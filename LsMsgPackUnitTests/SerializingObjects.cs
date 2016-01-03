@@ -56,8 +56,6 @@ namespace LsMsgPackUnitTests {
       Assert.AreEqual(testObj.ChildObject.ArrayOfChildObject[2].Name, ret.ChildObject.ArrayOfChildObject[2].Name);
       Assert.AreEqual(testObj.ChildObject.ArrayOfChildObject[3], ret.ChildObject.ArrayOfChildObject[3]);
       Assert.AreEqual(testObj.ChildObject.ArrayOfChildObject[4].Name, ret.ChildObject.ArrayOfChildObject[4].Name);
-
-      //System.IO.File.WriteAllBytes("D:\\Test.MsgPack", buffer);
     }
 
     class MyClass {
@@ -75,9 +73,11 @@ namespace LsMsgPackUnitTests {
       // Serialize
       byte[] buffer = MsgPackSerializer.Serialize(message);
       // Deserialize
-      MyClass ret = MsgPackSerializer.Deserialize<MyClass>(buffer);
-      string file = @"C:\MsgPackSuite\Example.MsgPack";
-      System.IO.File.WriteAllBytes(file, buffer);
+      MyClass creceiveMessage = MsgPackSerializer.Deserialize<MyClass>(buffer);
+
+      Assert.AreEqual(message.Name, creceiveMessage.Name);
+      Assert.AreEqual(message.Quantity, creceiveMessage.Quantity);
+      Assert.AreEqual(message.Anything, creceiveMessage.Anything);
     }
   }
 }
