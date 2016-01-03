@@ -76,6 +76,7 @@ namespace LsMsgPack {
       if(IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap() { Value = value };
       if(IsSubclassOfRawGeneric(typeof(Dictionary<,>), valuesType)) return new MpMap() { Value = value };
       if(valuesType.IsArray) return new MpArray() { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
+      if(typeof(IEnumerable).IsAssignableFrom(valuesType)) return new MpArray() { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
 
       // Extension types will come in like this most of the time:
       MsgPackItem val = value as MsgPackItem;

@@ -1,9 +1,9 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.Serialization;
 using System.Xml.Serialization;
 
 namespace LsMsgPack {
@@ -22,6 +22,7 @@ namespace LsMsgPack {
       typeof(float),
       typeof(string),
       typeof(byte[]),
+      typeof(List<>),
       typeof(object[]),
       typeof(Dictionary<,>)
     };
@@ -74,7 +75,9 @@ namespace LsMsgPack {
     private static object Materialize(Type tType, MpMap map) {
       PropertyInfo[] props = GetSerializedProps(tType);
       Dictionary<string, object> propVals = map.GetTypedValue<Dictionary<string, object>>();
-      object result = FormatterServices.GetUninitializedObject(tType);
+      
+      object result = Activator.CreateInstance(tType);
+
       for(int t = props.Length - 1; t >= 0; t--) {
         object val;
         if(propVals.TryGetValue(props[t].Name, out val)) {
@@ -98,6 +101,23 @@ namespace LsMsgPack {
                   valAsArr[i] = Materialize(propType, new MpMap((KeyValuePair<object, object>[])valAsArr[i]));
                 }
                 newInstance.SetValue(valAsArr[i], i);
+              }
+              props[t].SetValue(result, newInstance, null);
+              continue;
+            }
+            if(typeof(IList).IsAssignableFrom(propType)) {
+              IList newInstance = (IList)Activator.CreateInstance(propType);
+
+              object[] valAsArr = (object[])val;
+
+              // Part of the check for complex types can be done outside the loop
+              bool complexTypes = !MsgPackSerializer.NativelySupportedTypes.Contains(propType);
+              for(int i = 0; i < valAsArr.Length; i++) {
+                if(complexTypes && !ReferenceEquals(valAsArr[i], null)
+                  && valAsArr[i] is KeyValuePair<object, object>[]) {
+                  valAsArr[i] = Materialize(propType, new MpMap((KeyValuePair<object, object>[])valAsArr[i]));
+                }
+                newInstance.Add(valAsArr[i]);
               }
               props[t].SetValue(result, newInstance, null);
               continue;

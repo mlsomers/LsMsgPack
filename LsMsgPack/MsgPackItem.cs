@@ -39,6 +39,9 @@ namespace LsMsgPack {
       get { return _isBestGuess; }
     }
     
+    /// <summary>
+    /// The type of information held in this structure.
+    /// </summary> 
     [XmlAttribute("TypeId", DataType = "byte")]
     [Category("MetaData")]
     [DisplayName("Type")]
@@ -48,7 +51,10 @@ namespace LsMsgPack {
     [Browsable(true)]
     public abstract MsgPackTypeId TypeId { get; }
 
-    [XmlText]
+    /// <summary>
+    /// The actual piece of information held by this container.
+    /// </summary>
+    [XmlElement]
     [Category("Data")]
     [DisplayName("Data")]
     [Description("The actual piece of information held by this container.")]
@@ -131,6 +137,7 @@ namespace LsMsgPack {
       if(IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap(settings) { Value = value };
       if(IsSubclassOfRawGeneric(typeof(Dictionary<,>), valuesType)) return new MpMap(settings) { Value = value };
       if(valuesType.IsArray) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
+			if(typeof(IEnumerable).IsAssignableFrom(valuesType)) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
 
       // Extension types will come in like this most of the time:
       MsgPackItem val = value as MsgPackItem;

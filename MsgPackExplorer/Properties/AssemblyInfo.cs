@@ -28,9 +28,6 @@ LsMsgPack.dll
 Restart fiddler and you should see a MsgPack option in the Inspectors list.
 ")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("Matheu Louis Somers")]
-[assembly: AssemblyProduct("MsgPackExplorer")]
-[assembly: AssemblyCopyright("Copyright © Louis Somers 2015")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
@@ -54,5 +51,3 @@ Restart fiddler and you should see a MsgPack option in the Inspectors list.
 // You can specify all the values or you can default the Build and Revision Numbers 
 // by using the '*' as shown below:
 // [assembly: AssemblyVersion("1.0.*")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]

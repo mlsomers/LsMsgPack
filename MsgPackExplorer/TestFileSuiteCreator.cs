@@ -10,6 +10,7 @@ namespace MsgPackExplorer {
       AllSmallTypes(directory);
       SomeBadChoices(directory);
       SlidingTackle(directory);
+      Example(directory);
     }
 
     public void AllSmallTypes(string directory) {
@@ -162,6 +163,25 @@ namespace MsgPackExplorer {
         new KeyValuePair<object, object>(new object[0],new KeyValuePair<object,object>[0])
       };
       File.WriteAllBytes(Path.Combine(directory, "SlidingTackle.MsgPack"), MsgPackItem.Pack(items).ToBytes());
+    }
+
+    class MyClass {
+      public string Name { get; set; }
+      public int Quantity { get; set; }
+      public List<object> Anything { get; set; }
+    }
+
+    public void Example(string directory) {
+
+      MyClass message = new MyClass() {
+        Name = "TestMessage",
+        Quantity = 35,
+        Anything = new List<object>(new object[] { "First", 2, false, null, 5.5d, "last" })
+      };
+
+      byte[] bytes = MsgPackItem.Pack(message).ToBytes();
+
+      File.WriteAllBytes(Path.Combine(directory, "Example.MsgPack"), bytes);
     }
   }
 }

@@ -1,5 +1,6 @@
 ﻿using LsMsgPack;
 using NUnit.Framework;
+using System.Collections.Generic;
 using System.Xml.Serialization;
 
 namespace LsMsgPackUnitTests {
@@ -58,7 +59,31 @@ namespace LsMsgPackUnitTests {
 
       //System.IO.File.WriteAllBytes("D:\\Test.MsgPack", buffer);
     }
-  }
 
-  
+    class MyClass {
+      public string Name { get; set; }
+      public int Quantity { get; set; }
+      public List<object> Anything { get; set; }
+    }
+
+    [Test]
+    public void small_test() {
+
+      MyClass message = new MyClass() {
+        Name = "TestMessage",
+        Quantity = 35,
+        Anything = new List<object>(new object[] { "First", 2, false, null, 5.5d, "last" })
+      };
+
+      // Serialize
+      byte[] buffer = MsgPackSerializer.Serialize(message);
+
+      // Deserialize
+      MyClass ret = MsgPackSerializer.Deserialize<MyClass>(buffer);
+
+      string file = @"C:\MsgPackSuite\Example.MsgPack";
+      System.IO.File.WriteAllBytes(file, buffer);
+
+    }
+  }
 }
