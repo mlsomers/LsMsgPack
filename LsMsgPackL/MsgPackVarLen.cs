@@ -1,5 +1,4 @@
 ﻿using System;
-using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Xml.Serialization;
@@ -11,9 +10,9 @@ namespace LsMsgPack {
     protected abstract MsgPackTypeId GetTypeId(long len);
 
     [XmlIgnore]
-    [Category("MetaData")]
-    [DisplayName("Count")]
-    [Description("The number of items in this collection.")]
+    /// <summary>
+    /// The number of items in this collection.
+    /// </summary>
     public abstract int Count { get; }
 
     protected byte[] GetLengthBytes(long length, SupportedLengths supported) {

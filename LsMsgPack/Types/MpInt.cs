@@ -92,7 +92,7 @@ namespace LsMsgPack {
           case MsgPackTypeId.MpUInt:
             return Convert.ToUInt32(uvalue);
           case MsgPackTypeId.MpULong:
-            return Convert.ToUInt64(uvalue);
+            return uvalue;
           default:
             if(svalue != 0) return svalue;
             return uvalue;
