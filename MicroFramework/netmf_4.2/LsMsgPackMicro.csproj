@@ -1,0 +1,60 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <AssemblyName>LsMsgPackMicro</AssemblyName>
+    <OutputType>Library</OutputType>
+    <RootNamespace>LsMsgPackMicro</RootNamespace>
+    <ProjectTypeGuids>{b69e3092-b931-443c-abe7-7e7b65f2a37f};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
+    <ProductVersion>9.0.21022</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{09E851B1-A45D-4571-88FC-C7CF6266D6C1}</ProjectGuid>
+    <TargetFrameworkVersion>v4.2</TargetFrameworkVersion>
+    <NetMfTargetsBaseDir Condition="'$(NetMfTargetsBaseDir)'==''">$(MSBuildExtensionsPath32)\Microsoft\.NET Micro Framework\</NetMfTargetsBaseDir>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <Import Project="$(NetMfTargetsBaseDir)$(TargetFrameworkVersion)\CSharp.Targets" />
+  <ItemGroup>
+    <Compile Include="Meta\Attributes.cs" />
+    <Compile Include="Meta\BitConverter.cs" />
+    <Compile Include="Meta\Extensions.cs" />
+    <Compile Include="Meta\MsgPackException.cs" />
+    <Compile Include="Meta\MsgPackMeta.cs" />
+    <Compile Include="MsgPackItem.cs" />
+    <Compile Include="MsgPackSerializer.cs" />
+    <Compile Include="MsgPackVarLen.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Meta\KeyValuePair.cs" />
+    <Compile Include="Types\MpArray.cs" />
+    <Compile Include="Types\MpBin.cs" />
+    <Compile Include="Types\MpBool.cs" />
+    <Compile Include="Types\MpExt.cs" />
+    <Compile Include="Types\MpFloat.cs" />
+    <Compile Include="Types\MpInt.cs" />
+    <Compile Include="Types\MpMap.cs" />
+    <Compile Include="Types\MpNull.cs" />
+    <Compile Include="Types\MpString.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.SPOT.Native">
+    </Reference>
+    <Reference Include="System.IO" />
+  </ItemGroup>
+</Project>
