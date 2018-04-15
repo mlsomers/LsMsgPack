@@ -1,5 +1,6 @@
 ﻿using LsMsgPack;
 using NUnit.Framework;
+using NUnit.Framework.Internal;
 
 namespace LsMsgPackUnitTests {
   [TestFixture]
