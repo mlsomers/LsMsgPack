@@ -4,6 +4,38 @@ MsgPack debugging and validation tool also usable as Fiddler plugin
 More info about this application (and screenshots) can be found at:
 http://www.infotopie.nl/open-source/msgpack-explorer
 
+Library Usage Example
+---------------------
+Although the original was optimised for debugging and analysing, a lightweight version of the lib is included which does not keep track of all offsets and other overhead needed for debugging. It can be used in your code.
+
+Add LsMsgPackL.dll as a reference.
+
+```csharp
+public class MyClass
+{
+    public string Name { get; set; }
+    public int Quantity { get; set; }
+    public List<object> Anything { get; set; }
+}
+
+public void Test()
+{
+    MyClass message = new MyClass()
+    {
+        Name = "Test message",
+        Quantity = 100,
+        Anything = new List<object>(new object[] { "first", 2, false, null, 4.2d, "last" })
+    };
+    
+    // Serialize
+    byte[] buffer = MsgPackSerializer.Serialize(message);
+    
+    // Deserialize
+    MyClass returnMsg = MsgPackSerializer.Deserialize<MyClass>(buffer);
+}
+```
+I have never run any benchmarks so I have no idea how it will perform against other implementations.
+
 Fiddler Integration
 -------------------
 
@@ -34,4 +66,4 @@ Some unit tests on the core LsMsgPack.dll. No full coverage yet, but at least it
 
 #### LsMsgPackL.dll & LightUnitTests.dll
 A light version of the "parser". The parsing and generating methods are almost identical to the LsMsgPack lib, but with allot of overhead removed that comes with keeping track of offsets, original types and other debugging info. I'm planning to use this version in my projects that use the MsgPack format.
-The LightUnitTests are the same as LsMsgPackUnitTests with some tests omitted (preserving original types is not needed for non-debugging purposes).
+The LightUnitTests are the same as LsMsgPackUnitTests with some tests omitted.
