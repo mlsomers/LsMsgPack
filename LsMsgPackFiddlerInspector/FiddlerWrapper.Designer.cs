@@ -28,6 +28,9 @@
       this.aboutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripButton1 = new System.Windows.Forms.ToolStripButton();
       this.lsMsgPackExplorer1 = new MsgPackExplorer.LsMsgPackExplorer();
+      this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
+      this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
+      this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
       this.toolStrip1.SuspendLayout();
       this.SuspendLayout();
       // 
@@ -37,7 +40,10 @@
       this.toolStrip1.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
       this.toolStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.toolStripDropDownButton1,
-            this.toolStripButton1});
+            this.toolStripButton1,
+            this.toolStripSeparator1,
+            this.toolStripLabel1,
+            this.ddLimitItems});
       this.toolStrip1.Location = new System.Drawing.Point(0, 0);
       this.toolStrip1.Name = "toolStrip1";
       this.toolStrip1.Padding = new System.Windows.Forms.Padding(0);
@@ -89,6 +95,34 @@
       this.lsMsgPackExplorer1.Size = new System.Drawing.Size(700, 337);
       this.lsMsgPackExplorer1.TabIndex = 1;
       // 
+      // toolStripSeparator1
+      // 
+      this.toolStripSeparator1.Name = "toolStripSeparator1";
+      this.toolStripSeparator1.Size = new System.Drawing.Size(6, 25);
+      // 
+      // toolStripLabel1
+      // 
+      this.toolStripLabel1.Name = "toolStripLabel1";
+      this.toolStripLabel1.Size = new System.Drawing.Size(100, 22);
+      this.toolStripLabel1.Text = "Limit items in list:";
+      // 
+      // ddLimitItems
+      // 
+      this.ddLimitItems.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+      this.ddLimitItems.FlatStyle = System.Windows.Forms.FlatStyle.System;
+      this.ddLimitItems.Items.AddRange(new object[] {
+            "500",
+            "1000",
+            "10000",
+            "100000",
+            "All (no limit)"});
+      this.ddLimitItems.Name = "ddLimitItems";
+      this.ddLimitItems.Size = new System.Drawing.Size(121, 25);
+      this.ddLimitItems.ToolTipText = "More items take longer to process and it may seem like the application freezes fo" +
+    "r a while";
+      this.ddLimitItems.DropDownClosed += new System.EventHandler(this.ddLimitItems_TextChanged);
+      this.ddLimitItems.TextChanged += new System.EventHandler(this.ddLimitItems_TextChanged);
+      // 
       // FiddlerWrapper
       // 
       this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -111,5 +145,8 @@
     private System.Windows.Forms.ToolStripMenuItem aboutToolStripMenuItem;
     private System.Windows.Forms.ToolStripButton toolStripButton1;
     public MsgPackExplorer.LsMsgPackExplorer lsMsgPackExplorer1;
+    private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
+    private System.Windows.Forms.ToolStripLabel toolStripLabel1;
+    private System.Windows.Forms.ToolStripComboBox ddLimitItems;
   }
 }

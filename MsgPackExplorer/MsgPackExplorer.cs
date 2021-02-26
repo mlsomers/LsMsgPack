@@ -55,6 +55,16 @@ namespace MsgPackExplorer {
       }
     }
 
+    private long _displayLimit = 1000;
+    [Category("MsgPack")]
+    [DisplayName("Limit items")]
+    [Description("Limit the number of items that are displayed when many items are processed.")]
+    public long DisplayLimit {
+      get { return _displayLimit; }
+      set { _displayLimit = value; }
+    }
+
+
     /// <summary>
     /// Clears all the data and starts with an empty slate
     /// </summary>
@@ -80,46 +90,63 @@ namespace MsgPackExplorer {
       public MsgPackItem Item;
     }
 
-    private void RefreshTree() {
-      treeView1.Nodes.Clear();
-      richTextBox1.Clear();
-      lineairList.Clear();
-      listView1.Items.Clear();
-      if(ReferenceEquals(item, null)) return;
+    public void RefreshTree() {
+      SuspendLayout();
+      treeView1.SuspendLayout();
+      treeView1.BeginUpdate();
+      richTextBox1.SuspendLayout();
+      Cursor = Cursors.WaitCursor;
+      try {
+        treeView1.Nodes.Clear();
+        richTextBox1.Clear();
+        lineairList.Clear();
+        listView1.Items.Clear();
+        if (ReferenceEquals(item, null)) return;
 
-      TreeNode root = GetTreeNodeFor(item);
-      Traverse(root, item);
-      treeView1.Nodes.Add(root);
-      treeView1.ExpandAll();
-      if(ReferenceEquals(data, null) || data.Length == 0) data = item.ToBytes();
-      //richTextBox1.Text = BitConverter.ToString(data).Replace('-', ' ');
+        TreeNode root = GetTreeNodeFor(item);
+        _nodeCount = 0;
+        Traverse(root, item);
+        if (_nodeCount > _displayLimit)
+          root.Nodes.Add(string.Concat("Limit of ", _displayLimit, " displayed items reached..."));
 
-      string[] hex = BitConverter.ToString(data).Split('-');
-      StringBuilder sb = new StringBuilder("{\\rtf1 {\\colortbl ;\\red255\\green0\\blue0;\\red0\\green77\\blue187;\\red127\\green127\\blue127;}\r\n");
-      int byteOffset = 0;
+        treeView1.Nodes.Add(root);
+        treeView1.ExpandAll();
+        if (ReferenceEquals(data, null) || data.Length == 0) data = item.ToBytes();
+        //richTextBox1.Text = BitConverter.ToString(data).Replace('-', ' ');
 
-      EditorMetaData meta = null;
-      byteOffset = AddParts(hex, root, byteOffset, sb, ref meta);
+        string[] hex = BitConverter.ToString(data).Split('-');
+        StringBuilder sb = new StringBuilder("{\\rtf1 {\\colortbl ;\\red255\\green0\\blue0;\\red0\\green77\\blue187;\\red127\\green127\\blue127;}\r\n");
+        int byteOffset = 0;
 
-      if(!ReferenceEquals(meta, null) && !ReferenceEquals(meta.Item, null)) {
-        while(meta.Item.StoredOffset + meta.Item.StoredLength > byteOffset) {
+        EditorMetaData meta = null;
+        byteOffset = AddParts(hex, root, byteOffset, sb, ref meta);
+
+        if (!ReferenceEquals(meta, null) && !ReferenceEquals(meta.Item, null)) {
+          while (meta.Item.StoredOffset + meta.Item.StoredLength > byteOffset) {
+            sb.Append(hex[byteOffset]).Append(' ');
+            byteOffset++;
+            meta.Length++;
+          }
+        }
+
+        meta = (EditorMetaData)item.Tag;
+        meta.Length = byteOffset;
+
+        if (hex.Length - 1 > byteOffset) sb.Append("\\cf3 "); // gray
+        while (hex.Length - 1 > byteOffset) {
           sb.Append(hex[byteOffset]).Append(' ');
           byteOffset++;
-          meta.Length++;
         }
+
+        sb.Append("\r\n}\r\n");
+        richTextBox1.Rtf = sb.ToString();
+      } finally {
+        ResumeLayout();
+        treeView1.EndUpdate();
+        treeView1.ResumeLayout();
+        richTextBox1.ResumeLayout();
+        Cursor = Cursors.Default;
       }
-
-      meta = (EditorMetaData)item.Tag;
-      meta.Length = byteOffset;
-
-      if(hex.Length - 1 > byteOffset) sb.Append("\\cf3 "); // gray
-      while(hex.Length-1 > byteOffset) {
-        sb.Append(hex[byteOffset]).Append(' ');
-        byteOffset++;
-      }
-
-      sb.Append("\r\n}\r\n");
-      richTextBox1.Rtf = sb.ToString();
     }
 
     private int AddParts(string[] hex, TreeNode node, int byteOffset, StringBuilder sb, ref EditorMetaData previousMeta) {
@@ -203,7 +230,12 @@ namespace MsgPackExplorer {
       return node;
     }
 
+    long _nodeCount = 0;
+
     private void Traverse(TreeNode node, MsgPackItem item) {
+      _nodeCount++;
+      if (_nodeCount > _displayLimit)
+        return;
       if(ReferenceEquals(item, null)) return;
       Type typ = item.GetType();
       if(typ == typeof(MpBool)) return;
@@ -218,6 +250,8 @@ namespace MsgPackExplorer {
           TreeNode child = GetTreeNodeFor(children[t]);
           node.Nodes.Add(child);
           Traverse(child, children[t]);
+          if (_nodeCount > _displayLimit)
+            return;
         }
       }
       if (typ == typeof(MpArray)) {
@@ -227,6 +261,8 @@ namespace MsgPackExplorer {
           TreeNode child = GetTreeNodeFor(children[t]);
           node.Nodes.Add(child);
           Traverse(child, children[t]);
+          if (_nodeCount > _displayLimit)
+            return;
         }
       }
       if(typ == typeof(MpMap)) {
@@ -237,10 +273,14 @@ namespace MsgPackExplorer {
           child.StateImageIndex = 8; // Key
           node.Nodes.Add(child);
           Traverse(child, children[t].Key);
+          if (_nodeCount > _displayLimit)
+            return;
           TreeNode childVal = GetTreeNodeFor(children[t].Value);
           childVal.StateImageIndex = 9; // Value
           child.Nodes.Add(childVal);
           Traverse(childVal, children[t].Value);
+          if (_nodeCount > _displayLimit)
+            return;
         }
       }
       if(typ == typeof(MpError)) {
@@ -250,6 +290,8 @@ namespace MsgPackExplorer {
           TreeNode child = GetTreeNodeFor(err.PartialItem);
           node.Nodes.Add(child);
           Traverse(child, err.PartialItem);
+          if (_nodeCount > _displayLimit)
+            return;
         }
       }
     }

@@ -57,6 +57,7 @@
       // 
       this.treeView1.Dock = System.Windows.Forms.DockStyle.Fill;
       this.treeView1.DrawMode = System.Windows.Forms.TreeViewDrawMode.OwnerDrawText;
+      this.treeView1.FullRowSelect = true;
       this.treeView1.HideSelection = false;
       this.treeView1.ImageIndex = 0;
       this.treeView1.ImageList = this.imageList1;
