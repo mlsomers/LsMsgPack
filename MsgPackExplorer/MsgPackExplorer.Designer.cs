@@ -85,6 +85,7 @@
       this.imageList1.Images.SetKeyName(9, "Value.png");
       this.imageList1.Images.SetKeyName(10, "Extension.png");
       this.imageList1.Images.SetKeyName(11, "Broken.png");
+      this.imageList1.Images.SetKeyName(12, "Explore.png");
       // 
       // splitter1
       // 
@@ -119,7 +120,7 @@
       // richTextBox1
       // 
       this.richTextBox1.Dock = System.Windows.Forms.DockStyle.Fill;
-      this.richTextBox1.Font = new System.Drawing.Font("Segoe UI Mono", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+      this.richTextBox1.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
       this.richTextBox1.HideSelection = false;
       this.richTextBox1.Location = new System.Drawing.Point(0, 259);
       this.richTextBox1.Name = "richTextBox1";
@@ -254,14 +255,14 @@
       this.errorDetails.TabIndex = 3;
       this.errorDetails.Visible = false;
       // 
-      // MsgPackExplorer
+      // LsMsgPackExplorer
       // 
       this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
       this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
       this.Controls.Add(this.panel2);
       this.Controls.Add(this.splitter1);
       this.Controls.Add(this.panel1);
-      this.Name = "MsgPackExplorer";
+      this.Name = "LsMsgPackExplorer";
       this.Size = new System.Drawing.Size(639, 352);
       this.panel1.ResumeLayout(false);
       this.panel1.PerformLayout();

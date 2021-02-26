@@ -54,6 +54,7 @@
     <Compile Include="Types\MpMap.cs" />
     <Compile Include="Types\MpArray.cs" />
     <Compile Include="Types\MpBin.cs" />
+    <Compile Include="Types\MpRoot.cs" />
     <Compile Include="Types\MpString.cs" />
     <Compile Include="MsgPackVarLen.cs" />
     <Compile Include="Types\MpFloat.cs" />

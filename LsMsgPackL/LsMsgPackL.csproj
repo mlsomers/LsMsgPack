@@ -57,6 +57,7 @@
     <Compile Include="Types\MpInt.cs" />
     <Compile Include="Types\MpMap.cs" />
     <Compile Include="Types\MpNull.cs" />
+    <Compile Include="Types\MpRoot.cs" />
     <Compile Include="Types\MpString.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

@@ -53,6 +53,22 @@ namespace LsMsgPack {
       }
     }
 
+
+    public static MpRoot PackMultiple(params object[] values) {
+      MpRoot root = new MpRoot(values.Length);
+      for (int t = 0; t < values.Length; t++)
+        root.Add(Pack(values[t]));
+      return root;
+    }
+
+    public static MpRoot PackMultiple(IEnumerable values) {
+      MpRoot root = new MpRoot();
+      foreach (object item in values) {
+        root.Add(Pack(item));
+      }
+      return root;
+    }
+
     public static MsgPackItem Pack(object value) {
       if(ReferenceEquals(value, null)) return new MpNull();
       if(value is bool) return new MpBool() { Value = value };
@@ -114,6 +130,28 @@ namespace LsMsgPack {
       using(MemoryStream ms = new MemoryStream(data)) {
         return Unpack(ms);
       }
+    }
+
+    public static MpRoot UnpackMultiple(byte[] data) {
+      using (MemoryStream ms = new MemoryStream(data)) {
+        return UnpackMultiple(ms);
+      }
+    }
+
+    public static MpRoot UnpackMultiple(Stream stream) {
+      MpRoot items = new MpRoot();
+      long len = stream.Length - 1;
+      long lastpos = stream.Position;
+      while (stream.Position < len) {
+        try {
+          items.Add(Unpack(stream));
+          lastpos = stream.Position;
+        } catch (Exception ex) {
+          throw new MsgPackException(string.Concat("error while reading item [", items.Count, "] at offset ",lastpos," (read up to ",stream.Position,"). See inner exception for more details."), ex, lastpos);
+        }
+      }
+      
+      return items;
     }
 
     public static MsgPackItem Unpack(Stream stream) {

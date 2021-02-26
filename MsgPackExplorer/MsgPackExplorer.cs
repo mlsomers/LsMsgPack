@@ -47,8 +47,11 @@ namespace MsgPackExplorer {
       get { return data; }
       set {
         data = value;
-        if(ReferenceEquals(value, null)) Item = null;
-        else Item = MsgPackItem.Unpack(data, false, true, _continueOnError);
+        if (ReferenceEquals(value, null)) Item = null;
+        else {
+          MpRoot root= MsgPackItem.UnpackMultiple(data, false, true, _continueOnError);
+          Item = root?.Count == 1 ? root[0] : root;
+        }
       }
     }
 
@@ -146,7 +149,7 @@ namespace MsgPackExplorer {
       item.Tag = meta;
       previousMeta = meta;
 
-      if(!ReferenceEquals(item, null) && !(item is MpError && !ReferenceEquals(((MpError)item).PartialItem, null)) && byteOffset<hex.Length) {
+      if(!ReferenceEquals(item, null) && !(item is MpError && !ReferenceEquals(((MpError)item).PartialItem, null)) && !(item is MpRoot) && byteOffset<hex.Length) {
         sb.Append("\\cf1 "); // red
         sb.Append(hex[byteOffset]).Append(' ');
         byteOffset++;
@@ -208,7 +211,16 @@ namespace MsgPackExplorer {
       if(typ == typeof(MpFloat)) return;
       if(typ == typeof(MpBin)) return;
       if(typ == typeof(MpString)) return;
-      if(typ == typeof(MpArray)) {
+      if (typ == typeof(MpRoot)) {
+        MpRoot root = (MpRoot)item;
+        MsgPackItem[] children = (MsgPackItem[])root.Value;
+        for (int t = 0; t < children.Length; t++) {
+          TreeNode child = GetTreeNodeFor(children[t]);
+          node.Nodes.Add(child);
+          Traverse(child, children[t]);
+        }
+      }
+      if (typ == typeof(MpArray)) {
         MpArray arr = (MpArray)item;
         MsgPackItem[] children = arr.PackedValues;
         for(int t = 0; t < children.Length; t++) {
@@ -254,6 +266,7 @@ namespace MsgPackExplorer {
       if(typ == typeof(MpMap)) return 7;
       if(typ == typeof(MpExt)) return 10;
       if(typ == typeof(MpError)) return 11;
+      if(typ == typeof(MpRoot)) return 12;
       return -1;
     }
 

@@ -12,7 +12,7 @@ namespace LsMsgPack {
   public abstract class MsgPackItem {
 
     public MsgPackItem() : base() { }
-    public MsgPackItem(MsgPackSettings settings){
+    public MsgPackItem(MsgPackSettings settings) {
       _settings = settings;
       _isBestGuess = _settings.FileContainsErrors;
     }
@@ -28,7 +28,7 @@ namespace LsMsgPack {
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public MsgPackSettings Settings { get { return _settings; } }
-    
+
     private bool _isBestGuess = false;
     [XmlAttribute("Unreliable")]
     [DefaultValue(false)]
@@ -38,7 +38,7 @@ namespace LsMsgPack {
     public bool IsBestGuess {
       get { return _isBestGuess; }
     }
-    
+
     /// <summary>
     /// The type of information held in this structure.
     /// </summary> 
@@ -86,10 +86,10 @@ namespace LsMsgPack {
     public object Tag { get; set; }
 
     protected static void ReorderIfLittleEndian(List<byte> bytes) {
-      if(BitConverter.IsLittleEndian && bytes.Count > 1) {
+      if (BitConverter.IsLittleEndian && bytes.Count > 1) {
         byte[] swapped = new byte[bytes.Count];
         int c = 0;
-        for(int t = swapped.Length - 1; t >= 0; t--) {
+        for (int t = swapped.Length - 1; t >= 0; t--) {
           swapped[t] = bytes[c];
           c++;
         }
@@ -99,15 +99,40 @@ namespace LsMsgPack {
     }
 
     protected static void ReorderIfLittleEndian(byte[] bytes) {
-      if(BitConverter.IsLittleEndian && bytes.Length > 1) {
+      if (BitConverter.IsLittleEndian && bytes.Length > 1) {
         byte[] swapped = new byte[bytes.Length];
         int c = 0;
-        for(int t = swapped.Length - 1; t >= 0; t--) {
+        for (int t = swapped.Length - 1; t >= 0; t--) {
           swapped[t] = bytes[c];
           c++;
         }
-        for(int t = bytes.Length - 1; t >= 0; t--) bytes[t] = swapped[t];
+        for (int t = bytes.Length - 1; t >= 0; t--) bytes[t] = swapped[t];
       }
+    }
+
+    /// <param name="dynamicallyCompact">Will store a long with value 3 as a nibble (using only one byte)</param>
+    public static MpRoot PackMultiple(bool dynamicallyCompact, params object[] values) {
+      return PackMultiple(new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact }, values);
+    }
+
+    public static MpRoot PackMultiple(MsgPackSettings settings, params object[] values) {
+      MpRoot root = new MpRoot(settings, values.Length);
+      for (int t = 0; t < values.Length; t++) 
+        root.Add(Pack(values[t], settings));
+      return root;
+    }
+
+    /// <param name="dynamicallyCompact">Will store a long with value 3 as a nibble (using only one byte)</param>
+    public static MpRoot PackMultiple(bool dynamicallyCompact, IEnumerable values) {
+      return PackMultiple(new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact }, values);
+    }
+
+    public static MpRoot PackMultiple(MsgPackSettings settings, IEnumerable values) {
+      MpRoot root = new MpRoot(settings);
+      foreach (object item in values) {
+        root.Add(Pack(item, settings));
+      }
+      return root;
     }
 
     public static MsgPackItem Pack(object value, bool dynamicallyCompact = true) {
@@ -115,9 +140,9 @@ namespace LsMsgPack {
     }
 
     public static MsgPackItem Pack(object value, MsgPackSettings settings) {
-      if(ReferenceEquals(value, null)) return new MpNull(settings);
-      if(value is bool) return new MpBool(settings) { Value = value };
-      if(value is sbyte
+      if (ReferenceEquals(value, null)) return new MpNull(settings);
+      if (value is bool) return new MpBool(settings) { Value = value };
+      if (value is sbyte
         || value is short
         || value is int
         || value is long
@@ -125,23 +150,23 @@ namespace LsMsgPack {
         || value is ushort
         || value is uint
         || value is ulong) return new MpInt(settings) { Value = value };
-      if(value is float
+      if (value is float
         || value is double) return new MpFloat(settings) { Value = value };
-      if(value is string) return new MpString(settings) { Value = value };
-      if(value is byte[]) return new MpBin(settings) { Value = value };
-      if(value is object[]) return new MpArray(settings) { Value = value };
+      if (value is string) return new MpString(settings) { Value = value };
+      if (value is byte[]) return new MpBin(settings) { Value = value };
+      if (value is object[]) return new MpArray(settings) { Value = value };
 
       Type valuesType = value.GetType();
 
-      if(valuesType.IsEnum) return new MpInt(settings).SetEnumVal(value);
-      if(IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap(settings) { Value = value };
-      if(IsSubclassOfRawGeneric(typeof(Dictionary<,>), valuesType)) return new MpMap(settings) { Value = value };
-      if(valuesType.IsArray) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
-			if(typeof(IEnumerable).IsAssignableFrom(valuesType)) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
+      if (valuesType.IsEnum) return new MpInt(settings).SetEnumVal(value);
+      if (IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap(settings) { Value = value };
+      if (IsSubclassOfRawGeneric(typeof(Dictionary<,>), valuesType)) return new MpMap(settings) { Value = value };
+      if (valuesType.IsArray) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
+      if (typeof(IEnumerable).IsAssignableFrom(valuesType)) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
 
       // Extension types will come in like this most of the time:
       MsgPackItem val = value as MsgPackItem;
-      if(!ReferenceEquals(val, null)) {
+      if (!ReferenceEquals(val, null)) {
         val._settings = settings;
         return val;
       }
@@ -150,9 +175,9 @@ namespace LsMsgPack {
     }
 
     static protected bool IsSubclassOfRawGeneric(Type generic, Type toCheck) {
-      while(toCheck != null && toCheck != typeof(object)) {
+      while (toCheck != null && toCheck != typeof(object)) {
         var cur = toCheck.IsGenericType ? toCheck.GetGenericTypeDefinition() : toCheck;
-        if(generic == cur) {
+        if (generic == cur) {
           return true;
         }
         toCheck = toCheck.BaseType;
@@ -161,26 +186,26 @@ namespace LsMsgPack {
     }
 
     static protected bool IsSubclassOfArrayOfRawGeneric(Type generic, Type toCheck) {
-      if(!toCheck.IsArray) return false;
+      if (!toCheck.IsArray) return false;
       toCheck = toCheck.GetElementType();
 
-      while(toCheck != null && toCheck != typeof(object)) {
+      while (toCheck != null && toCheck != typeof(object)) {
         var cur = toCheck.IsGenericType ? toCheck.GetGenericTypeDefinition() : toCheck;
-        if(generic == cur) {
+        if (generic == cur) {
           return true;
         }
         toCheck = toCheck.BaseType;
       }
       return false;
     }
-    
+
     public static MsgPackItem Unpack(byte[] data, bool dynamicallyCompact = true, bool preservePackages = false, bool continueProcessingOnBreakingError = false) {
-      using(MemoryStream ms = new MemoryStream(data)) {
+      using (MemoryStream ms = new MemoryStream(data)) {
         return Unpack(ms, dynamicallyCompact, preservePackages, continueProcessingOnBreakingError);
       }
     }
 
-    public static MsgPackItem Unpack(Stream stream, bool dynamicallyCompact=true, bool preservePackages=false, bool continueProcessingOnBreakingError=false) {
+    public static MsgPackItem Unpack(Stream stream, bool dynamicallyCompact = true, bool preservePackages = false, bool continueProcessingOnBreakingError = false) {
       return Unpack(stream, new MsgPackSettings() {
         DynamicallyCompact = dynamicallyCompact,
         PreservePackages = preservePackages,
@@ -188,13 +213,50 @@ namespace LsMsgPack {
       });
     }
 
+    public static MpRoot UnpackMultiple(byte[] data, bool dynamicallyCompact = true, bool preservePackages = false, bool continueProcessingOnBreakingError = false) {
+      using (MemoryStream ms = new MemoryStream(data)) {
+        return UnpackMultiple(ms, dynamicallyCompact, preservePackages, continueProcessingOnBreakingError);
+      }
+    }
+
+    public static MpRoot UnpackMultiple(Stream stream, bool dynamicallyCompact = true, bool preservePackages = false, bool continueProcessingOnBreakingError = false) {
+      return UnpackMultiple(stream, new MsgPackSettings() {
+        DynamicallyCompact = dynamicallyCompact,
+        PreservePackages = preservePackages,
+        ContinueProcessingOnBreakingError = continueProcessingOnBreakingError
+      });
+    }
+
+    public static MpRoot UnpackMultiple(Stream stream, MsgPackSettings settings) {
+      MpRoot items = new MpRoot(settings) { storedOffset = stream.Position };
+      long len = stream.Length - 1;
+      long lastpos = stream.Position;
+      while (stream.Position < len) {
+        try {
+          items.Add(Unpack(stream, settings));
+          lastpos = stream.Position;
+        } catch (Exception ex) {
+          items.Add(new MpError(settings, ex, "Offset after parsing error is ", stream.Position) { storedOffset = lastpos, storedLength = stream.Position - lastpos });
+          if (settings.ContinueProcessingOnBreakingError) {
+            if (lastpos == stream.Position && stream.Position < len)
+              FindNextValidTypeId(stream);
+          } else {
+            break;
+          }
+        }
+      }
+
+      items.storedLength = stream.Position - items.storedOffset;
+      return items;
+    }
+
     public static MsgPackItem Unpack(Stream stream, MsgPackSettings settings) {
       int typeByte = stream.ReadByte();
-      if(typeByte < 0) return new MpError(settings, stream.Position, MsgPackTypeId.NeverUsed, "Unexpected end of data.");
+      if (typeByte < 0) return new MpError(settings, stream.Position, MsgPackTypeId.NeverUsed, "Unexpected end of data.");
       MsgPackItem item = null;
       try {
         MsgPackTypeId type = (MsgPackTypeId)typeByte;
-        switch(type) {
+        switch (type) {
           case MsgPackTypeId.MpNull: item = new MpNull(settings); break;
           case MsgPackTypeId.MpBoolFalse:
           case MsgPackTypeId.MpBoolTrue: item = new MpBool(settings); break;
@@ -231,41 +293,40 @@ namespace LsMsgPack {
           case MsgPackTypeId.MpExt8:
           case MsgPackTypeId.MpExt16:
           case MsgPackTypeId.MpExt32: item = new MpExt(settings); break;
-          case MsgPackTypeId.NeverUsed:
-            {
+          case MsgPackTypeId.NeverUsed: {
               long pos = stream.Position - 1;
-              if(settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
+              if (settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
               return new MpError(settings, pos, MsgPackTypeId.NeverUsed, "The specification specifically states that the value 0xC1 should never be used.") {
                 storedLength = (stream.Position - pos)
               };
             }
         }
 
-        if(ReferenceEquals(item, null)) {
-          if(((byte)type & 0xE0) == 0xE0 || (((byte)type & 0x80) == 0)) item = new MpInt(settings);
-          else if(((byte)type & 0xA0) == 0xA0) item = new MpString(settings);
-          else if(((byte)type & 0x90) == 0x90) item = new MpArray(settings);
-          else if(((byte)type & 0x80) == 0x80) item = new MpMap(settings);
+        if (ReferenceEquals(item, null)) {
+          if (((byte)type & 0xE0) == 0xE0 || (((byte)type & 0x80) == 0)) item = new MpInt(settings);
+          else if (((byte)type & 0xA0) == 0xA0) item = new MpString(settings);
+          else if (((byte)type & 0x90) == 0x90) item = new MpArray(settings);
+          else if (((byte)type & 0x80) == 0x80) item = new MpMap(settings);
         }
 
-        if(!ReferenceEquals(item, null)) {
+        if (!ReferenceEquals(item, null)) {
           item.storedOffset = stream.Position - 1;
           item._settings = settings; // maybe redundent, but want to be sure
           MsgPackItem ret = item.Read(type, stream);
           item.storedLength = stream.Position - item.storedOffset;
-          if(!ReferenceEquals(item, ret)) ret.storedLength = item.storedLength;
+          if (!ReferenceEquals(item, ret)) ret.storedLength = item.storedLength;
           return ret;
         } else {
           long pos = stream.Position - 1;
-          if(settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
+          if (settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
           return new MpError(settings, pos, type, "The type identifier with value 0x", BitConverter.ToString(new byte[] { (byte)type }),
             " is either new or invalid. It is not (yet) implemented in this version of LsMsgPack.") {
             storedLength = (stream.Position - pos)
           };
         }
-      }catch(Exception ex) {
+      } catch (Exception ex) {
         long pos = stream.Position - 1;
-        if(settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
+        if (settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
         return new MpError(settings, new MsgPackException("Error while reading data.", ex, stream.Position, (MsgPackTypeId)typeByte)) {
           storedOffset = pos,
           storedLength = (stream.Position - pos),
@@ -280,11 +341,11 @@ namespace LsMsgPack {
     protected static bool FindNextValidTypeId(Stream stream) {
       long lastPos = stream.Position;
       int typeByte = stream.ReadByte();
-      
-      while(typeByte>=0 && !MsgPackMeta.IsValidPackageStartByte((byte)typeByte)) typeByte = stream.ReadByte();
+
+      while (typeByte >= 0 && !MsgPackMeta.IsValidPackageStartByte((byte)typeByte)) typeByte = stream.ReadByte();
 
       bool result = (typeByte >= 0);
-      if(result) stream.Seek(stream.Position - 1, SeekOrigin.Begin);
+      if (result) stream.Seek(stream.Position - 1, SeekOrigin.Begin);
       return result;
     }
 
@@ -295,24 +356,24 @@ namespace LsMsgPack {
     public override string ToString() {
       return Value.ToString();
     }
-    
+
     public static string GetOfficialTypeName(MsgPackTypeId typeId) {
       MsgPackMeta.PackDef def;
-      if(MsgPackMeta.FromTypeId.TryGetValue(typeId, out def)) return def.OfficialName;
+      if (MsgPackMeta.FromTypeId.TryGetValue(typeId, out def)) return def.OfficialName;
       //if(typeId == MsgPackTypeId.NeverUsed) return "[\"Officially never used\"] (0xC1)";
       return string.Concat("Undefined (0x", BitConverter.ToString(new byte[] { (byte)typeId }), ")");
     }
 
     internal static MsgPackMeta.PackDef GetTypeDescriptor(MsgPackTypeId typeId) {
       MsgPackMeta.PackDef def;
-      if(MsgPackMeta.FromTypeId.TryGetValue(typeId, out def)) return def;
-      return new MsgPackMeta.PackDef(typeId, string.Concat("Undefined (0x", BitConverter.ToString(new byte[] { (byte)typeId }), ")"), 
+      if (MsgPackMeta.FromTypeId.TryGetValue(typeId, out def)) return def;
+      return new MsgPackMeta.PackDef(typeId, string.Concat("Undefined (0x", BitConverter.ToString(new byte[] { (byte)typeId }), ")"),
         "This value is either invalid or new to the specification since the implementation of this library. Check the specification and check for updates if the value is defined.");
     }
   }
 
 
-  public enum MsgPackTypeId:byte {
+  public enum MsgPackTypeId : byte {
     /// <summary>
     /// NULL
     /// </summary>
@@ -463,6 +524,6 @@ namespace LsMsgPack {
     /// <summary>
     /// An uninitialised ext might have this value, but it should actually never be used
     /// </summary>
-    NeverUsed = 0xc1
+    NeverUsed = 0xc1,
   }
 }
