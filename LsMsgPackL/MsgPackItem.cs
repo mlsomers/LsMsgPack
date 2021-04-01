@@ -29,30 +29,70 @@ namespace LsMsgPack {
     public object Tag { get; set; }
 
     protected static void ReorderIfLittleEndian(List<byte> bytes) {
-      if(BitConverter.IsLittleEndian && bytes.Count > 1) {
-        byte[] swapped = new byte[bytes.Count];
-        int c = 0;
-        for(int t = swapped.Length - 1; t >= 0; t--) {
-          swapped[t] = bytes[c];
-          c++;
-        }
-        bytes.Clear();
-        bytes.AddRange(swapped);
+      if (!BitConverter.IsLittleEndian || bytes.Count <= 1)
+        return;
+
+      byte[] swapped = new byte[bytes.Count];
+      int c = 0;
+      for (int t = swapped.Length - 1; t >= 0; t--) {
+        swapped[t] = bytes[c];
+        c++;
       }
+      bytes.Clear();
+      bytes.AddRange(swapped);
     }
 
     protected static void ReorderIfLittleEndian(byte[] bytes) {
-      if(BitConverter.IsLittleEndian && bytes.Length > 1) {
-        byte[] swapped = new byte[bytes.Length];
-        int c = 0;
-        for(int t = swapped.Length - 1; t >= 0; t--) {
-          swapped[t] = bytes[c];
-          c++;
-        }
-        for(int t = bytes.Length - 1; t >= 0; t--) bytes[t] = swapped[t];
+      if (!BitConverter.IsLittleEndian || bytes.Length <= 1)
+        return;
+
+      byte[] swapped = new byte[bytes.Length];
+      int c = 0;
+      for (int t = swapped.Length - 1; t >= 0; t--) {
+        swapped[t] = bytes[c];
+        c++;
       }
+      for (int t = bytes.Length - 1; t >= 0; t--) bytes[t] = swapped[t];
     }
 
+    protected static byte[] SwapIfLittleEndian(byte[] bytes) {
+      if (!BitConverter.IsLittleEndian || bytes.Length <= 1)
+        return bytes;
+
+      byte[] final = new byte[bytes.Length];
+      int c = 0;
+      for (int t = final.Length - 1; t >= 0; t--) {
+        final[t] = bytes[c];
+        c++;
+      }
+
+      return final;
+    }
+
+    protected static byte[] SwapIfLittleEndian(byte[] bytes, int start, int count) {
+      if (bytes.Length <= 1)
+        return bytes;
+
+      byte[] final = new byte[count];
+      int last = count - 1;
+
+      if (!BitConverter.IsLittleEndian) {
+        int offset = start + last;
+        for (int t = last; t >= 0; t--) {
+          final[t] = bytes[offset];
+          offset--;
+        }
+        return final;
+      }
+
+      int c = start;
+      for (int t = last; t >= 0; t--) {
+        final[t] = bytes[c];
+        c++;
+      }
+
+      return final;
+    }
 
     public static MpRoot PackMultiple(params object[] values) {
       MpRoot root = new MpRoot(values.Length);
@@ -71,20 +111,22 @@ namespace LsMsgPack {
 
     public static MsgPackItem Pack(object value) {
       if(ReferenceEquals(value, null)) return new MpNull();
-      if(value is bool) return new MpBool() { Value = value };
-      if(value is sbyte
-        || value is short
-        || value is int
-        || value is long
-        || value is byte
-        || value is ushort
-        || value is uint
-        || value is ulong) return new MpInt() { Value = value };
-      if(value is float
-        || value is double) return new MpFloat() { Value = value };
-      if(value is string) return new MpString() { Value = value };
-      if(value is byte[]) return new MpBin() { Value = value };
-      if(value is object[]) return new MpArray() { Value = value };
+      if (value is bool) return new MpBool() { Value = value };
+      if (value is sbyte
+       || value is short
+       || value is int
+       || value is long
+       || value is byte
+       || value is ushort
+       || value is uint
+       || value is ulong) return new MpInt() { Value = value };
+      if (value is float
+       || value is double) return new MpFloat() { Value = value };
+      if (value is string) return new MpString() { Value = value };
+      if (value is byte[]) return new MpBin() { Value = value };
+      if (value is object[]) return new MpArray() { Value = value };
+      if (value is DateTime
+       || value is DateTimeOffset) return new MpDateTime() { Value = value };
 
       Type valuesType = value.GetType();
 

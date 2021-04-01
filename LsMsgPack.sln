@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.23107.0
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.31019.35
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPack", "LsMsgPack\LsMsgPack.csproj", "{9ED6F698-8DE5-4E50-BEAC-1FCE03062756}"
 EndProject
@@ -59,5 +59,8 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{601DBB96-B626-4BB0-BBE8-21EEDA5F24E8} = {9EA1AACE-8E22-45B0-9F36-E3B05280279A}
 		{42154423-A1C1-4C36-BA9B-30FD0E6BF9D2} = {9EA1AACE-8E22-45B0-9F36-E3B05280279A}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {513BE6F8-329E-4A95-9A29-025519A99B80}
 	EndGlobalSection
 EndGlobal

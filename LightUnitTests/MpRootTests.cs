@@ -15,12 +15,12 @@ namespace LsMsgPackUnitTests {
 
       MpRoot result = MsgPackItem.UnpackMultiple(bytes);
 
-      Assert.AreEqual(items.Length, result.Count, string.Concat("Expected ",items.Length," items but got ", result.Count, " items after round trip."));
+      Assert.AreEqual(items.Length, result.Count, string.Concat("Expected ", items.Length, " items but got ", result.Count, " items after round trip."));
 
       for (int t = 0; t < result.Count; t++) {
         object expected = items[t];
         object actual = result[t].Value;
-        
+
         Assert.AreEqual(expected, actual, "The returned value ", actual, " differs from the input value ", expected);
       }
     }

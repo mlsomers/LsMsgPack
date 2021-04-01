@@ -6,6 +6,8 @@ namespace LsMsgPackUnitTests {
   [TestFixture]
   public class MpArrayTest {
 
+    private static Randomizer rnd = new Randomizer();
+
     [TestCase(0, 1, MsgPackTypeId.MpArray4)]
     [TestCase(1, 2, MsgPackTypeId.MpArray4)]
     [TestCase(15, 16, MsgPackTypeId.MpArray4)]
@@ -30,7 +32,6 @@ namespace LsMsgPackUnitTests {
 
     private int FillArrayWithRandomNumbers(object[] test) {
       MsgPackSettings settings = new MsgPackSettings() { };
-      Randomizer rnd = new Randomizer();
       int addSize = 0;
       for(int t = test.Length - 1; t >= 0; t--) {
         int newNr = rnd.Next();

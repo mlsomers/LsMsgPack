@@ -123,6 +123,13 @@ namespace LsMsgPack {
               continue;
             }
           }
+          // Fix ArgumentException like "System.Byte cannot be converted to System.Nullable`1[System.Int32]"
+          Type nullableType = Nullable.GetUnderlyingType(props[t].PropertyType);
+          if (!(nullableType is null) && !(val is null)) {
+            if (val.GetType() != nullableType) {
+              val = Convert.ChangeType(val, nullableType);
+            }
+          }
           props[t].SetValue(result, val, null);
         }
       }

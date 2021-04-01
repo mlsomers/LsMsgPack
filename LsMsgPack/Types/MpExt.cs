@@ -37,6 +37,9 @@ namespace LsMsgPack {
       get { return value.Length; }
     }
 
+    /// <summary>
+    /// The type Extension type assigned to this container
+    /// </summary>
     [XmlAttribute("TypeSpecifier", DataType = "byte")]
     [Category("Data")]
     [DisplayName("Type")]
@@ -64,6 +67,11 @@ namespace LsMsgPack {
         if(ReferenceEquals(bytes, null)) return;
         if(TypeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(this.value.Length);
       }
+    }
+
+    protected byte[] BaseValue {
+      get { return value ?? new byte[0]; }
+      set { this.value = value; }
     }
 
     public override byte[] ToBytes() {
@@ -94,12 +102,25 @@ namespace LsMsgPack {
       }
       typeSpecifier = (sbyte)data.ReadByte();
       value = ReadBytes(data, len);
+
+      if (typeSpecifier == -1)
+        return new MpDateTime(this);
+
       return this;
     }
 
     public override string ToString() {
       return string.Concat("Extension value (", GetOfficialTypeName(typeId),
         ") with a type specifier of ", typeSpecifier, " containing ", value.Length, " bytes.");
+    }
+
+    protected void CopyBaseDataFrom(MpExt generic) {
+      storedOffset = generic.storedOffset;
+      storedLength = generic.storedLength;
+      _settings = generic._settings;
+      typeId = generic.typeId;
+      typeSpecifier = generic.typeSpecifier;
+      value = generic.value;
     }
   }
 }

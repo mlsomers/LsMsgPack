@@ -60,6 +60,11 @@ namespace LsMsgPack {
       }
     }
 
+    protected byte[] BaseValue {
+      get { return value ?? new byte[0]; }
+      set { this.value = value; }
+    }
+
     public override byte[] ToBytes() {
       List<byte> bytes = new List<byte>(value.Length + 6); // current max length limit is 4 bytes + specifier + identifier
       if(typeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(value.LongLength);
@@ -88,12 +93,22 @@ namespace LsMsgPack {
       }
       typeSpecifier = (sbyte)data.ReadByte();
       value = ReadBytes(data, len);
+
+      if (typeSpecifier == -1)
+        return new MpDateTime(this);
+
       return this;
     }
 
     public override string ToString() {
       return string.Concat("Extension value (", GetOfficialTypeName(typeId),
         ") with a type specifier of ", typeSpecifier, " containing ", value.Length, " bytes.");
+    }
+
+    protected void CopyBaseDataFrom(MpExt generic) {
+      typeId = generic.typeId;
+      typeSpecifier = generic.typeSpecifier;
+      value = generic.value;
     }
   }
 }

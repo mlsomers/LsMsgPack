@@ -212,17 +212,9 @@ namespace LsMsgPack {
           break;
       }
 
-      byte[] final;
-      if(BitConverter.IsLittleEndian && bytes.Count > 1) {
-        final = new byte[bytes.Count];
-        int c = 0;
-        for(int t = final.Length - 1; t >= 0; t--) {
-          final[t] = bytes[c];
-          c++;
-        }
-      } else final = bytes.ToArray();
+      byte[] final = SwapIfLittleEndian(bytes.ToArray());
 
-      switch(typeId) {
+      switch (typeId) {
         case MsgPackTypeId.MpShort:
           svalue = BitConverter.ToInt16(final, 0);
           break;

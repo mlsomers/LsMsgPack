@@ -208,22 +208,22 @@ namespace LsMsgPack {
     public override MsgPackItem Read(MsgPackTypeId typeId, System.IO.Stream data) {
       svalue = 0; // in case of reuse
       this.typeId = typeId;
-      if(((byte)typeId & 0xE0) == 0xE0) { // 5-bit negative integer
+      if (((byte)typeId & 0xE0) == 0xE0) { // 5-bit negative integer
         svalue = (sbyte)typeId;
         this.typeId = MsgPackTypeId.MpSBytePart;
-        if(svalue > 0) uvalue = (ulong)svalue;
+        if (svalue > 0) uvalue = (ulong)svalue;
         return this;
       }
-      if(((byte)typeId & 0x80) == 0) { // 7-bit positive integer
+      if (((byte)typeId & 0x80) == 0) { // 7-bit positive integer
         uvalue = ((uint)((byte)typeId & 0x7F));
         this.typeId = MsgPackTypeId.MpBytePart;
         return this;
       }
       List<byte> bytes = new List<byte>(8);
-      switch((MsgPackTypeId)typeId) {
+      switch ((MsgPackTypeId)typeId) {
         case MsgPackTypeId.MpSByte:
           svalue = (sbyte)data.ReadByte();
-          if(svalue > 0) uvalue = (ulong)svalue;
+          if (svalue > 0) uvalue = (ulong)svalue;
           return this;
         case MsgPackTypeId.MpUByte:
           uvalue = (byte)data.ReadByte();
@@ -231,35 +231,27 @@ namespace LsMsgPack {
 
         case MsgPackTypeId.MpShort:
         case MsgPackTypeId.MpUShort:
-          byte[] buffer=new byte[2];
+          byte[] buffer = new byte[2];
           data.Read(buffer, 0, 2);
           bytes.AddRange(buffer);
           break;
         case MsgPackTypeId.MpInt:
         case MsgPackTypeId.MpUInt:
-          buffer=new byte[4];
+          buffer = new byte[4];
           data.Read(buffer, 0, 4);
           bytes.AddRange(buffer);
           break;
         case MsgPackTypeId.MpLong:
         case MsgPackTypeId.MpULong:
-          buffer=new byte[8];
+          buffer = new byte[8];
           data.Read(buffer, 0, 8);
           bytes.AddRange(buffer);
           break;
       }
 
-      byte[] final;
-      if(BitConverter.IsLittleEndian && bytes.Count > 1) {
-        final = new byte[bytes.Count];
-        int c = 0;
-        for(int t = final.Length - 1; t >= 0; t--) {
-          final[t] = bytes[c];
-          c++;
-        }
-      } else final = bytes.ToArray();
+      byte[] final = SwapIfLittleEndian(bytes.ToArray());
 
-      switch(typeId) {
+      switch (typeId) {
         case MsgPackTypeId.MpShort:
           svalue = BitConverter.ToInt16(final, 0);
           break;
@@ -281,7 +273,7 @@ namespace LsMsgPack {
         default:
           throw new MsgPackException(string.Concat("The type ", GetOfficialTypeName(typeId), " is not supported."), data.Position - 1, typeId);
       }
-      if(svalue > 0) uvalue = (ulong)svalue;
+      if (svalue > 0) uvalue = (ulong)svalue;
       return this;
     }
 

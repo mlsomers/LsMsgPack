@@ -36,11 +36,27 @@ namespace LsMsgPackUnitTests {
 
       MsgPackItem recreate = MsgPackItem.Unpack(new MemoryStream(buffer));
 
+      MpError err = recreate as MpError;
+      if (!(err is null))
+        throw new Exception(err.ToString());
+
       resultType = preservingType && item is MpInt ? ((MpInt)recreate).PreservedType : recreate.TypeId;
       typesAreEqual = (expectedMsgPackType & resultType) == expectedMsgPackType;
       Assert.IsTrue(typesAreEqual, string.Concat("Expected unpacked type of ", expectedMsgPackType, " but received the type ", resultType));
 
       T ret = recreate.GetTypedValue<T>();
+
+      // Correct Local / UTC differences before comparing final result
+      if(ret is DateTime) {
+        DateTime idt = (DateTime)(object)value;
+        DateTime odt = (DateTime)(object)ret;
+        if (idt.Kind != odt.Kind) {
+          if (idt.Kind == DateTimeKind.Utc)
+            ret = (T)(object)odt.ToUniversalTime();
+          else
+            ret= (T)(object)odt.ToLocalTime();
+        }
+      }
 
       Assert.AreEqual(value, ret, "The returned value ", ret, " differs from the input value ", value);
 
