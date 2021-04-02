@@ -46,7 +46,7 @@ namespace LsMsgPack {
       } else {
         bytes.AddRange(BitConverter.GetBytes(f64value));
       }
-      ReorderIfLittleEndian(bytes);
+      ReorderIfLittleEndian(Settings, bytes);
       bytes.Insert(0, (byte)typeId);
       return bytes.ToArray();
     }
@@ -63,7 +63,7 @@ namespace LsMsgPack {
         data.Read(buffer, 0, 8);
       }
 
-      ReorderIfLittleEndian(buffer);
+      ReorderIfLittleEndian(Settings, buffer);
 
       if(this.typeId == MsgPackTypeId.MpFloat) {
         f32value = BitConverter.ToSingle(buffer, 0);

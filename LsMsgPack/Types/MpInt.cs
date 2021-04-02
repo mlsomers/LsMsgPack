@@ -199,7 +199,7 @@ namespace LsMsgPack {
           break;
       }
 
-      ReorderIfLittleEndian(bytes);
+      ReorderIfLittleEndian(Settings, bytes);
 
       bytes.Insert(0, type);
       return bytes.ToArray();
@@ -249,7 +249,7 @@ namespace LsMsgPack {
           break;
       }
 
-      byte[] final = SwapIfLittleEndian(bytes.ToArray());
+      byte[] final = SwapIfLittleEndian(Settings, bytes.ToArray());
 
       switch (typeId) {
         case MsgPackTypeId.MpShort:

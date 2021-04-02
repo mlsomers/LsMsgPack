@@ -26,7 +26,7 @@ namespace LsMsgPack {
       if(length <= ushort.MaxValue && (supported & SupportedLengths.Short2) > 0) bytes = BitConverter.GetBytes((ushort)length);
       else if(length <= uint.MaxValue && (supported & SupportedLengths.Int4) > 0) bytes = BitConverter.GetBytes((uint)length);
       else bytes = BitConverter.GetBytes((ulong)length); 
-      ReorderIfLittleEndian(bytes);
+      ReorderIfLittleEndian(Settings, bytes);
       return bytes;
     }
 
@@ -52,7 +52,7 @@ namespace LsMsgPack {
       byte[] buffer = new byte[bytes];
       data.Read(buffer, 0, bytes);
       if(bytes == 1) return (long)buffer[0];
-      ReorderIfLittleEndian(buffer);
+      ReorderIfLittleEndian(Settings, buffer);
       switch(bytes) {
         case 2:
           return (long)BitConverter.ToUInt16(buffer, 0);

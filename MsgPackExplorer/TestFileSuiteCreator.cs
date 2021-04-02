@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -176,7 +177,7 @@ namespace MsgPackExplorer {
       MyClass message = new MyClass() {
         Name = "TestMessage",
         Quantity = 35,
-        Anything = new List<object>(new object[] { "First", 2, false, null, 5.5d, "last" })
+        Anything = new List<object>(new object[] { "First", 2, false, null, 5.5d, "last", DateTime.Now })
       };
 
       byte[] bytes = MsgPackItem.Pack(message).ToBytes();

@@ -11,7 +11,7 @@ namespace LsMsgPack {
   [DefaultProperty("Value")]
   public abstract class MsgPackItem {
 
-    public MsgPackItem() : base() { }
+    public MsgPackItem() : base() { _settings = new MsgPackSettings(); }
     public MsgPackItem(MsgPackSettings settings) {
       _settings = settings;
       _isBestGuess = _settings.FileContainsErrors;
@@ -85,8 +85,16 @@ namespace LsMsgPack {
     [Browsable(false)]
     public object Tag { get; set; }
 
-    protected static void ReorderIfLittleEndian(List<byte> bytes) {
-      if (!BitConverter.IsLittleEndian || bytes.Count <= 1)
+    public static bool SwapEndianChoice(MsgPackSettings settings, int length) {
+      if (settings.EndianAction == EndianAction.NeverSwap || length <= 1)
+        return false;
+      if (settings.EndianAction == EndianAction.SwapIfCurrentSystemIsLittleEndian && !BitConverter.IsLittleEndian)
+        return false;
+      return true;
+    }
+
+    protected static void ReorderIfLittleEndian(MsgPackSettings settings, List<byte> bytes) {
+      if (!SwapEndianChoice(settings, bytes.Count))
         return;
       byte[] swapped = new byte[bytes.Count];
       int c = 0;
@@ -98,8 +106,8 @@ namespace LsMsgPack {
       bytes.AddRange(swapped);
     }
 
-    protected static void ReorderIfLittleEndian(byte[] bytes) {
-      if (!BitConverter.IsLittleEndian || bytes.Length <= 1)
+    protected static void ReorderIfLittleEndian(MsgPackSettings settings, byte[] bytes) {
+      if (!SwapEndianChoice(settings, bytes.Length))
         return;
 
       byte[] swapped = new byte[bytes.Length];
@@ -111,8 +119,8 @@ namespace LsMsgPack {
       for (int t = bytes.Length - 1; t >= 0; t--) bytes[t] = swapped[t];
     }
 
-    protected static byte[] SwapIfLittleEndian(byte[] bytes) {
-      if (!BitConverter.IsLittleEndian || bytes.Length <= 1)
+    protected static byte[] SwapIfLittleEndian(MsgPackSettings settings, byte[] bytes) {
+      if (!SwapEndianChoice(settings, bytes.Length))
         return bytes;
 
       byte[] final = new byte[bytes.Length];
@@ -125,14 +133,11 @@ namespace LsMsgPack {
       return final;
     }
 
-    protected static byte[] SwapIfLittleEndian(byte[] bytes, int start, int count) {
-      if (bytes.Length <= 1)
-        return bytes;
-
+    protected static byte[] SwapIfLittleEndian(MsgPackSettings settings, byte[] bytes, int start, int count) {
       byte[] final = new byte[count];
       int last = count - 1;
 
-      if (!BitConverter.IsLittleEndian) {
+      if (!SwapEndianChoice(settings, count)) {
         int offset = start + last;
         for (int t = last; t >= 0; t--) {
           final[t] = bytes[offset];
@@ -267,6 +272,12 @@ namespace LsMsgPack {
         PreservePackages = preservePackages,
         ContinueProcessingOnBreakingError = continueProcessingOnBreakingError
       });
+    }
+
+    public static MpRoot UnpackMultiple(byte[] data, MsgPackSettings settings) {
+      using (MemoryStream ms = new MemoryStream(data)) {
+        return UnpackMultiple(ms, settings);
+      }
     }
 
     public static MpRoot UnpackMultiple(Stream stream, MsgPackSettings settings) {

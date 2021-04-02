@@ -23,14 +23,17 @@
     /// the contents of this method with the code editor.
     /// </summary>
     private void InitializeComponent() {
+      System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(FiddlerWrapper));
       this.toolStrip1 = new System.Windows.Forms.ToolStrip();
       this.toolStripDropDownButton1 = new System.Windows.Forms.ToolStripDropDownButton();
       this.aboutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripButton1 = new System.Windows.Forms.ToolStripButton();
-      this.lsMsgPackExplorer1 = new MsgPackExplorer.LsMsgPackExplorer();
       this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
       this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
+      this.lsMsgPackExplorer1 = new MsgPackExplorer.LsMsgPackExplorer();
+      this.toolStripLabel2 = new System.Windows.Forms.ToolStripLabel();
+      this.ddEndianess = new System.Windows.Forms.ToolStripComboBox();
       this.toolStrip1.SuspendLayout();
       this.SuspendLayout();
       // 
@@ -43,11 +46,13 @@
             this.toolStripButton1,
             this.toolStripSeparator1,
             this.toolStripLabel1,
-            this.ddLimitItems});
+            this.ddLimitItems,
+            this.toolStripLabel2,
+            this.ddEndianess});
       this.toolStrip1.Location = new System.Drawing.Point(0, 0);
       this.toolStrip1.Name = "toolStrip1";
       this.toolStrip1.Padding = new System.Windows.Forms.Padding(0);
-      this.toolStrip1.Size = new System.Drawing.Size(700, 25);
+      this.toolStrip1.Size = new System.Drawing.Size(769, 25);
       this.toolStrip1.TabIndex = 0;
       this.toolStrip1.Text = "toolStrip1";
       // 
@@ -84,17 +89,6 @@
     "ugging purposes.";
       this.toolStripButton1.CheckedChanged += new System.EventHandler(this.toolStripButton1_CheckedChanged);
       // 
-      // lsMsgPackExplorer1
-      // 
-      this.lsMsgPackExplorer1.ContinueOnError = false;
-      this.lsMsgPackExplorer1.Data = null;
-      this.lsMsgPackExplorer1.Dock = System.Windows.Forms.DockStyle.Fill;
-      this.lsMsgPackExplorer1.Item = null;
-      this.lsMsgPackExplorer1.Location = new System.Drawing.Point(0, 25);
-      this.lsMsgPackExplorer1.Name = "lsMsgPackExplorer1";
-      this.lsMsgPackExplorer1.Size = new System.Drawing.Size(700, 337);
-      this.lsMsgPackExplorer1.TabIndex = 1;
-      // 
       // toolStripSeparator1
       // 
       this.toolStripSeparator1.Name = "toolStripSeparator1";
@@ -123,6 +117,37 @@
       this.ddLimitItems.DropDownClosed += new System.EventHandler(this.ddLimitItems_TextChanged);
       this.ddLimitItems.TextChanged += new System.EventHandler(this.ddLimitItems_TextChanged);
       // 
+      // lsMsgPackExplorer1
+      // 
+      this.lsMsgPackExplorer1.ContinueOnError = false;
+      this.lsMsgPackExplorer1.Cursor = System.Windows.Forms.Cursors.Default;
+      this.lsMsgPackExplorer1.Data = null;
+      this.lsMsgPackExplorer1.DisplayLimit = ((long)(1000));
+      this.lsMsgPackExplorer1.Dock = System.Windows.Forms.DockStyle.Fill;
+      this.lsMsgPackExplorer1.EndianHandling = LsMsgPack.EndianAction.SwapIfCurrentSystemIsLittleEndian;
+      this.lsMsgPackExplorer1.Item = null;
+      this.lsMsgPackExplorer1.Location = new System.Drawing.Point(0, 25);
+      this.lsMsgPackExplorer1.Name = "lsMsgPackExplorer1";
+      this.lsMsgPackExplorer1.Size = new System.Drawing.Size(769, 337);
+      this.lsMsgPackExplorer1.TabIndex = 1;
+      // 
+      // toolStripLabel2
+      // 
+      this.toolStripLabel2.Name = "toolStripLabel2";
+      this.toolStripLabel2.Size = new System.Drawing.Size(69, 22);
+      this.toolStripLabel2.Text = "Endianness:";
+      this.toolStripLabel2.ToolTipText = "Override specification (for debugging purposes)";
+      // 
+      // ddEndianess
+      // 
+      this.ddEndianess.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+      this.ddEndianess.FlatStyle = System.Windows.Forms.FlatStyle.System;
+      this.ddEndianess.Name = "ddEndianess";
+      this.ddEndianess.Size = new System.Drawing.Size(240, 25);
+      this.ddEndianess.ToolTipText = resources.GetString("ddEndianess.ToolTipText");
+      this.ddEndianess.DropDownClosed += new System.EventHandler(this.ddEndianess_DropDownClosed);
+      this.ddEndianess.TextChanged += new System.EventHandler(this.ddEndianess_DropDownClosed);
+      // 
       // FiddlerWrapper
       // 
       this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -130,7 +155,7 @@
       this.Controls.Add(this.lsMsgPackExplorer1);
       this.Controls.Add(this.toolStrip1);
       this.Name = "FiddlerWrapper";
-      this.Size = new System.Drawing.Size(700, 362);
+      this.Size = new System.Drawing.Size(769, 362);
       this.toolStrip1.ResumeLayout(false);
       this.toolStrip1.PerformLayout();
       this.ResumeLayout(false);
@@ -148,5 +173,7 @@
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
     private System.Windows.Forms.ToolStripLabel toolStripLabel1;
     private System.Windows.Forms.ToolStripComboBox ddLimitItems;
+    private System.Windows.Forms.ToolStripLabel toolStripLabel2;
+    private System.Windows.Forms.ToolStripComboBox ddEndianess;
   }
 }

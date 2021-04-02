@@ -1,11 +1,20 @@
-﻿using System;
+﻿using LsMsgPack;
+using System;
 using System.Windows.Forms;
+using System.Linq;
 
 namespace MsgPackExplorer {
   public partial class Explorer: Form {
     public Explorer() {
       InitializeComponent();
       ddLimitItems.SelectedIndex = 0;
+
+      ddEndianess.Items.AddRange(new[]{
+        new EndianChoice(EndianAction.SwapIfCurrentSystemIsLittleEndian, "Reorder if system is little endian (default)."),
+        new EndianChoice(EndianAction.NeverSwap, "Never reorder"),
+        new EndianChoice(EndianAction.AlwaysSwap, "Always reorder")
+      });
+      ddEndianess.SelectedIndex = 0;
     }
 
     private void btnOpen_Click(object sender, EventArgs e) {
@@ -35,6 +44,28 @@ namespace MsgPackExplorer {
       else
         msgPackExplorer1.DisplayLimit = long.MaxValue;
       msgPackExplorer1.RefreshTree();
+    }
+
+    private void ddEndianess_DropDownClosed(object sender, EventArgs e) {
+      EndianChoice choice = ddEndianess.SelectedItem as EndianChoice;
+      if (choice is null)
+        return;
+      msgPackExplorer1.EndianHandling = choice.Value;
+      msgPackExplorer1.Data = msgPackExplorer1.Data;
+    }
+  }
+
+  public class EndianChoice {
+    public EndianChoice(EndianAction value, string description) {
+      Value = value;
+      Description = description;
+    }
+
+    private string Description { get; }
+    public EndianAction Value { get; }
+
+    public override string ToString() {
+      return Description;
     }
   }
 }

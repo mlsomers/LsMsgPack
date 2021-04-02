@@ -32,12 +32,14 @@
       this.toolStripDropDownButton2 = new System.Windows.Forms.ToolStripDropDownButton();
       this.btnGenerateTestFiles = new System.Windows.Forms.ToolStripMenuItem();
       this.btnProcessAfterError = new System.Windows.Forms.ToolStripMenuItem();
-      this.openFileDialog1 = new System.Windows.Forms.OpenFileDialog();
-      this.saveTestSuiteDialog = new System.Windows.Forms.SaveFileDialog();
-      this.msgPackExplorer1 = new MsgPackExplorer.LsMsgPackExplorer();
       this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
       this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
+      this.toolStripLabel2 = new System.Windows.Forms.ToolStripLabel();
+      this.ddEndianess = new System.Windows.Forms.ToolStripComboBox();
+      this.openFileDialog1 = new System.Windows.Forms.OpenFileDialog();
+      this.saveTestSuiteDialog = new System.Windows.Forms.SaveFileDialog();
+      this.msgPackExplorer1 = new MsgPackExplorer.LsMsgPackExplorer();
       this.toolStrip1.SuspendLayout();
       this.SuspendLayout();
       // 
@@ -51,7 +53,9 @@
             this.toolStripDropDownButton2,
             this.toolStripSeparator1,
             this.toolStripLabel1,
-            this.ddLimitItems});
+            this.ddLimitItems,
+            this.toolStripLabel2,
+            this.ddEndianess});
       this.toolStrip1.Location = new System.Drawing.Point(0, 0);
       this.toolStrip1.Name = "toolStrip1";
       this.toolStrip1.Padding = new System.Windows.Forms.Padding(0);
@@ -125,29 +129,6 @@
       this.btnProcessAfterError.Text = "Keep processing after errors";
       this.btnProcessAfterError.CheckedChanged += new System.EventHandler(this.btnProcessAfterError_CheckedChanged);
       // 
-      // openFileDialog1
-      // 
-      this.openFileDialog1.DefaultExt = "MsgPack";
-      this.openFileDialog1.Filter = "All (*.*)|*.*|Bin (*.bin)|*.bin|MsgPack (*.MsgPack)|*.MsgPack";
-      this.openFileDialog1.Title = "Open a raw MsgPack file";
-      // 
-      // saveTestSuiteDialog
-      // 
-      this.saveTestSuiteDialog.DefaultExt = "MsgPack";
-      this.saveTestSuiteDialog.FileName = "FileName will be ignored";
-      this.saveTestSuiteDialog.Title = "Save Test Suite files";
-      // 
-      // msgPackExplorer1
-      // 
-      this.msgPackExplorer1.ContinueOnError = false;
-      this.msgPackExplorer1.Data = null;
-      this.msgPackExplorer1.Dock = System.Windows.Forms.DockStyle.Fill;
-      this.msgPackExplorer1.Item = null;
-      this.msgPackExplorer1.Location = new System.Drawing.Point(0, 25);
-      this.msgPackExplorer1.Name = "msgPackExplorer1";
-      this.msgPackExplorer1.Size = new System.Drawing.Size(929, 470);
-      this.msgPackExplorer1.TabIndex = 0;
-      // 
       // toolStripSeparator1
       // 
       this.toolStripSeparator1.Name = "toolStripSeparator1";
@@ -175,6 +156,49 @@
     "r a while";
       this.ddLimitItems.DropDownClosed += new System.EventHandler(this.ddLimitItems_TextChanged);
       this.ddLimitItems.TextChanged += new System.EventHandler(this.ddLimitItems_TextChanged);
+      // 
+      // toolStripLabel2
+      // 
+      this.toolStripLabel2.Name = "toolStripLabel2";
+      this.toolStripLabel2.Size = new System.Drawing.Size(69, 22);
+      this.toolStripLabel2.Text = "Endianness:";
+      this.toolStripLabel2.ToolTipText = "Override specification (for debugging purposes)";
+      // 
+      // ddEndianess
+      // 
+      this.ddEndianess.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+      this.ddEndianess.FlatStyle = System.Windows.Forms.FlatStyle.System;
+      this.ddEndianess.Name = "ddEndianess";
+      this.ddEndianess.Size = new System.Drawing.Size(240, 25);
+      this.ddEndianess.ToolTipText = resources.GetString("ddEndianess.ToolTipText");
+      this.ddEndianess.DropDownClosed += new System.EventHandler(this.ddEndianess_DropDownClosed);
+      this.ddEndianess.TextChanged += new System.EventHandler(this.ddEndianess_DropDownClosed);
+      // 
+      // openFileDialog1
+      // 
+      this.openFileDialog1.DefaultExt = "MsgPack";
+      this.openFileDialog1.Filter = "All (*.*)|*.*|Bin (*.bin)|*.bin|MsgPack (*.MsgPack)|*.MsgPack";
+      this.openFileDialog1.Title = "Open a raw MsgPack file";
+      // 
+      // saveTestSuiteDialog
+      // 
+      this.saveTestSuiteDialog.DefaultExt = "MsgPack";
+      this.saveTestSuiteDialog.FileName = "FileName will be ignored";
+      this.saveTestSuiteDialog.Title = "Save Test Suite files";
+      // 
+      // msgPackExplorer1
+      // 
+      this.msgPackExplorer1.ContinueOnError = false;
+      this.msgPackExplorer1.Cursor = System.Windows.Forms.Cursors.Default;
+      this.msgPackExplorer1.Data = null;
+      this.msgPackExplorer1.DisplayLimit = ((long)(1000));
+      this.msgPackExplorer1.Dock = System.Windows.Forms.DockStyle.Fill;
+      this.msgPackExplorer1.EndianHandling = LsMsgPack.EndianAction.SwapIfCurrentSystemIsLittleEndian;
+      this.msgPackExplorer1.Item = null;
+      this.msgPackExplorer1.Location = new System.Drawing.Point(0, 25);
+      this.msgPackExplorer1.Name = "msgPackExplorer1";
+      this.msgPackExplorer1.Size = new System.Drawing.Size(929, 470);
+      this.msgPackExplorer1.TabIndex = 0;
       // 
       // Explorer
       // 
@@ -209,6 +233,8 @@
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
     private System.Windows.Forms.ToolStripLabel toolStripLabel1;
     private System.Windows.Forms.ToolStripComboBox ddLimitItems;
+    private System.Windows.Forms.ToolStripLabel toolStripLabel2;
+    private System.Windows.Forms.ToolStripComboBox ddEndianess;
   }
 }
 

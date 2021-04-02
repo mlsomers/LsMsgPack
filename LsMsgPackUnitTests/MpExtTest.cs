@@ -26,6 +26,8 @@ namespace LsMsgPackUnitTests {
       Randomizer rnd = new Randomizer();
       byte[] test = new byte[length];
       rnd.NextBytes(test);
+      if (test.Length > 0)
+        test[0] = 150; // prevent using implemented extension!
       MsgPackTests.RoundTripTest<MpExt, byte[]>(test, expectedBytes, expedctedType, (sbyte)(rnd.Next(255) - 128));
     }
 
