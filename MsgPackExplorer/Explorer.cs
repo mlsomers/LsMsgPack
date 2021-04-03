@@ -53,6 +53,23 @@ namespace MsgPackExplorer {
       msgPackExplorer1.EndianHandling = choice.Value;
       msgPackExplorer1.Data = msgPackExplorer1.Data;
     }
+
+    private void installAsFiddlerInspectorToolStripMenuItem_Click(object sender, EventArgs e) {
+      try {
+        if (!Installer.TryInstall()) {
+          MessageBox.Show("Unable to find the Fiddler application files", "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+          return;
+        }
+        
+        if(Installer.FiddlerIsRunning)
+          MessageBox.Show("Installed successfully.\r\nFiddler is currently running.\r\nYou will need to restart Fiddler in order to use the MsgPack inspector.", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+        else
+          MessageBox.Show("Installed successfully.", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+      } catch(Exception ex) {
+        MessageBox.Show(string.Concat("Inastallation failed with the following message:\r\n", ex.Message,"\r\n\r\nYou may have more luck (depending on the error) running with administration privileges.") , "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      }
+    }
   }
 
   public class EndianChoice {

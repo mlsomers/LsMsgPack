@@ -40,6 +40,8 @@
       this.openFileDialog1 = new System.Windows.Forms.OpenFileDialog();
       this.saveTestSuiteDialog = new System.Windows.Forms.SaveFileDialog();
       this.msgPackExplorer1 = new MsgPackExplorer.LsMsgPackExplorer();
+      this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
+      this.installAsFiddlerInspectorToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStrip1.SuspendLayout();
       this.SuspendLayout();
       // 
@@ -105,7 +107,9 @@
       // 
       this.toolStripDropDownButton2.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.btnGenerateTestFiles,
-            this.btnProcessAfterError});
+            this.btnProcessAfterError,
+            this.toolStripSeparator2,
+            this.installAsFiddlerInspectorToolStripMenuItem});
       this.toolStripDropDownButton2.Image = global::MsgPackExplorer.Properties.Resources.Tools;
       this.toolStripDropDownButton2.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.toolStripDropDownButton2.Name = "toolStripDropDownButton2";
@@ -200,6 +204,18 @@
       this.msgPackExplorer1.Size = new System.Drawing.Size(929, 470);
       this.msgPackExplorer1.TabIndex = 0;
       // 
+      // toolStripSeparator2
+      // 
+      this.toolStripSeparator2.Name = "toolStripSeparator2";
+      this.toolStripSeparator2.Size = new System.Drawing.Size(217, 6);
+      // 
+      // installAsFiddlerInspectorToolStripMenuItem
+      // 
+      this.installAsFiddlerInspectorToolStripMenuItem.Name = "installAsFiddlerInspectorToolStripMenuItem";
+      this.installAsFiddlerInspectorToolStripMenuItem.Size = new System.Drawing.Size(220, 22);
+      this.installAsFiddlerInspectorToolStripMenuItem.Text = "Install as Fiddler Inspector";
+      this.installAsFiddlerInspectorToolStripMenuItem.Click += new System.EventHandler(this.installAsFiddlerInspectorToolStripMenuItem_Click);
+      // 
       // Explorer
       // 
       this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -235,6 +251,8 @@
     private System.Windows.Forms.ToolStripComboBox ddLimitItems;
     private System.Windows.Forms.ToolStripLabel toolStripLabel2;
     private System.Windows.Forms.ToolStripComboBox ddEndianess;
+    private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
+    private System.Windows.Forms.ToolStripMenuItem installAsFiddlerInspectorToolStripMenuItem;
   }
 }
 
