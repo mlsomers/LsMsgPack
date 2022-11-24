@@ -66,7 +66,7 @@ namespace LsMsgPack
 
             for (int t = map.PackedValues.Length - 1; t >= 0; t--)
             {
-                if (map.PackedValues.Length - t > displayLimit)
+                if (System.Math.Pow(map.PackedValues.Length - t, 2) > displayLimit)
                     return;
 
                 if (ReferenceEquals(map.PackedValues[t].Key, null)) continue;
@@ -79,6 +79,9 @@ namespace LsMsgPack
                 }
                 for (int i = t - 1; i >= 0; i--)
                 {
+                    if (map.PackedValues.Length - t > displayLimit)
+                        return;
+
                     if (ReferenceEquals(map.PackedValues[t].Key, null) || ReferenceEquals(map.PackedValues[i].Key, null) || ReferenceEquals(map.PackedValues[t].Key.Value, null)) continue;
                     if (map.PackedValues[t].Key.Value.Equals(map.PackedValues[i].Key.Value))
                     {
