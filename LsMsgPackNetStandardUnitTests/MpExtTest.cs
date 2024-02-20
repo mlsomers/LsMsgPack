@@ -29,9 +29,7 @@ namespace LsMsgPackUnitTests
       Random rnd = new Random();
       byte[] test = new byte[length];
       rnd.NextBytes(test);
-      if (test.Length > 0)
-        test[0] = 150; // prevent using implemented extension!
-      MsgPackTests.RoundTripTest<MpExt, byte[]>(test, expectedBytes, expedctedType, true, (sbyte)(rnd.Next(255) - 128));
+      MsgPackTests.RoundTripTest<MpExt, byte[]>(test, expectedBytes, expedctedType, true, 124);
     }
 
   }
