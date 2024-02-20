@@ -3,17 +3,14 @@ using LsMsgPack;
 using System.IO;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Collections;
-using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace LsMsgPackUnitTests
 {
   public class MsgPackTests
   {
-    public static bool DynamicallyCompactValue = true;
-
-    public static MsgPackItem RoundTripTest<Typ, T>(T value, int expectedLength, MsgPackTypeId expectedMsgPackType, sbyte extensionType = 0) where Typ : MsgPackItem
+    public static MsgPackItem RoundTripTest<Typ, T>(T value, int expectedLength, MsgPackTypeId expectedMsgPackType, bool dynamicallyCompact = true, sbyte extensionType = 0) where Typ : MsgPackItem
     {
-      bool preservingType = !DynamicallyCompactValue;
+      bool preservingType = !dynamicallyCompact;
 
       MsgPackItem item;
       if (typeof(Typ) == typeof(MpExt))
@@ -27,7 +24,7 @@ namespace LsMsgPackUnitTests
       else
         item = MsgPackItem.Pack(value, new MsgPackSettings()
         {
-          DynamicallyCompact = DynamicallyCompactValue
+          DynamicallyCompact = dynamicallyCompact
         });
       byte[] buffer = item.ToBytes();
       Type expectedType = typeof(Typ);

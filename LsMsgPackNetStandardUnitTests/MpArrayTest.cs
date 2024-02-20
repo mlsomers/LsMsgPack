@@ -65,23 +65,16 @@ namespace LsMsgPackUnitTests
         new byte[]{1,2,3 },
         new object[] { true,null,"yes"}
       };
-      if (preserveTypes) MsgPackTests.DynamicallyCompactValue = false;
-      try
-      {
-        MsgPackItem item = MsgPackTests.RoundTripTest<MpArray, object[]>(items, expectedLength, MsgPackTypeId.MpArray4);
+
+      MsgPackItem item = MsgPackTests.RoundTripTest<MpArray, object[]>(items, expectedLength, MsgPackTypeId.MpArray4, !preserveTypes);
 
       object[] ret = item.GetTypedValue<object[]>();
 
       Assert.AreEqual(items.Length, ret.Length, string.Concat("Expected ", items.Length, " items but got ", ret.Length, " items in the array."));
       for (int t = ret.Length - 1; t >= 0; t--)
       {
-          if (preserveTypes && t != 2) Assert.IsTrue(items[t].GetType() == ret[t].GetType(), string.Concat("Expected type ", items[t].GetType(), " items but got ", ret[t].GetType(), "."));
-          Assert.IsTrue(MsgPackTests.AreEqualish(items[t], ret[t]), string.Concat("Expected ", items[t], " but got ", ret[t], " at index ", t));
-      }
-      }
-      finally
-      {
-        MsgPackTests.DynamicallyCompactValue = true;
+        if (preserveTypes && t != 2) Assert.IsTrue(items[t].GetType() == ret[t].GetType(), string.Concat("Expected type ", items[t].GetType(), " items but got ", ret[t].GetType(), "."));
+        Assert.IsTrue(MsgPackTests.AreEqualish(items[t], ret[t]), string.Concat("Expected ", items[t], " but got ", ret[t], " at index ", t));
       }
     }
   }
