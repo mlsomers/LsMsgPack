@@ -2,13 +2,12 @@
 using System.Collections.Generic;
 using System.IO;
 
-namespace LsMsgPack
-{
+namespace LsMsgPack {
   [Serializable]
   public class MpBin: MsgPackVarLen {
 
     public MpBin() : base() { }
-    public MpBin(MsgPackSettings settings):base(settings) { }
+    public MpBin(MsgPackSettings settings) : base(settings) { }
 
     private byte[] value = new byte[0];
 

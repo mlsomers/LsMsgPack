@@ -1,5 +1,4 @@
 ﻿using System;
-using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Xml.Serialization;
@@ -9,14 +8,11 @@ namespace LsMsgPack {
   public abstract class MsgPackVarLen: MsgPackItem {
 
     public MsgPackVarLen() : base() { }
-    public MsgPackVarLen(MsgPackSettings settings):base(settings) { }
+    public MsgPackVarLen(MsgPackSettings settings) : base(settings) { }
 
     protected abstract MsgPackTypeId GetTypeId(long len);
 
     [XmlIgnore]
-    [Category("MetaData")]
-    [DisplayName("Count")]
-    [Description("The number of items in this collection.")]
     /// <summary>
     /// The number of items in this collection.
     /// </summary>

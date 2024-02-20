@@ -1,10 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 
-namespace LsMsgPack {
+namespace LsMsgPack
+{
   public class MsgPackTypeConverter:TypeConverter {
 
     private static readonly Type[] supportedTypes = new Type[] { typeof(string), typeof(MsgPackTypeId), typeof(byte) };

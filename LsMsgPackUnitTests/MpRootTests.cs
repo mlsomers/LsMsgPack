@@ -2,7 +2,6 @@
 using NUnit.Framework;
 using System;
 
-
 namespace LsMsgPackUnitTests {
   [TestFixture]
   public class MpRootTests {

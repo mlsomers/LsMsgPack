@@ -58,6 +58,7 @@
     <Compile Include="AboutBox.Designer.cs">
       <DependentUpon>AboutBox.cs</DependentUpon>
     </Compile>
+    <Compile Include="ClipboardSupport.cs" />
     <Compile Include="Explorer.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -114,6 +115,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Explore.ico" />
+    <None Include="Resources\Clipboard.png" />
     <None Include="Resources\Explore.png" />
     <None Include="Resources\Explore.ico" />
     <None Include="Resources\Broken.png" />

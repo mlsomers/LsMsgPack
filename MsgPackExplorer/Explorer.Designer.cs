@@ -29,9 +29,12 @@
       this.aboutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripDropDownButton3 = new System.Windows.Forms.ToolStripDropDownButton();
       this.btnOpen = new System.Windows.Forms.ToolStripMenuItem();
+      this.fromClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripDropDownButton2 = new System.Windows.Forms.ToolStripDropDownButton();
       this.btnGenerateTestFiles = new System.Windows.Forms.ToolStripMenuItem();
       this.btnProcessAfterError = new System.Windows.Forms.ToolStripMenuItem();
+      this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
+      this.installAsFiddlerInspectorToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
       this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
@@ -40,8 +43,6 @@
       this.openFileDialog1 = new System.Windows.Forms.OpenFileDialog();
       this.saveTestSuiteDialog = new System.Windows.Forms.SaveFileDialog();
       this.msgPackExplorer1 = new MsgPackExplorer.LsMsgPackExplorer();
-      this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
-      this.installAsFiddlerInspectorToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStrip1.SuspendLayout();
       this.SuspendLayout();
       // 
@@ -88,7 +89,8 @@
       // toolStripDropDownButton3
       // 
       this.toolStripDropDownButton3.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.btnOpen});
+            this.btnOpen,
+            this.fromClipboardToolStripMenuItem});
       this.toolStripDropDownButton3.Image = global::MsgPackExplorer.Properties.Resources.Open;
       this.toolStripDropDownButton3.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.toolStripDropDownButton3.Name = "toolStripDropDownButton3";
@@ -99,9 +101,17 @@
       // 
       this.btnOpen.Image = global::MsgPackExplorer.Properties.Resources.Open;
       this.btnOpen.Name = "btnOpen";
-      this.btnOpen.Size = new System.Drawing.Size(112, 22);
+      this.btnOpen.Size = new System.Drawing.Size(180, 22);
       this.btnOpen.Text = "Open...";
       this.btnOpen.Click += new System.EventHandler(this.btnOpen_Click);
+      // 
+      // fromClipboardToolStripMenuItem
+      // 
+      this.fromClipboardToolStripMenuItem.Image = global::MsgPackExplorer.Properties.Resources.Clipboard;
+      this.fromClipboardToolStripMenuItem.Name = "fromClipboardToolStripMenuItem";
+      this.fromClipboardToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+      this.fromClipboardToolStripMenuItem.Text = "From Clipboard";
+      this.fromClipboardToolStripMenuItem.Click += new System.EventHandler(this.fromClipboardToolStripMenuItem_Click);
       // 
       // toolStripDropDownButton2
       // 
@@ -132,6 +142,18 @@
       this.btnProcessAfterError.Size = new System.Drawing.Size(220, 22);
       this.btnProcessAfterError.Text = "Keep processing after errors";
       this.btnProcessAfterError.CheckedChanged += new System.EventHandler(this.btnProcessAfterError_CheckedChanged);
+      // 
+      // toolStripSeparator2
+      // 
+      this.toolStripSeparator2.Name = "toolStripSeparator2";
+      this.toolStripSeparator2.Size = new System.Drawing.Size(217, 6);
+      // 
+      // installAsFiddlerInspectorToolStripMenuItem
+      // 
+      this.installAsFiddlerInspectorToolStripMenuItem.Name = "installAsFiddlerInspectorToolStripMenuItem";
+      this.installAsFiddlerInspectorToolStripMenuItem.Size = new System.Drawing.Size(220, 22);
+      this.installAsFiddlerInspectorToolStripMenuItem.Text = "Install as Fiddler Inspector";
+      this.installAsFiddlerInspectorToolStripMenuItem.Click += new System.EventHandler(this.installAsFiddlerInspectorToolStripMenuItem_Click);
       // 
       // toolStripSeparator1
       // 
@@ -204,18 +226,6 @@
       this.msgPackExplorer1.Size = new System.Drawing.Size(929, 470);
       this.msgPackExplorer1.TabIndex = 0;
       // 
-      // toolStripSeparator2
-      // 
-      this.toolStripSeparator2.Name = "toolStripSeparator2";
-      this.toolStripSeparator2.Size = new System.Drawing.Size(217, 6);
-      // 
-      // installAsFiddlerInspectorToolStripMenuItem
-      // 
-      this.installAsFiddlerInspectorToolStripMenuItem.Name = "installAsFiddlerInspectorToolStripMenuItem";
-      this.installAsFiddlerInspectorToolStripMenuItem.Size = new System.Drawing.Size(220, 22);
-      this.installAsFiddlerInspectorToolStripMenuItem.Text = "Install as Fiddler Inspector";
-      this.installAsFiddlerInspectorToolStripMenuItem.Click += new System.EventHandler(this.installAsFiddlerInspectorToolStripMenuItem_Click);
-      // 
       // Explorer
       // 
       this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -253,6 +263,7 @@
     private System.Windows.Forms.ToolStripComboBox ddEndianess;
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
     private System.Windows.Forms.ToolStripMenuItem installAsFiddlerInspectorToolStripMenuItem;
+    private System.Windows.Forms.ToolStripMenuItem fromClipboardToolStripMenuItem;
   }
 }
 
