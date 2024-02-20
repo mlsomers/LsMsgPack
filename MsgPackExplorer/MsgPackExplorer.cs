@@ -7,9 +7,12 @@ using System.Runtime.InteropServices;
 using System.Drawing;
 using System.ComponentModel;
 
-namespace MsgPackExplorer {
-  public partial class LsMsgPackExplorer : UserControl {
-    public LsMsgPackExplorer() {
+namespace MsgPackExplorer
+{
+  public partial class LsMsgPackExplorer : UserControl
+  {
+    public LsMsgPackExplorer()
+    {
       InitializeComponent();
     }
 
@@ -17,9 +20,11 @@ namespace MsgPackExplorer {
     [Category("MsgPack")]
     [DisplayName("Item")]
     [Description("The root element of a MsgPack message. If you have the choice rather populate Data so the original stream can be displayed in the hex editor.")]
-    public MsgPackItem Item {
+    public MsgPackItem Item
+    {
       get { return item; }
-      set {
+      set
+      {
         item = value;
         RefreshTree();
       }
@@ -29,10 +34,13 @@ namespace MsgPackExplorer {
     [Category("MsgPack")]
     [DisplayName("Continue On Error")]
     [Description("Set this to true in order to keep processing the stream after a breaking error occurred.")]
-    public bool ContinueOnError {
+    public bool ContinueOnError
+    {
       get { return _continueOnError; }
-      set {
-        if (value != _continueOnError) {
+      set
+      {
+        if (value != _continueOnError)
+        {
           _continueOnError = value;
           if (!ReferenceEquals(data, null) && data.Length > 0) Data = data;
         }
@@ -43,14 +51,18 @@ namespace MsgPackExplorer {
     [Category("MsgPack")]
     [DisplayName("Data")]
     [Description("The raw original bytes of a MsgPack message.")]
-    public byte[] Data {
+    public byte[] Data
+    {
       get { return data; }
-      set {
+      set
+      {
         data = value;
         if (ReferenceEquals(value, null)) Item = null;
-        else {
+        else
+        {
 
-          MsgPackSettings settings = new MsgPackSettings() {
+          MsgPackSettings settings = new MsgPackSettings()
+          {
             DynamicallyCompact = false,
             PreservePackages = true,
             ContinueProcessingOnBreakingError = _continueOnError,
@@ -67,7 +79,8 @@ namespace MsgPackExplorer {
     [Category("MsgPack")]
     [DisplayName("Limit items")]
     [Description("Limit the number of items that are displayed when many items are processed.")]
-    public long DisplayLimit {
+    public long DisplayLimit
+    {
       get { return _displayLimit; }
       set { _displayLimit = value; }
     }
@@ -76,7 +89,8 @@ namespace MsgPackExplorer {
     [Category("MsgPack")]
     [DisplayName("Endian handling")]
     [Description("Override Endianess conversion (default will reorder bytes on little-endian systems).")]
-    public EndianAction EndianHandling {
+    public EndianAction EndianHandling
+    {
       get { return _endianHandling; }
       set { _endianHandling = value; }
     }
@@ -84,13 +98,17 @@ namespace MsgPackExplorer {
     /// <summary>
     /// Clears all the data and starts with an empty slate
     /// </summary>
-    public void Clear() {
+    public void Clear()
+    {
       Data = null;
     }
 
-    public Image GetIcon() {
-      using (var stream = typeof(LsMsgPackExplorer).Assembly.GetManifestResourceStream("Explore")) {
-        if (stream != null) {
+    public Image GetIcon()
+    {
+      using (var stream = typeof(LsMsgPackExplorer).Assembly.GetManifestResourceStream("Explore"))
+      {
+        if (stream != null)
+        {
           return Image.FromStream(stream);
         }
       }
@@ -99,20 +117,23 @@ namespace MsgPackExplorer {
 
     List<EditorMetaData> lineairList = new List<EditorMetaData>();
 
-    private class EditorMetaData {
+    private class EditorMetaData
+    {
       public int CharOffset = 0;
       public int Length = 0;
       public TreeNode Node;
       public MsgPackItem Item;
     }
 
-    public void RefreshTree() {
+    public void RefreshTree()
+    {
       SuspendLayout();
       treeView1.SuspendLayout();
       treeView1.BeginUpdate();
       richTextBox1.SuspendLayout();
       Cursor = Cursors.WaitCursor;
-      try {
+      try
+      {
         treeView1.Nodes.Clear();
         richTextBox1.Clear();
         lineairList.Clear();
@@ -137,8 +158,10 @@ namespace MsgPackExplorer {
         EditorMetaData meta = null;
         byteOffset = AddParts(hex, root, byteOffset, sb, ref meta);
 
-        if (!ReferenceEquals(meta, null) && !ReferenceEquals(meta.Item, null)) {
-          while (meta.Item.StoredOffset + meta.Item.StoredLength > byteOffset) {
+        if (!ReferenceEquals(meta, null) && !ReferenceEquals(meta.Item, null))
+        {
+          while (meta.Item.StoredOffset + meta.Item.StoredLength > byteOffset)
+          {
             sb.Append(hex[byteOffset]).Append(' ');
             byteOffset++;
             meta.Length++;
@@ -149,14 +172,17 @@ namespace MsgPackExplorer {
         meta.Length = byteOffset;
 
         if (hex.Length - 1 > byteOffset) sb.Append("\\cf3 "); // gray
-        while (hex.Length - 1 > byteOffset) {
+        while (hex.Length - 1 > byteOffset)
+        {
           sb.Append(hex[byteOffset]).Append(' ');
           byteOffset++;
         }
 
         sb.Append("\r\n}\r\n");
         richTextBox1.Rtf = sb.ToString();
-      } finally {
+      }
+      finally
+      {
         ResumeLayout();
         treeView1.EndUpdate();
         treeView1.ResumeLayout();
@@ -165,25 +191,30 @@ namespace MsgPackExplorer {
       }
     }
 
-    private int AddParts(string[] hex, TreeNode node, int byteOffset, StringBuilder sb, ref EditorMetaData previousMeta) {
+    private int AddParts(string[] hex, TreeNode node, int byteOffset, StringBuilder sb, ref EditorMetaData previousMeta)
+    {
       MsgPackItem item = (MsgPackItem)node.Tag;
       if (ReferenceEquals(item, null)) return byteOffset;
       int additionalBytes = 0;
-      while (item.StoredOffset > byteOffset) {
+      while (item.StoredOffset > byteOffset)
+      {
         sb.Append(hex[byteOffset]).Append(' ');
         byteOffset++;
         additionalBytes++;
       }
-      if (additionalBytes > 0) {
+      if (additionalBytes > 0)
+      {
         previousMeta.Length += additionalBytes;
         TreeNode parent = previousMeta.Node.Parent;
-        while (!ReferenceEquals(parent, null)) {
+        while (!ReferenceEquals(parent, null))
+        {
           ((EditorMetaData)((MsgPackItem)parent.Tag).Tag).Length += additionalBytes;
           parent = parent.Parent;
         }
       }
 
-      EditorMetaData meta = new EditorMetaData() {
+      EditorMetaData meta = new EditorMetaData()
+      {
         CharOffset = byteOffset * 3,
         Node = node,
         Item = item
@@ -192,15 +223,18 @@ namespace MsgPackExplorer {
       item.Tag = meta;
       previousMeta = meta;
 
-      if (!ReferenceEquals(item, null) && !(item is MpError && !ReferenceEquals(((MpError)item).PartialItem, null)) && !(item is MpRoot) && byteOffset < hex.Length) {
+      if (!ReferenceEquals(item, null) && !(item is MpError && !ReferenceEquals(((MpError)item).PartialItem, null)) && !(item is MpRoot) && byteOffset < hex.Length)
+      {
         sb.Append("\\cf1 "); // red
         sb.Append(hex[byteOffset]).Append(' ');
         byteOffset++;
       }
 
-      if (item is MsgPackVarLen) {
+      if (item is MsgPackVarLen)
+      {
         int lengthBytes = 0;
-        switch (item.TypeId) {
+        switch (item.TypeId)
+        {
           case MsgPackTypeId.MpBin8: lengthBytes = 1; break;
           case MsgPackTypeId.MpBin16: lengthBytes = 2; break;
           case MsgPackTypeId.MpBin32: lengthBytes = 4; break;
@@ -215,9 +249,11 @@ namespace MsgPackExplorer {
           case MsgPackTypeId.MpExt16: lengthBytes = 2; break;
           case MsgPackTypeId.MpExt32: lengthBytes = 4; break;
         }
-        if (lengthBytes > 0) {
+        if (lengthBytes > 0)
+        {
           sb.Append("\\cf2 "); // blue
-          for (int t = lengthBytes - 1; t >= 0; t--) {
+          for (int t = lengthBytes - 1; t >= 0; t--)
+          {
             sb.Append(hex[byteOffset]).Append(' ');
             byteOffset++;
           }
@@ -225,7 +261,8 @@ namespace MsgPackExplorer {
       }
       sb.Append("\\cf0 "); // black
 
-      for (int t = 0; t < node.Nodes.Count; t++) {
+      for (int t = 0; t < node.Nodes.Count; t++)
+      {
         byteOffset = AddParts(hex, node.Nodes[t], byteOffset, sb, ref previousMeta);
       }
 
@@ -235,7 +272,8 @@ namespace MsgPackExplorer {
       return byteOffset;
     }
 
-    private TreeNode GetTreeNodeFor(MsgPackItem item) {
+    private TreeNode GetTreeNodeFor(MsgPackItem item)
+    {
       int imgIdx = GetIconFor(item);
       string text = ReferenceEquals(item, null) ? "NULL" : item.ToString();
       int pos = text.IndexOfAny(new char[] { '\r', '\n' });
@@ -248,7 +286,8 @@ namespace MsgPackExplorer {
 
     long _nodeCount = 0;
 
-    private void Traverse(TreeNode node, MsgPackItem item) {
+    private void Traverse(TreeNode node, MsgPackItem item)
+    {
       _nodeCount++;
       if (_nodeCount > _displayLimit)
         return;
@@ -259,10 +298,12 @@ namespace MsgPackExplorer {
       if (typ == typeof(MpFloat)) return;
       if (typ == typeof(MpBin)) return;
       if (typ == typeof(MpString)) return;
-      if (typ == typeof(MpRoot)) {
+      if (typ == typeof(MpRoot))
+      {
         MpRoot root = (MpRoot)item;
         MsgPackItem[] children = (MsgPackItem[])root.Value;
-        for (int t = 0; t < children.Length; t++) {
+        for (int t = 0; t < children.Length; t++)
+        {
           TreeNode child = GetTreeNodeFor(children[t]);
           node.Nodes.Add(child);
           Traverse(child, children[t]);
@@ -270,10 +311,12 @@ namespace MsgPackExplorer {
             return;
         }
       }
-      if (typ == typeof(MpArray)) {
+      if (typ == typeof(MpArray))
+      {
         MpArray arr = (MpArray)item;
         MsgPackItem[] children = arr.PackedValues;
-        for (int t = 0; t < children.Length; t++) {
+        for (int t = 0; t < children.Length; t++)
+        {
           TreeNode child = GetTreeNodeFor(children[t]);
           node.Nodes.Add(child);
           Traverse(child, children[t]);
@@ -281,10 +324,12 @@ namespace MsgPackExplorer {
             return;
         }
       }
-      if (typ == typeof(MpMap)) {
+      if (typ == typeof(MpMap))
+      {
         MpMap map = (MpMap)item;
         KeyValuePair<MsgPackItem, MsgPackItem>[] children = map.PackedValues;
-        for (int t = 0; t < children.Length; t++) {
+        for (int t = 0; t < children.Length; t++)
+        {
           TreeNode child = GetTreeNodeFor(children[t].Key);
           child.StateImageIndex = 8; // Key
           node.Nodes.Add(child);
@@ -299,9 +344,11 @@ namespace MsgPackExplorer {
             return;
         }
       }
-      if (typ == typeof(MpError)) {
+      if (typ == typeof(MpError))
+      {
         MpError err = (MpError)item;
-        if (!ReferenceEquals(err.PartialItem, null)) {
+        if (!ReferenceEquals(err.PartialItem, null))
+        {
           if (!(err.PartialItem is MpError)) node.StateImageIndex = GetIconFor(err.PartialItem);
           TreeNode child = GetTreeNodeFor(err.PartialItem);
           node.Nodes.Add(child);
@@ -312,7 +359,8 @@ namespace MsgPackExplorer {
       }
     }
 
-    private int GetIconFor(MsgPackItem item) {
+    private int GetIconFor(MsgPackItem item)
+    {
       if (ReferenceEquals(item, null)) return 0;
       Type typ = item.GetType();
       if (typ == typeof(MpBool)) return 1;
@@ -332,33 +380,45 @@ namespace MsgPackExplorer {
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wp, IntPtr lp);
     private const int WM_SETREDRAW = 0x0b;
 
-    private void treeView1_AfterSelect(object sender, TreeViewEventArgs e) {
-      if (ReferenceEquals(e.Node, null)) {
+    private void treeView1_AfterSelect(object sender, TreeViewEventArgs e)
+    {
+      if (ReferenceEquals(e.Node, null))
+      {
         propertyGrid1.SelectedObject = null;
         ColorSelectedNodeInHexView(null);
         ClearValidationSelection();
-      } else {
+      }
+      else
+      {
         propertyGrid1.SelectedObject = e.Node.Tag;
         propertyGrid1.ExpandAllGridItems();
 
         MsgPackItem item = e.Node.Tag as MsgPackItem;
-        if (ReferenceEquals(item, null)) {
+        if (ReferenceEquals(item, null))
+        {
           statusOffset.Text = "0 (0x00)";
           ColorSelectedNodeInHexView(null);
-        } else {
+        }
+        else
+        {
           statusOffset.Text = string.Concat(item.StoredOffset, " (0x", item.StoredOffset.ToString("X"), ")");
           EditorMetaData meta = item.Tag as EditorMetaData;
           ColorSelectedNodeInHexView(meta);
         }
 
-        if (!lvSelecting) {
+        if (!lvSelecting)
+        {
           lvSelecting = true;
-          try {
-            for (int t = listView1.Items.Count - 1; t >= 0; t--) {
+          try
+          {
+            for (int t = listView1.Items.Count - 1; t >= 0; t--)
+            {
               bool select = listView1.Items[t].Tag == e.Node;
               listView1.Items[t].Selected = select;
             }
-          } finally {
+          }
+          finally
+          {
             lvSelecting = false;
             errorDetails.Visible = false;
             splitter4.Visible = false;
@@ -367,38 +427,48 @@ namespace MsgPackExplorer {
       }
     }
 
-    private void ClearValidationSelection() {
-      for (int t = listView1.Items.Count - 1; t >= 0; t--) {
+    private void ClearValidationSelection()
+    {
+      for (int t = listView1.Items.Count - 1; t >= 0; t--)
+      {
         listView1.Items[t].Selected = false;
       }
     }
 
-    private void ColorSelectedNodeInHexView(EditorMetaData meta) {
+    private void ColorSelectedNodeInHexView(EditorMetaData meta)
+    {
       int preserveSelStart = richTextBox1.SelectionStart;
       int preserveSelLength = richTextBox1.SelectionLength;
       bool preserveSelecting = rtbSelecting;
 
       rtbSelecting = true;
       SendMessage(richTextBox1.Handle, WM_SETREDRAW, (IntPtr)0, IntPtr.Zero);
-      try {
+      try
+      {
         richTextBox1.SelectAll();
         richTextBox1.SelectionBackColor = richTextBox1.BackColor;
 
-        if (!ReferenceEquals(meta, null)) {
+        if (!ReferenceEquals(meta, null))
+        {
           richTextBox1.SelectionStart = meta.CharOffset;
           richTextBox1.SelectionLength = meta.Length * 3;
 
           richTextBox1.SelectionBackColor = Color.LightGreen;
         }
 
-        if (!preserveSelecting) {
+        if (!preserveSelecting)
+        {
           richTextBox1.ScrollToCaret();
           richTextBox1.SelectionLength = 0;
-        } else {
+        }
+        else
+        {
           richTextBox1.SelectionStart = preserveSelStart;
           richTextBox1.SelectionLength = preserveSelLength;
         }
-      } finally {
+      }
+      finally
+      {
         SendMessage(richTextBox1.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
         richTextBox1.Invalidate();
         rtbSelecting = preserveSelecting;
@@ -406,28 +476,37 @@ namespace MsgPackExplorer {
     }
 
     bool rtbSelecting = false;
-    private void richTextBox1_SelectionChanged(object sender, EventArgs e) {
+    private void richTextBox1_SelectionChanged(object sender, EventArgs e)
+    {
       if (rtbSelecting) return;
       rtbSelecting = true;
-      try {
-        for (int t = lineairList.Count - 1; t >= 0; t--) {
-          if (lineairList[t].CharOffset <= richTextBox1.SelectionStart) {
+      try
+      {
+        for (int t = lineairList.Count - 1; t >= 0; t--)
+        {
+          if (lineairList[t].CharOffset <= richTextBox1.SelectionStart)
+          {
             treeView1.SelectedNode = lineairList[t].Node;
             return;
           }
         }
-      } finally {
+      }
+      finally
+      {
         rtbSelecting = false;
       }
     }
 
     private bool lvSelecting = false;
 
-    private void listView1_SelectedIndexChanged(object sender, EventArgs e) {
+    private void listView1_SelectedIndexChanged(object sender, EventArgs e)
+    {
       if (lvSelecting) return;
       lvSelecting = true;
-      try {
-        if (listView1.SelectedItems.Count <= 0) {
+      try
+      {
+        if (listView1.SelectedItems.Count <= 0)
+        {
           treeView1.SelectedNode = null;
           errorDetails.Visible = false;
           splitter4.Visible = false;
@@ -437,23 +516,29 @@ namespace MsgPackExplorer {
         splitter4.Visible = true;
         errorDetails.Visible = true;
         treeView1.SelectedNode = (TreeNode)listView1.SelectedItems[0].Tag;
-      } finally {
+      }
+      finally
+      {
         lvSelecting = false;
       }
     }
 
-    private void treeView1_DrawNode(object sender, DrawTreeNodeEventArgs e) {
+    private void treeView1_DrawNode(object sender, DrawTreeNodeEventArgs e)
+    {
       e.DrawDefault = true;
     }
 
-    private void ValidateItem(EditorMetaData meta) {
+    private void ValidateItem(EditorMetaData meta)
+    {
       MsgPackValidation.ValidationItem[] issues = MsgPackValidation.ValidateItem(meta.Item);
-      for (int t = issues.Length - 1; t >= 0; t--) {
+      for (int t = issues.Length - 1; t >= 0; t--)
+      {
         AddValidationItem(issues[t].WaistedBytes, meta, issues[t].Severity, issues[t].Message);
       }
     }
 
-    private void AddValidationItem(int waistedBytes, EditorMetaData meta, MsgPackValidation.ValidationSeverity sev, string message) {
+    private void AddValidationItem(int waistedBytes, EditorMetaData meta, MsgPackValidation.ValidationSeverity sev, string message)
+    {
       int iconId = (meta.Item.TypeId == MsgPackTypeId.NeverUsed) ? -1 : GetIconFor(meta.Item);
       ListViewItem lvi = new ListViewItem(waistedBytes.ToString(), iconId);
       lvi.StateImageIndex = (int)sev;
