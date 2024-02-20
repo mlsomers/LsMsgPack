@@ -108,17 +108,9 @@ namespace LsMsgPackUnitTests
     [TestCase(true, short.MaxValue, 3, MsgPackTypeId.MpShort)]
     [TestCase(true, int.MaxValue, 5, MsgPackTypeId.MpInt)]
     [TestCase(true, long.MaxValue, 9, MsgPackTypeId.MpLong)]
-    public void SignedToUnsigned<T>(bool PreserveType, T value, int expectedLength, MsgPackTypeId expectedType)
+    public void SignedToUnsigned<T>(bool preserveType, T value, int expectedLength, MsgPackTypeId expectedType)
     {
-      if (PreserveType) MsgPackTests.DynamicallyCompactValue = false;
-      try
-      {
-        MsgPackTests.RoundTripTest<MpInt, T>(value, expectedLength, expectedType);
-      }
-      finally
-      {
-        MsgPackTests.DynamicallyCompactValue = true;
-      }
+      MsgPackTests.RoundTripTest<MpInt, T>(value, expectedLength, expectedType, !preserveType);
     }
 
     [TestCase((ulong)1, 1, MsgPackTypeId.MpBytePart)]
@@ -252,15 +244,7 @@ namespace LsMsgPackUnitTests
 
     public void PreserveTypeTest<T>(T value, int expectedLength, MsgPackTypeId expectedType)
     {
-      MsgPackTests.DynamicallyCompactValue = false;
-      try
-      {
-        MsgPackTests.RoundTripTest<MpInt, T>(value, expectedLength, expectedType);
-      }
-      finally
-      {
-        MsgPackTests.DynamicallyCompactValue = true;
-      }
+      MsgPackTests.RoundTripTest<MpInt, T>(value, expectedLength, expectedType, false);
     }
 
     #region enum tests

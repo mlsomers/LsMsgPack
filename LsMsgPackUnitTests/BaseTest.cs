@@ -6,11 +6,9 @@ using System.IO;
 namespace LsMsgPackUnitTests {
   public class MsgPackTests {
 
-    public static bool DynamicallyCompactValue = true;
+    public static MsgPackItem RoundTripTest<Typ, T>(T value, int expectedLength, MsgPackTypeId expectedMsgPackType, bool dynamicallyCompactValue = true, sbyte extensionType=0) where Typ : MsgPackItem {
 
-    public static MsgPackItem RoundTripTest<Typ, T>(T value, int expectedLength, MsgPackTypeId expectedMsgPackType, sbyte extensionType=0) where Typ : MsgPackItem {
-
-      bool preservingType = !DynamicallyCompactValue;
+      bool preservingType = !dynamicallyCompactValue;
 
       MsgPackItem item;
       if(typeof(Typ) == typeof(MpExt)) {
@@ -20,7 +18,7 @@ namespace LsMsgPackUnitTests {
         };
       } else
         item = MsgPackItem.Pack(value, new MsgPackSettings() {
-          DynamicallyCompact = DynamicallyCompactValue,
+          DynamicallyCompact = dynamicallyCompactValue,
           PreservePackages = false,
           ContinueProcessingOnBreakingError = false
         });
