@@ -2,10 +2,15 @@
 using System;
 using System.Windows.Forms;
 using System.Linq;
+using System.Collections.Generic;
+using System.IO;
 
-namespace MsgPackExplorer {
-  public partial class Explorer: Form {
-    public Explorer() {
+namespace MsgPackExplorer
+{
+  public partial class Explorer : Form
+  {
+    public Explorer()
+    {
       InitializeComponent();
       ddLimitItems.SelectedIndex = 0;
 
@@ -17,27 +22,34 @@ namespace MsgPackExplorer {
       ddEndianess.SelectedIndex = 0;
     }
 
-    private void btnOpen_Click(object sender, EventArgs e) {
-      if(openFileDialog1.ShowDialog() == DialogResult.OK) {
+    private void btnOpen_Click(object sender, EventArgs e)
+    {
+      if (openFileDialog1.ShowDialog() == DialogResult.OK)
+      {
         msgPackExplorer1.Data = System.IO.File.ReadAllBytes(openFileDialog1.FileName);
       }
     }
 
-    private void btnGenerateTestFiles_Click(object sender, EventArgs e) {
-      if(saveTestSuiteDialog.ShowDialog()== DialogResult.OK) {
+    private void btnGenerateTestFiles_Click(object sender, EventArgs e)
+    {
+      if (saveTestSuiteDialog.ShowDialog() == DialogResult.OK)
+      {
         new TestFileSuiteCreator().CreateSuite(System.IO.Path.GetDirectoryName(saveTestSuiteDialog.FileName));
       }
     }
 
-    private void aboutToolStripMenuItem_Click(object sender, EventArgs e) {
+    private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
+    {
       new AboutBox().ShowDialog(this);
     }
 
-    private void btnProcessAfterError_CheckedChanged(object sender, EventArgs e) {
+    private void btnProcessAfterError_CheckedChanged(object sender, EventArgs e)
+    {
       msgPackExplorer1.ContinueOnError = btnProcessAfterError.Checked;
     }
 
-    private void ddLimitItems_TextChanged(object sender, EventArgs e) {
+    private void ddLimitItems_TextChanged(object sender, EventArgs e)
+    {
       long limit;
       if (long.TryParse(ddLimitItems.Text, out limit))
         msgPackExplorer1.DisplayLimit = limit;
@@ -46,7 +58,8 @@ namespace MsgPackExplorer {
       msgPackExplorer1.RefreshTree();
     }
 
-    private void ddEndianess_DropDownClosed(object sender, EventArgs e) {
+    private void ddEndianess_DropDownClosed(object sender, EventArgs e)
+    {
       EndianChoice choice = ddEndianess.SelectedItem as EndianChoice;
       if (choice is null)
         return;
@@ -54,26 +67,68 @@ namespace MsgPackExplorer {
       msgPackExplorer1.Data = msgPackExplorer1.Data;
     }
 
-    private void installAsFiddlerInspectorToolStripMenuItem_Click(object sender, EventArgs e) {
-      try {
-        if (!Installer.TryInstall()) {
+    private void installAsFiddlerInspectorToolStripMenuItem_Click(object sender, EventArgs e)
+    {
+      try
+      {
+        if (!Installer.TryInstall())
+        {
           MessageBox.Show("Unable to find the Fiddler application files", "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
           return;
         }
-        
-        if(Installer.FiddlerIsRunning)
+
+        if (Installer.FiddlerIsRunning)
           MessageBox.Show("Installed successfully.\r\nFiddler is currently running.\r\nYou will need to restart Fiddler in order to use the MsgPack inspector.", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
         else
           MessageBox.Show("Installed successfully.", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-      } catch(Exception ex) {
-        MessageBox.Show(string.Concat("Inastallation failed with the following message:\r\n", ex.Message,"\r\n\r\nYou may have more luck (depending on the error) running with administration privileges.") , "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      }
+      catch (Exception ex)
+      {
+        MessageBox.Show(string.Concat("Inastallation failed with the following message:\r\n", ex.Message, "\r\n\r\nYou may have more luck (depending on the error) running with administration privileges."), "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
       }
     }
+
+    private void fromClipboardToolStripMenuItem_Click(object sender, EventArgs e)
+    {
+      string str = Clipboard.GetText();
+      if (!string.IsNullOrWhiteSpace(str))
+      {
+        try
+        {
+          msgPackExplorer1.Data = ClipboardSupport.GetBytes(str);
+          return;
+        }
+        catch (Exception ex)
+        {
+          MessageBox.Show("Clipboard content could not be converted to a byte array:\r\n" + ex.Message, "Parsing failure", MessageBoxButtons.OK, MessageBoxIcon.Error);
+          return;
+        }
+      }
+      DataObject retrievedData = Clipboard.GetDataObject() as DataObject;
+      if (retrievedData == null)
+      {
+        MessageBox.Show("Clipboard does not seem to contain anything.", "Unrecognised format", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        return;
+      }
+      if (retrievedData.GetDataPresent(typeof(Byte[])))
+        msgPackExplorer1.Data = retrievedData.GetData(typeof(Byte[])) as Byte[];
+      else if (retrievedData.GetDataPresent(typeof(MemoryStream)))
+        msgPackExplorer1.Data = (retrievedData.GetData(typeof(MemoryStream)) as MemoryStream).ToArray();
+      else
+      {
+        MessageBox.Show("Clipboard did not contain anything recognised as a byte array, memory stream or an encoded string.", "Unrecognised format", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        return;
+      }
+      return;
+    }
+
   }
 
-  public class EndianChoice {
-    public EndianChoice(EndianAction value, string description) {
+  public class EndianChoice
+  {
+    public EndianChoice(EndianAction value, string description)
+    {
       Value = value;
       Description = description;
     }
@@ -81,7 +136,8 @@ namespace MsgPackExplorer {
     private string Description { get; }
     public EndianAction Value { get; }
 
-    public override string ToString() {
+    public override string ToString()
+    {
       return Description;
     }
   }

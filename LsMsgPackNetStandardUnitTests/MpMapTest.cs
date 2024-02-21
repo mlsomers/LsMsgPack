@@ -1,21 +1,21 @@
 ﻿using LsMsgPack;
-using NUnit.Framework;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Collections.Generic;
 
 namespace LsMsgPackUnitTests
 {
-  [TestFixture]
+  [TestClass]
   public class MpMapTest
   {
-
-    [TestCase(0, 1, MsgPackTypeId.MpMap4)]
-    [TestCase(1, 2, MsgPackTypeId.MpMap4)]
-    [TestCase(15, 16, MsgPackTypeId.MpMap4)]
-    [TestCase(200, 203, MsgPackTypeId.MpMap16)]
-    [TestCase(256, 259, MsgPackTypeId.MpMap16)]
-    [TestCase(ushort.MaxValue, ushort.MaxValue + 3, MsgPackTypeId.MpMap16)]
-    [TestCase(ushort.MaxValue + 1, ushort.MaxValue + 6, MsgPackTypeId.MpMap32)]
-    // [TestCase(0x7FEFFFF9, 0x7FEFFFF9 + 6, MsgPackTypeId.MpMap32)] // Out of memory on my machine
+    [DataTestMethod]
+    [DataRow(0, 1, MsgPackTypeId.MpMap4)]
+    [DataRow(1, 2, MsgPackTypeId.MpMap4)]
+    [DataRow(15, 16, MsgPackTypeId.MpMap4)]
+    [DataRow(200, 203, MsgPackTypeId.MpMap16)]
+    [DataRow(256, 259, MsgPackTypeId.MpMap16)]
+    [DataRow(ushort.MaxValue, ushort.MaxValue + 3, MsgPackTypeId.MpMap16)]
+    [DataRow(ushort.MaxValue + 1, ushort.MaxValue + 6, MsgPackTypeId.MpMap32)]
+    // [DataRow(0x7FEFFFF9, 0x7FEFFFF9 + 6, MsgPackTypeId.MpMap32)] // Out of memory on my machine
     public void MapLengths(int length, int expectedBytes, MsgPackTypeId expedctedType)
     {
       KeyValuePair<object, object>[] test = new KeyValuePair<object, object>[length];
@@ -32,8 +32,9 @@ namespace LsMsgPackUnitTests
       }
     }
 
-    [TestCase(false, 47)]
-    [TestCase(true, 47)]
+    [DataTestMethod]
+    [DataRow(false, 47)]
+    [DataRow(true, 47)]
     public void AssortedMix(bool preserveTypes, int expectedLength)
     {
       KeyValuePair<object, object>[] items = new KeyValuePair<object, object>[] {
@@ -45,20 +46,18 @@ namespace LsMsgPackUnitTests
         new KeyValuePair<object, object>((byte)2, 900.1f),
         new KeyValuePair<object, object>("Hallo!", "Hallo!"),
       };
-
-      MsgPackItem item = MsgPackTests.RoundTripTest<MpMap, KeyValuePair<object, object>[]>(items, expectedLength, MsgPackTypeId.MpMap4, !preserveTypes);
+      MsgPackItem item = MsgPackTests.RoundTripTest<MpMap, KeyValuePair<object, object>[]>(items, expectedLength, MsgPackTypeId.MpMap4);
 
       KeyValuePair<object, object>[] ret = item.GetTypedValue<KeyValuePair<object, object>[]>();
 
       Assert.AreEqual(items.Length, ret.Length, string.Concat("Expected ", items.Length, " items but got ", ret.Length, " items in the array."));
       for (int t = ret.Length - 1; t >= 0; t--)
       {
-        if (preserveTypes && t != 2) Assert.IsTrue(items[t].GetType() == ret[t].GetType(), string.Concat("Expected type ", items[t].GetType(), " items but got ", ret[t].GetType(), "."));
         Assert.AreEqual(items[t], ret[t], string.Concat("Expected ", items[t], " but got ", ret[t], " at index ", t));
       }
     }
 
-    [Test]
+    [TestMethod]
     public void TypicalDictionaryUse()
     {
       Dictionary<string, object> objectProps = new Dictionary<string, object>();
@@ -71,7 +70,7 @@ namespace LsMsgPackUnitTests
       MsgPackItem item = MsgPackTests.RoundTripTest<MpMap, Dictionary<string, object>>(objectProps, 46, MsgPackTypeId.MpMap4);
     }
 
-    [Test]
+    [TestMethod]
     public void EnumDictionaryUse()
     {
       Dictionary<myEnum, object> objectProps = new Dictionary<myEnum, object>();

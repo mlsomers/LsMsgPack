@@ -61,7 +61,7 @@ namespace LsMsgPack
     public static DateTime ConvertExt(MsgPackSettings settings, MpExt ext)
     {
       if (ext.TypeSpecifier != -1)
-        throw new MsgPackException(string.Concat("The extension type ", ext.TypeSpecifier, " is not a recognised DatTime or TimeStamp, expected type -1."), ext.StoredOffset + 1, ext.TypeId);
+        throw new MsgPackException(string.Concat("The extension type ", ext.TypeSpecifier, " is not a recognised DatTime or TimeStamp, expected type -1."), -1, ext.TypeId);
 
       switch (ext.TypeId)
       {
@@ -104,7 +104,7 @@ namespace LsMsgPack
             return EpochToLocalDateTime(sc) + subSec;
       }
 
-      throw new MsgPackException(string.Concat("The extension type with base type ", GetOfficialTypeName(ext.TypeId), " is not recognised as a DatTime or TimeStamp. expected ", GetOfficialTypeName(MsgPackTypeId.MpFExt4), " or ", GetOfficialTypeName(MsgPackTypeId.MpFExt8), " or ", GetOfficialTypeName(MsgPackTypeId.MpExt8)), ext.StoredOffset, ext.TypeId);
+      throw new MsgPackException(string.Concat("The extension type with base type ", GetOfficialTypeName(ext.TypeId), " is not recognised as a DatTime or TimeStamp. expected ", GetOfficialTypeName(MsgPackTypeId.MpFExt4), " or ", GetOfficialTypeName(MsgPackTypeId.MpFExt8), " or ", GetOfficialTypeName(MsgPackTypeId.MpExt8)), -1, ext.TypeId);
     }
 
     public static MpDateTime FromDateTime(MsgPackSettings settings, DateTime dt, bool preserveFractionalSeconds = true)
