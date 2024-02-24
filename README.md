@@ -64,6 +64,20 @@ A tiny wrapper enabling the use of MsgPack Explorer as a Fiddler Inspector.
 #### LsMsgPackUnitTests.dll
 Some unit tests on the core LsMsgPack.dll. No full coverage yet, but at least it's a start.
 
-#### LsMsgPackL.dll & LightUnitTests.dll
-A light version of the "parser". The parsing and generating methods are almost identical to the LsMsgPack lib, but with allot of overhead removed that comes with keeping track of offsets, original types and other debugging info. I'm planning to use this version in my projects that use the MsgPack format.
-The LightUnitTests are the same as LsMsgPackUnitTests with some tests omitted.
+#### LsMsgPackNetStandard.dll & LsMsgPackNetStandardUnitTests.dll
+
+A light version of the serializer. The parsing and generating methods are almost identical to the LsMsgPack lib, but with allot of overhead removed that comes with keeping track of offsets, original types and other debugging info. I'm planning to use this version in my projects that use the MsgPack format.
+
+### Architecture
+
+#### Object-model
+
+![Hierarchy](https://github.com/mlsomers/LsMsgPack/blob/master/Hierarchy.png)
+
+Each class can serialize/deserialize the associated MsgPack type. Types that have a variable length inherit from MsgPackVarLen.
+
+#### Worker classes (or services)
+
+![Hierarchy](https://github.com/mlsomers/LsMsgPack/blob/master/Services.png)
+
+The MsgPackSerializer and MsgPackSettings are the ones that end-users are supposed to use (entry points).
