@@ -1,10 +1,10 @@
-﻿using System;
+﻿using LsMsgPackNetStandard.Meta;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Xml.Serialization;
 
 namespace LsMsgPack
 {
@@ -22,6 +22,7 @@ namespace LsMsgPack
       typeof(uint),
       typeof(ulong),
       typeof(float),
+      typeof(double),
       typeof(string),
       typeof(byte[]),
       typeof(List<>),
@@ -36,7 +37,7 @@ namespace LsMsgPack
 
     public static byte[] Serialize<T>(T item, MsgPackSettings settings)
     {
-      if (MsgPackSerializer.NativelySupportedTypes.Contains(typeof(T))) return MsgPackItem.Pack(item, settings).ToBytes();
+      if (NativelySupportedTypes.Contains(typeof(T))) return MsgPackItem.Pack(item, settings).ToBytes();
       MemoryStream ms = new MemoryStream();
       Serialize(item, ms, settings);
       return ms.ToArray();
@@ -64,16 +65,46 @@ namespace LsMsgPack
     {
       if (ReferenceEquals(item, null)) return new MpNull();
       Type tType = item.GetType();
-      if (MsgPackSerializer.NativelySupportedTypes.Contains(tType))
-      {
+      if (NativelySupportedTypes.Contains(tType))
         return MsgPackItem.Pack(item, settings);
-        // Maybe we should rather throw an exception here
+      PropertyInfo[] props;
+      Dictionary<string, object> propVals;
+      if (tType == typeof(MsgPackTypedItem)) // Add Type name as first entry with empty key
+      {
+        MsgPackTypedItem typedItem = (MsgPackTypedItem)item;
+        props = GetSerializedProps(typedItem.Instance.GetType());
+        propVals = new Dictionary<string, object>(props.Length + 1);
+        propVals.Add(string.Empty, settings._fullName ? typedItem.Type.FullName : typedItem.Type.Name);
+        item = typedItem.Instance;
       }
-      PropertyInfo[] props = GetSerializedProps(tType);
-      Dictionary<string, object> propVals = new Dictionary<string, object>(props.Length);
+      else
+      {
+        props = GetSerializedProps(tType);
+        propVals = new Dictionary<string, object>(props.Length);
+      }
       for (int t = props.Length - 1; t >= 0; t--)
       {
-        propVals.Add(props[t].Name, props[t].GetValue(item, null));
+        object value = props[t].GetValue(item, null);
+        if (settings._omitDefault && value == default)
+          continue;
+        if (value is null)
+        {
+          if (!settings._omitNull)
+            propVals.Add(props[t].Name, value);
+          continue;
+        }
+        Type valType = value.GetType();
+        if (settings._addTypeName == AddTypeNameOption.Never || NativelySupportedTypes.Contains(valType))
+          propVals.Add(props[t].Name, value);
+        else if (settings._addTypeName == AddTypeNameOption.Always)
+          propVals.Add(props[t].Name, new MsgPackTypedItem(value, valType));
+        else // AddTypeNameOption.IfAmbiguious
+        {
+          if (props[t].PropertyType == valType)
+            propVals.Add(props[t].Name, value);
+          else
+            propVals.Add(props[t].Name, new MsgPackTypedItem(value, valType));
+        }
       }
       return new MpMap(settings) { Value = propVals };
     }
@@ -100,11 +131,25 @@ namespace LsMsgPack
 
     private static object Materialize(Type tType, MpMap map)
     {
-      PropertyInfo[] props = GetSerializedProps(tType);
       Dictionary<string, object> propVals = map.GetTypedValue<Dictionary<string, object>>();
 
-      object result = Activator.CreateInstance(tType);
+      if(propVals.TryGetValue(string.Empty, out var value))
+      {
+        string typename = value as string;
+        if (!string.IsNullOrWhiteSpace(typename) && !typename.EndsWith(tType.Name))
+        {
+          Assembly assembly = Assembly.GetAssembly(tType);
+          Type tp = assembly.GetType(typename, false, true);
+          if (tp is null)
+            tp = assembly.GetExportedTypes().FirstOrDefault(t => t.Name.Equals(typename, StringComparison.InvariantCultureIgnoreCase));
+          if (tp != null)
+            tType = tp;
+        }
+      }
 
+      PropertyInfo[] props = GetSerializedProps(tType);
+      object result = Activator.CreateInstance(tType);
+      
       for (int t = props.Length - 1; t >= 0; t--)
       {
         object val;
@@ -194,7 +239,19 @@ namespace LsMsgPack
       bool ignore = false;
       for (int i = atts.Length - 1; i >= 0; i--)
       {
-        if (atts[i] is XmlIgnoreAttribute) { ignore = true; break; }
+        // This is going to be a drop-in replacement for xml, json, contract, binaryformatter etc..
+        // we do not want dependencies on all supported types so we'll check for common names:
+        //
+        // System.Xml.Serialization.XmlIgnore,
+        // System.Text.Json.Serialization.JsonIgnore,
+        // Newtonsoft.Json.JsonIgnore
+        // System.Runtime.Serialization.IgnoreDataMember
+        //
+        // Not sure, but you may squeeze out more performance by doing it the old way (knowing what attributes are in your source base)
+        // if(atts[i] is XmlIgnoreAttribute) { ignore = true; break; }
+
+        string attName = atts[i].GetType().Name;
+        if (attName.IndexOf("Ignore", StringComparison.InvariantCultureIgnoreCase) >= 0) { ignore = true; break; }
       }
       return ignore;
     }

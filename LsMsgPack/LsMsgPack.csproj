@@ -43,6 +43,7 @@
     <Compile Include="..\CommonAssemblyInfo.cs">
       <Link>Properties\CommonAssemblyInfo.cs</Link>
     </Compile>
+    <Compile Include="Meta\MsgPackTypedItem.cs" />
     <Compile Include="Meta\MsgPackValidation.cs" />
     <Compile Include="MsgPackSettings.cs" />
     <Compile Include="Types\MpDateTime.cs" />
@@ -64,6 +65,10 @@
     <Compile Include="Types\MpNull.cs" />
     <Compile Include="MsgPackItem.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Architecture\Hierarchy.cd" />
+    <None Include="Architecture\Services.cd" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
