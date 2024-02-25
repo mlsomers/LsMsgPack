@@ -30,7 +30,22 @@ namespace LsMsgPack
 
     public override object Value {
       get { return value; }
-      set { this.value = ReferenceEquals(value, null) ? new byte[0] : (byte[])value; }
+      set {
+        if (ReferenceEquals(value, null))
+          this.value = new byte[0];
+        else if (value is Guid)
+          this.value = ((Guid)value).ToByteArray();
+        else
+          this.value = (byte[])value;
+      }
+    }
+
+    public override T GetTypedValue<T>()
+    {
+      Type targetType = typeof(T);
+      if (targetType == typeof(Guid))
+        return (T)(object)(new Guid(value));
+      return base.GetTypedValue<T>();
     }
 
     public override byte[] ToBytes() {

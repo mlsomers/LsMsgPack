@@ -1,4 +1,5 @@
-﻿using LsMsgPackNetStandard.Meta;
+﻿using LsMsgPackNetStandard;
+using LsMsgPackNetStandard.Meta;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -8,6 +9,9 @@ using System.Reflection;
 
 namespace LsMsgPack
 {
+  /// <summary>
+  /// The main entry point, serialize and deserialize objects from here
+  /// </summary>
   public static class MsgPackSerializer
   {
 
@@ -27,7 +31,8 @@ namespace LsMsgPack
       typeof(byte[]),
       typeof(List<>),
       typeof(object[]),
-      typeof(Dictionary<,>)
+      typeof(Dictionary<,>),
+      typeof(Guid)
     };
 
     public static byte[] Serialize<T>(T item, bool dynamicallyCompact = true)
@@ -74,7 +79,25 @@ namespace LsMsgPack
         MsgPackTypedItem typedItem = (MsgPackTypedItem)item;
         props = GetSerializedProps(typedItem.Instance.GetType());
         propVals = new Dictionary<string, object>(props.Length + 1);
-        propVals.Add(string.Empty, settings._fullName ? typedItem.Type.FullName : typedItem.Type.Name);
+
+        object typeId = null;
+        if (settings._addTypeName == AddTypeNameOption.AlwaysFullName || settings._addTypeName == AddTypeNameOption.IfAmbiguiousFullName)
+          typeId = typedItem.Type.FullName;
+        else if (settings._addTypeName == AddTypeNameOption.Always || settings._addTypeName == AddTypeNameOption.IfAmbiguious)
+          typeId = typedItem.Type.Name;
+        else
+        {
+          IMsgPackTypeIdentifier[] idGens = settings.TypeIdentifiers.ToArray();
+          for (int t = idGens.Length - 1; t >= 0; t--)
+          {
+            typeId = idGens[t].IdForType(typedItem.Type);
+            if (typeId != null)
+              break;
+          }
+          if (typeId is null)
+            typeId = typedItem.Type.Name;
+        }
+        propVals.Add(string.Empty, typeId);
         item = typedItem.Instance;
       }
       else
@@ -96,9 +119,9 @@ namespace LsMsgPack
         Type valType = value.GetType();
         if (settings._addTypeName == AddTypeNameOption.Never || NativelySupportedTypes.Contains(valType))
           propVals.Add(props[t].Name, value);
-        else if (settings._addTypeName == AddTypeNameOption.Always)
+        else if (settings._addTypeName == AddTypeNameOption.Always || settings._addTypeName == AddTypeNameOption.AlwaysFullName || settings._addTypeName == AddTypeNameOption.UseCustomIdAlways)
           propVals.Add(props[t].Name, new MsgPackTypedItem(value, valType));
-        else // AddTypeNameOption.IfAmbiguious
+        else // If Ambiguious
         {
           if (props[t].PropertyType == valType)
             propVals.Add(props[t].Name, value);
@@ -111,20 +134,30 @@ namespace LsMsgPack
 
     public static T Deserialize<T>(byte[] source)
     {
+      return Deserialize<T>(source, new MsgPackSettings());
+    }
+
+    public static T Deserialize<T>(byte[] source, MsgPackSettings settings)
+    {
       using (MemoryStream ms = new MemoryStream(source))
       {
-        return Deserialize<T>(ms);
+        return Deserialize<T>(ms, settings);
       }
     }
 
     public static T Deserialize<T>(Stream stream)
     {
+      return Deserialize<T>(stream, new MsgPackSettings());
+    }
+
+    public static T Deserialize<T>(Stream stream, MsgPackSettings settings)
+    {
       Type tType = typeof(T);
-      if (MsgPackSerializer.NativelySupportedTypes.Contains(tType))
+      if (NativelySupportedTypes.Contains(tType))
       {
         return MsgPackItem.Unpack(stream).GetTypedValue<T>();
       }
-      MpMap map = (MpMap)MsgPackItem.Unpack(stream);
+      MpMap map = (MpMap)MsgPackItem.Unpack(stream, settings);
       T result = (T)Materialize(tType, map);
       return result;
     }
@@ -133,26 +166,27 @@ namespace LsMsgPack
     {
       Dictionary<string, object> propVals = map.GetTypedValue<Dictionary<string, object>>();
 
-      if(propVals.TryGetValue(string.Empty, out var value))
+      object val;
+      bool hasName = propVals.TryGetValue(string.Empty, out val);
+      string name = val as string;
+      bool namesMatch = hasName && !string.IsNullOrWhiteSpace(name) && tType.FullName.EndsWith(name, StringComparison.InvariantCultureIgnoreCase);
+      if (!namesMatch)
       {
-        string typename = value as string;
-        if (!string.IsNullOrWhiteSpace(typename) && !typename.EndsWith(tType.Name))
+        if (hasName)
         {
-          Assembly assembly = Assembly.GetAssembly(tType);
-          Type tp = assembly.GetType(typename, false, true);
-          if (tp is null)
-            tp = assembly.GetExportedTypes().FirstOrDefault(t => t.Name.Equals(typename, StringComparison.InvariantCultureIgnoreCase));
-          if (tp != null)
-            tType = tp;
+          tType = TypeResolver.Resolve(name, tType, map, propVals);
+        }
+        else if (tType.IsAbstract || tType.IsInterface)
+        {
+          tType = TypeResolver.Resolve(null, tType, map, propVals);
         }
       }
-
       PropertyInfo[] props = GetSerializedProps(tType);
-      object result = Activator.CreateInstance(tType);
-      
+      object result = Activator.CreateInstance(tType, true);
+
       for (int t = props.Length - 1; t >= 0; t--)
       {
-        object val;
+
         if (propVals.TryGetValue(props[t].Name, out val))
         {
           Type propType = props[t].PropertyType;
@@ -186,7 +220,7 @@ namespace LsMsgPack
             }
             if (typeof(IList).IsAssignableFrom(propType))
             {
-              IList newInstance = (IList)Activator.CreateInstance(propType);
+              IList newInstance = (IList)Activator.CreateInstance(propType, true);
 
               object[] valAsArr = (object[])val;
 
@@ -213,6 +247,11 @@ namespace LsMsgPack
             {
               val = Convert.ChangeType(val, nullableType);
             }
+          }
+          if (propType == typeof(Guid))
+          {
+            props[t].SetValue(result, new Guid((byte[])val), null);
+            continue;
           }
           props[t].SetValue(result, val, null);
         }

@@ -1,4 +1,6 @@
-﻿using System.ComponentModel;
+﻿using LsMsgPackNetStandard;
+using System.Collections.Generic;
+using System.ComponentModel;
 
 namespace LsMsgPack
 {
@@ -10,7 +12,6 @@ namespace LsMsgPack
     internal bool _omitNull = true;
     internal bool _omitDefault = true;
     internal AddTypeNameOption _addTypeName = AddTypeNameOption.Never;
-    internal bool _fullName = true;
 
     /// <summary>
     /// When true (default) will dynamically use the smallest possible datatype that the value fits in. When false, will always use the predefined type of integer.
@@ -75,9 +76,13 @@ namespace LsMsgPack
 
     /// <summary>
     /// Support type-hierarchy's where a property or collection can contain items of a base-type or interface with multiple implementations (eg. a list of IPet where a pet can be a dog, cat or fish etc...)
+    /// <para>Using the full name will allow faster deserialization (less searching through assemblies) but obviously results in a much larger payload.</para>
+    /// <para>Lookup speed my be increased when property types and their value types reside in the same assembly (i.e. when "interface IPet" and "class Dog" are defined in the same project).</para>
+    /// <para>Alternatively or in addition, IMsgPackTypeResolver can be implemented and added by calling MsgPackSerializer.TypeResolvers.Add().</para>
+    /// <para>Defining a property with the type "Object" will probably take significantly longer to deserialize and may pose a false match when FullName is not true.</para>
     /// </summary>
     /// <remarks>
-    /// Only affects writing
+    /// This setting only affects writing, but the effect of it's usage wil mostly be noticed when reading 
     /// </remarks>
     [Category("OOP")]
     [DisplayName("Add type name")]
@@ -88,25 +93,22 @@ namespace LsMsgPack
       get { return _addTypeName; }
       set { _addTypeName = value; }
     }
-
+    
     /// <summary>
-    /// When adding a type name (depending on <see cref="AddTypeName">AddTypeName</see>) this controls weather to use the full name or just the class/struct name.
-    /// <para>Using the full name will allow faster deserialization (less searching through assemblies) but obviously results in a much larger payload.</para>
-    /// <para>Lookup speed my be increased when property types and their value types reside in the same assembly (i.e. when "interface IPet" and "class Dog" are defined in the same project).</para>
-    /// <para>Defining a property with the type "Object" will probably take significantly longer to deserialize and may pose a false match when FullName is not true.</para>
+    /// Custom type resolvers can be added, only needed if using object-models with polymorphic properties (base types or interfaces that have multiple implementations).
+    /// <para>
+    /// There is a <see cref="WildGooseChaseResolver">WildGooseChaseResolver</see> that can be used while developing, but it is not recomended for production!
+    /// <code>
+    /// MsgPackSerializer.TypeResolvers.Add(new WildGooseChaseResolver());
+    /// </code>
+    /// </para>
+    /// <para>
+    /// In order to keep a minimal payload and best performance, implement a custom IMsgPackTypeIdentifier
+    /// </para>
     /// </summary>
-    /// <remarks>
-    /// Only affects writing
-    /// </remarks>
-    [Category("OOP")]
-    [DisplayName("Full Name")]
-    [Description("When adding a type name (depending on AddTypeName) this controls weather to use the full name or just the class/struct name.")]
-    [DefaultValue(true)]
-    public bool FullName
-    {
-      get { return _fullName; }
-      set { _fullName = value; }
-    }
+    public HashSet<IMsgPackTypeResolver> TypeResolvers = new HashSet<IMsgPackTypeResolver>();
+
+    public HashSet<IMsgPackTypeIdentifier> TypeIdentifiers = new HashSet<IMsgPackTypeIdentifier>();
   }
 
   public enum EndianAction
@@ -145,10 +147,34 @@ namespace LsMsgPack
     IfAmbiguious = 1,
 
     /// <summary>
+    /// Only add type name if the property is of a different type than the value it contains, use the full type name (significantly larger payload, only needed if multiple objects with the same name exist in multiple namespaces)
+    /// </summary>
+    [Description("Only add type name if the property is of a different type than the value it contains")]
+    IfAmbiguiousFullName = 2,
+
+    /// <summary>
     /// Always add the correct type name
     /// </summary>
     [Description("Always add the correct type name")]
-    Always = 2
+    Always = 3,
+
+    /// <summary>
+    /// Always add the correct full type name (wasteful but may be useful for debugging or reverse engineering)
+    /// </summary>
+    [Description("Always add the correct full type name (wasteful but may be useful for debugging or reverse engineering)")]
+    AlwaysFullName = 4,
+
+    /// <summary>
+    /// Use a custom ID if the property is of a different type than the value it contains (this requires <see cref="MsgPackSettings.TypeIdentifiers">MsgPackSettings.TypeIdentifiers</see> to be populated!)
+    /// </summary>
+    [Description("Use a custom ID if the property is of a different type than the value it contains")]
+    UseCustomIdWhenAmbiguious,
+
+    /// <summary>
+    /// Always use a custom ID (this requires <see cref="MsgPackSettings.TypeIdentifiers">MsgPackSettings.TypeIdentifiers</see> to be populated!)
+    /// </summary>
+    [Description("Always use a custom ID")]
+    UseCustomIdAlways,
   }
 
 }

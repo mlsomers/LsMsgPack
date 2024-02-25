@@ -176,7 +176,8 @@ namespace LsMsgPack
       if (value is float
         || value is double) return new MpFloat(settings) { Value = value };
       if (value is string) return new MpString(settings) { Value = value };
-      if (value is byte[]) return new MpBin(settings) { Value = value };
+      if (value is byte[] 
+        || value is Guid) return new MpBin(settings) { Value = value };
       if (value is object[]) return new MpArray(settings) { Value = value };
       if (value is DateTime
         || value is DateTimeOffset) return new MpDateTime(settings) { Value = value };

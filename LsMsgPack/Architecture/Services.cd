@@ -13,7 +13,7 @@
       <Compartment Name="Fields" Collapsed="true" />
     </Compartments>
     <TypeIdentifier>
-      <HashCode>UAAAAACAAAAAAIQAAAAAACICAAKAgACAABAAQAEAAFA=</HashCode>
+      <HashCode>UAAAAACAAAAAAAQAAAAAACICAAKAgACAABAAQQEAQFA=</HashCode>
       <FileName>MsgPackSettings.cs</FileName>
     </TypeIdentifier>
   </Class>
@@ -54,16 +54,16 @@
     </TypeIdentifier>
   </Class>
   <Enum Name="LsMsgPack.EndianAction">
-    <Position X="3.5" Y="3.5" Width="2.25" />
+    <Position X="3.5" Y="3.25" Width="2.25" />
     <TypeIdentifier>
       <HashCode>AACAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAEAA=</HashCode>
       <FileName>MsgPackSettings.cs</FileName>
     </TypeIdentifier>
   </Enum>
   <Enum Name="LsMsgPack.AddTypeNameOption">
-    <Position X="3.5" Y="5" Width="2.25" />
+    <Position X="3.5" Y="4.75" Width="2.25" />
     <TypeIdentifier>
-      <HashCode>AAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAkAAAAAAA=</HashCode>
+      <HashCode>AAIAAAAAAAAQAgAAAAEAAAAAAAAAAAAAAAAkAQAAAAA=</HashCode>
       <FileName>MsgPackSettings.cs</FileName>
     </TypeIdentifier>
   </Enum>
