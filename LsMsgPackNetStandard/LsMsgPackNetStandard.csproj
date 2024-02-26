@@ -1,7 +1,18 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
+    <Optimize>True</Optimize>
+    <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugKeepTrack|AnyCPU'">
+    <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
   </PropertyGroup>
 
 </Project>

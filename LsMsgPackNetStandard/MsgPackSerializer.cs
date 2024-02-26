@@ -1,5 +1,4 @@
-﻿using LsMsgPackNetStandard;
-using LsMsgPackNetStandard.Meta;
+﻿using LsMsgPack.Meta;
 using System;
 using System.Collections;
 using System.Collections.Generic;

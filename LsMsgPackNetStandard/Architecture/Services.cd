@@ -1,0 +1,71 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1">
+  <Class Name="LsMsgPack.MsgPackSerializer">
+    <Position X="0.5" Y="0.5" Width="2.5" />
+    <TypeIdentifier>
+      <HashCode>AAACAAAAAEAAAAAAAAAAAAAAACBAEAEAAAAAAAAAAAA=</HashCode>
+      <FileName>MsgPackSerializer.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="LsMsgPack.MsgPackSettings">
+    <Position X="3.5" Y="0.5" Width="2.25" />
+    <Compartments>
+      <Compartment Name="Fields" Collapsed="true" />
+    </Compartments>
+    <TypeIdentifier>
+      <HashCode>UAAAAACAAAAAAAQAAAAAACICAAKAgACAABAAQQEAQFA=</HashCode>
+      <FileName>MsgPackSettings.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="LsMsgPack.MsgPackMeta" Collapsed="true">
+    <Position X="0.5" Y="4.25" Width="2.5" />
+    <TypeIdentifier>
+      <HashCode>AABAAAAAACAAAAAQABAEggEAAgAAAAAAAQEAAFIAAAQ=</HashCode>
+      <FileName>Meta\MsgPackMeta.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="LsMsgPack.MsgPackTypeConverter" Collapsed="true">
+    <Position X="0.5" Y="3.25" Width="2.5" />
+    <TypeIdentifier>
+      <HashCode>AAIAiAAAAAABAAEAAAgIAAAAAAAAACAAAAIAAAAAAAE=</HashCode>
+      <FileName>Meta\MsgPackTypeConverter.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="LsMsgPack.MsgPackValidation">
+    <Position X="6.25" Y="0.5" Width="2.25" />
+    <Compartments>
+      <Compartment Name="Nested Types" Collapsed="false" />
+    </Compartments>
+    <NestedTypes>
+      <Enum Name="LsMsgPack.MsgPackValidation.ValidationSeverity">
+        <TypeIdentifier>
+          <NewMemberFileName>Meta\MsgPackValidation.cs</NewMemberFileName>
+        </TypeIdentifier>
+      </Enum>
+      <Class Name="LsMsgPack.MsgPackValidation.ValidationItem">
+        <TypeIdentifier>
+          <NewMemberFileName>Meta\MsgPackValidation.cs</NewMemberFileName>
+        </TypeIdentifier>
+      </Class>
+    </NestedTypes>
+    <TypeIdentifier>
+      <HashCode>AAAAgAAIAAAAAAgAAAAAAQAAAAAAAAAAQAAAAAAAAAA=</HashCode>
+      <FileName>Meta\MsgPackValidation.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Enum Name="LsMsgPack.EndianAction">
+    <Position X="3.5" Y="3.25" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>AACAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAEAA=</HashCode>
+      <FileName>MsgPackSettings.cs</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Enum Name="LsMsgPack.AddTypeNameOption">
+    <Position X="3.5" Y="4.75" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>AAIAAAAAAAAQAgAAAAEAAAAAAAAAAAAAAAAkAQAAAAA=</HashCode>
+      <FileName>MsgPackSettings.cs</FileName>
+    </TypeIdentifier>
+  </Enum>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>

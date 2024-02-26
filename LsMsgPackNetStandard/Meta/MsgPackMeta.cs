@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace LsMsgPack {
@@ -7,6 +8,10 @@ namespace LsMsgPack {
     public static readonly PackDef[] AllPacks;
     public static readonly Dictionary<MsgPackTypeId, PackDef> FromTypeId;
     public static readonly Dictionary<string, PackDef> FromName;
+
+#if KEEPTRACK
+    private static readonly HashSet<byte> ValidPackageStartBytes;
+#endif
 
     public class PackDef {
       public PackDef(MsgPackTypeId typeId, string officialName, string description) {
@@ -148,7 +153,23 @@ namespace LsMsgPack {
         MapTypeFamily,
         ExtTypeFamily
       };
+
+#if KEEPTRACK
+      ValidPackageStartBytes = new HashSet<byte>(Enum.GetValues(typeof(MsgPackTypeId)).Cast<byte>());
+      ValidPackageStartBytes.Remove((byte)MsgPackTypeId.NeverUsed);
+#endif
     }
+
+#if KEEPTRACK
+    public static bool IsValidPackageStartByte(byte b) {
+      if(ValidPackageStartBytes.Contains(b)) return true;
+      if((b & 0xE0) == 0xE0 || ((b & 0x80) == 0)) return true; // int
+      else if((b & 0xA0) == 0xA0) return true; // string
+      else if((b & 0x90) == 0x90) return true; // array
+      else if((b & 0x80) == 0x80) return true; // map
+      return false;
+    }
+#endif
 
     public static bool AreInSameFamily(MsgPackTypeId a, MsgPackTypeId b, bool NullIsEqual = true) {
       if(a == b) return true;

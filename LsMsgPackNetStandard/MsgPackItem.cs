@@ -4,10 +4,16 @@ using System.Xml.Serialization;
 using System.IO;
 using System.Collections;
 using System.Linq;
+#if KEEPTRACK
+using System.ComponentModel;
+#endif
 
 namespace LsMsgPack
 {
   [Serializable]
+#if KEEPTRACK
+  [DefaultProperty("Value")]
+#endif
   public abstract class MsgPackItem
   {
 
@@ -15,23 +21,81 @@ namespace LsMsgPack
     public MsgPackItem(MsgPackSettings settings)
     {
       _settings = settings;
+#if KEEPTRACK
+      _isBestGuess = _settings.FileContainsErrors;
+#endif
     }
 
+#if KEEPTRACK
+    protected long storedOffset;
+    protected long storedLength;
+#endif
     protected MsgPackSettings _settings;
 
     [XmlIgnore]
+#if KEEPTRACK
+    [Category("Control")]
+    [DisplayName("Settings")]
+    [Description("Settings belonging to this instance.")]
+    [Browsable(false)]
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+#endif
     public MsgPackSettings Settings { get { return _settings; } }
+
+#if KEEPTRACK
+    private bool _isBestGuess = false;
+    [XmlAttribute("Unreliable")]
+    [DefaultValue(false)]
+    [Category("MetaData")]
+    [DisplayName("Is best guess")]
+    [Description("If this is True, then a breaking error has preceded this item and the rest of the file may or may not be read correctly. Such items are not suitable for production use but may aid in debugging situations.")]
+    public bool IsBestGuess
+    {
+      get { return _isBestGuess; }
+    }
+
+    [XmlIgnore]
+    [Category("MetaData")]
+    [DisplayName("Offset")]
+    [Description("The number of bytes (0 bsaed) from the start of the file to the first byte of this node (is determined while reading).")]
+    public long StoredOffset
+    {
+      get { return storedOffset; }
+    }
+
+    [XmlIgnore]
+    [Category("MetaData")]
+    [DisplayName("Length")]
+    [Description("The number of bytes that this package occupied (is set determined reading).")]
+    public long StoredLength
+    {
+      get { return storedLength; }
+    }
+#endif
 
     /// <summary>
     /// The type of information held in this structure.
     /// </summary>
     [XmlAttribute("TypeId", DataType = "byte")]
+#if KEEPTRACK
+    [Category("MetaData")]
+    [DisplayName("Type")]
+    [Description("The type of information held in this structure.")]
+    [TypeConverter(typeof(MsgPackTypeConverter))]
+    [ReadOnly(true)]
+    [Browsable(true)]
+#endif
     public abstract MsgPackTypeId TypeId { get; }
 
     /// <summary>
     /// The actual piece of information held by this container.
     /// </summary>
     [XmlElement]
+#if KEEPTRACK
+    [Category("Data")]
+    [DisplayName("Data")]
+    [Description("The actual piece of information held by this container.")]
+#endif
     public abstract object Value { get; set; }
 
     public abstract byte[] ToBytes();
@@ -39,6 +103,10 @@ namespace LsMsgPack
     public abstract MsgPackItem Read(MsgPackTypeId typeId, Stream data);
 
     [XmlIgnore]
+#if KEEPTRACK
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    [Browsable(false)]
+#endif
     public object Tag { get; set; }
 
     public static bool SwapEndianChoice(MsgPackSettings settings, int length)
@@ -176,7 +244,7 @@ namespace LsMsgPack
       if (value is float
         || value is double) return new MpFloat(settings) { Value = value };
       if (value is string) return new MpString(settings) { Value = value };
-      if (value is byte[] 
+      if (value is byte[]
         || value is Guid) return new MpBin(settings) { Value = value };
       if (value is object[]) return new MpArray(settings) { Value = value };
       if (value is DateTime
@@ -232,6 +300,43 @@ namespace LsMsgPack
       return false;
     }
 
+#if KEEPTRACK
+    public static MsgPackItem Unpack(byte[] data, bool dynamicallyCompact = true, bool preservePackages = false, bool continueProcessingOnBreakingError = false)
+    {
+      using (MemoryStream ms = new MemoryStream(data))
+      {
+        return Unpack(ms, dynamicallyCompact, preservePackages, continueProcessingOnBreakingError);
+      }
+    }
+
+    public static MsgPackItem Unpack(Stream stream, bool dynamicallyCompact = true, bool preservePackages = false, bool continueProcessingOnBreakingError = false)
+    {
+      return Unpack(stream, new MsgPackSettings()
+      {
+        DynamicallyCompact = dynamicallyCompact,
+        PreservePackages = preservePackages,
+        ContinueProcessingOnBreakingError = continueProcessingOnBreakingError
+      });
+    }
+
+    public static MpRoot UnpackMultiple(byte[] data, bool dynamicallyCompact = true, bool preservePackages = false, bool continueProcessingOnBreakingError = false)
+    {
+      using (MemoryStream ms = new MemoryStream(data))
+      {
+        return UnpackMultiple(ms, dynamicallyCompact, preservePackages, continueProcessingOnBreakingError);
+      }
+    }
+
+    public static MpRoot UnpackMultiple(Stream stream, bool dynamicallyCompact = true, bool preservePackages = false, bool continueProcessingOnBreakingError = false)
+    {
+      return UnpackMultiple(stream, new MsgPackSettings()
+      {
+        DynamicallyCompact = dynamicallyCompact,
+        PreservePackages = preservePackages,
+        ContinueProcessingOnBreakingError = continueProcessingOnBreakingError
+      });
+    }
+#else
     public static MsgPackItem Unpack(byte[] data, bool dynamicallyCompact = true)
     {
       using (MemoryStream ms = new MemoryStream(data))
@@ -263,6 +368,7 @@ namespace LsMsgPack
         DynamicallyCompact = dynamicallyCompact
       });
     }
+#endif
 
     public static MpRoot UnpackMultiple(byte[] data, MsgPackSettings settings)
     {
@@ -274,22 +380,54 @@ namespace LsMsgPack
 
     public static MpRoot UnpackMultiple(Stream stream, MsgPackSettings settings)
     {
+#if KEEPTRACK
+      MpRoot items = new MpRoot(settings) { storedOffset = stream.Position };
+#else
       MpRoot items = new MpRoot(settings);
+#endif
       long len = stream.Length - 1;
       long lastpos = stream.Position;
       while (stream.Position < len)
       {
+#if KEEPTRACK
+        try
+        {
           items.Add(Unpack(stream, settings));
           lastpos = stream.Position;
+        }
+        catch (Exception ex)
+        {
+          items.Add(new MpError(settings, ex, "Offset after parsing error is ", stream.Position) { storedOffset = lastpos, storedLength = stream.Position - lastpos });
+          if (settings.ContinueProcessingOnBreakingError)
+          {
+            if (lastpos == stream.Position && stream.Position < len)
+              FindNextValidTypeId(stream);
+          }
+          else
+          {
+            break;
+          }
+        }
+#else
+        items.Add(Unpack(stream, settings));
+        lastpos = stream.Position;
+#endif
       }
 
+#if KEEPTRACK
+      items.storedLength = stream.Position - items.storedOffset;
+#endif
       return items;
     }
 
     public static MsgPackItem Unpack(Stream stream, MsgPackSettings settings)
     {
       int typeByte = stream.ReadByte();
+#if KEEPTRACK
+      if (typeByte < 0) return new MpError(settings, stream.Position, MsgPackTypeId.NeverUsed, "Unexpected end of data.");
+#else
       if (typeByte < 0) throw new MsgPackException("Unexpected end of data.", stream.Position, MsgPackTypeId.NeverUsed);
+#endif
       MsgPackItem item = null;
       try
       {
@@ -335,7 +473,15 @@ namespace LsMsgPack
           case MsgPackTypeId.NeverUsed:
             {
               long pos = stream.Position - 1;
+#if KEEPTRACK
+              if (settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
+              return new MpError(settings, pos, MsgPackTypeId.NeverUsed, "The specification specifically states that the value 0xC1 should never be used.")
+              {
+                storedLength = (stream.Position - pos)
+              };
+#else
               throw new MsgPackException("The specification specifically states that the value 0xC1 should never be used.", pos, MsgPackTypeId.NeverUsed);
+#endif
             }
         }
 
@@ -349,21 +495,68 @@ namespace LsMsgPack
 
         if (!ReferenceEquals(item, null))
         {
+#if KEEPTRACK
+          item.storedOffset = stream.Position - 1;
+#endif
           item._settings = settings; // maybe redundent, but want to be sure
           MsgPackItem ret = item.Read(type, stream);
+#if KEEPTRACK
+          item.storedLength = stream.Position - item.storedOffset;
+          if (!ReferenceEquals(item, ret)) ret.storedLength = item.storedLength;
+#endif
           return ret;
         }
         else
-        {          
+        {
+#if KEEPTRACK
+          long pos = stream.Position - 1;
+          if (settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
+          return new MpError(settings, pos, type, "The type identifier with value 0x", BitConverter.ToString(new byte[] { (byte)type }),
+            " is either new or invalid. It is not (yet) implemented in this version of LsMsgPack.")
+          {
+            storedLength = (stream.Position - pos)
+          };
+#else
           throw new MsgPackException(string.Concat("The type identifier with value 0x", BitConverter.ToString(new byte[] { (byte)type }),
             " is either new or invalid. It is not (yet) implemented in this version of LsMsgPack."), stream.Position - 1, type);
+#endif
         }
       }
       catch (Exception ex)
       {
-        throw new MsgPackException("Error while reading data.", ex, stream.Position-1, (MsgPackTypeId)typeByte);
+#if KEEPTRACK
+        long pos = stream.Position - 1;
+        if (settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
+        return new MpError(settings, new MsgPackException("Error while reading data.", ex, stream.Position, (MsgPackTypeId)typeByte))
+        {
+          storedOffset = pos,
+          storedLength = (stream.Position - pos),
+          PartialItem = item
+        };
+#else
+        throw new MsgPackException("Error while reading data.", ex, stream.Position - 1, (MsgPackTypeId)typeByte);
+#endif
       }
     }
+
+#if KEEPTRACK
+
+    /// <summary>
+    /// Is called after a breaking error occurred and the setting ContinueProcessingOnBreakingError is true (in order to find the beginning of the next item).
+    /// </summary>
+    protected static bool FindNextValidTypeId(Stream stream)
+    {
+      long lastPos = stream.Position;
+      int typeByte = stream.ReadByte();
+
+      while (typeByte >= 0 && !MsgPackMeta.IsValidPackageStartByte((byte)typeByte)) typeByte = stream.ReadByte();
+
+      bool result = (typeByte >= 0);
+      if (result) stream.Seek(stream.Position - 1, SeekOrigin.Begin);
+      return result;
+    }
+
+#endif
 
     public virtual T GetTypedValue<T>()
     {

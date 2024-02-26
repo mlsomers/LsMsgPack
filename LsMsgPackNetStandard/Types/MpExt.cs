@@ -1,7 +1,10 @@
 ﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+#if KEEPTRACK
 using System.Xml.Serialization;
+using System.ComponentModel;
+#endif
 
 namespace LsMsgPack {
   public class MpExt: MsgPackVarLen {
@@ -38,7 +41,13 @@ namespace LsMsgPack {
     ///<summary>
     /// The type Extension type assigned to this container
     /// </summary>
+#if KEEPTRACK
     [XmlAttribute("TypeSpecifier", DataType = "byte")]
+    [Category("Data")]
+    [DisplayName("Type")]
+    [Description("The type Extension type assigned to this container")]
+    [ReadOnly(true)]
+#endif
     public sbyte TypeSpecifier {
       get { return typeSpecifier; }
       set { typeSpecifier = value; }
@@ -109,6 +118,10 @@ namespace LsMsgPack {
     }
 
     protected void CopyBaseDataFrom(MpExt generic) {
+#if KEEPTRACK
+      storedOffset = generic.storedOffset;
+      storedLength = generic.storedLength;
+#endif
       _settings = generic._settings;
       typeId = generic.typeId;
       typeSpecifier = generic.typeSpecifier;

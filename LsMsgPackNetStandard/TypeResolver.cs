@@ -1,11 +1,10 @@
-﻿using LsMsgPack;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Reflection;
 
-namespace LsMsgPackNetStandard
+namespace LsMsgPack
 {
   /// <summary>
   /// Implement this class to resolve the type when having duplicate class names without using the fullName or when using ID's for each type in order to keep the payload smaller
@@ -196,6 +195,17 @@ namespace LsMsgPackNetStandard
         }
       }
       return null;
+    }
+  }
+
+  public static class MissigMethods
+  {
+    public static bool TryAdd<Ta, Tb>(this Dictionary<Ta, Tb> dict, Ta key, Tb val)
+    {
+      if (dict.ContainsKey(key))
+        return false;
+      dict.Add(key, val);
+      return true;
     }
   }
 

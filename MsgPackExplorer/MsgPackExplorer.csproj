@@ -9,9 +9,10 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>MsgPackExplorer</RootNamespace>
     <AssemblyName>MsgPackExplorer</AssemblyName>
-    <TargetFrameworkVersion>v4.5.2</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -34,6 +35,26 @@
   </PropertyGroup>
   <PropertyGroup>
     <ApplicationIcon>Explore.ico</ApplicationIcon>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'DebugKeepTrack|AnyCPU'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\DebugKeepTrack\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DebugType>full</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <LangVersion>7.3</LangVersion>
+    <ErrorReport>prompt</ErrorReport>
+    <Prefer32Bit>true</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'ReleaseKeepTrack|AnyCPU'">
+    <OutputPath>bin\ReleaseKeepTrack\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <LangVersion>7.3</LangVersion>
+    <ErrorReport>prompt</ErrorReport>
+    <Prefer32Bit>true</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
@@ -108,12 +129,6 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj">
-      <Project>{9ed6f698-8de5-4e50-beac-1fce03062756}</Project>
-      <Name>LsMsgPack</Name>
-    </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
     <Content Include="Explore.ico" />
     <None Include="Resources\Clipboard.png" />
     <None Include="Resources\Explore.png" />
@@ -125,6 +140,12 @@
     <None Include="Resources\Help.png" />
     <None Include="Resources\Info.png" />
     <None Include="Resources\Open.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPackNetStandard.csproj">
+      <Project>{1d06fe9f-830f-4ee2-bd10-0b12522e1dfc}</Project>
+      <Name>LsMsgPackNetStandard</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

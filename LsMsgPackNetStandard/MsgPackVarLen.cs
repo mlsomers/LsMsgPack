@@ -2,6 +2,9 @@
 using System.Globalization;
 using System.IO;
 using System.Xml.Serialization;
+#if KEEPTRACK
+using System.ComponentModel;
+#endif
 
 namespace LsMsgPack {
   [Serializable]
@@ -13,6 +16,11 @@ namespace LsMsgPack {
     protected abstract MsgPackTypeId GetTypeId(long len);
 
     [XmlIgnore]
+#if KEEPTRACK
+    [Category("MetaData")]
+    [DisplayName("Count")]
+    [Description("The number of items in this collection.")]
+#endif
     /// <summary>
     /// The number of items in this collection.
     /// </summary>

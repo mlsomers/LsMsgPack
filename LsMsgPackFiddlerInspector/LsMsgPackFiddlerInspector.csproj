@@ -9,7 +9,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>LsMsgPackFiddlerInspector</RootNamespace>
     <AssemblyName>LsMsgPackFiddlerInspector</AssemblyName>
-    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile />
   </PropertyGroup>
@@ -29,6 +29,24 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'DebugKeepTrack|AnyCPU'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\DebugKeepTrack\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DebugType>full</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <LangVersion>7.3</LangVersion>
+    <ErrorReport>prompt</ErrorReport>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'ReleaseKeepTrack|AnyCPU'">
+    <OutputPath>bin\ReleaseKeepTrack\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <LangVersion>7.3</LangVersion>
+    <ErrorReport>prompt</ErrorReport>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Fiddler">
@@ -66,9 +84,9 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj">
-      <Project>{9ed6f698-8de5-4e50-beac-1fce03062756}</Project>
-      <Name>LsMsgPack</Name>
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPackNetStandard.csproj">
+      <Project>{1d06fe9f-830f-4ee2-bd10-0b12522e1dfc}</Project>
+      <Name>LsMsgPackNetStandard</Name>
     </ProjectReference>
     <ProjectReference Include="..\MsgPackExplorer\MsgPackExplorer.csproj">
       <Project>{a43ed63b-ca9c-4fdf-b02b-8e7f958903a2}</Project>

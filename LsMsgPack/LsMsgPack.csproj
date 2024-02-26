@@ -30,6 +30,24 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'DebugKeepTrack|AnyCPU'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\DebugKeepTrack\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <DebugType>full</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <LangVersion>7.3</LangVersion>
+    <ErrorReport>prompt</ErrorReport>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'ReleaseKeepTrack|AnyCPU'">
+    <OutputPath>bin\ReleaseKeepTrack\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <LangVersion>7.3</LangVersion>
+    <ErrorReport>prompt</ErrorReport>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -43,14 +61,14 @@
     <Compile Include="..\CommonAssemblyInfo.cs">
       <Link>Properties\CommonAssemblyInfo.cs</Link>
     </Compile>
+    <Compile Include="Meta\MsgPackException.cs" />
+    <Compile Include="Meta\MsgPackMeta.cs" />
     <Compile Include="Meta\MsgPackTypedItem.cs" />
     <Compile Include="Meta\MsgPackValidation.cs" />
     <Compile Include="MsgPackSettings.cs" />
     <Compile Include="TypeResolver.cs" />
     <Compile Include="Types\MpDateTime.cs" />
     <Compile Include="Types\MpError.cs" />
-    <Compile Include="Meta\MsgPackException.cs" />
-    <Compile Include="Meta\MsgPackMeta.cs" />
     <Compile Include="Meta\MsgPackTypeConverter.cs" />
     <Compile Include="Types\MpExt.cs" />
     <Compile Include="MsgPackSerializer.cs" />

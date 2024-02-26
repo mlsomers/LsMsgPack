@@ -2,6 +2,10 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+#if KEEPTRACK
+using System.ComponentModel;
+using System.Xml.Serialization;
+#endif
 
 namespace LsMsgPack
 {
@@ -23,6 +27,9 @@ namespace LsMsgPack
     }
 
     KeyValuePair<object, object>[] value = new KeyValuePair<object, object>[0];
+#if KEEPTRACK
+    private KeyValuePair<MsgPackItem, MsgPackItem>[] packedItems = new KeyValuePair<MsgPackItem, MsgPackItem>[0];
+#endif
 
     public override int Count
     {
@@ -83,6 +90,25 @@ namespace LsMsgPack
       return base.GetTypedValue<T>();
     }
 
+#if KEEPTRACK
+    /// <summary>
+    /// Preserved containers after reading the data (contains offset metadata for debugging).
+    /// Depends on MsgPackVarLen.PreservePackages.
+    /// </summary>
+    [XmlIgnore]
+    [Category("Data")]
+    [DisplayName("Preserved Data")]
+    [Description("Preserved containers after reading the data (contains offset metadata for debugging).\r\nDepends on MsgPackVarLen.PreservePackages.")]
+    [Browsable(false)]
+    public KeyValuePair<MsgPackItem, MsgPackItem>[] PackedValues
+    {
+      get
+      {
+        return packedItems;
+      }
+    }
+#endif
+
     public override byte[] ToBytes()
     {
       List<byte> bytes = new List<byte>();// cannot estimate this one
@@ -118,12 +144,50 @@ namespace LsMsgPack
 
       value = new KeyValuePair<object, object>[len];
 
+#if KEEPTRACK
+      packedItems = new KeyValuePair<MsgPackItem, MsgPackItem>[len];
+      bool errorOccurred = false;
+#endif
       for (int t = 0; t < len; t++)
       {
         MsgPackItem key = MsgPackItem.Unpack(data, _settings);
+#if KEEPTRACK
+        MsgPackItem val;
+        if (key is MpError)
+        {
+          if (_settings.ContinueProcessingOnBreakingError)
+          {
+            _settings.FileContainsErrors = true;
+            errorOccurred = true;
+            if (data.Position >= data.Length) val = new MpNull(_settings);
+            else val = MsgPackItem.Unpack(data, _settings);
+          }
+          else val = new MpNull(_settings);
+        }
+        else val = MsgPackItem.Unpack(data, _settings);
+        if (_settings._preservePackages) packedItems[t] = new KeyValuePair<MsgPackItem, MsgPackItem>(key, val);
+#else
         MsgPackItem val = MsgPackItem.Unpack(data, _settings);
+#endif 
+
         value[t] = new KeyValuePair<object, object>(key.Value, val.Value);
+
+#if KEEPTRACK
+        if (!_settings.ContinueProcessingOnBreakingError && (key is MpError || val is MpError))
+        {
+          return new MpError(_settings, this);
+        }
+        if (val is MpError)
+        {
+          _settings.FileContainsErrors = true;
+          errorOccurred = true;
+          if (data.Position >= data.Length) return new MpError(_settings, this);
+        }
       }
+      if (errorOccurred) return new MpError(_settings, this);
+#else
+      }
+#endif
 
       return this;
     }

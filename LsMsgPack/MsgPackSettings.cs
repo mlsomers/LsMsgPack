@@ -12,7 +12,6 @@ namespace LsMsgPack
     internal bool _omitNull = true;
     internal bool _omitDefault = true;
     internal AddTypeNameOption _addTypeName = AddTypeNameOption.Never;
-    internal bool _fullName = true;
 
     /// <summary>
     /// When true (default) will dynamically use the smallest possible datatype that the value fits in. When false, will always use the predefined type of integer.

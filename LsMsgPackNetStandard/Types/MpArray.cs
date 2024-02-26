@@ -1,6 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+#if KEEPTRACK
+using System.ComponentModel;
+using System.Xml.Serialization;
+#endif
 
 namespace LsMsgPack
 {
@@ -12,6 +16,10 @@ namespace LsMsgPack
     public MpArray(MsgPackSettings settings) : base(settings) { }
 
     private object[] value = new object[0];
+
+#if KEEPTRACK
+    private MsgPackItem[] packedItems = new MsgPackItem[0];
+#endif
 
     public override MsgPackTypeId TypeId
     {
@@ -38,6 +46,24 @@ namespace LsMsgPack
       get { return value; }
       set { this.value = ReferenceEquals(value, null) ? new object[0] : (object[])value; }
     }
+
+#if KEEPTRACK
+    /// <summary>
+    /// Preserved containers after reading the data (contains offset metadata for debugging).
+    /// Depends on MsgPackVarLen.PreservePackages.
+    /// </summary>
+    [XmlIgnore]
+    [Category("Data")]
+    [DisplayName("Data")]
+    [Description("Preserved containers after reading the data (contains offset metadata for debugging).\r\nDepends on MsgPackVarLen.PreservePackages.")]
+    public MsgPackItem[] PackedValues
+    {
+      get
+      {
+        return packedItems;
+      }
+    }
+#endif
 
     public override byte[] ToBytes()
     {
@@ -71,12 +97,31 @@ namespace LsMsgPack
       }
 
       value = new object[len];
+#if KEEPTRACK
+      packedItems = new MsgPackItem[len];
+      bool errorOccurred = false; // keep a local copy in order not to wrap all items after an error in error nodes (just the one the error occurred in, and all parents)
+#endif
       for (int t = 0; t < len; t++)
       {
         MsgPackItem item = Unpack(data, _settings);
         value[t] = item.Value;
+#if KEEPTRACK
+        if (_settings._preservePackages) packedItems[t] = item;
+        if (item is MpError)
+        {
+          if (_settings.ContinueProcessingOnBreakingError)
+          {
+            _settings.FileContainsErrors = true;
+            errorOccurred = true;
+            if (data.Position >= data.Length) return new MpError(_settings, this);
+          }
+          else return new MpError(_settings, this);
+        }
       }
-
+      if (errorOccurred) return new MpError(_settings, this);
+#else
+      }
+#endif
       return this;
     }
 

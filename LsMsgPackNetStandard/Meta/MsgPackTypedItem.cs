@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace LsMsgPackNetStandard.Meta
+namespace LsMsgPack.Meta
 {
   internal struct MsgPackTypedItem
   {
