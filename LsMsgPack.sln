@@ -7,16 +7,18 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MsgPackExplorer", "MsgPackE
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPackFiddlerInspector", "LsMsgPackFiddlerInspector\LsMsgPackFiddlerInspector.csproj", "{3F6BFA77-8748-415C-833B-CA0DA84B6CA9}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Light Version", "Light Version", "{9EA1AACE-8E22-45B0-9F36-E3B05280279A}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "MsgPackLib", "MsgPackLib", "{9EA1AACE-8E22-45B0-9F36-E3B05280279A}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "CommonSource", "CommonSource", "{53B6BACB-9307-4B86-917B-FEF706D8C6C9}"
 	ProjectSection(SolutionItems) = preProject
 		CommonAssemblyInfo.cs = CommonAssemblyInfo.cs
 	EndProjectSection
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LsMsgPackNetStandard", "LsMsgPackNetStandard\LsMsgPackNetStandard.csproj", "{1D06FE9F-830F-4EE2-BD10-0B12522E1DFC}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LsMsgPack", "LsMsgPackNetStandard\LsMsgPack.csproj", "{1D06FE9F-830F-4EE2-BD10-0B12522E1DFC}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LsMsgPackNetStandardUnitTests", "LsMsgPackNetStandardUnitTests\LsMsgPackNetStandardUnitTests.csproj", "{666FAF0C-09CE-421F-977C-B989D0D2ED03}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LsMsgPackUnitTests", "LsMsgPackNetStandardUnitTests\LsMsgPackUnitTests.csproj", "{666FAF0C-09CE-421F-977C-B989D0D2ED03}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "WinformsDebugger", "WinformsDebugger", "{D6E2537A-D3DA-40D3-B7CB-905541CD8E60}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -59,6 +61,8 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{A43ED63B-CA9C-4FDF-B02B-8E7F958903A2} = {D6E2537A-D3DA-40D3-B7CB-905541CD8E60}
+		{3F6BFA77-8748-415C-833B-CA0DA84B6CA9} = {D6E2537A-D3DA-40D3-B7CB-905541CD8E60}
 		{1D06FE9F-830F-4EE2-BD10-0B12522E1DFC} = {9EA1AACE-8E22-45B0-9F36-E3B05280279A}
 		{666FAF0C-09CE-421F-977C-B989D0D2ED03} = {9EA1AACE-8E22-45B0-9F36-E3B05280279A}
 	EndGlobalSection

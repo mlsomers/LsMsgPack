@@ -4,7 +4,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 
-namespace LsMsgPackNetStandardUnitTests
+namespace LsMsgPackUnitTests
 {
   public interface iPet
   {
@@ -50,20 +50,20 @@ namespace LsMsgPackNetStandardUnitTests
     [DataRow(AddTypeNameOption.IfAmbiguious, true, false, 170)]
     [DataRow(AddTypeNameOption.IfAmbiguious, true, true, 170)]
 
-    [DataRow(AddTypeNameOption.IfAmbiguiousFullName, false, false, 265)]
-    [DataRow(AddTypeNameOption.IfAmbiguiousFullName, false, true, 232)]
-    [DataRow(AddTypeNameOption.IfAmbiguiousFullName, true, false, 232)]
-    [DataRow(AddTypeNameOption.IfAmbiguiousFullName, true, true, 232)]
+    [DataRow(AddTypeNameOption.IfAmbiguiousFullName, false, false, 241)]
+    [DataRow(AddTypeNameOption.IfAmbiguiousFullName, false, true, 208)]
+    [DataRow(AddTypeNameOption.IfAmbiguiousFullName, true, false, 208)]
+    [DataRow(AddTypeNameOption.IfAmbiguiousFullName, true, true, 208)]
 
     [DataRow(AddTypeNameOption.Always, false, false, 208)]
     [DataRow(AddTypeNameOption.Always, false, true, 175)]
     [DataRow(AddTypeNameOption.Always, true, false, 175)]
     [DataRow(AddTypeNameOption.Always, true, true, 175)]
 
-    [DataRow(AddTypeNameOption.AlwaysFullName, false, false, 301)]
-    [DataRow(AddTypeNameOption.AlwaysFullName, false, true, 268)]
-    [DataRow(AddTypeNameOption.AlwaysFullName, true, false, 268)]
-    [DataRow(AddTypeNameOption.AlwaysFullName, true, true, 268)]
+    [DataRow(AddTypeNameOption.AlwaysFullName, false, false, 265)]
+    [DataRow(AddTypeNameOption.AlwaysFullName, false, true, 232)]
+    [DataRow(AddTypeNameOption.AlwaysFullName, true, false, 232)]
+    [DataRow(AddTypeNameOption.AlwaysFullName, true, true, 232)]
     public void Hirarchical_Inheritance(AddTypeNameOption addTypeName, bool omitDefault, bool omitNull, int expectedLength)
     {
       HierarchyContainer container = new HierarchyContainer()
@@ -83,7 +83,7 @@ namespace LsMsgPackNetStandardUnitTests
       byte[] buffer = MsgPackSerializer.Serialize(container, settings);
       Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
       HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer);
-      
+
       string returned = JsonConvert.SerializeObject(ret);
       string org = JsonConvert.SerializeObject(container);
 

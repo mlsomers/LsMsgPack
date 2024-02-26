@@ -142,9 +142,9 @@
     <None Include="Resources\Open.png" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPackNetStandard.csproj">
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj">
       <Project>{1d06fe9f-830f-4ee2-bd10-0b12522e1dfc}</Project>
-      <Name>LsMsgPackNetStandard</Name>
+      <Name>LsMsgPack</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
