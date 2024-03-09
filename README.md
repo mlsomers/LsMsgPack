@@ -4,6 +4,8 @@ MsgPack debugging and validation tool also usable as Fiddler plugin
 More info about this application (and screenshots) can be found at:
 http://www.infotopie.nl/open-source/msgpack-explorer
 
+[![.NET](https://github.com/mlsomers/LsMsgPack/actions/workflows/dotnet.yml/badge.svg)](https://github.com/mlsomers/LsMsgPack/actions/workflows/dotnet.yml)
+
 Library Usage Example
 ---------------------
 Although the original was optimised for debugging and analysing, a lightweight version of the lib is included which does not keep track of all offsets and other overhead needed for debugging. It can be used in your code.
