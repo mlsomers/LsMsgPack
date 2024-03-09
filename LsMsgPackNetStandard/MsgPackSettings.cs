@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using LsMsgPack.TypeResolving;
+using LsMsgPack.TypeResolving.Interfaces;
+using System.Collections.Generic;
 using System.ComponentModel;
 
 namespace LsMsgPack
@@ -8,8 +10,6 @@ namespace LsMsgPack
     internal bool FileContainsErrors = false;
     internal bool _dynamicallyCompact = true;
     internal EndianAction _endianAction = EndianAction.SwapIfCurrentSystemIsLittleEndian;
-    internal bool _omitNull = true;
-    internal bool _omitDefault = true;
     internal AddTypeNameOption _addTypeName = AddTypeNameOption.Never;
 #if KEEPTRACK
     internal bool _preservePackages = false;
@@ -70,38 +70,6 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// When a property has a null value, omit the whole property from the dictionary.
-    /// </summary>
-    /// <remarks>
-    /// Only affects writing
-    /// </remarks>
-    [Category("Control")]
-    [DisplayName("Omit Null")]
-    [Description("When a property has a null value, omit the whole property from the dictionary.")]
-    [DefaultValue(true)]
-    public bool OmitNull
-    {
-      get { return _omitNull; }
-      set { _omitNull = value; }
-    }
-
-    /// <summary>
-    /// When a property has a default value (for example an integer value of 0), omit the whole property from the dictionary.
-    /// </summary>
-    /// <remarks>
-    /// Only affects writing
-    /// </remarks>
-    [Category("Control")]
-    [DisplayName("Omit Default")]
-    [Description("When a property has a default value (for example an integer value of 0), omit the whole property from the dictionary.")]
-    [DefaultValue(true)]
-    public bool OmitDefault
-    {
-      get { return _omitDefault; }
-      set { _omitDefault = value; }
-    }
-
-    /// <summary>
     /// Support type-hierarchy's where a property or collection can contain items of a base-type or interface with multiple implementations (eg. a list of IPet where a pet can be a dog, cat or fish etc...)
     /// <para>Using the full name will allow faster deserialization (less searching through assemblies) but obviously results in a much larger payload.</para>
     /// <para>Lookup speed my be increased when property types and their value types reside in the same assembly (i.e. when "interface IPet" and "class Dog" are defined in the same project).</para>
@@ -120,22 +88,50 @@ namespace LsMsgPack
       get { return _addTypeName; }
       set { _addTypeName = value; }
     }
-    
+
     /// <summary>
     /// Custom type resolvers can be added, only needed if using object-models with polymorphic properties (base types or interfaces that have multiple implementations).
     /// <para>
-    /// There is a <see cref="WildGooseChaseResolver">WildGooseChaseResolver</see> that can be used while developing, but it is not recomended for production!
+    /// There is a <see cref="TypeResolving.WildGooseChaseResolver">WildGooseChaseResolver</see> that can be used while developing, but it is not recomended for production!
     /// <code>
-    /// MsgPackSerializer.TypeResolvers.Add(new WildGooseChaseResolver());
+    /// MsgPackSerializer.TypeResolvers.Add(new TypeResolving.WildGooseChaseResolver());
     /// </code>
     /// </para>
     /// <para>
     /// In order to keep a minimal payload and best performance, implement a custom IMsgPackTypeIdentifier
     /// </para>
     /// </summary>
-    public HashSet<IMsgPackTypeResolver> TypeResolvers = new HashSet<IMsgPackTypeResolver>();
+    public List<IMsgPackTypeResolver> TypeResolvers = new List<IMsgPackTypeResolver>();
 
-    public HashSet<IMsgPackTypeIdentifier> TypeIdentifiers = new HashSet<IMsgPackTypeIdentifier>();
+    public List<IMsgPackTypeIdentifier> TypeIdentifiers = new List<IMsgPackTypeIdentifier>();
+
+    /// <summary>
+    /// Included:
+    /// <list type="bullet">
+    /// <item>FilterIgnoredAttribute</item>
+    /// </list>
+    /// </summary>
+    public List<IMsgPackPropertyIncludeStatically> StaticFilters = new List<IMsgPackPropertyIncludeStatically>(new IMsgPackPropertyIncludeStatically[] {
+      new FilterNonSettable(), 
+      new FilterIgnoredAttribute()
+    });
+
+    /// <summary>
+    /// Included:
+    /// <list type="bullet">
+    /// <item>FilterDefaultValues</item>
+    /// <item>FilterNullValues</item>
+    /// </list>
+    /// </summary>
+    public List<IMsgPackPropertyIncludeDynamically> DynamicFilters = new List<IMsgPackPropertyIncludeDynamically>(new[] { new FilterDefaultValues() });
+
+    /// <summary>
+    /// Included:
+    /// <list type="bullet">
+    /// <item>AttributePropertyNameResolver</item>
+    /// </list>
+    /// </summary>
+    public List<IMsgPackPropertyIdResolver> PropertyNameResolvers = new List<IMsgPackPropertyIdResolver>();
   }
 
   public enum EndianAction

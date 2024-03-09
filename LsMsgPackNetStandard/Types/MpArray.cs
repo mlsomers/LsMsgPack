@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+
 #if KEEPTRACK
 using System.ComponentModel;
 using System.Xml.Serialization;
@@ -44,7 +45,17 @@ namespace LsMsgPack
     public override object Value
     {
       get { return value; }
-      set { this.value = ReferenceEquals(value, null) ? new object[0] : (object[])value; }
+      set
+      {
+        if (ReferenceEquals(value, null))
+        {
+          this.value = (new object[0]);
+        }
+        else
+        {
+          this.value = (object[])value;
+        }
+      }
     }
 
 #if KEEPTRACK
