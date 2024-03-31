@@ -1,4 +1,6 @@
-﻿namespace LsMsgPack.TypeResolving.Interfaces
+﻿using LsMsgPack.Meta;
+
+namespace LsMsgPack.TypeResolving.Interfaces
 {
   /// <summary>
   /// Implement to filter properties (include or exclude them) based on the value of the property
@@ -6,7 +8,6 @@
   /// </summary>
   public interface IMsgPackPropertyIncludeDynamically
   {
-
     bool IncludeProperty(FullPropertyInfo propertyInfo, object value);
   }
 }

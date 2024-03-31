@@ -1,16 +1,17 @@
-﻿using LsMsgPack.TypeResolving;
+﻿using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 
 namespace LsMsgPack
 {
-  public class MsgPackSettings
+    public class MsgPackSettings
   {
     internal bool FileContainsErrors = false;
     internal bool _dynamicallyCompact = true;
     internal EndianAction _endianAction = EndianAction.SwapIfCurrentSystemIsLittleEndian;
-    internal AddTypeNameOption _addTypeName = AddTypeNameOption.Never;
+    internal AddTypeIdOption _addTypeName = AddTypeIdOption.Never;
 #if KEEPTRACK
     internal bool _preservePackages = false;
 #endif
@@ -73,17 +74,14 @@ namespace LsMsgPack
     /// Support type-hierarchy's where a property or collection can contain items of a base-type or interface with multiple implementations (eg. a list of IPet where a pet can be a dog, cat or fish etc...)
     /// <para>Using the full name will allow faster deserialization (less searching through assemblies) but obviously results in a much larger payload.</para>
     /// <para>Lookup speed my be increased when property types and their value types reside in the same assembly (i.e. when "interface IPet" and "class Dog" are defined in the same project).</para>
-    /// <para>Alternatively or in addition, IMsgPackTypeResolver can be implemented and added by calling MsgPackSerializer.TypeResolvers.Add().</para>
+    /// <para>Alternatively or in addition, IMsgPackTypeResolver can be implemented.</para>
     /// <para>Defining a property with the type "Object" will probably take significantly longer to deserialize and may pose a false match when FullName is not true.</para>
     /// </summary>
-    /// <remarks>
-    /// This setting only affects writing, but the effect of it's usage wil mostly be noticed when reading 
-    /// </remarks>
     [Category("OOP")]
     [DisplayName("Add type name")]
     [Description("Support type-hierarchy's where a property or collection can contain items of a base-type or interface with multiple implementations (eg. a list of IPet where a pet can be a dog, cat or fish etc...)")]
     [DefaultValue(true)]
-    public AddTypeNameOption AddTypeName
+    public AddTypeIdOption AddTypeIdOptions
     {
       get { return _addTypeName; }
       set { _addTypeName = value; }
@@ -92,7 +90,7 @@ namespace LsMsgPack
     /// <summary>
     /// Custom type resolvers can be added, only needed if using object-models with polymorphic properties (base types or interfaces that have multiple implementations).
     /// <para>
-    /// There is a <see cref="TypeResolving.WildGooseChaseResolver">WildGooseChaseResolver</see> that can be used while developing, but it is not recomended for production!
+    /// There is a <see cref="TypeResolving.Types.WildGooseChaseResolver">WildGooseChaseResolver</see> that can be used while developing, but it is not recomended for production!
     /// <code>
     /// MsgPackSerializer.TypeResolvers.Add(new TypeResolving.WildGooseChaseResolver());
     /// </code>
@@ -101,9 +99,7 @@ namespace LsMsgPack
     /// In order to keep a minimal payload and best performance, implement a custom IMsgPackTypeIdentifier
     /// </para>
     /// </summary>
-    public List<IMsgPackTypeResolver> TypeResolvers = new List<IMsgPackTypeResolver>();
-
-    public List<IMsgPackTypeIdentifier> TypeIdentifiers = new List<IMsgPackTypeIdentifier>();
+    public IMsgPackTypeResolver[] TypeResolvers = new IMsgPackTypeResolver[0];
 
     /// <summary>
     /// Included:
@@ -111,10 +107,10 @@ namespace LsMsgPack
     /// <item>FilterIgnoredAttribute</item>
     /// </list>
     /// </summary>
-    public List<IMsgPackPropertyIncludeStatically> StaticFilters = new List<IMsgPackPropertyIncludeStatically>(new IMsgPackPropertyIncludeStatically[] {
+    public IMsgPackPropertyIncludeStatically[] StaticFilters = new IMsgPackPropertyIncludeStatically[]{
       new FilterNonSettable(), 
       new FilterIgnoredAttribute()
-    });
+    };
 
     /// <summary>
     /// Included:
@@ -123,7 +119,7 @@ namespace LsMsgPack
     /// <item>FilterNullValues</item>
     /// </list>
     /// </summary>
-    public List<IMsgPackPropertyIncludeDynamically> DynamicFilters = new List<IMsgPackPropertyIncludeDynamically>(new[] { new FilterDefaultValues() });
+    public IMsgPackPropertyIncludeDynamically[] DynamicFilters = new[] { new FilterDefaultValues() };
 
     /// <summary>
     /// Included:
@@ -131,7 +127,7 @@ namespace LsMsgPack
     /// <item>AttributePropertyNameResolver</item>
     /// </list>
     /// </summary>
-    public List<IMsgPackPropertyIdResolver> PropertyNameResolvers = new List<IMsgPackPropertyIdResolver>();
+    public IMsgPackPropertyIdResolver[] PropertyNameResolvers = new IMsgPackPropertyIdResolver[0];
   }
 
   public enum EndianAction
@@ -155,49 +151,38 @@ namespace LsMsgPack
     NeverSwap = 2
   }
 
-  public enum AddTypeNameOption
+  [Flags]
+  public enum AddTypeIdOption
   {
     /// <summary>
-    /// Never add the Type name to the dictionary (no Interface or Base-classes (abstract or not) hierarchy in your code-base)
+    /// Never add the Type name to the dictionary (no Interface or Base-classes hierarchy in your code-base)
     /// </summary>
-    [Description("Never add the Type name to the dictionary (no Interface or Base-classes (abstract or not) hierarchy in your code-base)")]
+    [Description("Never add the Type name to the dictionary (no Interface or Base-classes hierarchy in your code-base)")]
     Never = 0,
 
     /// <summary>
-    /// Only add type name if the property is of a different type than the value it contains
+    /// Only add type name if the property is of a different type than the value it contains (interfaces or base types)
     /// </summary>
-    [Description("Only add type name if the property is of a different type than the value it contains")]
+    [Description("Only add type name if the property is of a different type than the value it contains (interfaces or base types)")]
     IfAmbiguious = 1,
 
     /// <summary>
-    /// Only add type name if the property is of a different type than the value it contains, use the full type name (significantly larger payload, only needed if multiple objects with the same name exist in multiple namespaces)
+    /// Always add the type id
     /// </summary>
-    [Description("Only add type name if the property is of a different type than the value it contains")]
-    IfAmbiguiousFullName = 2,
+    [Description("Always add the type id")]
+    Always = 2,
 
     /// <summary>
-    /// Always add the correct type name
+    /// Use the full type name (significantly larger payload, only needed if multiple objects with the same name exist in multiple namespaces)
     /// </summary>
-    [Description("Always add the correct type name")]
-    Always = 3,
+    [Description("Use the full type name (significantly larger payload, only needed if multiple objects with the same name exist in multiple namespaces)")]
+    FullName = 16,
 
     /// <summary>
-    /// Always add the correct full type name (wasteful but may be useful for debugging or reverse engineering)
+    /// By default the custom <see cref="IMsgPackTypeResolver">type resolvers</see> will be tried and if they all retuen null the built-in name/fullname resolver will be used. Setting this flag will prevent the default implementation to bloat the output (and the resolver should be able to handle null as input).
     /// </summary>
-    [Description("Always add the correct full type name (wasteful but may be useful for debugging or reverse engineering)")]
-    AlwaysFullName = 4,
-
-    /// <summary>
-    /// Use a custom ID if the property is of a different type than the value it contains (this requires <see cref="MsgPackSettings.TypeIdentifiers">MsgPackSettings.TypeIdentifiers</see> to be populated!)
-    /// </summary>
-    [Description("Use a custom ID if the property is of a different type than the value it contains")]
-    UseCustomIdWhenAmbiguious,
-
-    /// <summary>
-    /// Always use a custom ID (this requires <see cref="MsgPackSettings.TypeIdentifiers">MsgPackSettings.TypeIdentifiers</see> to be populated!)
-    /// </summary>
-    [Description("Always use a custom ID")]
-    UseCustomIdAlways,
+    [Description("By default the custom type resolvers will be tried and if they all retuen null the built-in name/fullname resolver will be used. Setting this flag will prevent the default implementation to bloat the output (and the resolver should be able to handle null as input).")]
+    NoDefaultFallBack = 64
   }
 
 }

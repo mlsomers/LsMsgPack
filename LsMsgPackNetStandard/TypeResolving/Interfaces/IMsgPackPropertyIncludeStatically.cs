@@ -1,4 +1,6 @@
-﻿namespace LsMsgPack.TypeResolving.Interfaces
+﻿using LsMsgPack.Meta;
+
+namespace LsMsgPack.TypeResolving.Interfaces
 {
   /// <summary>
   /// Implement to filter properties (include or exclude them) based on static (hardcoded) property information (such as attributes)

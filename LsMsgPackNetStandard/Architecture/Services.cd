@@ -3,7 +3,7 @@
   <Class Name="LsMsgPack.MsgPackSerializer">
     <Position X="0.5" Y="0.5" Width="2.5" />
     <TypeIdentifier>
-      <HashCode>AAACAAAAAEAAAAAAAAAAAAAAACBAEAEAAAAAAAAAAAA=</HashCode>
+      <HashCode>AAACAAAAAEAAAAAAAAAAAAAAACBEEAEAAAAAAAAAAAI=</HashCode>
       <FileName>MsgPackSerializer.cs</FileName>
     </TypeIdentifier>
   </Class>
@@ -13,19 +13,37 @@
       <Compartment Name="Fields" Collapsed="true" />
     </Compartments>
     <TypeIdentifier>
-      <HashCode>UAAAAACAAAAAAAQAAAAAACICAAKAgACAABAAQQEAQFA=</HashCode>
+      <HashCode>UAAAAAAAAACAAAQAAAAAAiAACACAgACAQBAAQAAAQEA=</HashCode>
       <FileName>MsgPackSettings.cs</FileName>
     </TypeIdentifier>
   </Class>
   <Class Name="LsMsgPack.MsgPackMeta" Collapsed="true">
-    <Position X="0.5" Y="4.25" Width="2.5" />
+    <Position X="0.5" Y="4.5" Width="2.5" />
+    <Compartments>
+      <Compartment Name="Fields" Collapsed="true" />
+      <Compartment Name="Methods" Collapsed="true" />
+    </Compartments>
+    <NestedTypes>
+      <Class Name="LsMsgPack.MsgPackMeta.PackDef" Collapsed="true">
+        <TypeIdentifier>
+          <NewMemberFileName>Meta\MsgPackMeta.cs</NewMemberFileName>
+        </TypeIdentifier>
+      </Class>
+    </NestedTypes>
     <TypeIdentifier>
       <HashCode>AABAAAAAACAAAAAQABAEggEAAgAAAAAAAQEAAFIAAAQ=</HashCode>
       <FileName>Meta\MsgPackMeta.cs</FileName>
     </TypeIdentifier>
   </Class>
   <Class Name="LsMsgPack.MsgPackTypeConverter" Collapsed="true">
-    <Position X="0.5" Y="3.25" Width="2.5" />
+    <Position X="0.5" Y="3.5" Width="2.5" />
+    <NestedTypes>
+      <Class Name="LsMsgPack.MsgPackTypeConverter.MsgPackTypeDescriptor" Collapsed="true">
+        <TypeIdentifier>
+          <NewMemberFileName>Meta\MsgPackTypeConverter.cs</NewMemberFileName>
+        </TypeIdentifier>
+      </Class>
+    </NestedTypes>
     <TypeIdentifier>
       <HashCode>AAIAiAAAAAABAAEAAAgIAAAAAAAAACAAAAIAAAAAAAE=</HashCode>
       <FileName>Meta\MsgPackTypeConverter.cs</FileName>
@@ -53,6 +71,34 @@
       <FileName>Meta\MsgPackValidation.cs</FileName>
     </TypeIdentifier>
   </Class>
+  <Interface Name="LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIdResolver">
+    <Position X="9" Y="4.5" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAA=</HashCode>
+      <FileName>TypeResolving\Interfaces\IMsgPackPropertyIdResolver.cs</FileName>
+    </TypeIdentifier>
+  </Interface>
+  <Interface Name="LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeDynamically">
+    <Position X="9" Y="3.25" Width="2.75" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA=</HashCode>
+      <FileName>TypeResolving\Interfaces\IMsgPackPropertyIncludeDynamically.cs</FileName>
+    </TypeIdentifier>
+  </Interface>
+  <Interface Name="LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeStatically">
+    <Position X="9" Y="2" Width="2.75" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA=</HashCode>
+      <FileName>TypeResolving\Interfaces\IMsgPackPropertyIncludeStatically.cs</FileName>
+    </TypeIdentifier>
+  </Interface>
+  <Interface Name="LsMsgPack.TypeResolving.Interfaces.IMsgPackTypeResolver">
+    <Position X="9" Y="0.5" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAA=</HashCode>
+      <FileName>TypeResolving\Interfaces\IMsgPackTypeResolver.cs</FileName>
+    </TypeIdentifier>
+  </Interface>
   <Enum Name="LsMsgPack.EndianAction">
     <Position X="3.5" Y="3.25" Width="2.25" />
     <TypeIdentifier>
@@ -60,10 +106,10 @@
       <FileName>MsgPackSettings.cs</FileName>
     </TypeIdentifier>
   </Enum>
-  <Enum Name="LsMsgPack.AddTypeNameOption">
+  <Enum Name="LsMsgPack.AddTypeIdOption">
     <Position X="3.5" Y="4.75" Width="2.25" />
     <TypeIdentifier>
-      <HashCode>AAIAAAAAAAAQAgAAAAEAAAAAAAAAAAAAAAAkAQAAAAA=</HashCode>
+      <HashCode>AAAAAAAAAAAAAIAAAAEAAAAAAAAAAAAAAAAkAEAAAAA=</HashCode>
       <FileName>MsgPackSettings.cs</FileName>
     </TypeIdentifier>
   </Enum>

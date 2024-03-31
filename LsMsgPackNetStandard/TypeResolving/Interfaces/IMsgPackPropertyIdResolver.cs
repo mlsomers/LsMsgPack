@@ -1,4 +1,6 @@
-﻿namespace LsMsgPack.TypeResolving.Interfaces
+﻿using LsMsgPack.Meta;
+
+namespace LsMsgPack.TypeResolving.Interfaces
 {
   public interface IMsgPackPropertyIdResolver
   {

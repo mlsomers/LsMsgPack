@@ -1,8 +1,8 @@
-﻿using LsMsgPack.Meta;
+﻿using LsMsgPack.TypeResolving.Interfaces;
 using System.Collections.Generic;
 using System.Reflection;
 
-namespace LsMsgPack.TypeResolving
+namespace LsMsgPack.Meta
 {
   public class FullPropertyInfo
   {
@@ -16,9 +16,9 @@ namespace LsMsgPack.TypeResolving
 
       full = new FullPropertyInfo(propertyInfo);
 
-      foreach (Interfaces.IMsgPackPropertyIdResolver resolver in settings.PropertyNameResolvers)
+      for (int t = settings.PropertyNameResolvers.Length - 1; t >= 0; t--)
       {
-        full.PropertyId = resolver.GetId(full);
+        full.PropertyId = settings.PropertyNameResolvers[t].GetId(full);
         if (full.PropertyId != null)
           break;
       }
@@ -26,7 +26,7 @@ namespace LsMsgPack.TypeResolving
       if (full.PropertyId == null)
         full.PropertyId = full.PropertyInfo.Name;
 
-        Cache.Add(propertyInfo, full);
+      Cache.Add(propertyInfo, full);
       return full;
     }
 
