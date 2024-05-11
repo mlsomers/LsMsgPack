@@ -64,6 +64,7 @@ namespace LsMsgPack
         if (IsSubclassOfRawGeneric(typeof(Dictionary<,>), value.GetType()))
         {
           IDictionary dict = (IDictionary)value;
+
           this.value = new KeyValuePair<object, object>[dict.Count];
           int t = 0;
           foreach (object key in dict.Keys)
@@ -121,6 +122,7 @@ namespace LsMsgPack
       }
       for (int t = 0; t < value.Length; t++)
       {
+        // TODO: call MsgPackSerializer.GetTypedOrUntyped for keys as well as values
         MsgPackItem key = MsgPackItem.Pack(value[t].Key, _settings);
         MsgPackItem val = MsgPackItem.Pack(value[t].Value, _settings);
         bytes.AddRange(key.ToBytes());

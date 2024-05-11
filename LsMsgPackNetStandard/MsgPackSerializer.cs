@@ -1,11 +1,11 @@
 ﻿using LsMsgPack.Meta;
-using LsMsgPack.TypeResolving.Interfaces;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Xml.Linq;
 
 namespace LsMsgPack
 {
@@ -29,11 +29,19 @@ namespace LsMsgPack
       typeof(double),
       typeof(string),
       typeof(byte[]),
-      typeof(List<>),
       typeof(object[]),
-      typeof(Dictionary<,>),
       typeof(Guid)
     };
+
+    public static readonly Type[] NativelySupportedGenericTypes = new Type[]{
+      typeof(List<>),
+      typeof(Dictionary<,>),
+    };
+
+    public static bool IsNativelySupported(Type type)
+    {
+      return NativelySupportedTypes.Contains(type);
+    }
 
     public static void CacheAssemblyTypes(Assembly assembly)
     {
@@ -52,7 +60,7 @@ namespace LsMsgPack
 
     public static byte[] Serialize<T>(T item, MsgPackSettings settings)
     {
-      if (NativelySupportedTypes.Contains(typeof(T))) return MsgPackItem.Pack(item, settings).ToBytes();
+      if (IsNativelySupported(typeof(T))) return MsgPackItem.Pack(item, settings).ToBytes();
       MemoryStream ms = new MemoryStream();
       Serialize(item, ms, settings);
       return ms.ToArray();
@@ -83,21 +91,23 @@ namespace LsMsgPack
       if (tType.IsArray)
         tType = tType.GetElementType();
 
-      if (NativelySupportedTypes.Contains(tType))
+      if (IsNativelySupported(tType))
         return MsgPackItem.Pack(item, settings);
 
       FullPropertyInfo[] props;
       Dictionary<object, object> propVals;
       if (tType == typeof(MsgPackTypedItem)) // Add Type name as first entry with empty key
       {
+        // TODO: Untangle type and nested (Array, Ienumerable, and IDictionary) types
+
         MsgPackTypedItem typedItem = (MsgPackTypedItem)item;
         if (typedItem.AssignmentType.IsArray)
         {
           Type arrType = typedItem.AssignmentType.GetElementType();
-          object[] orgObjects = (object[])typedItem.Instance;
+          Array orgObjects = (Array)typedItem.Instance;
           object[] objects = new object[orgObjects.Length];
           for (int t = objects.Length - 1; t >= 0; t--)
-            objects[t] = GetTypedOrUntyped(settings, arrType, orgObjects[t], typedItem.PropertyInfo);
+            objects[t] = GetTypedOrUntyped(settings, arrType, orgObjects.GetValue(t), typedItem.PropertyInfo);
           return new MpArray(settings) { Value = objects };
         }
 
@@ -108,7 +118,31 @@ namespace LsMsgPack
         propVals.Add(string.Empty, typeId);
         item = typedItem.Instance;
 
-        if (typedItem.Instance is IEnumerable)
+        if (typedItem.Instance is IDictionary)
+        {
+          Type[] types = typedItem.Type.GenericTypeArguments;
+          Type arrType = typeof(KeyValuePair<,>).MakeGenericType(types);
+          List<KeyValuePair<object, object>> objects = new List<KeyValuePair<object, object>>();
+          foreach (DictionaryEntry o in (IDictionary)typedItem.Instance)
+          {
+            KeyValuePair<object, object> kv = new KeyValuePair<object, object>(
+              GetTypedOrUntyped(settings, types[0], o.Key, typedItem.PropertyInfo),
+              GetTypedOrUntyped(settings, types[1], o.Value, typedItem.PropertyInfo)
+              );
+            objects.Add(kv);
+          }
+
+          if (arrType != typedItem.AssignmentType)
+            return
+              new MpMap(new[]
+              {
+              new KeyValuePair<object,object>(string.Empty, typeId),
+              new KeyValuePair<object,object>("@", new MpMap(objects.ToArray(), settings)),
+              }, settings);
+          else
+            return new MpMap(objects.ToArray(), settings);
+        }
+        else if (typedItem.Instance is IEnumerable)
         {
           Type arrType = typeof(object);
           Type[] types = typedItem.AssignmentType.GenericTypeArguments;
@@ -142,7 +176,7 @@ namespace LsMsgPack
 
         if (value is null)
         {
-          propVals.Add(prop.PropertyId, value); // TODO: prop name instead... Add IMsgPackPropertyIdResolver stuff to FullPropertyInfo....
+          propVals.Add(prop.PropertyId, value);
           continue;
         }
         propVals.Add(prop.PropertyId, GetTypedOrUntyped(settings, prp.PropertyType, value, prop));
@@ -153,16 +187,33 @@ namespace LsMsgPack
 
     private static object GetTypedOrUntyped(MsgPackSettings settings, Type assignementType, object value, FullPropertyInfo prp)
     {
+      if (value is null)
+        return null;
       Type valType = value.GetType();
-      if (settings._addTypeName == AddTypeIdOption.Never || NativelySupportedTypes.Contains(valType))
+
+      if (IsNativelySupported(valType))
         return value;
+
+      if (settings._addTypeName == AddTypeIdOption.Never)
+        return value;
+
       else if ((settings._addTypeName & AddTypeIdOption.Always) > 0)
         return new MsgPackTypedItem(value, valType, assignementType, prp);
       else // If Ambiguious
       {
         Type prpType;
-        if (assignementType.IsArray)
+        if (assignementType.IsArray) // TODO: Untangle type and nested (Array, Ienumerable, and IDictionary) types
           prpType = assignementType.GetElementType();
+        else if (assignementType is IDictionary && assignementType.IsGenericType)
+          prpType = typeof(KeyValuePair<,>).MakeGenericType(assignementType.GenericTypeArguments);
+        else if (assignementType is IEnumerable && assignementType.IsGenericType)
+        {
+          Type[] types = assignementType.GenericTypeArguments;
+          if (types.Length == 1)
+            prpType = types[0];
+          else
+            prpType = assignementType;
+        }
         else
           prpType = assignementType;
 
@@ -194,7 +245,7 @@ namespace LsMsgPack
     public static T Deserialize<T>(Stream stream, MsgPackSettings settings)
     {
       Type tType = typeof(T);
-      if (NativelySupportedTypes.Contains(tType))
+      if (IsNativelySupported(tType))
       {
         return MsgPackItem.Unpack(stream).GetTypedValue<T>();
       }
@@ -225,15 +276,46 @@ namespace LsMsgPack
       FullPropertyInfo[] props = GetSerializedProps(tType, map.Settings);
 
       object result;
-      if (typeof(IEnumerable).IsAssignableFrom(tType) && propVals.TryGetValue("@", out object items) && tType.GenericTypeArguments.Length == 1)
+      if (typeof(IEnumerable).IsAssignableFrom(tType) && propVals.TryGetValue("@", out object items)) // IEnumerable and IDictionary types
       {
-        object[] itemArr= (object[])items;
-        Array typedArr = Array.CreateInstance(tType.GenericTypeArguments[0], itemArr.Length);
-        KeyValuePair<object, object>[][] kvs = itemArr.Cast<KeyValuePair<object, object>[]>().ToArray();
-        for (int t = kvs.Length - 1; t >= 0; t--)
-          typedArr.SetValue(Materialize(tType.GenericTypeArguments[0], new MpMap(kvs[t], map.Settings), null), t);
+        if (tType.GenericTypeArguments.Length == 1) // IEnumerable
+        {
+          object[] itemArr = (object[])items;
+          Array typedArr = Array.CreateInstance(tType.GenericTypeArguments[0], itemArr.Length);
+          KeyValuePair<object, object>[][] kvs = itemArr.Cast<KeyValuePair<object, object>[]>().ToArray();
+          for (int t = kvs.Length - 1; t >= 0; t--)
+            typedArr.SetValue(Materialize(tType.GenericTypeArguments[0], new MpMap(kvs[t], map.Settings), null), t);
 
-        result = Activator.CreateInstance(tType, typedArr);
+          result = Activator.CreateInstance(tType, typedArr);
+        }
+        else if (tType.GenericTypeArguments.Length == 2) // IDictionary
+        {
+          KeyValuePair<object, object>[] itemArr = (KeyValuePair<object, object>[])items;
+          Type itemType = typeof(KeyValuePair<,>).MakeGenericType(tType.GenericTypeArguments[0], tType.GenericTypeArguments[1]);
+          Array typedArr = Array.CreateInstance(itemType, itemArr.Length);
+          for (int t = itemArr.Length - 1; t >= 0; t--)
+          {
+            object key;
+            if (itemArr[t].Key is KeyValuePair<object, object>[])
+              key = Materialize(tType.GenericTypeArguments[0], new MpMap((KeyValuePair<object, object>[])itemArr[t].Key, map.Settings), null);
+            else
+              key = itemArr[t].Key;
+
+            object value;
+            if (itemArr[t].Value is KeyValuePair<object, object>[])
+              value = Materialize(tType.GenericTypeArguments[1], new MpMap((KeyValuePair<object, object>[])itemArr[t].Value, map.Settings), null);
+            else
+              value = itemArr[t].Key;
+
+            object entry = Activator.CreateInstance(itemType, key, value);
+            typedArr.SetValue(entry, t);
+          }
+          result = Activator.CreateInstance(tType, typedArr);
+        }
+        else
+        {
+          result = Activator.CreateInstance(tType, true);
+        }
       }
       else
       {
@@ -249,7 +331,7 @@ namespace LsMsgPack
           Type propType = prp.PropertyType;
           if (!ReferenceEquals(val, null))
           {
-            if (!NativelySupportedTypes.Contains(propType)
+            if (!IsNativelySupported(propType)
               && val is KeyValuePair<object, object>[])
             {
               val = Materialize(propType, new MpMap((KeyValuePair<object, object>[])val, map.Settings), prop);
@@ -262,7 +344,7 @@ namespace LsMsgPack
               Array newInstance = Array.CreateInstance(propType, valAsArr.Length);
 
               // Part of the check for complex types can be done outside the loop
-              bool complexTypes = !NativelySupportedTypes.Contains(propType);
+              bool complexTypes = !IsNativelySupported(propType);
               for (int i = valAsArr.Length - 1; i >= 0; i--)
               {
                 if (complexTypes && !ReferenceEquals(valAsArr[i], null)
@@ -282,7 +364,7 @@ namespace LsMsgPack
               object[] valAsArr = (object[])val;
 
               // Part of the check for complex types can be done outside the loop
-              bool complexTypes = !NativelySupportedTypes.Contains(propType);
+              bool complexTypes = !IsNativelySupported(propType);
               for (int i = 0; i < valAsArr.Length; i++)
               {
                 if (complexTypes && !ReferenceEquals(valAsArr[i], null)

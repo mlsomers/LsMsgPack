@@ -150,11 +150,11 @@ namespace LsMsgPack.Meta
       }
 
       result = ResolveName(typeName, null);
-      if(result is null)
-        throw new Exception(string.Concat("Unable to resolve the type \"", typeName, 
-          "\".\r\nEither create a resolver by implementing and using IMsgPackTypeResolver or pre-cache your type like this:\r\n  MsgPackSerializer.CacheAssemblyTypes(typeof(", 
+      if (result is null)
+        throw new Exception(string.Concat("Unable to resolve the type \"", typeName,
+          "\".\r\nEither create a resolver by implementing and using IMsgPackTypeResolver or pre-cache your type like this:\r\n  MsgPackSerializer.CacheAssemblyTypes(typeof(",
           typeName, "));"));
-      
+
       return result;
     }
 
@@ -199,6 +199,10 @@ namespace LsMsgPack.Meta
         //if (assembly != null) // Also cache null for a specific assign-to type so this block can be skipped for the next item
         AssemblyCache.Add(assignedTo, assembly);
       }
+
+      Type[] argTypes = assignedTo?.GenericTypeArguments;
+      for (int t = (argTypes?.Length ?? 0) - 1; t >= 0; t--)
+        CacheAssembly(argTypes[t].Assembly, argTypes[t].Name);
 
       HashSet<Type> choices;
       if (assembly != null)

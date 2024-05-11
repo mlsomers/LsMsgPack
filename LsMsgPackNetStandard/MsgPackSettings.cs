@@ -11,7 +11,7 @@ namespace LsMsgPack
     internal bool FileContainsErrors = false;
     internal bool _dynamicallyCompact = true;
     internal EndianAction _endianAction = EndianAction.SwapIfCurrentSystemIsLittleEndian;
-    internal AddTypeIdOption _addTypeName = AddTypeIdOption.Never;
+    internal AddTypeIdOption _addTypeName = AddTypeIdOption.IfAmbiguious;
 #if KEEPTRACK
     internal bool _preservePackages = false;
 #endif
@@ -152,6 +152,7 @@ namespace LsMsgPack
   }
 
   [Flags]
+  [DefaultValue(AddTypeIdOption.IfAmbiguious)]
   public enum AddTypeIdOption
   {
     /// <summary>
