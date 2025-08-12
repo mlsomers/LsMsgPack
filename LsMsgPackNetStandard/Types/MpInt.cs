@@ -161,9 +161,11 @@ namespace LsMsgPack
           typeId = MsgPackTypeId.MpULong;
           svalue = 0;
           uvalue = Convert.ToUInt64(value);
-        }
-        else if (value.GetType().IsEnum)
-        {
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
+        } else if(value.GetType().IsEnum) {
+#else
+        } else if (value.GetType().IsEnum()) {
+#endif
           SetEnumVal(value);
         }
         else throw new MsgPackException(string.Concat("Unable to convert \"", value, "\" to an integer type"));
@@ -178,8 +180,11 @@ namespace LsMsgPack
     public override T GetTypedValue<T>()
     {
       Type targetType = typeof(T);
-      if (targetType.IsEnum)
-      {
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
+      if(targetType.IsEnum) {
+#else
+      if (targetType.IsEnum()) {
+#endif
         return (T)Enum.ToObject(targetType, Value);
       }
       if (targetType == typeof(sbyte)

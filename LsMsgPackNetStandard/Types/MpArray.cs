@@ -23,11 +23,13 @@ namespace LsMsgPack
     private MsgPackItem[] packedItems = new MsgPackItem[0];
 #endif
 
-    public override MsgPackTypeId TypeId
-    {
-      get
-      {
+    public override MsgPackTypeId TypeId {
+      get {
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
         return GetTypeId(value.LongLength);
+#else
+        return GetTypeId(value.Length);
+#endif
       }
     }
 
@@ -80,12 +82,19 @@ namespace LsMsgPack
     public override byte[] ToBytes()
     {
       List<byte> bytes = new List<byte>();// cannot estimate this one
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       MsgPackTypeId typeId = GetTypeId(value.LongLength);
+#else
+      MsgPackTypeId typeId = GetTypeId(value.Length);
+#endif
       if (typeId == MsgPackTypeId.MpArray4) bytes.Add(GetLengthBytes(typeId, value.Length));
-      else
-      {
+      else {
         bytes.Add((byte)typeId);
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
         bytes.AddRange(GetLengthBytes(value.LongLength, SupportedLengths.FromShortUpward));
+#else
+        bytes.AddRange(GetLengthBytes(value.Length, SupportedLengths.FromShortUpward));
+#endif
       }
       Type elementType=value.GetType().GetElementType();
       FullPropertyInfo asgnType=new FullPropertyInfo(elementType);

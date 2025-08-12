@@ -36,11 +36,13 @@ namespace LsMsgPack
       get { return value.Length; }
     }
 
-    public override MsgPackTypeId TypeId
-    {
-      get
-      {
+    public override MsgPackTypeId TypeId {
+      get {
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
         return GetTypeId(value.LongLength);
+#else
+        return GetTypeId(value.Length);
+#endif
       }
     }
 
@@ -113,12 +115,20 @@ namespace LsMsgPack
     public override byte[] ToBytes()
     {
       List<byte> bytes = new List<byte>();// cannot estimate this one
+
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       MsgPackTypeId typeId = GetTypeId(value.LongLength);
-      if (typeId == MsgPackTypeId.MpMap4) bytes.Add(GetLengthBytes(typeId, value.Length));
-      else
-      {
+#else
+      MsgPackTypeId typeId = GetTypeId(value.Length);
+#endif
+      if(typeId == MsgPackTypeId.MpMap4) bytes.Add(GetLengthBytes(typeId, value.Length));
+      else {
         bytes.Add((byte)typeId);
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
         bytes.AddRange(GetLengthBytes(value.LongLength, SupportedLengths.FromShortUpward));
+#else
+        bytes.AddRange(GetLengthBytes(value.Length, SupportedLengths.FromShortUpward));
+#endif
       }
       for (int t = 0; t < value.Length; t++)
       {
@@ -194,9 +204,12 @@ namespace LsMsgPack
       return this;
     }
 
-    public override string ToString()
-    {
+    public override string ToString() {
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       return string.Concat("Map (", GetOfficialTypeName(TypeId), ") of ", value.LongLength.ToString(), " key-value pairs.");
+#else
+      return string.Concat("Map (", GetOfficialTypeName(TypeId), ") of ", value.Length.ToString(), " key-value pairs.");
+#endif
     }
 
   }

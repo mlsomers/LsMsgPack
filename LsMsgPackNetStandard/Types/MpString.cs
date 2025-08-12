@@ -15,11 +15,13 @@ namespace LsMsgPack
 
     private string value = string.Empty;
 
-    public override MsgPackTypeId TypeId
-    {
-      get
-      {
+    public override MsgPackTypeId TypeId {
+      get {
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
         return GetTypeId(StrAsBytes.LongLength);
+#else
+        return GetTypeId(StrAsBytes.Length);
+#endif
       }
     }
 
@@ -83,12 +85,22 @@ namespace LsMsgPack
     {
       byte[] strBytes = StrAsBytes;
       List<byte> bytes = new List<byte>(strBytes.Length + 5); // current max length limit is 4 bytes + string identifier
+
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       MsgPackTypeId typeId = GetTypeId(strBytes.LongLength);
+#else
+      MsgPackTypeId typeId = GetTypeId(strBytes.Length);
+#endif
+
+
       if (typeId == MsgPackTypeId.MpStr5) bytes.Add(GetLengthBytes(typeId, strBytes.Length));
-      else
-      {
+      else {
         bytes.Add((byte)typeId);
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
         bytes.AddRange(GetLengthBytes(strBytes.LongLength, SupportedLengths.All));
+#else
+        bytes.AddRange(GetLengthBytes(strBytes.Length, SupportedLengths.All));
+#endif
       }
       bytes.AddRange(strBytes);
       return bytes.ToArray();

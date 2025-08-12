@@ -79,10 +79,20 @@ namespace LsMsgPack {
 
     public override byte[] ToBytes() {
       List<byte> bytes = new List<byte>(value.Length + 6); // current max length limit is 4 bytes + specifier + identifier
-      if(typeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(value.LongLength);
+
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
+      if (typeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(value.LongLength);
+#else
+      if (typeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(value.Length);
+#endif
       bytes.Add((byte)typeId);
       if(VarLenExtTypes.Contains(typeId)) {
+
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
         bytes.AddRange(GetLengthBytes(value.LongLength, SupportedLengths.All));
+#else
+        bytes.AddRange(GetLengthBytes(value.Length, SupportedLengths.All));
+#endif
       }
       bytes.Add((byte)typeSpecifier);
       bytes.AddRange(value);
