@@ -204,7 +204,7 @@ namespace LsMsgPack
     {
       MpRoot root = new MpRoot(settings, values.Length);
       for (int t = 0; t < values.Length; t++)
-        root.Add(Pack(values[t], settings));
+        root.Add(Pack(values[t], settings) ?? MsgPackSerializer.SerializeObject(values[t], settings));
       return root;
     }
 
@@ -219,17 +219,17 @@ namespace LsMsgPack
       MpRoot root = new MpRoot(settings);
       foreach (object item in values)
       {
-        root.Add(Pack(item, settings));
+        root.Add(Pack(item, settings) ?? MsgPackSerializer.SerializeObject(item, settings));
       }
       return root;
     }
 
     public static MsgPackItem Pack(object value, bool dynamicallyCompact = true)
-    {
-      return Pack(value, new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact });
+    {MsgPackSettings sett=new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact };
+      return Pack(value, sett) ?? MsgPackSerializer.SerializeObject(value, sett);
     }
 
-    public static MsgPackItem Pack(object value, MsgPackSettings settings)
+    public static MsgPackItem Pack(object value, MsgPackSettings settings, Type valuesType=null)
     {
       if (ReferenceEquals(value, null)) return new MpNull(settings);
       if (value is bool) return new MpBool(settings) { Value = value };
@@ -250,7 +250,8 @@ namespace LsMsgPack
       if (value is DateTime
         || value is DateTimeOffset) return new MpDateTime(settings) { Value = value };
 
-      Type valuesType = value.GetType();
+      if(valuesType is null)
+        valuesType = value.GetType();
 
       if (valuesType.IsEnum) return new MpInt(settings).SetEnumVal(value);
       if (IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap(settings) { Value = value };
@@ -266,7 +267,7 @@ namespace LsMsgPack
         return val;
       }
 
-      return MsgPackSerializer.SerializeObject(value, settings);
+      return null; // not natively supported  // MsgPackSerializer.SerializeObject(value, settings);
     }
 
     static protected bool IsSubclassOfRawGeneric(Type generic, Type toCheck)

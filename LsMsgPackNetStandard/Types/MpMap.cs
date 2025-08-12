@@ -123,8 +123,8 @@ namespace LsMsgPack
       for (int t = 0; t < value.Length; t++)
       {
         // TODO: call MsgPackSerializer.GetTypedOrUntyped for keys as well as values
-        MsgPackItem key = MsgPackItem.Pack(value[t].Key, _settings);
-        MsgPackItem val = MsgPackItem.Pack(value[t].Value, _settings);
+        MsgPackItem key = MsgPackItem.Pack(value[t].Key, _settings) ?? MsgPackSerializer.SerializeObject(value[t].Key, _settings);
+        MsgPackItem val = MsgPackItem.Pack(value[t].Value, _settings)?? MsgPackSerializer.SerializeObject(value[t].Value, _settings);
         bytes.AddRange(key.ToBytes());
         bytes.AddRange(val.ToBytes());
       }

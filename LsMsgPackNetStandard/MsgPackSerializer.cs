@@ -1,4 +1,5 @@
 ﻿using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Attributes;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -14,35 +15,6 @@ namespace LsMsgPack
   /// </summary>
   public static class MsgPackSerializer
   {
-
-    public static readonly Type[] NativelySupportedTypes = new Type[]{
-      typeof(bool),
-      typeof(sbyte),
-      typeof(short),
-      typeof(int),
-      typeof(long),
-      typeof(byte ),
-      typeof(ushort),
-      typeof(uint),
-      typeof(ulong),
-      typeof(float),
-      typeof(double),
-      typeof(string),
-      typeof(byte[]),
-      typeof(object[]),
-      typeof(Guid)
-    };
-
-    public static readonly Type[] NativelySupportedGenericTypes = new Type[]{
-      typeof(List<>),
-      typeof(Dictionary<,>),
-    };
-
-    public static bool IsNativelySupported(Type type)
-    {
-      return NativelySupportedTypes.Contains(type);
-    }
-
     public static void CacheAssemblyTypes(Assembly assembly)
     {
       TypeResolver.CacheAssembly(assembly, null);
@@ -60,7 +32,9 @@ namespace LsMsgPack
 
     public static byte[] Serialize<T>(T item, MsgPackSettings settings)
     {
-      if (IsNativelySupported(typeof(T))) return MsgPackItem.Pack(item, settings).ToBytes();
+      if (ReferenceEquals(item, null))
+        return new MpNull().ToBytes();
+
       MemoryStream ms = new MemoryStream();
       Serialize(item, ms, settings);
       return ms.ToArray();
@@ -73,7 +47,7 @@ namespace LsMsgPack
 
     public static void Serialize<T>(T item, Stream target, MsgPackSettings settings)
     {
-      MsgPackItem packed = SerializeObject(item, settings);
+      MsgPackItem packed = SerializeObject(item, settings, new FullPropertyInfo(typeof(T)));
       byte[] buffer = packed.ToBytes();
       target.Write(buffer, 0, buffer.Length);
       return;
@@ -84,81 +58,109 @@ namespace LsMsgPack
       return SerializeObject(item, new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact });
     }
 
-    public static MsgPackItem SerializeObject(object item, MsgPackSettings settings)
+    public static MsgPackItem SerializeObject(object item, MsgPackSettings settings, FullPropertyInfo assignedTo = null)
     {
-      if (ReferenceEquals(item, null)) return new MpNull();
-      Type tType = item.GetType();
-      if (tType.IsArray)
-        tType = tType.GetElementType();
+      if (ReferenceEquals(item, null))
+        return new MpNull();
 
-      if (IsNativelySupported(tType))
-        return MsgPackItem.Pack(item, settings);
+      Type tType = item.GetType();
+      Type nullableType = Nullable.GetUnderlyingType(tType);
+      if (!(nullableType is null))
+        tType=nullableType;
+
+      MsgPackItem packed = MsgPackItem.Pack(item, settings, tType);
+      if (packed != null)
+      { 
+        if(assignedTo?.AssignedToType is null 
+          || settings.AddTypeIdOptions == AddTypeIdOption.Never
+          || tType.IsPrimitive 
+          || tType == typeof(string)
+          || (settings.AddTypeIdOptions.HasFlag(AddTypeIdOption.IfAmbiguious) && assignedTo?.AssignedToType == tType))
+          return packed;
+      }
 
       FullPropertyInfo[] props;
       Dictionary<object, object> propVals;
-      if (tType == typeof(MsgPackTypedItem)) // Add Type name as first entry with empty key
+      SerializeEnumerableAttribute handleItems = null;
+
+      if (packed is null && item is IEnumerable) // typeof(IEnumerable).IsAssignableFrom(tType))
       {
-        // TODO: Untangle type and nested (Array, Ienumerable, and IDictionary) types
+        if (assignedTo?.CustomAttributes != null && assignedTo.CustomAttributes.TryGetValue(nameof(SerializeEnumerableAttribute), out object att)) // GetCustomAttribute<SerializeEnumerableAttribute>(true);
+          handleItems = (SerializeEnumerableAttribute)att;
 
-        MsgPackTypedItem typedItem = (MsgPackTypedItem)item;
-        if (typedItem.AssignmentType.IsArray)
+        if (handleItems is null)
+          handleItems = tType.GetCustomAttribute<SerializeEnumerableAttribute>(true);
+
+        if (handleItems is null)
         {
-          Type arrType = typedItem.AssignmentType.GetElementType();
-          Array orgObjects = (Array)typedItem.Instance;
-          object[] objects = new object[orgObjects.Length];
-          for (int t = objects.Length - 1; t >= 0; t--)
-            objects[t] = GetTypedOrUntyped(settings, arrType, orgObjects.GetValue(t), typedItem.PropertyInfo);
-          return new MpArray(settings) { Value = objects };
-        }
-
-        props = GetSerializedProps(typedItem.Type, settings);
-        propVals = new Dictionary<object, object>(props.Length + 1);
-
-        object typeId = typedItem.GetTypeIdentifier(settings);
-        propVals.Add(string.Empty, typeId);
-        item = typedItem.Instance;
-
-        if (typedItem.Instance is IDictionary)
-        {
-          Type[] types = typedItem.Type.GenericTypeArguments;
-          Type arrType = typeof(KeyValuePair<,>).MakeGenericType(types);
-          List<KeyValuePair<object, object>> objects = new List<KeyValuePair<object, object>>();
-          foreach (DictionaryEntry o in (IDictionary)typedItem.Instance)
+          handleItems = new SerializeEnumerableAttribute();
+          if (tType.IsArray)
+            handleItems.ElementType = tType.GetElementType();
+          else if (tType is IDictionary)
           {
-            KeyValuePair<object, object> kv = new KeyValuePair<object, object>(
-              GetTypedOrUntyped(settings, types[0], o.Key, typedItem.PropertyInfo),
-              GetTypedOrUntyped(settings, types[1], o.Value, typedItem.PropertyInfo)
-              );
-            objects.Add(kv);
+            Type[] types = tType.GenericTypeArguments;
+            handleItems.ElementType = typeof(KeyValuePair<,>).MakeGenericType(types);
           }
-
-          if (arrType != typedItem.AssignmentType)
-            return
-              new MpMap(new[]
-              {
-              new KeyValuePair<object,object>(string.Empty, typeId),
-              new KeyValuePair<object,object>("@", new MpMap(objects.ToArray(), settings)),
-              }, settings);
           else
-            return new MpMap(objects.ToArray(), settings);
-        }
-        else if (typedItem.Instance is IEnumerable)
-        {
-          Type arrType = typeof(object);
-          Type[] types = typedItem.AssignmentType.GenericTypeArguments;
-          if (types.Length == 1)
-            arrType = types[0];
-          List<object> objects = new List<object>();
-          foreach (object o in (IEnumerable)typedItem.Instance)
-            objects.Add(GetTypedOrUntyped(settings, arrType, o, typedItem.PropertyInfo));
-
-          propVals.Add("@", new MpArray(settings) { Value = objects.ToArray() });
+          {
+            Type[] types = tType.GenericTypeArguments;
+            if (types.Length == 1)
+              handleItems.ElementType = types[0];
+            //else if (types.Length == 2)
+            //{
+            //  handleItems.ElementType = typeof(KeyValuePair<,>).MakeGenericType(types);
+            //}
+            else
+              throw new NotImplementedException(string.Concat("Todo: check if we can derive element type from IEnumerable<T>.",
+                "For now decorate/annotate your fancy collection (", tType.Name, assignedTo is null ? "" : ") or property (" + assignedTo.PropertyInfo.Name, ") with a [SerializeEnumerable] Attribute specifying the type of the elements and weather to include or exclude other properties..."));
+          }
         }
       }
-      else
+
+      // Any complex object with properties
+      props = GetSerializedProps(tType, settings);
+      propVals = new Dictionary<object, object>(props.Length);
+      bool addTypeId=false;
+
+      if (settings.AddTypeIdOptions != AddTypeIdOption.Never)
       {
-        props = GetSerializedProps(tType, settings);
-        propVals = new Dictionary<object, object>(props.Length);
+        if ((settings.AddTypeIdOptions.HasFlag(AddTypeIdOption.IfAmbiguious) && assignedTo?.AssignedToType != tType)
+          || settings.AddTypeIdOptions.HasFlag(AddTypeIdOption.Always))
+        {
+          object typeIdd = GetTypeIdentifier(tType, settings, assignedTo);
+          propVals.Add(string.Empty, typeIdd);
+          addTypeId=true;
+        }
+      }
+
+      if(packed != null)
+      {
+        propVals.Add("@", packed);
+        return new MpMap(settings) { Value = propVals };
+      }
+
+      if (handleItems != null)
+      {
+        if (handleItems.SerializeElements)
+        {
+          List<MsgPackItem> objects = new List<MsgPackItem>();
+
+          FullPropertyInfo assignedToInfo = new FullPropertyInfo(handleItems.ElementType);
+          foreach (object o in (IEnumerable)item)
+            objects.Add(SerializeObject(o, settings, assignedToInfo));
+
+          MpArray arr = new MpArray(settings) { Value = objects.ToArray() };
+
+          if(!addTypeId && !handleItems.SerializeProperties) // no need to wrap the array in a map
+            return arr;
+
+          propVals.Add("@", arr);
+        }
+
+        if (!handleItems.SerializeProperties)
+        {
+          return new MpMap(settings) { Value = propVals };
+        }
       }
 
       for (int t = props.Length - 1; t >= 0; t--)
@@ -179,49 +181,51 @@ namespace LsMsgPack
           propVals.Add(prop.PropertyId, value);
           continue;
         }
-        propVals.Add(prop.PropertyId, GetTypedOrUntyped(settings, prp.PropertyType, value, prop));
+        propVals.Add(prop.PropertyId, SerializeObject(value, settings, prop)); //GetTypedOrUntyped(settings, prp.PropertyType, value, prop));
       }
 
       return new MpMap(settings) { Value = propVals };
     }
 
-    private static object GetTypedOrUntyped(MsgPackSettings settings, Type assignementType, object value, FullPropertyInfo prp)
+    /// <summary>
+    /// This can be overridden by implementing <see cref="IMsgPackTypeResolver">IMsgPackTypeResolver</see>.
+    /// </summary>
+    private static object GetTypeIdentifier(Type type, MsgPackSettings settings, FullPropertyInfo propertyInfo)
     {
-      if (value is null)
-        return null;
-      Type valType = value.GetType();
+      object typeId = null;
 
-      if (IsNativelySupported(valType))
-        return value;
-
-      if (settings._addTypeName == AddTypeIdOption.Never)
-        return value;
-
-      else if ((settings._addTypeName & AddTypeIdOption.Always) > 0)
-        return new MsgPackTypedItem(value, valType, assignementType, prp);
-      else // If Ambiguious
+      for (int t = settings.TypeResolvers.Length - 1; t >= 0; t--)
       {
-        Type prpType;
-        if (assignementType.IsArray) // TODO: Untangle type and nested (Array, Ienumerable, and IDictionary) types
-          prpType = assignementType.GetElementType();
-        else if (assignementType is IDictionary && assignementType.IsGenericType)
-          prpType = typeof(KeyValuePair<,>).MakeGenericType(assignementType.GenericTypeArguments);
-        else if (assignementType is IEnumerable && assignementType.IsGenericType)
-        {
-          Type[] types = assignementType.GenericTypeArguments;
-          if (types.Length == 1)
-            prpType = types[0];
-          else
-            prpType = assignementType;
-        }
-        else
-          prpType = assignementType;
-
-        if (prpType == valType)
-          return value;
-        else
-          return new MsgPackTypedItem(value, valType, assignementType, prp);
+        typeId = settings.TypeResolvers[t].IdForType(type, propertyInfo);
+        if (typeId != null)
+          break;
       }
+      if (typeId is null && !((settings._addTypeName & AddTypeIdOption.NoDefaultFallBack) > 0))
+      {
+        bool fullname = (settings._addTypeName & AddTypeIdOption.FullName) > 0;
+        typeId = GetTypeName(type, fullname);
+      }
+
+      return typeId;
+    }
+
+    private static string GetTypeName(Type type, bool fullname)
+    {
+      Type[] args = type.GenericTypeArguments;
+
+      if (args.Length == 0)
+        return fullname ? type.FullName : type.Name;
+
+      // Get the generic type name...
+
+      string[] names = new string[args.Length];
+      for (int t = args.Length - 1; t >= 0; t--)
+        names[t] = GetTypeName(args[t], fullname);
+
+      string typeName = fullname ? type.FullName : type.Name;
+      typeName = typeName.Substring(0, typeName.IndexOf('`'));
+
+      return string.Concat(typeName, '<', string.Join(", ", names), '>');
     }
 
     public static T Deserialize<T>(byte[] source)
@@ -244,14 +248,78 @@ namespace LsMsgPack
 
     public static T Deserialize<T>(Stream stream, MsgPackSettings settings)
     {
-      Type tType = typeof(T);
-      if (IsNativelySupported(tType))
+      MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
+      if (unpacked.Value is T)
+        return (T)unpacked.Value;
+
+      if (unpacked is MpMap)
       {
-        return MsgPackItem.Unpack(stream).GetTypedValue<T>();
+        MpMap map = (MpMap)unpacked;
+
+        T result = (T)Materialize(typeof(T), map);
+        return result;
       }
-      MpMap map = (MpMap)MsgPackItem.Unpack(stream, settings);
-      T result = (T)Materialize(tType, map);
-      return result;
+
+      T resultt = (T)ConvertDeserializeValue(unpacked.Value, typeof(T), new MpMap(settings), new FullPropertyInfo(typeof(T)));
+      return resultt;
+    }
+
+    /// <summary>
+    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benifit from compile-time type safety.
+    /// </summary>
+    /// <param name="tType">Type of the object to be deserialized</param>
+    /// <param name="source">Bytes containing MsgPack formatted data</param>
+    /// <returns>The deserialized object</returns>
+    public static object Deserialize(Type tType, byte[] source)
+    {
+      return Deserialize(tType, source, new MsgPackSettings());
+    }
+
+    /// <summary>
+    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benifit from compile-time type safety.
+    /// </summary>
+    /// <param name="tType">Type of the object to be deserialized</param>
+    /// <param name="source">Bytes containing MsgPack formatted data</param>
+    /// <param name="settings"><see cref="MsgPackSettings"/></param>
+    /// <returns>The deserialized object</returns>
+    public static object Deserialize(Type tType, byte[] source, MsgPackSettings settings)
+    {
+      using (MemoryStream ms = new MemoryStream(source))
+      {
+        return Deserialize(tType, ms, settings);
+      }
+    }
+
+    /// <summary>
+    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benifit from compile-time type safety.
+    /// </summary>
+    /// <param name="tType">Type of the object to be deserialized</param>
+    /// <param name="stream">Stream of bytes containing MsgPack formatted data</param>
+    /// <returns>The deserialized object</returns>
+    public static object Deserialize(Type tType, Stream stream)
+    {
+      return Deserialize(tType, stream, new MsgPackSettings());
+    }
+
+    /// <summary>
+    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benifit from compile-time type safety.
+    /// </summary>
+    /// <param name="tType">Type of the object to be deserialized</param>
+    /// <param name="stream">Stream of bytes containing MsgPack formatted data</param>
+    /// <param name="settings"><see cref="MsgPackSettings"/></param>
+    /// <returns>The deserialized object</returns>
+    public static object Deserialize(Type tType, Stream stream, MsgPackSettings settings)
+    {
+      MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
+      if (unpacked.Value.GetType() == tType)
+        return unpacked.Value;
+
+      if (unpacked is MpMap)
+      {
+        MpMap map = (MpMap)unpacked;
+        return Materialize(tType, map);
+      }
+      return ConvertDeserializeValue(unpacked.Value, tType, new MpMap(settings), new FullPropertyInfo(tType));
     }
 
     private static object Materialize(Type tType, MpMap map, FullPropertyInfo rootProp = null)
@@ -280,11 +348,15 @@ namespace LsMsgPack
       {
         if (tType.GenericTypeArguments.Length == 1) // IEnumerable
         {
-          object[] itemArr = (object[])items;
+          Array itemArr = (Array)items;
           Array typedArr = Array.CreateInstance(tType.GenericTypeArguments[0], itemArr.Length);
-          KeyValuePair<object, object>[][] kvs = itemArr.Cast<KeyValuePair<object, object>[]>().ToArray();
-          for (int t = kvs.Length - 1; t >= 0; t--)
-            typedArr.SetValue(Materialize(tType.GenericTypeArguments[0], new MpMap(kvs[t], map.Settings), null), t);
+
+          //object[] kvs = itemArr.Cast<object[]>().ToArray();
+          for (int t = itemArr.Length - 1; t >= 0; t--)
+          {
+            //typedArr.SetValue(Materialize(tType.GenericTypeArguments[0], itemArr[t], rootProp), t);
+            typedArr.SetValue(itemArr.GetValue(t), t);
+          }
 
           result = Activator.CreateInstance(tType, typedArr);
         }
@@ -312,6 +384,10 @@ namespace LsMsgPack
           }
           result = Activator.CreateInstance(tType, typedArr);
         }
+        else if (tType.IsArray)
+        {
+          result = items;
+        }
         else
         {
           result = Activator.CreateInstance(tType, true);
@@ -329,74 +405,116 @@ namespace LsMsgPack
         if (propVals.TryGetValue(prp.Name, out val))
         {
           Type propType = prp.PropertyType;
-          if (!ReferenceEquals(val, null))
-          {
-            if (!IsNativelySupported(propType)
-              && val is KeyValuePair<object, object>[])
-            {
-              val = Materialize(propType, new MpMap((KeyValuePair<object, object>[])val, map.Settings), prop);
-            }
-            if (propType.IsArray && !(propType == typeof(object)))
-            {
-              // Need to cast object[] to whatever[]
-              object[] valAsArr = (object[])val;
-              propType = propType.GetElementType();
-              Array newInstance = Array.CreateInstance(propType, valAsArr.Length);
 
-              // Part of the check for complex types can be done outside the loop
-              bool complexTypes = !IsNativelySupported(propType);
-              for (int i = valAsArr.Length - 1; i >= 0; i--)
-              {
-                if (complexTypes && !ReferenceEquals(valAsArr[i], null)
-                  && valAsArr[i] is KeyValuePair<object, object>[])
-                {
-                  valAsArr[i] = Materialize(propType, new MpMap((KeyValuePair<object, object>[])valAsArr[i], map.Settings), prop);
-                }
-                newInstance.SetValue(valAsArr[i], i);
-              }
-              prp.SetValue(result, newInstance, null);
-              continue;
-            }
-            else if (typeof(IList).IsAssignableFrom(propType))
-            {
-              IList newInstance = (IList)Activator.CreateInstance(propType, true);
-
-              object[] valAsArr = (object[])val;
-
-              // Part of the check for complex types can be done outside the loop
-              bool complexTypes = !IsNativelySupported(propType);
-              for (int i = 0; i < valAsArr.Length; i++)
-              {
-                if (complexTypes && !ReferenceEquals(valAsArr[i], null)
-                  && valAsArr[i] is KeyValuePair<object, object>[])
-                {
-                  valAsArr[i] = Materialize(propType, new MpMap((KeyValuePair<object, object>[])valAsArr[i], map.Settings), prop);
-                }
-                newInstance.Add(valAsArr[i]);
-              }
-              prp.SetValue(result, newInstance, null);
-              continue;
-            }
-          }
-          // Fix ArgumentException like "System.Byte cannot be converted to System.Nullable`1[System.Int32]"
-          Type nullableType = Nullable.GetUnderlyingType(prp.PropertyType);
-          if (!(nullableType is null) && !(val is null))
-          {
-            if (val.GetType() != nullableType)
-            {
-              val = Convert.ChangeType(val, nullableType);
-            }
-          }
-          if (propType == typeof(Guid))
-          {
-            prp.SetValue(result, new Guid((byte[])val), null);
-            continue;
-          }
-          prp.SetValue(result, val, null);
+          object ConvertedVal;
+          if(val is MpMap)
+            ConvertedVal = Materialize(propType,(MpMap)val,prop);
+          else          
+            ConvertedVal = ConvertDeserializeValue(val, propType, map, prop);
+          prp.SetValue(result, ConvertedVal, null);
         }
       }
 
       return result;
+    }
+
+    private static object ConvertDeserializeValue(object val, Type assignType, MpMap map, FullPropertyInfo prop)
+    {
+      if (ReferenceEquals(val, null))
+      {
+        return null;
+      }
+
+      Type nestedAssignType=null;
+      
+      if (val is KeyValuePair<object, object>[])
+      {
+        KeyValuePair<object, object>[] vVal = (KeyValuePair<object, object>[])val;
+        if((vVal[0].Key as string)==""){
+          string nestedAssignTypestr = vVal[0].Value.ToString();
+          nestedAssignType = TypeResolver.Resolve(nestedAssignTypestr, assignType, prop, map, null);
+        }
+        val = Materialize(assignType, new MpMap(vVal, map.Settings), prop); // <- ???
+      }
+      Type valType = val.GetType();
+      if (assignType == valType)
+      {
+        return val;
+      }
+      if (assignType.IsArray && !(assignType == typeof(object)))
+      {
+        // Need to cast object[] to whatever[]
+        object[] valAsArr = (object[])val;
+        assignType = nestedAssignType?.GetElementType() ?? assignType.GetElementType();
+        Array newInstance = Array.CreateInstance(assignType, valAsArr.Length);
+
+        for (int i = valAsArr.Length - 1; i >= 0; i--)
+        {
+          if (!ReferenceEquals(valAsArr[i], null)
+            && valAsArr[i] is KeyValuePair<object, object>[])
+          {
+            valAsArr[i] = Materialize(assignType, new MpMap((KeyValuePair<object, object>[])valAsArr[i], map.Settings), prop);
+          }
+          newInstance.SetValue(valAsArr[i], i);
+        }
+        return newInstance;
+      }
+      else if (typeof(IList).IsAssignableFrom(assignType))
+      {
+        IList newInstance;
+
+        ConstructorInfo specialConstructor = prop.GetConstructorTaking(valType);
+        if (specialConstructor != null)
+        {
+          newInstance = (IList)specialConstructor.Invoke(new[] { val });
+        }
+        else
+        {
+          object[] valAsArr = (object[])val;
+          specialConstructor = prop.GetConstructorTaking(typeof(int));
+          if (specialConstructor != null)
+          {
+            newInstance = (IList)specialConstructor.Invoke(new object[] { valAsArr.Length });
+          }
+          else
+            newInstance = (IList)Activator.CreateInstance(assignType, true);
+
+          for (int i = 0; i < valAsArr.Length; i++)
+          {
+            if (!ReferenceEquals(valAsArr[i], null)
+              && valAsArr[i] is KeyValuePair<object, object>[])
+            {
+              valAsArr[i] = Materialize(assignType, new MpMap((KeyValuePair<object, object>[])valAsArr[i], map.Settings), prop);
+            }
+            newInstance.Add(valAsArr[i]);
+          }
+        }
+        return newInstance;
+      }
+
+      // Fix ArgumentException like "System.Byte cannot be converted to System.Nullable`1[System.Int32]"
+      Type nullableType = Nullable.GetUnderlyingType(assignType);
+      if (!(nullableType is null) && !(val is null))
+      {
+        if (nullableType == valType)
+        {
+          return val;
+        }
+
+        if (nullableType == typeof(Guid))
+        {
+          return new Guid((byte[])val);
+        }
+        if (val.GetType() != nullableType)
+        {
+          val = Convert.ChangeType(val, nullableType);
+        }
+      }
+      if (assignType == typeof(Guid))
+      {
+        return new Guid((byte[])val);
+      }
+      return val;
     }
 
     private static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackSettings settings)

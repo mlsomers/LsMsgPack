@@ -12,6 +12,8 @@ namespace LsMsgPack
     internal bool _dynamicallyCompact = true;
     internal EndianAction _endianAction = EndianAction.SwapIfCurrentSystemIsLittleEndian;
     internal AddTypeIdOption _addTypeName = AddTypeIdOption.IfAmbiguious;
+
+
 #if KEEPTRACK
     internal bool _preservePackages = false;
 #endif

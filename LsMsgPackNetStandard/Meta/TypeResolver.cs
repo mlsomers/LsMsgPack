@@ -1,6 +1,8 @@
 ﻿using LsMsgPack.TypeResolving.Interfaces;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -51,6 +53,15 @@ namespace LsMsgPack.Meta
     internal static Type ResolveInternal(string typeName, Type assignedTo, IMsgPackTypeResolver[] resolvers)
     {
       Type result;
+
+      if (typeName.EndsWith("[]"))
+      {
+        string nm=typeName.Substring(0, typeName.Length -2);
+        Type arr= ResolveInternal(nm, assignedTo, resolvers);
+        if(arr != null)
+          return arr.MakeArrayType();
+      }
+
       // 1st tier
       if (FullNameCache.TryGetValue(typeName, out result))
         return result;
@@ -153,10 +164,17 @@ namespace LsMsgPack.Meta
       if (result is null)
         throw new Exception(string.Concat("Unable to resolve the type \"", typeName,
           "\".\r\nEither create a resolver by implementing and using IMsgPackTypeResolver or pre-cache your type like this:\r\n  MsgPackSerializer.CacheAssemblyTypes(typeof(",
-          typeName, "));"));
+          typeName, "));")); // Or add an assembly to NativeAssemblies
 
       return result;
     }
+
+    private static Assembly[] NativeAssemblies =new Assembly[]
+    {
+      typeof(List<>).Assembly, // System.Collections.Generic
+      typeof(ConcurrentBag<>).Assembly, // System.Collections.Concurrent
+      typeof(ObservableCollection<>).Assembly // System.Collections.ObjectModel
+    };
 
     private static Type ResolveName(string typeName, Type assignedTo)
     {
@@ -172,12 +190,15 @@ namespace LsMsgPack.Meta
       if (result == null)
       {
         // search all types from System.Collections.Generic
-        Assembly assm = typeof(List<>).Assembly;
-        if (!CachedAssembies.Contains(assm))
+        for (int t = 0; t < NativeAssemblies.Length; t++)
         {
-          result = CacheAssembly(assm, typeName);
-          if (result != null)
-            return result; // has already been added to cache, code below would crash
+          Assembly assm = NativeAssemblies[t];
+          if (!CachedAssembies.Contains(assm))
+          {
+            result = CacheAssembly(assm, typeName);
+            if (result != null)
+              return result; // has already been added to cache, code below would crash
+          } 
         }
       }
       if (result != null)

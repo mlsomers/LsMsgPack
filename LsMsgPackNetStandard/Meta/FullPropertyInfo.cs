@@ -1,15 +1,21 @@
 ﻿using LsMsgPack.TypeResolving.Interfaces;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading;
 
 namespace LsMsgPack.Meta
 {
   public class FullPropertyInfo
   {
     private static readonly Dictionary<PropertyInfo, FullPropertyInfo> Cache = new Dictionary<PropertyInfo, FullPropertyInfo>();
+    private static readonly Dictionary<Type, ConstructorInfo> _constructorTakingType = new Dictionary<Type, ConstructorInfo>();
 
     public static FullPropertyInfo GetFullPropInfo(PropertyInfo propertyInfo, MsgPackSettings settings)
     {
+      if (propertyInfo == null)
+        return null;
+
       FullPropertyInfo full;
       if (Cache.TryGetValue(propertyInfo, out full))
         return full;
@@ -40,6 +46,29 @@ namespace LsMsgPack.Meta
         string attName = atts[t].GetType().Name;
         CustomAttributes.TryAdd(attName, atts[t]);
       }
+      AssignedToType = prop.PropertyType;
+    }
+
+    public FullPropertyInfo(Type assignToType)
+    {
+      AssignedToType = assignToType;
+    }
+
+    private Type _assignedToType;
+    public Type AssignedToType
+    {
+      get
+      {
+        return _assignedToType;
+      }
+      set
+      {
+        Type nullableType = Nullable.GetUnderlyingType(value);
+        if (!(nullableType is null))
+          _assignedToType = nullableType;
+        else
+          _assignedToType = value;
+      }
     }
 
     public PropertyInfo PropertyInfo { get; set; }
@@ -60,5 +89,25 @@ namespace LsMsgPack.Meta
     /// By default the property name (string), but can be overridden by IMsgPackPropertyIdResolver
     /// </summary>
     public object PropertyId { get; set; }
+
+    public ConstructorInfo GetConstructorTaking(Type type)
+    {
+      if (_constructorTakingType.TryGetValue(type, out ConstructorInfo constructor))
+        return constructor;
+
+      // Todo: concurrent locking system
+
+      ConstructorInfo ci = AssignedToType.GetConstructor(new[] { type });
+      _constructorTakingType.Add(type, ci);
+      return ci;
+    }
+
+    public override string ToString()
+    {
+      string ignored = (StaticallyIgnored.HasValue && StaticallyIgnored.Value) ? " (ignored)":string.Empty;
+      string propInfo = (PropertyInfo is null) ? " not a property" : $" property: {PropertyInfo.Name}";
+      return $"{AssignedToType}{ignored}{propInfo}";
+    }
+
   }
 }

@@ -31,6 +31,10 @@ namespace LsMsgPackUnitTests
       public DateTime Date { get; set; }
 
       public Guid Guid { get; set; }
+
+      public DateTime? DateNullable { get; set; }
+
+      public Guid? GuidNullable { get; set; }
     }
 
     [TestMethod]
@@ -59,6 +63,8 @@ namespace LsMsgPackUnitTests
         Date = new DateTime(2021, 3, 5, 11, 32, 20),
         NullableTypeWithValue = 3,
         Guid = Guid.NewGuid(),
+        DateNullable = new DateTime(2022, 3, 5, 11, 32, 20),
+        GuidNullable = Guid.NewGuid()
       };
 
       byte[] buffer = MsgPackSerializer.Serialize(testObj);
@@ -77,6 +83,8 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(testObj.NullableTypeWithValue, ret.NullableTypeWithValue);
       Assert.AreEqual(testObj.Date, ret.Date);
       Assert.AreEqual(testObj.Guid, ret.Guid);
+      Assert.AreEqual(testObj.DateNullable, ret.DateNullable);
+      Assert.AreEqual(testObj.GuidNullable, ret.GuidNullable);
     }
 
     class MyClass

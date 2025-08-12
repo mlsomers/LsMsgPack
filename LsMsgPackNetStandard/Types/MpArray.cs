@@ -1,4 +1,5 @@
-﻿using System;
+﻿using LsMsgPack.Meta;
+using System;
 using System.Collections.Generic;
 using System.IO;
 
@@ -16,7 +17,7 @@ namespace LsMsgPack
     public MpArray() : base() { }
     public MpArray(MsgPackSettings settings) : base(settings) { }
 
-    private object[] value = new object[0];
+    private Array value = new object[0];
 
 #if KEEPTRACK
     private MsgPackItem[] packedItems = new MsgPackItem[0];
@@ -53,7 +54,7 @@ namespace LsMsgPack
         }
         else
         {
-          this.value = (object[])value;
+          this.value = (Array)value;
         }
       }
     }
@@ -86,9 +87,12 @@ namespace LsMsgPack
         bytes.Add((byte)typeId);
         bytes.AddRange(GetLengthBytes(value.LongLength, SupportedLengths.FromShortUpward));
       }
+      Type elementType=value.GetType().GetElementType();
+      FullPropertyInfo asgnType=new FullPropertyInfo(elementType);
       for (int t = 0; t < value.Length; t++)
       {
-        MsgPackItem item = MsgPackItem.Pack(value[t], _settings);
+        object instance=value.GetValue(t);
+        MsgPackItem item = MsgPackItem.Pack(instance, _settings, elementType) ?? MsgPackSerializer.SerializeObject(instance, _settings, asgnType);
         bytes.AddRange(item.ToBytes());
       }
       return bytes.ToArray();
@@ -115,7 +119,7 @@ namespace LsMsgPack
       for (int t = 0; t < len; t++)
       {
         MsgPackItem item = Unpack(data, _settings);
-        value[t] = item.Value;
+        value.SetValue(item.Value,t);
 #if KEEPTRACK
         if (_settings._preservePackages) packedItems[t] = item;
         if (item is MpError)

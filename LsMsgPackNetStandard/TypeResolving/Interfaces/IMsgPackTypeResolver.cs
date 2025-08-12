@@ -13,7 +13,7 @@ namespace LsMsgPack.TypeResolving.Interfaces
     /// Generate an object (string / integer or anything else) by wich the type can be identified later
     /// </summary>
     /// <param name="type">Type of the object</param>
-    /// <param name="assignedTo">The property information (if any, may be null) of tyhe type it will be assigned to</param>
+    /// <param name="assignedTo">The property information (if any, may be null) of the type it will be assigned to</param>
     /// <returns>An identifier by wich the type can be resolved when deserializing, returning null will leave it to the next resolver or ultimately the default resolver</returns>
     object IdForType(Type type, FullPropertyInfo assignedTo);
 

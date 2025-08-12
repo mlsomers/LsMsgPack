@@ -108,25 +108,25 @@ namespace LsMsgPackUnitTests
 
     [TestMethod]
 
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 415)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 392)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 307)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 307)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 410)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 387)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 302)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 302)]
 
-    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, false, false, 491)]
-    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, false, true, 468)]
-    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, true, false, 383)]
-    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, true, true, 383)]
+    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, false, false, 448)]
+    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, false, true, 425)]
+    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, true, false, 340)]
+    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, true, true, 340)]
 
-    [DataRow(AddTypeIdOption.Always, false, false, 420)]
-    [DataRow(AddTypeIdOption.Always, false, true, 397)]
-    [DataRow(AddTypeIdOption.Always, true, false, 312)]
-    [DataRow(AddTypeIdOption.Always, true, true, 312)]
+    [DataRow(AddTypeIdOption.Always, false, false, 450)]
+    [DataRow(AddTypeIdOption.Always, false, true, 427)]
+    [DataRow(AddTypeIdOption.Always, true, false, 342)]
+    [DataRow(AddTypeIdOption.Always, true, true, 342)]
 
-    [DataRow(AddTypeIdOption.Always | AddTypeIdOption.FullName, false, false, 515)]
-    [DataRow(AddTypeIdOption.Always | AddTypeIdOption.FullName, false, true, 492)]
-    [DataRow(AddTypeIdOption.Always | AddTypeIdOption.FullName, true, false, 407)]
-    [DataRow(AddTypeIdOption.Always | AddTypeIdOption.FullName, true, true, 407)]
+    [DataRow(AddTypeIdOption.Always | AddTypeIdOption.FullName, false, false, 584)]
+    [DataRow(AddTypeIdOption.Always | AddTypeIdOption.FullName, false, true, 561)]
+    [DataRow(AddTypeIdOption.Always | AddTypeIdOption.FullName, true, false, 476)]
+    [DataRow(AddTypeIdOption.Always | AddTypeIdOption.FullName, true, true, 476)]
     public void Hirarchical_Inheritance(AddTypeIdOption addTypeName, bool omitDefault, bool omitNull, int expectedLength)
     {
       HierarchyContainer container = GetDefault();
@@ -138,25 +138,26 @@ namespace LsMsgPackUnitTests
       SetFilters(settings, omitDefault, omitNull);
 
       byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
+      
       HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer);
 
       string returned = JsonConvert.SerializeObject(ret);
       string org = JsonConvert.SerializeObject(container);
 
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
+      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 403)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 380)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 295)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 295)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 402)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 379)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 294)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 294)]
 
-    [DataRow(AddTypeIdOption.Always, false, false, 405)]
-    [DataRow(AddTypeIdOption.Always, false, true, 382)]
-    [DataRow(AddTypeIdOption.Always, true, false, 297)]
-    [DataRow(AddTypeIdOption.Always, true, true, 297)]
+    [DataRow(AddTypeIdOption.Always, false, false, 430)]
+    [DataRow(AddTypeIdOption.Always, false, true, 407)]
+    [DataRow(AddTypeIdOption.Always, true, false, 322)]
+    [DataRow(AddTypeIdOption.Always, true, true, 322)]
     public void Hirarchical_CustomId(AddTypeIdOption addTypeName, bool omitDefault, bool omitNull, int expectedLength)
     {
       HierarchyContainer container = GetDefault();
@@ -171,13 +172,13 @@ namespace LsMsgPackUnitTests
       settings.TypeResolvers = new[] { res };
 
       byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
       HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer, settings);
 
       string returned = JsonConvert.SerializeObject(ret);
       string org = JsonConvert.SerializeObject(container);
 
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
+      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
     }
 
     private class Resolver : IMsgPackTypeResolver
@@ -188,6 +189,10 @@ namespace LsMsgPackUnitTests
           return 1;
         if (type == typeof(Cat))
           return 2;
+        if (type == typeof(Dog[]))
+          return 3;
+        if (type == typeof(Cat[]))
+          return 4;
         return null;
       }
 
@@ -202,6 +207,8 @@ namespace LsMsgPackUnitTests
         {
           case 1: return typeof(Dog);
           case 2: return typeof(Cat);
+          case 3: return typeof(Dog[]);
+          case 4: return typeof(Cat[]);
         }
         
         return null;
@@ -226,13 +233,13 @@ namespace LsMsgPackUnitTests
       settings.TypeResolvers = new[] { res };
 
       byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
       HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer, settings);
 
       string returned = JsonConvert.SerializeObject(ret);
       string org = JsonConvert.SerializeObject(container);
 
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
+      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
     }
 
     private class Resolver2 : IMsgPackTypeResolver
@@ -254,15 +261,15 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 612)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 589)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 484)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 484)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 626)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 603)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 498)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 498)]
 
-    [DataRow(AddTypeIdOption.Always, false, false, 617)]
-    [DataRow(AddTypeIdOption.Always, false, true, 594)]
-    [DataRow(AddTypeIdOption.Always, true, false, 489)]
-    [DataRow(AddTypeIdOption.Always, true, true, 489)]
+    [DataRow(AddTypeIdOption.Always, false, false, 672)]
+    [DataRow(AddTypeIdOption.Always, false, true, 649)]
+    [DataRow(AddTypeIdOption.Always, true, false, 544)]
+    [DataRow(AddTypeIdOption.Always, true, true, 544)]
     public void Hirarchical_NextLevel(AddTypeIdOption addTypeName, bool omitDefault, bool omitNull, int expectedLength)
     {
       NextLevelHierarchyContainer container = GetNextLevel();
@@ -274,7 +281,6 @@ namespace LsMsgPackUnitTests
       SetFilters(settings, omitDefault, omitNull);
 
       byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      //Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
       MsgPackSerializer.CacheAssemblyTypes(typeof(IIPet)); // or else the type will not be found (only needed once).
       NextLevelHierarchyContainer ret = MsgPackSerializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
 
@@ -282,6 +288,7 @@ namespace LsMsgPackUnitTests
       string org = JsonConvert.SerializeObject(container);
 
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
+      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
     }
   }
 }

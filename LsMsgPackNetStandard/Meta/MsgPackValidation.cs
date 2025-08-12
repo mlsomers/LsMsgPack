@@ -49,8 +49,11 @@ namespace LsMsgPack
                     default: waisted = 0; break;
                 }
 
-                issues.Add(new ValidationItem(item, ValidationSeverity.Warning, waisted, "Consider using a null (nil) value instead of an empty ", MsgPackItem.GetOfficialTypeName(item.TypeId), " instance."));
-                return true;
+                if(waisted > 0)
+                {
+                  issues.Add(new ValidationItem(item, ValidationSeverity.Warning, waisted, "Consider using a null (nil) value instead of an empty ", MsgPackItem.GetOfficialTypeName(item.TypeId), " instance."));
+                  return true;
+                }
             }
             return false;
         }
