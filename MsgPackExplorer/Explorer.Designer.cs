@@ -35,6 +35,7 @@
       this.btnProcessAfterError = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
       this.installAsFiddlerInspectorToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+      this.installAsVsPluginToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
       this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
@@ -119,7 +120,8 @@
             this.btnGenerateTestFiles,
             this.btnProcessAfterError,
             this.toolStripSeparator2,
-            this.installAsFiddlerInspectorToolStripMenuItem});
+            this.installAsFiddlerInspectorToolStripMenuItem,
+            this.installAsVsPluginToolStripMenuItem});
       this.toolStripDropDownButton2.Image = global::MsgPackExplorer.Properties.Resources.Tools;
       this.toolStripDropDownButton2.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.toolStripDropDownButton2.Name = "toolStripDropDownButton2";
@@ -154,6 +156,13 @@
       this.installAsFiddlerInspectorToolStripMenuItem.Size = new System.Drawing.Size(220, 22);
       this.installAsFiddlerInspectorToolStripMenuItem.Text = "Install as Fiddler Inspector";
       this.installAsFiddlerInspectorToolStripMenuItem.Click += new System.EventHandler(this.installAsFiddlerInspectorToolStripMenuItem_Click);
+      //
+      // installAsVsPluginToolStripMenuItem
+      //
+      this.installAsVsPluginToolStripMenuItem.Name = "installAsVsPluginToolStripMenuItem";
+      this.installAsVsPluginToolStripMenuItem.Size = new System.Drawing.Size(220, 22);
+      this.installAsVsPluginToolStripMenuItem.Text = "Install as Visual Studio Plugin";
+      this.installAsVsPluginToolStripMenuItem.Click += new System.EventHandler(this.installVisualStudioPluginToolStripMenuItem_Click);
       // 
       // toolStripSeparator1
       // 
@@ -263,6 +272,7 @@
     private System.Windows.Forms.ToolStripComboBox ddEndianess;
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
     private System.Windows.Forms.ToolStripMenuItem installAsFiddlerInspectorToolStripMenuItem;
+    private System.Windows.Forms.ToolStripMenuItem installAsVsPluginToolStripMenuItem;
     private System.Windows.Forms.ToolStripMenuItem fromClipboardToolStripMenuItem;
   }
 }

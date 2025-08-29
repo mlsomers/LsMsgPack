@@ -11,9 +11,33 @@ namespace MsgPackExplorer {
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Fiddler\\Inspectors")
     };
 
+    private static readonly KeyValuePair<Environment.SpecialFolder,string>[] KnownDestinationsVs = new[] { 
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2008\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2017\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 8\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 9\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 10\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 11\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 12\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 13\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 14\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio\\2017\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio\\2019\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio 10.0\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio 12.0\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
+    };
+
     private static readonly string[] files = new[] {
       "LsMsgPack.dll",
       "LsMsgPackFiddlerInspector.dll",
+      "MsgPackExplorer.exe" 
+    };
+
+    private static readonly string[] filesVs = new[] {
+      "LsMsgPack.dll",
+      "LsMsgPackVisualStudioPlugin.dll",
       "MsgPackExplorer.exe" 
     };
 
@@ -24,40 +48,69 @@ namespace MsgPackExplorer {
       }
     }
 
-    public static bool TryInstall() {
+    public static bool VsIsRunning {
+      get {
+        Process[] proc = Process.GetProcessesByName("Devenv");
+        return proc.Length > 0;
+      }
+    }
+
+    public static string TryInstall(bool vs) {
 
       string[] source = new string[files.Length];
       string baseDir = AppDomain.CurrentDomain.BaseDirectory;
       for (int t = source.Length - 1; t >= 0; t--) {
-        string path = Path.Combine(baseDir, files[t]);
+        string path = Path.Combine(baseDir, vs ? filesVs[t] : files[t]);
         if (!File.Exists(path))
           throw new Exception("Could not find source file " + path);
         source[t] = path;
       }
 
-      bool success = false;
+      List<string> filesCopied= new List<string>();
 
-      foreach (KeyValuePair<Environment.SpecialFolder, string> destination in KnownDestinations) {
+      KeyValuePair<Environment.SpecialFolder,string>[] potentialDestinations= vs? KnownDestinationsVs : KnownDestinations;
+
+      foreach (KeyValuePair<Environment.SpecialFolder, string> destination in potentialDestinations) {
         string destDir = Path.Combine(Environment.GetFolderPath(destination.Key), destination.Value);
         if (Directory.Exists(destDir)) {
+          bool localSuccess=false;
           for (int t = files.Length - 1; t >= 0; t--) {
             string destPath = Path.Combine(destDir, files[t]);
             if (File.Exists(destPath)) {
-              if (FiddlerIsRunning)
-                throw new Exception("Found previous installation, please close fiddler and try again in order to replace the files.");
               try {
                 File.Delete(destPath);
               }catch(Exception ex) {
+                if (vs ? VsIsRunning : FiddlerIsRunning)
+                  throw new Exception("Found previous installation, please close fiddler or Visual studio and try again in order to replace the files.");
                 throw new Exception("Unable to remove old version:\r\n  " + ex.Message);
               }
             }
             File.Copy(source[t], destPath);
-            success = true;
+            filesCopied.Add(destPath);
+            localSuccess=true;
+          }
+          if (vs && localSuccess)
+          {
+            destDir = Path.Combine(destDir,"netstandard2.0");
+            if (!Directory.Exists(destDir))
+              Directory.CreateDirectory(destDir);
+            string destPath = Path.Combine(destDir, "DebuggerProxy.dll");
+            if (File.Exists(destPath)) {
+              try {
+                File.Delete(destPath);
+              }catch(Exception ex) {
+                if (VsIsRunning)
+                  throw new Exception("Found previous installation, please close Visual studio and try again in order to replace the files.");
+                throw new Exception("Unable to remove old version:\r\n  " + ex.Message);
+              }
+            }
+            File.Copy("DebuggerProxy.dll", destPath);
+            filesCopied.Add(destPath);
           }
         }
       }
 
-      return success;
+      return "  " + string.Join("\r\n  ", filesCopied);
     }
   }
 }

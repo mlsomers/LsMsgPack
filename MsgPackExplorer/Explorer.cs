@@ -1,9 +1,10 @@
-﻿using LsMsgPack;
+﻿using DebuggerProxy;
+using LsMsgPack;
 using System;
-using System.Windows.Forms;
-using System.Linq;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Windows.Forms;
 
 namespace MsgPackExplorer
 {
@@ -71,16 +72,40 @@ namespace MsgPackExplorer
     {
       try
       {
-        if (!Installer.TryInstall())
+        string success=Installer.TryInstall(false).Trim();
+        if (string.IsNullOrEmpty(success))
         {
           MessageBox.Show("Unable to find the Fiddler application files", "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
           return;
         }
 
         if (Installer.FiddlerIsRunning)
-          MessageBox.Show("Installed successfully.\r\nFiddler is currently running.\r\nYou will need to restart Fiddler in order to use the MsgPack inspector.", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+          MessageBox.Show($"Installed successfully.\r\nFiddler is currently running.\r\nYou will need to restart Fiddler in order to use the MsgPack inspector.\r\n\r\nFiles installed:\r\n{success}", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
         else
-          MessageBox.Show("Installed successfully.", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+          MessageBox.Show($"Installed successfully.\r\n\r\nFiles installed:\r\n{success}", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+      }
+      catch (Exception ex)
+      {
+        MessageBox.Show(string.Concat("Inastallation failed with the following message:\r\n", ex.Message, "\r\n\r\nYou may have more luck (depending on the error) running with administration privileges."), "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      }
+    }
+
+    private void installVisualStudioPluginToolStripMenuItem_Click(object sender, EventArgs e)
+    {
+      try
+      {
+        string success=Installer.TryInstall(true).Trim();
+        if (string.IsNullOrEmpty(success))
+        {
+          MessageBox.Show("Unable to find the Visual studio installation directory", "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+          return;
+        }
+
+        if (Installer.VsIsRunning)
+          MessageBox.Show($"Installed successfully.\r\nVisual Studio is currently running.\r\nYou will need to restart Visual Studio in order to use the MsgPack inspector.\r\n\r\nFiles installed:\r\n{success}", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+        else
+          MessageBox.Show($"Installed successfully.\r\n\r\nFiles installed:\r\n{success}", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
       }
       catch (Exception ex)

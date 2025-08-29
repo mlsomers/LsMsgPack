@@ -146,6 +146,10 @@
       <Project>{1d06fe9f-830f-4ee2-bd10-0b12522e1dfc}</Project>
       <Name>LsMsgPack</Name>
     </ProjectReference>
+    <ProjectReference Include="..\LsMsgPackVisualStudioPlugin\DebuggerProxy\DebuggerProxy.csproj">
+      <Project>{e87b099b-63e8-4238-b0b0-cea44ed72b4f}</Project>
+      <Name>DebuggerProxy</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

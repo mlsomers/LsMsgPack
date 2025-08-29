@@ -32,6 +32,7 @@ Restart fiddler and you should see a MsgPack option in the Inspectors list.
 [assembly: AssemblyCulture("")]
 
 [assembly: InternalsVisibleTo("LsMsgPackFiddlerInspector")]
+[assembly: InternalsVisibleTo("LsMsgPackVisualStudioPlugin")]
 
 // Setting ComVisible to false makes the types in this assembly not visible 
 // to COM components.  If you need to access a type in this assembly from 
