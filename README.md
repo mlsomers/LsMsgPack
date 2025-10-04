@@ -4,6 +4,8 @@ MsgPack debugging and validation tool also usable as Fiddler plugin
 More info about this application (and screenshots) can be found at:
 http://www.infotopie.nl/open-source/msgpack-explorer
 
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/yellow_img.png)](https://www.buymeacoffee.com/mlsomers)
+
 [![.NET](https://github.com/mlsomers/LsMsgPack/actions/workflows/dotnet.yml/badge.svg)](https://github.com/mlsomers/LsMsgPack/actions/workflows/dotnet.yml)
 
 Library Usage Example
@@ -43,7 +45,7 @@ Serializing classes by creating name-value dictionaries of their properties is n
 
 For this reason I have submitted a [pull request]( https://github.com/msgpack/msgpack/pull/334/commits/c6a4935b9e0e38818cc1ef878db72621143bfcd7) to the official MsgPack specification, including a more standardized choice of solutions and in addition a standard way to support polymorphic class-hierarchies.
 
-While using dictionaries diminishes the small size of a MsgPack message, it does help bring up the compatibility level with other serializers (XML / JSON) so that it can be used as a drop-in replacement. I hope to deal with part of the problem later by adding a schema, but letís first just bring it up to speed with other serializers for now.
+While using dictionaries diminishes the small size of a MsgPack message, it does help bring up the compatibility level with other serializers (XML / JSON) so that it can be used as a drop-in replacement. I hope to deal with part of the problem later by adding a schema, but let‚Äôs first just bring it up to speed with other serializers for now.
 
 Polymorphic class-hierarchy support
 -----------------------------------
@@ -57,7 +59,7 @@ There are limits and edge cases to this rule though. For example:
 public IEnumerable<object> Pets { get; set; } = new HashSet<IPet> { new Cat(), new Dog() };
 ```
 
-May require you to call `MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));` once somewhere before trying to deserialize it. If the property is changed to `IEnumerable<IPet>` instead of `IEnumerable<object>` it will work without preregistering because the deserializer will know how to find the assembly where IPet is defined. Pre-caching may also be required when not all derived IPet implementations are in the same assembly as the IPet interface. There are multiple tier caches; the fastest is the ìused namesî cache where only previously used types are cached for fast lookup the next time the type is encountered. A 2nd tier has names of all types in cached assemblies. Not all assemblies will be cached by default (waste of memory) but you can opt into caching all loaded assemblies by using an included `WildGooseChaseResolver` which will scan all loaded assemblies when looking for a type (and cache the searched assemblies until it finds the wanted type).
+May require you to call `MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));` once somewhere before trying to deserialize it. If the property is changed to `IEnumerable<IPet>` instead of `IEnumerable<object>` it will work without preregistering because the deserializer will know how to find the assembly where IPet is defined. Pre-caching may also be required when not all derived IPet implementations are in the same assembly as the IPet interface. There are multiple tier caches; the fastest is the ‚Äúused names‚Äù cache where only previously used types are cached for fast lookup the next time the type is encountered. A 2nd tier has names of all types in cached assemblies. Not all assemblies will be cached by default (waste of memory) but you can opt into caching all loaded assemblies by using an included `WildGooseChaseResolver` which will scan all loaded assemblies when looking for a type (and cache the searched assemblies until it finds the wanted type).
 
 
 Fiddler Integration
