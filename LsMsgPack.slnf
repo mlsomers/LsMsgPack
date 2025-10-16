@@ -1,0 +1,9 @@
+{
+  "solution": {
+    "path": "LsMsgPack.sln",
+    "projects": [
+      "LsMsgPackNetStandard/LsMsgPack.csproj",
+      "LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj"
+    ]
+  }
+}

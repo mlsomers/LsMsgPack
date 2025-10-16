@@ -22,6 +22,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "WinformsDebugger", "Winform
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{57B35D3B-F51C-40C2-8CA0-769FE26D9064}"
 	ProjectSection(SolutionItems) = preProject
+		LsMsgPack.slnf = LsMsgPack.slnf
 		README.md = README.md
 	EndProjectSection
 EndProject
