@@ -34,7 +34,7 @@ namespace LsMsgPackUnitTests
       bool typesAreEqual = (expectedMsgPackType & resultType) == expectedMsgPackType;
       Assert.IsTrue(typesAreEqual, string.Concat("Expected packed type of ", expectedMsgPackType, " but received the type ", resultType));
       Assert.IsTrue(foundType == expectedType, string.Concat("Expected type of ", expectedType.ToString(), " but received the type ", foundType.ToString()));
-      if (expectedLength >= 0) Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected a packed length of ", expectedLength.ToString(), " bytes but got ", buffer.Length.ToString(), " bytes."));
+      if (expectedLength >= 0) Assert.HasCount(expectedLength, buffer, string.Concat("Expected a packed length of ", expectedLength.ToString(), " bytes but got ", buffer.Length.ToString(), " bytes."));
 
       MsgPackItem recreate = MsgPackItem.Unpack(new MemoryStream(buffer));
 

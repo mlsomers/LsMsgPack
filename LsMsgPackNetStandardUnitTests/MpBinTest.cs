@@ -8,7 +8,7 @@ namespace LsMsgPackUnitTests
   public class MpBinTest
   {
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0, 2, MsgPackTypeId.MpBin8)]
     [DataRow(1, 3, MsgPackTypeId.MpBin8)]
     [DataRow(32, 34, MsgPackTypeId.MpBin8)]

@@ -7,7 +7,7 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class MpRootTests
   {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, 11, 1, "hello")]
     [DataRow(true, 7, 1, "hello")]
 
@@ -19,7 +19,7 @@ namespace LsMsgPackUnitTests
       MpRoot root = MsgPackItem.PackMultiple(dynamicallyCompact, items);
       byte[] bytes = root.ToBytes();
 
-      Assert.AreEqual(expectedLength, bytes.Length, string.Concat("Expected ", expectedLength, " serialized bytes items but got ", bytes.Length, " bytes."));
+      Assert.HasCount(expectedLength, bytes, string.Concat("Expected ", expectedLength, " serialized bytes items but got ", bytes.Length, " bytes."));
 
       MpRoot result = MsgPackItem.UnpackMultiple(bytes);
 

@@ -7,7 +7,7 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class MpMapTest
   {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0, 1, MsgPackTypeId.MpMap4)]
     [DataRow(1, 2, MsgPackTypeId.MpMap4)]
     [DataRow(15, 16, MsgPackTypeId.MpMap4)]
@@ -25,14 +25,14 @@ namespace LsMsgPackUnitTests
 
       KeyValuePair<object, object>[] ret = item.GetTypedValue<KeyValuePair<object, object>[]>();
 
-      Assert.AreEqual(length, ret.Length, string.Concat("Expected ", length, " items but got ", ret.Length, " items in the map."));
+      Assert.HasCount(length, ret, string.Concat("Expected ", length, " items but got ", ret.Length, " items in the map."));
       for (int t = ret.Length - 1; t >= 0; t--)
       {
         Assert.AreEqual(test[t], ret[t], string.Concat("Expected ", test[t], " but got ", ret[t], " at index ", t));
       }
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, 47)]
     [DataRow(true, 47)]
     public void AssortedMix(bool preserveTypes, int expectedLength)
@@ -50,7 +50,7 @@ namespace LsMsgPackUnitTests
 
       KeyValuePair<object, object>[] ret = item.GetTypedValue<KeyValuePair<object, object>[]>();
 
-      Assert.AreEqual(items.Length, ret.Length, string.Concat("Expected ", items.Length, " items but got ", ret.Length, " items in the array."));
+      Assert.HasCount(items.Length, ret, string.Concat("Expected ", items.Length, " items but got ", ret.Length, " items in the array."));
       for (int t = ret.Length - 1; t >= 0; t--)
       {
         Assert.AreEqual(items[t], ret[t], string.Concat("Expected ", items[t], " but got ", ret[t], " at index ", t));

@@ -145,7 +145,7 @@ namespace LsMsgPackUnitTests
       string org = JsonConvert.SerializeObject(container);
 
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
-      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
+      Assert.HasCount(expectedLength, buffer, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
     }
 
     [TestMethod]
@@ -178,7 +178,7 @@ namespace LsMsgPackUnitTests
       string org = JsonConvert.SerializeObject(container);
 
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
-      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
+      Assert.HasCount(expectedLength, buffer, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
     }
 
     private class Resolver : IMsgPackTypeResolver
@@ -239,7 +239,7 @@ namespace LsMsgPackUnitTests
       string org = JsonConvert.SerializeObject(container);
 
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
-      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
+      Assert.HasCount(expectedLength, buffer, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
     }
 
     private class Resolver2 : IMsgPackTypeResolver
@@ -288,7 +288,7 @@ namespace LsMsgPackUnitTests
       string org = JsonConvert.SerializeObject(container);
 
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
-      Assert.AreEqual(expectedLength, buffer.Length, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
+      Assert.HasCount(expectedLength, buffer, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
     }
   }
 }

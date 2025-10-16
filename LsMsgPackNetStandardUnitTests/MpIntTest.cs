@@ -10,7 +10,7 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class MpIntTest
   {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow((byte)0)]   
     [DataRow((byte)1)]   
     [DataRow((byte)65)]  
@@ -20,7 +20,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpInt, byte>(value, 1, MsgPackTypeId.MpBytePart);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow((sbyte)-1)]   
     [DataRow((sbyte)-15)]  
     [DataRow((sbyte)-31)]  
@@ -29,7 +29,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpInt, sbyte>(value, 1, MsgPackTypeId.MpBytePart);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow((byte)128)]  
     [DataRow((byte)200)]  
     [DataRow((byte)255)]  
@@ -38,7 +38,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpInt, byte>(value, 2, MsgPackTypeId.MpUByte);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow((sbyte)-32)]   
     [DataRow((sbyte)-100)]  
     [DataRow((sbyte)-128)]  
@@ -47,7 +47,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpInt, sbyte>(value, 2, MsgPackTypeId.MpSByte);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow((short)-129)]    
     [DataRow((short)-1000)]   
     [DataRow(short.MinValue)] 
@@ -56,7 +56,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpInt, short>(value, 3, MsgPackTypeId.MpShort);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow((ushort)256)]
     [DataRow((ushort)1000)]
     [DataRow(ushort.MaxValue)]
@@ -65,7 +65,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpInt, ushort>(value, 3, MsgPackTypeId.MpUShort);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(short.MinValue - 1)]
     [DataRow(short.MinValue - 1000)]
     [DataRow(int.MinValue)]
@@ -74,7 +74,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpInt, int>(value, 5, MsgPackTypeId.MpInt);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(((uint)ushort.MaxValue) + 1)]
     [DataRow((uint)int.MaxValue)]
     [DataRow(uint.MaxValue)]
@@ -83,7 +83,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpInt, uint>(value, 5, MsgPackTypeId.MpUInt);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(((long)int.MinValue) - 1)]
     [DataRow(((long)int.MinValue) - 1000)]
     [DataRow(long.MinValue)]
@@ -92,7 +92,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpInt, long>(value, 9, MsgPackTypeId.MpLong);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(((ulong)uint.MaxValue) + 1)]
     [DataRow((ulong)long.MaxValue)]
     [DataRow(ulong.MaxValue)]
@@ -103,7 +103,7 @@ namespace LsMsgPackUnitTests
 
     // Since these tests are ignored by MsTest (left attributes) due to the Generic method, we need to run them in NUnit (right attributes)
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, (sbyte)50, 1, MsgPackTypeId.MpBytePart)]      [TestCase(false, (sbyte)50, 1, MsgPackTypeId.MpBytePart)]
     [DataRow(false, (int)128, 2, MsgPackTypeId.MpUByte)]          [TestCase(false, (int)128, 2, MsgPackTypeId.MpUByte)]
     [DataRow(false, (short)129, 2, MsgPackTypeId.MpUByte)]        [TestCase(false, (short)129, 2, MsgPackTypeId.MpUByte)]
@@ -130,7 +130,7 @@ namespace LsMsgPackUnitTests
 
     // Since these tests are ignored by MsTest (left attributes) due to the Generic method, we need to run them in NUnit (right attributes)
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow((ulong)1, 1, MsgPackTypeId.MpBytePart)]                    [TestCase((ulong)1, 1, MsgPackTypeId.MpBytePart)]
     [DataRow((ulong)127, 1, MsgPackTypeId.MpBytePart)]                  [TestCase((ulong)127, 1, MsgPackTypeId.MpBytePart)]
     [DataRow((ulong)128, 2, MsgPackTypeId.MpUByte)]                     [TestCase((ulong)128, 2, MsgPackTypeId.MpUByte)]
@@ -201,7 +201,7 @@ namespace LsMsgPackUnitTests
 
     // Since these tests are ignored by MsTest (left attributes) due to the Generic method, we need to run them in NUnit (right attributes)
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow((ulong)1, 9, MsgPackTypeId.MpULong)]                     [TestCase((ulong)1, 9, MsgPackTypeId.MpULong)]
     [DataRow((ulong)127, 9, MsgPackTypeId.MpULong)]                   [TestCase((ulong)127, 9, MsgPackTypeId.MpULong)]
     [DataRow((ulong)128, 9, MsgPackTypeId.MpULong)]                   [TestCase((ulong)128, 9, MsgPackTypeId.MpULong)]
@@ -270,7 +270,7 @@ namespace LsMsgPackUnitTests
 
     // Since these tests are ignored by MsTest (left attributes) due to the Generic method, we need to run them in NUnit (right attributes)
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(regularInt32.First, MsgPackTypeId.MpUInt)]      [TestCase(regularInt32.First, MsgPackTypeId.MpUInt)]
     [DataRow(aByteEnum.First, MsgPackTypeId.MpBytePart)]     [TestCase(aByteEnum.First, MsgPackTypeId.MpBytePart)]
     [DataRow(aShortEnum.First, MsgPackTypeId.MpUShort)]      [TestCase(aShortEnum.First, MsgPackTypeId.MpUShort)]

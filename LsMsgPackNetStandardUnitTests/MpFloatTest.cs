@@ -7,7 +7,7 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class MpFloatTest
   {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0f)]
     [DataRow(1f)]
     [DataRow(-1f)]
@@ -22,7 +22,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpFloat, float>(value, 5, MsgPackTypeId.MpFloat);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0d)]
     [DataRow(1d)]
     [DataRow(-1d)]

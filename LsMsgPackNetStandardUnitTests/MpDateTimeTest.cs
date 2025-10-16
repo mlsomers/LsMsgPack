@@ -63,7 +63,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpDateTime, DateTime?>(dt, 10, MsgPackTypeId.MpFExt8);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(2106, 2, 6, 6, 28, 16, 0, MsgPackTypeId.MpFExt4)]
     [DataRow(2106, 2, 8, 6, 28, 16, 0, MsgPackTypeId.MpFExt8)]
     [DataRow(2514, 5, 29, 1, 53, 04, 0, MsgPackTypeId.MpFExt8)]

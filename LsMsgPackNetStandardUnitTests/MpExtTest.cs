@@ -7,7 +7,7 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class MpExtTest
   {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0, 3, MsgPackTypeId.MpExt8)]
     [DataRow(1, 3, MsgPackTypeId.MpFExt1)]
     [DataRow(2, 4, MsgPackTypeId.MpFExt2)]

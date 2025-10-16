@@ -10,7 +10,7 @@ namespace LsMsgPackUnitTests
 
     private static Random rnd = new Random();
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0, 1, MsgPackTypeId.MpArray4)]
     [DataRow(1, 2, MsgPackTypeId.MpArray4)]
     [DataRow(15, 16, MsgPackTypeId.MpArray4)]
@@ -28,7 +28,7 @@ namespace LsMsgPackUnitTests
 
       object[] ret = item.GetTypedValue<object[]>();
 
-      Assert.AreEqual(length, ret.Length, string.Concat("Expected ", length, " items but got ", ret.Length, " items in the array."));
+      Assert.HasCount(length, ret, string.Concat("Expected ", length, " items but got ", ret.Length, " items in the array."));
       for (int t = ret.Length - 1; t >= 0; t--)
       {
         Assert.IsTrue(MsgPackTests.AreEqualish(test[t], ret[t]), string.Concat("Expected ", test[t], " but got ", ret[t], " at index ", t));
@@ -47,7 +47,7 @@ namespace LsMsgPackUnitTests
       return addSize;
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(false, 40)]
     [DataRow(true, 47)]
     public void AssortedMix(bool preserveTypes, int expectedLength)
@@ -69,7 +69,7 @@ namespace LsMsgPackUnitTests
 
       object[] ret = item.GetTypedValue<object[]>();
 
-      Assert.AreEqual(items.Length, ret.Length, string.Concat("Expected ", items.Length, " items but got ", ret.Length, " items in the array."));
+      Assert.HasCount(items.Length, ret, string.Concat("Expected ", items.Length, " items but got ", ret.Length, " items in the array."));
       for (int t = ret.Length - 1; t >= 0; t--)
       {
         if (preserveTypes && t != 2) Assert.IsTrue(items[t].GetType() == ret[t].GetType(), string.Concat("Expected type ", items[t].GetType(), " items but got ", ret[t].GetType(), "."));

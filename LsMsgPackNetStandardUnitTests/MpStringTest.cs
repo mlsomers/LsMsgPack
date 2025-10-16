@@ -7,7 +7,7 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class MpStringTest
   {
-    [DataTestMethod]
+    [TestMethod]
     [DataRow("Hello world!", 13, MsgPackTypeId.MpStr5)]
     [DataRow("More than 31 characters in this nice string.", 46, MsgPackTypeId.MpStr8)]
     [DataRow("~!@#$%^&*()_+€–¿", 22, MsgPackTypeId.MpStr5)]
@@ -17,7 +17,7 @@ namespace LsMsgPackUnitTests
       MsgPackTests.RoundTripTest<MpString, string>(value, expectedBytes, expedctedType);
     }
 
-    [DataTestMethod]
+    [TestMethod]
     [DataRow(0, 1, MsgPackTypeId.MpStr5)]
     [DataRow(1, 2, MsgPackTypeId.MpStr5)]
     [DataRow(31, 32, MsgPackTypeId.MpStr5)]
