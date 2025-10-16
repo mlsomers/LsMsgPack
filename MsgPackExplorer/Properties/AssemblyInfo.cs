@@ -15,6 +15,8 @@ https://github.com/mlsomers/LsMsgPack
 More info about this application can be found at:
 http://www.infotopie.nl/open-source/msgpack-explorer
 
+
+
 -------------------
 Fiddler Integration
 -------------------
@@ -26,6 +28,18 @@ LsMsgPackFiddlerInspector.dll
 LsMsgPack.dll
 
 Restart fiddler and you should see a MsgPack option in the Inspectors list.
+
+-------------------
+Visual Studio Integration
+-------------------
+
+In order to debug byte arrays directly in visual studio copy the following files to the ...\Common7\Packages\Debugger\Visualizers directory of your version of Visual Studio (e.g. C:\Program Files\Microsoft Visual Studio\2022\Community\)
+
+MsgPackExplorer.exe
+LsMsgPackVisualStudioPlugin.dll
+LsMsgPack.dll
+
+After restarting Visual Studio you should be able to choose the new debugger by hovering over a byte[] variable.
 ")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyTrademark("")]

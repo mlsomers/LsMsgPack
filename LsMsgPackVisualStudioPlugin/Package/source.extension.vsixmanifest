@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
+    <Metadata>
+        <Identity Id="Package.f8d5e777-aa48-4592-897b-28d145246378" Version="1.0" Language="en-US" Publisher="Louis Somers" />
+        <DisplayName>MsgPack Debugger Extension</DisplayName>
+        <Description xml:space="preserve">Custom visualizer for debugging MsgPack formatted byte arrays.</Description>
+        <MoreInfo>https://github.com/mlsomers/LsMsgPack</MoreInfo>
+        <License>Apache-2.0 license.txt</License>
+        <GettingStartedGuide>While debugging after hitting a break point, hover over a byte array with the mouse, select the drop-down View widget and select "MsgPack debugging tool" as visualizer.</GettingStartedGuide>
+        <ReleaseNotes>Initial luanch</ReleaseNotes>
+        <Icon>Explore.ico</Icon>
+        <PreviewImage>Preview.png</PreviewImage>
+        <Tags>MsgPack</Tags>
+    </Metadata>
+    <Installation>
+        <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[16.0, 18.0)">
+            <ProductArchitecture>amd64</ProductArchitecture>
+        </InstallationTarget>
+        <InstallationTarget Version="[16.0,18.0)" Id="Microsoft.VisualStudio.Community">
+            <ProductArchitecture>x86</ProductArchitecture>
+        </InstallationTarget>
+        <InstallationTarget Version="[16.0,18.0)" Id="Microsoft.VisualStudio.Pro">
+            <ProductArchitecture>x86</ProductArchitecture>
+        </InstallationTarget>
+        <InstallationTarget Version="[16.0,18.0)" Id="Microsoft.VisualStudio.Pro">
+            <ProductArchitecture>amd64</ProductArchitecture>
+        </InstallationTarget>
+        <InstallationTarget Version="[16.0,18.0)" Id="Microsoft.VisualStudio.Enterprise">
+            <ProductArchitecture>x86</ProductArchitecture>
+        </InstallationTarget>
+        <InstallationTarget Version="[16.0,18.0)" Id="Microsoft.VisualStudio.Enterprise">
+            <ProductArchitecture>amd64</ProductArchitecture>
+        </InstallationTarget>
+    </Installation>
+    <Dependencies>
+        <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" d:Source="Manual" Version="[4.5,)" />
+    </Dependencies>
+    <Assets>
+        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPackVisualStudioPlugin.dll" AssemblyName="LsMsgPackVisualStudioPlugin, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
+        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPack.dll" AssemblyName="LsMsgPack, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
+        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\netstandard2.0\DebuggerProxy.dll" AssemblyName="DebuggerProxy, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers\netstandard2.0" />
+        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\MsgPackExplorer.exe" AssemblyName="MsgPackExplorer, Version=1.0.0.3, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
+    </Assets>
+    <Prerequisites>
+        <Prerequisite Id="Microsoft.NetCore.Component.DevelopmentTools" Version="[15.0,18.0)" DisplayName="Development tools for .NET" />
+    </Prerequisites>
+</PackageManifest>

@@ -94,4 +94,7 @@
   <ItemGroup>
     <Content Include="Explore.ico" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
 </Project>

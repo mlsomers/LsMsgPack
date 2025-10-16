@@ -66,7 +66,7 @@ namespace LsMsgPackUnitTests
       }
       else
       {
-        Assert.AreEqual(value, ret, "The returned value ", ret, " differs from the input value ", value);
+        Assert.AreEqual<T>(value, ret, string.Concat("The returned value ", ret, " differs from the input value ", value));
       }
 
       return recreate;

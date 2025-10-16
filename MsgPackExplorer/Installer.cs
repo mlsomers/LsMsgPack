@@ -26,6 +26,8 @@ namespace MsgPackExplorer {
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio 10.0\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio 12.0\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Community\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Professional\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
     };
 

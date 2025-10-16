@@ -30,7 +30,7 @@ namespace LsMsgPackUnitTests
         object expected = items[t];
         object actual = result[t].Value;
 
-        Assert.IsTrue(MsgPackTests.AreEqualish(expected, actual), "The returned value ", actual, " differs from the input value ", expected);
+        Assert.IsTrue(MsgPackTests.AreEqualish(expected, actual), string.Concat("The returned value ", actual, " differs from the input value ", expected));
       }
     }
   }

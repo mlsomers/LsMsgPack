@@ -1,11 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.Diagnostics;
-using System.Drawing;
-using System.Linq;
 using System.Reflection;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace MsgPackExplorer {
@@ -84,6 +79,11 @@ namespace MsgPackExplorer {
 
     private void textBoxDescription_LinkClicked(object sender, LinkClickedEventArgs e) {
       Process.Start(e.LinkText);
+    }
+
+    private void label1_Click(object sender, EventArgs e)
+    {
+      Process.Start("https://www.buymeacoffee.com/mlsomers");
     }
   }
 }
