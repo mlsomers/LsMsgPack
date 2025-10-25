@@ -1,12 +1,11 @@
 ﻿using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
 using System;
-using System.Collections.Generic;
 using System.ComponentModel;
 
 namespace LsMsgPack
 {
-    public class MsgPackSettings
+  public class MsgPackSettings
   {
     internal bool FileContainsErrors = false;
     internal bool _dynamicallyCompact = true;
@@ -110,9 +109,9 @@ namespace LsMsgPack
     /// </list>
     /// </summary>
     public IMsgPackPropertyIncludeStatically[] StaticFilters = new IMsgPackPropertyIncludeStatically[]{
-      new FilterNonSettable(), 
-      new FilterIgnoredAttribute()
-    };
+            new FilterNonSettable(),
+            new FilterIgnoredAttribute()
+        };
 
     /// <summary>
     /// Included:
@@ -130,6 +129,27 @@ namespace LsMsgPack
     /// </list>
     /// </summary>
     public IMsgPackPropertyIdResolver[] PropertyNameResolvers = new IMsgPackPropertyIdResolver[0];
+
+
+    public MsgPackSettings Clone()
+    {
+      return new MsgPackSettings
+      {
+        FileContainsErrors = FileContainsErrors,
+        _dynamicallyCompact = _dynamicallyCompact,
+        _endianAction = _endianAction,
+        _addTypeName = _addTypeName,
+
+#if KEEPTRACK
+        _preservePackages = _preservePackages,
+        _continueProcessingOnBreakingError = _continueProcessingOnBreakingError,
+#endif
+        TypeResolvers = TypeResolvers,
+        StaticFilters = StaticFilters,
+        DynamicFilters = DynamicFilters,
+        PropertyNameResolvers = PropertyNameResolvers
+      };
+    }
   }
 
   public enum EndianAction

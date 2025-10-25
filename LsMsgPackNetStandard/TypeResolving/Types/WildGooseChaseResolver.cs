@@ -11,12 +11,12 @@ namespace LsMsgPack.TypeResolving.Types
   /// </summary>
   public class WildGooseChaseResolver : IMsgPackTypeResolver
   {
-    public object IdForType(Type type, FullPropertyInfo assignedTo)
+    public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
     {
       return null; // use default
     }
 
-    public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<string, object> properties)
+    public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
     {
       string typeName = typeId as string;
 

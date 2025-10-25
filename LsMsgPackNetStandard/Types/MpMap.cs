@@ -84,13 +84,18 @@ namespace LsMsgPack
       if (IsSubclassOfRawGeneric(typeof(Dictionary<,>), typeof(T)))
       {
         IDictionary dict = (IDictionary)Activator.CreateInstance(typeof(T), new object[] { value.Length });
-        for (int t = value.Length - 1; t >= 0; t--)
-        {
-          dict.Add(value[t].Key, value[t].Value);
-        }
+        FillDictionary(dict);
         return (T)dict;
       }
       return base.GetTypedValue<T>();
+    }
+
+    internal void FillDictionary<T>(T dict) where T: IDictionary
+    {
+      for (int t = value.Length - 1; t >= 0; t--)
+      {
+        dict.Add(value[t].Key, value[t].Value);
+      }
     }
 
 #if KEEPTRACK

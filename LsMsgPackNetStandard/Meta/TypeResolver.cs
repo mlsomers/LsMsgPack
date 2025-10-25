@@ -22,14 +22,14 @@ namespace LsMsgPack.Meta
     // 3rd tier cache
     private static readonly Dictionary<string, HashSet<Type>> NameCache = new Dictionary<string, HashSet<Type>>(); // Can contain duplicate names
 
-    internal static Type Resolve(object typeId, Type assignedTo, FullPropertyInfo rootProp, MpMap map, Dictionary<string, object> propVals)
+    internal static Type Resolve(object typeId, Type assignedTo, FullPropertyInfo rootProp, MpMap map, Dictionary<object, object> propVals)
     {
       Type result;
       // First give custom resolvers (if any) a chance...
       for (int t = (map.Settings?.TypeResolvers.Length ?? 0) - 1; t >= 0; t--)
       {
         IMsgPackTypeResolver resolver = map.Settings.TypeResolvers[t];
-        result = resolver.Resolve(typeId, assignedTo, rootProp, propVals);
+        result = resolver.Resolve(typeId, assignedTo, rootProp, propVals, map.Settings);
         if (result != null && !result.ContainsGenericParameters)
           return result;
       }
@@ -152,7 +152,7 @@ namespace LsMsgPack.Meta
 
       for (int t = resolvers.Length - 1; t >= 0; t--)
       {
-        result = resolvers[t].Resolve(typeName, null, null, null);
+        result = resolvers[t].Resolve(typeName, null, null, null, null);
         if (result != null)
         {
           UsedNameCache.Add(typeName, result);

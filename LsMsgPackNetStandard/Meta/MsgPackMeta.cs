@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace LsMsgPack {
-  public static class MsgPackMeta {
+namespace LsMsgPack
+{
+  public static class MsgPackMeta
+  {
 
     public static readonly PackDef[] AllPacks;
     public static readonly Dictionary<MsgPackTypeId, PackDef> FromTypeId;
@@ -13,8 +15,10 @@ namespace LsMsgPack {
     private static readonly HashSet<byte> ValidPackageStartBytes;
 #endif
 
-    public class PackDef {
-      public PackDef(MsgPackTypeId typeId, string officialName, string description) {
+    public class PackDef
+    {
+      public PackDef(MsgPackTypeId typeId, string officialName, string description)
+      {
         OfficialName = officialName;
         Description = description;
         TypeId = typeId;
@@ -35,7 +39,8 @@ namespace LsMsgPack {
 
     private static readonly MsgPackTypeId[][] typeFamilys;
 
-    static MsgPackMeta() {
+    static MsgPackMeta()
+    {
       AllPacks = new PackDef[] {
        new PackDef(MsgPackTypeId.MpNull,     "nil", "Unassigned (null) value"),
 
@@ -87,9 +92,9 @@ namespace LsMsgPack {
       };
 
       FromTypeId = new Dictionary<MsgPackTypeId, PackDef>(AllPacks.Length);
-      for(int t = AllPacks.Length - 1; t >= 0; t--) FromTypeId.Add(AllPacks[t].TypeId, AllPacks[t]);
+      for (int t = AllPacks.Length - 1; t >= 0; t--) FromTypeId.Add(AllPacks[t].TypeId, AllPacks[t]);
       FromName = new Dictionary<string, PackDef>(AllPacks.Length);
-      for(int t = AllPacks.Length - 1; t >= 0; t--) FromName.Add(AllPacks[t].OfficialName, AllPacks[t]);
+      for (int t = AllPacks.Length - 1; t >= 0; t--) FromName.Add(AllPacks[t].OfficialName, AllPacks[t]);
 
       IntTypeFamily = new MsgPackTypeId[]{
           MsgPackTypeId.MpBytePart,
@@ -161,24 +166,42 @@ namespace LsMsgPack {
     }
 
 #if KEEPTRACK
-    public static bool IsValidPackageStartByte(byte b) {
-      if(ValidPackageStartBytes.Contains(b)) return true;
-      if((b & 0xE0) == 0xE0 || ((b & 0x80) == 0)) return true; // int
-      else if((b & 0xA0) == 0xA0) return true; // string
-      else if((b & 0x90) == 0x90) return true; // array
-      else if((b & 0x80) == 0x80) return true; // map
+    public static bool IsValidPackageStartByte(byte b)
+    {
+      if (ValidPackageStartBytes.Contains(b)) return true;
+      if ((b & 0xE0) == 0xE0 || ((b & 0x80) == 0)) return true; // int
+      else if ((b & 0xA0) == 0xA0) return true; // string
+      else if ((b & 0x90) == 0x90) return true; // array
+      else if ((b & 0x80) == 0x80) return true; // map
       return false;
     }
 #endif
 
-    public static bool AreInSameFamily(MsgPackTypeId a, MsgPackTypeId b, bool NullIsEqual = true) {
-      if(a == b) return true;
-      if(a == MsgPackTypeId.MpNull || b == MsgPackTypeId.MpNull) return NullIsEqual;
-      for(int t = typeFamilys.GetLength(0) - 1; t >= 0; t--) {
-        if(typeFamilys[t].Contains(a)) return typeFamilys[t].Contains(b);
+    public static bool AreInSameFamily(MsgPackTypeId a, MsgPackTypeId b, bool NullIsEqual = true)
+    {
+      if (a == b) return true;
+      if (a == MsgPackTypeId.MpNull || b == MsgPackTypeId.MpNull) return NullIsEqual;
+      for (int t = typeFamilys.GetLength(0) - 1; t >= 0; t--)
+      {
+        if (typeFamilys[t].Contains(a)) return typeFamilys[t].Contains(b);
       }
       return false;
     }
 
+
+    public static readonly HashSet<Type> NumericTypes = new HashSet<Type>(new[]
+    {
+     typeof(sbyte),
+     typeof(short),
+     typeof(int),
+     typeof(long),
+     typeof(byte),
+     typeof(ushort),
+     typeof(uint),
+     typeof(ulong),
+     typeof(float),
+     typeof(double),
+     typeof(decimal),
+    });
   }
 }

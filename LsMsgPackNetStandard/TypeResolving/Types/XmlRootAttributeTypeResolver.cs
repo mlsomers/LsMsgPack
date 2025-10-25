@@ -16,7 +16,7 @@ namespace LsMsgPack.TypeResolving.Types
         private Dictionary<string, Type> _resolve = new Dictionary<string, Type>();
         private Dictionary<Type, string> _resolveWriting = new Dictionary<Type, string>();
 
-        public object IdForType(Type type, FullPropertyInfo assignedTo)
+        public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
         {
             if (_resolveWriting.TryGetValue(type, out string value))
                 return value;
@@ -51,7 +51,7 @@ namespace LsMsgPack.TypeResolving.Types
                 RegisterType(types[t]);
         }
 
-        public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<string, object> properties)
+        public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
         {
             return _resolve[(string)typeId];
         }

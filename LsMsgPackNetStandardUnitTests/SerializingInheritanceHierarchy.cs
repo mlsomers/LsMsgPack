@@ -25,7 +25,7 @@ namespace LsMsgPackUnitTests
   {
     public float ClawLengthMilimeters { get; set; }
 
-    public int NotNullable {  get; set; }
+    public int NotNullable { get; set; }
   }
 
   public class Dog : MyPetBaseClass
@@ -60,6 +60,18 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class SerializingInheritanceHierarchy
   {
+
+    public TestContext TestContext { get; private set; }
+
+    SerializingInheritanceHierarchy(TestContext context)
+    {
+      TestContext = context;
+    }
+
+    public SerializingInheritanceHierarchy()
+    {
+      MsgPackSerializer.CacheAssemblyTypes(typeof(IIPet)); // or else the type will not be found (only needed once).
+    }
 
     public static HierarchyContainer GetDefault()
     {
@@ -138,7 +150,7 @@ namespace LsMsgPackUnitTests
       SetFilters(settings, omitDefault, omitNull);
 
       byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      
+
       HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer);
 
       string returned = JsonConvert.SerializeObject(ret);
@@ -183,7 +195,7 @@ namespace LsMsgPackUnitTests
 
     private class Resolver : IMsgPackTypeResolver
     {
-      public object IdForType(Type type, FullPropertyInfo assignedTo)
+      public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
       {
         if (type == typeof(Dog))
           return 1;
@@ -196,12 +208,12 @@ namespace LsMsgPackUnitTests
         return null;
       }
 
-      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<string, object> properties)
+      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
       {
         if (typeId == null)
           return null;
 
-        int id= Convert.ToInt32(typeId);
+        int id = Convert.ToInt32(typeId);
 
         switch (id)
         {
@@ -210,7 +222,7 @@ namespace LsMsgPackUnitTests
           case 3: return typeof(Dog[]);
           case 4: return typeof(Cat[]);
         }
-        
+
         return null;
       }
     }
@@ -244,12 +256,12 @@ namespace LsMsgPackUnitTests
 
     private class Resolver2 : IMsgPackTypeResolver
     {
-      public object IdForType(Type type, FullPropertyInfo assignedTo)
+      public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
       {
         return null; // use default
       }
 
-      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<string, object> properties)
+      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
       {
         if (properties.ContainsKey("ClawLengthMilimeters"))
           return typeof(Cat);
@@ -281,7 +293,6 @@ namespace LsMsgPackUnitTests
       SetFilters(settings, omitDefault, omitNull);
 
       byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      MsgPackSerializer.CacheAssemblyTypes(typeof(IIPet)); // or else the type will not be found (only needed once).
       NextLevelHierarchyContainer ret = MsgPackSerializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
 
       string returned = JsonConvert.SerializeObject(ret);
@@ -289,6 +300,82 @@ namespace LsMsgPackUnitTests
 
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
       Assert.HasCount(expectedLength, buffer, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
+    }
+
+    [TestMethod]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 570)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 566)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 536)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 536)]
+
+    [DataRow(AddTypeIdOption.Always, false, false, 607)]
+    [DataRow(AddTypeIdOption.Always, false, true, 603)]
+    [DataRow(AddTypeIdOption.Always, true, false, 573)]
+    [DataRow(AddTypeIdOption.Always, true, true, 573)]
+    public void Hirarchical_NextLevelWithSchema(AddTypeIdOption addTypeName, bool omitDefault, bool omitNull, int expectedLength)
+    {
+      NextLevelHierarchyContainer container = GetNextLevel();
+
+      MsgPackSettings settings = new MsgPackSettings()
+      {
+        AddTypeIdOptions = addTypeName,
+      };
+      SetFilters(settings, omitDefault, omitNull);
+
+      byte[] buffer = MsgPackSerializer.SerializeWithSchema(container, settings);
+      NextLevelHierarchyContainer ret = MsgPackSerializer.DeserializeWithSchema<NextLevelHierarchyContainer>(buffer, settings);
+
+      string returned = JsonConvert.SerializeObject(ret);
+      string org = JsonConvert.SerializeObject(container);
+
+      Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
+      Assert.HasCount(expectedLength, buffer, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
+    }
+
+    [TestMethod]
+    public void SchemaBecomesSmallerWithMoreData()
+    {
+      NextLevelHierarchyContainer container = GetNextLevel();
+      string org = JsonConvert.SerializeObject(container);
+
+      byte[] buffer = MsgPackSerializer.Serialize(container);
+      NextLevelHierarchyContainer ret = MsgPackSerializer.Deserialize<NextLevelHierarchyContainer>(buffer);
+
+      string returned = JsonConvert.SerializeObject(ret);
+      Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
+
+      byte[] bufferSchema = MsgPackSerializer.SerializeWithSchema(container);
+      ret = MsgPackSerializer.DeserializeWithSchema<NextLevelHierarchyContainer>(bufferSchema);
+
+      returned = JsonConvert.SerializeObject(ret);
+      Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
+
+      Assert.IsGreaterThan(buffer.Length, bufferSchema.Length); // with just a few items, adding a schema makes the file larger
+
+      TestContext.WriteLine($"1 pet: Normal: {buffer.Length}  With schema: {bufferSchema.Length}  = {100d - ((buffer.Length * 100d) / bufferSchema.Length):N2} % larger");
+
+      // -- check the difference with 100 pets
+
+      Dictionary<int, IIPet> dict = container.Pets as Dictionary<int, IIPet>;
+      for (int t = 100 - 1; t >= 4; t--)  
+        dict.Add(t, dict[t % 3]);
+      org = JsonConvert.SerializeObject(container);
+
+      buffer = MsgPackSerializer.Serialize(container);
+      ret = MsgPackSerializer.Deserialize<NextLevelHierarchyContainer>(buffer);
+
+      returned = JsonConvert.SerializeObject(ret);
+      Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
+
+      bufferSchema = MsgPackSerializer.SerializeWithSchema(container);
+      ret = MsgPackSerializer.DeserializeWithSchema<NextLevelHierarchyContainer>(bufferSchema);
+
+      returned = JsonConvert.SerializeObject(ret);
+      Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
+
+      Assert.IsGreaterThan(bufferSchema.Length, buffer.Length); // with just a few items, adding a schema makes the file larger
+
+      TestContext.WriteLine($"100 pets: Normal: {buffer.Length}  With schema: {bufferSchema.Length}  = {100d - ((bufferSchema.Length * 100d) / buffer.Length):N2} % smaller");
     }
   }
 }

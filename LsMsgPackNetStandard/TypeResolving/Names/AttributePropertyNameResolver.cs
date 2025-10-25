@@ -3,6 +3,7 @@ using LsMsgPack.TypeResolving.Interfaces;
 using System;
 using System.Reflection;
 using System.Xml;
+using System.Xml.Serialization;
 
 namespace LsMsgPack.TypeResolving.Names
 {
@@ -22,7 +23,7 @@ namespace LsMsgPack.TypeResolving.Names
             _customAttributePropertyInfo = customAttribute.GetProperty(customAttributePropertyName);
         }
 
-        public object GetId(FullPropertyInfo assignedTo)
+        public object GetId(FullPropertyInfo assignedTo, MsgPackSettings settings)
         {
             if (_customAttribute != null)
             {
@@ -39,13 +40,13 @@ namespace LsMsgPack.TypeResolving.Names
             {
                 return val.GetType().GetProperty("PropertyName").GetValue(val2).ToString(); // Using reflection because we do not want any dependency!
             }
-            if (assignedTo.CustomAttributes.TryGetValue(nameof(XmlAttribute), out object val3)) // Xml Attribute
+            if (assignedTo.CustomAttributes.TryGetValue(nameof(XmlAttributeAttribute), out object val3)) // Xml Attribute
             {
-                return ((XmlAttribute)val3).Name;
+                return ((XmlAttributeAttribute)val3).AttributeName;
             }
-            if (assignedTo.CustomAttributes.TryGetValue(nameof(XmlElement), out object val4)) // Xml Element
+            if (assignedTo.CustomAttributes.TryGetValue(nameof(XmlElementAttribute), out object val4)) // Xml Element
             {
-                return ((XmlElement)val4).Name;
+                return ((XmlElementAttribute)val4).ElementName;
             }
             return null; // revert to default
         }

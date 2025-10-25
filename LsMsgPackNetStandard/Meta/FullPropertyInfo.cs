@@ -1,13 +1,12 @@
-﻿using LsMsgPack.TypeResolving.Interfaces;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Threading;
 
 namespace LsMsgPack.Meta
 {
   public class FullPropertyInfo
   {
+    // Type is a IMsgPackPropertyIdResolver Type
     private static readonly Dictionary<PropertyInfo, FullPropertyInfo> Cache = new Dictionary<PropertyInfo, FullPropertyInfo>();
     private static readonly Dictionary<Type, ConstructorInfo> _constructorTakingType = new Dictionary<Type, ConstructorInfo>();
 
@@ -17,14 +16,16 @@ namespace LsMsgPack.Meta
         return null;
 
       FullPropertyInfo full;
-      if (Cache.TryGetValue(propertyInfo, out full))
-        return full;
+      if (settings.PropertyNameResolvers is null || settings.PropertyNameResolvers.Length == 0){ // Only cache for default resolver, Implemented resolvers must have their own cache (or not)
+        if (Cache.TryGetValue(propertyInfo, out full))
+          return full;
+      }
 
       full = new FullPropertyInfo(propertyInfo);
 
       for (int t = settings.PropertyNameResolvers.Length - 1; t >= 0; t--)
       {
-        full.PropertyId = settings.PropertyNameResolvers[t].GetId(full);
+        full.PropertyId = settings.PropertyNameResolvers[t].GetId(full, settings);
         if (full.PropertyId != null)
           break;
       }
@@ -32,7 +33,8 @@ namespace LsMsgPack.Meta
       if (full.PropertyId == null)
         full.PropertyId = full.PropertyInfo.Name;
 
-      Cache.Add(propertyInfo, full);
+      if (settings.PropertyNameResolvers is null || settings.PropertyNameResolvers.Length == 0)
+        Cache.Add(propertyInfo, full);
       return full;
     }
 
@@ -104,7 +106,7 @@ namespace LsMsgPack.Meta
 
     public override string ToString()
     {
-      string ignored = (StaticallyIgnored.HasValue && StaticallyIgnored.Value) ? " (ignored)":string.Empty;
+      string ignored = (StaticallyIgnored.HasValue && StaticallyIgnored.Value) ? " (ignored)" : string.Empty;
       string propInfo = (PropertyInfo is null) ? " not a property" : $" property: {PropertyInfo.Name}";
       return $"{AssignedToType}{ignored}{propInfo}";
     }

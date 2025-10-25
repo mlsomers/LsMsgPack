@@ -1,12 +1,13 @@
 ﻿using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
+using LsMsgPack.TypeResolving.Interfaces;
+using LsMsgPack.TypeResolving.Names;
+using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using System.Xml.Linq;
 
 namespace LsMsgPack
 {
@@ -66,14 +67,14 @@ namespace LsMsgPack
       Type tType = item.GetType();
       Type nullableType = Nullable.GetUnderlyingType(tType);
       if (!(nullableType is null))
-        tType=nullableType;
+        tType = nullableType;
 
       MsgPackItem packed = MsgPackItem.Pack(item, settings, tType);
       if (packed != null)
-      { 
-        if(assignedTo?.AssignedToType is null 
+      {
+        if (assignedTo?.AssignedToType is null
           || settings.AddTypeIdOptions == AddTypeIdOption.Never
-          || tType.IsPrimitive 
+          || tType.IsPrimitive
           || tType == typeof(string)
           || (settings.AddTypeIdOptions.HasFlag(AddTypeIdOption.IfAmbiguious) && assignedTo?.AssignedToType == tType))
           return packed;
@@ -120,7 +121,7 @@ namespace LsMsgPack
       // Any complex object with properties
       props = GetSerializedProps(tType, settings);
       propVals = new Dictionary<object, object>(props.Length);
-      bool addTypeId=false;
+      bool addTypeId = false;
 
       if (settings.AddTypeIdOptions != AddTypeIdOption.Never)
       {
@@ -129,11 +130,11 @@ namespace LsMsgPack
         {
           object typeIdd = GetTypeIdentifier(tType, settings, assignedTo);
           propVals.Add(string.Empty, typeIdd);
-          addTypeId=true;
+          addTypeId = true;
         }
       }
 
-      if(packed != null)
+      if (packed != null)
       {
         propVals.Add("@", packed);
         return new MpMap(settings) { Value = propVals };
@@ -151,7 +152,7 @@ namespace LsMsgPack
 
           MpArray arr = new MpArray(settings) { Value = objects.ToArray() };
 
-          if(!addTypeId && !handleItems.SerializeProperties) // no need to wrap the array in a map
+          if (!addTypeId && !handleItems.SerializeProperties) // no need to wrap the array in a map
             return arr;
 
           propVals.Add("@", arr);
@@ -196,7 +197,7 @@ namespace LsMsgPack
 
       for (int t = settings.TypeResolvers.Length - 1; t >= 0; t--)
       {
-        typeId = settings.TypeResolvers[t].IdForType(type, propertyInfo);
+        typeId = settings.TypeResolvers[t].IdForType(type, propertyInfo, settings);
         if (typeId != null)
           break;
       }
@@ -209,7 +210,7 @@ namespace LsMsgPack
       return typeId;
     }
 
-    private static string GetTypeName(Type type, bool fullname)
+    internal static string GetTypeName(Type type, bool fullname)
     {
       Type[] args = type.GenericTypeArguments;
 
@@ -226,6 +227,77 @@ namespace LsMsgPack
       typeName = typeName.Substring(0, typeName.IndexOf('`'));
 
       return string.Concat(typeName, '<', string.Join(", ", names), '>');
+    }
+
+
+    public static byte[] SerializeWithSchema<T>(T item, bool dynamicallyCompact = true)
+    {
+      return SerializeWithSchema<T>(item, new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact });
+    }
+
+    public static byte[] SerializeWithSchema<T>(T item, MsgPackSettings settings)
+    {
+      if (ReferenceEquals(item, null))
+        return new MpNull().ToBytes();
+
+      MemoryStream ms = new MemoryStream();
+      SerializeWithSchema(item, ms, settings);
+      return ms.ToArray();
+    }
+
+    public static void SerializeWithSchema<T>(T item, Stream target, bool dynamicallyCompact = true)
+    {
+      SerializeWithSchema<T>(item, target, new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact });
+    }
+
+    public static void SerializeWithSchema<T>(T item, Stream target, MsgPackSettings settings)
+    {
+
+      if (settings == null)
+        settings = new MsgPackSettings();
+
+      IndexedSchemaTypeResolver resolver = new IndexedSchemaTypeResolver();
+
+      InjectSchema(settings, resolver);
+
+      MemoryStream ms = new MemoryStream();
+      Serialize(item, ms, settings);
+
+      MsgPackSettings schemaSerializationSettings = new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.Never };
+      schemaSerializationSettings.PropertyNameResolvers = new[]{ new AttributePropertyNameResolver() };
+      Serialize(resolver, target, schemaSerializationSettings);
+      ms.Seek(0, 0);
+      ms.CopyTo(target);
+
+      RemoveSchemaResolver(settings);
+
+      return;
+    }
+
+    private static void InjectSchema(MsgPackSettings settings, IndexedSchemaTypeResolver resolver)
+    {
+      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings.TypeResolvers);
+      resolvers.Insert(0, resolver);
+      settings.TypeResolvers = resolvers.ToArray();
+
+      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings.PropertyNameResolvers);
+      propNameResolvers.Insert(0, resolver);
+      settings.PropertyNameResolvers = propNameResolvers.ToArray();
+    }
+
+    private static void RemoveSchemaResolver(MsgPackSettings settings)
+    {
+      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings.TypeResolvers);
+      for (int t = resolvers.Count - 1; t >= 0; t--)
+        if (resolvers[t] is IndexedSchemaTypeResolver)
+          resolvers.RemoveAt(t);
+      settings.TypeResolvers = resolvers.ToArray();
+
+      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings.PropertyNameResolvers);
+      for (int t = propNameResolvers.Count - 1; t >= 0; t--)
+        if (propNameResolvers[t] is IndexedSchemaTypeResolver)
+          propNameResolvers.RemoveAt(t);
+      settings.PropertyNameResolvers = propNameResolvers.ToArray();
     }
 
     public static T Deserialize<T>(byte[] source)
@@ -249,6 +321,62 @@ namespace LsMsgPack
     public static T Deserialize<T>(Stream stream, MsgPackSettings settings)
     {
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
+      if (unpacked.Value is T)
+        return (T)unpacked.Value;
+
+      if (unpacked is MpMap)
+      {
+        MpMap map = (MpMap)unpacked;
+
+        T result = (T)Materialize(typeof(T), map);
+        return result;
+      }
+
+      T resultt = (T)ConvertDeserializeValue(unpacked.Value, typeof(T), new MpMap(settings), new FullPropertyInfo(typeof(T)));
+      return resultt;
+    }
+
+    public static T DeserializeWithSchema<T>(byte[] source)
+    {
+      return DeserializeWithSchema<T>(source, new MsgPackSettings());
+    }
+
+    public static T DeserializeWithSchema<T>(byte[] source, MsgPackSettings settings)
+    {
+      using (MemoryStream ms = new MemoryStream(source))
+      {
+        return DeserializeWithSchema<T>(ms, settings);
+      }
+    }
+
+    public static T DeserializeWithSchema<T>(Stream stream)
+    {
+      return DeserializeWithSchema<T>(stream, new MsgPackSettings());
+    }
+
+    public static T DeserializeWithSchema<T>(Stream stream, MsgPackSettings settings)
+    {
+      RemoveSchemaResolver(settings);
+
+      IndexedSchemaTypeResolver resolver = null;
+
+      MsgPackSettings schemaSerializationSettings = new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.Never };
+      schemaSerializationSettings.PropertyNameResolvers = new[] { new AttributePropertyNameResolver() };
+
+      MsgPackItem unpacked = MsgPackItem.Unpack(stream, schemaSerializationSettings);
+      if (unpacked.Value is IndexedSchemaTypeResolver)
+        resolver = (IndexedSchemaTypeResolver)unpacked.Value;
+      else if (unpacked is MpMap)
+      {
+        MpMap map = (MpMap)unpacked;
+
+        resolver = (IndexedSchemaTypeResolver)Materialize(typeof(IndexedSchemaTypeResolver), map);
+      }
+
+      resolver.ResolveDeserializedTypes(settings);
+      InjectSchema(settings, resolver);
+      
+      unpacked = MsgPackItem.Unpack(stream, settings);
       if (unpacked.Value is T)
         return (T)unpacked.Value;
 
@@ -324,7 +452,8 @@ namespace LsMsgPack
 
     private static object Materialize(Type tType, MpMap map, FullPropertyInfo rootProp = null)
     {
-      Dictionary<string, object> propVals = map.GetTypedValue<Dictionary<string, object>>();
+      Dictionary<object, object> propVals = new Dictionary<object,object>(map.Count, new MapConversionEqualityComparer());
+      map.FillDictionary(propVals);
 
       object val;
       bool hasName = propVals.TryGetValue(string.Empty, out val);
@@ -390,32 +519,55 @@ namespace LsMsgPack
         }
         else
         {
-          result = Activator.CreateInstance(tType, true);
+          result = CreateInstance(tType);
         }
       }
       else
       {
-        result = Activator.CreateInstance(tType, true);
+        result = CreateInstance(tType);
       }
 
       for (int t = props.Length - 1; t >= 0; t--)
       {
         FullPropertyInfo prop = props[t];
         PropertyInfo prp = prop.PropertyInfo;
-        if (propVals.TryGetValue(prp.Name, out val))
+
+        object propval=null;
+
+        //if (propVals.TryGetValue(prp.Name, out propval))
+        if (propVals.TryGetValue(prop.PropertyId, out propval))
         {
           Type propType = prp.PropertyType;
 
           object ConvertedVal;
-          if(val is MpMap)
-            ConvertedVal = Materialize(propType,(MpMap)val,prop);
-          else          
-            ConvertedVal = ConvertDeserializeValue(val, propType, map, prop);
+          if (propval is MpMap)
+            ConvertedVal = Materialize(propType, (MpMap)propval, prop);
+          else
+            ConvertedVal = ConvertDeserializeValue(propval, propType, map, prop);
           prp.SetValue(result, ConvertedVal, null);
         }
       }
 
       return result;
+    }
+
+    private static object CreateInstance(Type type)
+    {
+      try
+      {
+        return Activator.CreateInstance(type, true);
+      }
+      catch
+      {
+        try
+        {
+          return System.Runtime.Serialization.FormatterServices.GetSafeUninitializedObject(type);
+        }
+        catch
+        {
+          return System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type);
+        }
+      }
     }
 
     private static object ConvertDeserializeValue(object val, Type assignType, MpMap map, FullPropertyInfo prop)
@@ -425,16 +577,45 @@ namespace LsMsgPack
         return null;
       }
 
-      Type nestedAssignType=null;
-      
+      Type nestedAssignType = null;
+
       if (val is KeyValuePair<object, object>[])
       {
         KeyValuePair<object, object>[] vVal = (KeyValuePair<object, object>[])val;
-        if((vVal[0].Key as string)==""){
+        if (vVal.Length <= 0)
+        {
+          val = CreateInstance(assignType);
+        }
+        else if ((vVal[0].Key as string) == "")
+        {
           string nestedAssignTypestr = vVal[0].Value.ToString();
           nestedAssignType = TypeResolver.Resolve(nestedAssignTypestr, assignType, prop, map, null);
+          val = Materialize(assignType, new MpMap(vVal, map.Settings), prop); // <- ???
         }
-        val = Materialize(assignType, new MpMap(vVal, map.Settings), prop); // <- ???
+        else if (!(vVal[0].Key is null) && assignType.IsGenericType && typeof(Dictionary<,>) == assignType.GetGenericTypeDefinition())
+        {
+          val = CreateInstance(assignType);
+          IDictionary dictionary = (IDictionary)val;
+          for (int t = vVal.Length - 1; t >= 0; t--)
+          {
+            KeyValuePair<object, object> item = vVal[t];
+            if (assignType.GenericTypeArguments[0] == vVal[t].Key.GetType() && assignType.GenericTypeArguments[1] == vVal[t].Value.GetType())
+            {
+              dictionary.Add(item.Key, item.Value);
+            }
+            else
+            {
+              object key = assignType.GenericTypeArguments[0] == vVal[t].Key.GetType() ? vVal[t].Key : ConvertDeserializeValue(vVal[t].Key, assignType.GenericTypeArguments[0], map, prop);
+              object value = assignType.GenericTypeArguments[1] == vVal[t].Value.GetType() ? vVal[t].Value : ConvertDeserializeValue(vVal[t].Value, assignType.GenericTypeArguments[1], map, prop);
+
+              dictionary.Add(key, value);
+            }
+          }
+          return dictionary;
+        }
+        else
+          val = Materialize(assignType, new MpMap(vVal, map.Settings), prop); // <- ???
+
       }
       Type valType = val.GetType();
       if (assignType == valType)
@@ -450,8 +631,7 @@ namespace LsMsgPack
 
         for (int i = valAsArr.Length - 1; i >= 0; i--)
         {
-          if (!ReferenceEquals(valAsArr[i], null)
-            && valAsArr[i] is KeyValuePair<object, object>[])
+          if (!ReferenceEquals(valAsArr[i], null) && valAsArr[i] is KeyValuePair<object, object>[])
           {
             valAsArr[i] = Materialize(assignType, new MpMap((KeyValuePair<object, object>[])valAsArr[i], map.Settings), prop);
           }
@@ -477,7 +657,7 @@ namespace LsMsgPack
             newInstance = (IList)specialConstructor.Invoke(new object[] { valAsArr.Length });
           }
           else
-            newInstance = (IList)Activator.CreateInstance(assignType, true);
+            newInstance = (IList)CreateInstance(assignType);
 
           for (int i = 0; i < valAsArr.Length; i++)
           {
@@ -514,10 +694,14 @@ namespace LsMsgPack
       {
         return new Guid((byte[])val);
       }
+      if (MsgPackMeta.NumericTypes.Contains(assignType)) { 
+        return Convert.ChangeType(val, assignType);
+      }
       return val;
     }
 
-    private static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackSettings settings)
+
+    internal static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackSettings settings)
     {
       PropertyInfo[] props = type.GetProperties();
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);

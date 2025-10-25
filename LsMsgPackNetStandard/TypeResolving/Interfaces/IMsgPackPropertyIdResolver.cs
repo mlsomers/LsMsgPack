@@ -4,6 +4,6 @@ namespace LsMsgPack.TypeResolving.Interfaces
 {
   public interface IMsgPackPropertyIdResolver
   {
-    object GetId(FullPropertyInfo assignedTo);
+    object GetId(FullPropertyInfo assignedTo, MsgPackSettings settings);
   }
 }
