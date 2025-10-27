@@ -11,24 +11,37 @@ namespace MsgPackExplorer {
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Fiddler\\Inspectors")
     };
 
-    private static readonly KeyValuePair<Environment.SpecialFolder,string>[] KnownDestinationsVs = new[] { 
+    private static readonly KeyValuePair<Environment.SpecialFolder,string>[] KnownDestinationsVs = new[] {
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2005\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2008\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2012\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2013\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2015\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2017\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2019\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2022\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 8\\Common7\\Packages\\Debugger\\Visualizers"),
-      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 9\\Common7\\Packages\\Debugger\\Visualizers"),
-      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 10\\Common7\\Packages\\Debugger\\Visualizers"),
-      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 11\\Common7\\Packages\\Debugger\\Visualizers"),
-      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 12\\Common7\\Packages\\Debugger\\Visualizers"),
-      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 13\\Common7\\Packages\\Debugger\\Visualizers"),
-      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 14\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 9.0\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 10.0\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 11.0\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 12.0\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 14.0\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio\\2017\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio\\2019\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio 10.0\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio 11.0\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio 12.0\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio 14.0\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2017\\Community\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2017\\Professional\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2017\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2019\\Community\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2019\\Professional\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2019\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Community\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Professional\\Common7\\Packages\\Debugger\\Visualizers"),
-      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers")
     };
 
     private static readonly string[] files = new[] {
@@ -59,7 +72,7 @@ namespace MsgPackExplorer {
 
     public static string TryInstall(bool vs) {
 
-      string[] source = new string[files.Length];
+      string[] source = new string[vs ? filesVs.Length : files.Length];
       string baseDir = AppDomain.CurrentDomain.BaseDirectory;
       for (int t = source.Length - 1; t >= 0; t--) {
         string path = Path.Combine(baseDir, vs ? filesVs[t] : files[t]);
@@ -76,8 +89,9 @@ namespace MsgPackExplorer {
         string destDir = Path.Combine(Environment.GetFolderPath(destination.Key), destination.Value);
         if (Directory.Exists(destDir)) {
           bool localSuccess=false;
-          for (int t = files.Length - 1; t >= 0; t--) {
-            string destPath = Path.Combine(destDir, files[t]);
+          for (int t = source.Length - 1; t >= 0; t--) {
+            string filename = Path.GetFileName(source[t]);
+            string destPath = Path.Combine(destDir, filename);
             if (File.Exists(destPath)) {
               try {
                 File.Delete(destPath);
@@ -87,7 +101,7 @@ namespace MsgPackExplorer {
                 throw new Exception("Unable to remove old version:\r\n  " + ex.Message);
               }
             }
-            File.Copy(source[t], destPath);
+            File.Copy(source[t], destPath, true);
             filesCopied.Add(destPath);
             localSuccess=true;
           }
@@ -106,7 +120,7 @@ namespace MsgPackExplorer {
                 throw new Exception("Unable to remove old version:\r\n  " + ex.Message);
               }
             }
-            File.Copy("DebuggerProxy.dll", destPath);
+            File.Copy("DebuggerProxy.dll", destPath, true);
             filesCopied.Add(destPath);
           }
         }

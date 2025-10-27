@@ -22,6 +22,25 @@ namespace LsMsgPack.Meta
     // 3rd tier cache
     private static readonly Dictionary<string, HashSet<Type>> NameCache = new Dictionary<string, HashSet<Type>>(); // Can contain duplicate names
 
+    internal static string GetTypeName(Type type, bool fullname)
+    {
+      Type[] args = type.GenericTypeArguments;
+
+      if (args.Length == 0)
+        return fullname ? type.FullName : type.Name;
+
+      // Get the generic type name...
+
+      string[] names = new string[args.Length];
+      for (int t = args.Length - 1; t >= 0; t--)
+        names[t] = GetTypeName(args[t], fullname);
+
+      string typeName = fullname ? type.FullName : type.Name;
+      typeName = typeName.Substring(0, typeName.IndexOf('`'));
+
+      return string.Concat(typeName, '<', string.Join(", ", names), '>');
+    }
+
     internal static Type Resolve(object typeId, Type assignedTo, FullPropertyInfo rootProp, MpMap map, Dictionary<object, object> propVals)
     {
       Type result;
@@ -56,9 +75,9 @@ namespace LsMsgPack.Meta
 
       if (typeName.EndsWith("[]"))
       {
-        string nm=typeName.Substring(0, typeName.Length -2);
-        Type arr= ResolveInternal(nm, assignedTo, resolvers);
-        if(arr != null)
+        string nm = typeName.Substring(0, typeName.Length - 2);
+        Type arr = ResolveInternal(nm, assignedTo, resolvers);
+        if (arr != null)
           return arr.MakeArrayType();
       }
 
@@ -169,7 +188,7 @@ namespace LsMsgPack.Meta
       return result;
     }
 
-    private static Assembly[] NativeAssemblies =new Assembly[]
+    private static Assembly[] NativeAssemblies = new Assembly[]
     {
       typeof(List<>).Assembly, // System.Collections.Generic
       typeof(ConcurrentBag<>).Assembly, // System.Collections.Concurrent
@@ -198,7 +217,7 @@ namespace LsMsgPack.Meta
             result = CacheAssembly(assm, typeName);
             if (result != null)
               return result; // has already been added to cache, code below would crash
-          } 
+          }
         }
       }
       if (result != null)

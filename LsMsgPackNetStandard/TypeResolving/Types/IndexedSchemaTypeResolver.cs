@@ -1,4 +1,5 @@
 ﻿using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Interfaces;
 using System;
 using System.Collections.Generic;
@@ -18,10 +19,12 @@ namespace LsMsgPack.TypeResolving.Types
   /// </summary>
   public class IndexedSchemaTypeResolver : IMsgPackTypeResolver, IMsgPackPropertyIdResolver
   {
-    public int count { get; private set; } = 0;
+    [IgnoreDataMember]
+    public int count { get { return ByTypeId.Count; } }
 
     [XmlElement("T")]
-    public Dictionary<long, ComplexTypeDef> ByTypeId { get; set; } = new Dictionary<long, ComplexTypeDef>();
+    [SerializeEnumerable(typeof(ComplexTypeDef), false)]
+    public List<ComplexTypeDef> ByTypeId { get; set; } = new List<ComplexTypeDef>();
 
     [IgnoreDataMember]
     public Dictionary<Type, ComplexTypeDef> ByType { get; set; } = new Dictionary<Type, ComplexTypeDef>();
@@ -32,12 +35,10 @@ namespace LsMsgPack.TypeResolving.Types
       if (ByType.TryGetValue(type, out ComplexTypeDef complexSchemaBase))
         return complexSchemaBase;
 
-      count++;
-
       ComplexTypeDef newEntry = new ComplexTypeDef(count, type, settings);
       ByType.Add(type, newEntry);
-      ByTypeId.Add(count, newEntry);
-      FullPropertyInfo[] props = MsgPackSerializer.GetSerializedProps(type, settings);
+      ByTypeId.Add(newEntry);
+      FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(type, settings);
       newEntry.ParseProps(props);
 
       return newEntry;
@@ -51,16 +52,17 @@ namespace LsMsgPack.TypeResolving.Types
     private bool _blockRecursionResolve = false;
     public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
     {
-      if (_blockRecursionResolve)
+      if (_blockRecursionResolve || typeId is null)
         return null;
 
-      long id;
-      if (typeId is long) id = (long)typeId;
-      else id = Convert.ToInt64(typeId);
+      int id;
+      if (typeId is int) id = (int)typeId;
+      else id = Convert.ToInt32(typeId);
 
-      ComplexTypeDef def;
-      if (!ByTypeId.TryGetValue(id, out def))
+      if (id < 0 || id >= ByTypeId.Count)
         return null;
+
+      ComplexTypeDef def = ByTypeId[id];
 
       if (def.Type != null)
         return def.Type;
@@ -89,14 +91,14 @@ namespace LsMsgPack.TypeResolving.Types
         return null;
 
       ComplexTypeDef def;
-      if (!ByType.TryGetValue(assignedTo.PropertyInfo.DeclaringType, out def))
+      if (!ByType.TryGetValue(assignedTo.PropertyInfo.ReflectedType, out def))
       {
         if (assignedTo.AssignedToType != null)
         {
           _blockRecursionGetId = true;
           try
           {
-            def = GetComplex(assignedTo.PropertyInfo.DeclaringType, settings);
+            def = GetComplex(assignedTo.PropertyInfo.ReflectedType, settings);
           }
           finally
           {
@@ -107,16 +109,16 @@ namespace LsMsgPack.TypeResolving.Types
           return null;
       }
 
-      if (def.IdByName.TryGetValue(assignedTo.PropertyInfo.Name, out long id))
+      if (def.IdByName.TryGetValue(assignedTo.PropertyInfo.Name, out int id))
         return id;
 
       return null;
     }
 
-    internal void ResolveDeserializedTypes(MsgPackSettings settings)
+    private void ResolveDeserializedTypes(MsgPackSettings settings)
     {
-      
-      foreach (ComplexTypeDef def in ByTypeId.Values)
+
+      foreach (ComplexTypeDef def in ByTypeId)
       {
         // string typeName = MsgPackSerializer.GetTypeName(type, (settings._addTypeName & AddTypeIdOption.FullName) > 0);
 
@@ -129,8 +131,43 @@ namespace LsMsgPack.TypeResolving.Types
         if (!ByType.ContainsKey(def.Type))
           ByType.Add(def.Type, def);
       }
+    }
 
-      count = ByTypeId.Count;
+
+    // We know the fixed structure of our schema, so we can omit the oop stuff to keep it small
+    public byte[] Pack()
+    {
+      MsgPackSettings settings=new MsgPackSettings{AddTypeIdOptions = AddTypeIdOption.Never};
+
+      KeyValuePair<object,object>[] items=new KeyValuePair<object, object>[ByTypeId.Count];
+      if (ByTypeId.Count > 0) { 
+        for (int t = ByTypeId.Count - 1; t != 0; t--) // Loop with JNZ condition
+          items[t] = new KeyValuePair<object, object>(ByTypeId[t].TypeName, ByTypeId[t].Props.ToArray());
+        items[0] = new KeyValuePair<object, object>(ByTypeId[0].TypeName, ByTypeId[0].Props.ToArray());
+      }
+      MpMap m=new MpMap(items, settings);
+      return m.ToBytes();
+    }
+
+    public static IndexedSchemaTypeResolver Unpack(System.IO.Stream bytes, MsgPackSettings settings) {
+      MpMap m=(MpMap)MsgPackItem.Unpack(bytes);
+      KeyValuePair<object, object>[] items=m.Value as KeyValuePair<object, object>[];
+
+      IndexedSchemaTypeResolver ret=new IndexedSchemaTypeResolver(){ ByTypeId=new List<ComplexTypeDef>(items.Length), ByType=new Dictionary<Type, ComplexTypeDef>(items.Length)};
+      for (int i = 0; i < m.Count; i++) {
+        KeyValuePair<object, object> typ = items[i];
+        object[] props= (object[])typ.Value;
+
+        ComplexTypeDef def= new ComplexTypeDef() { TypeId = i, TypeName = (string)typ.Key, Props = new List<string>(props.Length) };
+        for (int t = 0; t < props.Length; t++)
+          def.Props.Add((string)props[t]);
+
+        ret.ByTypeId.Add(def);
+      }
+
+      ret.ResolveDeserializedTypes(settings);
+
+      return ret;
     }
   }
 
@@ -157,16 +194,13 @@ namespace LsMsgPack.TypeResolving.Types
       }
 
       if (string.IsNullOrEmpty(TypeName))
-        TypeName = MsgPackSerializer.GetTypeName(type, (settings._addTypeName & AddTypeIdOption.FullName) > 0);
+        TypeName = TypeResolver.GetTypeName(type, (settings._addTypeName & AddTypeIdOption.FullName) > 0);
     }
 
     internal void ParseProps(FullPropertyInfo[] props)
     {
-      for (int t = props.Length - 1; t >= 0; t--)
-      {
-        FullPropertyInfo prop = props[t];
-        Props.Add(t, prop.PropertyInfo.Name);
-      }
+      for (int t = 0; t < props.Length; t++)
+        Props.Add(props[t].PropertyInfo.Name);
     }
 
     [IgnoreDataMember]
@@ -176,25 +210,29 @@ namespace LsMsgPack.TypeResolving.Types
     public string TypeName { get; set; }
 
     [IgnoreDataMember]
-    public long TypeId { get; set; }
+    public int TypeId { get; set; }
 
     // used to have PropType as value, but there is no need to preserve more info than the name.
     [XmlElement("P")]
-    public Dictionary<long, string> Props { get; set; } = new Dictionary<long, string>();
+    public List<string> Props { get; set; } = new List<string>();
 
 
-    private Dictionary<string, long> _idByName;
+    private Dictionary<string, int> _idByName;
     [IgnoreDataMember]
-    public Dictionary<string, long> IdByName
+    public Dictionary<string, int> IdByName
     {
       get
       {
         if (_idByName != null)
           return _idByName;
 
-        _idByName = new Dictionary<string, long>(Props.Count);
-        foreach (KeyValuePair<long, string> kvp in Props)
-          _idByName[kvp.Value] = kvp.Key;
+        _idByName = new Dictionary<string, int>(Props.Count);
+        if(Props.Count <= 0)
+          return _idByName;
+
+        for (int t = Props.Count - 1; t != 0; t--)
+          _idByName.Add(Props[t], t);
+        _idByName.Add(Props[0], 0);
 
         return _idByName;
       }

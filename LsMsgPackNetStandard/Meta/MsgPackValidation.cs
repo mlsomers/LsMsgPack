@@ -61,6 +61,11 @@ namespace LsMsgPack
         private static void ValidateMap(MsgPackItem item, List<ValidationItem> issues, long displayLimit)
         {
             MpMap map = (MpMap)item;
+            if(map.PackedValues.Length == 0)
+            {
+                issues.Add(new ValidationItem(item, ValidationSeverity.Comment, 0, "Map is empty."));
+                return;
+            }
             MsgPackTypeId firstKeyType = map.PackedValues[0].Key.TypeId;
             if (!MsgPackMeta.StrTypeFamily.Contains(firstKeyType) && !MsgPackMeta.IntTypeFamily.Contains(firstKeyType) && firstKeyType != MsgPackTypeId.MpNull)
             {

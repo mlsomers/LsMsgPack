@@ -111,5 +111,36 @@ namespace LsMsgPack.Meta
       return $"{AssignedToType}{ignored}{propInfo}";
     }
 
+
+    internal static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackSettings settings)
+    {
+      PropertyInfo[] props = type.GetProperties();
+      List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
+      for (int t = 0; t < props.Length; t++)
+      {
+        FullPropertyInfo full = FullPropertyInfo.GetFullPropInfo(props[t], settings);
+
+        if (full.StaticallyIgnored.HasValue)
+        {
+          if (full.StaticallyIgnored.Value) // statically cached to ignore always
+            continue;
+        }
+        else
+        {
+          bool keep = true;
+          for (int i = settings.StaticFilters.Length - 1; i >= 0; i--)
+            if (!settings.StaticFilters[i].IncludeProperty(full)) { keep = false; break; }
+
+          full.StaticallyIgnored = !keep;
+
+          if (!keep)
+            continue;
+        }
+
+        keptProps.Add(full);
+      }
+      return keptProps.ToArray();
+    }
+
   }
 }

@@ -6,6 +6,9 @@ using System.Linq;
 
 namespace LsMsgPack
 {
+  /// <summary>
+  /// This is for the PropertyGrid functionality
+  /// </summary>
   public class MsgPackTypeConverter:TypeConverter {
 
     private static readonly Type[] supportedTypes = new Type[] { typeof(string), typeof(MsgPackTypeId), typeof(byte) };
