@@ -235,10 +235,10 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.Never, false, false, 398)]
-    [DataRow(AddTypeIdOption.Never, false, true, 375)]
-    [DataRow(AddTypeIdOption.Never, true, false, 290)]
-    [DataRow(AddTypeIdOption.Never, true, true, 290)]
+    [DataRow(AddTypeIdOption.Never, false, false, 395)]
+    [DataRow(AddTypeIdOption.Never, false, true, 372)]
+    [DataRow(AddTypeIdOption.Never, true, false, 287)]
+    [DataRow(AddTypeIdOption.Never, true, true, 287)]
     public void Hirarchical_ResolveBySignature(AddTypeIdOption addTypeName, bool omitDefault, bool omitNull, int expectedLength)
     {
       HierarchyContainer container = GetDefault();

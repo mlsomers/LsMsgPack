@@ -3,6 +3,8 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net472</TargetFramework>
+    <BaseOutputPath>..\..\MsgPackExplorer\bin</BaseOutputPath>
+    <Configurations>Debug;Release;ReleaseKeepTrack</Configurations>
   </PropertyGroup>
 
   <ItemGroup>

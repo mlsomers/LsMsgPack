@@ -2,13 +2,24 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
-    <BaseOutputPath>..\..\MsgPackExplorer\bin\ReleaseKeepTrack</BaseOutputPath>
+    <BaseOutputPath>..\..\MsgPackExplorer\bin</BaseOutputPath>
+    <ApplicationIcon>Explore.ico</ApplicationIcon>
+	<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+	<Configurations>Debug;Release;ReleaseKeepTrack</Configurations>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="bin\**" />
     <EmbeddedResource Remove="bin\**" />
     <None Remove="bin\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\CommonAssemblyInfo.cs" Link="CommonAssemblyInfo.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Explore.ico" />
   </ItemGroup>
 
   <ItemGroup>

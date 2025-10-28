@@ -87,6 +87,9 @@ namespace LsMsgPack
 
       if (packed != null)
       {
+        if (settings.AddTypeIdOptions == AddTypeIdOption.Never)
+          return packed;
+        
         propVals.Add("@", packed);
         return new MpMap(settings) { Value = propVals };
       }

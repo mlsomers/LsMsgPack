@@ -208,8 +208,8 @@ Global
 		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.Release|x64.Build.0 = Release|Any CPU
 		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.Release|x86.ActiveCfg = Release|Any CPU
 		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.Release|x86.Build.0 = Release|Any CPU
-		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.ReleaseKeepTrack|Any CPU.ActiveCfg = Release|Any CPU
-		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.ReleaseKeepTrack|Any CPU.Build.0 = Release|Any CPU
+		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.ReleaseKeepTrack|Any CPU.ActiveCfg = ReleaseKeepTrack|Any CPU
+		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.ReleaseKeepTrack|Any CPU.Build.0 = ReleaseKeepTrack|Any CPU
 		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.ReleaseKeepTrack|ARM.ActiveCfg = ReleaseKeepTrack|Any CPU
 		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.ReleaseKeepTrack|ARM.Build.0 = ReleaseKeepTrack|Any CPU
 		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.ReleaseKeepTrack|ARM64.ActiveCfg = ReleaseKeepTrack|Any CPU
@@ -248,8 +248,8 @@ Global
 		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.Release|x64.Build.0 = Release|Any CPU
 		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.Release|x86.ActiveCfg = Release|Any CPU
 		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.Release|x86.Build.0 = Release|Any CPU
-		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.ReleaseKeepTrack|Any CPU.ActiveCfg = Release|Any CPU
-		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.ReleaseKeepTrack|Any CPU.Build.0 = Release|Any CPU
+		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.ReleaseKeepTrack|Any CPU.ActiveCfg = ReleaseKeepTrack|Any CPU
+		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.ReleaseKeepTrack|Any CPU.Build.0 = ReleaseKeepTrack|Any CPU
 		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.ReleaseKeepTrack|ARM.ActiveCfg = Release|Any CPU
 		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.ReleaseKeepTrack|ARM.Build.0 = Release|Any CPU
 		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.ReleaseKeepTrack|ARM64.ActiveCfg = Release|Any CPU
@@ -288,8 +288,8 @@ Global
 		{E87B099B-63E8-4238-B0B0-CEA44ED72B4F}.Release|x64.Build.0 = Release|Any CPU
 		{E87B099B-63E8-4238-B0B0-CEA44ED72B4F}.Release|x86.ActiveCfg = Release|Any CPU
 		{E87B099B-63E8-4238-B0B0-CEA44ED72B4F}.Release|x86.Build.0 = Release|Any CPU
-		{E87B099B-63E8-4238-B0B0-CEA44ED72B4F}.ReleaseKeepTrack|Any CPU.ActiveCfg = Release|Any CPU
-		{E87B099B-63E8-4238-B0B0-CEA44ED72B4F}.ReleaseKeepTrack|Any CPU.Build.0 = Release|Any CPU
+		{E87B099B-63E8-4238-B0B0-CEA44ED72B4F}.ReleaseKeepTrack|Any CPU.ActiveCfg = ReleaseKeepTrack|Any CPU
+		{E87B099B-63E8-4238-B0B0-CEA44ED72B4F}.ReleaseKeepTrack|Any CPU.Build.0 = ReleaseKeepTrack|Any CPU
 		{E87B099B-63E8-4238-B0B0-CEA44ED72B4F}.ReleaseKeepTrack|ARM.ActiveCfg = Release|Any CPU
 		{E87B099B-63E8-4238-B0B0-CEA44ED72B4F}.ReleaseKeepTrack|ARM.Build.0 = Release|Any CPU
 		{E87B099B-63E8-4238-B0B0-CEA44ED72B4F}.ReleaseKeepTrack|ARM64.ActiveCfg = Release|Any CPU
@@ -328,8 +328,8 @@ Global
 		{2323BE29-A36C-B601-2519-D0B1425A04F2}.Release|x64.Build.0 = Release|Any CPU
 		{2323BE29-A36C-B601-2519-D0B1425A04F2}.Release|x86.ActiveCfg = Release|Any CPU
 		{2323BE29-A36C-B601-2519-D0B1425A04F2}.Release|x86.Build.0 = Release|Any CPU
-		{2323BE29-A36C-B601-2519-D0B1425A04F2}.ReleaseKeepTrack|Any CPU.ActiveCfg = Release|Any CPU
-		{2323BE29-A36C-B601-2519-D0B1425A04F2}.ReleaseKeepTrack|Any CPU.Build.0 = Release|Any CPU
+		{2323BE29-A36C-B601-2519-D0B1425A04F2}.ReleaseKeepTrack|Any CPU.ActiveCfg = ReleaseKeepTrack|Any CPU
+		{2323BE29-A36C-B601-2519-D0B1425A04F2}.ReleaseKeepTrack|Any CPU.Build.0 = ReleaseKeepTrack|Any CPU
 		{2323BE29-A36C-B601-2519-D0B1425A04F2}.ReleaseKeepTrack|ARM.ActiveCfg = Release|Any CPU
 		{2323BE29-A36C-B601-2519-D0B1425A04F2}.ReleaseKeepTrack|ARM.Build.0 = Release|Any CPU
 		{2323BE29-A36C-B601-2519-D0B1425A04F2}.ReleaseKeepTrack|ARM64.ActiveCfg = Release|Any CPU
@@ -368,8 +368,8 @@ Global
 		{58C33F66-24C9-4F12-9DB1-83590A7299B7}.Release|x64.Build.0 = Release|Any CPU
 		{58C33F66-24C9-4F12-9DB1-83590A7299B7}.Release|x86.ActiveCfg = Release|x86
 		{58C33F66-24C9-4F12-9DB1-83590A7299B7}.Release|x86.Build.0 = Release|x86
-		{58C33F66-24C9-4F12-9DB1-83590A7299B7}.ReleaseKeepTrack|Any CPU.ActiveCfg = Release|Any CPU
-		{58C33F66-24C9-4F12-9DB1-83590A7299B7}.ReleaseKeepTrack|Any CPU.Build.0 = Release|Any CPU
+		{58C33F66-24C9-4F12-9DB1-83590A7299B7}.ReleaseKeepTrack|Any CPU.ActiveCfg = ReleaseKeepTrack|Any CPU
+		{58C33F66-24C9-4F12-9DB1-83590A7299B7}.ReleaseKeepTrack|Any CPU.Build.0 = ReleaseKeepTrack|Any CPU
 		{58C33F66-24C9-4F12-9DB1-83590A7299B7}.ReleaseKeepTrack|ARM.ActiveCfg = Release|Any CPU
 		{58C33F66-24C9-4F12-9DB1-83590A7299B7}.ReleaseKeepTrack|ARM.Build.0 = Release|Any CPU
 		{58C33F66-24C9-4F12-9DB1-83590A7299B7}.ReleaseKeepTrack|ARM64.ActiveCfg = Release|arm64

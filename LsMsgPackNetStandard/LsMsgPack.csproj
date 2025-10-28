@@ -4,6 +4,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <Nullable>disable</Nullable>
+	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
@@ -14,5 +15,9 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugKeepTrack|AnyCPU'">
     <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\CommonAssemblyInfo.cs" Link="Meta\CommonAssemblyInfo.cs" />
+  </ItemGroup>
 
 </Project>
