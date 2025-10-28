@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 
 namespace MsgPackExplorer {
   public class Installer {
@@ -127,6 +128,68 @@ namespace MsgPackExplorer {
       }
 
       return "  " + string.Join("\r\n  ", filesCopied);
+    }
+
+    public static string UnInstall(bool vs)
+    {
+      HashSet<string> src= new HashSet<string>(files);
+      src.UnionWith(filesVs);
+      string[] source= src.ToArray();
+
+      List<string> filesRemoved = new List<string>();
+      List<string> filesCouldNotRemove = new List<string>();
+
+      KeyValuePair<Environment.SpecialFolder, string>[] potentialDestinations = vs ? KnownDestinationsVs : KnownDestinations;
+
+      foreach (KeyValuePair<Environment.SpecialFolder, string> destination in potentialDestinations)
+      {
+        string destDir = Path.Combine(Environment.GetFolderPath(destination.Key), destination.Value);
+        if (Directory.Exists(destDir))
+        {
+          for (int t = source.Length - 1; t >= 0; t--)
+          {
+            string filename = Path.GetFileName(source[t]);
+            string destPath = Path.Combine(destDir, filename);
+            if (File.Exists(destPath))
+            {
+              try
+              {
+                File.Delete(destPath);
+                filesRemoved.Add(destPath);
+              }
+              catch (Exception ex)
+              {
+                filesCouldNotRemove.Add(destPath);
+              }
+            }
+          }
+          if (vs)
+          {
+            destDir = Path.Combine(destDir, "netstandard2.0");
+            if (!Directory.Exists(destDir))
+              continue;
+            string destPath = Path.Combine(destDir, "DebuggerProxy.dll");
+            if (File.Exists(destPath))
+            {
+              try
+              {
+                File.Delete(destPath);
+                filesRemoved.Add(destPath);
+              }
+              catch (Exception ex)
+              {
+                filesCouldNotRemove.Add(destPath);
+              }
+            }
+          }
+        }
+      }
+
+      if (filesCouldNotRemove.Count > 0)
+      {
+        return $"Unable to remove the following files:\r\n  {string.Join("\r\n  ", filesCouldNotRemove)}\r\n\r\nThe following were successfully removed:\r\n  {string.Join("\r\n  ", filesRemoved)}";
+      }
+      return $"Successfully removed the following files:\r\n  {string.Join("\r\n  ", filesRemoved)}";
     }
   }
 }

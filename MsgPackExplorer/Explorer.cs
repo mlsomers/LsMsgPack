@@ -148,6 +148,44 @@ namespace MsgPackExplorer
       return;
     }
 
+    private void menUnistallFiddler_Click(object sender, EventArgs e)
+    {
+      try
+      {
+        string success = Installer.UnInstall(false).Trim();
+        if (string.IsNullOrEmpty(success))
+        {
+          MessageBox.Show("Unable to find the Fiddler application files", "Not removed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+          return;
+        }
+
+        MessageBox.Show($"Uninstalled successfully.\r\n\r\nFiles removed:\r\n{success}", "Uninstalled", MessageBoxButtons.OK, MessageBoxIcon.Information);
+      }
+      catch (Exception ex)
+      {
+        MessageBox.Show(string.Concat("Removal failed with the following message:\r\n", ex.Message, "\r\n\r\nYou may have more luck (depending on the error) running with administration privileges."), "Not removed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      }
+    }
+
+    private void menUninstallVisualStudio_Click(object sender, EventArgs e)
+    {
+      try
+      {
+        string success = Installer.UnInstall(true).Trim();
+        if (string.IsNullOrEmpty(success))
+        {
+          MessageBox.Show("Unable to find the Visual studio installation directory", "Not removed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+          return;
+        }
+
+        MessageBox.Show($"Uninstalled successfully.\r\n\r\nFiles removed:\r\n{success}", "Uninstalled", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+      }
+      catch (Exception ex)
+      {
+        MessageBox.Show(string.Concat("Removal failed with the following message:\r\n", ex.Message, "\r\n\r\nYou may have more luck (depending on the error) running with administration privileges."), "Not removed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+      }
+    }
   }
 
   public class EndianChoice

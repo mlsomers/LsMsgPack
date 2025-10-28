@@ -1,7 +1,5 @@
-﻿using Microsoft.VisualStudio.DebuggerVisualizers;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 
@@ -19,11 +17,17 @@ namespace DebuggerProxy
 
     public MsgPackByteArray(IEnumerable<byte> value)
     {
+      if (value is null)
+        throw new ArgumentNullException(nameof(value), "IEnumerable<byte> is null.");
+
       Value = value.ToArray();
     }
 
     public MsgPackByteArray(Stream value)
     {
+      if(value is null)
+        throw new ArgumentNullException(nameof(value), "Stream to read from is null.");
+
       if(!value.CanRead)
         throw new ArgumentException("Stream must be readable!",nameof(value));
 
@@ -42,6 +46,14 @@ namespace DebuggerProxy
         Value = new byte[value.Length];
         value.Read(Value, 0, Value.Length);
       }
+    }
+
+    public MsgPackByteArray(string base64)
+    {
+      if (base64 is null)
+        throw new ArgumentNullException(nameof(base64), "base64 string is null.");
+
+      Value = Convert.FromBase64String(base64);
     }
 
     /// <summary>
@@ -66,7 +78,7 @@ namespace DebuggerProxy
 
     public static implicit operator MsgPackByteArray(string base64)
     {
-      return new MsgPackByteArray(System.Convert.FromBase64String(base64));
+      return new MsgPackByteArray(Convert.FromBase64String(base64));
     }
 
 
@@ -89,7 +101,7 @@ namespace DebuggerProxy
 
     public static implicit operator string(MsgPackByteArray d)
     {
-      return System.Convert.ToBase64String(d.Value);
+      return Convert.ToBase64String(d.Value);
     }
 
     #endregion

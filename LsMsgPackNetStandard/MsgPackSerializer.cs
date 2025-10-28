@@ -92,10 +92,6 @@ namespace LsMsgPack
       MemoryStream ms = new MemoryStream();
       Serialize(item, ms, settings);
 
-      // MsgPackSettings schemaSerializationSettings = new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.Never };
-      // schemaSerializationSettings.PropertyNameResolvers = new[]{ new AttributePropertyNameResolver() };
-      //Serialize(resolver, target, schemaSerializationSettings);
-
       byte[] schema= resolver.Pack();
       target.Write(schema, 0, schema.Length);
       
@@ -192,21 +188,6 @@ namespace LsMsgPack
       RemoveSchemaResolver(settings);
 
       IndexedSchemaTypeResolver resolver = null;
-
-      // MsgPackSettings schemaSerializationSettings = new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.Never };
-      // schemaSerializationSettings.PropertyNameResolvers = new[] { new AttributePropertyNameResolver() };
-
-      //MsgPackItem unpacked = MsgPackItem.Unpack(stream, schemaSerializationSettings);
-      //if (unpacked.Value is IndexedSchemaTypeResolver)
-      //  resolver = (IndexedSchemaTypeResolver)unpacked.Value;
-      //else if (unpacked is MpMap)
-      //{
-      //  MpMap map = (MpMap)unpacked;
-
-      //  resolver = (IndexedSchemaTypeResolver)Materialize(typeof(IndexedSchemaTypeResolver), map);
-      //}
-
-      // resolver.ResolveDeserializedTypes(settings);
 
       resolver= IndexedSchemaTypeResolver.Unpack(stream, settings);
 

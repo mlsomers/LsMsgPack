@@ -1,11 +1,7 @@
 ﻿using DebuggerProxy;
 using Microsoft.VisualStudio.DebuggerVisualizers;
-using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 [assembly: System.Diagnostics.DebuggerVisualizer(
 typeof(LsMsgPackVisualStudioPlugin.MsgPackInspector),
@@ -38,7 +34,7 @@ namespace LsMsgPackVisualStudioPlugin
   // https://learn.microsoft.com/en-us/previous-versions/visualstudio/visual-studio-2015/debugger/how-to-write-a-visualizer?view=vs-2015&redirectedfrom=MSDN
 
   /// <summary>
-  /// 
+  /// MsgPack Explorer integrated as debugging tool
   /// </summary>
   public class MsgPackInspector : DialogDebuggerVisualizer
   {
@@ -52,10 +48,14 @@ namespace LsMsgPackVisualStudioPlugin
 
     protected override void Show(IDialogVisualizerService windowService, IVisualizerObjectProvider objectProvider)
     {
+      System.Diagnostics.Debug.WriteLine("Init MsgPack inspector");
       byte[] bytes = ((IVisualizerObjectProvider3)objectProvider).GetObject<MsgPackByteArray>();
+      System.Diagnostics.Debug.WriteLine($"{bytes.Length} Bytes ready for MsgPack inspector");
       using (InspectorWindow inspectorWindow = new InspectorWindow())
       {
+        System.Diagnostics.Debug.WriteLine("Created instance of MsgPack InspectorWindow");
         inspectorWindow.Explorer.Data = bytes;
+        System.Diagnostics.Debug.WriteLine("MsgPack data loaded into Inspector");
         inspectorWindow.ShowDialog();
       }
 
@@ -67,8 +67,10 @@ namespace LsMsgPackVisualStudioPlugin
       if(correctType is null){
         if(objectToVisualize is byte[])
           correctType = new MsgPackByteArray((byte[])objectToVisualize);
-        else
+        else if (objectToVisualize is Stream)
           correctType = new MsgPackByteArray((Stream)objectToVisualize);
+        else if (objectToVisualize is string)
+          correctType = new MsgPackByteArray((string)objectToVisualize);
       }
       
       VisualizerDevelopmentHost visualizerHost = new VisualizerDevelopmentHost(correctType, typeof(MsgPackInspector));

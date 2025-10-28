@@ -35,7 +35,9 @@
       this.btnProcessAfterError = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
       this.installAsFiddlerInspectorToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+      this.menUnistallFiddler = new System.Windows.Forms.ToolStripMenuItem();
       this.installAsVsPluginToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+      this.menUninstallVisualStudio = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
       this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
@@ -102,7 +104,7 @@
       // 
       this.btnOpen.Image = global::MsgPackExplorer.Properties.Resources.Open;
       this.btnOpen.Name = "btnOpen";
-      this.btnOpen.Size = new System.Drawing.Size(180, 22);
+      this.btnOpen.Size = new System.Drawing.Size(157, 22);
       this.btnOpen.Text = "Open...";
       this.btnOpen.Click += new System.EventHandler(this.btnOpen_Click);
       // 
@@ -110,7 +112,7 @@
       // 
       this.fromClipboardToolStripMenuItem.Image = global::MsgPackExplorer.Properties.Resources.Clipboard;
       this.fromClipboardToolStripMenuItem.Name = "fromClipboardToolStripMenuItem";
-      this.fromClipboardToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+      this.fromClipboardToolStripMenuItem.Size = new System.Drawing.Size(157, 22);
       this.fromClipboardToolStripMenuItem.Text = "From Clipboard";
       this.fromClipboardToolStripMenuItem.Click += new System.EventHandler(this.fromClipboardToolStripMenuItem_Click);
       // 
@@ -132,7 +134,7 @@
       // 
       this.btnGenerateTestFiles.Image = global::MsgPackExplorer.Properties.Resources.Gears;
       this.btnGenerateTestFiles.Name = "btnGenerateTestFiles";
-      this.btnGenerateTestFiles.Size = new System.Drawing.Size(220, 22);
+      this.btnGenerateTestFiles.Size = new System.Drawing.Size(227, 22);
       this.btnGenerateTestFiles.Text = "Generate test files";
       this.btnGenerateTestFiles.Click += new System.EventHandler(this.btnGenerateTestFiles_Click);
       // 
@@ -141,28 +143,46 @@
       this.btnProcessAfterError.CheckOnClick = true;
       this.btnProcessAfterError.Image = global::MsgPackExplorer.Properties.Resources.Broken;
       this.btnProcessAfterError.Name = "btnProcessAfterError";
-      this.btnProcessAfterError.Size = new System.Drawing.Size(220, 22);
+      this.btnProcessAfterError.Size = new System.Drawing.Size(227, 22);
       this.btnProcessAfterError.Text = "Keep processing after errors";
       this.btnProcessAfterError.CheckedChanged += new System.EventHandler(this.btnProcessAfterError_CheckedChanged);
       // 
       // toolStripSeparator2
       // 
       this.toolStripSeparator2.Name = "toolStripSeparator2";
-      this.toolStripSeparator2.Size = new System.Drawing.Size(217, 6);
+      this.toolStripSeparator2.Size = new System.Drawing.Size(224, 6);
       // 
       // installAsFiddlerInspectorToolStripMenuItem
       // 
+      this.installAsFiddlerInspectorToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.menUnistallFiddler});
       this.installAsFiddlerInspectorToolStripMenuItem.Name = "installAsFiddlerInspectorToolStripMenuItem";
-      this.installAsFiddlerInspectorToolStripMenuItem.Size = new System.Drawing.Size(220, 22);
+      this.installAsFiddlerInspectorToolStripMenuItem.Size = new System.Drawing.Size(227, 22);
       this.installAsFiddlerInspectorToolStripMenuItem.Text = "Install as Fiddler Inspector";
       this.installAsFiddlerInspectorToolStripMenuItem.Click += new System.EventHandler(this.installAsFiddlerInspectorToolStripMenuItem_Click);
-      //
+      // 
+      // menUnistallFiddler
+      // 
+      this.menUnistallFiddler.Name = "menUnistallFiddler";
+      this.menUnistallFiddler.Size = new System.Drawing.Size(180, 22);
+      this.menUnistallFiddler.Text = "Uninstall";
+      this.menUnistallFiddler.Click += new System.EventHandler(this.menUnistallFiddler_Click);
+      // 
       // installAsVsPluginToolStripMenuItem
-      //
+      // 
+      this.installAsVsPluginToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.menUninstallVisualStudio});
       this.installAsVsPluginToolStripMenuItem.Name = "installAsVsPluginToolStripMenuItem";
-      this.installAsVsPluginToolStripMenuItem.Size = new System.Drawing.Size(220, 22);
+      this.installAsVsPluginToolStripMenuItem.Size = new System.Drawing.Size(227, 22);
       this.installAsVsPluginToolStripMenuItem.Text = "Install as Visual Studio Plugin";
       this.installAsVsPluginToolStripMenuItem.Click += new System.EventHandler(this.installVisualStudioPluginToolStripMenuItem_Click);
+      // 
+      // menUninstallVisualStudio
+      // 
+      this.menUninstallVisualStudio.Name = "menUninstallVisualStudio";
+      this.menUninstallVisualStudio.Size = new System.Drawing.Size(180, 22);
+      this.menUninstallVisualStudio.Text = "Uninstall";
+      this.menUninstallVisualStudio.Click += new System.EventHandler(this.menUninstallVisualStudio_Click);
       // 
       // toolStripSeparator1
       // 
@@ -274,6 +294,8 @@
     private System.Windows.Forms.ToolStripMenuItem installAsFiddlerInspectorToolStripMenuItem;
     private System.Windows.Forms.ToolStripMenuItem installAsVsPluginToolStripMenuItem;
     private System.Windows.Forms.ToolStripMenuItem fromClipboardToolStripMenuItem;
+    private System.Windows.Forms.ToolStripMenuItem menUnistallFiddler;
+    private System.Windows.Forms.ToolStripMenuItem menUninstallVisualStudio;
   }
 }
 
