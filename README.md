@@ -73,6 +73,11 @@ In order to use this tool as a Fiddler plugin, copy the following files to the F
 
 Restart fiddler and you should see a MsgPack option in the Inspectors list.
 
+Visual Studio Integration
+-------------------------
+
+The tool can also be used as a debugging Visualizer in Visual Studio. It can be installed via the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=mlsomers.V2025102900).
+
 Source documentation
 --------------------
 
