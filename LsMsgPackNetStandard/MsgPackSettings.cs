@@ -1,21 +1,127 @@
 ﻿using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
+using LsMsgPack.Types.Extensions;
 using System;
 using System.ComponentModel;
+using System.Runtime.Serialization;
 
 namespace LsMsgPack
 {
   public class MsgPackSettings
   {
-    internal bool FileContainsErrors = false;
-    internal bool _dynamicallyCompact = true;
-    internal EndianAction _endianAction = EndianAction.SwapIfCurrentSystemIsLittleEndian;
-    internal AddTypeIdOption _addTypeName = AddTypeIdOption.IfAmbiguious;
 
+    #region Default settings
+
+    /// <summary>
+    /// When true (default) will dynamically use the smallest possible datatype that the value fits in. When false, will always use the predefined type of integer.
+    /// </summary>
+    /// <remarks>
+    /// Only affects writing
+    /// </remarks>
+    [IgnoreDataMember]
+    public static bool Default_DynamicallyCompact { get; set; } = true;
 
 #if KEEPTRACK
-    internal bool _preservePackages = false;
+
+    /// <summary>
+    /// Preserve the packaged (MsgPackItem) items in arrays and maps (in order to debug or inspect them in an editor)
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool Default_PreservePackages { get; set; } = false;
+
+    /// <summary>
+    /// If there is a breaking error (such as a non-existing MsgPack type) the reader will do a best effort to continue reading the rest of the file (it will search for the next valid MsgPack type in the stream and continue from there) This should never be done in production code, but for debugging it might help (in navigating or spotting multiple issues in one cycle).
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool Default_ContinueProcessingOnBreakingError { get; set; } = false;
+
 #endif
+
+    /// <summary>
+    /// The MsgPack specification explicitly states that it is a big-endian format, so by default we will reorder bytes of many types on little endian systems. Some implementations of MsgPack may ignore the endianness, so for this reason you can override the swapping action in order to correct the faulty endianness.
+    /// </summary>
+    [IgnoreDataMember]
+    public static EndianAction Default_EndianAction { get; set; } = EndianAction.SwapIfCurrentSystemIsLittleEndian;
+
+    /// <summary>
+    /// Support type-hierarchy's where a property or collection can contain items of a base-type or interface with multiple implementations (eg. a list of IPet where a pet can be a dog, cat or fish etc...)
+    /// <para>Using the full name will allow faster deserialization (less searching through assemblies) but obviously results in a much larger payload.</para>
+    /// <para>Lookup speed my be increased when property types and their value types reside in the same assembly (i.e. when "interface IPet" and "class Dog" are defined in the same project).</para>
+    /// <para>Alternatively or in addition, IMsgPackTypeResolver can be implemented.</para>
+    /// <para>Defining a property with the type "Object" will probably take significantly longer to deserialize and may pose a false match when FullName is not true.</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public static AddTypeIdOption Default_AddTypeIdOptions { get; set; } = AddTypeIdOption.IfAmbiguious;
+
+    /// <summary>
+    /// Custom type resolvers can be added, only needed if using object-models with polymorphic properties (base types or interfaces that have multiple implementations).
+    /// <para>
+    /// There is a <see cref="TypeResolving.Types.WildGooseChaseResolver">WildGooseChaseResolver</see> that can be used while developing, but it is not recomended for production!
+    /// <code>
+    /// MsgPackSerializer.TypeResolvers.Add(new TypeResolving.WildGooseChaseResolver());
+    /// </code>
+    /// </para>
+    /// <para>
+    /// In order to keep a minimal payload and best performance, implement a custom IMsgPackTypeIdentifier
+    /// </para>
+    /// </summary>
+    public static IMsgPackTypeResolver[] Default_TypeResolvers = new IMsgPackTypeResolver[0];
+
+    /// <summary>
+    /// Included:
+    /// <list type="bullet">
+    /// <item>FilterIgnoredAttribute</item>
+    /// </list>
+    /// </summary>
+    public static IMsgPackPropertyIncludeStatically[] Default_StaticFilters = new IMsgPackPropertyIncludeStatically[]{
+            new FilterNonSettable(),
+            new FilterIgnoredAttribute()
+        };
+
+    /// <summary>
+    /// Included:
+    /// <list type="bullet">
+    /// <item>FilterDefaultValues</item>
+    /// <item>FilterNullValues</item>
+    /// </list>
+    /// </summary>
+    public static IMsgPackPropertyIncludeDynamically[] Default_DynamicFilters = new[] { new FilterDefaultValues() };
+
+    /// <summary>
+    /// Included:
+    /// <list type="bullet">
+    /// <item>AttributePropertyNameResolver</item>
+    /// </list>
+    /// </summary>
+    public static IMsgPackPropertyIdResolver[] Default_PropertyNameResolvers = new IMsgPackPropertyIdResolver[0];
+
+    /// <summary>
+    /// Should inherit from BaseCustomExt, BaseCustomExtNonCached or AbstractCustomExt
+    /// </summary>
+    [IgnoreDataMember]
+    public static ICustomExt[] Default_CustomExtentionTypes = new ICustomExt[]
+    {
+      new MpDecimal((MsgPackSettings)null)
+    };
+
+
+    #endregion
+
+    internal bool FileContainsErrors = false;
+    internal bool _dynamicallyCompact = Default_DynamicallyCompact;
+    internal EndianAction _endianAction = Default_EndianAction;
+    internal AddTypeIdOption _addTypeIdOptions = Default_AddTypeIdOptions;
+
+#if KEEPTRACK
+    internal bool _preservePackages = Default_PreservePackages;
+    internal bool _continueProcessingOnBreakingError = Default_ContinueProcessingOnBreakingError;
+#endif
+
+    internal IMsgPackTypeResolver[] _typeResolvers = Default_TypeResolvers;
+    internal IMsgPackPropertyIncludeStatically[] _staticFilters = Default_StaticFilters;
+    internal IMsgPackPropertyIncludeDynamically[] _dynamicFilters = Default_DynamicFilters;
+    internal IMsgPackPropertyIdResolver[] _propertyNameResolvers = Default_PropertyNameResolvers;
+    internal ICustomExt[] _customExtentionTypes = Default_CustomExtentionTypes;
 
     /// <summary>
     /// When true (default) will dynamically use the smallest possible datatype that the value fits in. When false, will always use the predefined type of integer.
@@ -35,21 +141,26 @@ namespace LsMsgPack
 
 #if KEEPTRACK
 
+    /// <summary>
+    /// Preserve the packaged (MsgPackItem) items in arrays and maps (in order to debug or inspect them in an editor)
+    /// </summary>
     [Category("Control")]
     [DisplayName("Preserve Packages")]
     [Description("Preserve the packaged (MsgPackItem) items in arrays and maps (in order to debug or inspect them in an editor)")]
-    [DefaultValue(true)]
+    [DefaultValue(false)]
     public bool PreservePackages
     {
       get { return _preservePackages; }
       set { _preservePackages = value; }
     }
 
-    internal bool _continueProcessingOnBreakingError = false;
+    /// <summary>
+    /// If there is a breaking error (such as a non-existing MsgPack type) the reader will do a best effort to continue reading the rest of the file (it will search for the next valid MsgPack type in the stream and continue from there) This should never be done in production code, but for debugging it might help (in navigating or spotting multiple issues in one cycle).
+    /// </summary>
     [Category("Control")]
     [DisplayName("Continue Processing On Breaking Error")]
     [Description("If there is a breaking error (such as a non-existing MsgPack type) the reader will do a best effort to continue reading the rest of the file (it will search for the next valid MsgPack type in the stream and continue from there) This should never be done in production code, but for debugging it might help (in navigating or spotting multiple issues in one cycle).")]
-    [DefaultValue(true)]
+    [DefaultValue(false)]
     public bool ContinueProcessingOnBreakingError
     {
       get { return _continueProcessingOnBreakingError; }
@@ -84,10 +195,11 @@ namespace LsMsgPack
     [DefaultValue(true)]
     public AddTypeIdOption AddTypeIdOptions
     {
-      get { return _addTypeName; }
-      set { _addTypeName = value; }
+      get { return _addTypeIdOptions; }
+      set { _addTypeIdOptions = value; }
     }
 
+    
     /// <summary>
     /// Custom type resolvers can be added, only needed if using object-models with polymorphic properties (base types or interfaces that have multiple implementations).
     /// <para>
@@ -100,19 +212,18 @@ namespace LsMsgPack
     /// In order to keep a minimal payload and best performance, implement a custom IMsgPackTypeIdentifier
     /// </para>
     /// </summary>
-    public IMsgPackTypeResolver[] TypeResolvers = new IMsgPackTypeResolver[0];
+    public IMsgPackTypeResolver[] TypeResolvers { get {  return _typeResolvers; } set {_typeResolvers=value;} }
 
+    
     /// <summary>
     /// Included:
     /// <list type="bullet">
     /// <item>FilterIgnoredAttribute</item>
     /// </list>
     /// </summary>
-    public IMsgPackPropertyIncludeStatically[] StaticFilters = new IMsgPackPropertyIncludeStatically[]{
-            new FilterNonSettable(),
-            new FilterIgnoredAttribute()
-        };
+    public IMsgPackPropertyIncludeStatically[] StaticFilters { get { return _staticFilters; } set {_staticFilters=value;} }
 
+    
     /// <summary>
     /// Included:
     /// <list type="bullet">
@@ -120,16 +231,22 @@ namespace LsMsgPack
     /// <item>FilterNullValues</item>
     /// </list>
     /// </summary>
-    public IMsgPackPropertyIncludeDynamically[] DynamicFilters = new[] { new FilterDefaultValues() };
+    public IMsgPackPropertyIncludeDynamically[] DynamicFilters { get { return _dynamicFilters;} set { _dynamicFilters=value;} }
 
+    
     /// <summary>
     /// Included:
     /// <list type="bullet">
     /// <item>AttributePropertyNameResolver</item>
     /// </list>
     /// </summary>
-    public IMsgPackPropertyIdResolver[] PropertyNameResolvers = new IMsgPackPropertyIdResolver[0];
+    public IMsgPackPropertyIdResolver[] PropertyNameResolvers { get { return _propertyNameResolvers; } set { _propertyNameResolvers=value;} }
 
+    
+    /// <summary>
+    /// Should inherit from BaseCustomExt, BaseCustomExtNonCached or AbstractCustomExt
+    /// </summary>
+    public ICustomExt[] CustomExtentionTypes { get { return _customExtentionTypes;} set { _customExtentionTypes=value;} }
 
     public MsgPackSettings Clone()
     {
@@ -138,16 +255,17 @@ namespace LsMsgPack
         FileContainsErrors = FileContainsErrors,
         _dynamicallyCompact = _dynamicallyCompact,
         _endianAction = _endianAction,
-        _addTypeName = _addTypeName,
+        _addTypeIdOptions = _addTypeIdOptions,
 
 #if KEEPTRACK
         _preservePackages = _preservePackages,
         _continueProcessingOnBreakingError = _continueProcessingOnBreakingError,
 #endif
-        TypeResolvers = TypeResolvers,
-        StaticFilters = StaticFilters,
-        DynamicFilters = DynamicFilters,
-        PropertyNameResolvers = PropertyNameResolvers
+        _typeResolvers = _typeResolvers,
+        _staticFilters = _staticFilters,
+        _dynamicFilters = _dynamicFilters,
+        _propertyNameResolvers = _propertyNameResolvers,
+        _customExtentionTypes = _customExtentionTypes
       };
     }
   }

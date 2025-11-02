@@ -1,6 +1,11 @@
 ﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using LsMsgPack.Types.Extensions;
+using System.Runtime;
+using System;
+
+
 #if KEEPTRACK
 using System.Xml.Serialization;
 using System.ComponentModel;
@@ -44,11 +49,11 @@ namespace LsMsgPack {
 #if KEEPTRACK
     [XmlAttribute("TypeSpecifier", DataType = "byte")]
     [Category("Data")]
-    [DisplayName("Type")]
+    [DisplayName("Extension Type")]
     [Description("The type Extension type assigned to this container")]
     [ReadOnly(true)]
 #endif
-    public sbyte TypeSpecifier {
+    public virtual sbyte TypeSpecifier {
       get { return typeSpecifier; }
       set { typeSpecifier = value; }
     }
@@ -72,7 +77,7 @@ namespace LsMsgPack {
       }
     }
 
-    protected byte[] BaseValue {
+    protected internal byte[] BaseValue {
       get { return value ?? new byte[0]; }
       set { this.value = value; }
     }
@@ -94,7 +99,7 @@ namespace LsMsgPack {
         bytes.AddRange(GetLengthBytes(value.Length, SupportedLengths.All));
 #endif
       }
-      bytes.Add((byte)typeSpecifier);
+      bytes.Add((byte)TypeSpecifier);
       bytes.AddRange(value);
       return bytes.ToArray();
     }
@@ -119,22 +124,35 @@ namespace LsMsgPack {
       if (typeSpecifier == -1)
         return new MpDateTime(this);
 
+      if (_settings._customExtentionTypes != null)
+      {
+        for (int t = 0; t < _settings._customExtentionTypes.Length; t++)
+        {
+          ICustomExt ext = _settings._customExtentionTypes[t];
+          if (ext is null)
+            continue;
+
+          if (typeSpecifier == ext.TypeSpecifier)
+            return ext.Create(_settings, this, null);
+        }
+      }
+
       return this;
     }
 
     public override string ToString() {
       return string.Concat("Extension value (", GetOfficialTypeName(typeId),
-        ") with a type specifier of ", typeSpecifier, " containing ", value.Length, " bytes.");
+        ") with a type specifier of ", TypeSpecifier, " containing ", value.Length, " bytes.");
     }
 
-    protected void CopyBaseDataFrom(MpExt generic) {
+    protected virtual void CopyBaseDataFrom(MpExt generic) {
 #if KEEPTRACK
       storedOffset = generic.storedOffset;
       storedLength = generic.storedLength;
 #endif
       _settings = generic._settings;
       typeId = generic.typeId;
-      typeSpecifier = generic.typeSpecifier;
+      typeSpecifier = generic.TypeSpecifier;
       value = generic.value;
     }
   }

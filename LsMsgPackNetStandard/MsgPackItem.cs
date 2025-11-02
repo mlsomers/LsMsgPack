@@ -4,6 +4,8 @@ using System.Xml.Serialization;
 using System.IO;
 using System.Collections;
 using System.Linq;
+using LsMsgPack.Types.Extensions;
+
 #if KEEPTRACK
 using System.ComponentModel;
 #endif
@@ -22,7 +24,7 @@ namespace LsMsgPack
     {
       _settings = settings;
 #if KEEPTRACK
-      _isBestGuess = _settings.FileContainsErrors;
+      _isBestGuess = _settings?.FileContainsErrors ?? false;
 #endif
     }
 
@@ -40,7 +42,7 @@ namespace LsMsgPack
     [Browsable(false)]
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 #endif
-    public MsgPackSettings Settings { get { return _settings; } }
+    public MsgPackSettings Settings { get { return _settings; } set { _settings = value; } }
 
 #if KEEPTRACK
     private bool _isBestGuess = false;
@@ -111,9 +113,9 @@ namespace LsMsgPack
 
     public static bool SwapEndianChoice(MsgPackSettings settings, int length)
     {
-      if (settings.EndianAction == EndianAction.NeverSwap || length <= 1)
+      if (settings._endianAction == EndianAction.NeverSwap || length <= 1)
         return false;
-      if (settings.EndianAction == EndianAction.SwapIfCurrentSystemIsLittleEndian && !BitConverter.IsLittleEndian)
+      if (settings._endianAction == EndianAction.SwapIfCurrentSystemIsLittleEndian && !BitConverter.IsLittleEndian)
         return false;
       return true;
     }
@@ -197,7 +199,7 @@ namespace LsMsgPack
     /// <param name="dynamicallyCompact">Will store a long with value 3 as a nibble (using only one byte)</param>
     public static MpRoot PackMultiple(bool dynamicallyCompact, params object[] values)
     {
-      return PackMultiple(new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact }, values);
+      return PackMultiple(new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact }, values);
     }
 
     public static MpRoot PackMultiple(MsgPackSettings settings, params object[] values)
@@ -211,7 +213,7 @@ namespace LsMsgPack
     /// <param name="dynamicallyCompact">Will store a long with value 3 as a nibble (using only one byte)</param>
     public static MpRoot PackMultiple(bool dynamicallyCompact, IEnumerable values)
     {
-      return PackMultiple(new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact }, values);
+      return PackMultiple(new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact }, values);
     }
 
     public static MpRoot PackMultiple(MsgPackSettings settings, IEnumerable values)
@@ -225,11 +227,12 @@ namespace LsMsgPack
     }
 
     public static MsgPackItem Pack(object value, bool dynamicallyCompact = true)
-    {MsgPackSettings sett=new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact };
+    {
+      MsgPackSettings sett = new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact };
       return Pack(value, sett) ?? MsgPackSerializer.SerializeObject(value, sett);
     }
 
-    public static MsgPackItem Pack(object value, MsgPackSettings settings, Type valuesType=null)
+    public static MsgPackItem Pack(object value, MsgPackSettings settings, Type valuesType = null)
     {
       if (ReferenceEquals(value, null)) return new MpNull(settings);
       if (value is bool) return new MpBool(settings) { Value = value };
@@ -250,8 +253,21 @@ namespace LsMsgPack
       if (value is DateTime
         || value is DateTimeOffset) return new MpDateTime(settings) { Value = value };
 
-      if(valuesType is null)
+      if (valuesType is null)
         valuesType = value.GetType();
+
+      if (settings._customExtentionTypes != null)
+      {
+        for (int t = 0; t < settings._customExtentionTypes.Length; t++)
+        {
+          ICustomExt ext = settings._customExtentionTypes[t];
+          if (ext is null)
+            continue;
+
+          if (ext.SupportsType(valuesType))
+            return ext.Create(settings, null, value);
+        }
+      }
 
       if (valuesType.IsEnum) return new MpInt(settings).SetEnumVal(value);
       if (IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap(settings) { Value = value };
@@ -314,9 +330,9 @@ namespace LsMsgPack
     {
       return Unpack(stream, new MsgPackSettings()
       {
-        DynamicallyCompact = dynamicallyCompact,
-        PreservePackages = preservePackages,
-        ContinueProcessingOnBreakingError = continueProcessingOnBreakingError
+        _dynamicallyCompact = dynamicallyCompact,
+        _preservePackages = preservePackages,
+        _continueProcessingOnBreakingError = continueProcessingOnBreakingError
       });
     }
 
@@ -332,9 +348,9 @@ namespace LsMsgPack
     {
       return UnpackMultiple(stream, new MsgPackSettings()
       {
-        DynamicallyCompact = dynamicallyCompact,
-        PreservePackages = preservePackages,
-        ContinueProcessingOnBreakingError = continueProcessingOnBreakingError
+        _dynamicallyCompact = dynamicallyCompact,
+        _preservePackages = preservePackages,
+        _continueProcessingOnBreakingError = continueProcessingOnBreakingError
       });
     }
 #else
@@ -350,7 +366,7 @@ namespace LsMsgPack
     {
       return Unpack(stream, new MsgPackSettings()
       {
-        DynamicallyCompact = dynamicallyCompact
+        _dynamicallyCompact = dynamicallyCompact
       });
     }
 
@@ -366,7 +382,7 @@ namespace LsMsgPack
     {
       return UnpackMultiple(stream, new MsgPackSettings()
       {
-        DynamicallyCompact = dynamicallyCompact
+        _dynamicallyCompact = dynamicallyCompact
       });
     }
 #endif
@@ -399,7 +415,7 @@ namespace LsMsgPack
         catch (Exception ex)
         {
           items.Add(new MpError(settings, ex, "Offset after parsing error is ", stream.Position) { storedOffset = lastpos, storedLength = stream.Position - lastpos });
-          if (settings.ContinueProcessingOnBreakingError)
+          if (settings._continueProcessingOnBreakingError)
           {
             if (lastpos == stream.Position && stream.Position < len)
               FindNextValidTypeId(stream);
@@ -475,7 +491,7 @@ namespace LsMsgPack
             {
               long pos = stream.Position - 1;
 #if KEEPTRACK
-              if (settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
+              if (settings._continueProcessingOnBreakingError) FindNextValidTypeId(stream);
               return new MpError(settings, pos, MsgPackTypeId.NeverUsed, "The specification specifically states that the value 0xC1 should never be used.")
               {
                 storedLength = (stream.Position - pos)
@@ -511,7 +527,7 @@ namespace LsMsgPack
         {
 #if KEEPTRACK
           long pos = stream.Position - 1;
-          if (settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
+          if (settings._continueProcessingOnBreakingError) FindNextValidTypeId(stream);
           return new MpError(settings, pos, type, "The type identifier with value 0x", BitConverter.ToString(new byte[] { (byte)type }),
             " is either new or invalid. It is not (yet) implemented in this version of LsMsgPack.")
           {
@@ -527,7 +543,7 @@ namespace LsMsgPack
       {
 #if KEEPTRACK
         long pos = stream.Position - 1;
-        if (settings.ContinueProcessingOnBreakingError) FindNextValidTypeId(stream);
+        if (settings._continueProcessingOnBreakingError) FindNextValidTypeId(stream);
         return new MpError(settings, new MsgPackException("Error while reading data.", ex, stream.Position, (MsgPackTypeId)typeByte))
         {
           storedOffset = pos,

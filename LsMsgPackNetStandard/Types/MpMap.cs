@@ -172,7 +172,7 @@ namespace LsMsgPack
         MsgPackItem val;
         if (key is MpError)
         {
-          if (_settings.ContinueProcessingOnBreakingError)
+          if (_settings._continueProcessingOnBreakingError)
           {
             _settings.FileContainsErrors = true;
             errorOccurred = true;
@@ -190,7 +190,7 @@ namespace LsMsgPack
         value[t] = new KeyValuePair<object, object>(key.Value, val.Value);
 
 #if KEEPTRACK
-        if (!_settings.ContinueProcessingOnBreakingError && (key is MpError || val is MpError))
+        if (!_settings._continueProcessingOnBreakingError && (key is MpError || val is MpError))
         {
           return new MpError(_settings, this);
         }

@@ -16,16 +16,16 @@ namespace LsMsgPack.Meta
         return null;
 
       FullPropertyInfo full;
-      if (settings.PropertyNameResolvers is null || settings.PropertyNameResolvers.Length == 0){ // Only cache for default resolver, Implemented resolvers must have their own cache (or not)
+      if (settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0){ // Only cache for default resolver, Implemented resolvers must have their own cache (or not)
         if (Cache.TryGetValue(propertyInfo, out full))
           return full;
       }
 
       full = new FullPropertyInfo(propertyInfo);
 
-      for (int t = settings.PropertyNameResolvers.Length - 1; t >= 0; t--)
+      for (int t = settings._propertyNameResolvers.Length - 1; t >= 0; t--)
       {
-        full.PropertyId = settings.PropertyNameResolvers[t].GetId(full, settings);
+        full.PropertyId = settings._propertyNameResolvers[t].GetId(full, settings);
         if (full.PropertyId != null)
           break;
       }
@@ -33,7 +33,7 @@ namespace LsMsgPack.Meta
       if (full.PropertyId == null)
         full.PropertyId = full.PropertyInfo.Name;
 
-      if (settings.PropertyNameResolvers is null || settings.PropertyNameResolvers.Length == 0)
+      if (settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0)
         Cache.Add(propertyInfo, full);
       return full;
     }
@@ -128,8 +128,8 @@ namespace LsMsgPack.Meta
         else
         {
           bool keep = true;
-          for (int i = settings.StaticFilters.Length - 1; i >= 0; i--)
-            if (!settings.StaticFilters[i].IncludeProperty(full)) { keep = false; break; }
+          for (int i = settings._staticFilters.Length - 1; i >= 0; i--)
+            if (!settings._staticFilters[i].IncludeProperty(full)) { keep = false; break; }
 
           full.StaticallyIgnored = !keep;
 

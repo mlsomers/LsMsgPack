@@ -19,7 +19,7 @@ namespace LsMsgPack {
     }
 
     internal MpError(MsgPackSettings settings, MsgPackItem partialItemWithNestedError) : this(settings, partialItemWithNestedError.StoredOffset, partialItemWithNestedError.TypeId,
-      string.Concat("A nested item contains an error. ", settings.ContinueProcessingOnBreakingError 
+      string.Concat("A nested item contains an error. ", settings._continueProcessingOnBreakingError 
         ? "Inspect the PartialItem to view the part of the message that could be read. Since the option 'ContinueProcessingOnBreakingError' is used, the 'IsBestGuess' property of each subitem will indicate if it was read before or after the error."
         : "Inspect the PartialItem to view the part of the message that could be read.")) {
       PartialItem = partialItemWithNestedError;

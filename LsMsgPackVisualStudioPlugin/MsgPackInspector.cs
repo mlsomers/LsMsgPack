@@ -2,30 +2,43 @@
 using Microsoft.VisualStudio.DebuggerVisualizers;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 
 [assembly: System.Diagnostics.DebuggerVisualizer(
 typeof(LsMsgPackVisualStudioPlugin.MsgPackInspector),
 typeof(VisualizerObjectSource),
 Target = typeof(MsgPackByteArray),
-Description = "MsgPack debugging tool")]
+Description = "MsgPack Explorer")]
 
 [assembly: System.Diagnostics.DebuggerVisualizer(
 typeof(LsMsgPackVisualStudioPlugin.MsgPackInspector),
 typeof(VisualizerObjectSource),
 Target = typeof(Stream),
-Description = "MsgPack debugging tool")]
+Description = "MsgPack Explorer")]
 
 [assembly: System.Diagnostics.DebuggerVisualizer(
 typeof(LsMsgPackVisualStudioPlugin.MsgPackInspector),
 typeof(VisualizerObjectSource),
 Target = typeof(byte[]),
-Description = "MsgPack debugging tool")]
+Description = "MsgPack Explorer")]
 
 [assembly: System.Diagnostics.DebuggerVisualizer(
 typeof(LsMsgPackVisualStudioPlugin.MsgPackInspector),
 typeof(VisualizerObjectSource),
 Target = typeof(List<byte>),
-Description = "MsgPack debugging tool")]
+Description = "MsgPack Explorer")]
+
+[assembly: System.Diagnostics.DebuggerVisualizer(
+typeof(LsMsgPackVisualStudioPlugin.MsgPackInspector),
+typeof(VisualizerObjectSource),
+Target = typeof(ByteArrayContent),
+Description = "MsgPack Explorer")]
+
+[assembly: System.Diagnostics.DebuggerVisualizer(
+typeof(LsMsgPackVisualStudioPlugin.MsgPackInspector),
+typeof(VisualizerObjectSource),
+Target = typeof(HttpResponseMessage),
+Description = "MsgPack Explorer")]
 
 namespace LsMsgPackVisualStudioPlugin
 {
@@ -71,8 +84,12 @@ namespace LsMsgPackVisualStudioPlugin
           correctType = new MsgPackByteArray((Stream)objectToVisualize);
         else if (objectToVisualize is string)
           correctType = new MsgPackByteArray((string)objectToVisualize);
+        else if (objectToVisualize is ByteArrayContent)
+          correctType = new MsgPackByteArray(((ByteArrayContent)objectToVisualize).ReadAsByteArrayAsync().Result);
+        else if (objectToVisualize is HttpResponseMessage)
+          correctType = new MsgPackByteArray(((HttpResponseMessage)objectToVisualize).Content.ReadAsByteArrayAsync().Result);
       }
-      
+
       VisualizerDevelopmentHost visualizerHost = new VisualizerDevelopmentHost(correctType, typeof(MsgPackInspector));
       visualizerHost.ShowVisualizer();
     }

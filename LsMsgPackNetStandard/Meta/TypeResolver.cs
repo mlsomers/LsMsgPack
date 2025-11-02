@@ -45,9 +45,9 @@ namespace LsMsgPack.Meta
     {
       Type result;
       // First give custom resolvers (if any) a chance...
-      for (int t = (map.Settings?.TypeResolvers.Length ?? 0) - 1; t >= 0; t--)
+      for (int t = (map.Settings?._typeResolvers.Length ?? 0) - 1; t >= 0; t--)
       {
-        IMsgPackTypeResolver resolver = map.Settings.TypeResolvers[t];
+        IMsgPackTypeResolver resolver = map.Settings._typeResolvers[t];
         result = resolver.Resolve(typeId, assignedTo, rootProp, propVals, map.Settings);
         if (result != null && !result.ContainsGenericParameters)
           return result;
@@ -59,7 +59,7 @@ namespace LsMsgPack.Meta
       {
         if (assignedTo.IsAbstract || assignedTo.IsInterface)
           throw new Exception(string.Concat("Cannot create an instance of an interface or abstract type:\r\n  ", assignedTo.FullName,
-            "\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings.TypeResolvers."));
+            "\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers."));
       }
       else
       {
@@ -267,7 +267,7 @@ namespace LsMsgPack.Meta
               {
                 throw new Exception(string.Concat("Type assignment dilamma for \"", typeName, "\" with the following choices:\r\n  ",
                   string.Join("\r\n  ", choices.Select(t => t.FullName)),
-                  "\r\nFix this by either serializing with full name or implementing a IMsgPackTypeResolver and add it to MsgPackSettings.TypeResolvers."));
+                  "\r\nFix this by either serializing with full name or implementing a IMsgPackTypeResolver and add it to MsgPackSettings._typeResolvers."));
               }
             }
           }
@@ -295,7 +295,7 @@ namespace LsMsgPack.Meta
         {
           throw new Exception(string.Concat("Type assignment dilamma for \"", typeName, "\" with the following choices:\r\n  ",
             string.Join("\r\n  ", choices.Select(t => t.FullName)),
-            "\r\nFix this by either serializing with full name or implementing a IMsgPackTypeResolver and add it to MsgPackSettings.TypeResolvers."));
+            "\r\nFix this by either serializing with full name or implementing a IMsgPackTypeResolver and add it to MsgPackSettings._typeResolvers."));
         }
       }
 

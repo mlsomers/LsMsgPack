@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 
 namespace DebuggerProxy
 {
@@ -81,6 +82,15 @@ namespace DebuggerProxy
       return new MsgPackByteArray(Convert.FromBase64String(base64));
     }
 
+    public static implicit operator MsgPackByteArray(ByteArrayContent content)
+    {
+      return new MsgPackByteArray(content.ReadAsByteArrayAsync().Result);
+    }
+
+    public static implicit operator MsgPackByteArray(HttpResponseMessage content)
+    {
+      return new MsgPackByteArray(content.Content.ReadAsByteArrayAsync().Result);
+    }
 
     #region Converting back 
 

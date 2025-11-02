@@ -24,10 +24,10 @@ namespace LsMsgPack
       if (packed != null && !(!(item is string) && item is IEnumerable))
       {
         if (assignedTo?.AssignedToType is null
-          || settings.AddTypeIdOptions == AddTypeIdOption.Never
+          || settings._addTypeIdOptions == AddTypeIdOption.Never
           || tType.IsPrimitive
           || tType == typeof(string)
-          || (settings.AddTypeIdOptions.HasFlag(AddTypeIdOption.IfAmbiguious) && assignedTo?.AssignedToType == tType))
+          || (settings._addTypeIdOptions.HasFlag(AddTypeIdOption.IfAmbiguious) && assignedTo?.AssignedToType == tType))
           return packed;
       }
 
@@ -74,10 +74,10 @@ namespace LsMsgPack
       propVals = new Dictionary<object, object>(props.Length);
       bool addTypeId = false;
 
-      if (settings.AddTypeIdOptions != AddTypeIdOption.Never)
+      if (settings._addTypeIdOptions != AddTypeIdOption.Never)
       {
-        if ((settings.AddTypeIdOptions.HasFlag(AddTypeIdOption.IfAmbiguious) && assignedTo?.AssignedToType != tType)
-          || settings.AddTypeIdOptions.HasFlag(AddTypeIdOption.Always))
+        if ((settings._addTypeIdOptions.HasFlag(AddTypeIdOption.IfAmbiguious) && assignedTo?.AssignedToType != tType)
+          || settings._addTypeIdOptions.HasFlag(AddTypeIdOption.Always))
         {
           object typeIdd = GetTypeIdentifier(tType, settings, assignedTo);
           propVals.Add(string.Empty, typeIdd);
@@ -87,7 +87,7 @@ namespace LsMsgPack
 
       if (packed != null)
       {
-        if (settings.AddTypeIdOptions == AddTypeIdOption.Never)
+        if (settings._addTypeIdOptions == AddTypeIdOption.Never)
           return packed;
         
         propVals.Add("@", packed);
@@ -125,8 +125,8 @@ namespace LsMsgPack
         object value = prp.GetValue(item, null);
 
         bool exclude = false;
-        for (int i = settings.DynamicFilters.Length - 1; i >= 0; i--)
-          if (!settings.DynamicFilters[i].IncludeProperty(prop, value)) { exclude = true; break; }
+        for (int i = settings._dynamicFilters.Length - 1; i >= 0; i--)
+          if (!settings._dynamicFilters[i].IncludeProperty(prop, value)) { exclude = true; break; }
 
         if (exclude)
           continue;
@@ -149,15 +149,15 @@ namespace LsMsgPack
     {
       object typeId = null;
 
-      for (int t = settings.TypeResolvers.Length - 1; t >= 0; t--)
+      for (int t = settings._typeResolvers.Length - 1; t >= 0; t--)
       {
-        typeId = settings.TypeResolvers[t].IdForType(type, propertyInfo, settings);
+        typeId = settings._typeResolvers[t].IdForType(type, propertyInfo, settings);
         if (typeId != null)
           break;
       }
-      if (typeId is null && !((settings._addTypeName & AddTypeIdOption.NoDefaultFallBack) > 0))
+      if (typeId is null && !((settings._addTypeIdOptions & AddTypeIdOption.NoDefaultFallBack) > 0))
       {
-        bool fullname = (settings._addTypeName & AddTypeIdOption.FullName) > 0;
+        bool fullname = (settings._addTypeIdOptions & AddTypeIdOption.FullName) > 0;
         typeId = TypeResolver.GetTypeName(type, fullname);
       }
 

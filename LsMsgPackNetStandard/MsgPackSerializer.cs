@@ -1,10 +1,7 @@
 ﻿using LsMsgPack.Meta;
-using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Interfaces;
-using LsMsgPack.TypeResolving.Names;
 using LsMsgPack.TypeResolving.Types;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -28,7 +25,7 @@ namespace LsMsgPack
 
     public static byte[] Serialize<T>(T item, bool dynamicallyCompact = true)
     {
-      return Serialize<T>(item, new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact });
+      return Serialize<T>(item, new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact });
     }
 
     public static byte[] Serialize<T>(T item, MsgPackSettings settings)
@@ -43,7 +40,7 @@ namespace LsMsgPack
 
     public static void Serialize<T>(T item, Stream target, bool dynamicallyCompact = true)
     {
-      Serialize<T>(item, target, new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact });
+      Serialize<T>(item, target, new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact });
     }
 
     public static void Serialize<T>(T item, Stream target, MsgPackSettings settings)
@@ -56,12 +53,12 @@ namespace LsMsgPack
 
     public static MsgPackItem SerializeObject(object item, bool dynamicallyCompact = true)
     {
-      return SerializeObject(item, new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact });
+      return SerializeObject(item, new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact });
     }
 
     public static byte[] SerializeWithSchema<T>(T item, bool dynamicallyCompact = true)
     {
-      return SerializeWithSchema<T>(item, new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact });
+      return SerializeWithSchema<T>(item, new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact });
     }
 
     public static byte[] SerializeWithSchema<T>(T item, MsgPackSettings settings)
@@ -76,7 +73,7 @@ namespace LsMsgPack
 
     public static void SerializeWithSchema<T>(T item, Stream target, bool dynamicallyCompact = true)
     {
-      SerializeWithSchema<T>(item, target, new MsgPackSettings() { DynamicallyCompact = dynamicallyCompact });
+      SerializeWithSchema<T>(item, target, new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact });
     }
 
     public static void SerializeWithSchema<T>(T item, Stream target, MsgPackSettings settings)
@@ -105,28 +102,28 @@ namespace LsMsgPack
 
     private static void InjectSchema(MsgPackSettings settings, IndexedSchemaTypeResolver resolver)
     {
-      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings.TypeResolvers);
+      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings._typeResolvers);
       resolvers.Insert(0, resolver);
-      settings.TypeResolvers = resolvers.ToArray();
+      settings._typeResolvers = resolvers.ToArray();
 
-      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings.PropertyNameResolvers);
+      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings._propertyNameResolvers);
       propNameResolvers.Insert(0, resolver);
-      settings.PropertyNameResolvers = propNameResolvers.ToArray();
+      settings._propertyNameResolvers = propNameResolvers.ToArray();
     }
 
     private static void RemoveSchemaResolver(MsgPackSettings settings)
     {
-      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings.TypeResolvers);
+      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings._typeResolvers);
       for (int t = resolvers.Count - 1; t >= 0; t--)
         if (resolvers[t] is IndexedSchemaTypeResolver)
           resolvers.RemoveAt(t);
-      settings.TypeResolvers = resolvers.ToArray();
+      settings._typeResolvers = resolvers.ToArray();
 
-      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings.PropertyNameResolvers);
+      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings._propertyNameResolvers);
       for (int t = propNameResolvers.Count - 1; t >= 0; t--)
         if (propNameResolvers[t] is IndexedSchemaTypeResolver)
           propNameResolvers.RemoveAt(t);
-      settings.PropertyNameResolvers = propNameResolvers.ToArray();
+      settings._propertyNameResolvers = propNameResolvers.ToArray();
     }
 
     public static T Deserialize<T>(byte[] source)

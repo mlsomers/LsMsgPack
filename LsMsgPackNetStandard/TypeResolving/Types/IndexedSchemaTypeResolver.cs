@@ -70,7 +70,7 @@ namespace LsMsgPack.TypeResolving.Types
       _blockRecursionResolve = true;
       try
       {
-        List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings.TypeResolvers);
+        List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings._typeResolvers);
         resolvers.Remove(this);
         Type type = TypeResolver.ResolveInternal(def.TypeName, assignedTo, resolvers.ToArray());
         def.Type = type;
@@ -123,10 +123,10 @@ namespace LsMsgPack.TypeResolving.Types
         // string typeName = MsgPackSerializer.GetTypeName(type, (settings._addTypeName & AddTypeIdOption.FullName) > 0);
 
         if (def.Type is null)
-          def.Type = TypeResolver.ResolveInternal(def.TypeName, null, settings.TypeResolvers);
+          def.Type = TypeResolver.ResolveInternal(def.TypeName, null, settings._typeResolvers);
 
         if (def.Type is null)
-          throw new Exception($"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings.TypeResolvers.Select(r => r.GetType().Name))}");
+          throw new Exception($"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}");
 
         if (!ByType.ContainsKey(def.Type))
           ByType.Add(def.Type, def);
@@ -137,7 +137,7 @@ namespace LsMsgPack.TypeResolving.Types
     // We know the fixed structure of our schema, so we can omit the oop stuff to keep it small
     public byte[] Pack()
     {
-      MsgPackSettings settings=new MsgPackSettings{AddTypeIdOptions = AddTypeIdOption.Never};
+      MsgPackSettings settings=new MsgPackSettings{_addTypeIdOptions = AddTypeIdOption.Never};
 
       KeyValuePair<object,object>[] items=new KeyValuePair<object, object>[ByTypeId.Count];
       if (ByTypeId.Count > 0) { 
@@ -182,9 +182,9 @@ namespace LsMsgPack.TypeResolving.Types
 
       // Get type name from downstream resolvers
 
-      for (int t = 0; t < settings.TypeResolvers.Length; t++)
+      for (int t = 0; t < settings._typeResolvers.Length; t++)
       {
-        IMsgPackTypeResolver resolver = settings.TypeResolvers[t];
+        IMsgPackTypeResolver resolver = settings._typeResolvers[t];
         if (resolver is IndexedSchemaTypeResolver)
           continue;
 
@@ -194,7 +194,7 @@ namespace LsMsgPack.TypeResolving.Types
       }
 
       if (string.IsNullOrEmpty(TypeName))
-        TypeName = TypeResolver.GetTypeName(type, (settings._addTypeName & AddTypeIdOption.FullName) > 0);
+        TypeName = TypeResolver.GetTypeName(type, (settings._addTypeIdOptions & AddTypeIdOption.FullName) > 0);
     }
 
     internal void ParseProps(FullPropertyInfo[] props)

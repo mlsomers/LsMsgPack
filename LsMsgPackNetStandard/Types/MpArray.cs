@@ -133,7 +133,7 @@ namespace LsMsgPack
         if (_settings._preservePackages) packedItems[t] = item;
         if (item is MpError)
         {
-          if (_settings.ContinueProcessingOnBreakingError)
+          if (_settings._continueProcessingOnBreakingError)
           {
             _settings.FileContainsErrors = true;
             errorOccurred = true;

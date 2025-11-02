@@ -106,7 +106,7 @@ namespace LsMsgPack
             try
             {
                 MpInt intItem = (MpInt)item;
-                item.Settings.DynamicallyCompact = true;
+                item.Settings._dynamicallyCompact = true;
                 MsgPackTypeId calcType = intItem.TypeId;
                 if (calcType != intItem.PreservedType)
                 {
@@ -127,7 +127,7 @@ namespace LsMsgPack
             }
             finally
             {
-                item.Settings.DynamicallyCompact = false;
+                item.Settings._dynamicallyCompact = false;
             }
         }
 

@@ -160,6 +160,7 @@ namespace MsgPackExplorer {
               catch (Exception ex)
               {
                 filesCouldNotRemove.Add(destPath);
+                Trace.WriteLine(ex.Message);
               }
             }
           }
@@ -179,6 +180,7 @@ namespace MsgPackExplorer {
               catch (Exception ex)
               {
                 filesCouldNotRemove.Add(destPath);
+                Trace.WriteLine(ex.Message);
               }
             }
           }
