@@ -28,7 +28,7 @@ namespace LsMsgPack {
     }
 
     public override string ToString() {
-      return string.Concat("Boolean (", GetOfficialTypeName(TypeId), ") with the value \"", value, "\"");
+      return $"Boolean ({GetOfficialTypeName(TypeId)}) with the value \"{value}\"";
     }
   }
 }

@@ -86,7 +86,7 @@ namespace LsMsgPack
 
     public override string ToString()
     {
-      return string.Concat("Root (", packedItems.Count, " items)");
+      return $"Root ({packedItems.Count} items)";
     }
 
     // iList interface

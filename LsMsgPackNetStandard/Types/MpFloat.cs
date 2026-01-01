@@ -28,7 +28,7 @@ namespace LsMsgPack
           case MsgPackTypeId.MpFloat: return f32value;
           case MsgPackTypeId.MpDouble: return f64value;
         }
-        throw new MsgPackException(string.Concat("Type ", GetOfficialTypeName(typeId), " is not a floating point."), 0, typeId);
+        throw new MsgPackException($"Type {GetOfficialTypeName(typeId)} is not a floating point.", 0, typeId);
       }
       set
       {
@@ -96,7 +96,7 @@ namespace LsMsgPack
 
     public override string ToString()
     {
-      return string.Concat("Floating point (", GetOfficialTypeName(typeId), ") with the value ", Value);
+      return $"Floating point ({GetOfficialTypeName(typeId)}) with the value {Value}";
     }
   }
 }

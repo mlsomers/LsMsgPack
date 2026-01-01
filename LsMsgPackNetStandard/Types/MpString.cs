@@ -116,7 +116,7 @@ namespace LsMsgPack
           case MsgPackTypeId.MpStr8: len = ReadLen(data, 1); break;
           case MsgPackTypeId.MpStr16: len = ReadLen(data, 2); break;
           case MsgPackTypeId.MpStr32: len = ReadLen(data, 4); break;
-          default: throw new MsgPackException(string.Concat("MpString does not support a type ID of ", GetOfficialTypeName(typeId), "."), data.Position - 1, typeId);
+          default: throw new MsgPackException($"MpString does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position - 1, typeId);
         }
       }
       StrAsBytes = ReadBytes(data, len);
@@ -125,7 +125,7 @@ namespace LsMsgPack
 
     public override string ToString()
     {
-      return string.Concat("String (", GetOfficialTypeName(TypeId), ") with the value \"", value, "\"");
+      return $"String ({GetOfficialTypeName(TypeId)}) with the value \"{value}\"";
     }
   }
 }

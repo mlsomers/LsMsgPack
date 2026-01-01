@@ -63,8 +63,8 @@ namespace LsMsgPack
               // do nothing, dictionary should be in -> packed
             }
             else
-              throw new NotImplementedException(string.Concat("Todo: check if we can derive element type from IEnumerable<T>.",
-                "For now decorate/annotate your fancy collection (", tType.Name, assignedTo is null ? "" : ") or property (" + assignedTo.PropertyInfo.Name, ") with a [SerializeEnumerable] Attribute specifying the type of the elements and weather to include or exclude other properties..."));
+              throw new NotImplementedException(
+                $"Todo: check if we can derive element type from IEnumerable<T>.For now decorate/annotate your fancy collection ({tType.Name}{(assignedTo is null ? "" : $") or property ({assignedTo.PropertyInfo.Name}")}) with a [SerializeEnumerable] Attribute specifying the type of the elements and weather to include or exclude other properties...");
           }
         }
       }

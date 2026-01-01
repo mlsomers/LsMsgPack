@@ -76,14 +76,14 @@ namespace LsMsgPack {
         case MsgPackTypeId.MpBin8: len = ReadLen(data, 1); break;
         case MsgPackTypeId.MpBin16: len = ReadLen(data, 2); break;
         case MsgPackTypeId.MpBin32: len = ReadLen(data, 4); break;
-        default: throw new MsgPackException(string.Concat("MpBin does not support a type ID of ", GetOfficialTypeName(typeId), "."), data.Position - 1, typeId);
+        default: throw new MsgPackException($"MpBin does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position - 1, typeId);
       }
       value = ReadBytes(data, len);
       return this;
     }
 
     public override string ToString() {
-      return string.Concat("Blob (", GetOfficialTypeName(TypeId), ") of ", value.Length, " bytes.");
+      return $"Blob ({GetOfficialTypeName(TypeId)}) of {value.Length} bytes.";
     }
   }
 }

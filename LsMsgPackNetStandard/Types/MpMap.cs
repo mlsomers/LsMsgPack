@@ -155,7 +155,7 @@ namespace LsMsgPack
         {
           case MsgPackTypeId.MpMap16: len = ReadLen(data, 2); break;
           case MsgPackTypeId.MpMap32: len = ReadLen(data, 4); break;
-          default: throw new MsgPackException(string.Concat("MpMap does not support a type ID of ", GetOfficialTypeName(typeId), "."), data.Position - 1, typeId);
+          default: throw new MsgPackException($"MpMap does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position - 1, typeId);
         }
       }
 
@@ -211,7 +211,7 @@ namespace LsMsgPack
 
     public override string ToString() {
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
-      return string.Concat("Map (", GetOfficialTypeName(TypeId), ") of ", value.LongLength.ToString(), " key-value pairs.");
+      return $"Map ({GetOfficialTypeName(TypeId)}) of {value.LongLength} key-value pairs.";
 #else
       return string.Concat("Map (", GetOfficialTypeName(TypeId), ") of ", value.Length.ToString(), " key-value pairs.");
 #endif

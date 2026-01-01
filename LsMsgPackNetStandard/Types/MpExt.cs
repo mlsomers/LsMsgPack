@@ -32,7 +32,7 @@ namespace LsMsgPack {
       if(len <= 255) return MsgPackTypeId.MpExt8;
       if(len <= ushort.MaxValue) return MsgPackTypeId.MpExt16;
       if(len <= uint.MaxValue) return MsgPackTypeId.MpExt32;
-      throw new MsgPackException(string.Concat("Cannot store more than ", uint.MaxValue, " bytes in an Ext package."),0, MsgPackTypeId.MpExt32);
+      throw new MsgPackException($"Cannot store more than {uint.MaxValue} bytes in an Ext package.",0, MsgPackTypeId.MpExt32);
     }
 
     private MsgPackTypeId typeId = MsgPackTypeId.NeverUsed;
@@ -116,7 +116,7 @@ namespace LsMsgPack {
         case MsgPackTypeId.MpExt8:   len = ReadLen(data, 1); break;
         case MsgPackTypeId.MpExt16:  len = ReadLen(data, 2); break;
         case MsgPackTypeId.MpExt32:  len = ReadLen(data, 4); break;
-        default: throw new MsgPackException(string.Concat("Ext does not support a type ID of ", GetOfficialTypeName(typeId), "."), data.Position-1, typeId);
+        default: throw new MsgPackException($"Ext does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position-1, typeId);
       }
       typeSpecifier = (sbyte)data.ReadByte();
       value = ReadBytes(data, len);
@@ -141,8 +141,8 @@ namespace LsMsgPack {
     }
 
     public override string ToString() {
-      return string.Concat("Extension value (", GetOfficialTypeName(typeId),
-        ") with a type specifier of ", TypeSpecifier, " containing ", value.Length, " bytes.");
+      return
+        $"Extension value ({GetOfficialTypeName(typeId)}) with a type specifier of {TypeSpecifier} containing {value.Length} bytes.";
     }
 
     protected virtual void CopyBaseDataFrom(MpExt generic) {

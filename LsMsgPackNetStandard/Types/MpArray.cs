@@ -116,7 +116,7 @@ namespace LsMsgPack
         {
           case MsgPackTypeId.MpArray16: len = ReadLen(data, 2); break;
           case MsgPackTypeId.MpArray32: len = ReadLen(data, 4); break;
-          default: throw new MsgPackException(string.Concat("MpArray does not support a type ID of ", GetOfficialTypeName(typeId), "."), data.Position - 1, typeId);
+          default: throw new MsgPackException($"MpArray does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position - 1, typeId);
         }
       }
 
@@ -151,7 +151,7 @@ namespace LsMsgPack
 
     public override string ToString()
     {
-      return string.Concat("Array (", GetOfficialTypeName(TypeId), ") of ", value.Length, " items.");
+      return $"Array ({GetOfficialTypeName(TypeId)}) of {value.Length} items.";
     }
   }
 }

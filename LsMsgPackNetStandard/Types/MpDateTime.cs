@@ -55,7 +55,8 @@ namespace LsMsgPack
 
     public override string ToString()
     {
-      return string.Concat("DateTime (", GetOfficialTypeName(TypeId), ") extension type ", TypeSpecifier, " with the value ", value.ToLongDateString());
+      return
+        $"DateTime ({GetOfficialTypeName(TypeId)}) extension type {TypeSpecifier} with the value {value.ToLongDateString()}";
     }
 
     public static DateTime ConvertExt(MsgPackSettings settings, MpExt ext)
@@ -64,7 +65,8 @@ namespace LsMsgPack
 #if KEEPTRACK
         throw new MsgPackException(string.Concat("The extension type ", ext.TypeSpecifier, " is not a recognised DatTime or TimeStamp, expected type -1."), ext.StoredOffset + 1, ext.TypeId);
 #else
-        throw new MsgPackException(string.Concat("The extension type ", ext.TypeSpecifier, " is not a recognised DatTime or TimeStamp, expected type -1."), -1, ext.TypeId);
+        throw new MsgPackException(
+          $"The extension type {ext.TypeSpecifier} is not a recognised DatTime or TimeStamp, expected type -1.", -1, ext.TypeId);
 #endif
 
       switch (ext.TypeId)
@@ -111,7 +113,8 @@ namespace LsMsgPack
 #if KEEPTRACK
       throw new MsgPackException(string.Concat("The extension type with base type ", GetOfficialTypeName(ext.TypeId), " is not recognised as a DatTime or TimeStamp. expected ", GetOfficialTypeName(MsgPackTypeId.MpFExt4), " or ", GetOfficialTypeName(MsgPackTypeId.MpFExt8), " or ", GetOfficialTypeName(MsgPackTypeId.MpExt8)), ext.StoredOffset, ext.TypeId);
 #else
-      throw new MsgPackException(string.Concat("The extension type with base type ", GetOfficialTypeName(ext.TypeId), " is not recognised as a DatTime or TimeStamp. expected ", GetOfficialTypeName(MsgPackTypeId.MpFExt4), " or ", GetOfficialTypeName(MsgPackTypeId.MpFExt8), " or ", GetOfficialTypeName(MsgPackTypeId.MpExt8)), -1, ext.TypeId);
+      throw new MsgPackException(
+        $"The extension type with base type {GetOfficialTypeName(ext.TypeId)} is not recognised as a DatTime or TimeStamp. expected {GetOfficialTypeName(MsgPackTypeId.MpFExt4)} or {GetOfficialTypeName(MsgPackTypeId.MpFExt8)} or {GetOfficialTypeName(MsgPackTypeId.MpExt8)}", -1, ext.TypeId);
 #endif
     }
 

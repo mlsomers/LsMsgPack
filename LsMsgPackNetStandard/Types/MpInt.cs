@@ -79,7 +79,7 @@ namespace LsMsgPack
       else if (typ == typeof(uint)) Value = (uint)value;
       else if (typ == typeof(ushort)) Value = (ushort)value;
       else if (typ == typeof(ulong)) Value = (ulong)value;
-      else throw new MsgPackException(string.Concat("Unable to convert \"", value, "\" (\"", typ, "\") to an integer type"));
+      else throw new MsgPackException($"Unable to convert \"{value}\" (\"{typ}\") to an integer type");
       return this;
     }
 
@@ -168,7 +168,7 @@ namespace LsMsgPack
 #endif
           SetEnumVal(value);
         }
-        else throw new MsgPackException(string.Concat("Unable to convert \"", value, "\" to an integer type"));
+        else throw new MsgPackException($"Unable to convert \"{value}\" to an integer type");
 
         if (svalue > 0 && uvalue == 0)
         {
@@ -324,7 +324,7 @@ namespace LsMsgPack
           uvalue = BitConverter.ToUInt64(final, 0);
           break;
         default:
-          throw new MsgPackException(string.Concat("The type ", GetOfficialTypeName(typeId), " is not supported."), data.Position - 1, typeId);
+          throw new MsgPackException($"The type {GetOfficialTypeName(typeId)} is not supported.", data.Position - 1, typeId);
       }
       if (svalue > 0) uvalue = (ulong)svalue;
       return this;
@@ -345,12 +345,13 @@ namespace LsMsgPack
         case MsgPackTypeId.MpLong:
         case MsgPackTypeId.MpULong: return 9;
       }
-      throw new MsgPackException(string.Concat("The type ", GetOfficialTypeName(intType), " is not an integer type."), 0, intType);
+      throw new MsgPackException($"The type {GetOfficialTypeName(intType)} is not an integer type.", 0, intType);
     }
 
     public override string ToString()
     {
-      return string.Concat("Integer (", GetOfficialTypeName(typeId), ") with the value ", IsSigned() ? svalue.ToString() : uvalue.ToString());
+      return
+        $"Integer ({GetOfficialTypeName(typeId)}) with the value {(IsSigned() ? svalue.ToString() : uvalue.ToString())}";
     }
   }
 }

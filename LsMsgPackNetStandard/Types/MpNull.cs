@@ -30,7 +30,7 @@ namespace LsMsgPack {
     }
 
     public override string ToString() {
-      return string.Concat("[NULL] (", GetOfficialTypeName(TypeId), ")");
+      return $"[NULL] ({GetOfficialTypeName(TypeId)})";
     }
   }
 }

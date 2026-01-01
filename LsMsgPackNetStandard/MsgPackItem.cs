@@ -534,8 +534,8 @@ namespace LsMsgPack
             storedLength = (stream.Position - pos)
           };
 #else
-          throw new MsgPackException(string.Concat("The type identifier with value 0x", BitConverter.ToString(new byte[] { (byte)type }),
-            " is either new or invalid. It is not (yet) implemented in this version of LsMsgPack."), stream.Position - 1, type);
+          throw new MsgPackException(
+            $"The type identifier with value 0x{BitConverter.ToString(new byte[] { (byte)type })} is either new or invalid. It is not (yet) implemented in this version of LsMsgPack.", stream.Position - 1, type);
 #endif
         }
       }
@@ -590,14 +590,14 @@ namespace LsMsgPack
       MsgPackMeta.PackDef def;
       if (MsgPackMeta.FromTypeId.TryGetValue(typeId, out def)) return def.OfficialName;
       //if(typeId == MsgPackTypeId.NeverUsed) return "[\"Officially never used\"] (0xC1)";
-      return string.Concat("Undefined (0x", BitConverter.ToString(new byte[] { (byte)typeId }), ")");
+      return $"Undefined (0x{BitConverter.ToString(new byte[] { (byte)typeId })})";
     }
 
     internal static MsgPackMeta.PackDef GetTypeDescriptor(MsgPackTypeId typeId)
     {
       MsgPackMeta.PackDef def;
       if (MsgPackMeta.FromTypeId.TryGetValue(typeId, out def)) return def;
-      return new MsgPackMeta.PackDef(typeId, string.Concat("Undefined (0x", BitConverter.ToString(new byte[] { (byte)typeId }), ")"),
+      return new MsgPackMeta.PackDef(typeId, $"Undefined (0x{BitConverter.ToString(new byte[] { (byte)typeId })})",
         "This value is either invalid or new to the specification since the implementation of this library. Check the specification and check for updates if the value is defined.");
     }
   }

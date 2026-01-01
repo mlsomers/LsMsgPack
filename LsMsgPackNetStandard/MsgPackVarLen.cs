@@ -68,14 +68,16 @@ namespace LsMsgPack {
         case 8:
           return (long)BitConverter.ToUInt64(buffer, 0);
       }
-      throw new MsgPackException(string.Concat("Only 1, 2, 4 or 8 byte lenths are allowed. ", bytes.ToString(CultureInfo.InvariantCulture), " is not implemented."), data.Position, TypeId);
+      throw new MsgPackException(
+        $"Only 1, 2, 4 or 8 byte lenths are allowed. {bytes.ToString(CultureInfo.InvariantCulture)} is not implemented.", data.Position, TypeId);
     }
 
     protected byte[] ReadBytes(Stream data, long len) {
       byte[] buffer = new byte[len];
       if(len < int.MaxValue) { // TODO: implement reading larger portions.
         data.Read(buffer, 0, (int)len);
-      } else throw new MsgPackException(string.Concat("Not implemented. At this time we cannot read chunks larger than ", int.MaxValue, " bytes in one stread. This is a \"ToDo\" item.", data.Position, TypeId));
+      } else throw new MsgPackException(
+        $"Not implemented. At this time we cannot read chunks larger than {int.MaxValue} bytes in one stread. This is a \"ToDo\" item.{data.Position}{TypeId}");
       return buffer;
     }
   }
