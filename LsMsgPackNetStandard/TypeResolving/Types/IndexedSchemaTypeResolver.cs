@@ -126,7 +126,7 @@ namespace LsMsgPack.TypeResolving.Types
           def.Type = TypeResolver.ResolveInternal(def.TypeName, null, settings._typeResolvers);
 
         if (def.Type is null)
-          throw new Exception($"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}");
+          throw new Exception($"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}\r\nIt may help to pre-register your type like this:\r\n  MsgPackSerializer.CacheAssemblyTypes(typeof({def.TypeName}));");
 
         if (!ByType.ContainsKey(def.Type))
           ByType.Add(def.Type, def);

@@ -13,6 +13,12 @@ namespace LsMsgPack
     #region Default settings
 
     /// <summary>
+    /// Use the <see cref="TypeResolving.Types.IndexedSchemaTypeResolver"/> to compact repetitive type and property names
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool Default_UseInexedSchema {  get; set; } = true;
+
+    /// <summary>
     /// When true (default) will dynamically use the smallest possible datatype that the value fits in. When false, will always use the predefined type of integer.
     /// </summary>
     /// <remarks>
@@ -108,6 +114,7 @@ namespace LsMsgPack
     #endregion
 
     internal bool FileContainsErrors = false;
+    internal bool _useInexedSchema = Default_UseInexedSchema;
     internal bool _dynamicallyCompact = Default_DynamicallyCompact;
     internal EndianAction _endianAction = Default_EndianAction;
     internal AddTypeIdOption _addTypeIdOptions = Default_AddTypeIdOptions;
@@ -122,6 +129,18 @@ namespace LsMsgPack
     internal IMsgPackPropertyIncludeDynamically[] _dynamicFilters = Default_DynamicFilters;
     internal IMsgPackPropertyIdResolver[] _propertyNameResolvers = Default_PropertyNameResolvers;
     internal ICustomExt[] _customExtentionTypes = Default_CustomExtentionTypes;
+
+    /// <summary>
+    /// Uses a micro schema (dictionary with type-name as key and an array of the types property names as value. The index of the name will be referenced from the serialized body (instead of the full name)
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Use Indexed Schema")]
+    [Description("Uses a micro schema (dictionary with type-name as key and an array of the types property names as value. The index of the name will be referenced from the serialized body (instead of the full name)")]
+    [DefaultValue(true)]
+    public bool UseInexedSchema { 
+      get { return _useInexedSchema; } 
+      set {  _useInexedSchema = value; } 
+    }
 
     /// <summary>
     /// When true (default) will dynamically use the smallest possible datatype that the value fits in. When false, will always use the predefined type of integer.

@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Types.Extensions;
 using System;
 using System.IO;
 using System.Windows.Forms;
@@ -9,6 +10,8 @@ namespace MsgPackExplorer
   {
     public Explorer()
     {
+      MsgPackSettings.Default_CustomExtentionTypes = new ICustomExt[0]; // exclude custom decimal type for general purpose debugger
+
       InitializeComponent();
       ddLimitItems.SelectedIndex = 0;
 
