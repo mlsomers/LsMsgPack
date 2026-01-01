@@ -4,10 +4,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+
 
 namespace LsMsgPackUnitTests
 {
@@ -31,12 +28,14 @@ namespace LsMsgPackUnitTests
       addMethod.Invoke(collection, new object[] { instance });
       System.Reflection.PropertyInfo countProp = generic.GetProperty("Count");
 
-      byte[] buffer = MsgPackSerializer.Serialize(collection);
+      MsgPackSettings settings = new MsgPackSettings(){ UseInexedSchema=false};
+
+      byte[] buffer = MsgPackSerializer.Serialize(collection, settings);
 
       //if(preregister)
       //  MsgPackSerializer.CacheAssemblyTypes(generic);
 
-      object ret = MsgPackSerializer.Deserialize(generic, buffer);
+      object ret = MsgPackSerializer.Deserialize(generic, buffer, settings);
 
       Assert.AreEqual(generic, ret.GetType());
 
