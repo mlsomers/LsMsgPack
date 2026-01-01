@@ -217,7 +217,7 @@ namespace LsMsgPack
         if ((type & 0x7F) == 0) return new byte[1] { (byte)(type | Convert.ToByte(uvalue)) };
         if ((type & 0xE0) == 0xE0) return new byte[1] { (byte)(type | BitConverter.GetBytes(svalue)[0]) };
       }
-      List<byte> bytes = new List<byte>(9);
+      List<byte> bytes = Settings.Buffers.BytesList; // new List<byte>(9)
 
       switch (targetType)
       {
@@ -270,7 +270,7 @@ namespace LsMsgPack
         this.typeId = MsgPackTypeId.MpBytePart;
         return this;
       }
-      List<byte> bytes = new List<byte>(8);
+      List<byte> bytes = Settings.Buffers.BytesList; // // new List<byte>(8)
       switch ((MsgPackTypeId)typeId)
       {
         case MsgPackTypeId.MpSByte:
@@ -283,19 +283,19 @@ namespace LsMsgPack
 
         case MsgPackTypeId.MpShort:
         case MsgPackTypeId.MpUShort:
-          byte[] buffer = new byte[2];
+          byte[] buffer = Settings.Buffers.Bytes2;
           data.Read(buffer, 0, 2);
           bytes.AddRange(buffer);
           break;
         case MsgPackTypeId.MpInt:
         case MsgPackTypeId.MpUInt:
-          buffer = new byte[4];
+          buffer = Settings.Buffers.Bytes4;
           data.Read(buffer, 0, 4);
           bytes.AddRange(buffer);
           break;
         case MsgPackTypeId.MpLong:
         case MsgPackTypeId.MpULong:
-          buffer = new byte[8];
+          buffer = Settings.Buffers.Bytes8;
           data.Read(buffer, 0, 8);
           bytes.AddRange(buffer);
           break;

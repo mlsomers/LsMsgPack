@@ -2,6 +2,7 @@
 using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.Types.Extensions;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.Serialization;
 
@@ -16,7 +17,7 @@ namespace LsMsgPack
     /// Use the <see cref="TypeResolving.Types.IndexedSchemaTypeResolver"/> to compact repetitive type and property names
     /// </summary>
     [IgnoreDataMember]
-    public static bool Default_UseInexedSchema {  get; set; } = true;
+    public static bool Default_UseInexedSchema { get; set; } = true;
 
     /// <summary>
     /// When true (default) will dynamically use the smallest possible datatype that the value fits in. When false, will always use the predefined type of integer.
@@ -137,9 +138,10 @@ namespace LsMsgPack
     [DisplayName("Use Indexed Schema")]
     [Description("Uses a micro schema (dictionary with type-name as key and an array of the types property names as value. The index of the name will be referenced from the serialized body (instead of the full name)")]
     [DefaultValue(true)]
-    public bool UseInexedSchema { 
-      get { return _useInexedSchema; } 
-      set {  _useInexedSchema = value; } 
+    public bool UseInexedSchema
+    {
+      get { return _useInexedSchema; }
+      set { _useInexedSchema = value; }
     }
 
     /// <summary>
@@ -218,7 +220,7 @@ namespace LsMsgPack
       set { _addTypeIdOptions = value; }
     }
 
-    
+
     /// <summary>
     /// Custom type resolvers can be added, only needed if using object-models with polymorphic properties (base types or interfaces that have multiple implementations).
     /// <para>
@@ -231,18 +233,18 @@ namespace LsMsgPack
     /// In order to keep a minimal payload and best performance, implement a custom IMsgPackTypeIdentifier
     /// </para>
     /// </summary>
-    public IMsgPackTypeResolver[] TypeResolvers { get {  return _typeResolvers; } set {_typeResolvers=value;} }
+    public IMsgPackTypeResolver[] TypeResolvers { get { return _typeResolvers; } set { _typeResolvers = value; } }
 
-    
+
     /// <summary>
     /// Included:
     /// <list type="bullet">
     /// <item>FilterIgnoredAttribute</item>
     /// </list>
     /// </summary>
-    public IMsgPackPropertyIncludeStatically[] StaticFilters { get { return _staticFilters; } set {_staticFilters=value;} }
+    public IMsgPackPropertyIncludeStatically[] StaticFilters { get { return _staticFilters; } set { _staticFilters = value; } }
 
-    
+
     /// <summary>
     /// Included:
     /// <list type="bullet">
@@ -250,22 +252,22 @@ namespace LsMsgPack
     /// <item>FilterNullValues</item>
     /// </list>
     /// </summary>
-    public IMsgPackPropertyIncludeDynamically[] DynamicFilters { get { return _dynamicFilters;} set { _dynamicFilters=value;} }
+    public IMsgPackPropertyIncludeDynamically[] DynamicFilters { get { return _dynamicFilters; } set { _dynamicFilters = value; } }
 
-    
+
     /// <summary>
     /// Included:
     /// <list type="bullet">
     /// <item>AttributePropertyNameResolver</item>
     /// </list>
     /// </summary>
-    public IMsgPackPropertyIdResolver[] PropertyNameResolvers { get { return _propertyNameResolvers; } set { _propertyNameResolvers=value;} }
+    public IMsgPackPropertyIdResolver[] PropertyNameResolvers { get { return _propertyNameResolvers; } set { _propertyNameResolvers = value; } }
 
-    
+
     /// <summary>
     /// Should inherit from BaseCustomExt, BaseCustomExtNonCached or AbstractCustomExt
     /// </summary>
-    public ICustomExt[] CustomExtentionTypes { get { return _customExtentionTypes;} set { _customExtentionTypes=value;} }
+    public ICustomExt[] CustomExtentionTypes { get { return _customExtentionTypes; } set { _customExtentionTypes = value; } }
 
     public MsgPackSettings Clone()
     {
@@ -287,6 +289,12 @@ namespace LsMsgPack
         _customExtentionTypes = _customExtentionTypes
       };
     }
+
+    /// <summary>
+    /// Buffers used during deserialization so they do not need to be allocated for each instance
+    /// </summary>
+    [IgnoreDataMember]
+    internal Buffers Buffers = new Buffers();
   }
 
   public enum EndianAction
@@ -343,6 +351,24 @@ namespace LsMsgPack
     /// </summary>
     [Description("By default the custom type resolvers will be tried and if they all retuen null the built-in name/fullname resolver will be used. Setting this flag will prevent the default implementation to bloat the output (and the resolver should be able to handle null as input).")]
     NoDefaultFallBack = 64
+  }
+
+  /// <summary>
+  /// Reusable buffers, reduce some allocations
+  /// </summary>
+  public class Buffers
+  {
+    private List<byte> _BytesList = new List<byte>(200);
+    public List<byte> BytesList { 
+      get {
+        _BytesList.Clear(); 
+        return _BytesList; 
+      }
+    }
+
+    public byte[] Bytes2 = new byte[2];
+    public byte[] Bytes4 = new byte[4];
+    public byte[] Bytes8 = new byte[8];
   }
 
 }

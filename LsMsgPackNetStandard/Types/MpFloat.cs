@@ -50,7 +50,7 @@ namespace LsMsgPack
 
     public override byte[] ToBytes()
     {
-      List<byte> bytes = new List<byte>(9);
+      List<byte> bytes = Settings.Buffers.BytesList; // new List<byte>(9);
       if (typeId == MsgPackTypeId.MpFloat)
       {
         bytes.AddRange(BitConverter.GetBytes(f32value));
@@ -71,12 +71,12 @@ namespace LsMsgPack
 
       if (this.typeId == MsgPackTypeId.MpFloat)
       {
-        buffer = new byte[4];
+        buffer = Settings.Buffers.Bytes4;
         data.Read(buffer, 0, 4);
       }
       else
       {
-        buffer = new byte[8];
+        buffer = Settings.Buffers.Bytes8;
         data.Read(buffer, 0, 8);
       }
 
