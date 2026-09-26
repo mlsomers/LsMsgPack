@@ -30,6 +30,7 @@ namespace LsMsgPackFormatters
     /// <returns>same Mvc Builder as input (for dasy-chaining)</returns>
     public static IMvcBuilder AddLsMsgPackSerializerFormatters(this IMvcBuilder builder, Action<MsgPackSettings> setupAction)
     {
+      builder.Services.Configure(setupAction);
       builder.Services.TryAddEnumerable(ServiceDescriptor.Transient<IConfigureOptions<MvcOptions>, LsMsgPackSettingsSetup>());
 
       return builder;

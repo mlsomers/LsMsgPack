@@ -42,16 +42,45 @@ namespace LsMsgPack
 
     public static void Serialize<T>(T item, Stream target, MsgPackSettings settings)
     {
+      Serialize(item, typeof(T), target, settings);
+    }
+
+    /// <summary>
+    /// Provided for generic flexibility, use the strongly typed Serialize&lt;T&gt; to benifit from compile-time type safety.
+    /// </summary>
+    /// <param name="item">The object to serialize</param>
+    /// <param name="assignedTo">The declared type the item is assigned to, a type id is only added when the item's actual type differs (depending on <see cref="MsgPackSettings.AddTypeIdOptions"/>)</param>
+    /// <param name="settings"><see cref="MsgPackSettings"/></param>
+    /// <returns>Bytes containing MsgPack formatted data</returns>
+    public static byte[] Serialize(object item, Type assignedTo, MsgPackSettings settings)
+    {
+      MemoryStream ms = new MemoryStream();
+      Serialize(item, assignedTo, ms, settings);
+      return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Provided for generic flexibility, use the strongly typed Serialize&lt;T&gt; to benifit from compile-time type safety.
+    /// </summary>
+    /// <param name="item">The object to serialize</param>
+    /// <param name="assignedTo">The declared type the item is assigned to, a type id is only added when the item's actual type differs (depending on <see cref="MsgPackSettings.AddTypeIdOptions"/>)</param>
+    /// <param name="target">Stream to write the MsgPack formatted data to</param>
+    /// <param name="settings"><see cref="MsgPackSettings"/></param>
+    public static void Serialize(object item, Type assignedTo, Stream target, MsgPackSettings settings)
+    {
       if (settings is null)
         settings = new MsgPackSettings();
 
+      if (assignedTo is null)
+        assignedTo = item?.GetType() ?? typeof(object);
+
       if (settings.UseInexedSchema && !ReferenceEquals(item, null)) // null is serialized without a schema
       {
-        SerializeWithSchema(item, typeof(T), target, settings);
+        SerializeWithSchema(item, assignedTo, target, settings);
         return;
       }
 
-      MsgPackItem packed = SerializeObject(item, settings, new FullPropertyInfo(typeof(T)));
+      MsgPackItem packed = SerializeObject(item, settings, new FullPropertyInfo(assignedTo));
       byte[] buffer = packed.ToBytes();
       target.Write(buffer, 0, buffer.Length);
     }
