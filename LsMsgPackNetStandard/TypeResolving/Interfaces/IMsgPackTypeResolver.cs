@@ -23,7 +23,9 @@ namespace LsMsgPack.TypeResolving.Interfaces
     /// <param name="typeId">The name (or ID) of the class or struct to be resolved</param>
     /// <param name="assignedTo">The type of the property that will be set with an instance of the resolved type</param>
     /// <param name="assignedToProp">The property information (if any, may be null) of tyhe type it will be assigned to</param>
-    /// <param name="properties">Names and values of properties that are going to be populated on an instance of the resolved type (may be null when looking for generic types)</param>
+    /// <param name="properties">Names and values of properties that are going to be populated on an instance of the resolved type (may be null when looking for generic types).
+    /// <para>With <see cref="MsgPackSettings.UseInexedSchema"/> the keys are indexes into the schema of the serialized type instead of names, so resolving by signature is not possible.
+    /// Serializing an ambiguous object without a type id (e.g. <see cref="AddTypeIdOption.Never"/>) then throws a <see cref="MsgPackException"/>.</para></param>
     /// <returns>The resolved type or null if no suiteble type is found.</returns>
     Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings);
   }

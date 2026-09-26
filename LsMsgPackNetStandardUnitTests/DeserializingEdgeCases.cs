@@ -189,7 +189,35 @@ namespace LsMsgPackUnitTests
       if (option == AddTypeIdOption.Never)
         settings.TypeResolvers = new IMsgPackTypeResolver[] { new PetBySignature() };
 
-      RoundTrip(new WithCollections()
+      RoundTrip(GetCollections(), settings);
+    }
+
+    /// <summary>
+    /// With the indexed schema the property keys are indexes, so the pets can not be resolved by signature and serializing them without a type id should fail fast.
+    /// </summary>
+    [TestMethod]
+    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.Always)]
+    [DataRow(AddTypeIdOption.Never)]
+    public void NestedAndConvertedCollections_WithSchema(AddTypeIdOption option)
+    {
+      MsgPackSettings settings = Settings(option);
+      settings.UseInexedSchema = true;
+      settings.TypeResolvers = new IMsgPackTypeResolver[] { new PetBySignature() };
+
+      if (option == AddTypeIdOption.Never)
+      {
+        MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Serialize(GetCollections(), settings));
+        StringAssert.Contains(ex.Message, nameof(AddTypeIdOption.IfAmbiguious));
+        return;
+      }
+
+      RoundTrip(GetCollections(), settings);
+    }
+
+    private static WithCollections GetCollections()
+    {
+      return new WithCollections()
       {
         ListOfArrays = new List<int[]>() { new[] { 1, 2 }, new[] { 300, 70000 }, null },
         Jagged = new[] { new[] { 1 }, new[] { 2, 3 } },
@@ -204,7 +232,7 @@ namespace LsMsgPackUnitTests
         Cats = new List<Cat>() { new Cat() { Name = "Mia" }, null },
         Pets = new List<IIPet>() { new Cat() { Name = "Mia", ClawLengthMilimeters = 1 }, new Dog() { Name = "Rex", BarkingDecibels = 3 } },
         Dogs = new ObservableCollection<Dog>() { new Dog() { Name = "Rex" } },
-      }, settings);
+      };
     }
 
     [TestMethod]

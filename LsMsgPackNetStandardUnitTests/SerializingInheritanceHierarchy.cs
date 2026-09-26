@@ -264,6 +264,53 @@ namespace LsMsgPackUnitTests
       Assert.HasCount(expectedLength, buffer, string.Concat("Expected ", expectedLength, " bytes but got ", buffer.Length, " bytes."));
     }
 
+    /// <summary>
+    /// With the indexed schema the property keys are indexes, so resolving by signature is impossible and serializing without a type id should fail fast.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, true)]
+    public void Hirarchical_ResolveBySignature_WithSchemaThrows(bool omitDefault, bool omitNull)
+    {
+      MsgPackSettings settings = new MsgPackSettings()
+      {
+        UseInexedSchema = true,
+        AddTypeIdOptions = AddTypeIdOption.Never,
+      };
+      SetFilters(settings, omitDefault, omitNull);
+      settings.TypeResolvers = new[] { new Resolver2() };
+
+      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Serialize(GetDefault(), settings));
+      StringAssert.Contains(ex.Message, nameof(AddTypeIdOption.IfAmbiguious));
+    }
+
+    /// <summary>
+    /// The suggested alternative: with the schema a type id costs about 1 byte.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, true)]
+    public void Hirarchical_ResolveBySignature_WithSchemaIfAmbiguious(bool omitDefault, bool omitNull)
+    {
+      HierarchyContainer container = GetDefault();
+
+      MsgPackSettings settings = new MsgPackSettings()
+      {
+        UseInexedSchema = true,
+        AddTypeIdOptions = AddTypeIdOption.IfAmbiguious,
+      };
+      SetFilters(settings, omitDefault, omitNull);
+      settings.TypeResolvers = new[] { new Resolver2() };
+
+      byte[] buffer = MsgPackSerializer.Serialize(container, settings);
+      HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer, settings);
+
+      string returned = JsonConvert.SerializeObject(ret);
+      string org = JsonConvert.SerializeObject(container);
+
+      Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
+    }
+
     private class Resolver2 : IMsgPackTypeResolver
     {
       public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
