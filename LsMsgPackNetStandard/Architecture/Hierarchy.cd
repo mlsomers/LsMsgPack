@@ -23,7 +23,7 @@
   <Class Name="LsMsgPack.MpBin" Collapsed="true">
     <Position X="11" Y="0.5" Width="1.5" />
     <TypeIdentifier>
-      <HashCode>AAAAAACAAAAAAAAEAAAAAAQgAAAAACAgAAAgIAAAAAA=</HashCode>
+      <HashCode>AAAAAACAAAAAAAAEAAAAAAQgAAAAACAgABAgIAAAAAA=</HashCode>
       <FileName>Types\MpBin.cs</FileName>
     </TypeIdentifier>
   </Class>
@@ -109,7 +109,7 @@
       </Path>
     </InheritanceLine>
     <TypeIdentifier>
-      <HashCode>AAAAAACEAAAAAAAEAAEAAAQgAAAAACAgABAgIAAAAAA=</HashCode>
+      <HashCode>AAAAAACEAAAAAAAEAAEAAAQgAAAAACAgABAgIAAAAAE=</HashCode>
       <FileName>Types\MpMap.cs</FileName>
     </TypeIdentifier>
   </Class>
@@ -154,6 +154,21 @@
       <HashCode>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAgAA=</HashCode>
       <FileName>Meta\MsgPackException.cs</FileName>
     </TypeIdentifier>
+  </Class>
+  <Class Name="LsMsgPack.Types.Extensions.MpDecimal" Collapsed="true">
+    <Position X="10.75" Y="7.25" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAAAAACAAAAAAAAEAAAAAAAgAAACAiQAABAgAAAAACA=</HashCode>
+      <FileName>Types\Extensions\MpDecimal.cs</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="LsMsgPack.Types.Extensions.AbstractCustomExt&lt;TSelf&gt;" Collapsed="true">
+    <Position X="10.75" Y="6.25" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAABAAAAAAAAAACAkAAAAAAAAAAAAA=</HashCode>
+      <FileName>Types\Extensions\AbstractCustomExt.cs</FileName>
+    </TypeIdentifier>
+    <Lollipop Position="0.2" />
   </Class>
   <Font Name="Segoe UI" Size="9" />
 </ClassDiagram>

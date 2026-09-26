@@ -106,6 +106,7 @@
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
+    <None Include="App.config" />
     <None Include="Resources\Broken.png" />
   </ItemGroup>
   <ItemGroup>
