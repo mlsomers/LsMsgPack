@@ -12,7 +12,7 @@ Library Usage Example
 ---------------------
 Although the original was optimised for debugging and analysing, some compiler directives have been added to exclude keeping track of all offsets and other overhead needed for debugging. It has been expanded to support serialization and deserialization of .Net classes (using the properties) similar to other xml and json serializers.
 
-Add LsMsgPackL.dll as a reference.
+Install the `LsMsgPack` NuGet package (or add LsMsgPack.dll as a reference).
 
 ```csharp
 public class MyClass
@@ -45,21 +45,45 @@ Serializing classes by creating name-value dictionaries of their properties is n
 
 For this reason I have submitted a [pull request]( https://github.com/msgpack/msgpack/pull/334/commits/c6a4935b9e0e38818cc1ef878db72621143bfcd7) to the official MsgPack specification, including a more standardized choice of solutions and in addition a standard way to support polymorphic class-hierarchies.
 
-While using dictionaries diminishes the small size of a MsgPack message, it does help bring up the compatibility level with other serializers (XML / JSON) so that it can be used as a drop-in replacement. I hope to deal with part of the problem later by adding a schema, but let’s first just bring it up to speed with other serializers for now.
+While using dictionaries diminishes the small size of a MsgPack message, it does help bring up the compatibility level with other serializers (XML / JSON) so that it can be used as a drop-in replacement.
 
-Polymorphic class-hierarchy support
------------------------------------
+To win back most of that size, LsMsgPack has a few options in `MsgPackSettings`:
 
-One of my frustrations with other serializers is that they do not handle class-hierarchies very well. For example, the `System.Xml.Serialization` classes had a solution where you could add `XmlInclude` attributes to a base class or alternatively add `XmlArrayItem` attributes to a property holding a list of derived classes. In this case one would have to add an attribute for each and every possible derived type (and not forget when adding new types). Other serializers had other solutions but almost always needed extra coding. I decided to go an extra mile and add basic support for class hierarchies out of the box.
+- **Indexed schema** (`UseInexedSchema`, on by default): each message starts with a small schema listing every type and its property names once. The body then refers to them by index. This roughly halves the size of messages with repeating objects, and it stays tolerant to adding or removing properties. Other MsgPack implementations don't understand it, so turn it off when they need to read your data.
+- **Type ids** (`AddTypeIdOptions`, `IfAmbiguious` by default): adds the type name (or a custom id) when a property holds a derived type. This gives polymorphic class hierarchies (a `List<IPet>` holding cats and dogs) out of the box, without `XmlInclude`-style attributes.
+- **Type resolvers** (`TypeResolvers`): control how type ids are written and resolved, for example with short `[XmlRoot]` names, numeric ids, or by recognizing a type from its properties.
+- **Plain MsgPack** (`UseInexedSchema = false`, `AddTypeIdOptions = Never`): plain maps of property names and values that any MsgPack implementation can read.
 
-So if you have an interface IPet with classes Cat, Dog and Fish that implement IPet. You can have a class containing an array (or other collection) of pets and have it serialize and deserialize correctly without adding any extra code.
+See [docs/schema.md](docs/schema.md) for examples of each wire format, their pros and cons, and how polymorphic class-hierarchy support works.
 
-There are limits and edge cases to this rule though. For example:
+ASP.NET Integration
+-------------------
+
+Three NuGet packages add MsgPack support to ASP.NET controllers and to HttpClient, so they receive and return MsgPack the same way they handle JSON. Clients choose the format with the `Content-Type` and `Accept` headers: `application/msgpack` (or `application/x-msgpack`) for plain MsgPack that any implementation understands, or `application/x-lsmsgpack` for the configured settings (by default the indexed schema with type ids).
+
+| Package | For | How to use |
+|---|---|---|
+| `LsMsgPack.AspNetCore` | ASP.NET Core 2.x and up | `services.AddControllers().AddLsMsgPackSerializerFormatters();` |
+| `LsMsgPack.AspNet.WebApi` | ASP.NET Web API 2 | `config.Formatters.Add(new LsMsgPackMediaTypeFormatter());` |
+| `LsMsgPack.AspNet.WebApi` | HttpClient (any platform) | `new ObjectContent<T>(value, formatter, MsgPackMediaTypes.XLsMsgPack)` and `response.Content.ReadAsAsync<T>(new[] { formatter })` |
+| `LsMsgPack.AspNet.Mvc` | ASP.NET MVC 5 | `LsMsgPackMvc.LsMsgPackMvc.Register();` in `Application_Start`, and `return this.MsgPack(data);` in actions |
+
+ASP.NET Core example:
+
 ```csharp
-public IEnumerable<object> Pets { get; set; } = new HashSet<IPet> { new Cat(), new Dog() };
+builder.Services.AddControllers()
+  .AddLsMsgPackSerializerFormatters(); // optionally: (settings => settings.UseInexedSchema = false) for application/x-lsmsgpack
+
+[ApiController]
+[Route("api/orders")]
+public class OrdersController : ControllerBase
+{
+  [HttpPost]
+  public ActionResult<Order> Post(Order order) => order; // MsgPack in and out when the client asks for it, JSON otherwise
+}
 ```
 
-May require you to call `MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));` once somewhere before trying to deserialize it. If the property is changed to `IEnumerable<IPet>` instead of `IEnumerable<object>` it will work without preregistering because the deserializer will know how to find the assembly where IPet is defined. Pre-caching may also be required when not all derived IPet implementations are in the same assembly as the IPet interface. There are multiple tier caches; the fastest is the “used names” cache where only previously used types are cached for fast lookup the next time the type is encountered. A 2nd tier has names of all types in cached assemblies. Not all assemblies will be cached by default (waste of memory) but you can opt into caching all loaded assemblies by using an included `WildGooseChaseResolver` which will scan all loaded assemblies when looking for a type (and cache the searched assemblies until it finds the wanted type).
+See [docs/aspnet.md](docs/aspnet.md) for installation, configuration, error handling and complete examples for each package.
 
 
 Fiddler Integration
@@ -97,7 +121,11 @@ Some unit tests on the core LsMsgPack.dll. No full coverage yet, but at least it
 
 #### LsMsgPackNetStandard.dll & LsMsgPackNetStandardUnitTests.dll
 
-A light version of the serializer. The parsing and generating methods are almost identical to the LsMsgPack lib, but with allot of overhead removed that comes with keeping track of offsets, original types and other debugging info. I'm planning to use this version in my projects that use the MsgPack format.
+A light version of the serializer. The parsing and generating methods are almost identical to the LsMsgPack lib, but with allot of overhead removed that comes with keeping track of offsets, original types and other debugging info. I'm planning to use this version in my projects that use the MsgPack format. It is published as the `LsMsgPack` NuGet package.
+
+#### LsMsgPackFormatters.dll, LsMsgPackWebApiFormatters.dll & LsMsgPackMvc.dll
+
+The ASP.NET integration packages (`LsMsgPack.AspNetCore`, `LsMsgPack.AspNet.WebApi` and `LsMsgPack.AspNet.Mvc`), see [docs/aspnet.md](docs/aspnet.md). Each has its own test project.
 
 ### Architecture
 
