@@ -15,7 +15,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
+    <!-- Always use LsMsgPack without KEEPTRACK (DebugKeepTrack -> Debug, ReleaseKeepTrack -> Release), its debugging overhead does not belong in a web server -->
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
   </ItemGroup>
 
 </Project>
