@@ -101,7 +101,7 @@ namespace LsMsgPack
       for (int t = 0; t < value.Length; t++)
       {
         object instance=value.GetValue(t);
-        MsgPackItem item = MsgPackItem.Pack(instance, _settings, elementType) ?? MsgPackSerializer.SerializeObject(instance, _settings, asgnType);
+        MsgPackItem item = instance as MsgPackItem ?? MsgPackItem.Pack(instance, _settings, elementType) ?? MsgPackSerializer.SerializeObject(instance, _settings, asgnType); // already packed by the serializer
         bytes.AddRange(item.ToBytes());
       }
       return bytes.ToArray();

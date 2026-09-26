@@ -283,10 +283,10 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 629)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 606)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 501)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 501)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 626)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 603)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 498)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 498)]
 
     [DataRow(AddTypeIdOption.Always, false, false, 672)]
     [DataRow(AddTypeIdOption.Always, false, true, 649)]
@@ -314,10 +314,10 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 415)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 411)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 381)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 381)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 403)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 399)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 369)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 369)]
 
     [DataRow(AddTypeIdOption.Always, false, false, 421)]
     [DataRow(AddTypeIdOption.Always, false, true, 417)]
