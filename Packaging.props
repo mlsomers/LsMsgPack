@@ -1,13 +1,24 @@
 <Project>
-  <!-- NuGet metadata shared by the packable libraries, imported by their project files -->
+  <!-- NuGet metadata and assembly info shared by the packable libraries, imported by their project files -->
   <PropertyGroup>
-    <!-- yy.MM.dd.build -->
-    <Version>26.09.26.01</Version>
+    <!-- The version (yyyy.M.d.build) is defined once, in CommonAssemblyInfo.cs -->
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)CommonAssemblyInfo.cs')), '(?&lt;=AssemblyVersion\(&quot;)[^&quot;]+').Value)</Version>
     <Authors>Louis Somers</Authors>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/mlsomers/LsMsgPack</PackageProjectUrl>
     <RepositoryUrl>https://github.com/mlsomers/LsMsgPack</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>msgpack;messagepack;serializer;serialization</PackageTags>
+
+    <!-- Version, company, copyright and product come from CommonAssemblyInfo.cs -->
+    <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
+    <GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>
+    <GenerateAssemblyCompanyAttribute>false</GenerateAssemblyCompanyAttribute>
+    <GenerateAssemblyCopyrightAttribute>false</GenerateAssemblyCopyrightAttribute>
+    <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)CommonAssemblyInfo.cs" Link="Meta\CommonAssemblyInfo.cs" />
+  </ItemGroup>
 </Project>

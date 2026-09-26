@@ -40,6 +40,9 @@
     <Compile Include="MsgPackItem.cs" />
     <Compile Include="MsgPackSerializer.cs" />
     <Compile Include="MsgPackVarLen.cs" />
+    <Compile Include="..\..\CommonAssemblyInfo.cs">
+      <Link>Properties\CommonAssemblyInfo.cs</Link>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Meta\KeyValuePair.cs" />
     <Compile Include="Types\MpArray.cs" />
