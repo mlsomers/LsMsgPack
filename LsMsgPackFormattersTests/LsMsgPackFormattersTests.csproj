@@ -16,6 +16,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPackFormatters\LsMsgPackFormatters.csproj" />
+    <!-- Explicit (instead of transitive) so the KEEPTRACK configuration mapping of the formatter projects applies here as well -->
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
   </ItemGroup>
 
 </Project>
