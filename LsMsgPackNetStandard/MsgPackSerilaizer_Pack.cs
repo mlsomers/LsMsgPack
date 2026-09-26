@@ -1,5 +1,7 @@
 ﻿using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
+using LsMsgPack.TypeResolving.Interfaces;
+using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -50,6 +52,8 @@ namespace LsMsgPack
 
       if (NeedsTypeId(tType, assignedTo, settings))
         propVals.Add(TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo));
+      else
+        ThrowIfUnresolvableWithSchema(tType, assignedTo, settings);
 
       AddProperties(item, props, propVals, settings);
 
@@ -76,6 +80,8 @@ namespace LsMsgPack
 
       if (addTypeId)
         propVals.Add(TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo));
+      else if (props.Length > 0)
+        ThrowIfUnresolvableWithSchema(tType, assignedTo, settings);
 
       if (elements != null)
         propVals.Add(ContentKey, elements);
@@ -133,6 +139,26 @@ namespace LsMsgPack
       if ((settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0)
         return assignedTo?.AssignedToType != tType;
 
+      return false;
+    }
+
+    /// <summary>
+    /// With the indexed schema, property keys are indexes into the schema of the runtime type, so without a type id the reader cannot tell which type (and thus which property names) they belong to.
+    /// Resolving by signature (see <see cref="IMsgPackTypeResolver.Resolve"/>) is therefore impossible and the data would be read as the wrong type.
+    /// </summary>
+    private static void ThrowIfUnresolvableWithSchema(Type tType, FullPropertyInfo assignedTo, MsgPackSettings settings)
+    {
+      if (assignedTo?.AssignedToType is null || assignedTo.AssignedToType == tType || !UsesIndexedSchema(settings))
+        return;
+
+      throw new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id while using the indexed schema: the property keys are schema indexes of {tType.Name}, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} (with the schema a type id costs about 1 byte) or set {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.UseInexedSchema)} = false.");
+    }
+
+    private static bool UsesIndexedSchema(MsgPackSettings settings)
+    {
+      for (int t = 0; t < settings._propertyNameResolvers.Length; t++)
+        if (settings._propertyNameResolvers[t] is IndexedSchemaTypeResolver)
+          return true;
       return false;
     }
 
