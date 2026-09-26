@@ -24,6 +24,9 @@ namespace LsMsgPack.Meta
 
     internal static string GetTypeName(Type type, bool fullname)
     {
+      if (type.IsArray) // "KeyValuePair<Int32, String>[]" instead of "KeyValuePair`2[]"
+        return $"{GetTypeName(type.GetElementType(), fullname)}[]";
+
       Type[] args = type.GenericTypeArguments;
 
       if (args.Length == 0)
@@ -41,30 +44,25 @@ namespace LsMsgPack.Meta
       return $"{typeName}<{string.Join(", ", names)}>";
     }
 
-    internal static Type Resolve(object typeId, Type assignedTo, FullPropertyInfo rootProp, MpMap map, Dictionary<object, object> propVals)
+    /// <summary>
+    /// Returns <paramref name="assignedTo"/> when no (more specific) type could be resolved, it is up to the caller to decide if that type can be instantiated.
+    /// </summary>
+    internal static Type Resolve(object typeId, Type assignedTo, FullPropertyInfo rootProp, MsgPackSettings settings, Dictionary<object, object> propVals)
     {
       Type result;
       // First give custom resolvers (if any) a chance...
-      for (int t = (map.Settings?._typeResolvers.Length ?? 0) - 1; t >= 0; t--)
+      for (int t = (settings?._typeResolvers.Length ?? 0) - 1; t >= 0; t--)
       {
-        IMsgPackTypeResolver resolver = map.Settings._typeResolvers[t];
-        result = resolver.Resolve(typeId, assignedTo, rootProp, propVals, map.Settings);
+        IMsgPackTypeResolver resolver = settings._typeResolvers[t];
+        result = resolver.Resolve(typeId, assignedTo, rootProp, propVals, settings);
         if (result != null && !result.ContainsGenericParameters)
           return result;
       }
 
       string typeName = typeId as string;
 
-      if (string.IsNullOrWhiteSpace(typeName))
-      {
-        if (assignedTo.IsAbstract || assignedTo.IsInterface)
-          throw new Exception(
-            $"Cannot create an instance of an interface or abstract type:\r\n  {assignedTo.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers.");
-      }
-      else
-      {
-        return ResolveInternal(typeName, assignedTo, map.Settings?.TypeResolvers);
-      }
+      if (!string.IsNullOrWhiteSpace(typeName))
+        return ResolveInternal(typeName, assignedTo, settings?.TypeResolvers);
 
       return assignedTo;
     }
@@ -162,6 +160,9 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static Type ResolveIndirect(string typeName, IMsgPackTypeResolver[] resolvers)
     {
+      if (typeName.EndsWith("[]"))
+        return ResolveIndirect(typeName.Substring(0, typeName.Length - 2), resolvers).MakeArrayType();
+
       Type result;
       // 1st tier
       if (FullNameCache.TryGetValue(typeName, out result))
@@ -190,6 +191,7 @@ namespace LsMsgPack.Meta
     private static Assembly[] NativeAssemblies = new Assembly[]
     {
       typeof(List<>).Assembly, // System.Collections.Generic
+      typeof(SortedDictionary<,>).Assembly, // System.Collections (SortedDictionary, SortedSet, LinkedList, Stack, Queue...)
       typeof(ConcurrentBag<>).Assembly, // System.Collections.Concurrent
       typeof(ObservableCollection<>).Assembly // System.Collections.ObjectModel
     };

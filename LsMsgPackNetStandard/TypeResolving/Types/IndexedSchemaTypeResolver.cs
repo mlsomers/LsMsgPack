@@ -149,8 +149,11 @@ namespace LsMsgPack.TypeResolving.Types
       return m.ToBytes();
     }
 
+    /// <returns>null if the stream starts with nil (null is serialized without a schema)</returns>
     public static IndexedSchemaTypeResolver Unpack(System.IO.Stream bytes, MsgPackSettings settings) {
-      MpMap m=(MpMap)MsgPackItem.Unpack(bytes);
+      MpMap m = MsgPackItem.Unpack(bytes) as MpMap;
+      if (m is null)
+        return null;
       KeyValuePair<object, object>[] items=m.Value as KeyValuePair<object, object>[];
 
       IndexedSchemaTypeResolver ret=new IndexedSchemaTypeResolver(){ ByTypeId=new List<ComplexTypeDef>(items.Length), ByType=new Dictionary<Type, ComplexTypeDef>(items.Length)};

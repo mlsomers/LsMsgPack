@@ -271,7 +271,7 @@ namespace LsMsgPack
 
       if (valuesType.IsEnum) return new MpInt(settings).SetEnumVal(value);
       if (IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap(settings) { Value = value };
-      if (IsSubclassOfRawGeneric(typeof(Dictionary<,>), valuesType)) return new MpMap(settings) { Value = value };
+      if (value is IDictionary) return new MpMap(settings) { Value = value };
       if (valuesType.IsArray) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
       if (typeof(IEnumerable).IsAssignableFrom(valuesType)) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
 
