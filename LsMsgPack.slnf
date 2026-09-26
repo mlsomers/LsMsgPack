@@ -5,7 +5,9 @@
       "LsMsgPackNetStandard/LsMsgPack.csproj",
       "LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj",
       "LsMsgPackFormatters/LsMsgPackFormatters.csproj",
-      "LsMsgPackFormattersTests/LsMsgPackFormattersTests.csproj"
+      "LsMsgPackFormattersTests/LsMsgPackFormattersTests.csproj",
+      "LsMsgPackWebApiFormatters/LsMsgPackWebApiFormatters.csproj",
+      "LsMsgPackWebApiFormattersTests/LsMsgPackWebApiFormattersTests.csproj"
     ]
   }
 }
