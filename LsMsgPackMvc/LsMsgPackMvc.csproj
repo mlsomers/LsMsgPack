@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\Packaging.props" />
+
+  <PropertyGroup>
+    <!-- ASP.NET MVC 5 (System.Web.Mvc) only runs on .NET Framework -->
+    <TargetFramework>net462</TargetFramework>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <PackageId>LsMsgPack.AspNet.Mvc</PackageId>
+    <Description>LsMsgPack model binding and action result for ASP.NET MVC 5 controllers on .NET Framework (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNet.Mvc" Version="5.2.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Web" />
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -3,7 +3,12 @@
     "path": "LsMsgPack.sln",
     "projects": [
       "LsMsgPackNetStandard/LsMsgPack.csproj",
-      "LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj"
+      "LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj",
+      "LsMsgPackFormatters/LsMsgPackFormatters.csproj",
+      "LsMsgPackFormattersTests/LsMsgPackFormattersTests.csproj",
+      "LsMsgPackWebApiFormatters/LsMsgPackWebApiFormatters.csproj",
+      "LsMsgPackWebApiFormattersTests/LsMsgPackWebApiFormattersTests.csproj",
+      "LsMsgPackMvc/LsMsgPackMvc.csproj"
     ]
   }
 }

@@ -1,0 +1,13 @@
+<Project>
+  <!-- NuGet metadata shared by the packable libraries, imported by their project files -->
+  <PropertyGroup>
+    <!-- yy.MM.dd.build -->
+    <Version>26.09.26.01</Version>
+    <Authors>Louis Somers</Authors>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/mlsomers/LsMsgPack</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/mlsomers/LsMsgPack</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>msgpack;messagepack;serializer;serialization</PackageTags>
+  </PropertyGroup>
+</Project>

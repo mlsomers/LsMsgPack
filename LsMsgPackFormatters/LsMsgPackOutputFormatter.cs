@@ -1,34 +1,36 @@
-﻿using LsMsgPack;
+using LsMsgPack;
 using Microsoft.AspNetCore.Mvc.Formatters;
-using System;
 using System.Threading.Tasks;
 
 namespace LsMsgPackFormatters
 {
+  /// <summary>
+  /// Writes responses for Accept application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack (using the given settings).
+  /// </summary>
   public class LsMsgPackOutputFormatter : OutputFormatter
   {
-    private MsgPackSettings Settings;
+    private readonly MsgPackSettings Settings;
+    private readonly MsgPackSettings PlainSettings;
 
+    public LsMsgPackOutputFormatter() : this(new MsgPackSettings()) { }
+
+    /// <param name="settings">Used for application/x-lsmsgpack, a copy is taken so later changes have no effect.</param>
     public LsMsgPackOutputFormatter(MsgPackSettings settings)
     {
-      Settings = settings;
+      Settings = (settings ?? new MsgPackSettings()).Clone();
+      PlainSettings = MsgPackMediaTypes.ToPlain(Settings);
+      foreach (string mediaType in MsgPackMediaTypes.All)
+        SupportedMediaTypes.Add(mediaType);
     }
 
-    public LsMsgPackOutputFormatter() { 
-      SupportedMediaTypes.Add(new Microsoft.Net.Http.Headers.MediaTypeHeaderValue("application/msgpack"));
-      SupportedMediaTypes.Add(new Microsoft.Net.Http.Headers.MediaTypeHeaderValue("application/x-msgpack"));
-      SupportedMediaTypes.Add(new Microsoft.Net.Http.Headers.MediaTypeHeaderValue("application/x-lsmsgpack"));
-    }
-
-    protected override bool CanWriteType(Type type)
+    public override async Task WriteResponseBodyAsync(OutputFormatterWriteContext context)
     {
-      return true; // Optimistic :-)
-    }
+      MsgPackSettings settings = MsgPackMediaTypes.IsLsMsgPack(context.ContentType.Value) ? Settings : PlainSettings;
 
-    public override Task WriteResponseBodyAsync(OutputFormatterWriteContext context)
-    {
-      MsgPackSerializer.Serialize(context.Object, context.HttpContext.Response.Body, Settings);
-      return Task.CompletedTask;
+      // Serialize to a buffer and write it asynchronously, ASP.NET Core does not allow synchronous writes to the response stream.
+      byte[] buffer = MsgPackSerializer.Serialize(context.Object, context.ObjectType, settings);
+      context.HttpContext.Response.ContentLength = buffer.Length;
+      await context.HttpContext.Response.Body.WriteAsync(buffer, 0, buffer.Length, context.HttpContext.RequestAborted);
     }
   }
 }
