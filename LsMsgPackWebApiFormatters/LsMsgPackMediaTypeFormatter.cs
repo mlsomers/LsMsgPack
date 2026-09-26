@@ -13,7 +13,7 @@ namespace LsMsgPackWebApiFormatters
   /// <summary>
   /// Reads and writes application/msgpack, application/x-msgpack (plain MsgPack) and application/x-lsmsgpack (using the given settings).
   /// <para>Server side (ASP.NET Web API 2): <c>config.Formatters.Add(new LsMsgPackMediaTypeFormatter());</c></para>
-  /// <para>Client side (HttpClient): <c>new ObjectContent&lt;T&gt;(value, formatter, LsMsgPackMediaTypes.XLsMsgPack)</c> and <c>response.Content.ReadAsAsync&lt;T&gt;(new[] { formatter })</c></para>
+  /// <para>Client side (HttpClient): <c>new ObjectContent&lt;T&gt;(value, formatter, MsgPackMediaTypes.XLsMsgPack)</c> and <c>response.Content.ReadAsAsync&lt;T&gt;(new[] { formatter })</c></para>
   /// </summary>
   public class LsMsgPackMediaTypeFormatter : MediaTypeFormatter
   {
@@ -26,8 +26,8 @@ namespace LsMsgPackWebApiFormatters
     public LsMsgPackMediaTypeFormatter(MsgPackSettings settings)
     {
       Settings = (settings ?? new MsgPackSettings()).Clone();
-      PlainSettings = LsMsgPackMediaTypes.ToPlain(Settings);
-      foreach (string mediaType in LsMsgPackMediaTypes.All)
+      PlainSettings = MsgPackMediaTypes.ToPlain(Settings);
+      foreach (string mediaType in MsgPackMediaTypes.All)
         SupportedMediaTypes.Add(new MediaTypeHeaderValue(mediaType));
     }
 
@@ -60,7 +60,7 @@ namespace LsMsgPackWebApiFormatters
       body.Position = 0;
 
       // A copy per request, since deserializing may flag errors on the settings (KEEPTRACK builds)
-      MsgPackSettings settings = (LsMsgPackMediaTypes.IsLsMsgPack(content?.Headers.ContentType) ? Settings : PlainSettings).Clone();
+      MsgPackSettings settings = (MsgPackMediaTypes.IsLsMsgPack(content?.Headers.ContentType?.MediaType) ? Settings : PlainSettings).Clone();
       try
       {
         object model = MsgPackSerializer.Deserialize(type, body, settings);
@@ -83,7 +83,7 @@ namespace LsMsgPackWebApiFormatters
 
     public override Task WriteToStreamAsync(Type type, object value, Stream writeStream, HttpContent content, TransportContext transportContext, CancellationToken cancellationToken)
     {
-      MsgPackSettings settings = LsMsgPackMediaTypes.IsLsMsgPack(content?.Headers.ContentType) ? Settings : PlainSettings;
+      MsgPackSettings settings = MsgPackMediaTypes.IsLsMsgPack(content?.Headers.ContentType?.MediaType) ? Settings : PlainSettings;
 
       // Serialize to a buffer and write it asynchronously
       byte[] buffer = MsgPackSerializer.Serialize(value, type, settings);

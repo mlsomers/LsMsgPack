@@ -1,9 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <Import Project="..\Packaging.props" />
+
   <PropertyGroup>
     <!-- ASP.NET Web API 2 (System.Web.Http) on .NET Framework, and HttpClient on any platform -->
     <TargetFramework>netstandard2.0</TargetFramework>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <PackageId>LsMsgPack.AspNet.WebApi</PackageId>
+    <Description>LsMsgPack MediaTypeFormatter for ASP.NET Web API 2 and for HttpClient (ObjectContent / ReadAsAsync) on any platform (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
   </PropertyGroup>
 
   <ItemGroup>

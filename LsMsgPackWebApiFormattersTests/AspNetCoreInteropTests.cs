@@ -13,7 +13,6 @@ using System.Net.Http;
 using System.Net.Http.Formatting;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
-using MediaTypes = LsMsgPackWebApiFormatters.LsMsgPackMediaTypes;
 
 namespace LsMsgPackWebApiFormattersTests
 {
@@ -56,9 +55,9 @@ namespace LsMsgPackWebApiFormattersTests
       host.Dispose();
     }
 
-    [TestCase(MediaTypes.MsgPack)]
-    [TestCase(MediaTypes.XMsgPack)]
-    [TestCase(MediaTypes.XLsMsgPack)]
+    [TestCase(MsgPackMediaTypes.MsgPack)]
+    [TestCase(MsgPackMediaTypes.XMsgPack)]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack)]
     public async Task RoundTrips(string mediaType)
     {
       HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "core/echo") { Content = new ObjectContent<Order>(SampleOrder, Formatter, mediaType) };

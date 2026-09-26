@@ -32,20 +32,20 @@ namespace LsMsgPackWebApiFormattersTests
     [Test]
     public void MalformedInputThrows()
     {
-      Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => ReadOrder(Bytes(new byte[] { 0x83, 0xA2, 0x49 }, LsMsgPackMediaTypes.MsgPack))));
+      Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => ReadOrder(Bytes(new byte[] { 0x83, 0xA2, 0x49 }, MsgPackMediaTypes.MsgPack))));
     }
 
     [Test]
     public void WrongTypeThrows()
     {
-      Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => ReadOrder(Bytes(new byte[] { 0xA5, 0x68, 0x65, 0x6C, 0x6C, 0x6F }, LsMsgPackMediaTypes.MsgPack))));
+      Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => ReadOrder(Bytes(new byte[] { 0xA5, 0x68, 0x65, 0x6C, 0x6C, 0x6F }, MsgPackMediaTypes.MsgPack))));
     }
 
     [Test]
     public async Task EmptyBodyGivesDefault()
     {
-      Assert.That(await Bytes(new byte[0], LsMsgPackMediaTypes.MsgPack).ReadAsAsync<Order>(new MediaTypeFormatter[] { Formatter }), Is.Null);
-      Assert.That(await Bytes(new byte[0], LsMsgPackMediaTypes.MsgPack).ReadAsAsync<int>(new MediaTypeFormatter[] { Formatter }), Is.EqualTo(0));
+      Assert.That(await Bytes(new byte[0], MsgPackMediaTypes.MsgPack).ReadAsAsync<Order>(new MediaTypeFormatter[] { Formatter }), Is.Null);
+      Assert.That(await Bytes(new byte[0], MsgPackMediaTypes.MsgPack).ReadAsAsync<int>(new MediaTypeFormatter[] { Formatter }), Is.EqualTo(0));
     }
 
     [Test]
@@ -53,7 +53,7 @@ namespace LsMsgPackWebApiFormattersTests
     {
       ObjectContent<Order> content = new ObjectContent<Order>(new Order { Id = 1 }, Formatter);
 
-      Assert.That(content.Headers.ContentType.MediaType, Is.EqualTo(LsMsgPackMediaTypes.MsgPack));
+      Assert.That(content.Headers.ContentType.MediaType, Is.EqualTo(MsgPackMediaTypes.MsgPack));
       Assert.That(MsgPackItem.UnpackMultiple(await content.ReadAsByteArrayAsync()).Count, Is.EqualTo(1));
     }
   }

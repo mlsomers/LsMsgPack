@@ -81,8 +81,8 @@ namespace LsMsgPackFormattersTests
       Assert.That(actual.Amounts, Is.EqualTo(SampleOrder.Amounts));
     }
 
-    [TestCase(LsMsgPackMediaTypes.MsgPack)]
-    [TestCase(LsMsgPackMediaTypes.XMsgPack)]
+    [TestCase(MsgPackMediaTypes.MsgPack)]
+    [TestCase(MsgPackMediaTypes.XMsgPack)]
     public async Task PlainMsgPackRoundTrips(string mediaType)
     {
       (IHost host, HttpClient client) = await StartAsync();
@@ -104,10 +104,10 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync();
       using (host)
       {
-        HttpResponseMessage response = await client.SendAsync(Post(MsgPackSerializer.Serialize(SampleOrder), LsMsgPackMediaTypes.XLsMsgPack, LsMsgPackMediaTypes.XLsMsgPack));
+        HttpResponseMessage response = await client.SendAsync(Post(MsgPackSerializer.Serialize(SampleOrder), MsgPackMediaTypes.XLsMsgPack, MsgPackMediaTypes.XLsMsgPack));
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
-        Assert.That(response.Content.Headers.ContentType.MediaType, Is.EqualTo(LsMsgPackMediaTypes.XLsMsgPack));
+        Assert.That(response.Content.Headers.ContentType.MediaType, Is.EqualTo(MsgPackMediaTypes.XLsMsgPack));
         byte[] body = await response.Content.ReadAsByteArrayAsync();
         Assert.That(body, Is.EqualTo(MsgPackSerializer.Serialize(SampleOrder, new MsgPackSettings())), "The root should not get a type id when it matches the declared type");
         AssertSampleOrder(MsgPackSerializer.Deserialize<Order>(body));
@@ -121,7 +121,7 @@ namespace LsMsgPackFormattersTests
       using (host)
       {
         HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "/test/animal");
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(LsMsgPackMediaTypes.XLsMsgPack));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack));
         HttpResponseMessage response = await client.SendAsync(request);
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
@@ -137,7 +137,7 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(settings => settings.UseInexedSchema = false));
       using (host)
       {
-        HttpResponseMessage response = await client.SendAsync(Post(MsgPackSerializer.Serialize(SampleOrder, Plain), LsMsgPackMediaTypes.XLsMsgPack, LsMsgPackMediaTypes.XLsMsgPack));
+        HttpResponseMessage response = await client.SendAsync(Post(MsgPackSerializer.Serialize(SampleOrder, Plain), MsgPackMediaTypes.XLsMsgPack, MsgPackMediaTypes.XLsMsgPack));
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
         byte[] body = await response.Content.ReadAsByteArrayAsync();
@@ -151,7 +151,7 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddMvcOptions(options => options.AddLsMsgPackSerializerFormatters()));
       using (host)
       {
-        HttpResponseMessage response = await client.SendAsync(Post(MsgPackSerializer.Serialize(SampleOrder, Plain), LsMsgPackMediaTypes.MsgPack, LsMsgPackMediaTypes.MsgPack));
+        HttpResponseMessage response = await client.SendAsync(Post(MsgPackSerializer.Serialize(SampleOrder, Plain), MsgPackMediaTypes.MsgPack, MsgPackMediaTypes.MsgPack));
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
         AssertSampleOrder(MsgPackSerializer.Deserialize<Order>(await response.Content.ReadAsByteArrayAsync(), Plain));
@@ -164,7 +164,7 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync();
       using (host)
       {
-        HttpRequestMessage request = Post(MsgPackSerializer.Serialize(21, Plain), LsMsgPackMediaTypes.MsgPack, LsMsgPackMediaTypes.MsgPack);
+        HttpRequestMessage request = Post(MsgPackSerializer.Serialize(21, Plain), MsgPackMediaTypes.MsgPack, MsgPackMediaTypes.MsgPack);
         request.RequestUri = new Uri("/test/double", UriKind.Relative);
         HttpResponseMessage response = await client.SendAsync(request);
 
@@ -181,7 +181,7 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync();
       using (host)
       {
-        HttpResponseMessage response = await client.SendAsync(Post(body, LsMsgPackMediaTypes.MsgPack, "application/json"));
+        HttpResponseMessage response = await client.SendAsync(Post(body, MsgPackMediaTypes.MsgPack, "application/json"));
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest), await response.Content.ReadAsStringAsync());
       }
@@ -193,7 +193,7 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync();
       using (host)
       {
-        HttpResponseMessage response = await client.SendAsync(Post(new byte[] { 0x68, 0x69 }, "text/plain", LsMsgPackMediaTypes.MsgPack));
+        HttpResponseMessage response = await client.SendAsync(Post(new byte[] { 0x68, 0x69 }, "text/plain", MsgPackMediaTypes.MsgPack));
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.UnsupportedMediaType));
       }

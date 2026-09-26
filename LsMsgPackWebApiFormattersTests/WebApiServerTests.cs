@@ -80,9 +80,9 @@ namespace LsMsgPackWebApiFormattersTests
       return content;
     }
 
-    [TestCase(LsMsgPackMediaTypes.MsgPack)]
-    [TestCase(LsMsgPackMediaTypes.XMsgPack)]
-    [TestCase(LsMsgPackMediaTypes.XLsMsgPack)]
+    [TestCase(MsgPackMediaTypes.MsgPack)]
+    [TestCase(MsgPackMediaTypes.XMsgPack)]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack)]
     public async Task RoundTrips(string mediaType)
     {
       HttpResponseMessage response = await client.SendAsync(Post(new ObjectContent<Order>(SampleOrder, Formatter, mediaType), mediaType));
@@ -95,8 +95,8 @@ namespace LsMsgPackWebApiFormattersTests
       Assert.That(order.Amounts, Is.EqualTo(SampleOrder.Amounts));
     }
 
-    [TestCase(LsMsgPackMediaTypes.MsgPack, false)]
-    [TestCase(LsMsgPackMediaTypes.XLsMsgPack, true)]
+    [TestCase(MsgPackMediaTypes.MsgPack, false)]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack, true)]
     public async Task WireFormatFollowsMediaType(string mediaType, bool lsMsgPack)
     {
       HttpResponseMessage response = await client.SendAsync(Post(new ObjectContent<Order>(SampleOrder, Formatter, mediaType), mediaType));
@@ -111,7 +111,7 @@ namespace LsMsgPackWebApiFormattersTests
     public async Task LsMsgPackAddsTypeIdForPolymorphicRoot()
     {
       HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "webapi/animal");
-      request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(LsMsgPackMediaTypes.XLsMsgPack));
+      request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack));
       HttpResponseMessage response = await client.SendAsync(request);
 
       Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
@@ -125,7 +125,7 @@ namespace LsMsgPackWebApiFormattersTests
     [TestCase(new byte[] { 0xA5, 0x68, 0x65, 0x6C, 0x6C, 0x6F }, TestName = "MalformedInputGives400(string instead of map)")]
     public async Task MalformedInputGives400(byte[] body)
     {
-      HttpResponseMessage response = await client.SendAsync(Post(Bytes(body, LsMsgPackMediaTypes.MsgPack), "application/json"));
+      HttpResponseMessage response = await client.SendAsync(Post(Bytes(body, MsgPackMediaTypes.MsgPack), "application/json"));
 
       Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest), await response.Content.ReadAsStringAsync());
     }
@@ -133,7 +133,7 @@ namespace LsMsgPackWebApiFormattersTests
     [Test]
     public async Task UnsupportedContentTypeGives415()
     {
-      HttpResponseMessage response = await client.SendAsync(Post(Bytes(new byte[] { 0x68, 0x69 }, "text/plain"), LsMsgPackMediaTypes.MsgPack));
+      HttpResponseMessage response = await client.SendAsync(Post(Bytes(new byte[] { 0x68, 0x69 }, "text/plain"), MsgPackMediaTypes.MsgPack));
 
       Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.UnsupportedMediaType));
     }

@@ -18,13 +18,14 @@ namespace LsMsgPackFormatters
     public LsMsgPackOutputFormatter(MsgPackSettings settings)
     {
       Settings = (settings ?? new MsgPackSettings()).Clone();
-      PlainSettings = LsMsgPackMediaTypes.ToPlain(Settings);
-      LsMsgPackMediaTypes.AddTo(SupportedMediaTypes);
+      PlainSettings = MsgPackMediaTypes.ToPlain(Settings);
+      foreach (string mediaType in MsgPackMediaTypes.All)
+        SupportedMediaTypes.Add(mediaType);
     }
 
     public override async Task WriteResponseBodyAsync(OutputFormatterWriteContext context)
     {
-      MsgPackSettings settings = LsMsgPackMediaTypes.IsLsMsgPack(context.ContentType.Value) ? Settings : PlainSettings;
+      MsgPackSettings settings = MsgPackMediaTypes.IsLsMsgPack(context.ContentType.Value) ? Settings : PlainSettings;
 
       // Serialize to a buffer and write it asynchronously, ASP.NET Core does not allow synchronous writes to the response stream.
       byte[] buffer = MsgPackSerializer.Serialize(context.Object, context.ObjectType, settings);

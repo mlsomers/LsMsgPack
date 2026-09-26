@@ -1,10 +1,14 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <Import Project="..\Packaging.props" />
+
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <Nullable>disable</Nullable>
 	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <PackageId>LsMsgPack</PackageId>
+    <Description>MsgPack serializer and deserializer for .NET classes (like the xml and json serializers), with an optional indexed schema and type ids for polymorphic object models.</Description>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">

@@ -1,9 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <Import Project="..\Packaging.props" />
+
   <PropertyGroup>
     <!-- netstandard2.0: ASP.NET Core 2.x (also on .NET Framework), net8.0: ASP.NET Core 3.0 and up -->
     <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <PackageId>LsMsgPack.AspNetCore</PackageId>
+    <Description>LsMsgPack input and output formatters for ASP.NET Core MVC / Web API controllers (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">

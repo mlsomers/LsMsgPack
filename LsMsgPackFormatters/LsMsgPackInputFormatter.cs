@@ -20,8 +20,9 @@ namespace LsMsgPackFormatters
     public LsMsgPackInputFormatter(MsgPackSettings settings)
     {
       Settings = (settings ?? new MsgPackSettings()).Clone();
-      PlainSettings = LsMsgPackMediaTypes.ToPlain(Settings);
-      LsMsgPackMediaTypes.AddTo(SupportedMediaTypes);
+      PlainSettings = MsgPackMediaTypes.ToPlain(Settings);
+      foreach (string mediaType in MsgPackMediaTypes.All)
+        SupportedMediaTypes.Add(mediaType);
     }
 
     public override async Task<InputFormatterResult> ReadRequestBodyAsync(InputFormatterContext context)
@@ -34,7 +35,7 @@ namespace LsMsgPackFormatters
       body.Position = 0;
 
       // A copy per request, since deserializing may flag errors on the settings (KEEPTRACK builds)
-      MsgPackSettings settings = (LsMsgPackMediaTypes.IsLsMsgPack(context.HttpContext.Request.ContentType) ? Settings : PlainSettings).Clone();
+      MsgPackSettings settings = (MsgPackMediaTypes.IsLsMsgPack(context.HttpContext.Request.ContentType) ? Settings : PlainSettings).Clone();
       try
       {
         object model = MsgPackSerializer.Deserialize(context.ModelType, body, settings);
