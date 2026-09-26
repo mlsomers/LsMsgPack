@@ -63,16 +63,30 @@ namespace LsMsgPack
           value = new KeyValuePair<object, object>[0];
           return;
         }
-        if (IsSubclassOfRawGeneric(typeof(Dictionary<,>), value.GetType()))
+        if (value is IDictionary dict)
         {
-          IDictionary dict = (IDictionary)value;
-
           this.value = new KeyValuePair<object, object>[dict.Count];
           int t = 0;
-          foreach (object key in dict.Keys)
+          foreach (DictionaryEntry entry in dict)
           {
-            this.value[t] = new KeyValuePair<object, object>(key, dict[key]);
+            this.value[t] = new KeyValuePair<object, object>(entry.Key, entry.Value);
             t++;
+          }
+        }
+        else if (value is KeyValuePair<object, object>[] pairs)
+          this.value = pairs;
+        else if (IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), value.GetType())) // KeyValuePair<TKey, TValue>[]
+        {
+          Array arr = (Array)value;
+          Type pairType = arr.GetType().GetElementType();
+          System.Reflection.PropertyInfo keyProp = pairType.GetProperty(nameof(KeyValuePair<object, object>.Key));
+          System.Reflection.PropertyInfo valueProp = pairType.GetProperty(nameof(KeyValuePair<object, object>.Value));
+
+          this.value = new KeyValuePair<object, object>[arr.Length];
+          for (int t = arr.Length - 1; t >= 0; t--)
+          {
+            object pair = arr.GetValue(t);
+            this.value[t] = new KeyValuePair<object, object>(keyProp.GetValue(pair), valueProp.GetValue(pair));
           }
         }
         else this.value = (KeyValuePair<object, object>[])value;

@@ -8,7 +8,7 @@ namespace LsMsgPack.Meta
   {
     // Type is a IMsgPackPropertyIdResolver Type
     private static readonly Dictionary<PropertyInfo, FullPropertyInfo> Cache = new Dictionary<PropertyInfo, FullPropertyInfo>();
-    private static readonly Dictionary<Type, ConstructorInfo> _constructorTakingType = new Dictionary<Type, ConstructorInfo>();
+    private readonly Dictionary<Type, ConstructorInfo> _constructorTakingType = new Dictionary<Type, ConstructorInfo>(); // per instance, constructors differ per AssignedToType
 
     public static FullPropertyInfo GetFullPropInfo(PropertyInfo propertyInfo, MsgPackSettings settings)
     {

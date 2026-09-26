@@ -174,19 +174,7 @@ namespace LsMsgPack
         return DeserializeWithSchema<T>(stream, settings);
 
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
-      if (unpacked.Value is T)
-        return (T)unpacked.Value;
-
-      if (unpacked is MpMap)
-      {
-        MpMap map = (MpMap)unpacked;
-
-        T result = (T)Materialize(typeof(T), map);
-        return result;
-      }
-
-      T resultt = (T)ConvertDeserializeValue(unpacked.Value, typeof(T), new MpMap(settings), new FullPropertyInfo(typeof(T)));
-      return resultt;
+      return ConvertRoot<T>(unpacked, settings);
     }
 
     private static T DeserializeWithSchema<T>(byte[] source, MsgPackSettings settings)
@@ -203,25 +191,15 @@ namespace LsMsgPack
       MsgPackSerializer.CacheAssemblyTypes(typeof(T));
 
       IndexedSchemaTypeResolver resolver = IndexedSchemaTypeResolver.Unpack(stream, settings);
-      if(resolver != null) 
-        InjectSchema(settings, resolver);
+      if (resolver is null) // null is serialized without a schema
+        return default;
 
-      try { 
+      InjectSchema(settings, resolver);
 
-      MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
-      if (unpacked.Value is T)
-        return (T)unpacked.Value;
-
-      if (unpacked is MpMap)
+      try
       {
-        MpMap map = (MpMap)unpacked;
-
-        T result = (T)Materialize(typeof(T), map);
-        return result;
-      }
-
-      T resultt = (T)ConvertDeserializeValue(unpacked.Value, typeof(T), new MpMap(settings), new FullPropertyInfo(typeof(T)));
-      return resultt;
+        MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
+        return ConvertRoot<T>(unpacked, settings);
       }
       finally
       {
@@ -276,15 +254,15 @@ namespace LsMsgPack
     public static object Deserialize(Type tType, Stream stream, MsgPackSettings settings)
     {
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
-      if (unpacked.Value.GetType() == tType)
-        return unpacked.Value;
+      return ConvertDeserializeValue(unpacked.Value, tType, settings, null);
+    }
 
-      if (unpacked is MpMap)
-      {
-        MpMap map = (MpMap)unpacked;
-        return Materialize(tType, map);
-      }
-      return ConvertDeserializeValue(unpacked.Value, tType, new MpMap(settings), new FullPropertyInfo(tType));
+    private static T ConvertRoot<T>(MsgPackItem unpacked, MsgPackSettings settings)
+    {
+      object result = ConvertDeserializeValue(unpacked.Value, typeof(T), settings, null);
+      if (result is null)
+        return default;
+      return (T)result;
     }
 
   }
