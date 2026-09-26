@@ -314,15 +314,15 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 420)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 416)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 386)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 386)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 415)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 411)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 381)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 381)]
 
-    [DataRow(AddTypeIdOption.Always, false, false, 426)]
-    [DataRow(AddTypeIdOption.Always, false, true, 422)]
-    [DataRow(AddTypeIdOption.Always, true, false, 392)]
-    [DataRow(AddTypeIdOption.Always, true, true, 392)]
+    [DataRow(AddTypeIdOption.Always, false, false, 421)]
+    [DataRow(AddTypeIdOption.Always, false, true, 417)]
+    [DataRow(AddTypeIdOption.Always, true, false, 387)]
+    [DataRow(AddTypeIdOption.Always, true, true, 387)]
     public void Hirarchical_NextLevelWithSchema(AddTypeIdOption addTypeName, bool omitDefault, bool omitNull, int expectedLength)
     {
       NextLevelHierarchyContainer container = GetNextLevel();

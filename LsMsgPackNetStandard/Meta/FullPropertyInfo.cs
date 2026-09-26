@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 
@@ -7,7 +8,7 @@ namespace LsMsgPack.Meta
   public class FullPropertyInfo
   {
     // Type is a IMsgPackPropertyIdResolver Type
-    private static readonly Dictionary<PropertyInfo, FullPropertyInfo> Cache = new Dictionary<PropertyInfo, FullPropertyInfo>();
+    private static readonly ConcurrentDictionary<PropertyInfo, FullPropertyInfo> Cache = new ConcurrentDictionary<PropertyInfo, FullPropertyInfo>();
     private readonly Dictionary<Type, ConstructorInfo> _constructorTakingType = new Dictionary<Type, ConstructorInfo>(); // per instance, constructors differ per AssignedToType
 
     public static FullPropertyInfo GetFullPropInfo(PropertyInfo propertyInfo, MsgPackSettings settings)
@@ -34,7 +35,7 @@ namespace LsMsgPack.Meta
         full.PropertyId = full.PropertyInfo.Name;
 
       if (settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0)
-        Cache.Add(propertyInfo, full);
+        return Cache.GetOrAdd(propertyInfo, full); // another thread may have been first
       return full;
     }
 
@@ -112,9 +113,43 @@ namespace LsMsgPack.Meta
     }
 
 
+    private static readonly ConcurrentDictionary<Type, PropertyInfo[]> PropertiesCache = new ConcurrentDictionary<Type, PropertyInfo[]>();
+
+    /// <summary>
+    /// Public properties excluding indexers and properties hidden by a property with the same name in a derived class ("new" modifier).
+    /// </summary>
+    private static PropertyInfo[] GetProperties(Type type)
+    {
+      return PropertiesCache.GetOrAdd(type, t =>
+      {
+        PropertyInfo[] all = t.GetProperties();
+        List<PropertyInfo> kept = new List<PropertyInfo>(all.Length);
+        for (int i = 0; i < all.Length; i++)
+        {
+          PropertyInfo prop = all[i];
+          if (prop.GetIndexParameters().Length > 0)
+            continue;
+
+          bool hidden = false;
+          for (int j = 0; j < all.Length; j++)
+          {
+            if (j != i && all[j].Name == prop.Name && all[j].DeclaringType != prop.DeclaringType && prop.DeclaringType.IsAssignableFrom(all[j].DeclaringType))
+            {
+              hidden = true;
+              break;
+            }
+          }
+
+          if (!hidden)
+            kept.Add(prop);
+        }
+        return kept.ToArray();
+      });
+    }
+
     internal static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackSettings settings)
     {
-      PropertyInfo[] props = type.GetProperties();
+      PropertyInfo[] props = GetProperties(type);
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
       for (int t = 0; t < props.Length; t++)
       {

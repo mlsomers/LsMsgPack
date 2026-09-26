@@ -274,6 +274,7 @@ namespace LsMsgPack
       return new MsgPackSettings
       {
         FileContainsErrors = FileContainsErrors,
+        _useInexedSchema = _useInexedSchema,
         _dynamicallyCompact = _dynamicallyCompact,
         _endianAction = _endianAction,
         _addTypeIdOptions = _addTypeIdOptions,
@@ -290,11 +291,18 @@ namespace LsMsgPack
       };
     }
 
+    [ThreadStatic]
+    private static Buffers _threadBuffers;
+
     /// <summary>
-    /// Buffers used during deserialization so they do not need to be allocated for each instance
+    /// Buffers used during (de)serialization so they do not need to be allocated for each instance.
+    /// <para>One set per thread, since settings are often shared between threads.</para>
     /// </summary>
     [IgnoreDataMember]
-    internal Buffers Buffers = new Buffers();
+    internal Buffers Buffers
+    {
+      get { return _threadBuffers ?? (_threadBuffers = new Buffers()); }
+    }
   }
 
   public enum EndianAction

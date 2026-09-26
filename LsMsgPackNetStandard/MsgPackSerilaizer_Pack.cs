@@ -44,29 +44,7 @@ namespace LsMsgPack
           handleItems = tType.GetCustomAttribute<SerializeEnumerableAttribute>(true);
 
         if (handleItems is null)
-        {
-          handleItems = new SerializeEnumerableAttribute();
-          if (tType.IsArray)
-            handleItems.ElementType = tType.GetElementType();
-          else if (tType is IDictionary)
-          {
-            Type[] types = tType.GenericTypeArguments;
-            handleItems.ElementType = typeof(KeyValuePair<,>).MakeGenericType(types);
-          }
-          else
-          {
-            Type[] types = tType.GenericTypeArguments;
-            if (types.Length == 1)
-              handleItems.ElementType = types[0];
-            else if (item is IDictionary)
-            {
-              // do nothing, dictionary should be in -> packed
-            }
-            else
-              throw new NotImplementedException(
-                $"Todo: check if we can derive element type from IEnumerable<T>.For now decorate/annotate your fancy collection ({tType.Name}{(assignedTo is null ? "" : $") or property ({assignedTo.PropertyInfo.Name}")}) with a [SerializeEnumerable] Attribute specifying the type of the elements and weather to include or exclude other properties...");
-          }
-        }
+          handleItems = new SerializeEnumerableAttribute(CollectionInfo.Get(tType).ElementType); // T of IEnumerable<T> (KeyValuePair<TKey, TValue> for dictionaries), object if unknown
       }
 
       // Any complex object with properties
