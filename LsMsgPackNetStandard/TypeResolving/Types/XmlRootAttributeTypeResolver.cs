@@ -1,6 +1,7 @@
 ﻿using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Interfaces;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Xml.Serialization;
@@ -13,8 +14,8 @@ namespace LsMsgPack.TypeResolving.Types
     /// </summary>
     public class XmlRootAttributeTypeResolver : IMsgPackTypeResolver
     {
-        private Dictionary<string, Type> _resolve = new Dictionary<string, Type>();
-        private Dictionary<Type, string> _resolveWriting = new Dictionary<Type, string>();
+        private readonly ConcurrentDictionary<string, Type> _resolve = new ConcurrentDictionary<string, Type>(); // settings (and their resolvers) may be shared between threads
+        private readonly ConcurrentDictionary<Type, string> _resolveWriting = new ConcurrentDictionary<Type, string>();
 
         public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
         {
@@ -34,8 +35,8 @@ namespace LsMsgPack.TypeResolving.Types
             if (name == null)
                 return null;
 
-            _resolve.Add(name, type);
-            _resolveWriting.Add(type, name);
+            _resolve[name] = type;
+            _resolveWriting[type] = name;
 
             return name;
         }
@@ -53,7 +54,10 @@ namespace LsMsgPack.TypeResolving.Types
 
         public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
         {
-            return _resolve[(string)typeId];
+            string name = typeId as string; // null or an id from another resolver
+            if (name != null && _resolve.TryGetValue(name, out Type type))
+                return type;
+            return null;
         }
     }
 }

@@ -11,6 +11,9 @@ namespace LsMsgPack.Meta
 {
   internal static class TypeResolver
   {
+    // The caches are shared by all threads, guard them with this lock (it is re-entrant, custom resolvers may call back into this class)
+    private static readonly object SyncRoot = new object();
+
     // 1st tier cache
     private static readonly Dictionary<string, Type> FullNameCache = new Dictionary<string, Type>(); // full name's should never collide
     private static readonly Dictionary<string, Type> UsedNameCache = new Dictionary<string, Type>(); // Previously resolved names
@@ -69,12 +72,20 @@ namespace LsMsgPack.Meta
 
     internal static Type ResolveInternal(string typeName, Type assignedTo, IMsgPackTypeResolver[] resolvers)
     {
+      lock (SyncRoot)
+      {
+        return ResolveInternalLocked(typeName, assignedTo, resolvers);
+      }
+    }
+
+    private static Type ResolveInternalLocked(string typeName, Type assignedTo, IMsgPackTypeResolver[] resolvers)
+    {
       Type result;
 
       if (typeName.EndsWith("[]"))
       {
         string nm = typeName.Substring(0, typeName.Length - 2);
-        Type arr = ResolveInternal(nm, assignedTo, resolvers);
+        Type arr = ResolveInternalLocked(nm, assignedTo, resolvers);
         if (arr != null)
           return arr.MakeArrayType();
       }
@@ -303,6 +314,14 @@ namespace LsMsgPack.Meta
 
     internal static Type CacheAssembly(Assembly assembly, string typeName)
     {
+      lock (SyncRoot)
+      {
+        return CacheAssemblyLocked(assembly, typeName);
+      }
+    }
+
+    private static Type CacheAssemblyLocked(Assembly assembly, string typeName)
+    {
       if (CachedAssembies.Contains(assembly))
         return null;
 
@@ -324,13 +343,10 @@ namespace LsMsgPack.Meta
         if (found == null)
         {
           if (fullName == typeName)
-          {
-            FullNameCache.Add(fullName, type);
-            found = type;
-          }
+            found = type; // already added to FullNameCache above
           else if (name == typeName)
           {
-            UsedNameCache.Add(name, type);
+            UsedNameCache.TryAdd(name, type);
             found = type;
           }
         }

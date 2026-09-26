@@ -49,40 +49,48 @@ namespace LsMsgPack.TypeResolving.Types
       return GetComplex(type, settings).TypeId;
     }
 
-    private bool _blockRecursionResolve = false;
     public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
     {
-      if (_blockRecursionResolve || typeId is null)
+      if (typeId is null || !MsgPackMeta.NumericTypes.Contains(typeId.GetType())) // e.g. a name used by another resolver
         return null;
 
-      int id;
-      if (typeId is int) id = (int)typeId;
-      else id = Convert.ToInt32(typeId);
-
-      if (id < 0 || id >= ByTypeId.Count)
+      decimal id = Convert.ToDecimal(typeId);
+      if (id < 0 || id >= ByTypeId.Count || id != decimal.Truncate(id))
         return null;
 
-      ComplexTypeDef def = ByTypeId[id];
+      ComplexTypeDef def = ByTypeId[(int)id];
 
       if (def.Type != null)
         return def.Type;
 
-      _blockRecursionResolve = true;
-      try
+      Type type = ResolveTypeName(def.TypeName, assignedTo, settings);
+      if (type != null)
       {
-        List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings._typeResolvers);
-        resolvers.Remove(this);
-        Type type = TypeResolver.ResolveInternal(def.TypeName, assignedTo, resolvers.ToArray());
         def.Type = type;
         ByType[type] = def;
-        return type;
       }
-      finally
-      {
-        _blockRecursionResolve = false;
-      }
+      return type;
     }
 
+    /// <summary>
+    /// Resolve the name (stored in the schema) using the other resolvers (they may have provided the name, see <see cref="ComplexTypeDef"/>) or the default name resolver.
+    /// </summary>
+    private static Type ResolveTypeName(string typeName, Type assignedTo, MsgPackSettings settings)
+    {
+      IMsgPackTypeResolver[] resolvers = settings._typeResolvers;
+      Dictionary<object, object> noProperties = new Dictionary<object, object>(0);
+      for (int t = resolvers.Length - 1; t >= 0; t--)
+      {
+        if (resolvers[t] is IndexedSchemaTypeResolver)
+          continue;
+
+        Type type = resolvers[t].Resolve(typeName, assignedTo, null, noProperties, settings);
+        if (type != null && !type.ContainsGenericParameters)
+          return type;
+      }
+
+      return TypeResolver.ResolveInternal(typeName, assignedTo, resolvers);
+    }
 
     private bool _blockRecursionGetId = false;
     object IMsgPackPropertyIdResolver.GetId(FullPropertyInfo assignedTo, MsgPackSettings settings)
@@ -123,7 +131,7 @@ namespace LsMsgPack.TypeResolving.Types
         // string typeName = MsgPackSerializer.GetTypeName(type, (settings._addTypeName & AddTypeIdOption.FullName) > 0);
 
         if (def.Type is null)
-          def.Type = TypeResolver.ResolveInternal(def.TypeName, null, settings._typeResolvers);
+          def.Type = ResolveTypeName(def.TypeName, null, settings);
 
         if (def.Type is null)
           throw new Exception($"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}\r\nIt may help to pre-register your type like this:\r\n  MsgPackSerializer.CacheAssemblyTypes(typeof({def.TypeName}));");
@@ -137,7 +145,14 @@ namespace LsMsgPack.TypeResolving.Types
     // We know the fixed structure of our schema, so we can omit the oop stuff to keep it small
     public byte[] Pack()
     {
-      MsgPackSettings settings=new MsgPackSettings{_addTypeIdOptions = AddTypeIdOption.Never};
+      return Pack(null);
+    }
+
+    /// <param name="settings">Settings used for the rest of the data (e.g. to use the same <see cref="MsgPackSettings.EndianAction"/>)</param>
+    public byte[] Pack(MsgPackSettings settings)
+    {
+      settings = settings?.Clone() ?? new MsgPackSettings();
+      settings._addTypeIdOptions = AddTypeIdOption.Never;
 
       KeyValuePair<object,object>[] items=new KeyValuePair<object, object>[ByTypeId.Count];
       if (ByTypeId.Count > 0) { 
@@ -150,20 +165,31 @@ namespace LsMsgPack.TypeResolving.Types
     }
 
     /// <returns>null if the stream starts with nil (null is serialized without a schema)</returns>
+    /// <exception cref="MsgPackException">When the stream does not start with a schema</exception>
     public static IndexedSchemaTypeResolver Unpack(System.IO.Stream bytes, MsgPackSettings settings) {
-      MpMap m = MsgPackItem.Unpack(bytes) as MpMap;
-      if (m is null)
+      MsgPackItem item = MsgPackItem.Unpack(bytes, settings ?? new MsgPackSettings());
+      if (item is MpNull)
         return null;
-      KeyValuePair<object, object>[] items=m.Value as KeyValuePair<object, object>[];
+
+      KeyValuePair<object, object>[] items = (item as MpMap)?.Value as KeyValuePair<object, object>[];
+      if (items is null)
+        throw new MsgPackException($"Expected the data to start with an indexed schema (a map) but found {item.TypeId}. Was it serialized with {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.UseInexedSchema)} = false?", 0, item.TypeId);
 
       IndexedSchemaTypeResolver ret=new IndexedSchemaTypeResolver(){ ByTypeId=new List<ComplexTypeDef>(items.Length), ByType=new Dictionary<Type, ComplexTypeDef>(items.Length)};
-      for (int i = 0; i < m.Count; i++) {
+      for (int i = 0; i < items.Length; i++) {
         KeyValuePair<object, object> typ = items[i];
-        object[] props= (object[])typ.Value;
+        string typeName = typ.Key as string;
+        object[] props = typ.Value as object[];
+        if (typeName is null || props is null)
+          throw InvalidSchema();
 
-        ComplexTypeDef def= new ComplexTypeDef() { TypeId = i, TypeName = (string)typ.Key, Props = new List<string>(props.Length) };
+        ComplexTypeDef def= new ComplexTypeDef() { TypeId = i, TypeName = typeName, Props = new List<string>(props.Length) };
         for (int t = 0; t < props.Length; t++)
-          def.Props.Add((string)props[t]);
+        {
+          if (!(props[t] is string propName))
+            throw InvalidSchema();
+          def.Props.Add(propName);
+        }
 
         ret.ByTypeId.Add(def);
       }
@@ -171,6 +197,11 @@ namespace LsMsgPack.TypeResolving.Types
       ret.ResolveDeserializedTypes(settings);
 
       return ret;
+    }
+
+    private static MsgPackException InvalidSchema()
+    {
+      return new MsgPackException($"Invalid indexed schema, expected a map of type names with an array of property names. Was the data serialized with {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.UseInexedSchema)} = false?");
     }
   }
 

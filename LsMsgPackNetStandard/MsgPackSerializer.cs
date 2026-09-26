@@ -25,22 +25,11 @@ namespace LsMsgPack
 
     public static byte[] Serialize<T>(T item, bool dynamicallyCompact = true)
     {
-      MsgPackSettings settings = new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact };
-
-      if (settings.UseInexedSchema)
-        return SerializeWithSchema(item, settings);
-
-      return Serialize<T>(item, settings);
+      return Serialize<T>(item, new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact });
     }
 
     public static byte[] Serialize<T>(T item, MsgPackSettings settings)
     {
-      if (ReferenceEquals(item, null))
-        return new MpNull().ToBytes();
-
-      if (settings != null && settings.UseInexedSchema)
-        return SerializeWithSchema(item, settings);
-
       MemoryStream ms = new MemoryStream();
       Serialize(item, ms, settings);
       return ms.ToArray();
@@ -48,29 +37,23 @@ namespace LsMsgPack
 
     public static void Serialize<T>(T item, Stream target, bool dynamicallyCompact = true)
     {
-      MsgPackSettings settings = new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact };
-
-      if (settings.UseInexedSchema)
-      {
-        SerializeWithSchema(item, target, settings);
-        return;
-      }
-
-      Serialize<T>(item, target, settings);
+      Serialize<T>(item, target, new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact });
     }
 
     public static void Serialize<T>(T item, Stream target, MsgPackSettings settings)
     {
-      if (settings != null && settings.UseInexedSchema)
+      if (settings is null)
+        settings = new MsgPackSettings();
+
+      if (settings.UseInexedSchema && !ReferenceEquals(item, null)) // null is serialized without a schema
       {
-        SerializeWithSchema(item, target, settings);
+        SerializeWithSchema(item, typeof(T), target, settings);
         return;
       }
 
       MsgPackItem packed = SerializeObject(item, settings, new FullPropertyInfo(typeof(T)));
       byte[] buffer = packed.ToBytes();
       target.Write(buffer, 0, buffer.Length);
-      return;
     }
 
     public static MsgPackItem SerializeObject(object item, bool dynamicallyCompact = true)
@@ -78,81 +61,50 @@ namespace LsMsgPack
       return SerializeObject(item, new MsgPackSettings() { _dynamicallyCompact = dynamicallyCompact });
     }
 
-    private static byte[] SerializeWithSchema<T>(T item, MsgPackSettings settings)
+    private static void SerializeWithSchema(object item, Type assignedTo, Stream target, MsgPackSettings settings)
     {
-      if (ReferenceEquals(item, null))
-        return new MpNull().ToBytes();
-
-      MemoryStream ms = new MemoryStream();
-      SerializeWithSchema(item, ms, settings);
-      return ms.ToArray();
-    }
-
-    private static void SerializeWithSchema<T>(T item, Stream target, MsgPackSettings settings)
-    {
-
-      if (settings == null)
-        settings = new MsgPackSettings();
-
-      RemoveSchemaResolver(settings);
-
       IndexedSchemaTypeResolver resolver = new IndexedSchemaTypeResolver();
+      MsgPackSettings schemaSettings = WithSchema(settings, resolver);
 
-      InjectSchema(settings, resolver);
+      MsgPackItem packed = SerializeObject(item, schemaSettings, new FullPropertyInfo(assignedTo));
+      byte[] buffer = packed.ToBytes(); // Fills the schema, so this needs to be done before packing the schema
 
-      MsgPackItem packed = SerializeObject(item, settings, new FullPropertyInfo(typeof(T)));
-      byte[] buffer = packed.ToBytes();
-      
-
-      byte[] schema = resolver.Pack();
+      byte[] schema = resolver.Pack(settings);
       target.Write(schema, 0, schema.Length);
       target.Write(buffer, 0, buffer.Length);
-
-      RemoveSchemaResolver(settings);
-
-      return;
     }
 
-    private static void InjectSchema(MsgPackSettings settings, IndexedSchemaTypeResolver resolver)
+    /// <summary>
+    /// Returns a copy of the settings using the given schema, the original settings are not modified so they can safely be shared between threads.
+    /// </summary>
+    private static MsgPackSettings WithSchema(MsgPackSettings settings, IndexedSchemaTypeResolver resolver)
     {
-      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings._typeResolvers);
-      resolvers.Insert(0, resolver);
-      settings._typeResolvers = resolvers.ToArray();
+      MsgPackSettings schemaSettings = settings.Clone();
 
-      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings._propertyNameResolvers);
-      propNameResolvers.Insert(0, resolver);
-      settings._propertyNameResolvers = propNameResolvers.ToArray();
-    }
+      // Resolvers are consulted from last to first, the schema should be consulted first so its type id's cannot be mistaken for those of another resolver.
+      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings._typeResolvers.Length + 1);
+      for (int t = 0; t < settings._typeResolvers.Length; t++)
+        if (!(settings._typeResolvers[t] is IndexedSchemaTypeResolver))
+          resolvers.Add(settings._typeResolvers[t]);
+      resolvers.Add(resolver);
+      schemaSettings._typeResolvers = resolvers.ToArray();
 
-    private static void RemoveSchemaResolver(MsgPackSettings settings)
-    {
-      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings._typeResolvers);
-      for (int t = resolvers.Count - 1; t >= 0; t--)
-        if (resolvers[t] is IndexedSchemaTypeResolver)
-          resolvers.RemoveAt(t);
-      settings._typeResolvers = resolvers.ToArray();
+      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings._propertyNameResolvers.Length + 1) { resolver };
+      for (int t = 0; t < settings._propertyNameResolvers.Length; t++)
+        if (!(settings._propertyNameResolvers[t] is IndexedSchemaTypeResolver))
+          propNameResolvers.Add(settings._propertyNameResolvers[t]);
+      schemaSettings._propertyNameResolvers = propNameResolvers.ToArray();
 
-      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings._propertyNameResolvers);
-      for (int t = propNameResolvers.Count - 1; t >= 0; t--)
-        if (propNameResolvers[t] is IndexedSchemaTypeResolver)
-          propNameResolvers.RemoveAt(t);
-      settings._propertyNameResolvers = propNameResolvers.ToArray();
+      return schemaSettings;
     }
 
     public static T Deserialize<T>(byte[] source)
     {
-      MsgPackSettings settings = new MsgPackSettings();
-      if (settings.UseInexedSchema)
-        return DeserializeWithSchema<T>(source, settings);
-
       return Deserialize<T>(source, new MsgPackSettings());
     }
 
     public static T Deserialize<T>(byte[] source, MsgPackSettings settings)
     {
-      if(settings.UseInexedSchema)
-        return DeserializeWithSchema<T>(source, settings);
-
       using (MemoryStream ms = new MemoryStream(source))
       {
         return Deserialize<T>(ms, settings);
@@ -161,50 +113,15 @@ namespace LsMsgPack
 
     public static T Deserialize<T>(Stream stream)
     {
-      MsgPackSettings settings = new MsgPackSettings();
-      if (settings.UseInexedSchema)
-        return DeserializeWithSchema<T>(stream, settings);
-
       return Deserialize<T>(stream, new MsgPackSettings());
     }
 
     public static T Deserialize<T>(Stream stream, MsgPackSettings settings)
     {
-      if (settings.UseInexedSchema)
-        return DeserializeWithSchema<T>(stream, settings);
-
-      MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
-      return ConvertRoot<T>(unpacked, settings);
-    }
-
-    private static T DeserializeWithSchema<T>(byte[] source, MsgPackSettings settings)
-    {
-      using (MemoryStream ms = new MemoryStream(source))
-      {
-        return DeserializeWithSchema<T>(ms, settings);
-      }
-    }
-
-    private static T DeserializeWithSchema<T>(Stream stream, MsgPackSettings settings)
-    {
-      RemoveSchemaResolver(settings);
-      MsgPackSerializer.CacheAssemblyTypes(typeof(T));
-
-      IndexedSchemaTypeResolver resolver = IndexedSchemaTypeResolver.Unpack(stream, settings);
-      if (resolver is null) // null is serialized without a schema
+      object result = Deserialize(typeof(T), stream, settings);
+      if (result is null)
         return default;
-
-      InjectSchema(settings, resolver);
-
-      try
-      {
-        MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
-        return ConvertRoot<T>(unpacked, settings);
-      }
-      finally
-      {
-        RemoveSchemaResolver(settings);
-      }
+      return (T)result;
     }
 
     /// <summary>
@@ -253,16 +170,34 @@ namespace LsMsgPack
     /// <returns>The deserialized object</returns>
     public static object Deserialize(Type tType, Stream stream, MsgPackSettings settings)
     {
+      if (settings is null)
+        settings = new MsgPackSettings();
+
+      if (settings.UseInexedSchema)
+        return DeserializeWithSchema(tType, stream, settings);
+
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
       return ConvertDeserializeValue(unpacked.Value, tType, settings, null);
     }
 
-    private static T ConvertRoot<T>(MsgPackItem unpacked, MsgPackSettings settings)
+    private static object DeserializeWithSchema(Type tType, Stream stream, MsgPackSettings settings)
     {
-      object result = ConvertDeserializeValue(unpacked.Value, typeof(T), settings, null);
-      if (result is null)
-        return default;
-      return (T)result;
+      CacheAssemblyTypes(tType);
+
+      IndexedSchemaTypeResolver resolver = IndexedSchemaTypeResolver.Unpack(stream, settings);
+      if (resolver is null) // null is serialized without a schema
+        return null;
+
+      MsgPackSettings schemaSettings = WithSchema(settings, resolver);
+      try
+      {
+        MsgPackItem unpacked = MsgPackItem.Unpack(stream, schemaSettings);
+        return ConvertDeserializeValue(unpacked.Value, tType, schemaSettings, null);
+      }
+      finally
+      {
+        settings.FileContainsErrors |= schemaSettings.FileContainsErrors;
+      }
     }
 
   }

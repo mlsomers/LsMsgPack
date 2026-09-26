@@ -37,6 +37,16 @@ namespace LsMsgPack.Meta
 
     public int GetHashCode(object obj)
     {
+      // Numbers considered equal by Equals (e.g. (sbyte)-1 and (int)-1) must return the same hash code
+      if (MsgPackMeta.NumericTypes.Contains(obj.GetType()))
+      {
+        try
+        {
+          return Convert.ToDecimal(obj).GetHashCode();
+        }
+        catch (OverflowException) { } // NaN, infinity or out of range, these can only equal themselves
+      }
+
       return obj.GetHashCode();
     }
   }
