@@ -13,7 +13,7 @@ namespace LsMsgPack
     public static MsgPackItem SerializeObject(object item, MsgPackSettings settings, FullPropertyInfo assignedTo = null)
     {
       if (ReferenceEquals(item, null))
-        return new MpNull();
+        return new MpNull(settings);
 
       Type tType = item.GetType();
       Type nullableType = Nullable.GetUnderlyingType(tType);
@@ -21,81 +21,123 @@ namespace LsMsgPack
         tType = nullableType;
 
       MsgPackItem packed = MsgPackItem.Pack(item, settings, tType);
-      if (packed != null && !(!(item is string) && item is IEnumerable))
-      {
-        if (assignedTo?.AssignedToType is null
-          || settings._addTypeIdOptions == AddTypeIdOption.Never
-          || tType.IsPrimitive
-          || tType == typeof(string)
-          || (settings._addTypeIdOptions.HasFlag(AddTypeIdOption.IfAmbiguious) && assignedTo?.AssignedToType == tType))
-          return packed;
-      }
 
-      FullPropertyInfo[] props;
-      Dictionary<object, object> propVals;
-      SerializeEnumerableAttribute handleItems = null;
-
-      if (item is IEnumerable) // typeof(IEnumerable).IsAssignableFrom(tType))
-      {
-        if (assignedTo?.CustomAttributes != null && assignedTo.CustomAttributes.TryGetValue(nameof(SerializeEnumerableAttribute), out object att)) // GetCustomAttribute<SerializeEnumerableAttribute>(true);
-          handleItems = (SerializeEnumerableAttribute)att;
-
-        if (handleItems is null)
-          handleItems = tType.GetCustomAttribute<SerializeEnumerableAttribute>(true);
-
-        if (handleItems is null)
-          handleItems = new SerializeEnumerableAttribute(CollectionInfo.Get(tType).ElementType); // T of IEnumerable<T> (KeyValuePair<TKey, TValue> for dictionaries), object if unknown
-      }
-
-      // Any complex object with properties
-      props = FullPropertyInfo.GetSerializedProps(tType, settings);
-      propVals = new Dictionary<object, object>(props.Length);
-      bool addTypeId = false;
-
-      if (settings._addTypeIdOptions != AddTypeIdOption.Never)
-      {
-        if ((settings._addTypeIdOptions.HasFlag(AddTypeIdOption.IfAmbiguious) && assignedTo?.AssignedToType != tType)
-          || settings._addTypeIdOptions.HasFlag(AddTypeIdOption.Always))
-        {
-          object typeIdd = GetTypeIdentifier(tType, settings, assignedTo);
-          propVals.Add(string.Empty, typeIdd);
-          addTypeId = true;
-        }
-      }
+      // Strings, byte[] and Guid (MpBin) are enumerable but not treated as a collection
+      if (item is IEnumerable && (packed is MpArray || packed is MpMap))
+        return SerializeCollection(item, packed, tType, settings, assignedTo);
 
       if (packed != null)
       {
-        if (settings._addTypeIdOptions == AddTypeIdOption.Never)
+        if (assignedTo?.AssignedToType is null
+          || tType.IsPrimitive
+          || tType == typeof(string)
+          || !NeedsTypeId(tType, assignedTo, settings))
           return packed;
-        
-        propVals.Add("@", packed);
-        return new MpMap(settings) { Value = propVals };
+
+        return new MpMap(settings)
+        {
+          Value = new Dictionary<object, object>(2)
+          {
+            { TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo) },
+            { ContentKey, packed }
+          }
+        };
       }
 
-      if (handleItems != null)
+      // Any complex object with properties
+      FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
+      Dictionary<object, object> propVals = new Dictionary<object, object>(props.Length + 1);
+
+      if (NeedsTypeId(tType, assignedTo, settings))
+        propVals.Add(TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo));
+
+      AddProperties(item, props, propVals, settings);
+
+      return new MpMap(settings) { Value = propVals };
+    }
+
+    /// <summary>
+    /// The elements are serialized as an array (or a map for dictionaries).
+    /// <para>Only when a type identifier or properties (see <see cref="SerializeEnumerableAttribute.SerializeProperties"/>) are needed, they are wrapped in a map: { "": typeId, "@": elements, ...properties }</para>
+    /// </summary>
+    private static MsgPackItem SerializeCollection(object item, MsgPackItem packed, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo)
+    {
+      SerializeEnumerableAttribute handleItems = GetEnumerableAttribute(tType, assignedTo);
+      bool serializeElements = handleItems?.SerializeElements ?? true;
+      bool serializeProperties = handleItems?.SerializeProperties ?? false;
+      bool addTypeId = NeedsTypeId(tType, assignedTo, settings);
+
+      MsgPackItem elements = serializeElements ? SerializeElements(packed, tType, handleItems?.ElementType, settings) : null;
+      if (!addTypeId && !serializeProperties && elements != null) // no need to wrap the elements in a map
+        return elements;
+
+      FullPropertyInfo[] props = serializeProperties ? FullPropertyInfo.GetSerializedProps(tType, settings) : new FullPropertyInfo[0];
+      Dictionary<object, object> propVals = new Dictionary<object, object>(props.Length + 2);
+
+      if (addTypeId)
+        propVals.Add(TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo));
+
+      if (elements != null)
+        propVals.Add(ContentKey, elements);
+
+      AddProperties(item, props, propVals, settings);
+
+      return new MpMap(settings) { Value = propVals };
+    }
+
+    /// <summary>
+    /// Serialize the elements knowing the type they will be assigned to, so type identifiers are only added when the element type is ambiguous.
+    /// </summary>
+    private static MsgPackItem SerializeElements(MsgPackItem packed, Type tType, Type elementType, MsgPackSettings settings)
+    {
+      CollectionInfo info = CollectionInfo.Get(tType);
+
+      if (packed is MpMap)
       {
-        if (handleItems.SerializeElements)
-        {
-          List<MsgPackItem> objects = new List<MsgPackItem>();
+        KeyValuePair<object, object>[] pairs = (KeyValuePair<object, object>[])packed.Value;
+        FullPropertyInfo keyInfo = new FullPropertyInfo(info.KeyType ?? typeof(object));
+        FullPropertyInfo valueInfo = new FullPropertyInfo(info.ValueType ?? typeof(object));
 
-          FullPropertyInfo assignedToInfo = new FullPropertyInfo(handleItems.ElementType);
-          foreach (object o in (IEnumerable)item)
-            objects.Add(SerializeObject(o, settings, assignedToInfo));
+        KeyValuePair<object, object>[] packedPairs = new KeyValuePair<object, object>[pairs.Length];
+        for (int t = 0; t < pairs.Length; t++)
+          packedPairs[t] = new KeyValuePair<object, object>(SerializeObject(pairs[t].Key, settings, keyInfo), SerializeObject(pairs[t].Value, settings, valueInfo));
 
-          MpArray arr = new MpArray(settings) { Value = objects.ToArray() };
-
-          if (!addTypeId && !handleItems.SerializeProperties) // no need to wrap the array in a map
-            return arr;
-
-          propVals.Add("@", arr);
-        }
-
-        if (!handleItems.SerializeProperties)
-        {
-          return new MpMap(settings) { Value = propVals };
-        }
+        return new MpMap(packedPairs, settings);
       }
 
+      Array items = (Array)packed.Value;
+      FullPropertyInfo elementInfo = new FullPropertyInfo(elementType ?? info.ElementType);
+      MsgPackItem[] packedItems = new MsgPackItem[items.Length];
+      for (int t = 0; t < packedItems.Length; t++)
+        packedItems[t] = SerializeObject(items.GetValue(t), settings, elementInfo);
+
+      return new MpArray(settings) { Value = packedItems };
+    }
+
+    /// <summary>
+    /// An attribute on the property takes precedence over one on the collection type
+    /// </summary>
+    private static SerializeEnumerableAttribute GetEnumerableAttribute(Type tType, FullPropertyInfo assignedTo)
+    {
+      if (assignedTo?.CustomAttributes != null && assignedTo.CustomAttributes.TryGetValue(nameof(SerializeEnumerableAttribute), out object att))
+        return (SerializeEnumerableAttribute)att;
+
+      return CollectionInfo.Get(tType).Attribute;
+    }
+
+    private static bool NeedsTypeId(Type tType, FullPropertyInfo assignedTo, MsgPackSettings settings)
+    {
+      if ((settings._addTypeIdOptions & AddTypeIdOption.Always) != 0)
+        return true;
+
+      if ((settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0)
+        return assignedTo?.AssignedToType != tType;
+
+      return false;
+    }
+
+    private static void AddProperties(object item, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackSettings settings)
+    {
       for (int t = 0; t < props.Length; t++)
       {
         FullPropertyInfo prop = props[t];
@@ -114,10 +156,8 @@ namespace LsMsgPack
           propVals.Add(prop.PropertyId, value);
           continue;
         }
-        propVals.Add(prop.PropertyId, SerializeObject(value, settings, prop)); //GetTypedOrUntyped(settings, prp.PropertyType, value, prop));
+        propVals.Add(prop.PropertyId, SerializeObject(value, settings, prop));
       }
-
-      return new MpMap(settings) { Value = propVals };
     }
 
     /// <summary>

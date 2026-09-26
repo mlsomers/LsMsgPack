@@ -1,4 +1,5 @@
 ﻿using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Attributes;
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
@@ -79,7 +80,7 @@ namespace LsMsgPack
         return result;
       }
 
-      if (IsDictionary(tType))
+      if (IsDictionary(tType) && !ElementsOmitted(tType, prop))
         return ConvertPairs(map, tType, settings);
 
       if (tType.IsInstanceOfType(map)) // object, IEnumerable, ... there is nothing more specific known, keep the raw map
@@ -92,6 +93,20 @@ namespace LsMsgPack
       result = CreateInstance(tType);
       SetProperties(result, tType, propVals, settings);
       return result;
+    }
+
+    /// <summary>
+    /// A collection serialized with <see cref="SerializeEnumerableAttribute.SerializeElements"/> = false is a map of properties (not of dictionary entries).
+    /// </summary>
+    private static bool ElementsOmitted(Type tType, FullPropertyInfo prop)
+    {
+      SerializeEnumerableAttribute att = null;
+      if (prop?.CustomAttributes != null && prop.CustomAttributes.TryGetValue(nameof(SerializeEnumerableAttribute), out object propAtt))
+        att = (SerializeEnumerableAttribute)propAtt;
+      else
+        att = CollectionInfo.Get(tType).Attribute;
+
+      return att != null && !att.SerializeElements;
     }
 
     private static void SetProperties(object instance, Type tType, Dictionary<object, object> propVals, MsgPackSettings settings)
@@ -246,6 +261,11 @@ namespace LsMsgPack
       public readonly Type ElementType;
 
       public readonly bool IsDictionary;
+
+      /// <summary>
+      /// [SerializeEnumerable] on the collection type (or a base class), may be overruled by one on the property.
+      /// </summary>
+      public readonly SerializeEnumerableAttribute Attribute;
       public readonly Type KeyType;
       public readonly Type ValueType;
 
@@ -272,6 +292,7 @@ namespace LsMsgPack
       private CollectionInfo(Type type)
       {
         ElementType = GetElementType(type);
+        Attribute = type.GetCustomAttribute<SerializeEnumerableAttribute>(true);
 
         if (ElementType.IsGenericType && ElementType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
         {
