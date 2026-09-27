@@ -378,6 +378,51 @@ namespace LsMsgPackUnitTests
       CollectionAssert.AreEqual(org.Numbers, ret.Numbers);
     }
 
+    public class TwoNames
+    {
+      public string First { get; set; }
+      public string Second { get; set; }
+    }
+
+    /// <summary>
+    /// Returns the same id for every property of <see cref="TwoNames"/>
+    /// </summary>
+    private class FixedPropertyId : IMsgPackPropertyIdResolver
+    {
+      private readonly object _id;
+      public FixedPropertyId(object id) { _id = id; }
+
+      public object GetId(FullPropertyInfo assignedTo, MsgPackSettings settings)
+      {
+        return assignedTo.PropertyInfo.DeclaringType == typeof(TwoNames) ? _id : null;
+      }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void DuplicatePropertyIdsThrow(bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new FixedPropertyId("same") } };
+
+      // Even when one of them would be skipped (default value), the ids are checked once per type
+      MsgPackException ex = Assert.Throws<MsgPackException>(() => MsgPackSerializer.Serialize(new TwoNames() { First = "a" }, settings));
+      StringAssert.Contains(ex.Message, "same id");
+    }
+
+    [TestMethod]
+    [DataRow("", false)]
+    [DataRow("@", false)]
+    [DataRow("", true)]
+    [DataRow("@", true)]
+    public void ReservedPropertyIdsThrow(string id, bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new FixedPropertyId(id) } };
+
+      MsgPackException ex = Assert.Throws<MsgPackException>(() => MsgPackSerializer.Serialize(new TwoNames() { First = "a", Second = "b" }, settings));
+      StringAssert.Contains(ex.Message, "reserved");
+    }
+
     private class NumberedPets : IMsgPackTypeResolver
     {
       public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)

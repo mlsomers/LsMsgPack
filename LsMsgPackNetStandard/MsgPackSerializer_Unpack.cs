@@ -14,12 +14,12 @@ namespace LsMsgPack
     /// <summary>
     /// Map key holding the type identifier (see <see cref="GetTypeIdentifier"/>).
     /// </summary>
-    private const string TypeIdKey = "";
+    internal const string TypeIdKey = "";
 
     /// <summary>
     /// Map key holding the packed value of a wrapped item (collections, dictionaries or values that needed a type identifier).
     /// </summary>
-    private const string ContentKey = "@";
+    internal const string ContentKey = "@";
 
     /// <summary>
     /// Single entry point for converting an unpacked value into the type it will be assigned to.

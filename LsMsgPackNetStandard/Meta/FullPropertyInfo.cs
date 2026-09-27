@@ -181,13 +181,21 @@ namespace LsMsgPack.Meta
       FullPropertyInfo[] props = GetStaticallyIncludedProps(type, settings);
       for (int t = 0; t < props.Length; t++)
         ResolvePropertyId(props[t], settings);
+      ThrowIfIdsNotUnique(type, props);
 
       sessionCache[type] = props;
       return props;
     }
 
+    // Without property id resolvers the FullPropertyInfo instances (and their StaticallyIgnored) are shared by all settings (see GetFullPropInfo), so the result only depends on the type
+    private static readonly ConcurrentDictionary<Type, FullPropertyInfo[]> SerializedPropsCache = new ConcurrentDictionary<Type, FullPropertyInfo[]>();
+
     private static FullPropertyInfo[] GetSerializedPropsWithoutSession(Type type, MsgPackSettings settings)
     {
+      bool shared = settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0;
+      if (shared && SerializedPropsCache.TryGetValue(type, out FullPropertyInfo[] cached))
+        return cached;
+
       PropertyInfo[] props = GetProperties(type);
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
       for (int t = 0; t < props.Length; t++)
@@ -196,7 +204,33 @@ namespace LsMsgPack.Meta
         if (IsStaticallyIncluded(full, settings))
           keptProps.Add(full);
       }
-      return keptProps.ToArray();
+
+      FullPropertyInfo[] result = keptProps.ToArray();
+      ThrowIfIdsNotUnique(type, result); // custom resolvers are consulted for every call (they may have their own cache), so are their ids
+
+      if (shared)
+        return SerializedPropsCache.GetOrAdd(type, result);
+      return result;
+    }
+
+    /// <summary>
+    /// The property ids are the keys of the map an object is serialized to, the serializer does not check them for every object.
+    /// </summary>
+    /// <exception cref="MsgPackException">When two properties have the same id, or an id is a key the serializer uses for the type id or the content of a collection</exception>
+    private static void ThrowIfIdsNotUnique(Type type, FullPropertyInfo[] props)
+    {
+      for (int t = 0; t < props.Length; t++)
+      {
+        object id = props[t].PropertyId;
+        if (MsgPackSerializer.TypeIdKey.Equals(id) || MsgPackSerializer.ContentKey.Equals(id))
+          throw new MsgPackException($"The id \"{id}\" of property {type.Name}.{props[t].PropertyInfo.Name} is reserved, the serializer uses it for the type id or the content of a collection.");
+
+        for (int i = 0; i < t; i++)
+        {
+          if (Equals(props[i].PropertyId, id))
+            throw new MsgPackException($"The properties {type.Name}.{props[i].PropertyInfo.Name} and {type.Name}.{props[t].PropertyInfo.Name} have the same id \"{id}\", the keys of a map must be unique.");
+        }
+      }
     }
 
     /// <summary>
