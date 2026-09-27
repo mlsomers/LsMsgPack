@@ -38,6 +38,11 @@ namespace LsMsgPack.TypeResolving.Types
       ComplexTypeDef newEntry = new ComplexTypeDef(count, type, settings);
       ByType.Add(type, newEntry);
       ByTypeId.Add(newEntry);
+
+      // The properties of a collection are only serialized when asked for (SerializeEnumerableAttribute.SerializeProperties, on the type or the property), so they are added once they are (see GetId)
+      if (newEntry.IsCollection)
+        return newEntry;
+
       FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(type, settings);
       newEntry.ParseProps(props);
 
@@ -119,6 +124,9 @@ namespace LsMsgPack.TypeResolving.Types
 
       if (def.IdByName.TryGetValue(assignedTo.PropertyInfo.Name, out int id))
         return id;
+
+      if (def.IsCollection)
+        return def.AddProp(assignedTo.PropertyInfo.Name);
 
       return null;
     }
@@ -235,6 +243,22 @@ namespace LsMsgPack.TypeResolving.Types
     {
       for (int t = 0; t < props.Length; t++)
         Props.Add(props[t].PropertyInfo.Name);
+    }
+
+    internal int AddProp(string name)
+    {
+      int id = Props.Count;
+      IdByName.Add(name, id); // before Props.Add, the getter may build the lookup from Props
+      Props.Add(name);
+      return id;
+    }
+
+    /// <summary>
+    /// Collections (except strings) are serialized as their elements, their properties only when asked for.
+    /// </summary>
+    internal bool IsCollection
+    {
+      get { return Type != null && Type != typeof(string) && typeof(System.Collections.IEnumerable).IsAssignableFrom(Type); }
     }
 
     [IgnoreDataMember]
