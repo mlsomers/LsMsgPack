@@ -114,6 +114,14 @@ namespace LsMsgPack
 
     #endregion
 
+    /// <summary>
+    /// Property values are read and written by typed delegates bound to the get and set methods (once a property has been used a number of times) instead of reflection.
+    /// <para>This applies to all settings, set it before (de)serializing. It is ignored when the runtime does not compile code (checked in the .NET Standard 2.1 build),
+    /// switch it off on an AOT platform that uses the .NET Standard 2.0 build (the delegates need generic types that are created at runtime).</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool CompilePropertyAccessors { get; set; } = true;
+
     internal bool FileContainsErrors = false;
     internal bool _useInexedSchema = Default_UseInexedSchema;
     internal bool _dynamicallyCompact = Default_DynamicallyCompact;

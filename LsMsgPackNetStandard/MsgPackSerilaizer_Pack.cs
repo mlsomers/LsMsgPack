@@ -5,7 +5,6 @@ using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 
 namespace LsMsgPack
 {
@@ -177,8 +176,7 @@ namespace LsMsgPack
       for (int t = 0; t < props.Length; t++)
       {
         FullPropertyInfo prop = props[t];
-        PropertyInfo prp = prop.PropertyInfo;
-        object value = prp.GetValue(item, null);
+        object value = prop.GetValue(item);
 
         bool exclude = false;
         for (int i = settings._dynamicFilters.Length - 1; i >= 0; i--)

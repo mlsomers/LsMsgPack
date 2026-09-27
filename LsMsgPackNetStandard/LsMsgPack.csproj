@@ -3,7 +3,8 @@
   <Import Project="..\Packaging.props" />
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <!-- 2.1 can ask whether the runtime compiles code (RuntimeFeature.IsDynamicCodeCompiled, see PropertyAccessor) -->
+    <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <Nullable>disable</Nullable>
 	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>

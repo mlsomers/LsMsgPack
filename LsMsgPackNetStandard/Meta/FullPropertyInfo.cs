@@ -93,6 +93,26 @@ namespace LsMsgPack.Meta
 
     public PropertyInfo PropertyInfo { get; set; }
 
+    private PropertyAccessor _accessor;
+
+    /// <summary>
+    /// The value of the property, read by a compiled delegate once the property is used often (see <see cref="PropertyAccessor"/>).
+    /// </summary>
+    internal object GetValue(object instance)
+    {
+      PropertyAccessor accessor = _accessor ?? (_accessor = PropertyAccessor.Get(PropertyInfo));
+      return accessor.GetValue(instance);
+    }
+
+    /// <summary>
+    /// Sets the value of the property, by a compiled delegate once the property is used often (see <see cref="PropertyAccessor"/>).
+    /// </summary>
+    internal void SetValue(object instance, object value)
+    {
+      PropertyAccessor accessor = _accessor ?? (_accessor = PropertyAccessor.Get(PropertyInfo));
+      accessor.SetValue(instance, value);
+    }
+
     /// <summary>
     /// Note that this may not be the complete set, When multiple attributes of the same type are applied, only the first one will be listed here, so if your custom attribute supports multiple instances on a property you will need to get them from the propertyInfo.
     /// </summary>

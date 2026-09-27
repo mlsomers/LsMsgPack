@@ -117,8 +117,7 @@ namespace LsMsgPack
         FullPropertyInfo prop = props[t];
         if (propVals.TryGetValue(prop.PropertyId, out object propval))
         {
-          PropertyInfo prp = prop.PropertyInfo;
-          prp.SetValue(instance, ConvertDeserializeValue(propval, prp.PropertyType, settings, prop), null);
+          prop.SetValue(instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
         }
       }
     }
