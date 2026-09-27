@@ -82,7 +82,7 @@ namespace LsMsgPack.Meta
     {
       Type result;
 
-      if (typeName.EndsWith("[]"))
+      if (typeName.EndsWith("[]", StringComparison.Ordinal))
       {
         string nm = typeName.Substring(0, typeName.Length - 2);
         Type arr = ResolveInternalLocked(nm, assignedTo, resolvers);
@@ -171,7 +171,7 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static Type ResolveIndirect(string typeName, IMsgPackTypeResolver[] resolvers)
     {
-      if (typeName.EndsWith("[]"))
+      if (typeName.EndsWith("[]", StringComparison.Ordinal))
         return ResolveIndirect(typeName.Substring(0, typeName.Length - 2), resolvers).MakeArrayType();
 
       Type result;

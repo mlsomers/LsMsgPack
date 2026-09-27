@@ -24,7 +24,7 @@ namespace LsMsgPack.Types.Extensions
 
     public MsgPackItem Create(MsgPackSettings settings, MpExt value, object val)
     {
-      TSelf ret = new TSelf() { Settings = settings };
+      TSelf ret = CreateNew(settings);
       if (value is null)
         ret.Value = val;
       else { 
@@ -47,6 +47,15 @@ namespace LsMsgPack.Types.Extensions
     /// Set a default specifier, note that it can be overridden globally in an application using the static CustomTypeSpecifier property
     /// </summary>
     protected abstract sbyte DefaultTypeSpecifier { get; }
+
+    /// <summary>
+    /// Creates the (empty) instance returned by <see cref="Create"/>.
+    /// <para>Override when <typeparamref name="TSelf"/> has a constructor taking the settings, the parameterless constructor creates default settings that are replaced right away.</para>
+    /// </summary>
+    protected virtual TSelf CreateNew(MsgPackSettings settings)
+    {
+      return new TSelf() { Settings = settings };
+    }
 
     /// <summary>
     /// It may be desirable to override this if the type must be exact (not IsAssignableFrom())

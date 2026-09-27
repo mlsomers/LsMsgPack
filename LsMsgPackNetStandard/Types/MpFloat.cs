@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using LsMsgPack.Meta;
+using System.Runtime.InteropServices;
 
 namespace LsMsgPack
 {
@@ -50,18 +52,48 @@ namespace LsMsgPack
 
     public override byte[] ToBytes()
     {
-      List<byte> bytes = Settings.Buffers.BytesList; // new List<byte>(9);
+      ByteWriter bytes = new ByteWriter(9);
+      WriteValue(bytes);
+      return bytes.ToArray();
+    }
+
+    internal override void WriteTo(ByteWriter target)
+    {
+      if (GetType() != typeof(MpFloat)) // a derived type may override ToBytes
+      {
+        base.WriteTo(target);
+        return;
+      }
+      WriteValue(target);
+    }
+
+    private void WriteValue(ByteWriter bytes)
+    {
+      bytes.Write((byte)typeId);
       if (typeId == MsgPackTypeId.MpFloat)
       {
-        bytes.AddRange(BitConverter.GetBytes(f32value));
+        bytes.WriteEndian(new SingleBits(f32value).Bits, 4, Settings);
       }
       else
       {
-        bytes.AddRange(BitConverter.GetBytes(f64value));
+        bytes.WriteEndian((ulong)BitConverter.DoubleToInt64Bits(f64value), 8, Settings);
       }
-      ReorderIfLittleEndian(Settings, bytes);
-      bytes.Insert(0, (byte)typeId);
-      return bytes.ToArray();
+    }
+
+    /// <summary>
+    /// BitConverter.SingleToInt32Bits is not available in .NET Standard 2.0
+    /// </summary>
+    [StructLayout(LayoutKind.Explicit)]
+    private struct SingleBits
+    {
+      [FieldOffset(0)] private readonly float value;
+      [FieldOffset(0)] public readonly uint Bits;
+
+      public SingleBits(float value)
+      {
+        Bits = 0;
+        this.value = value;
+      }
     }
 
     public override MsgPackItem Read(MsgPackTypeId typeId, System.IO.Stream data)

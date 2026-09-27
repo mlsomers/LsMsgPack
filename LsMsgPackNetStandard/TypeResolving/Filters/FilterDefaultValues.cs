@@ -1,6 +1,7 @@
 ﻿using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Interfaces;
 using System;
+using System.Collections.Concurrent;
 using System.ComponentModel;
 
 namespace LsMsgPack.TypeResolving.Filters
@@ -11,6 +12,11 @@ namespace LsMsgPack.TypeResolving.Filters
     /// </summary>
     public class FilterDefaultValues : IMsgPackPropertyIncludeDynamically
     {
+        /// <summary>
+        /// Boxed default values of other value types (enums, decimal, DateTime, structs...), so they are not created for every property value
+        /// </summary>
+        private static readonly ConcurrentDictionary<Type, object> DefaultInstances = new ConcurrentDictionary<Type, object>();
+
         /// <inheritdoc cref="IMsgPackPropertyIncludeDynamically.IncludeProperty(FullPropertyInfo, object)"/>
         public bool IncludeProperty(FullPropertyInfo propertyInfo, object value)
         {
@@ -27,7 +33,8 @@ namespace LsMsgPack.TypeResolving.Filters
                 return false;
 
             Type type = value.GetType();
-            if (Nullable.GetUnderlyingType(propertyInfo.PropertyInfo.PropertyType) != null)
+            Type propertyType = propertyInfo.PropertyInfo.PropertyType;
+            if (propertyType.IsGenericType && !propertyType.IsGenericTypeDefinition && propertyType.GetGenericTypeDefinition() == typeof(Nullable<>)) // Nullable.GetUnderlyingType(propertyType) != null, without allocating the generic arguments
                 return true; // type is nullable, value is not null but default...
 
             if (!type.IsValueType)
@@ -36,8 +43,8 @@ namespace LsMsgPack.TypeResolving.Filters
                 return true;
             }
 
-            if (type == typeof(int)) return !value.Equals(0);
-            if (type == typeof(bool)) return !value.Equals(false);
+            if (type == typeof(int)) return (int)value != 0;
+            if (type == typeof(bool)) return (bool)value;
             if (type == typeof(long)) return !value.Equals(0);
             if (type == typeof(float)) return !value.Equals(0);
             if (type == typeof(double)) return !value.Equals(0);
@@ -49,7 +56,7 @@ namespace LsMsgPack.TypeResolving.Filters
             if (type == typeof(ulong)) return !value.Equals(0);
             if (type == typeof(sbyte)) return !value.Equals(0);
 
-            return !Activator.CreateInstance(type).Equals(value);
+            return !DefaultInstances.GetOrAdd(type, t => Activator.CreateInstance(t)).Equals(value);
         }
     }
 }

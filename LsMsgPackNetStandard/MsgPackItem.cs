@@ -102,6 +102,15 @@ namespace LsMsgPack
 
     public abstract byte[] ToBytes();
 
+    /// <summary>
+    /// Appends the same bytes as <see cref="ToBytes"/> to the target.
+    /// <para>Containers override this to write their items directly into the target instead of copying the bytes of every nesting level.</para>
+    /// </summary>
+    internal virtual void WriteTo(Meta.ByteWriter target)
+    {
+      target.Write(ToBytes());
+    }
+
     public abstract MsgPackItem Read(MsgPackTypeId typeId, Stream data);
 
     [XmlIgnore]
@@ -125,15 +134,7 @@ namespace LsMsgPack
       if (!SwapEndianChoice(settings, bytes.Count))
         return;
 
-      byte[] swapped = new byte[bytes.Count];
-      int c = 0;
-      for (int t = swapped.Length - 1; t >= 0; t--)
-      {
-        swapped[t] = bytes[c];
-        c++;
-      }
-      bytes.Clear();
-      bytes.AddRange(swapped);
+      bytes.Reverse();
     }
 
     protected static void ReorderIfLittleEndian(MsgPackSettings settings, byte[] bytes)
@@ -141,14 +142,7 @@ namespace LsMsgPack
       if (!SwapEndianChoice(settings, bytes.Length))
         return;
 
-      byte[] swapped = new byte[bytes.Length];
-      int c = 0;
-      for (int t = swapped.Length - 1; t >= 0; t--)
-      {
-        swapped[t] = bytes[c];
-        c++;
-      }
-      for (int t = bytes.Length - 1; t >= 0; t--) bytes[t] = swapped[t];
+      Array.Reverse(bytes);
     }
 
     protected static byte[] SwapIfLittleEndian(MsgPackSettings settings, byte[] bytes)

@@ -1,7 +1,6 @@
 ﻿using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Interfaces;
 using System;
-using System.Linq;
 
 namespace LsMsgPack.TypeResolving.Filters
 {
@@ -20,12 +19,11 @@ namespace LsMsgPack.TypeResolving.Filters
         /// <inheritdoc cref="IMsgPackPropertyIncludeStatically.IncludeProperty(FullPropertyInfo)"/>
         public bool IncludeProperty(FullPropertyInfo info)
         {
-            string[] atts = info.CustomAttributes.Keys.ToArray();
-            bool include = true;
-            for (int i = atts.Length - 1; i >= 0; i--)
-                if (atts[i].IndexOf("Ignore", StringComparison.InvariantCultureIgnoreCase) >= 0) { include = false; break; }
+            foreach (string att in info.CustomAttributes.Keys)
+                if (att.IndexOf("Ignore", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return false;
 
-            return include;
+            return true;
         }
     }
 }

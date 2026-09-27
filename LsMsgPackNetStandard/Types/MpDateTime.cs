@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using LsMsgPack.Meta;
 
 namespace LsMsgPack
 {
@@ -8,7 +9,7 @@ namespace LsMsgPack
 
     public MpDateTime() : base() { TypeSpecifier = -1; }
     public MpDateTime(MsgPackSettings settings) : base(settings) { TypeSpecifier = -1; }
-    public MpDateTime(MpExt ext) : base()
+    public MpDateTime(MpExt ext) : base(ext.Settings) // not base(), that creates default settings that CopyBaseDataFrom replaces
     {
       CopyBaseDataFrom(ext);
       value = ConvertExt(Settings, ext).ToUniversalTime();
@@ -51,6 +52,20 @@ namespace LsMsgPack
         return FromDateTime(Settings, value).ToBytes();
 
       return base.ToBytes();
+    }
+
+    internal override void WriteTo(ByteWriter target)
+    {
+      if (GetType() != typeof(MpDateTime)) // a derived type may override ToBytes
+      {
+        target.Write(ToBytes());
+        return;
+      }
+
+      if (base.Value is null || ((byte[])base.Value).Length <= 0)
+        FromDateTime(Settings, value).WriteTo(target);
+      else
+        WriteExt(target);
     }
 
     public override string ToString()

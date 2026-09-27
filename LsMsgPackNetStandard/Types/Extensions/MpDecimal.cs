@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using LsMsgPack.Meta;
 
 namespace LsMsgPack.Types.Extensions
 {
@@ -40,6 +41,11 @@ namespace LsMsgPack.Types.Extensions
 
     protected override sbyte DefaultTypeSpecifier { get { return Default_TypeSpecifier; } }
 
+    protected override MpDecimal CreateNew(MsgPackSettings settings)
+    {
+      return new MpDecimal(settings);
+    }
+
     public override T GetTypedValue<T>()
     {
       return (T)(object)value.value;
@@ -58,6 +64,20 @@ namespace LsMsgPack.Types.Extensions
         BaseValue = value.ToBytes();
 
       return base.ToBytes();
+    }
+
+    internal override void WriteTo(ByteWriter target)
+    {
+      if (GetType() != typeof(MpDecimal)) // a derived type may override ToBytes
+      {
+        target.Write(ToBytes());
+        return;
+      }
+
+      if (BaseValue is null || (BaseValue).Length != 16)
+        BaseValue = value.ToBytes();
+
+      WriteExt(target);
     }
 
     public override string ToString()
