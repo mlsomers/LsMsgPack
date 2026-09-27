@@ -47,19 +47,6 @@
       <FileName>Types\MpDateTime.cs</FileName>
     </TypeIdentifier>
   </Class>
-  <Class Name="LsMsgPack.MpError" Collapsed="true">
-    <Position X="3.5" Y="5.75" Width="1.5" />
-    <InheritanceLine Type="LsMsgPack.MsgPackItem" FixedToPoint="true">
-      <Path>
-        <Point X="3" Y="6.062" />
-        <Point X="3.5" Y="6.062" />
-      </Path>
-    </InheritanceLine>
-    <TypeIdentifier>
-      <HashCode>AAAAAACIAAAAAAAEAAAAAAAgAAAAACAgAAAgAAAAAAA=</HashCode>
-      <FileName>Types\MpError.cs</FileName>
-    </TypeIdentifier>
-  </Class>
   <Class Name="LsMsgPack.MpExt" Collapsed="true">
     <Position X="11" Y="3.5" Width="1.5" />
     <InheritanceLine Type="LsMsgPack.MsgPackVarLen" FixedToPoint="true">
@@ -169,6 +156,19 @@
       <FileName>Types\Extensions\AbstractCustomExt.cs</FileName>
     </TypeIdentifier>
     <Lollipop Position="0.2" />
+  </Class>
+  <Class Name="LsMsgPack.MpError" Collapsed="true">
+    <Position X="3.5" Y="5.75" Width="1.5" />
+    <InheritanceLine Type="LsMsgPack.MsgPackItem" FixedToPoint="true">
+      <Path>
+        <Point X="3" Y="6.062" />
+        <Point X="3.5" Y="6.062" />
+      </Path>
+    </InheritanceLine>
+    <TypeIdentifier>
+      <HashCode>AAAAAACIAAAAAAAEAAAAAAAgAAAAACAgAAAgAAAAAAA=</HashCode>
+      <FileName>Types\MpError.cs</FileName>
+    </TypeIdentifier>
   </Class>
   <Font Name="Segoe UI" Size="9" />
 </ClassDiagram>
