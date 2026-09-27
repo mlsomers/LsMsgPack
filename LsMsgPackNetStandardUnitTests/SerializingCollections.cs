@@ -1,8 +1,10 @@
 ﻿using LsMsgPack;
 using LsMsgPack.TypeResolving.Attributes;
+using LsMsgPack.TypeResolving.Types;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 
 namespace LsMsgPackUnitTests
@@ -118,6 +120,7 @@ namespace LsMsgPackUnitTests
     [DataRow(AddTypeIdOption.Always, false)]
     [DataRow(AddTypeIdOption.Never, false)]
     [DataRow(AddTypeIdOption.IfAmbiguious, true)]
+    [DataRow(AddTypeIdOption.Always, true)]
     public void SerializePropertiesOnType(AddTypeIdOption option, bool useSchema)
     {
       MsgPackSettings settings = Settings(option);
@@ -132,10 +135,15 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
-    [DataRow(AddTypeIdOption.Never)]
-    public void SerializePropertiesOnProperty(AddTypeIdOption option)
+    [DataRow(AddTypeIdOption.IfAmbiguious, false)]
+    [DataRow(AddTypeIdOption.Never, false)]
+    [DataRow(AddTypeIdOption.IfAmbiguious, true)]
+    [DataRow(AddTypeIdOption.Always, true)]
+    public void SerializePropertiesOnProperty(AddTypeIdOption option, bool useSchema)
     {
+      MsgPackSettings settings = Settings(option);
+      settings.UseInexedSchema = useSchema;
+
       WithTaggedList org = new WithTaggedList()
       {
         Tagged = new TaggedList() { "a" },
@@ -144,11 +152,32 @@ namespace LsMsgPackUnitTests
       org.Tagged.Tag = "tag";
       org.NotTagged.Tag = "not serialized";
 
-      WithTaggedList ret = MsgPackSerializer.Deserialize<WithTaggedList>(MsgPackSerializer.Serialize(org, Settings(option)), Settings(option));
+      WithTaggedList ret = MsgPackSerializer.Deserialize<WithTaggedList>(MsgPackSerializer.Serialize(org, settings), settings);
       Assert.AreEqual("tag", ret.Tagged.Tag);
       CollectionAssert.AreEqual(new[] { "a" }, ret.Tagged);
       Assert.IsNull(ret.NotTagged.Tag);
       CollectionAssert.AreEqual(new[] { "b" }, ret.NotTagged);
+    }
+
+    [TestMethod]
+    [DataRow(AddTypeIdOption.Always)]
+    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    public void SchemaOnlyListsSerializedPropertiesOfCollections(AddTypeIdOption option)
+    {
+      MsgPackSettings settings = Settings(option);
+      settings.UseInexedSchema = true;
+
+      List<IIPet> org = new List<IIPet>() { new Cat() { Name = "Mia" }, new Dog() { Name = "Rex" } };
+      byte[] buffer = MsgPackSerializer.Serialize(org, settings);
+
+      IndexedSchemaTypeResolver schema = IndexedSchemaTypeResolver.Unpack(new MemoryStream(buffer), settings);
+      foreach (ComplexTypeDef def in schema.ByTypeId.Where(d => typeof(IEnumerable).IsAssignableFrom(d.Type)))
+        Assert.IsEmpty(def.Props, $"{def.TypeName} lists properties that are not serialized: {string.Join(", ", def.Props)}");
+
+      List<IIPet> ret = MsgPackSerializer.Deserialize<List<IIPet>>(buffer, settings);
+      Assert.IsInstanceOfType<Cat>(ret[0]);
+      Assert.IsInstanceOfType<Dog>(ret[1]);
+      Assert.AreEqual("Rex", ret[1].Name);
     }
 
     [TestMethod]

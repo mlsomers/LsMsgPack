@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Windows.Forms;
 
 namespace MsgPackExplorer {
-  partial class AboutBox: Form {
+  public partial class AboutBox: Form {
     public AboutBox() {
       InitializeComponent();
       this.Text = String.Format("About {0}", AssemblyTitle);

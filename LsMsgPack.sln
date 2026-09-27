@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.9.34607.119
+# Visual Studio Version 18
+VisualStudioVersion = 18.10.12217.157 stable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MsgPackExplorer", "MsgPackExplorer\MsgPackExplorer.csproj", "{A43ED63B-CA9C-4FDF-B02B-8E7F958903A2}"
 EndProject
@@ -233,7 +233,6 @@ Global
 		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.ReleaseKeepTrack|x86.ActiveCfg = ReleaseKeepTrack|Any CPU
 		{666FAF0C-09CE-421F-977C-B989D0D2ED03}.ReleaseKeepTrack|x86.Build.0 = ReleaseKeepTrack|Any CPU
 		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.Debug|ARM.ActiveCfg = Debug|Any CPU
 		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.Debug|ARM.Build.0 = Debug|Any CPU
 		{38E7CA2C-3E93-4F0A-9C15-83C68ADE55CA}.Debug|ARM64.ActiveCfg = Debug|Any CPU
@@ -403,7 +402,6 @@ Global
 		{C52E8642-F2E5-4CC6-B4DC-D6ACFEC7F561}.Debug|x86.ActiveCfg = Debug|Any CPU
 		{C52E8642-F2E5-4CC6-B4DC-D6ACFEC7F561}.Debug|x86.Build.0 = Debug|Any CPU
 		{C52E8642-F2E5-4CC6-B4DC-D6ACFEC7F561}.DebugKeepTrack|Any CPU.ActiveCfg = Debug|Any CPU
-		{C52E8642-F2E5-4CC6-B4DC-D6ACFEC7F561}.DebugKeepTrack|Any CPU.Build.0 = Debug|Any CPU
 		{C52E8642-F2E5-4CC6-B4DC-D6ACFEC7F561}.DebugKeepTrack|ARM.ActiveCfg = Debug|Any CPU
 		{C52E8642-F2E5-4CC6-B4DC-D6ACFEC7F561}.DebugKeepTrack|ARM.Build.0 = Debug|Any CPU
 		{C52E8642-F2E5-4CC6-B4DC-D6ACFEC7F561}.DebugKeepTrack|ARM64.ActiveCfg = Debug|Any CPU
@@ -443,7 +441,6 @@ Global
 		{CB02AD6C-ABDA-441B-A90E-1A68405CF5AB}.Debug|x86.ActiveCfg = Debug|Any CPU
 		{CB02AD6C-ABDA-441B-A90E-1A68405CF5AB}.Debug|x86.Build.0 = Debug|Any CPU
 		{CB02AD6C-ABDA-441B-A90E-1A68405CF5AB}.DebugKeepTrack|Any CPU.ActiveCfg = DebugKeepTrack|Any CPU
-		{CB02AD6C-ABDA-441B-A90E-1A68405CF5AB}.DebugKeepTrack|Any CPU.Build.0 = DebugKeepTrack|Any CPU
 		{CB02AD6C-ABDA-441B-A90E-1A68405CF5AB}.DebugKeepTrack|ARM.ActiveCfg = DebugKeepTrack|Any CPU
 		{CB02AD6C-ABDA-441B-A90E-1A68405CF5AB}.DebugKeepTrack|ARM.Build.0 = DebugKeepTrack|Any CPU
 		{CB02AD6C-ABDA-441B-A90E-1A68405CF5AB}.DebugKeepTrack|ARM64.ActiveCfg = DebugKeepTrack|Any CPU
@@ -483,7 +480,6 @@ Global
 		{63F4E1CC-D25C-4B58-BEC9-AAB588FBE4E0}.Debug|x86.ActiveCfg = Debug|Any CPU
 		{63F4E1CC-D25C-4B58-BEC9-AAB588FBE4E0}.Debug|x86.Build.0 = Debug|Any CPU
 		{63F4E1CC-D25C-4B58-BEC9-AAB588FBE4E0}.DebugKeepTrack|Any CPU.ActiveCfg = DebugKeepTrack|Any CPU
-		{63F4E1CC-D25C-4B58-BEC9-AAB588FBE4E0}.DebugKeepTrack|Any CPU.Build.0 = DebugKeepTrack|Any CPU
 		{63F4E1CC-D25C-4B58-BEC9-AAB588FBE4E0}.DebugKeepTrack|ARM.ActiveCfg = DebugKeepTrack|Any CPU
 		{63F4E1CC-D25C-4B58-BEC9-AAB588FBE4E0}.DebugKeepTrack|ARM.Build.0 = DebugKeepTrack|Any CPU
 		{63F4E1CC-D25C-4B58-BEC9-AAB588FBE4E0}.DebugKeepTrack|ARM64.ActiveCfg = DebugKeepTrack|Any CPU
@@ -523,7 +519,6 @@ Global
 		{050F1FB5-2258-4C80-BA93-051263DCCEF1}.Debug|x86.ActiveCfg = Debug|Any CPU
 		{050F1FB5-2258-4C80-BA93-051263DCCEF1}.Debug|x86.Build.0 = Debug|Any CPU
 		{050F1FB5-2258-4C80-BA93-051263DCCEF1}.DebugKeepTrack|Any CPU.ActiveCfg = DebugKeepTrack|Any CPU
-		{050F1FB5-2258-4C80-BA93-051263DCCEF1}.DebugKeepTrack|Any CPU.Build.0 = DebugKeepTrack|Any CPU
 		{050F1FB5-2258-4C80-BA93-051263DCCEF1}.DebugKeepTrack|ARM.ActiveCfg = DebugKeepTrack|Any CPU
 		{050F1FB5-2258-4C80-BA93-051263DCCEF1}.DebugKeepTrack|ARM.Build.0 = DebugKeepTrack|Any CPU
 		{050F1FB5-2258-4C80-BA93-051263DCCEF1}.DebugKeepTrack|ARM64.ActiveCfg = DebugKeepTrack|Any CPU
@@ -563,7 +558,6 @@ Global
 		{D0025BAF-417D-40AB-A1A6-FDD8C67CCBEF}.Debug|x86.ActiveCfg = Debug|Any CPU
 		{D0025BAF-417D-40AB-A1A6-FDD8C67CCBEF}.Debug|x86.Build.0 = Debug|Any CPU
 		{D0025BAF-417D-40AB-A1A6-FDD8C67CCBEF}.DebugKeepTrack|Any CPU.ActiveCfg = DebugKeepTrack|Any CPU
-		{D0025BAF-417D-40AB-A1A6-FDD8C67CCBEF}.DebugKeepTrack|Any CPU.Build.0 = DebugKeepTrack|Any CPU
 		{D0025BAF-417D-40AB-A1A6-FDD8C67CCBEF}.DebugKeepTrack|ARM.ActiveCfg = DebugKeepTrack|Any CPU
 		{D0025BAF-417D-40AB-A1A6-FDD8C67CCBEF}.DebugKeepTrack|ARM.Build.0 = DebugKeepTrack|Any CPU
 		{D0025BAF-417D-40AB-A1A6-FDD8C67CCBEF}.DebugKeepTrack|ARM64.ActiveCfg = DebugKeepTrack|Any CPU
@@ -603,7 +597,6 @@ Global
 		{B1C47AF6-D7ED-461F-839B-1671EB19FC85}.Debug|x86.ActiveCfg = Debug|Any CPU
 		{B1C47AF6-D7ED-461F-839B-1671EB19FC85}.Debug|x86.Build.0 = Debug|Any CPU
 		{B1C47AF6-D7ED-461F-839B-1671EB19FC85}.DebugKeepTrack|Any CPU.ActiveCfg = DebugKeepTrack|Any CPU
-		{B1C47AF6-D7ED-461F-839B-1671EB19FC85}.DebugKeepTrack|Any CPU.Build.0 = DebugKeepTrack|Any CPU
 		{B1C47AF6-D7ED-461F-839B-1671EB19FC85}.DebugKeepTrack|ARM.ActiveCfg = DebugKeepTrack|Any CPU
 		{B1C47AF6-D7ED-461F-839B-1671EB19FC85}.DebugKeepTrack|ARM.Build.0 = DebugKeepTrack|Any CPU
 		{B1C47AF6-D7ED-461F-839B-1671EB19FC85}.DebugKeepTrack|ARM64.ActiveCfg = DebugKeepTrack|Any CPU

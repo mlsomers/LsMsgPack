@@ -256,9 +256,10 @@ namespace LsMsgPack
 
 
     /// <summary>
-    /// Included:
+    /// Available:
     /// <list type="bullet">
     /// <item>AttributePropertyNameResolver</item>
+    /// <item>IndexedSchemaTypeResolver</item>
     /// </list>
     /// </summary>
     public IMsgPackPropertyIdResolver[] PropertyNameResolvers { get { return _propertyNameResolvers; } set { _propertyNameResolvers = value; } }
