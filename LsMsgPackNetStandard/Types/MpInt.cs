@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Xml.Serialization;
+using LsMsgPack.Meta;
 
 namespace LsMsgPack
 {
@@ -210,47 +211,59 @@ namespace LsMsgPack
 
     public override byte[] ToBytes()
     {
+      ByteWriter bytes = new ByteWriter(9);
+      WriteValue(bytes);
+      return bytes.ToArray();
+    }
+
+    internal override void WriteTo(ByteWriter target)
+    {
+      if (GetType() != typeof(MpInt)) // a derived type may override ToBytes
+      {
+        base.WriteTo(target);
+        return;
+      }
+      WriteValue(target);
+    }
+
+    private void WriteValue(ByteWriter bytes)
+    {
       MsgPackTypeId targetType = _settings._dynamicallyCompact ? TypeId : typeId;
       byte type = (byte)targetType;
       if (_settings._dynamicallyCompact || targetType == MsgPackTypeId.MpBytePart || targetType == MsgPackTypeId.MpSBytePart)
       {
-        if ((type & 0x7F) == 0) return new byte[1] { (byte)(type | Convert.ToByte(uvalue)) };
-        if ((type & 0xE0) == 0xE0) return new byte[1] { (byte)(type | BitConverter.GetBytes(svalue)[0]) };
+        if ((type & 0x7F) == 0) { bytes.Write((byte)(type | Convert.ToByte(uvalue))); return; }
+        if ((type & 0xE0) == 0xE0) { bytes.Write((byte)(type | (BitConverter.IsLittleEndian ? (byte)svalue : (byte)(svalue >> 56)))); return; } // first byte of BitConverter.GetBytes(svalue)
       }
-      List<byte> bytes = Settings.Buffers.BytesList; // new List<byte>(9)
 
+      bytes.Write(type);
       switch (targetType)
       {
         case MsgPackTypeId.MpSByte:
-          bytes.Add((byte)Convert.ToSByte(svalue));
+          bytes.Write((byte)Convert.ToSByte(svalue));
           break;
         case MsgPackTypeId.MpShort:
-          bytes.AddRange(BitConverter.GetBytes(Convert.ToInt16(svalue)));
+          bytes.WriteEndian((ushort)Convert.ToInt16(svalue), 2, Settings);
           break;
         case MsgPackTypeId.MpInt:
-          bytes.AddRange(BitConverter.GetBytes(Convert.ToInt32(svalue)));
+          bytes.WriteEndian((uint)Convert.ToInt32(svalue), 4, Settings);
           break;
         case MsgPackTypeId.MpLong:
-          bytes.AddRange(BitConverter.GetBytes(Convert.ToInt64(svalue)));
+          bytes.WriteEndian((ulong)svalue, 8, Settings);
           break;
         case MsgPackTypeId.MpUByte:
-          bytes.Add(Convert.ToByte(uvalue));
+          bytes.Write(Convert.ToByte(uvalue));
           break;
         case MsgPackTypeId.MpUShort:
-          bytes.AddRange(BitConverter.GetBytes(Convert.ToUInt16(uvalue)));
+          bytes.WriteEndian(Convert.ToUInt16(uvalue), 2, Settings);
           break;
         case MsgPackTypeId.MpUInt:
-          bytes.AddRange(BitConverter.GetBytes(Convert.ToUInt32(uvalue)));
+          bytes.WriteEndian(Convert.ToUInt32(uvalue), 4, Settings);
           break;
         case MsgPackTypeId.MpULong:
-          bytes.AddRange(BitConverter.GetBytes(Convert.ToUInt64(uvalue)));
+          bytes.WriteEndian(uvalue, 8, Settings);
           break;
       }
-
-      ReorderIfLittleEndian(Settings, bytes);
-
-      bytes.Insert(0, type);
-      return bytes.ToArray();
     }
 
     public override MsgPackItem Read(MsgPackTypeId typeId, System.IO.Stream data)
@@ -270,7 +283,7 @@ namespace LsMsgPack
         this.typeId = MsgPackTypeId.MpBytePart;
         return this;
       }
-      List<byte> bytes = Settings.Buffers.BytesList; // // new List<byte>(8)
+      byte[] final;
       switch ((MsgPackTypeId)typeId)
       {
         case MsgPackTypeId.MpSByte:
@@ -283,25 +296,22 @@ namespace LsMsgPack
 
         case MsgPackTypeId.MpShort:
         case MsgPackTypeId.MpUShort:
-          byte[] buffer = Settings.Buffers.Bytes2;
-          data.Read(buffer, 0, 2);
-          bytes.AddRange(buffer);
+          final = Settings.Buffers.Bytes2;
           break;
         case MsgPackTypeId.MpInt:
         case MsgPackTypeId.MpUInt:
-          buffer = Settings.Buffers.Bytes4;
-          data.Read(buffer, 0, 4);
-          bytes.AddRange(buffer);
+          final = Settings.Buffers.Bytes4;
           break;
         case MsgPackTypeId.MpLong:
         case MsgPackTypeId.MpULong:
-          buffer = Settings.Buffers.Bytes8;
-          data.Read(buffer, 0, 8);
-          bytes.AddRange(buffer);
+          final = Settings.Buffers.Bytes8;
           break;
+        default:
+          throw new MsgPackException($"The type {GetOfficialTypeName(typeId)} is not supported.", data.Position - 1, typeId);
       }
 
-      byte[] final = SwapIfLittleEndian(Settings, bytes.ToArray());
+      data.Read(final, 0, final.Length);
+      ReorderIfLittleEndian(Settings, final); // in place, the (per thread) buffer is only used here
 
       switch (typeId)
       {

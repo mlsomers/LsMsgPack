@@ -4,6 +4,7 @@ using System.Linq;
 using LsMsgPack.Types.Extensions;
 using System.Runtime;
 using System;
+using LsMsgPack.Meta;
 
 
 #if KEEPTRACK
@@ -83,25 +84,39 @@ namespace LsMsgPack {
     }
 
     public override byte[] ToBytes() {
-      List<byte> bytes = new List<byte>(value.Length + 6); // current max length limit is 4 bytes + specifier + identifier
+      ByteWriter bytes = new ByteWriter(value.Length + 6); // current max length limit is 4 bytes + specifier + identifier
+      WriteExt(bytes);
+      return bytes.ToArray();
+    }
 
+    internal override void WriteTo(ByteWriter target) {
+      if (GetType() != typeof(MpExt)) { // derived types (custom extensions) may override ToBytes
+        base.WriteTo(target);
+        return;
+      }
+      WriteExt(target);
+    }
+
+    /// <summary>
+    /// Writes the bytes of <see cref="MpExt.ToBytes"/>, derived types that know they do not need anything else can call this from their <see cref="WriteTo"/>.
+    /// </summary>
+    internal void WriteExt(ByteWriter bytes) {
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       if (typeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(value.LongLength);
 #else
       if (typeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(value.Length);
 #endif
-      bytes.Add((byte)typeId);
-      if(VarLenExtTypes.Contains(typeId)) {
+      bytes.Write((byte)typeId);
+      if(typeId == MsgPackTypeId.MpExt8 || typeId == MsgPackTypeId.MpExt16 || typeId == MsgPackTypeId.MpExt32) { // VarLenExtTypes
 
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
-        bytes.AddRange(GetLengthBytes(value.LongLength, SupportedLengths.All));
+        WriteLength(bytes, value.LongLength, SupportedLengths.All);
 #else
-        bytes.AddRange(GetLengthBytes(value.Length, SupportedLengths.All));
+        WriteLength(bytes, value.Length, SupportedLengths.All);
 #endif
       }
-      bytes.Add((byte)TypeSpecifier);
-      bytes.AddRange(value);
-      return bytes.ToArray();
+      bytes.Write((byte)TypeSpecifier);
+      bytes.Write(value);
     }
 
     public override MsgPackItem Read(MsgPackTypeId typeId, Stream data) {

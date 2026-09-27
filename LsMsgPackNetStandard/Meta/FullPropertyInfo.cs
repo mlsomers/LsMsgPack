@@ -9,7 +9,7 @@ namespace LsMsgPack.Meta
   {
     // Type is a IMsgPackPropertyIdResolver Type
     private static readonly ConcurrentDictionary<PropertyInfo, FullPropertyInfo> Cache = new ConcurrentDictionary<PropertyInfo, FullPropertyInfo>();
-    private readonly Dictionary<Type, ConstructorInfo> _constructorTakingType = new Dictionary<Type, ConstructorInfo>(); // per instance, constructors differ per AssignedToType
+    private Dictionary<Type, ConstructorInfo> _constructorTakingType; // per instance (created when first used), constructors differ per AssignedToType
 
     public static FullPropertyInfo GetFullPropInfo(PropertyInfo propertyInfo, MsgPackSettings settings)
     {
@@ -39,17 +39,26 @@ namespace LsMsgPack.Meta
       return full;
     }
 
+    // Attributes are static metadata, so they are read once per property (even when the FullPropertyInfo itself cannot be cached because of custom property id resolvers)
+    private static readonly ConcurrentDictionary<PropertyInfo, Dictionary<string, object>> AttributesCache = new ConcurrentDictionary<PropertyInfo, Dictionary<string, object>>();
+
     private FullPropertyInfo(PropertyInfo prop)
     {
       PropertyInfo = prop;
+      CustomAttributes = AttributesCache.GetOrAdd(prop, p => ReadCustomAttributes(p));
+      AssignedToType = prop.PropertyType;
+    }
+
+    private static Dictionary<string, object> ReadCustomAttributes(PropertyInfo prop)
+    {
       object[] atts = prop.GetCustomAttributes(true);
-      CustomAttributes = new Dictionary<string, object>(atts.Length);
+      Dictionary<string, object> attributes = new Dictionary<string, object>(atts.Length);
       for (int t = atts.Length - 1; t >= 0; t--)
       {
         string attName = atts[t].GetType().Name;
-        CustomAttributes.TryAdd(attName, atts[t]);
+        attributes.TryAdd(attName, atts[t]);
       }
-      AssignedToType = prop.PropertyType;
+      return attributes;
     }
 
     public FullPropertyInfo(Type assignToType)
@@ -95,6 +104,9 @@ namespace LsMsgPack.Meta
 
     public ConstructorInfo GetConstructorTaking(Type type)
     {
+      if (_constructorTakingType is null)
+        _constructorTakingType = new Dictionary<Type, ConstructorInfo>();
+
       if (_constructorTakingType.TryGetValue(type, out ConstructorInfo constructor))
         return constructor;
 
@@ -149,6 +161,16 @@ namespace LsMsgPack.Meta
 
     internal static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackSettings settings)
     {
+      return GetSerializedProps(type, settings, true);
+    }
+
+    /// <param name="useSessionCache">When false the result is neither taken from nor added to <see cref="MsgPackSettings._serializedPropsCache"/>, used while the property ids cannot be resolved yet (the indexed schema is still adding this type)</param>
+    internal static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackSettings settings, bool useSessionCache)
+    {
+      Dictionary<Type, FullPropertyInfo[]> sessionCache = useSessionCache ? settings._serializedPropsCache : null;
+      if (sessionCache != null && sessionCache.TryGetValue(type, out FullPropertyInfo[] cached))
+        return cached;
+
       PropertyInfo[] props = GetProperties(type);
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
       for (int t = 0; t < props.Length; t++)
@@ -174,7 +196,11 @@ namespace LsMsgPack.Meta
 
         keptProps.Add(full);
       }
-      return keptProps.ToArray();
+
+      FullPropertyInfo[] result = keptProps.ToArray();
+      if (sessionCache != null)
+        sessionCache[type] = result;
+      return result;
     }
 
   }

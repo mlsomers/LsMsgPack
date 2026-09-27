@@ -132,6 +132,12 @@ namespace LsMsgPack
     internal ICustomExt[] _customExtentionTypes = Default_CustomExtentionTypes;
 
     /// <summary>
+    /// Serialized properties per type (see <see cref="Meta.FullPropertyInfo.GetSerializedProps(Type, MsgPackSettings)"/>), only for the settings of a single (de)serialization session with the indexed schema.
+    /// <para>The property ids are indexes into that session's schema, so they cannot be shared with other sessions. Not copied by <see cref="Clone"/>.</para>
+    /// </summary>
+    internal Dictionary<Type, Meta.FullPropertyInfo[]> _serializedPropsCache;
+
+    /// <summary>
     /// Uses a micro schema (dictionary with type-name as key and an array of the types property names as value. The index of the name will be referenced from the serialized body (instead of the full name)
     /// </summary>
     [Category("Control")]

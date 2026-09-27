@@ -81,8 +81,9 @@ namespace LsMsgPack
       }
 
       MsgPackItem packed = SerializeObject(item, settings, new FullPropertyInfo(assignedTo));
-      byte[] buffer = packed.ToBytes();
-      target.Write(buffer, 0, buffer.Length);
+      ByteWriter buffer = new ByteWriter();
+      packed.WriteTo(buffer);
+      buffer.CopyTo(target);
     }
 
     public static MsgPackItem SerializeObject(object item, bool dynamicallyCompact = true)
@@ -96,11 +97,12 @@ namespace LsMsgPack
       MsgPackSettings schemaSettings = WithSchema(settings, resolver);
 
       MsgPackItem packed = SerializeObject(item, schemaSettings, new FullPropertyInfo(assignedTo));
-      byte[] buffer = packed.ToBytes(); // Fills the schema, so this needs to be done before packing the schema
+      ByteWriter buffer = new ByteWriter();
+      packed.WriteTo(buffer); // Fills the schema, so this needs to be done before packing the schema
 
       byte[] schema = resolver.Pack(settings);
       target.Write(schema, 0, schema.Length);
-      target.Write(buffer, 0, buffer.Length);
+      buffer.CopyTo(target);
     }
 
     /// <summary>
@@ -123,6 +125,9 @@ namespace LsMsgPack
         if (!(settings._propertyNameResolvers[t] is IndexedSchemaTypeResolver))
           propNameResolvers.Add(settings._propertyNameResolvers[t]);
       schemaSettings._propertyNameResolvers = propNameResolvers.ToArray();
+
+      // These settings (and resolver) are only used for this session, so the property ids can be cached for all instances of the same type
+      schemaSettings._serializedPropsCache = new Dictionary<Type, FullPropertyInfo[]>();
 
       return schemaSettings;
     }

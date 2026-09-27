@@ -43,7 +43,8 @@ namespace LsMsgPack.TypeResolving.Types
       if (newEntry.IsCollection)
         return newEntry;
 
-      FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(type, settings);
+      // Only the names are needed here, the ids of these props are not final (not yet in the schema) so keep them out of the session cache
+      FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(type, settings, false);
       newEntry.ParseProps(props);
 
       return newEntry;
@@ -159,17 +160,34 @@ namespace LsMsgPack.TypeResolving.Types
     /// <param name="settings">Settings used for the rest of the data (e.g. to use the same <see cref="MsgPackSettings.EndianAction"/>)</param>
     public byte[] Pack(MsgPackSettings settings)
     {
-      settings = settings?.Clone() ?? new MsgPackSettings();
-      settings._addTypeIdOptions = AddTypeIdOption.Never;
+      ByteWriter bytes = new ByteWriter();
+      WriteTo(bytes, settings ?? new MsgPackSettings());
+      return bytes.ToArray();
+    }
 
-      KeyValuePair<object,object>[] items=new KeyValuePair<object, object>[ByTypeId.Count];
-      if (ByTypeId.Count > 0) { 
-        for (int t = ByTypeId.Count - 1; t != 0; t--) // Loop with JNZ condition
-          items[t] = new KeyValuePair<object, object>(ByTypeId[t].TypeName, ByTypeId[t].Props.ToArray());
-        items[0] = new KeyValuePair<object, object>(ByTypeId[0].TypeName, ByTypeId[0].Props.ToArray());
+    /// <summary>
+    /// A map of type names with an array of property names, written directly (the same bytes as packing them as MpMap, MpArray and MpString items)
+    /// </summary>
+    /// <param name="settings">Only the <see cref="MsgPackSettings.EndianAction"/> is used (for the lengths of long names and large schemas)</param>
+    private void WriteTo(ByteWriter bytes, MsgPackSettings settings)
+    {
+      MpMap.WriteHeader(bytes, ByTypeId.Count, settings);
+      for (int t = 0; t < ByTypeId.Count; t++)
+      {
+        ComplexTypeDef def = ByTypeId[t];
+        WriteName(bytes, def.TypeName, settings);
+        MpArray.WriteHeader(bytes, def.Props.Count, settings);
+        for (int p = 0; p < def.Props.Count; p++)
+          WriteName(bytes, def.Props[p], settings);
       }
-      MpMap m=new MpMap(items, settings);
-      return m.ToBytes();
+    }
+
+    private static void WriteName(ByteWriter bytes, string name, MsgPackSettings settings)
+    {
+      if (name is null)
+        bytes.Write((byte)MsgPackTypeId.MpNull);
+      else
+        MpString.Write(bytes, name, settings);
     }
 
     /// <returns>null if the stream starts with nil (null is serialized without a schema)</returns>

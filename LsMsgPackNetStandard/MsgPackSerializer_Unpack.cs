@@ -56,7 +56,7 @@ namespace LsMsgPack
       if (assignType == typeof(KeyValuePair<object, object>[]))
         return map;
 
-      Dictionary<object, object> propVals = new Dictionary<object, object>(map.Length, new MapConversionEqualityComparer());
+      Dictionary<object, object> propVals = new Dictionary<object, object>(map.Length, MapConversionEqualityComparer.Instance);
       for (int t = map.Length - 1; t >= 0; t--)
       {
         if (!(map[t].Key is null))
@@ -224,22 +224,29 @@ namespace LsMsgPack
       return IsCollection(type) && CollectionInfo.Get(type).IsDictionary;
     }
 
+    /// <summary>
+    /// Whether the type has a (public or non-public) parameterless constructor, without one <see cref="Activator.CreateInstance(Type, bool)"/> would throw (slow) for every instance.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Type, bool> HasParameterlessConstructor = new ConcurrentDictionary<Type, bool>();
+
     private static object CreateInstance(Type type)
     {
-      try
-      {
-        return Activator.CreateInstance(type, true);
-      }
-      catch
+      if (HasParameterlessConstructor.GetOrAdd(type, t => t.IsValueType || t.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null))
       {
         try
         {
-          return System.Runtime.Serialization.FormatterServices.GetSafeUninitializedObject(type);
+          return Activator.CreateInstance(type, true);
         }
-        catch
-        {
-          return System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type);
-        }
+        catch { } // e.g. the constructor itself throws, fall back to an uninitialized instance
+      }
+
+      try
+      {
+        return System.Runtime.Serialization.FormatterServices.GetSafeUninitializedObject(type);
+      }
+      catch
+      {
+        return System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type);
       }
     }
 

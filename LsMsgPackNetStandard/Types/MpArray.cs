@@ -81,19 +81,38 @@ namespace LsMsgPack
 
     public override byte[] ToBytes()
     {
-      List<byte> bytes = new List<byte>();// cannot estimate this one
+      ByteWriter bytes = new ByteWriter();// cannot estimate this one
+      WriteTo(bytes);
+      return bytes.ToArray();
+    }
+
+    /// <summary>
+    /// Writes the same header as <see cref="WriteTo"/> for an array with <paramref name="count"/> items, the items should follow (used for the indexed schema).
+    /// </summary>
+    internal static void WriteHeader(ByteWriter bytes, int count, MsgPackSettings settings)
+    {
+      if (count < 16) bytes.Write((byte)((byte)MsgPackTypeId.MpArray4 | count));
+      else
+      {
+        bytes.Write((byte)(count <= ushort.MaxValue ? MsgPackTypeId.MpArray16 : MsgPackTypeId.MpArray32));
+        WriteLength(bytes, count, SupportedLengths.FromShortUpward, settings);
+      }
+    }
+
+    internal override void WriteTo(ByteWriter bytes)
+    {
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       MsgPackTypeId typeId = GetTypeId(value.LongLength);
 #else
       MsgPackTypeId typeId = GetTypeId(value.Length);
 #endif
-      if (typeId == MsgPackTypeId.MpArray4) bytes.Add(GetLengthBytes(typeId, value.Length));
+      if (typeId == MsgPackTypeId.MpArray4) bytes.Write(GetLengthBytes(typeId, value.Length));
       else {
-        bytes.Add((byte)typeId);
+        bytes.Write((byte)typeId);
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
-        bytes.AddRange(GetLengthBytes(value.LongLength, SupportedLengths.FromShortUpward));
+        WriteLength(bytes, value.LongLength, SupportedLengths.FromShortUpward);
 #else
-        bytes.AddRange(GetLengthBytes(value.Length, SupportedLengths.FromShortUpward));
+        WriteLength(bytes, value.Length, SupportedLengths.FromShortUpward);
 #endif
       }
       Type elementType=value.GetType().GetElementType();
@@ -102,9 +121,8 @@ namespace LsMsgPack
       {
         object instance=value.GetValue(t);
         MsgPackItem item = instance as MsgPackItem ?? MsgPackItem.Pack(instance, _settings, elementType) ?? MsgPackSerializer.SerializeObject(instance, _settings, asgnType); // already packed by the serializer
-        bytes.AddRange(item.ToBytes());
+        item.WriteTo(bytes);
       }
-      return bytes.ToArray();
     }
 
     public override MsgPackItem Read(MsgPackTypeId typeId, Stream data)
@@ -120,7 +138,8 @@ namespace LsMsgPack
         }
       }
 
-      value = new object[len];
+      object[] items = new object[len]; // typed, Array.SetValue is slow
+      value = items;
 #if KEEPTRACK
       packedItems = new MsgPackItem[len];
       bool errorOccurred = false; // keep a local copy in order not to wrap all items after an error in error nodes (just the one the error occurred in, and all parents)
@@ -128,7 +147,7 @@ namespace LsMsgPack
       for (int t = 0; t < len; t++)
       {
         MsgPackItem item = Unpack(data, _settings);
-        value.SetValue(item.Value,t);
+        items[t] = item.Value;
 #if KEEPTRACK
         if (_settings._preservePackages) packedItems[t] = item;
         if (item is MpError)
