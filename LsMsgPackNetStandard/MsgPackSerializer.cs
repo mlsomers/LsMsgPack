@@ -128,6 +128,7 @@ namespace LsMsgPack
 
       // These settings (and resolver) are only used for this session, so the property ids can be cached for all instances of the same type
       schemaSettings._serializedPropsCache = new Dictionary<Type, FullPropertyInfo[]>();
+      schemaSettings._staticPropsCache = new Dictionary<Type, FullPropertyInfo[]>();
 
       return schemaSettings;
     }

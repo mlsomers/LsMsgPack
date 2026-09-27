@@ -43,8 +43,8 @@ namespace LsMsgPack.TypeResolving.Types
       if (newEntry.IsCollection)
         return newEntry;
 
-      // Only the names are needed here, the ids of these props are not final (not yet in the schema) so keep them out of the session cache
-      FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(type, settings, false);
+      // Only the names are needed, so the property id resolvers (including this one) are not consulted
+      FullPropertyInfo[] props = FullPropertyInfo.GetStaticallyIncludedProps(type, settings);
       newEntry.ParseProps(props);
 
       return newEntry;
@@ -98,29 +98,15 @@ namespace LsMsgPack.TypeResolving.Types
       return TypeResolver.ResolveInternal(typeName, assignedTo, resolvers);
     }
 
-    private bool _blockRecursionGetId = false;
     object IMsgPackPropertyIdResolver.GetId(FullPropertyInfo assignedTo, MsgPackSettings settings)
     {
-      if (_blockRecursionGetId)
-        return null;
-
       ComplexTypeDef def;
       if (!ByType.TryGetValue(assignedTo.PropertyInfo.ReflectedType, out def))
       {
-        if (assignedTo.AssignedToType != null)
-        {
-          _blockRecursionGetId = true;
-          try
-          {
-            def = GetComplex(assignedTo.PropertyInfo.ReflectedType, settings);
-          }
-          finally
-          {
-            _blockRecursionGetId = false;
-          }
-        }
-        else
+        if (assignedTo.AssignedToType is null)
           return null;
+
+        def = GetComplex(assignedTo.PropertyInfo.ReflectedType, settings); // does not resolve property ids, so no recursion
       }
 
       if (def.IdByName.TryGetValue(assignedTo.PropertyInfo.Name, out int id))

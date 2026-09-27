@@ -138,6 +138,12 @@ namespace LsMsgPack
     internal Dictionary<Type, Meta.FullPropertyInfo[]> _serializedPropsCache;
 
     /// <summary>
+    /// The properties per type that pass the static filters, before their ids are resolved (see <see cref="Meta.FullPropertyInfo.GetStaticallyIncludedProps"/>).
+    /// <para>Only for the settings of a single session with the indexed schema, like <see cref="_serializedPropsCache"/>. Not copied by <see cref="Clone"/>.</para>
+    /// </summary>
+    internal Dictionary<Type, Meta.FullPropertyInfo[]> _staticPropsCache;
+
+    /// <summary>
     /// Uses a micro schema (dictionary with type-name as key and an array of the types property names as value. The index of the name will be referenced from the serialized body (instead of the full name)
     /// </summary>
     [Category("Control")]
