@@ -27,6 +27,8 @@ namespace LsMsgPack
       {
         if (value is DateTime)
           this.value = ((DateTime)value).ToUniversalTime();
+        else if (value is DateTimeOffset)
+          this.value = ((DateTimeOffset)value).UtcDateTime; // not IConvertible, Convert.ToDateTime would throw an InvalidCastException
         else
           this.value = Convert.ToDateTime(value).ToUniversalTime();
 
@@ -91,13 +93,8 @@ namespace LsMsgPack
           return EpochToLocalDateTime(seconds);
 
         case MsgPackTypeId.MpFExt8:
-          byte[] bitVal = (byte[])ext.Value;
-
-          if (BitConverter.IsLittleEndian)
-          {
-            SwapIfLittleEndian(settings, bitVal, 0, 4);
-            SwapIfLittleEndian(settings, bitVal, 4, 4);
-          }
+          // One big-endian 64 bit value: 30 bits nanoseconds followed by 34 bits seconds
+          byte[] bitVal = SwapIfLittleEndian(settings, (byte[])ext.Value); // a copy when swapped, the value of the ext is not changed
 
           ulong bytes = BitConverter.ToUInt64(bitVal, 0);
           ulong nanoSecc;
@@ -190,11 +187,7 @@ namespace LsMsgPack
       ulong prepareBytes = nanoSec << 34;
       prepareBytes = prepareBytes | seconds;
       byte[] bitVal = BitConverter.GetBytes(prepareBytes);
-      if (BitConverter.IsLittleEndian)
-      {
-        SwapIfLittleEndian(settings, bitVal, 0, 4);
-        SwapIfLittleEndian(settings, bitVal, 4, 4);
-      }
+      ReorderIfLittleEndian(settings, bitVal); // one big-endian 64 bit value: 30 bits nanoseconds followed by 34 bits seconds
       return bitVal;
     }
 

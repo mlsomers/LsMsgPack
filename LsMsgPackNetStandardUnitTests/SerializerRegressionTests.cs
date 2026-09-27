@@ -1,5 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.TypeResolving.Types;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -260,6 +261,121 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual("two hundred", dict[200]);
       Assert.AreEqual("two hundred", dict[(ulong)200]);
       Assert.AreEqual("one and a half", dict[1.5f]);
+    }
+
+    [TestMethod]
+    public void MapKeysThatCannotBeDecimalsDoNotThrow()
+    {
+      MapConversionEqualityComparer comparer = new MapConversionEqualityComparer();
+
+      Assert.IsFalse(comparer.Equals(double.NaN, 1));
+      Assert.IsFalse(comparer.Equals(1, float.NaN));
+      Assert.IsFalse(comparer.Equals(double.PositiveInfinity, 1L));
+      Assert.IsFalse(comparer.Equals(1e30, 1.5d));
+      Assert.IsTrue(comparer.Equals(double.NaN, double.NaN));
+    }
+
+    public class AllZero
+    {
+      public string Name { get; set; } = "x";
+      public int I { get; set; }
+      public long L { get; set; }
+      public float F { get; set; }
+      public double D { get; set; }
+      public byte B { get; set; }
+      public sbyte SB { get; set; }
+      public short S { get; set; }
+      public ushort US { get; set; }
+      public uint UI { get; set; }
+      public ulong UL { get; set; }
+      public decimal M { get; set; }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void FilterDefaultValuesOmitsZerosOfAllNumericTypes(bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings()
+      {
+        UseInexedSchema = useSchema,
+        DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() }
+      };
+
+      byte[] withoutSchema = MsgPackSerializer.Serialize(new AllZero(), new MsgPackSettings() { UseInexedSchema = false, DynamicFilters = settings.DynamicFilters });
+      Assert.AreEqual(1, ((MpMap)MsgPackItem.Unpack(withoutSchema)).Count, "Only Name should be serialized");
+
+      AllZero org = new AllZero() { L = 1, F = 2, D = 3, B = 4, SB = -5, S = 6, US = 7, UI = 8, UL = 9, M = 10 };
+      AllZero ret = MsgPackSerializer.Deserialize<AllZero>(MsgPackSerializer.Serialize(org, settings), settings);
+      Assert.AreEqual(1L, ret.L);
+      Assert.AreEqual(2f, ret.F);
+      Assert.AreEqual(3d, ret.D);
+      Assert.AreEqual((byte)4, ret.B);
+      Assert.AreEqual((sbyte)-5, ret.SB);
+      Assert.AreEqual((short)6, ret.S);
+      Assert.AreEqual((ushort)7, ret.US);
+      Assert.AreEqual(8u, ret.UI);
+      Assert.AreEqual(9ul, ret.UL);
+      Assert.AreEqual(10m, ret.M);
+    }
+
+    /// <summary>
+    /// Returns at most one byte per read, like a network stream that has not received all data yet.
+    /// </summary>
+    private class TrickleStream : MemoryStream
+    {
+      public TrickleStream(byte[] buffer) : base(buffer) { }
+
+      public override int Read(byte[] buffer, int offset, int count)
+      {
+        return base.Read(buffer, offset, Math.Min(count, 1));
+      }
+    }
+
+    public class Assorted
+    {
+      public string Name { get; set; }
+      public short S { get; set; }
+      public int I { get; set; }
+      public long L { get; set; }
+      public float F { get; set; }
+      public double D { get; set; }
+      public byte[] Bin { get; set; }
+      public DateTime When { get; set; }
+      public List<int> Numbers { get; set; }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ReadsFromStreamsThatReturnPartialData(bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      Assorted org = new Assorted()
+      {
+        Name = new string('n', 300), // str16
+        S = -1000,
+        I = 100000,
+        L = long.MaxValue,
+        F = 1.5f,
+        D = 2.25,
+        Bin = new byte[] { 1, 2, 3 },
+        When = new DateTime(2021, 1, 1, 0, 0, 0, 500, DateTimeKind.Utc),
+        Numbers = new List<int>(new int[20]) { 1 } // array16
+      };
+
+      byte[] buffer = MsgPackSerializer.Serialize(org, settings);
+      Assorted ret = MsgPackSerializer.Deserialize<Assorted>(new TrickleStream(buffer), settings);
+
+      Assert.AreEqual(org.Name, ret.Name);
+      Assert.AreEqual(org.S, ret.S);
+      Assert.AreEqual(org.I, ret.I);
+      Assert.AreEqual(org.L, ret.L);
+      Assert.AreEqual(org.F, ret.F);
+      Assert.AreEqual(org.D, ret.D);
+      CollectionAssert.AreEqual(org.Bin, ret.Bin);
+      Assert.AreEqual(org.When, ret.When.ToUniversalTime());
+      CollectionAssert.AreEqual(org.Numbers, ret.Numbers);
     }
 
     private class NumberedPets : IMsgPackTypeResolver

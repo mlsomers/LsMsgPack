@@ -94,6 +94,42 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
+    public void FractionalSecondsAreBigEndian()
+    {
+      DateTime dt = new DateTime(2021, 1, 1, 0, 0, 0, 500, DateTimeKind.Utc);
+      // Timestamp 64 from the spec: 30 bits nanoseconds (500000000) and 34 bits seconds (1609459200) in one big-endian 64 bit value
+      byte[] expected = new byte[] { (byte)MsgPackTypeId.MpFExt8, 0xFF, 0x77, 0x35, 0x94, 0x00, 0x5F, 0xEE, 0x66, 0x00 };
+
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+
+      CollectionAssert.AreEqual(expected, MsgPackItem.Pack(dt).ToBytes());
+      CollectionAssert.AreEqual(expected, MsgPackSerializer.Serialize(dt, withoutSchema));
+      Assert.AreEqual(dt, ((DateTime)MsgPackItem.Unpack(expected).Value).ToUniversalTime());
+      Assert.AreEqual(dt, MsgPackSerializer.Deserialize<DateTime>(expected, withoutSchema).ToUniversalTime());
+    }
+
+    public class WithDateTimeOffset
+    {
+      public DateTimeOffset When { get; set; }
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void DateTimeOffsetRoundTrip(bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      DateTimeOffset when = new DateTimeOffset(2021, 1, 1, 12, 30, 15, 250, TimeSpan.FromHours(3));
+
+      MsgPackItem item = MsgPackItem.Pack(when);
+      Assert.AreEqual(when.UtcDateTime, ((DateTime)item.Value).ToUniversalTime());
+
+      byte[] buffer = MsgPackSerializer.Serialize(new WithDateTimeOffset() { When = when }, settings);
+      WithDateTimeOffset ret = MsgPackSerializer.Deserialize<WithDateTimeOffset>(buffer, settings);
+      Assert.AreEqual(when, ret.When); // the same moment (the offset is not stored)
+    }
+
+    [TestMethod]
     public void TestTheory()
     {
       DateTime epoch = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);

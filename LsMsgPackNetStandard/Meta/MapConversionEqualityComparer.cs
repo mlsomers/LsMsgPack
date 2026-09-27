@@ -38,9 +38,13 @@ namespace LsMsgPack.Meta
         Type yType = y.GetType();
         if (MsgPackMeta.NumericTypes.Contains(yType))
         {
-          Decimal xx = Convert.ToDecimal(x);
-          Decimal yy = Convert.ToDecimal(y);
-          return xx == yy;
+          try
+          {
+            Decimal xx = Convert.ToDecimal(x);
+            Decimal yy = Convert.ToDecimal(y);
+            return xx == yy;
+          }
+          catch (OverflowException) { } // NaN, infinity or out of range, these can only equal themselves (checked by Equals above)
         }
       }
 

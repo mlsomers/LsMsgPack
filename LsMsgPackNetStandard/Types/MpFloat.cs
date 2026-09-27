@@ -104,12 +104,12 @@ namespace LsMsgPack
       if (this.typeId == MsgPackTypeId.MpFloat)
       {
         buffer = Settings.Buffers.Bytes4;
-        data.Read(buffer, 0, 4);
+        ReadExactly(data, buffer, 4);
       }
       else
       {
         buffer = Settings.Buffers.Bytes8;
-        data.Read(buffer, 0, 8);
+        ReadExactly(data, buffer, 8);
       }
 
       ReorderIfLittleEndian(Settings, buffer);
