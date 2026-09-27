@@ -145,6 +145,25 @@ namespace LsMsgPack
       Array.Reverse(bytes);
     }
 
+    /// <summary>
+    /// Reads count bytes into the buffer. <see cref="Stream.Read(byte[], int, int)"/> may return fewer bytes than requested (e.g. network streams), so keep reading until all bytes arrived.
+    /// <para>At the end of the data the remaining bytes are zeroed (the same as reading into a new buffer).</para>
+    /// </summary>
+    protected static void ReadExactly(Stream data, byte[] buffer, int count)
+    {
+      int offset = 0;
+      while (offset < count)
+      {
+        int read = data.Read(buffer, offset, count - offset);
+        if (read <= 0)
+        {
+          Array.Clear(buffer, offset, count - offset);
+          return;
+        }
+        offset += read;
+      }
+    }
+
     protected static byte[] SwapIfLittleEndian(MsgPackSettings settings, byte[] bytes)
     {
       if (!SwapEndianChoice(settings, bytes.Length))

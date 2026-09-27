@@ -76,7 +76,7 @@ namespace LsMsgPack {
         return len < 0 ? 0 : len; // at the end of the data, the same as reading into a new (zeroed) buffer below
       }
       byte[] buffer = new byte[bytes];
-      data.Read(buffer, 0, bytes);
+      ReadExactly(data, buffer, bytes);
       if(bytes == 1) return (long)buffer[0];
       ReorderIfLittleEndian(Settings, buffer);
       switch(bytes) {
@@ -94,7 +94,7 @@ namespace LsMsgPack {
     protected byte[] ReadBytes(Stream data, long len) {
       byte[] buffer = new byte[len];
       if(len < int.MaxValue) { // TODO: implement reading larger portions.
-        data.Read(buffer, 0, (int)len);
+        ReadExactly(data, buffer, (int)len);
       } else throw new MsgPackException(
         $"Not implemented. At this time we cannot read chunks larger than {int.MaxValue} bytes in one stread. This is a \"ToDo\" item.{data.Position}{TypeId}");
       return buffer;

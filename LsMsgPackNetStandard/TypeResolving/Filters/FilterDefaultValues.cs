@@ -45,16 +45,16 @@ namespace LsMsgPack.TypeResolving.Filters
 
             if (type == typeof(int)) return (int)value != 0;
             if (type == typeof(bool)) return (bool)value;
-            if (type == typeof(long)) return !value.Equals(0);
-            if (type == typeof(float)) return !value.Equals(0);
-            if (type == typeof(double)) return !value.Equals(0);
+            if (type == typeof(long)) return (long)value != 0;
+            if (type == typeof(float)) return (float)value != 0;
+            if (type == typeof(double)) return (double)value != 0;
             if (type == typeof(Guid)) return !value.Equals(Guid.Empty);
-            if (type == typeof(byte)) return !value.Equals(0);
-            if (type == typeof(short)) return !value.Equals(0);
-            if (type == typeof(ushort)) return !value.Equals(0);
-            if (type == typeof(uint)) return !value.Equals(0);
-            if (type == typeof(ulong)) return !value.Equals(0);
-            if (type == typeof(sbyte)) return !value.Equals(0);
+            if (type == typeof(byte)) return (byte)value != 0;
+            if (type == typeof(short)) return (short)value != 0;
+            if (type == typeof(ushort)) return (ushort)value != 0;
+            if (type == typeof(uint)) return (uint)value != 0;
+            if (type == typeof(ulong)) return (ulong)value != 0;
+            if (type == typeof(sbyte)) return (sbyte)value != 0;
 
             return !DefaultInstances.GetOrAdd(type, t => Activator.CreateInstance(t)).Equals(value);
         }

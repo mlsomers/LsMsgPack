@@ -310,7 +310,7 @@ namespace LsMsgPack
           throw new MsgPackException($"The type {GetOfficialTypeName(typeId)} is not supported.", data.Position - 1, typeId);
       }
 
-      data.Read(final, 0, final.Length);
+      ReadExactly(data, final, final.Length);
       ReorderIfLittleEndian(Settings, final); // in place, the (per thread) buffer is only used here
 
       switch (typeId)

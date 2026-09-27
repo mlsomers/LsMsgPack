@@ -205,6 +205,9 @@ namespace LsMsgPack
       if (assignType.IsAssignableFrom(valType))
         return val;
 
+      if (targetType == typeof(DateTimeOffset) && val is DateTime dateTime)
+        return new DateTimeOffset(dateTime); // the timestamp does not contain the offset, the value is local time
+
       if (targetType.IsEnum)
         return Enum.ToObject(targetType, val);
 

@@ -61,7 +61,7 @@ namespace LsMsgPack
       {
         if (ReferenceEquals(value, null))
         {
-          value = new KeyValuePair<object, object>[0];
+          this.value = new KeyValuePair<object, object>[0];
           return;
         }
         if (value.GetType() == typeof(Dictionary<object, object>)) // used by the serializer, the generic enumerator does not box every entry
