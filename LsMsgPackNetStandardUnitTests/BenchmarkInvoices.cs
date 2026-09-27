@@ -186,101 +186,151 @@ namespace LsMsgPackUnitTests
 
     #endregion
 
-    private class Result
+    private interface ICandidate
     {
-      public string Name;
-      public long Bytes;
-      public TimeSpan Serialize;
-      public TimeSpan Deserialize;
+      string Name { get; }
+
+      /// <summary>Serialize and deserialize a single invoice (to verify the serializer before timing it)</summary>
+      Invoice RoundTrip(Invoice invoice);
+
+      /// <summary>Serialize all invoices once (not timed), the payloads are used by <see cref="Read"/>. Returns the total payload size in bytes.</summary>
+      long Prepare(Invoice[] invoices);
+
+      /// <summary>Time serializing all invoices <see cref="Rounds"/> times</summary>
+      TimeSpan Write(Invoice[] invoices);
+
+      /// <summary>Time deserializing all prepared payloads <see cref="Rounds"/> times</summary>
+      TimeSpan Read();
     }
 
-    private static Result Measure<TPayload>(string name, Invoice[] invoices, Func<Invoice, TPayload> serialize, Func<TPayload, Invoice> deserialize, Func<TPayload, int> size)
+    private class Candidate<TPayload> : ICandidate
     {
-      TPayload[] payloads = new TPayload[invoices.Length];
+      private readonly Func<Invoice, TPayload> _serialize;
+      private readonly Func<TPayload, Invoice> _deserialize;
+      private readonly Func<TPayload, int> _size;
+      private TPayload[] _payloads;
 
-      Stopwatch sw = Stopwatch.StartNew();
-      for (int r = 0; r < Rounds; r++)
+      public Candidate(string name, Func<Invoice, TPayload> serialize, Func<TPayload, Invoice> deserialize, Func<TPayload, int> size)
+      {
+        Name = name;
+        _serialize = serialize;
+        _deserialize = deserialize;
+        _size = size;
+      }
+
+      public string Name { get; }
+
+      public Invoice RoundTrip(Invoice invoice)
+      {
+        return _deserialize(_serialize(invoice));
+      }
+
+      public long Prepare(Invoice[] invoices)
+      {
+        _payloads = new TPayload[invoices.Length];
+        long bytes = 0;
         for (int t = 0; t < invoices.Length; t++)
-          payloads[t] = serialize(invoices[t]);
-      TimeSpan serializeTime = sw.Elapsed;
+          bytes += _size(_payloads[t] = _serialize(invoices[t]));
+        return bytes;
+      }
 
-      sw.Restart();
-      for (int r = 0; r < Rounds; r++)
-        for (int t = 0; t < invoices.Length; t++)
-          deserialize(payloads[t]);
-      TimeSpan deserializeTime = sw.Elapsed;
+      public TimeSpan Write(Invoice[] invoices)
+      {
+        TPayload[] payloads = new TPayload[invoices.Length];
+        Stopwatch sw = Stopwatch.StartNew();
+        for (int r = 0; r < Rounds; r++)
+          for (int t = 0; t < invoices.Length; t++)
+            payloads[t] = _serialize(invoices[t]);
+        return sw.Elapsed;
+      }
 
-      long bytes = 0;
-      for (int t = 0; t < payloads.Length; t++)
-        bytes += size(payloads[t]);
+      public TimeSpan Read()
+      {
+        Stopwatch sw = Stopwatch.StartNew();
+        for (int r = 0; r < Rounds; r++)
+          for (int t = 0; t < _payloads.Length; t++)
+            _deserialize(_payloads[t]);
+        return sw.Elapsed;
+      }
+    }
 
-      return new Result() { Name = name, Bytes = bytes, Serialize = serializeTime, Deserialize = deserializeTime };
+    private static ICandidate[] CreateCandidates()
+    {
+      MsgPackSettings indexed = new MsgPackSettings() { UseInexedSchema = true };
+      MsgPackSettings named = new MsgPackSettings() { UseInexedSchema = false };
+
+      return new ICandidate[]
+      {
+        new Candidate<string>("Json.NET (string)",
+          i => JsonConvert.SerializeObject(i),
+          s => JsonConvert.DeserializeObject<Invoice>(s),
+          s => Encoding.UTF8.GetByteCount(s)),
+
+        new Candidate<byte[]>("Json.NET (UTF-8 bytes)",
+          i => Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(i)),
+          b => JsonConvert.DeserializeObject<Invoice>(Encoding.UTF8.GetString(b)),
+          b => b.Length),
+
+        new Candidate<byte[]>("LsMsgPack (indexed schema)",
+          i => MsgPackSerializer.Serialize(i, indexed),
+          b => MsgPackSerializer.Deserialize<Invoice>(b, indexed),
+          b => b.Length),
+
+        new Candidate<byte[]>("LsMsgPack (property names)",
+          i => MsgPackSerializer.Serialize(i, named),
+          b => MsgPackSerializer.Deserialize<Invoice>(b, named),
+          b => b.Length)
+      };
     }
 
     [TestMethod]
-    public void Invoices_LsMsgPack_vs_JsonNet()
+    public void Invoices_Write_LsMsgPack_vs_JsonNet()
+    {
+      Benchmark("Serialize", (candidate, invoices) => candidate.Write(invoices));
+    }
+
+    [TestMethod]
+    public void Invoices_Read_LsMsgPack_vs_JsonNet()
+    {
+      Benchmark("Deserialize", (candidate, invoices) => candidate.Read());
+    }
+
+    private void Benchmark(string operation, Func<ICandidate, Invoice[], TimeSpan> measure)
     {
       // PreservePackages only exists when LsMsgPack is compiled with KEEPTRACK (DebugKeepTrack / ReleaseKeepTrack), the debugging overhead would skew the results
       if (typeof(MsgPackSettings).GetProperty("PreservePackages") != null)
         Assert.Inconclusive("LsMsgPack is compiled with KEEPTRACK, run the benchmark using the Release (or Debug) configuration.");
 
       Invoice[] invoices = CreateInvoices(InvoiceCount);
-
-      MsgPackSettings indexed = new MsgPackSettings() { UseInexedSchema = true };
-      MsgPackSettings named = new MsgPackSettings() { UseInexedSchema = false };
+      ICandidate[] candidates = CreateCandidates();
 
       // Make sure all serializers produce an equivalent object before timing them
       // (MsgPack timestamps do not preserve DateTimeKind, so compare the dates as UTC)
       JsonSerializerSettings compare = new JsonSerializerSettings() { DateTimeZoneHandling = DateTimeZoneHandling.Utc };
       string expected = JsonConvert.SerializeObject(invoices[0], compare);
-      Assert.AreEqual(expected, JsonConvert.SerializeObject(JsonConvert.DeserializeObject<Invoice>(JsonConvert.SerializeObject(invoices[0])), compare), "Json.NET round-trip");
-      Assert.AreEqual(expected, JsonConvert.SerializeObject(MsgPackSerializer.Deserialize<Invoice>(MsgPackSerializer.Serialize(invoices[0], indexed), indexed), compare), "LsMsgPack (indexed schema) round-trip");
-      Assert.AreEqual(expected, JsonConvert.SerializeObject(MsgPackSerializer.Deserialize<Invoice>(MsgPackSerializer.Serialize(invoices[0], named), named), compare), "LsMsgPack (property names) round-trip");
+      foreach (ICandidate candidate in candidates)
+        Assert.AreEqual(expected, JsonConvert.SerializeObject(candidate.RoundTrip(invoices[0]), compare), candidate.Name + " round-trip");
 
-      Func<Result>[] candidates =
-      {
-        () => Measure("Json.NET (string)", invoices,
-          i => JsonConvert.SerializeObject(i),
-          s => JsonConvert.DeserializeObject<Invoice>(s),
-          s => Encoding.UTF8.GetByteCount(s)),
-
-        () => Measure("Json.NET (UTF-8 bytes)", invoices,
-          i => Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(i)),
-          b => JsonConvert.DeserializeObject<Invoice>(Encoding.UTF8.GetString(b)),
-          b => b.Length),
-
-        () => Measure("LsMsgPack (indexed schema)", invoices,
-          i => MsgPackSerializer.Serialize(i, indexed),
-          b => MsgPackSerializer.Deserialize<Invoice>(b, indexed),
-          b => b.Length),
-
-        () => Measure("LsMsgPack (property names)", invoices,
-          i => MsgPackSerializer.Serialize(i, named),
-          b => MsgPackSerializer.Deserialize<Invoice>(b, named),
-          b => b.Length)
-      };
+      long[] bytes = new long[candidates.Length];
+      for (int c = 0; c < candidates.Length; c++)
+        bytes[c] = candidates[c].Prepare(invoices);
 
       // Warm up all candidates first so JIT (tiered compilation) and caches do not penalize whoever runs first
-      foreach (Func<Result> candidate in candidates)
-        candidate();
+      foreach (ICandidate candidate in candidates)
+        measure(candidate, invoices);
       Thread.Sleep(500);
-      foreach (Func<Result> candidate in candidates)
-        candidate();
+      foreach (ICandidate candidate in candidates)
+        measure(candidate, invoices);
 
       // Keep the fastest of several passes, interleaving the candidates to spread out background noise
-      Result[] results = new Result[candidates.Length];
+      TimeSpan[] fastest = new TimeSpan[candidates.Length];
       for (int p = 0; p < Passes; p++)
       {
         for (int c = 0; c < candidates.Length; c++)
         {
-          Result r = candidates[c]();
-          if (results[c] == null)
-            results[c] = r;
-          else
-          {
-            if (r.Serialize < results[c].Serialize) results[c].Serialize = r.Serialize;
-            if (r.Deserialize < results[c].Deserialize) results[c].Deserialize = r.Deserialize;
-          }
+          TimeSpan elapsed = measure(candidates[c], invoices);
+          if (p == 0 || elapsed < fastest[c])
+            fastest[c] = elapsed;
         }
       }
 
@@ -288,22 +338,19 @@ namespace LsMsgPackUnitTests
       foreach (Invoice invoice in invoices)
         totalLines += invoice.Lines.Count;
 
-      Result baseline = results[0];
       StringBuilder sb = new StringBuilder();
-      sb.AppendLine($"{InvoiceCount} invoices ({totalLines} lines), {Rounds} rounds each, fastest of {Passes} passes");
+      sb.AppendLine($"{operation}: {InvoiceCount} invoices ({totalLines} lines), {Rounds} rounds each, fastest of {Passes} passes");
       sb.AppendLine();
-      sb.AppendLine(string.Format("{0,-28} {1,12} {2,8} {3,14} {4,8} {5,16} {6,8}", "Serializer", "Bytes", "Size", "Serialize ms", "Speed", "Deserialize ms", "Speed"));
-      sb.AppendLine(new string('-', 100));
-      foreach (Result r in results)
+      sb.AppendLine(string.Format("{0,-28} {1,12} {2,8} {3,16} {4,8}", "Serializer", "Bytes", "Size", operation + " ms", "Speed"));
+      sb.AppendLine(new string('-', 76));
+      for (int c = 0; c < candidates.Length; c++)
       {
-        sb.AppendLine(string.Format("{0,-28} {1,12:N0} {2,7:P0} {3,14:N1} {4,7:N2}x {5,16:N1} {6,7:N2}x",
-          r.Name,
-          r.Bytes,
-          (double)r.Bytes / baseline.Bytes,
-          r.Serialize.TotalMilliseconds,
-          baseline.Serialize.TotalMilliseconds / r.Serialize.TotalMilliseconds,
-          r.Deserialize.TotalMilliseconds,
-          baseline.Deserialize.TotalMilliseconds / r.Deserialize.TotalMilliseconds));
+        sb.AppendLine(string.Format("{0,-28} {1,12:N0} {2,7:P0} {3,16:N1} {4,7:N2}x",
+          candidates[c].Name,
+          bytes[c],
+          (double)bytes[c] / bytes[0],
+          fastest[c].TotalMilliseconds,
+          fastest[0].TotalMilliseconds / fastest[c].TotalMilliseconds));
       }
       sb.AppendLine();
       sb.AppendLine("Size is relative to Json.NET, Speed is how many times faster than Json.NET (higher is better).");
