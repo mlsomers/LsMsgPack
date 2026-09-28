@@ -114,6 +114,14 @@ namespace LsMsgPack
 
     #endregion
 
+    /// <summary>
+    /// Property values are read and written by typed delegates bound to the get and set methods (once a property has been used a number of times) instead of reflection.
+    /// <para>This applies to all settings, set it before (de)serializing. It is ignored when the runtime does not compile code (checked in the .NET Standard 2.1 build),
+    /// switch it off on an AOT platform that uses the .NET Standard 2.0 build (the delegates need generic types that are created at runtime).</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool CompilePropertyAccessors { get; set; } = true;
+
     internal bool FileContainsErrors = false;
     internal bool _useInexedSchema = Default_UseInexedSchema;
     internal bool _dynamicallyCompact = Default_DynamicallyCompact;
@@ -136,6 +144,12 @@ namespace LsMsgPack
     /// <para>The property ids are indexes into that session's schema, so they cannot be shared with other sessions. Not copied by <see cref="Clone"/>.</para>
     /// </summary>
     internal Dictionary<Type, Meta.FullPropertyInfo[]> _serializedPropsCache;
+
+    /// <summary>
+    /// The properties per type that pass the static filters, before their ids are resolved (see <see cref="Meta.FullPropertyInfo.GetStaticallyIncludedProps"/>).
+    /// <para>Only for the settings of a single session with the indexed schema, like <see cref="_serializedPropsCache"/>. Not copied by <see cref="Clone"/>.</para>
+    /// </summary>
+    internal Dictionary<Type, Meta.FullPropertyInfo[]> _staticPropsCache;
 
     /// <summary>
     /// Uses a micro schema (dictionary with type-name as key and an array of the types property names as value. The index of the name will be referenced from the serialized body (instead of the full name)

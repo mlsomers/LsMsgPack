@@ -23,7 +23,19 @@ namespace LsMsgPack.Meta
       }
 
       full = new FullPropertyInfo(propertyInfo);
+      ResolvePropertyId(full, settings);
 
+      if (settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0)
+        return Cache.GetOrAdd(propertyInfo, full); // another thread may have been first
+      return full;
+    }
+
+    /// <summary>
+    /// The first id returned by the <see cref="MsgPackSettings.PropertyNameResolvers"/> (consulted from last to first), or the name of the property.
+    /// </summary>
+    private static void ResolvePropertyId(FullPropertyInfo full, MsgPackSettings settings)
+    {
+      full.PropertyId = null;
       for (int t = settings._propertyNameResolvers.Length - 1; t >= 0; t--)
       {
         full.PropertyId = settings._propertyNameResolvers[t].GetId(full, settings);
@@ -33,10 +45,6 @@ namespace LsMsgPack.Meta
 
       if (full.PropertyId == null)
         full.PropertyId = full.PropertyInfo.Name;
-
-      if (settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0)
-        return Cache.GetOrAdd(propertyInfo, full); // another thread may have been first
-      return full;
     }
 
     // Attributes are static metadata, so they are read once per property (even when the FullPropertyInfo itself cannot be cached because of custom property id resolvers)
@@ -84,6 +92,26 @@ namespace LsMsgPack.Meta
     }
 
     public PropertyInfo PropertyInfo { get; set; }
+
+    private PropertyAccessor _accessor;
+
+    /// <summary>
+    /// The value of the property, read by a compiled delegate once the property is used often (see <see cref="PropertyAccessor"/>).
+    /// </summary>
+    internal object GetValue(object instance)
+    {
+      PropertyAccessor accessor = _accessor ?? (_accessor = PropertyAccessor.Get(PropertyInfo));
+      return accessor.GetValue(instance);
+    }
+
+    /// <summary>
+    /// Sets the value of the property, by a compiled delegate once the property is used often (see <see cref="PropertyAccessor"/>).
+    /// </summary>
+    internal void SetValue(object instance, object value)
+    {
+      PropertyAccessor accessor = _accessor ?? (_accessor = PropertyAccessor.Get(PropertyInfo));
+      accessor.SetValue(instance, value);
+    }
 
     /// <summary>
     /// Note that this may not be the complete set, When multiple attributes of the same type are applied, only the first one will be listed here, so if your custom attribute supports multiple instances on a property you will need to get them from the propertyInfo.
@@ -161,14 +189,31 @@ namespace LsMsgPack.Meta
 
     internal static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackSettings settings)
     {
-      return GetSerializedProps(type, settings, true);
+      Dictionary<Type, FullPropertyInfo[]> sessionCache = settings._serializedPropsCache;
+      if (sessionCache is null)
+        return GetSerializedPropsWithoutSession(type, settings);
+
+      if (sessionCache.TryGetValue(type, out FullPropertyInfo[] cached))
+        return cached;
+
+      // Within a session each property is resolved once: first the static filters, then the ids of the properties that are kept.
+      // The indexed schema asks for the kept properties of the type (see GetStaticallyIncludedProps) when resolving the first id.
+      FullPropertyInfo[] props = GetStaticallyIncludedProps(type, settings);
+      for (int t = 0; t < props.Length; t++)
+        ResolvePropertyId(props[t], settings);
+      ThrowIfIdsNotUnique(type, props);
+
+      sessionCache[type] = props;
+      return props;
     }
 
-    /// <param name="useSessionCache">When false the result is neither taken from nor added to <see cref="MsgPackSettings._serializedPropsCache"/>, used while the property ids cannot be resolved yet (the indexed schema is still adding this type)</param>
-    internal static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackSettings settings, bool useSessionCache)
+    // Without property id resolvers the FullPropertyInfo instances (and their StaticallyIgnored) are shared by all settings (see GetFullPropInfo), so the result only depends on the type
+    private static readonly ConcurrentDictionary<Type, FullPropertyInfo[]> SerializedPropsCache = new ConcurrentDictionary<Type, FullPropertyInfo[]>();
+
+    private static FullPropertyInfo[] GetSerializedPropsWithoutSession(Type type, MsgPackSettings settings)
     {
-      Dictionary<Type, FullPropertyInfo[]> sessionCache = useSessionCache ? settings._serializedPropsCache : null;
-      if (sessionCache != null && sessionCache.TryGetValue(type, out FullPropertyInfo[] cached))
+      bool shared = settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0;
+      if (shared && SerializedPropsCache.TryGetValue(type, out FullPropertyInfo[] cached))
         return cached;
 
       PropertyInfo[] props = GetProperties(type);
@@ -176,31 +221,74 @@ namespace LsMsgPack.Meta
       for (int t = 0; t < props.Length; t++)
       {
         FullPropertyInfo full = FullPropertyInfo.GetFullPropInfo(props[t], settings);
+        if (IsStaticallyIncluded(full, settings))
+          keptProps.Add(full);
+      }
 
-        if (full.StaticallyIgnored.HasValue)
+      FullPropertyInfo[] result = keptProps.ToArray();
+      ThrowIfIdsNotUnique(type, result); // custom resolvers are consulted for every call (they may have their own cache), so are their ids
+
+      if (shared)
+        return SerializedPropsCache.GetOrAdd(type, result);
+      return result;
+    }
+
+    /// <summary>
+    /// The property ids are the keys of the map an object is serialized to, the serializer does not check them for every object.
+    /// </summary>
+    /// <exception cref="MsgPackException">When two properties have the same id, or an id is a key the serializer uses for the type id or the content of a collection</exception>
+    private static void ThrowIfIdsNotUnique(Type type, FullPropertyInfo[] props)
+    {
+      for (int t = 0; t < props.Length; t++)
+      {
+        object id = props[t].PropertyId;
+        if (MsgPackSerializer.TypeIdKey.Equals(id) || MsgPackSerializer.ContentKey.Equals(id))
+          throw new MsgPackException($"The id \"{id}\" of property {type.Name}.{props[t].PropertyInfo.Name} is reserved, the serializer uses it for the type id or the content of a collection.");
+
+        for (int i = 0; i < t; i++)
         {
-          if (full.StaticallyIgnored.Value) // statically cached to ignore always
-            continue;
+          if (Equals(props[i].PropertyId, id))
+            throw new MsgPackException($"The properties {type.Name}.{props[i].PropertyInfo.Name} and {type.Name}.{props[t].PropertyInfo.Name} have the same id \"{id}\", the keys of a map must be unique.");
         }
-        else
-        {
-          bool keep = true;
-          for (int i = settings._staticFilters.Length - 1; i >= 0; i--)
-            if (!settings._staticFilters[i].IncludeProperty(full)) { keep = false; break; }
+      }
+    }
 
-          full.StaticallyIgnored = !keep;
+    /// <summary>
+    /// The properties that pass the static filters, their <see cref="PropertyId"/> is the name of the property (the property id resolvers are not consulted).
+    /// <para>Cached for the rest of the session (see <see cref="MsgPackSettings._staticPropsCache"/>), <see cref="GetSerializedProps"/> resolves the ids of the same instances.</para>
+    /// </summary>
+    internal static FullPropertyInfo[] GetStaticallyIncludedProps(Type type, MsgPackSettings settings)
+    {
+      Dictionary<Type, FullPropertyInfo[]> sessionCache = settings._staticPropsCache;
+      if (sessionCache != null && sessionCache.TryGetValue(type, out FullPropertyInfo[] cached))
+        return cached;
 
-          if (!keep)
-            continue;
-        }
-
-        keptProps.Add(full);
+      PropertyInfo[] props = GetProperties(type);
+      List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
+      for (int t = 0; t < props.Length; t++)
+      {
+        FullPropertyInfo full = new FullPropertyInfo(props[t]) { PropertyId = props[t].Name };
+        if (IsStaticallyIncluded(full, settings))
+          keptProps.Add(full);
       }
 
       FullPropertyInfo[] result = keptProps.ToArray();
       if (sessionCache != null)
         sessionCache[type] = result;
       return result;
+    }
+
+    private static bool IsStaticallyIncluded(FullPropertyInfo full, MsgPackSettings settings)
+    {
+      if (full.StaticallyIgnored.HasValue) // statically cached
+        return !full.StaticallyIgnored.Value;
+
+      bool keep = true;
+      for (int i = settings._staticFilters.Length - 1; i >= 0; i--)
+        if (!settings._staticFilters[i].IncludeProperty(full)) { keep = false; break; }
+
+      full.StaticallyIgnored = !keep;
+      return keep;
     }
 
   }

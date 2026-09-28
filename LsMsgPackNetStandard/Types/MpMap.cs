@@ -64,7 +64,7 @@ namespace LsMsgPack
           this.value = new KeyValuePair<object, object>[0];
           return;
         }
-        if (value.GetType() == typeof(Dictionary<object, object>)) // used by the serializer, the generic enumerator does not box every entry
+        if (value.GetType() == typeof(Dictionary<object, object>)) // the generic enumerator does not box every entry
         {
           Dictionary<object, object> generic = (Dictionary<object, object>)value;
           this.value = new KeyValuePair<object, object>[generic.Count];

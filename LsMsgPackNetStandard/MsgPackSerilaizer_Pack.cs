@@ -5,7 +5,6 @@ using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 
 namespace LsMsgPack
 {
@@ -36,28 +35,26 @@ namespace LsMsgPack
           || !NeedsTypeId(tType, assignedTo, settings))
           return packed;
 
-        return new MpMap(settings)
+        return new MpMap(new KeyValuePair<object, object>[]
         {
-          Value = new Dictionary<object, object>(2)
-          {
-            { TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo) },
-            { ContentKey, packed }
-          }
-        };
+          new KeyValuePair<object, object>(TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo)),
+          new KeyValuePair<object, object>(ContentKey, packed)
+        }, settings);
       }
 
       // Any complex object with properties
       FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
-      Dictionary<object, object> propVals = new Dictionary<object, object>(props.Length + 1);
+      KeyValuePair<object, object>[] propVals = new KeyValuePair<object, object>[props.Length + 1];
+      int count = 0;
 
       if (NeedsTypeId(tType, assignedTo, settings))
-        propVals.Add(TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo));
+        propVals[count++] = new KeyValuePair<object, object>(TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo));
       else
         ThrowIfUnresolvableWithSchema(tType, assignedTo, settings);
 
-      AddProperties(item, props, propVals, settings);
+      count = AddProperties(item, props, propVals, count, settings);
 
-      return new MpMap(settings) { Value = propVals };
+      return ToMap(propVals, count, settings);
     }
 
     /// <summary>
@@ -76,19 +73,30 @@ namespace LsMsgPack
         return elements;
 
       FullPropertyInfo[] props = serializeProperties ? FullPropertyInfo.GetSerializedProps(tType, settings) : new FullPropertyInfo[0];
-      Dictionary<object, object> propVals = new Dictionary<object, object>(props.Length + 2);
+      KeyValuePair<object, object>[] propVals = new KeyValuePair<object, object>[props.Length + 2];
+      int count = 0;
 
       if (addTypeId)
-        propVals.Add(TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo));
+        propVals[count++] = new KeyValuePair<object, object>(TypeIdKey, GetTypeIdentifier(tType, settings, assignedTo));
       else if (props.Length > 0)
         ThrowIfUnresolvableWithSchema(tType, assignedTo, settings);
 
       if (elements != null)
-        propVals.Add(ContentKey, elements);
+        propVals[count++] = new KeyValuePair<object, object>(ContentKey, elements);
 
-      AddProperties(item, props, propVals, settings);
+      count = AddProperties(item, props, propVals, count, settings);
 
-      return new MpMap(settings) { Value = propVals };
+      return ToMap(propVals, count, settings);
+    }
+
+    /// <summary>
+    /// The keys do not need to be checked for duplicates (like a dictionary would), property ids are unique per type and differ from the reserved keys (see FullPropertyInfo.ThrowIfIdsNotUnique).
+    /// </summary>
+    private static MpMap ToMap(KeyValuePair<object, object>[] entries, int count, MsgPackSettings settings)
+    {
+      if (count != entries.Length) // skipped properties (e.g. default values), or no type id
+        Array.Resize(ref entries, count);
+      return new MpMap(entries, settings);
     }
 
     /// <summary>
@@ -162,13 +170,13 @@ namespace LsMsgPack
       return false;
     }
 
-    private static void AddProperties(object item, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackSettings settings)
+    /// <returns>The number of entries in <paramref name="propVals"/></returns>
+    private static int AddProperties(object item, FullPropertyInfo[] props, KeyValuePair<object, object>[] propVals, int count, MsgPackSettings settings)
     {
       for (int t = 0; t < props.Length; t++)
       {
         FullPropertyInfo prop = props[t];
-        PropertyInfo prp = prop.PropertyInfo;
-        object value = prp.GetValue(item, null);
+        object value = prop.GetValue(item);
 
         bool exclude = false;
         for (int i = settings._dynamicFilters.Length - 1; i >= 0; i--)
@@ -179,11 +187,12 @@ namespace LsMsgPack
 
         if (value is null)
         {
-          propVals.Add(prop.PropertyId, value);
+          propVals[count++] = new KeyValuePair<object, object>(prop.PropertyId, value);
           continue;
         }
-        propVals.Add(prop.PropertyId, SerializeObject(value, settings, prop));
+        propVals[count++] = new KeyValuePair<object, object>(prop.PropertyId, SerializeObject(value, settings, prop));
       }
+      return count;
     }
 
     /// <summary>

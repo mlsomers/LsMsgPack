@@ -181,6 +181,28 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
+    [DataRow(AddTypeIdOption.Always)]
+    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    public void SchemaDoesNotListStaticallyIgnoredPropertiesOfCollections(AddTypeIdOption option)
+    {
+      MsgPackSettings settings = Settings(option);
+      settings.UseInexedSchema = true;
+
+      PagedList org = new PagedList() { 1, 2, 3 };
+      org.Page = 7;
+      byte[] buffer = MsgPackSerializer.Serialize(org, settings);
+
+      IndexedSchemaTypeResolver schema = IndexedSchemaTypeResolver.Unpack(new MemoryStream(buffer), settings);
+      ComplexTypeDef def = schema.ByTypeId.Single(d => d.Type == typeof(PagedList));
+      CollectionAssert.Contains(def.Props, nameof(PagedList.Page));
+      CollectionAssert.DoesNotContain(def.Props, nameof(PagedList.Count), "Count cannot be set, so it is never serialized");
+
+      PagedList ret = MsgPackSerializer.Deserialize<PagedList>(buffer, settings);
+      Assert.AreEqual(7, ret.Page);
+      CollectionAssert.AreEqual(new[] { 1, 2, 3 }, ret);
+    }
+
+    [TestMethod]
     public void SerializeElementsFalse()
     {
       Bag org = new Bag() { Items = new List<string>() { "a", "b" } };
