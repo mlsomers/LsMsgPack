@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.TypeResolving.Interfaces;
 using MessagePack;
 using MessagePack.Formatters;
 using MessagePack.Resolvers;
@@ -240,6 +241,43 @@ namespace LsMsgPackInteropTests
       Assert.IsNotNull(read.Items);
 
       Same.AssertEqual(probe, MsgPackSerializer.Deserialize<DefaultsProbe>(MessagePackSerializer.Serialize(probe, Contractless), Named));
+    }
+
+    /// <summary>
+    /// Without the dynamic filters LsMsgPack writes every value (null, "", 0 and false too), then it writes the same bytes as MessagePack-CSharp.
+    /// </summary>
+    [TestMethod]
+    public void DefaultValues_WrittenWithoutDynamicFilters()
+    {
+      MsgPackSettings everything = new MsgPackSettings() { UseInexedSchema = false, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
+      DefaultsProbe probe = new DefaultsProbe() { Text = "", Retries = 0, Enabled = false, Items = null };
+      byte[] bytes = MsgPackSerializer.Serialize(probe, everything);
+
+      CollectionAssert.AreEqual(MessagePackSerializer.Serialize(probe, Contractless), bytes);
+      Same.AssertEqual(probe, MessagePackSerializer.Deserialize<DefaultsProbe>(bytes, Contractless));
+      Same.AssertEqual(probe, MsgPackSerializer.Deserialize<DefaultsProbe>(bytes, everything));
+    }
+
+    public class WithObjectMember
+    {
+      public string Name { get; set; }
+      public object When { get; set; }
+    }
+
+    /// <summary>
+    /// A value assigned to object gets a type id: { "": "DateTime", "@": timestamp }, other libraries read that map as the value.
+    /// With <see cref="AddTypeIdOption.Never"/> only the value is written.
+    /// </summary>
+    [TestMethod]
+    public void TypeIds_NotWrittenWithNever()
+    {
+      WithObjectMember item = new WithObjectMember() { Name = "x", When = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) };
+
+      object withTypeId = MessagePackSerializer.Deserialize<WithObjectMember>(MsgPackSerializer.Serialize(item, Named), Contractless).When;
+      Assert.IsInstanceOfType<IDictionary<object, object>>(withTypeId);
+
+      MsgPackSettings noTypeIds = new MsgPackSettings() { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never };
+      Assert.AreEqual(item.When, MessagePackSerializer.Deserialize<WithObjectMember>(MsgPackSerializer.Serialize(item, noTypeIds), Contractless).When);
     }
   }
 }

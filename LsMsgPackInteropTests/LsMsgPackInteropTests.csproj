@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Checks what other MsgPack libraries can read of LsMsgPack's output and the other way around (see MessagePackCSharpTests.cs and NerdbankTests.cs) -->
+  <!-- Checks what other MsgPack libraries can read of LsMsgPack's output and the other way around (see MessagePackCSharpTests.cs and NerdbankTests.cs, the settings are described in docs/Compatibility.md) -->
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
