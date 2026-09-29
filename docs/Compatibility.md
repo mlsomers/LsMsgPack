@@ -13,7 +13,7 @@ MsgPack standardizes the value types (integers, strings, binary data, arrays, ma
 
 LsMsgPack always needs `UseInexedSchema = false`, see below.
 
-LtMsgPack (`LtMsgPackSerializer`) writes the same bytes as LsMsgPack with the same settings and reads the same data, so everything here applies to it too (custom extensions are `LtExtension<T>` there, with the same bytes as LsMsgPack's `ICustomExt` for the same type code).
+LtMsgPack (`LtMsgPackSerializer`) writes the same bytes as LsMsgPack with the same settings and reads the same data, so everything here applies to it too (the interop tests run against both) (custom extensions are `LtExtension<T>` there, with the same bytes as LsMsgPack's `ICustomExt` for the same type code).
 
 ## LsMsgPack settings
 

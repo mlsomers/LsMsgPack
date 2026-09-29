@@ -70,4 +70,35 @@ namespace LsMsgPackInteropTests
       Assert.AreEqual(JsonConvert.SerializeObject(expected, Utc), JsonConvert.SerializeObject(actual, Utc), message);
     }
   }
+
+  /// <summary>
+  /// The Guids of Nerdbank.MessagePack for LtMsgPack (the same as <see cref="NerdbankGuidExtension"/>).
+  /// </summary>
+  public sealed class NerdbankGuidLtExtension : LtMsgPack.Extensions.LtExtension<Guid>
+  {
+    public override sbyte TypeCode { get { return 2; } }
+
+    public override int GetMaxLength(Guid value) { return 16; }
+
+    public override int Write(Guid value, Span<byte> destination)
+    {
+      value.TryWriteBytes(destination, bigEndian: true, out int written);
+      return written;
+    }
+
+    public override Guid Read(ReadOnlySpan<byte> data)
+    {
+      return new Guid(data, bigEndian: true);
+    }
+  }
+
+  [TestClass]
+  public static class LtEquivalents
+  {
+    [AssemblyInitialize]
+    public static void Register(TestContext context)
+    {
+      LsMsgPackUnitTests.LtSerializer.ExtensionEquivalents.Add(ext => ext is NerdbankGuidExtension ? new NerdbankGuidLtExtension() : null);
+    }
+  }
 }

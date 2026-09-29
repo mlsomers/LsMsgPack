@@ -294,6 +294,10 @@ namespace LtMsgPack
         case TypeKind.Uri: w.String(((Uri)value).OriginalString); return;
         case TypeKind.DateOnly: w.Int32((int)FrameworkTypeInfo.DayNumber.GetValue(value)); return;
         case TypeKind.TimeOnly: w.Int64((long)FrameworkTypeInfo.TimeOnlyTicks.GetValue(value)); return;
+        case TypeKind.RawExtension:
+          MsgPackExtension extension = (MsgPackExtension)value;
+          w.Extension(extension.TypeCode, extension.Data);
+          return;
       }
       throw new InvalidOperationException($"{info.Kind} is not a leaf value.");
     }

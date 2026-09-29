@@ -19,6 +19,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The tests run against LsMsgPack and LtMsgPack through the same adapters as the unit tests -->
+    <Compile Include="..\LsMsgPackNetStandardUnitTests\SerializerUnderTest.cs" Link="SerializerUnderTest.cs" />
   </ItemGroup>
 
 </Project>

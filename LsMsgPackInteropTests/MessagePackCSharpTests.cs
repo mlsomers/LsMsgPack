@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackUnitTests;
 using LsMsgPack.TypeResolving.Interfaces;
 using MessagePack;
 using MessagePack.Formatters;
@@ -21,9 +22,10 @@ namespace LsMsgPackInteropTests
   /// <item>Polymorphism: LsMsgPack a type id in the object's map (key ""), MessagePack-CSharp [Union]: a two element array [key, object].</item>
   /// </list>
   /// </summary>
-  [TestClass]
-  public class MessagePackCSharpTests
+  public abstract class MessagePackCSharpTests
   {
+    protected abstract LsMsgPackUnitTests.ISerializerUnderTest Serializer { get; }
+
     private static readonly MsgPackSettings Indexed = new MsgPackSettings() { UseInexedSchema = true };
     private static readonly MsgPackSettings Named = new MsgPackSettings() { UseInexedSchema = false };
 
@@ -49,14 +51,14 @@ namespace LsMsgPackInteropTests
     public void LsMsgPackPropertyNames_ReadByMessagePackCSharp()
     {
       foreach (Invoice invoice in AllInvoices)
-        Same.AssertEqual(invoice, MessagePackSerializer.Deserialize<Invoice>(MsgPackSerializer.Serialize(invoice, Named), ContractlessLsMsgPack), invoice.InvoiceNumber);
+        Same.AssertEqual(invoice, MessagePackSerializer.Deserialize<Invoice>(Serializer.Serialize(invoice, Named), ContractlessLsMsgPack), invoice.InvoiceNumber);
     }
 
     [TestMethod]
     public void MessagePackCSharpMap_ReadByLsMsgPack()
     {
       foreach (Invoice invoice in AllInvoices)
-        Same.AssertEqual(invoice, MsgPackSerializer.Deserialize<Invoice>(MessagePackSerializer.Serialize(invoice, ContractlessBinaryGuid), Named), invoice.InvoiceNumber);
+        Same.AssertEqual(invoice, Serializer.Deserialize<Invoice>(MessagePackSerializer.Serialize(invoice, ContractlessBinaryGuid), Named), invoice.InvoiceNumber);
     }
 
     [TestMethod]
@@ -65,11 +67,11 @@ namespace LsMsgPackInteropTests
       Invoice invoice = AllInvoices[1];
 
       // Guid: bin in LsMsgPack, a string in MessagePack-CSharp
-      Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<Invoice>(MsgPackSerializer.Serialize(invoice, Named), Contractless));
-      Assert.Throws<Exception>(() => MsgPackSerializer.Deserialize<Invoice>(MessagePackSerializer.Serialize(invoice, Contractless), Named));
+      Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<Invoice>(Serializer.Serialize(invoice, Named), Contractless));
+      Assert.Throws<Exception>(() => Serializer.Deserialize<Invoice>(MessagePackSerializer.Serialize(invoice, Contractless), Named));
 
       // decimal: an extension in LsMsgPack, MessagePack-CSharp only reads strings
-      Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<Invoice>(MsgPackSerializer.Serialize(invoice, Named), ContractlessBinaryGuid));
+      Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<Invoice>(Serializer.Serialize(invoice, Named), ContractlessBinaryGuid));
     }
 
     /// <summary>
@@ -79,14 +81,14 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void IndexedSchema_NotReadable()
     {
-      byte[] bytes = MsgPackSerializer.Serialize(AllInvoices[1], Indexed);
+      byte[] bytes = Serializer.Serialize(AllInvoices[1], Indexed);
       Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<Invoice>(bytes, ContractlessLsMsgPack));
 
       MessagePackSerializer.Deserialize<object>(bytes, Contractless, out int bytesRead);
       Assert.IsTrue(bytesRead < bytes.Length, $"{bytesRead} of {bytes.Length} bytes read");
 
       // and LsMsgPack expects a schema by default
-      Assert.Throws<MsgPackException>(() => MsgPackSerializer.Deserialize<Invoice>(MessagePackSerializer.Serialize(AllInvoices[1], ContractlessBinaryGuid), Indexed));
+      Assert.Throws<MsgPackException>(() => Serializer.Deserialize<Invoice>(MessagePackSerializer.Serialize(AllInvoices[1], ContractlessBinaryGuid), Indexed));
     }
 
     /// <summary>
@@ -99,7 +101,7 @@ namespace LsMsgPackInteropTests
       byte[] bytes = MessagePackSerializer.Serialize(keyed, Standard);
 
       Same.AssertEqual(keyed, MessagePackSerializer.Deserialize<InvoiceK>(bytes, Standard));
-      Assert.Throws<InvalidCastException>(() => MsgPackSerializer.Deserialize<Invoice>(bytes, Named));
+      Assert.Throws<InvalidCastException>(() => Serializer.Deserialize<Invoice>(bytes, Named));
     }
 
     [TestMethod]
@@ -147,13 +149,13 @@ namespace LsMsgPackInteropTests
       AssertSameBytes(new Uri("relative/path", UriKind.Relative));
     }
 
-    private static void AssertSameBytes<T>(T value)
+    private void AssertSameBytes<T>(T value)
     {
-      byte[] ls = MsgPackSerializer.Serialize(value, Named);
+      byte[] ls = Serializer.Serialize(value, Named);
       byte[] mp = MessagePackSerializer.Serialize(value, Standard);
       CollectionAssert.AreEqual(mp, ls, $"{typeof(T).Name} {value}: LsMsgPack {Convert.ToHexString(ls)}, MessagePack-CSharp {Convert.ToHexString(mp)}");
 
-      Same.AssertEqual(value, MsgPackSerializer.Deserialize<T>(mp, Named), $"{typeof(T).Name} {value} read by LsMsgPack");
+      Same.AssertEqual(value, Serializer.Deserialize<T>(mp, Named), $"{typeof(T).Name} {value} read by LsMsgPack");
       Same.AssertEqual(value, MessagePackSerializer.Deserialize<T>(ls, Standard), $"{typeof(T).Name} {value} read by MessagePack-CSharp");
     }
 
@@ -161,26 +163,26 @@ namespace LsMsgPackInteropTests
     public void Guid_BinaryInLsMsgPack_StringInMessagePackCSharp()
     {
       Guid id = Guid.Parse("00112233-4455-6677-8899-aabbccddeeff");
-      byte[] ls = MsgPackSerializer.Serialize(id, Named);
+      byte[] ls = Serializer.Serialize(id, Named);
 
       CollectionAssert.AreEqual(Convert.FromHexString("C41033221100554477668899AABBCCDDEEFF"), ls); // bin 8, Guid.ToByteArray()
       Assert.AreEqual(id.ToString(), MessagePackSerializer.Deserialize<string>(MessagePackSerializer.Serialize(id, Standard), Standard));
       CollectionAssert.AreEqual(ls, MessagePackSerializer.Serialize(id, ContractlessBinaryGuid));
 
       Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<Guid>(ls, Standard));
-      Assert.Throws<Exception>(() => MsgPackSerializer.Deserialize<Guid>(MessagePackSerializer.Serialize(id, Standard), Named));
+      Assert.Throws<Exception>(() => Serializer.Deserialize<Guid>(MessagePackSerializer.Serialize(id, Standard), Named));
     }
 
     [TestMethod]
     public void Decimal_ExtensionInLsMsgPack_StringInMessagePackCSharp()
     {
-      byte[] ls = MsgPackSerializer.Serialize(1234.50m, Named);
+      byte[] ls = Serializer.Serialize(1234.50m, Named);
       byte[] mp = MessagePackSerializer.Serialize(1234.50m, Standard);
 
       CollectionAssert.AreEqual(Convert.FromHexString("D80100000200000000003AE2010000000000"), ls); // fixext 16, type 1, the bytes of System.Decimal
       Assert.AreEqual("1234.50", MessagePackSerializer.Deserialize<string>(mp, Standard));
 
-      Assert.AreEqual(1234.50m, MsgPackSerializer.Deserialize<decimal>(mp, Named)); // LsMsgPack parses the string
+      Assert.AreEqual(1234.50m, Serializer.Deserialize<decimal>(mp, Named)); // LsMsgPack parses the string
       Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<decimal>(ls, Standard));
       Assert.AreEqual(1234.50m, MessagePackSerializer.Deserialize<decimal>(ls, ContractlessLsMsgPack));
     }
@@ -194,7 +196,7 @@ namespace LsMsgPackInteropTests
     {
       DateTime unspecified = new DateTime(2026, 3, 1, 10, 0, 0, DateTimeKind.Unspecified);
 
-      CollectionAssert.AreEqual(MessagePackSerializer.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Local), Standard), MsgPackSerializer.Serialize(unspecified, Named));
+      CollectionAssert.AreEqual(MessagePackSerializer.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Local), Standard), Serializer.Serialize(unspecified, Named));
       CollectionAssert.AreEqual(MessagePackSerializer.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), Standard), MessagePackSerializer.Serialize(unspecified, Standard));
     }
 
@@ -206,8 +208,8 @@ namespace LsMsgPackInteropTests
     {
       DateTimeOffset when = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.FromHours(2));
 
-      Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<DateTimeOffset>(MsgPackSerializer.Serialize(when, Named), Standard));
-      Assert.Throws<Exception>(() => MsgPackSerializer.Deserialize<DateTimeOffset>(MessagePackSerializer.Serialize(when, Standard), Named));
+      Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<DateTimeOffset>(Serializer.Serialize(when, Named), Standard));
+      Assert.Throws<Exception>(() => Serializer.Deserialize<DateTimeOffset>(MessagePackSerializer.Serialize(when, Standard), Named));
     }
 
     [TestMethod]
@@ -215,14 +217,14 @@ namespace LsMsgPackInteropTests
     {
       MsgPackSerializer.CacheAssemblyTypes(typeof(Animal));
       Zoo zoo = new Zoo() { Animals = new List<Animal>() { new Dog() { Name = "Rex", Barks = 3 }, new Cat() { Name = "Tom", Indoor = true } } };
-      byte[] ls = MsgPackSerializer.Serialize(zoo, Named); // { "Animals": [{ "": "Dog", "Barks": 3, "Name": "Rex" }, ...] }
+      byte[] ls = Serializer.Serialize(zoo, Named); // { "Animals": [{ "": "Dog", "Barks": 3, "Name": "Rex" }, ...] }
       byte[] mp = MessagePackSerializer.Serialize(zoo, Contractless); // { "Animals": [[0, { "Name": "Rex", "Barks": 3 }], ...] }
 
-      Same.AssertEqual(zoo, MsgPackSerializer.Deserialize<Zoo>(ls, Named));
+      Same.AssertEqual(zoo, Serializer.Deserialize<Zoo>(ls, Named));
       Same.AssertEqual(zoo, MessagePackSerializer.Deserialize<Zoo>(mp, Contractless));
 
       Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<Zoo>(ls, Contractless));
-      Assert.Throws<Exception>(() => MsgPackSerializer.Deserialize<Zoo>(mp, Named));
+      Assert.Throws<Exception>(() => Serializer.Deserialize<Zoo>(mp, Named));
     }
 
     /// <summary>
@@ -234,13 +236,13 @@ namespace LsMsgPackInteropTests
     {
       DefaultsProbe probe = new DefaultsProbe() { Text = "", Retries = 0, Enabled = false, Items = null };
 
-      DefaultsProbe read = MessagePackSerializer.Deserialize<DefaultsProbe>(MsgPackSerializer.Serialize(probe, Named), Contractless);
+      DefaultsProbe read = MessagePackSerializer.Deserialize<DefaultsProbe>(Serializer.Serialize(probe, Named), Contractless);
       Assert.IsNull(read.Text);
       Assert.AreEqual(3, read.Retries);
       Assert.IsTrue(read.Enabled);
       Assert.IsNotNull(read.Items);
 
-      Same.AssertEqual(probe, MsgPackSerializer.Deserialize<DefaultsProbe>(MessagePackSerializer.Serialize(probe, Contractless), Named));
+      Same.AssertEqual(probe, Serializer.Deserialize<DefaultsProbe>(MessagePackSerializer.Serialize(probe, Contractless), Named));
     }
 
     /// <summary>
@@ -251,11 +253,11 @@ namespace LsMsgPackInteropTests
     {
       MsgPackSettings everything = new MsgPackSettings() { UseInexedSchema = false, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
       DefaultsProbe probe = new DefaultsProbe() { Text = "", Retries = 0, Enabled = false, Items = null };
-      byte[] bytes = MsgPackSerializer.Serialize(probe, everything);
+      byte[] bytes = Serializer.Serialize(probe, everything);
 
       CollectionAssert.AreEqual(MessagePackSerializer.Serialize(probe, Contractless), bytes);
       Same.AssertEqual(probe, MessagePackSerializer.Deserialize<DefaultsProbe>(bytes, Contractless));
-      Same.AssertEqual(probe, MsgPackSerializer.Deserialize<DefaultsProbe>(bytes, everything));
+      Same.AssertEqual(probe, Serializer.Deserialize<DefaultsProbe>(bytes, everything));
     }
 
     public class WithObjectMember
@@ -273,11 +275,23 @@ namespace LsMsgPackInteropTests
     {
       WithObjectMember item = new WithObjectMember() { Name = "x", When = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc) };
 
-      object withTypeId = MessagePackSerializer.Deserialize<WithObjectMember>(MsgPackSerializer.Serialize(item, Named), Contractless).When;
+      object withTypeId = MessagePackSerializer.Deserialize<WithObjectMember>(Serializer.Serialize(item, Named), Contractless).When;
       Assert.IsInstanceOfType<IDictionary<object, object>>(withTypeId);
 
       MsgPackSettings noTypeIds = new MsgPackSettings() { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never };
-      Assert.AreEqual(item.When, MessagePackSerializer.Deserialize<WithObjectMember>(MsgPackSerializer.Serialize(item, noTypeIds), Contractless).When);
+      Assert.AreEqual(item.When, MessagePackSerializer.Deserialize<WithObjectMember>(Serializer.Serialize(item, noTypeIds), Contractless).When);
     }
+  }
+
+  [TestClass]
+  public class LsMessagePackCSharpTests : MessagePackCSharpTests
+  {
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Ls; } }
+  }
+
+  [TestClass]
+  public class LtMessagePackCSharpTests : MessagePackCSharpTests
+  {
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Lt; } }
   }
 }

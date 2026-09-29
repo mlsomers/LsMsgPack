@@ -12,9 +12,10 @@ namespace LsMsgPackUnitTests
   /// <summary>
   /// The <see cref="SchemaStore"/>: schema references instead of inline schemas, shared sessions that grow, and caching the inline schemas that are read.
   /// </summary>
-  [TestClass]
-  public class CachedSchemaTests
+  public abstract class CachedSchemaTests
   {
+    protected abstract ISerializerUnderTest Serializer { get; }
+
     public CachedSchemaTests()
     {
       MsgPackSerializer.CacheAssemblyTypes(typeof(ICsPet));
@@ -96,13 +97,13 @@ namespace LsMsgPackUnitTests
       SchemaStore store = new SchemaStore();
       CsOrder order = CreateOrder(1, new CsDog() { Name = "Rex", Barks = true });
 
-      byte[] payload = MsgPackSerializer.Serialize(order, Writer(store));
+      byte[] payload = Serializer.Serialize(order, Writer(store));
       SchemaId id = ReferencedId(payload);
       Assert.IsTrue(store.Contains(id));
       Assert.AreEqual(1, store.Count);
 
-      AssertSame(order, MsgPackSerializer.Deserialize<CsOrder>(payload, Reader(store)));
-      AssertSame(order, MsgPackSerializer.Deserialize<CsOrder>(new MemoryStream(payload), Writer(store))); // the writer's settings read too
+      AssertSame(order, Serializer.Deserialize<CsOrder>(payload, Reader(store)));
+      AssertSame(order, Serializer.Deserialize<CsOrder>(new MemoryStream(payload), Writer(store))); // the writer's settings read too
     }
 
     [TestMethod]
@@ -111,8 +112,8 @@ namespace LsMsgPackUnitTests
       SchemaStore store = new SchemaStore();
       CsOrder order = CreateOrder(2, new CsDog() { Name = "Rex" });
 
-      byte[] inline = MsgPackSerializer.Serialize(order, new MsgPackSettings());
-      byte[] referenced = MsgPackSerializer.Serialize(order, Writer(store));
+      byte[] inline = Serializer.Serialize(order, new MsgPackSettings());
+      byte[] referenced = Serializer.Serialize(order, Writer(store));
 
       byte[] schema = store.GetSchema(ReferencedId(referenced));
       CollectionAssert.AreEqual(inline, schema.Concat(referenced.Skip(SchemaStore.ReferenceLength)).ToArray(), "the same schema and body");
@@ -125,8 +126,8 @@ namespace LsMsgPackUnitTests
       SchemaStore store = new SchemaStore();
       MsgPackSettings settings = Writer(store);
 
-      byte[] first = MsgPackSerializer.Serialize(CreateOrder(1, new CsDog() { Name = "Rex" }), settings);
-      byte[] second = MsgPackSerializer.Serialize(CreateOrder(2, new CsDog() { Name = "Fido", Barks = true }), Writer(store)); // other settings, same defaults
+      byte[] first = Serializer.Serialize(CreateOrder(1, new CsDog() { Name = "Rex" }), settings);
+      byte[] second = Serializer.Serialize(CreateOrder(2, new CsDog() { Name = "Fido", Barks = true }), Writer(store)); // other settings, same defaults
 
       Assert.AreEqual(ReferencedId(first), ReferencedId(second));
       Assert.AreEqual(1, store.Count);
@@ -139,9 +140,9 @@ namespace LsMsgPackUnitTests
       CsOrder withDog = CreateOrder(1, new CsDog() { Name = "Rex", Barks = true });
       CsOrder withCat = CreateOrder(2, new CsCat() { Name = "Mia", Lives = 9 });
 
-      byte[] dogPayload = MsgPackSerializer.Serialize(withDog, Writer(store));
-      byte[] catPayload = MsgPackSerializer.Serialize(withCat, Writer(store));
-      byte[] dogAgain = MsgPackSerializer.Serialize(withDog, Writer(store));
+      byte[] dogPayload = Serializer.Serialize(withDog, Writer(store));
+      byte[] catPayload = Serializer.Serialize(withCat, Writer(store));
+      byte[] dogAgain = Serializer.Serialize(withDog, Writer(store));
 
       Assert.AreNotEqual(ReferencedId(dogPayload), ReferencedId(catPayload), "the cat was added to the schema");
       Assert.AreEqual(ReferencedId(catPayload), ReferencedId(dogAgain), "the grown schema is used from then on");
@@ -152,20 +153,20 @@ namespace LsMsgPackUnitTests
       foreach (SchemaId id in store.GetSchemaIds())
         readerStore.Register(store.GetSchema(id));
 
-      AssertSame(withDog, MsgPackSerializer.Deserialize<CsOrder>(dogPayload, Reader(readerStore)));
-      AssertSame(withCat, MsgPackSerializer.Deserialize<CsOrder>(catPayload, Reader(readerStore)));
-      AssertSame(withDog, MsgPackSerializer.Deserialize<CsOrder>(dogAgain, Reader(readerStore)));
+      AssertSame(withDog, Serializer.Deserialize<CsOrder>(dogPayload, Reader(readerStore)));
+      AssertSame(withCat, Serializer.Deserialize<CsOrder>(catPayload, Reader(readerStore)));
+      AssertSame(withDog, Serializer.Deserialize<CsOrder>(dogAgain, Reader(readerStore)));
     }
 
     [TestMethod]
     public void EachRootTypeHasItsOwnSchema()
     {
       SchemaStore store = new SchemaStore();
-      byte[] order = MsgPackSerializer.Serialize(CreateOrder(1, null), Writer(store));
-      byte[] line = MsgPackSerializer.Serialize(new CsLine() { Product = "Plums", Quantity = 1 }, Writer(store));
+      byte[] order = Serializer.Serialize(CreateOrder(1, null), Writer(store));
+      byte[] line = Serializer.Serialize(new CsLine() { Product = "Plums", Quantity = 1 }, Writer(store));
 
       Assert.AreNotEqual(ReferencedId(order), ReferencedId(line));
-      Assert.AreEqual("Plums", MsgPackSerializer.Deserialize<CsLine>(line, Reader(store)).Product);
+      Assert.AreEqual("Plums", Serializer.Deserialize<CsLine>(line, Reader(store)).Product);
     }
 
     [TestMethod]
@@ -173,15 +174,15 @@ namespace LsMsgPackUnitTests
     {
       SchemaStore writerStore = new SchemaStore();
       CsOrder order = CreateOrder(3, new CsCat() { Name = "Mia" });
-      byte[] payload = MsgPackSerializer.Serialize(order, Writer(writerStore));
+      byte[] payload = Serializer.Serialize(order, Writer(writerStore));
       SchemaId id = ReferencedId(payload);
 
       SchemaStore readerStore = new SchemaStore();
-      MissingSchemaException missing = Assert.ThrowsExactly<MissingSchemaException>(() => MsgPackSerializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
+      MissingSchemaException missing = Assert.ThrowsExactly<MissingSchemaException>(() => Serializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
       Assert.AreEqual(id, missing.SchemaId);
 
       Assert.AreEqual(id, readerStore.Register(writerStore.GetSchema(id)));
-      AssertSame(order, MsgPackSerializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
+      AssertSame(order, Serializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
     }
 
     [TestMethod]
@@ -189,12 +190,12 @@ namespace LsMsgPackUnitTests
     {
       SchemaStore writerStore = new SchemaStore();
       CsOrder order = CreateOrder(4, new CsDog() { Name = "Rex" });
-      byte[] payload = MsgPackSerializer.Serialize(order, Writer(writerStore));
+      byte[] payload = Serializer.Serialize(order, Writer(writerStore));
 
       int asked = 0;
       SchemaStore readerStore = new SchemaStore() { SchemaProvider = id => { asked++; return writerStore.GetSchema(id); } };
-      AssertSame(order, MsgPackSerializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
-      AssertSame(order, MsgPackSerializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
+      AssertSame(order, Serializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
+      AssertSame(order, Serializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
       Assert.AreEqual(1, asked);
     }
 
@@ -202,11 +203,11 @@ namespace LsMsgPackUnitTests
     public void SchemaProviderCannotSubstituteAnotherSchema()
     {
       SchemaStore writerStore = new SchemaStore();
-      byte[] payload = MsgPackSerializer.Serialize(CreateOrder(5, null), Writer(writerStore));
-      byte[] otherSchema = writerStore.GetSchema(ReferencedId(MsgPackSerializer.Serialize(new CsLine() { Product = "x" }, Writer(writerStore))));
+      byte[] payload = Serializer.Serialize(CreateOrder(5, null), Writer(writerStore));
+      byte[] otherSchema = writerStore.GetSchema(ReferencedId(Serializer.Serialize(new CsLine() { Product = "x" }, Writer(writerStore))));
 
       SchemaStore readerStore = new SchemaStore() { SchemaProvider = id => otherSchema };
-      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
+      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
       StringAssert.Contains(ex.Message, "returned the schema");
     }
 
@@ -214,7 +215,7 @@ namespace LsMsgPackUnitTests
     public void TheIdIsComputedFromTheSchema()
     {
       SchemaStore writerStore = new SchemaStore();
-      byte[] payload = MsgPackSerializer.Serialize(CreateOrder(6, null), Writer(writerStore));
+      byte[] payload = Serializer.Serialize(CreateOrder(6, null), Writer(writerStore));
       SchemaId id = ReferencedId(payload);
       byte[] schema = writerStore.GetSchema(id);
       Assert.AreEqual(id, SchemaId.Compute(schema));
@@ -225,7 +226,7 @@ namespace LsMsgPackUnitTests
       tampered[at] = (byte)'K';
       SchemaStore readerStore = new SchemaStore();
       Assert.AreNotEqual(id, readerStore.Register(tampered));
-      Assert.ThrowsExactly<MissingSchemaException>(() => MsgPackSerializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
+      Assert.ThrowsExactly<MissingSchemaException>(() => Serializer.Deserialize<CsOrder>(payload, Reader(readerStore)));
     }
 
     private static int IndexOf(byte[] bytes, byte[] part)
@@ -251,8 +252,8 @@ namespace LsMsgPackUnitTests
     public void MaxSchemasLimitsReceivedSchemas()
     {
       SchemaStore writerStore = new SchemaStore();
-      byte[] a = writerStore.GetSchema(ReferencedId(MsgPackSerializer.Serialize(CreateOrder(1, null), Writer(writerStore))));
-      byte[] b = writerStore.GetSchema(ReferencedId(MsgPackSerializer.Serialize(new CsLine() { Product = "x" }, Writer(writerStore))));
+      byte[] a = writerStore.GetSchema(ReferencedId(Serializer.Serialize(CreateOrder(1, null), Writer(writerStore))));
+      byte[] b = writerStore.GetSchema(ReferencedId(Serializer.Serialize(new CsLine() { Product = "x" }, Writer(writerStore))));
 
       SchemaStore readerStore = new SchemaStore() { MaxSchemas = 1 };
       readerStore.Register(a);
@@ -265,8 +266,8 @@ namespace LsMsgPackUnitTests
     public void ExportAndImport()
     {
       SchemaStore writerStore = new SchemaStore();
-      byte[] dog = MsgPackSerializer.Serialize(CreateOrder(1, new CsDog() { Name = "Rex" }), Writer(writerStore));
-      byte[] cat = MsgPackSerializer.Serialize(CreateOrder(2, new CsCat() { Name = "Mia" }), Writer(writerStore));
+      byte[] dog = Serializer.Serialize(CreateOrder(1, new CsDog() { Name = "Rex" }), Writer(writerStore));
+      byte[] cat = Serializer.Serialize(CreateOrder(2, new CsCat() { Name = "Mia" }), Writer(writerStore));
 
       MemoryStream exported = new MemoryStream();
       writerStore.Export(exported);
@@ -275,8 +276,8 @@ namespace LsMsgPackUnitTests
       SchemaStore readerStore = new SchemaStore();
       Assert.AreEqual(2, readerStore.Import(exported));
       CollectionAssert.AreEquivalent(writerStore.GetSchemaIds(), readerStore.GetSchemaIds());
-      Assert.AreEqual("Rex", MsgPackSerializer.Deserialize<CsOrder>(dog, Reader(readerStore)).Pet.Name);
-      Assert.AreEqual("Mia", MsgPackSerializer.Deserialize<CsOrder>(cat, Reader(readerStore)).Pet.Name);
+      Assert.AreEqual("Rex", Serializer.Deserialize<CsOrder>(dog, Reader(readerStore)).Pet.Name);
+      Assert.AreEqual("Mia", Serializer.Deserialize<CsOrder>(cat, Reader(readerStore)).Pet.Name);
     }
 
     [TestMethod]
@@ -292,28 +293,28 @@ namespace LsMsgPackUnitTests
     public void NullIsWrittenWithoutReference()
     {
       SchemaStore store = new SchemaStore();
-      byte[] payload = MsgPackSerializer.Serialize<CsOrder>(null, Writer(store));
+      byte[] payload = Serializer.Serialize<CsOrder>(null, Writer(store));
       CollectionAssert.AreEqual(new byte[] { 0xC0 }, payload);
-      Assert.IsNull(MsgPackSerializer.Deserialize<CsOrder>(payload, Reader(store)));
+      Assert.IsNull(Serializer.Deserialize<CsOrder>(payload, Reader(store)));
       Assert.AreEqual(0, store.Count);
     }
 
     [TestMethod]
     public void ReferenceNeedsAStore()
     {
-      Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Serialize(CreateOrder(1, null), new MsgPackSettings() { WriteSchemaReference = true }));
+      Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(CreateOrder(1, null), new MsgPackSettings() { WriteSchemaReference = true }));
 
-      byte[] payload = MsgPackSerializer.Serialize(CreateOrder(1, null), Writer(new SchemaStore()));
-      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Deserialize<CsOrder>(payload, new MsgPackSettings()));
+      byte[] payload = Serializer.Serialize(CreateOrder(1, null), Writer(new SchemaStore()));
+      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<CsOrder>(payload, new MsgPackSettings()));
       StringAssert.Contains(ex.Message, "SchemaStore");
     }
 
     [TestMethod]
     public void OtherExtensionIsNotAReference()
     {
-      byte[] payload = MsgPackSerializer.Serialize(CreateOrder(1, null), Writer(new SchemaStore()));
+      byte[] payload = Serializer.Serialize(CreateOrder(1, null), Writer(new SchemaStore()));
       payload[1] = 3;
-      Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Deserialize<CsOrder>(payload, Reader(new SchemaStore())));
+      Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<CsOrder>(payload, Reader(new SchemaStore())));
     }
 
     [TestMethod]
@@ -322,9 +323,9 @@ namespace LsMsgPackUnitTests
       SchemaStore store = new SchemaStore();
       MsgPackSettings names = new MsgPackSettings() { UseInexedSchema = false, SchemaStore = store, WriteSchemaReference = true };
       CsOrder order = CreateOrder(7, null);
-      byte[] payload = MsgPackSerializer.Serialize(order, names);
-      CollectionAssert.AreEqual(MsgPackSerializer.Serialize(order, new MsgPackSettings() { UseInexedSchema = false }), payload);
-      AssertSame(order, MsgPackSerializer.Deserialize<CsOrder>(payload, names));
+      byte[] payload = Serializer.Serialize(order, names);
+      CollectionAssert.AreEqual(Serializer.Serialize(order, new MsgPackSettings() { UseInexedSchema = false }), payload);
+      AssertSame(order, Serializer.Deserialize<CsOrder>(payload, names));
       Assert.AreEqual(0, store.Count);
     }
 
@@ -336,12 +337,12 @@ namespace LsMsgPackUnitTests
       SchemaStore store = new SchemaStore();
       CsOrder order = CreateOrder(8, new CsDog() { Name = new string('x', 300) }); // a name with a length of 2 bytes
       MsgPackSettings settings = new MsgPackSettings() { SchemaStore = store, WriteSchemaReference = true, EndianAction = endian };
-      byte[] payload = MsgPackSerializer.Serialize(order, settings);
+      byte[] payload = Serializer.Serialize(order, settings);
 
       SchemaStore reference = new SchemaStore();
-      byte[] canonical = MsgPackSerializer.Serialize(order, Writer(reference));
+      byte[] canonical = Serializer.Serialize(order, Writer(reference));
       Assert.AreEqual(ReferencedId(canonical), ReferencedId(payload));
-      AssertSame(order, MsgPackSerializer.Deserialize<CsOrder>(payload, new MsgPackSettings() { SchemaStore = store, EndianAction = endian }));
+      AssertSame(order, Serializer.Deserialize<CsOrder>(payload, new MsgPackSettings() { SchemaStore = store, EndianAction = endian }));
     }
 
     [TestMethod]
@@ -350,22 +351,22 @@ namespace LsMsgPackUnitTests
       SchemaStore store = new SchemaStore();
       CsOrder dog = CreateOrder(1, new CsDog() { Name = "Rex" });
       CsOrder cat = CreateOrder(2, new CsCat() { Name = "Mia", Lives = 7 });
-      byte[] dogPayload = MsgPackSerializer.Serialize(dog, new MsgPackSettings());
-      byte[] catPayload = MsgPackSerializer.Serialize(cat, new MsgPackSettings());
+      byte[] dogPayload = Serializer.Serialize(dog, new MsgPackSettings());
+      byte[] catPayload = Serializer.Serialize(cat, new MsgPackSettings());
 
       for (int t = 0; t < 3; t++)
       {
-        AssertSame(dog, MsgPackSerializer.Deserialize<CsOrder>(dogPayload, Reader(store)));
-        AssertSame(cat, MsgPackSerializer.Deserialize<CsOrder>(catPayload, Reader(store)));
+        AssertSame(dog, Serializer.Deserialize<CsOrder>(dogPayload, Reader(store)));
+        AssertSame(cat, Serializer.Deserialize<CsOrder>(catPayload, Reader(store)));
       }
       Assert.AreEqual(0, store.Count, "inline schemas cannot be referred to");
 
       SchemaStore notCaching = new SchemaStore() { CacheInlineSchemas = false };
-      AssertSame(dog, MsgPackSerializer.Deserialize<CsOrder>(dogPayload, Reader(notCaching)));
+      AssertSame(dog, Serializer.Deserialize<CsOrder>(dogPayload, Reader(notCaching)));
 
       SchemaStore full = new SchemaStore() { MaxSchemas = 1 };
-      AssertSame(dog, MsgPackSerializer.Deserialize<CsOrder>(dogPayload, Reader(full)));
-      AssertSame(cat, MsgPackSerializer.Deserialize<CsOrder>(catPayload, Reader(full))); // read without caching
+      AssertSame(dog, Serializer.Deserialize<CsOrder>(dogPayload, Reader(full)));
+      AssertSame(cat, Serializer.Deserialize<CsOrder>(catPayload, Reader(full))); // read without caching
     }
 
     [TestMethod]
@@ -374,10 +375,10 @@ namespace LsMsgPackUnitTests
       // A reader session is shared per schema: reading the same schema as another type needs other properties
       SchemaStore store = new SchemaStore();
       CsDog dog = new CsDog() { Name = "Rex", Barks = true };
-      byte[] payload = MsgPackSerializer.Serialize<ICsPet>(dog, Writer(store));
-      Assert.AreEqual("Rex", MsgPackSerializer.Deserialize<ICsPet>(payload, Reader(store)).Name);
-      Assert.IsTrue(MsgPackSerializer.Deserialize<CsDog>(payload, Reader(store)).Barks);
-      Assert.AreEqual("Rex", ((CsDog)MsgPackSerializer.Deserialize<object>(payload, Reader(store))).Name);
+      byte[] payload = Serializer.Serialize<ICsPet>(dog, Writer(store));
+      Assert.AreEqual("Rex", Serializer.Deserialize<ICsPet>(payload, Reader(store)).Name);
+      Assert.IsTrue(Serializer.Deserialize<CsDog>(payload, Reader(store)).Barks);
+      Assert.AreEqual("Rex", ((CsDog)Serializer.Deserialize<object>(payload, Reader(store))).Name);
     }
 
     [TestMethod]
@@ -399,18 +400,30 @@ namespace LsMsgPackUnitTests
           default: pet = null; break;
         }
         CsOrder order = CreateOrder(i, pet);
-        byte[] payload = MsgPackSerializer.Serialize(order, writer);
-        CsOrder read = MsgPackSerializer.Deserialize<CsOrder>(payload, reader);
+        byte[] payload = Serializer.Serialize(order, writer);
+        CsOrder read = Serializer.Deserialize<CsOrder>(payload, reader);
         if (JsonConvert.SerializeObject(order, Utc) != JsonConvert.SerializeObject(read, Utc))
           System.Threading.Interlocked.Increment(ref failures);
 
-        byte[] inline = MsgPackSerializer.Serialize(order, new MsgPackSettings());
-        if (JsonConvert.SerializeObject(order, Utc) != JsonConvert.SerializeObject(MsgPackSerializer.Deserialize<CsOrder>(inline, reader), Utc))
+        byte[] inline = Serializer.Serialize(order, new MsgPackSettings());
+        if (JsonConvert.SerializeObject(order, Utc) != JsonConvert.SerializeObject(Serializer.Deserialize<CsOrder>(inline, reader), Utc))
           System.Threading.Interlocked.Increment(ref failures);
       });
 
       Assert.AreEqual(0, failures);
       Assert.IsLessThanOrEqualTo(3, writerStore.Count, "at most one schema per order of first use of dog and cat");
     }
+  }
+
+  [TestClass]
+  public class LsCachedSchemaTests : CachedSchemaTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+  }
+
+  [TestClass]
+  public class LtCachedSchemaTests : CachedSchemaTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
 }

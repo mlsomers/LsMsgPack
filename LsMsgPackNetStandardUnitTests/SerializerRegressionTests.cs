@@ -16,9 +16,10 @@ namespace LsMsgPackUnitTests
   /// <summary>
   /// Serializer / deserializer entry points, the indexed schema and type resolving.
   /// </summary>
-  [TestClass]
-  public class SerializerRegressionTests
+  public abstract class SerializerRegressionTests
   {
+    protected abstract ISerializerUnderTest Serializer { get; }
+
     public SerializerRegressionTests()
     {
       MsgPackSerializer.CacheAssemblyTypes(typeof(IIPet));
@@ -61,32 +62,32 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
       Cat org = new Cat() { Name = "Mia", ClawLengthMilimeters = 2 };
 
-      byte[] buffer = MsgPackSerializer.Serialize(org, settings);
-      Cat ret = (Cat)MsgPackSerializer.Deserialize(typeof(Cat), buffer, settings);
+      byte[] buffer = Serializer.Serialize(org, settings);
+      Cat ret = (Cat)Serializer.Deserialize(typeof(Cat), buffer, settings);
       Assert.AreEqual("Mia", ret.Name);
 
       MemoryStream ms = new MemoryStream();
-      MsgPackSerializer.Serialize(org, ms, settings);
+      Serializer.Serialize(org, ms, settings);
       ms.Position = 0;
-      ret = (Cat)MsgPackSerializer.Deserialize(typeof(Cat), ms, settings);
+      ret = (Cat)Serializer.Deserialize(typeof(Cat), ms, settings);
       Assert.AreEqual("Mia", ret.Name);
     }
 
     [TestMethod]
     public void DeserializeByTypeWithDefaultSettings()
     {
-      byte[] buffer = MsgPackSerializer.Serialize(new Cat() { Name = "Mia" });
-      Assert.AreEqual("Mia", ((Cat)MsgPackSerializer.Deserialize(typeof(Cat), buffer)).Name);
+      byte[] buffer = Serializer.Serialize(new Cat() { Name = "Mia" });
+      Assert.AreEqual("Mia", ((Cat)Serializer.Deserialize(typeof(Cat), buffer)).Name);
     }
 
     [TestMethod]
     public void NullSettingsUseDefaults()
     {
-      byte[] buffer = MsgPackSerializer.Serialize(new Cat() { Name = "Mia" }, (MsgPackSettings)null);
-      Assert.AreEqual("Mia", MsgPackSerializer.Deserialize<Cat>(buffer, (MsgPackSettings)null).Name);
+      byte[] buffer = Serializer.Serialize(new Cat() { Name = "Mia" }, (MsgPackSettings)null);
+      Assert.AreEqual("Mia", Serializer.Deserialize<Cat>(buffer, (MsgPackSettings)null).Name);
 
       MemoryStream ms = new MemoryStream();
-      MsgPackSerializer.Serialize(new Cat() { Name = "Mia" }, ms, (MsgPackSettings)null);
+      Serializer.Serialize(new Cat() { Name = "Mia" }, ms, (MsgPackSettings)null);
       CollectionAssert.AreEqual(buffer, ms.ToArray());
     }
 
@@ -97,9 +98,9 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
       MemoryStream ms = new MemoryStream();
-      MsgPackSerializer.Serialize<Cat>(null, ms, settings);
+      Serializer.Serialize<Cat>(null, ms, settings);
 
-      CollectionAssert.AreEqual(MsgPackSerializer.Serialize<Cat>(null, settings), ms.ToArray());
+      CollectionAssert.AreEqual(Serializer.Serialize<Cat>(null, settings), ms.ToArray());
       CollectionAssert.AreEqual(new byte[] { (byte)MsgPackTypeId.MpNull }, ms.ToArray());
     }
 
@@ -117,8 +118,8 @@ namespace LsMsgPackUnitTests
       IMsgPackPropertyIdResolver[] propResolvers = new IMsgPackPropertyIdResolver[0];
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = true, TypeResolvers = resolvers, PropertyNameResolvers = propResolvers };
 
-      byte[] buffer = MsgPackSerializer.Serialize(new Cat() { Name = "Mia" }, settings);
-      MsgPackSerializer.Deserialize<Cat>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(new Cat() { Name = "Mia" }, settings);
+      Serializer.Deserialize<Cat>(buffer, settings);
 
       Assert.AreSame(resolvers, settings.TypeResolvers);
       Assert.AreSame(propResolvers, settings.PropertyNameResolvers);
@@ -137,8 +138,8 @@ namespace LsMsgPackUnitTests
           ExplicitlyCat = new Cat() { Name = $"Cat {i}" },
           PetBaseClass = new Dog() { Name = $"Dog {i}" },
         };
-        byte[] buffer = MsgPackSerializer.Serialize(org, settings);
-        HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer, settings);
+        byte[] buffer = Serializer.Serialize(org, settings);
+        HierarchyContainer ret = Serializer.Deserialize<HierarchyContainer>(buffer, settings);
 
         Assert.AreEqual($"Cat {i}", ret.ExplicitlyCat.Name);
         Assert.AreEqual($"Dog {i}", ((Dog)ret.PetBaseClass).Name);
@@ -149,8 +150,8 @@ namespace LsMsgPackUnitTests
     public void SchemaPrimitiveRoots()
     {
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = true };
-      Assert.AreEqual(70000, MsgPackSerializer.Deserialize<int>(MsgPackSerializer.Serialize(70000, settings), settings));
-      Assert.AreEqual("x", MsgPackSerializer.Deserialize<string>(MsgPackSerializer.Serialize("x", settings), settings));
+      Assert.AreEqual(70000, Serializer.Deserialize<int>(Serializer.Serialize(70000, settings), settings));
+      Assert.AreEqual("x", Serializer.Deserialize<string>(Serializer.Serialize("x", settings), settings));
     }
 
     [TestMethod]
@@ -159,11 +160,11 @@ namespace LsMsgPackUnitTests
       MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
       MsgPackSettings withSchema = new MsgPackSettings() { UseInexedSchema = true };
 
-      byte[] array = MsgPackSerializer.Serialize(new[] { 1, 2 }, withoutSchema); // { "@": [1, 2] }
-      Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Deserialize<int[]>(array, withSchema));
+      byte[] array = Serializer.Serialize(new[] { 1, 2 }, withoutSchema); // { "@": [1, 2] }
+      Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<int[]>(array, withSchema));
 
-      byte[] number = MsgPackSerializer.Serialize(5, withoutSchema); // Used to silently return default
-      Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Deserialize<int>(number, withSchema));
+      byte[] number = Serializer.Serialize(5, withoutSchema); // Used to silently return default
+      Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<int>(number, withSchema));
     }
 
     /// <summary>
@@ -174,8 +175,8 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = true, TypeResolvers = new IMsgPackTypeResolver[] { new NumberedPets() } };
 
-      byte[] buffer = MsgPackSerializer.Serialize(new PetBox() { Pet = new Cat() { Name = "Mia" }, Thing = new Other() { X = "x" } }, settings);
-      PetBox ret = MsgPackSerializer.Deserialize<PetBox>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(new PetBox() { Pet = new Cat() { Name = "Mia" }, Thing = new Other() { X = "x" } }, settings);
+      PetBox ret = Serializer.Deserialize<PetBox>(buffer, settings);
 
       Assert.IsInstanceOfType<Cat>(ret.Pet);
       Assert.IsInstanceOfType<Other>(ret.Thing);
@@ -196,8 +197,8 @@ namespace LsMsgPackUnitTests
         TypeResolvers = new IMsgPackTypeResolver[] { new XmlRootAttributeTypeResolver() }
       };
 
-      byte[] buffer = MsgPackSerializer.Serialize(new PetBox() { Thing = new XmlCat() { Name = "Mia" } }, settings);
-      PetBox ret = MsgPackSerializer.Deserialize<PetBox>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(new PetBox() { Thing = new XmlCat() { Name = "Mia" } }, settings);
+      PetBox ret = Serializer.Deserialize<PetBox>(buffer, settings);
 
       Assert.AreEqual("Mia", ((XmlCat)ret.Thing).Name);
     }
@@ -206,9 +207,9 @@ namespace LsMsgPackUnitTests
     public void FullNameOfTypeOutsideCoreLibrary()
     {
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName };
-      byte[] buffer = MsgPackSerializer.Serialize(new WithSorted() { Sorted = new SortedDictionary<string, long>() { { "a", 1 } } }, settings);
+      byte[] buffer = Serializer.Serialize(new WithSorted() { Sorted = new SortedDictionary<string, long>() { { "a", 1 } } }, settings);
 
-      WithSorted ret = MsgPackSerializer.Deserialize<WithSorted>(buffer, settings);
+      WithSorted ret = Serializer.Deserialize<WithSorted>(buffer, settings);
       Assert.IsInstanceOfType<SortedDictionary<string, long>>(ret.Sorted);
     }
 
@@ -219,11 +220,11 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
 
-      byte[] buffer = MsgPackSerializer.Serialize(new WithArrayList() { Items = new ArrayList() { 1, "a" } }, settings);
-      CollectionAssert.AreEqual(new object[] { (byte)1, "a" }, MsgPackSerializer.Deserialize<WithArrayList>(buffer, settings).Items);
+      byte[] buffer = Serializer.Serialize(new WithArrayList() { Items = new ArrayList() { 1, "a" } }, settings);
+      CollectionAssert.AreEqual(new object[] { (byte)1, "a" }, Serializer.Deserialize<WithArrayList>(buffer, settings).Items);
 
-      buffer = MsgPackSerializer.Serialize(new WithIntList() { Items = new IntList() { 1, 300 } }, settings);
-      CollectionAssert.AreEqual(new[] { 1, 300 }, MsgPackSerializer.Deserialize<WithIntList>(buffer, settings).Items);
+      buffer = Serializer.Serialize(new WithIntList() { Items = new IntList() { 1, 300 } }, settings);
+      CollectionAssert.AreEqual(new[] { 1, 300 }, Serializer.Deserialize<WithIntList>(buffer, settings).Items);
     }
 
     [TestMethod]
@@ -232,8 +233,8 @@ namespace LsMsgPackUnitTests
     public void HiddenPropertyUsesTheMostDerivedOne(bool useSchema)
     {
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
-      byte[] buffer = MsgPackSerializer.Serialize(new HidesX() { X = "a" }, settings);
-      Assert.AreEqual("a", MsgPackSerializer.Deserialize<HidesX>(buffer, settings).X);
+      byte[] buffer = Serializer.Serialize(new HidesX() { X = "a" }, settings);
+      Assert.AreEqual("a", Serializer.Deserialize<HidesX>(buffer, settings).X);
     }
 
     [TestMethod]
@@ -242,8 +243,8 @@ namespace LsMsgPackUnitTests
     public void IndexersAreIgnored(bool useSchema)
     {
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
-      byte[] buffer = MsgPackSerializer.Serialize(new WithIndexer() { Name = "a" }, settings);
-      Assert.AreEqual("a", MsgPackSerializer.Deserialize<WithIndexer>(buffer, settings).Name);
+      byte[] buffer = Serializer.Serialize(new WithIndexer() { Name = "a" }, settings);
+      Assert.AreEqual("a", Serializer.Deserialize<WithIndexer>(buffer, settings).Name);
     }
 
     [TestMethod]
@@ -302,11 +303,11 @@ namespace LsMsgPackUnitTests
         DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() }
       };
 
-      byte[] withoutSchema = MsgPackSerializer.Serialize(new AllZero(), new MsgPackSettings() { UseInexedSchema = false, DynamicFilters = settings.DynamicFilters });
+      byte[] withoutSchema = Serializer.Serialize(new AllZero(), new MsgPackSettings() { UseInexedSchema = false, DynamicFilters = settings.DynamicFilters });
       Assert.AreEqual(1, ((MpMap)MsgPackItem.Unpack(withoutSchema)).Count, "Only Name should be serialized");
 
       AllZero org = new AllZero() { L = 1, F = 2, D = 3, B = 4, SB = -5, S = 6, US = 7, UI = 8, UL = 9, M = 10 };
-      AllZero ret = MsgPackSerializer.Deserialize<AllZero>(MsgPackSerializer.Serialize(org, settings), settings);
+      AllZero ret = Serializer.Deserialize<AllZero>(Serializer.Serialize(org, settings), settings);
       Assert.AreEqual(1L, ret.L);
       Assert.AreEqual(2f, ret.F);
       Assert.AreEqual(3d, ret.D);
@@ -364,8 +365,8 @@ namespace LsMsgPackUnitTests
         Numbers = new List<int>(new int[20]) { 1 } // array16
       };
 
-      byte[] buffer = MsgPackSerializer.Serialize(org, settings);
-      Assorted ret = MsgPackSerializer.Deserialize<Assorted>(new TrickleStream(buffer), settings);
+      byte[] buffer = Serializer.Serialize(org, settings);
+      Assorted ret = Serializer.Deserialize<Assorted>(new TrickleStream(buffer), settings);
 
       Assert.AreEqual(org.Name, ret.Name);
       Assert.AreEqual(org.S, ret.S);
@@ -406,7 +407,7 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new FixedPropertyId("same") } };
 
       // Even when one of them would be skipped (default value), the ids are checked once per type
-      MsgPackException ex = Assert.Throws<MsgPackException>(() => MsgPackSerializer.Serialize(new TwoNames() { First = "a" }, settings));
+      MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Serialize(new TwoNames() { First = "a" }, settings));
       StringAssert.Contains(ex.Message, "same id");
     }
 
@@ -419,7 +420,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new FixedPropertyId(id) } };
 
-      MsgPackException ex = Assert.Throws<MsgPackException>(() => MsgPackSerializer.Serialize(new TwoNames() { First = "a", Second = "b" }, settings));
+      MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Serialize(new TwoNames() { First = "a", Second = "b" }, settings));
       StringAssert.Contains(ex.Message, "reserved");
     }
 
@@ -447,5 +448,17 @@ namespace LsMsgPackUnitTests
         return null;
       }
     }
+  }
+
+  [TestClass]
+  public class LsSerializerRegressionTests : SerializerRegressionTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+  }
+
+  [TestClass]
+  public class LtSerializerRegressionTests : SerializerRegressionTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
 }

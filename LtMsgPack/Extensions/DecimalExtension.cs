@@ -14,7 +14,15 @@ namespace LtMsgPack.Extensions
     /// </summary>
     public static sbyte Default_TypeCode = 1;
 
-    private readonly sbyte _typeCode = Default_TypeCode;
+    private readonly sbyte _typeCode;
+
+    public DecimalExtension() : this(Default_TypeCode) { }
+
+    /// <param name="typeCode">Another type code (e.g. 4 for the decimals of Nerdbank.MessagePack)</param>
+    public DecimalExtension(sbyte typeCode)
+    {
+      _typeCode = typeCode;
+    }
 
     public override sbyte TypeCode { get { return _typeCode; } }
 

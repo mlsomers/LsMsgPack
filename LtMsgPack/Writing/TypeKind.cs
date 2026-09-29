@@ -17,6 +17,7 @@ namespace LtMsgPack.Writing
     Map, // dictionaries and arrays of KeyValuePair<,>
     Array, // other collections
     Char, TimeSpan, Uri, DateOnly, TimeOnly,
+    RawExtension, // a MsgPackExtension that was read (LsMsgPack writes the MpExt it read as itself)
     Complex // an object with properties
   }
 
@@ -58,6 +59,7 @@ namespace LtMsgPack.Writing
       if (typeof(IDictionary).IsAssignableFrom(type)) return TypeKind.Map;
       if (type.IsArray) return TypeKind.Array;
       if (typeof(IEnumerable).IsAssignableFrom(type)) return TypeKind.Array;
+      if (type == typeof(MsgPackExtension)) return TypeKind.RawExtension;
       if (type == typeof(char)) return TypeKind.Char;
       if (type == typeof(TimeSpan)) return TypeKind.TimeSpan;
       if (typeof(Uri).IsAssignableFrom(type)) return TypeKind.Uri;

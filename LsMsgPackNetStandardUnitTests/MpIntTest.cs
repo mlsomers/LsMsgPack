@@ -59,8 +59,6 @@ namespace LsMsgPackUnitTests
       foreach (object value in new object[] { (sbyte)-32, (short)-32, -32, -32L })
       {
         CollectionAssert.AreEqual(new byte[] { 0xE0 }, MsgPackItem.Pack(value).ToBytes(), value.GetType().Name);
-        CollectionAssert.AreEqual(new byte[] { 0xE0 }, MsgPackSerializer.Serialize(value, value.GetType(), compact), value.GetType().Name);
-        Assert.AreEqual(value, MsgPackSerializer.Deserialize(value.GetType(), new byte[] { 0xE0 }, compact));
       }
     }
 
@@ -81,7 +79,6 @@ namespace LsMsgPackUnitTests
       MsgPackItem item = MsgPackItem.Pack(value, settings);
       CollectionAssert.AreEqual(expected, item.ToBytes());
       Assert.AreEqual(value, item.Value); // still the original type
-      Assert.AreEqual(value, MsgPackSerializer.Deserialize<sbyte>(MsgPackSerializer.Serialize(value, settings), settings));
       Assert.AreEqual(value, MsgPackItem.Unpack(expected).GetTypedValue<sbyte>());
     }
 

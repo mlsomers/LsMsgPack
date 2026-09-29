@@ -57,16 +57,12 @@ namespace LsMsgPackUnitTests
   }
 
 
-  [TestClass]
-  public class SerializingInheritanceHierarchy
+  public abstract class SerializingInheritanceHierarchy
   {
+    protected abstract ISerializerUnderTest Serializer { get; }
 
-    public TestContext TestContext { get; private set; }
 
-    SerializingInheritanceHierarchy(TestContext context)
-    {
-      TestContext = context;
-    }
+    public TestContext TestContext { get; set; }
 
     public SerializingInheritanceHierarchy()
     {
@@ -150,9 +146,9 @@ namespace LsMsgPackUnitTests
       };
       SetFilters(settings, omitDefault, omitNull);
 
-      byte[] buffer = MsgPackSerializer.Serialize(container, settings);
+      byte[] buffer = Serializer.Serialize(container, settings);
 
-      HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer, settings);
+      HierarchyContainer ret = Serializer.Deserialize<HierarchyContainer>(buffer, settings);
 
       string returned = JsonConvert.SerializeObject(ret);
       string org = JsonConvert.SerializeObject(container);
@@ -185,8 +181,8 @@ namespace LsMsgPackUnitTests
       Resolver res = new Resolver();
       settings.TypeResolvers = new[] { res };
 
-      byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(container, settings);
+      HierarchyContainer ret = Serializer.Deserialize<HierarchyContainer>(buffer, settings);
 
       string returned = JsonConvert.SerializeObject(ret);
       string org = JsonConvert.SerializeObject(container);
@@ -254,8 +250,8 @@ namespace LsMsgPackUnitTests
       Resolver2 res = new Resolver2();
       settings.TypeResolvers = new[] { res };
 
-      byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(container, settings);
+      HierarchyContainer ret = Serializer.Deserialize<HierarchyContainer>(buffer, settings);
 
       string returned = JsonConvert.SerializeObject(ret);
       string org = JsonConvert.SerializeObject(container);
@@ -280,7 +276,7 @@ namespace LsMsgPackUnitTests
       SetFilters(settings, omitDefault, omitNull);
       settings.TypeResolvers = new[] { new Resolver2() };
 
-      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Serialize(GetDefault(), settings));
+      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(GetDefault(), settings));
       StringAssert.Contains(ex.Message, nameof(AddTypeIdOption.IfAmbiguious));
     }
 
@@ -302,8 +298,8 @@ namespace LsMsgPackUnitTests
       SetFilters(settings, omitDefault, omitNull);
       settings.TypeResolvers = new[] { new Resolver2() };
 
-      byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      HierarchyContainer ret = MsgPackSerializer.Deserialize<HierarchyContainer>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(container, settings);
+      HierarchyContainer ret = Serializer.Deserialize<HierarchyContainer>(buffer, settings);
 
       string returned = JsonConvert.SerializeObject(ret);
       string org = JsonConvert.SerializeObject(container);
@@ -350,8 +346,8 @@ namespace LsMsgPackUnitTests
       };
       SetFilters(settings, omitDefault, omitNull);
 
-      byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      NextLevelHierarchyContainer ret = MsgPackSerializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(container, settings);
+      NextLevelHierarchyContainer ret = Serializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
 
       string returned = JsonConvert.SerializeObject(ret);
       string org = JsonConvert.SerializeObject(container);
@@ -381,8 +377,8 @@ namespace LsMsgPackUnitTests
       };
       SetFilters(settings, omitDefault, omitNull);
 
-      byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      NextLevelHierarchyContainer ret = MsgPackSerializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(container, settings);
+      NextLevelHierarchyContainer ret = Serializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
 
       string returned = JsonConvert.SerializeObject(ret);
       string org = JsonConvert.SerializeObject(container);
@@ -402,16 +398,16 @@ namespace LsMsgPackUnitTests
       NextLevelHierarchyContainer container = GetNextLevel();
       string org = JsonConvert.SerializeObject(container);
 
-      byte[] buffer = MsgPackSerializer.Serialize(container, settings);
-      NextLevelHierarchyContainer ret = MsgPackSerializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(container, settings);
+      NextLevelHierarchyContainer ret = Serializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
 
       string returned = JsonConvert.SerializeObject(ret);
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
 
       settings.UseInexedSchema = true;
 
-      byte[] bufferSchema = MsgPackSerializer.Serialize(container, settings);
-      ret = MsgPackSerializer.Deserialize<NextLevelHierarchyContainer>(bufferSchema, settings);
+      byte[] bufferSchema = Serializer.Serialize(container, settings);
+      ret = Serializer.Deserialize<NextLevelHierarchyContainer>(bufferSchema, settings);
 
       returned = JsonConvert.SerializeObject(ret);
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
@@ -429,16 +425,16 @@ namespace LsMsgPackUnitTests
 
       settings.UseInexedSchema = false;
 
-      buffer = MsgPackSerializer.Serialize(container, settings);
-      ret = MsgPackSerializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
+      buffer = Serializer.Serialize(container, settings);
+      ret = Serializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
 
       returned = JsonConvert.SerializeObject(ret);
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
 
       settings.UseInexedSchema = true;
 
-      bufferSchema = MsgPackSerializer.Serialize(container, settings);
-      ret = MsgPackSerializer.Deserialize<NextLevelHierarchyContainer>(bufferSchema, settings);
+      bufferSchema = Serializer.Serialize(container, settings);
+      ret = Serializer.Deserialize<NextLevelHierarchyContainer>(bufferSchema, settings);
 
       returned = JsonConvert.SerializeObject(ret);
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
@@ -447,5 +443,17 @@ namespace LsMsgPackUnitTests
 
       TestContext.WriteLine($"100 pets: Normal: {buffer.Length}  With schema: {bufferSchema.Length}  = {100d - ((bufferSchema.Length * 100d) / buffer.Length):N2} % smaller");
     }
+  }
+
+  [TestClass]
+  public class LsSerializingInheritanceHierarchy : SerializingInheritanceHierarchy
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+  }
+
+  [TestClass]
+  public class LtSerializingInheritanceHierarchy : SerializingInheritanceHierarchy
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
 }

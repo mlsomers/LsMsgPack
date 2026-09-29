@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackUnitTests;
 using LsMsgPack.Types.Extensions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PolyType;
@@ -19,9 +20,10 @@ namespace LsMsgPackInteropTests
   /// <item>decimal: extension type 4 with the same 16 bytes as LsMsgPack's extension type 1 (Nerdbank uses type 1 for object references).</item>
   /// </list>
   /// </summary>
-  [TestClass]
-  public class NerdbankTests
+  public abstract class NerdbankTests
   {
+    protected abstract LsMsgPackUnitTests.ISerializerUnderTest Serializer { get; }
+
     private static readonly NB.MessagePackSerializer Nerdbank = new NB.MessagePackSerializer();
 
     private static readonly NB.MessagePackSerializer NerdbankLsMsgPackDecimal = new NB.MessagePackSerializer()
@@ -46,17 +48,17 @@ namespace LsMsgPackInteropTests
     public void LsMsgPackPropertyNames_ReadByNerdbank()
     {
       foreach (Invoice invoice in AllInvoices)
-        Same.AssertEqual(invoice, NerdbankLsMsgPackDecimal.Deserialize<Invoice, NerdbankShapes>(MsgPackSerializer.Serialize(invoice, Named)), invoice.InvoiceNumber);
+        Same.AssertEqual(invoice, NerdbankLsMsgPackDecimal.Deserialize<Invoice, NerdbankShapes>(Serializer.Serialize(invoice, Named)), invoice.InvoiceNumber);
 
       // With its own extension type codes Nerdbank does not read LsMsgPack's decimal
-      Assert.Throws<NB.MessagePackSerializationException>(() => Nerdbank.Deserialize<Invoice, NerdbankShapes>(MsgPackSerializer.Serialize(AllInvoices[1], Named)));
+      Assert.Throws<NB.MessagePackSerializationException>(() => Nerdbank.Deserialize<Invoice, NerdbankShapes>(Serializer.Serialize(AllInvoices[1], Named)));
     }
 
     [TestMethod]
     public void Nerdbank_ReadByLsMsgPack()
     {
       foreach (Invoice invoice in AllInvoices)
-        Same.AssertEqual(invoice, MsgPackSerializer.Deserialize<Invoice>(Nerdbank.Serialize<Invoice, NerdbankShapes>(invoice), NamedNerdbankExtensions), invoice.InvoiceNumber);
+        Same.AssertEqual(invoice, Serializer.Deserialize<Invoice>(Nerdbank.Serialize<Invoice, NerdbankShapes>(invoice), NamedNerdbankExtensions), invoice.InvoiceNumber);
     }
 
     /// <summary>
@@ -67,15 +69,27 @@ namespace LsMsgPackInteropTests
     {
       byte[] bytes = NerdbankLsMsgPackDecimal.Serialize<Invoice, NerdbankShapes>(AllInvoices[1]); // only the Guid differs from what LsMsgPack reads
 
-      MsgPackException ex = Assert.Throws<MsgPackException>(() => MsgPackSerializer.Deserialize<Invoice>(bytes, Named));
+      MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<Invoice>(bytes, Named));
       StringAssert.Contains(ex.Message, "extension type 2");
     }
 
     [TestMethod]
     public void IndexedSchema_NotReadable()
     {
-      byte[] bytes = MsgPackSerializer.Serialize(AllInvoices[1], new MsgPackSettings() { UseInexedSchema = true });
+      byte[] bytes = Serializer.Serialize(AllInvoices[1], new MsgPackSettings() { UseInexedSchema = true });
       Assert.Throws<NB.MessagePackSerializationException>(() => NerdbankLsMsgPackDecimal.Deserialize<Invoice, NerdbankShapes>(bytes));
     }
+  }
+
+  [TestClass]
+  public class LsNerdbankTests : NerdbankTests
+  {
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Ls; } }
+  }
+
+  [TestClass]
+  public class LtNerdbankTests : NerdbankTests
+  {
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Lt; } }
   }
 }
