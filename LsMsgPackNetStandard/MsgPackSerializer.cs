@@ -212,7 +212,7 @@ namespace LsMsgPack
         return DeserializeWithSchema(tType, stream, settings);
 
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
-      return ConvertDeserializeValue(unpacked.Value, tType, settings, null);
+      return ConvertDeserializeValue(unpacked.UnpackedValue, tType, settings, null);
     }
 
     private static object DeserializeWithSchema(Type tType, Stream stream, MsgPackSettings settings)
@@ -227,7 +227,7 @@ namespace LsMsgPack
       try
       {
         MsgPackItem unpacked = MsgPackItem.Unpack(stream, schemaSettings);
-        return ConvertDeserializeValue(unpacked.Value, tType, schemaSettings, null);
+        return ConvertDeserializeValue(unpacked.UnpackedValue, tType, schemaSettings, null);
       }
       finally
       {

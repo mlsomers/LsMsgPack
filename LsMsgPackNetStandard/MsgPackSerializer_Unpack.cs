@@ -40,7 +40,25 @@ namespace LsMsgPack
       if (val is object[] items)
         return ConvertArray(items, assignType, settings);
 
+      if (val is MpExt extension) // only extensions without a registered type (see MsgPackItem.UnpackedValue)
+        return ConvertExtension(extension, assignType);
+
       return ConvertScalar(val, assignType);
+    }
+
+    /// <summary>
+    /// An extension without a registered type (see <see cref="MsgPackSettings.CustomExtentionTypes"/>) is only assigned as itself (e.g. to object), or as its bytes to a byte[].
+    /// <para>Converting its bytes to anything else would silently misread data, another library may use the type for something else (e.g. a Guid in a different byte order).</para>
+    /// </summary>
+    private static object ConvertExtension(MpExt extension, Type assignType)
+    {
+      if (assignType.IsInstanceOfType(extension))
+        return extension;
+
+      if (assignType == typeof(byte[]))
+        return extension.Value;
+
+      throw new MsgPackException($"Unable to convert extension type {extension.TypeSpecifier} ({extension.Count} bytes) to {assignType.FullName}. To read it, add a custom extension for type {extension.TypeSpecifier} to {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.CustomExtentionTypes)}.", 0, extension.TypeId);
     }
 
     /// <summary>
