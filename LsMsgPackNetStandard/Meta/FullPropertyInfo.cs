@@ -196,6 +196,9 @@ namespace LsMsgPack.Meta
       if (sessionCache.TryGetValue(type, out FullPropertyInfo[] cached))
         return cached;
 
+      if (settings._schemaFrozen) // a shared session, see SchemaSession
+        throw SchemaGrowthException.Instance;
+
       // Within a session each property is resolved once: first the static filters, then the ids of the properties that are kept.
       // The indexed schema asks for the kept properties of the type (see GetStaticallyIncludedProps) when resolving the first id.
       FullPropertyInfo[] props = GetStaticallyIncludedProps(type, settings);
@@ -262,6 +265,9 @@ namespace LsMsgPack.Meta
       Dictionary<Type, FullPropertyInfo[]> sessionCache = settings._staticPropsCache;
       if (sessionCache != null && sessionCache.TryGetValue(type, out FullPropertyInfo[] cached))
         return cached;
+
+      if (settings._schemaFrozen) // a shared session, see SchemaSession
+        throw SchemaGrowthException.Instance;
 
       PropertyInfo[] props = GetProperties(type);
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);

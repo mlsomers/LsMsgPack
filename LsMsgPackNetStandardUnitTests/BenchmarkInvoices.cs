@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json;
 using System;
@@ -258,6 +258,9 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings indexed = new MsgPackSettings() { UseInexedSchema = true };
       MsgPackSettings named = new MsgPackSettings() { UseInexedSchema = false };
+      SchemaStore store = new SchemaStore(); // one store for writing and reading: in practice the reader has its own, holding the writer's schemas
+      MsgPackSettings reference = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store, WriteSchemaReference = true };
+      MsgPackSettings inlineStore = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store };
 
       return new ICandidate[]
       {
@@ -274,6 +277,16 @@ namespace LsMsgPackUnitTests
         new Candidate<byte[]>("LsMsgPack (indexed schema)",
           i => MsgPackSerializer.Serialize(i, indexed),
           b => MsgPackSerializer.Deserialize<Invoice>(b, indexed),
+          b => b.Length),
+
+        new Candidate<byte[]>("LsMsgPack (inline, store)", // the schema is written like the indexed schema, the reader recognizes it
+          i => MsgPackSerializer.Serialize(i, inlineStore),
+          b => MsgPackSerializer.Deserialize<Invoice>(b, inlineStore),
+          b => b.Length),
+
+        new Candidate<byte[]>("LsMsgPack (schema reference)",
+          i => MsgPackSerializer.Serialize(i, reference),
+          b => MsgPackSerializer.Deserialize<Invoice>(b, reference),
           b => b.Length),
 
         new Candidate<byte[]>("LsMsgPack (property names)",

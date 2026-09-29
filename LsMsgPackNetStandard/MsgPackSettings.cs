@@ -112,6 +112,17 @@ namespace LsMsgPack
     };
 
 
+    /// <summary>
+    /// The <see cref="SchemaStore"/> of new settings (null by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static SchemaStore Default_SchemaStore { get; set; } = null;
+
+    /// <summary>
+    /// The <see cref="WriteSchemaReference"/> of new settings (false by default).
+    /// </summary>
+    public static bool Default_WriteSchemaReference { get; set; } = false;
+
     #endregion
 
     /// <summary>
@@ -138,6 +149,13 @@ namespace LsMsgPack
     internal IMsgPackPropertyIncludeDynamically[] _dynamicFilters = Default_DynamicFilters;
     internal IMsgPackPropertyIdResolver[] _propertyNameResolvers = Default_PropertyNameResolvers;
     internal ICustomExt[] _customExtentionTypes = Default_CustomExtentionTypes;
+    internal SchemaStore _schemaStore = Default_SchemaStore;
+    internal bool _writeSchemaReference = Default_WriteSchemaReference;
+
+    /// <summary>
+    /// The session caches (<see cref="_serializedPropsCache"/>, <see cref="_staticPropsCache"/> and the schema) are shared by several calls and must not change (see <see cref="SchemaSession"/>). Not copied by <see cref="Clone"/>.
+    /// </summary>
+    internal bool _schemaFrozen;
 
     /// <summary>
     /// Serialized properties per type (see <see cref="Meta.FullPropertyInfo.GetSerializedProps(Type, MsgPackSettings)"/>), only for the settings of a single (de)serialization session with the indexed schema.
@@ -290,6 +308,27 @@ namespace LsMsgPack
     /// </summary>
     public ICustomExt[] CustomExtentionTypes { get { return _customExtentionTypes; } set { _customExtentionTypes = value; } }
 
+    /// <summary>
+    /// Keeps the indexed schemas between calls (null by default). Share one store between settings and threads, <see cref="Clone"/> keeps the same store.
+    /// <para>Reading: data with a schema reference (see <see cref="WriteSchemaReference"/>) needs the store, data with the schema inline is read faster when its schema was seen before (<see cref="SchemaStore.CacheInlineSchemas"/>).</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public SchemaStore SchemaStore { get { return _schemaStore; } set { _schemaStore = value; } }
+
+    /// <summary>
+    /// Write a reference to the schema (18 bytes, see <see cref="SchemaStore"/>) instead of the schema itself, false by default. Needs <see cref="UseInexedSchema"/> and a <see cref="SchemaStore"/>.
+    /// <para>The reader needs the schema in its <see cref="SchemaStore"/>, other MsgPack libraries cannot read such data.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Write Schema Reference")]
+    [Description("Write a reference to the schema (kept in the SchemaStore) instead of the schema itself. The reader needs the schema in its own SchemaStore.")]
+    [DefaultValue(false)]
+    public bool WriteSchemaReference
+    {
+      get { return _writeSchemaReference; }
+      set { _writeSchemaReference = value; }
+    }
+
     public MsgPackSettings Clone()
     {
       return new MsgPackSettings
@@ -308,7 +347,9 @@ namespace LsMsgPack
         _staticFilters = _staticFilters,
         _dynamicFilters = _dynamicFilters,
         _propertyNameResolvers = _propertyNameResolvers,
-        _customExtentionTypes = _customExtentionTypes
+        _customExtentionTypes = _customExtentionTypes,
+        _schemaStore = _schemaStore,
+        _writeSchemaReference = _writeSchemaReference
       };
     }
 

@@ -30,10 +30,18 @@ namespace LsMsgPack.TypeResolving.Types
     public Dictionary<Type, ComplexTypeDef> ByType { get; set; } = new Dictionary<Type, ComplexTypeDef>();
 
 
+    /// <summary>
+    /// A frozen schema is shared by the calls of a cached schema session (see <see cref="SchemaStore"/>) and must not change: adding to it throws <see cref="SchemaGrowthException"/>, the caller then extends a copy.
+    /// </summary>
+    internal bool IsFrozen { get; private set; }
+
     public ComplexTypeDef GetComplex(Type type, MsgPackSettings settings)
     {
       if (ByType.TryGetValue(type, out ComplexTypeDef complexSchemaBase))
         return complexSchemaBase;
+
+      if (IsFrozen)
+        throw SchemaGrowthException.Instance;
 
       ComplexTypeDef newEntry = new ComplexTypeDef(count, type, settings);
       ByType.Add(type, newEntry);
@@ -68,6 +76,9 @@ namespace LsMsgPack.TypeResolving.Types
 
       if (def.Type != null)
         return def.Type;
+
+      if (IsFrozen)
+        throw SchemaGrowthException.Instance;
 
       Type type = ResolveTypeName(def.TypeName, assignedTo, settings);
       if (type != null)
@@ -113,7 +124,11 @@ namespace LsMsgPack.TypeResolving.Types
         return id;
 
       if (def.IsCollection)
+      {
+        if (IsFrozen)
+          throw SchemaGrowthException.Instance;
         return def.AddProp(assignedTo.PropertyInfo.Name);
+      }
 
       return null;
     }
@@ -178,42 +193,71 @@ namespace LsMsgPack.TypeResolving.Types
 
     /// <returns>null if the stream starts with nil (null is serialized without a schema)</returns>
     /// <exception cref="MsgPackException">When the stream does not start with a schema</exception>
-    public static IndexedSchemaTypeResolver Unpack(System.IO.Stream bytes, MsgPackSettings settings) {
-      MsgPackItem item = MsgPackItem.Unpack(bytes, settings ?? new MsgPackSettings());
-      if (item is MpNull)
+    public static IndexedSchemaTypeResolver Unpack(System.IO.Stream bytes, MsgPackSettings settings)
+    {
+      if (settings is null)
+        settings = new MsgPackSettings();
+
+      int first = bytes.ReadByte();
+      if (first < 0)
+        throw new MsgPackException("Unexpected end of data.", 0, MsgPackTypeId.NeverUsed);
+      if (first == (int)MsgPackTypeId.MpNull)
         return null;
+      if (!SchemaBytes.IsMap(first))
+        throw SchemaBytes.NotASchema(first);
 
-      KeyValuePair<object, object>[] items = (item as MpMap)?.Value as KeyValuePair<object, object>[];
-      if (items is null)
-        throw new MsgPackException($"Expected the data to start with an indexed schema (a map) but found {item.TypeId}. Was it serialized with {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.UseInexedSchema)} = false?", 0, item.TypeId);
+      return FromBytes(SchemaBytes.ReadRaw(bytes, first, settings), settings, settings);
+    }
 
-      IndexedSchemaTypeResolver ret=new IndexedSchemaTypeResolver(){ ByTypeId=new List<ComplexTypeDef>(items.Length), ByType=new Dictionary<Type, ComplexTypeDef>(items.Length)};
-      for (int i = 0; i < items.Length; i++) {
-        KeyValuePair<object, object> typ = items[i];
-        string typeName = typ.Key as string;
-        object[] props = typ.Value as object[];
-        if (typeName is null || props is null)
-          throw InvalidSchema();
-
-        ComplexTypeDef def= new ComplexTypeDef() { TypeId = i, TypeName = typeName, Props = new List<string>(props.Length) };
-        for (int t = 0; t < props.Length; t++)
-        {
-          if (!(props[t] is string propName))
-            throw InvalidSchema();
-          def.Props.Add(propName);
-        }
-
-        ret.ByTypeId.Add(def);
-      }
-
+    /// <summary>
+    /// The schema of the given bytes (see <see cref="SchemaBytes.ReadRaw"/>), with the types resolved.
+    /// </summary>
+    /// <param name="lengthSettings">The <see cref="MsgPackSettings.EndianAction"/> the bytes were read with, null for the byte order of the specification (<see cref="SchemaBytes.Canonical"/>)</param>
+    /// <param name="settings">Resolves the types</param>
+    internal static IndexedSchemaTypeResolver FromBytes(byte[] raw, MsgPackSettings lengthSettings, MsgPackSettings settings)
+    {
+      List<ComplexTypeDef> defs = SchemaBytes.Parse(raw, lengthSettings);
+      IndexedSchemaTypeResolver ret = new IndexedSchemaTypeResolver() { ByTypeId = defs, ByType = new Dictionary<Type, ComplexTypeDef>(defs.Count) };
       ret.ResolveDeserializedTypes(settings);
-
       return ret;
     }
 
-    private static MsgPackException InvalidSchema()
+    /// <summary>
+    /// A copy that can be extended (not frozen), the types and properties keep their ids.
+    /// </summary>
+    internal IndexedSchemaTypeResolver Copy()
     {
-      return new MsgPackException($"Invalid indexed schema, expected a map of type names with an array of property names. Was the data serialized with {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.UseInexedSchema)} = false?");
+      IndexedSchemaTypeResolver copy = new IndexedSchemaTypeResolver()
+      {
+        ByTypeId = new List<ComplexTypeDef>(ByTypeId.Count),
+        ByType = new Dictionary<Type, ComplexTypeDef>(ByType.Count)
+      };
+
+      Dictionary<ComplexTypeDef, ComplexTypeDef> copies = new Dictionary<ComplexTypeDef, ComplexTypeDef>(ByTypeId.Count);
+      for (int t = 0; t < ByTypeId.Count; t++)
+      {
+        ComplexTypeDef def = ByTypeId[t];
+        ComplexTypeDef defCopy = new ComplexTypeDef() { Type = def.Type, TypeName = def.TypeName, TypeId = def.TypeId, Props = new List<string>(def.Props) };
+        copy.ByTypeId.Add(defCopy);
+        copies.Add(def, defCopy);
+      }
+
+      foreach (KeyValuePair<Type, ComplexTypeDef> entry in ByType)
+        copy.ByType.Add(entry.Key, copies.TryGetValue(entry.Value, out ComplexTypeDef defCopy) ? defCopy : entry.Value);
+
+      return copy;
+    }
+
+    /// <summary>
+    /// From now on the schema is only read (by several threads), the lookups that are otherwise built when first used are built now.
+    /// </summary>
+    internal void Freeze()
+    {
+      for (int t = 0; t < ByTypeId.Count; t++)
+      {
+        Dictionary<string, int> built = ByTypeId[t].IdByName;
+      }
+      IsFrozen = true;
     }
   }
 
