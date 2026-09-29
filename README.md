@@ -56,13 +56,27 @@ One of my frustrations with other serializers is that they do not handle class-h
 
 So if you have an interface IPet with classes Cat, Dog and Fish that implement IPet. You can have a class containing an array (or other collection) of pets and have it serialize and deserialize correctly without adding any extra code.
 
-There are limits and edge cases to this rule though. For example:
+How the type is found again: a value whose type differs from the declared type gets a type id, the short name of its type by default (`Cat`). When reading, the name is looked up in this order:
+
+1. Names resolved before (the fastest), and types that `Type.GetType` finds by themselves.
+2. The assembly of the declared type (and of its generic arguments): all its types are cached by name the first time. With the indexed schema (the default) the assembly of the type you deserialize is cached as well.
+3. The names of all types in the assemblies cached so far.
+
+So the implementations of `IPet` are found without any registration when they are in the assembly of `IPet` (declared as `IPet`, `List<IPet>`, `IPet[]`...), or in the assembly of the class you deserialize. Register an assembly yourself when that is not the case, once, before deserializing:
+
 ```csharp
+// The property is declared as object, so the reader has no assembly to look in:
 public IEnumerable<object> Pets { get; set; } = new HashSet<IPet> { new Cat(), new Dog() };
+
+MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));    // LsMsgPack
+LtMsgPackSerializer.CacheAssemblyTypes(typeof(IPet));  // LtMsgPack (the same cache, either call will do)
 ```
 
-May require you to call `MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));` once somewhere before trying to deserialize it. If the property is changed to `IEnumerable<IPet>` instead of `IEnumerable<object>` it will work without preregistering because the deserializer will know how to find the assembly where IPet is defined. Pre-caching may also be required when not all derived IPet implementations are in the same assembly as the IPet interface. There are multiple tier caches; the fastest is the “used names” cache where only previously used types are cached for fast lookup the next time the type is encountered. A 2nd tier has names of all types in cached assemblies. Not all assemblies will be cached by default (waste of memory) but you can opt into caching all loaded assemblies by using an included `WildGooseChaseResolver` which will scan all loaded assemblies when looking for a type (and cache the searched assemblies until it finds the wanted type).
+The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins): register each of them.
 
+- **Short names must be unique** among the cached assemblies. Two cached classes called `Cat` (in different namespaces) make reading throw "Type assignment dilamma". Use `AddTypeIdOptions = AddTypeIdOption.FullName` (bigger payloads) or your own `IMsgPackTypeResolver` in `TypeResolvers`.
+- **Let it search**: `TypeResolvers = new IMsgPackTypeResolver[] { new WildGooseChaseResolver() }` searches all assemblies loaded in the AppDomain for a name it cannot find otherwise (and caches the assemblies it searched). Convenient, but slower the first time and it keeps more names in memory.
+- **Your own mapping**: implement `IMsgPackTypeResolver` to choose the ids and the types (e.g. a fixed table of names, or `XmlRootAttributeTypeResolver` to use the names of `[XmlRoot]`).
 
 Fiddler Integration
 -------------------

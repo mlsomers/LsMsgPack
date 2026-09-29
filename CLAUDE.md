@@ -79,7 +79,7 @@ Custom property id resolvers without the schema are consulted on every call (by 
 - `DateTime` values are returned as local time (`MpDateTime.Value` calls `ToLocalTime`), MsgPack timestamps do not keep the `DateTimeKind`: compare with `ToUniversalTime()` in tests. `DateTimeOffset` is written as its UTC time, the offset is lost. Timestamps before 1970 round the seconds down, the nanoseconds are always added (`MpDateTime.DateTimeToEpoch`), as the spec requires.
 - Reading maps uses `MapConversionEqualityComparer`: numbers are equal across types (`(byte)3` equals the property id `(int)3`), strings and integers take a fast path.
 - **Type names are short by default**, so the classes of an assembly that is searched for types need unique names: two test classes both called `Assorted` (nested in different test classes) make deserializing either of them throw "Type assignment dilamma". Give test classes unique names.
-- `Deserialize<List<T>>` only registers the assembly of `List<T>`. When `T` lives elsewhere (and is not reachable from the root type), call `MsgPackSerializer.CacheAssemblyTypes(typeof(T))` first.
+- `Deserialize<List<T>>` only registers the assembly of `List<T>`. When `T` lives elsewhere (and is not reachable from the root type), call `MsgPackSerializer.CacheAssemblyTypes(typeof(T))` (or `LtMsgPackSerializer.CacheAssemblyTypes`, the same cache) first. The README explains the lookup order to users.
 - Known issue: `Type.GetProperties()` without binding flags also returns **public static properties**, so settable static properties are serialized (and set again when deserializing). Not fixed yet, changing it changes the output of such types.
 
 ## Performance
