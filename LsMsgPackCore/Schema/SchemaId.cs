@@ -37,9 +37,6 @@ namespace LsMsgPack
       _low = ReadUInt64(bytes, offset + 8);
     }
 
-    [ThreadStatic]
-    private static SHA256 _sha256;
-
     /// <summary>
     /// The id of the given schema bytes (as written by <see cref="TypeResolving.Types.IndexedSchemaTypeResolver.Pack()"/>).
     /// </summary>
@@ -48,10 +45,14 @@ namespace LsMsgPack
       if (schema is null)
         throw new ArgumentNullException(nameof(schema));
 
-      SHA256 sha = _sha256 ?? (_sha256 = SHA256.Create());
-      sha.TransformBlock(FormatVersion, 0, 1, null, 0);
-      sha.TransformFinalBlock(schema, 0, schema.Length);
-      return new SchemaId(sha.Hash, 0);
+      byte[] input = new byte[FormatVersion.Length + schema.Length];
+      Buffer.BlockCopy(FormatVersion, 0, input, 0, FormatVersion.Length);
+      Buffer.BlockCopy(schema, 0, input, FormatVersion.Length, schema.Length);
+
+      // A new instance per call: on .NET Framework a SHA256 reused after TransformFinalBlock fails ("invalid handle" of its CNG hash).
+      // Only called when a schema is published or registered, not per value.
+      using (SHA256 sha = SHA256.Create())
+        return new SchemaId(sha.ComputeHash(input), 0);
     }
 
     public byte[] ToByteArray()
