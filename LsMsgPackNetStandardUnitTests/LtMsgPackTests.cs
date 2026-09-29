@@ -269,5 +269,13 @@ namespace LsMsgPackUnitTests
       }
       Assert.AreEqual(ids[2] + "," + ids[1], client.GetSchemasHeader(uri));
     }
+    [TestMethod]
+    public void CacheAssemblyTypes()
+    {
+      LtMsgPackSerializer.CacheAssemblyTypes(typeof(LtNode));
+      LtMsgPackSerializer.CacheAssemblyTypes(typeof(LtNode).Assembly); // again: nothing to do
+      Assert.ThrowsExactly<ArgumentNullException>(() => LtMsgPackSerializer.CacheAssemblyTypes((Type)null));
+      Assert.ThrowsExactly<ArgumentNullException>(() => LtMsgPackSerializer.CacheAssemblyTypes((System.Reflection.Assembly)null));
+    }
   }
 }

@@ -1,7 +1,9 @@
 using LsMsgPack;
+using LsMsgPack.Meta;
 using LtMsgPack.IO;
 using System;
 using System.IO;
+using System.Reflection;
 
 namespace LtMsgPack
 {
@@ -21,6 +23,27 @@ namespace LtMsgPack
       if (options is null)
         throw new ArgumentNullException(nameof(options));
       _serializer = new Serializer(options.Clone());
+    }
+
+    /// <summary>
+    /// Makes the types of the assembly known by their names, for type ids the reader cannot find by itself (see the README: e.g. the implementations of an interface in another assembly, assigned to an object property).
+    /// <para>The type caches are shared with LsMsgPack (MsgPackSerializer.CacheAssemblyTypes does the same).</para>
+    /// </summary>
+    public static void CacheAssemblyTypes(Assembly assembly)
+    {
+      if (assembly is null)
+        throw new ArgumentNullException(nameof(assembly));
+      TypeResolver.CacheAssembly(assembly, null);
+    }
+
+    /// <summary>
+    /// Makes the types of the assembly of <paramref name="type"/> known by their names (see <see cref="CacheAssemblyTypes(Assembly)"/>).
+    /// </summary>
+    public static void CacheAssemblyTypes(Type type)
+    {
+      if (type is null)
+        throw new ArgumentNullException(nameof(type));
+      TypeResolver.CacheAssembly(type.Assembly, type.Name);
     }
 
     private static LtMsgPackSerializer _default;
