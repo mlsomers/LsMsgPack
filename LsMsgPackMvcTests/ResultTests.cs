@@ -15,10 +15,15 @@ namespace LsMsgPackMvcTests
 
     private static FakeHttpContext Execute(ActionResult result, params string[] acceptTypes)
     {
-      return Execute(result, null, acceptTypes);
+      ControllerContext context = Fake.Context(new FakeRequest(null, null, acceptTypes));
+      result.ExecuteResult(context);
+      return (FakeHttpContext)context.HttpContext;
     }
 
-    private static FakeHttpContext Execute(ActionResult result, string clientSchemas, params string[] acceptTypes)
+    /// <summary>
+    /// A different name on purpose: as an overload of Execute, Execute(result, "application/x-lsmsgpack") would pick this one (more declared parameters) and take the media type for the schemas.
+    /// </summary>
+    private static FakeHttpContext ExecuteWithSchemas(ActionResult result, string clientSchemas, params string[] acceptTypes)
     {
       FakeRequest request = new FakeRequest(null, null, acceptTypes);
       if (!(clientSchemas is null))
@@ -92,7 +97,7 @@ namespace LsMsgPackMvcTests
       Assert.That(first.ResponseHeaders["Vary"], Is.EqualTo(LtMsgPackHttpSerializer.SchemasHeader));
       Assert.That(first.ResponseBody, Is.EqualTo(MsgPackSerializer.Serialize(SampleOrder)));
 
-      FakeHttpContext second = Execute(new LsMsgPackResult(SampleOrder) { Serializer = serializer }, schemaId, MsgPackMediaTypes.XLsMsgPack);
+      FakeHttpContext second = ExecuteWithSchemas(new LsMsgPackResult(SampleOrder) { Serializer = serializer }, schemaId, MsgPackMediaTypes.XLsMsgPack);
       byte[] reference = second.ResponseBody;
       Assert.That(reference.Take(2), Is.EqualTo(new byte[] { 0xD8, 2 }));
       Assert.That(MsgPackSerializer.Deserialize<Order>(reference, new MsgPackSettings() { SchemaStore = serializer.SchemaStore }).Customer, Is.EqualTo(SampleOrder.Customer));
