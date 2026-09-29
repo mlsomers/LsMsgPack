@@ -108,6 +108,36 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(dt, MsgPackSerializer.Deserialize<DateTime>(expected, withoutSchema).ToUniversalTime());
     }
 
+    /// <summary>
+    /// Timestamp 96 stores seconds (signed) plus nanoseconds (always positive), so before 1970 the seconds are rounded down: -1.5 seconds is -2 seconds plus 0.5 seconds.
+    /// </summary>
+    [TestMethod]
+    public void FractionalSecondsBefore1970()
+    {
+      DateTime dt = new DateTime(1969, 12, 31, 23, 59, 58, 500, DateTimeKind.Utc);
+      byte[] expected = new byte[] { (byte)MsgPackTypeId.MpExt8, 12, 0xFF, 0x1D, 0xCD, 0x65, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE };
+
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+
+      CollectionAssert.AreEqual(expected, MsgPackItem.Pack(dt).ToBytes());
+      CollectionAssert.AreEqual(expected, MsgPackSerializer.Serialize(dt, withoutSchema));
+      Assert.AreEqual(dt, ((DateTime)MsgPackItem.Unpack(expected).Value).ToUniversalTime());
+      Assert.AreEqual(dt, MsgPackSerializer.Deserialize<DateTime>(expected, withoutSchema).ToUniversalTime());
+      Assert.AreEqual(-2, MpDateTime.DateTimeToEpoch(dt));
+    }
+
+    [TestMethod]
+    [DataRow(1969, 12, 31, 23, 59, 59, 999)]
+    [DataRow(1969, 1, 1, 0, 0, 0, 1)]
+    [DataRow(1601, 1, 1, 0, 0, 0, 250)]
+    [DataRow(1, 1, 1, 0, 0, 0, 1)]
+    public void FractionalSecondsBefore1970RoundTrip(int year, int month, int day, int hour, int minute, int second, int millisecond)
+    {
+      DateTime dt = new DateTime(year, month, day, hour, minute, second, millisecond, DateTimeKind.Utc).AddTicks(7);
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      Assert.AreEqual(dt, MsgPackSerializer.Deserialize<DateTime>(MsgPackSerializer.Serialize(dt, withoutSchema), withoutSchema).ToUniversalTime());
+    }
+
     public class WithDateTimeOffset
     {
       public DateTimeOffset When { get; set; }

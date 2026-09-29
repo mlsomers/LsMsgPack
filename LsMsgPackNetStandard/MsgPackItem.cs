@@ -631,7 +631,7 @@ namespace LsMsgPack
     /// </summary>
     MpBoolFalse = 0xc2,
     /// <summary>
-    /// 5-bit negative (signed) number (up to 31)
+    /// 5-bit negative (signed) number (-32 to -1)
     /// </summary>
     MpSBytePart = 0xE0,
     /// <summary>
