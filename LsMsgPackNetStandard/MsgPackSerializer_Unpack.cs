@@ -213,6 +213,9 @@ namespace LsMsgPack
       if ((targetType.IsPrimitive || targetType == typeof(decimal)) && val is IConvertible)
         return Convert.ChangeType(val, targetType, CultureInfo.InvariantCulture);
 
+      if (FrameworkTypes.TryConvert(val, targetType, out object converted)) // TimeSpan, DateOnly, TimeOnly and Uri
+        return converted;
+
       return val;
     }
 

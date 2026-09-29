@@ -296,6 +296,10 @@ namespace LsMsgPack
         return val;
       }
 
+      MsgPackItem framework = Meta.FrameworkTypes.Pack(value, valuesType, settings); // char, TimeSpan, DateOnly, TimeOnly and Uri (no settable properties)
+      if (!ReferenceEquals(framework, null))
+        return framework;
+
       return null; // not natively supported  // MsgPackSerializer.SerializeObject(value, settings);
     }
 
