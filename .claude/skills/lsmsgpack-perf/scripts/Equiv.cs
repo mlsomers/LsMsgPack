@@ -10,6 +10,8 @@ using System.Collections.Generic;
 using System.Text;
 public enum E8 : byte { A = 1, B = 200 } public enum E16 : short { A = -300, B = 3 } public enum E64 : long { A = long.MinValue, B = 5 }
 public class Nested { public string Name { get; set; } public double D { get; set; } public float F { get; set; } public int? N { get; set; } public byte[] Blob { get; set; } public Guid G { get; set; } public DateTime When { get; set; } public DateTimeOffset Off { get; set; } public decimal M { get; set; } public E16 E { get; set; } public bool B { get; set; } public List<object> Objs { get; set; } public Dictionary<string, long> Map { get; set; } public ulong U { get; set; } public sbyte S { get; set; } }
+public class Bcl { public char C { get; set; } public TimeSpan T { get; set; } public TimeSpan? N { get; set; } public DateOnly D { get; set; } public TimeOnly O { get; set; } public Uri U { get; set; } public List<object> Boxed { get; set; } }
+public class WithGuid { public Guid G { get; set; } public byte[] B { get; set; } public object O { get; set; } }
 public class Attributed { [System.Xml.Serialization.XmlElement("renamed")] public string A { get; set; } [System.Xml.Serialization.XmlIgnore] public string Ignored { get; set; } public int ReadOnly { get { return 5; } } public int B { get; set; } public Attributed Child { get; set; } public List<Attributed> Kids { get; set; } }
 public static class P {
   static string Hex(byte[] b) => BitConverter.ToString(b);
@@ -34,7 +36,9 @@ public static class P {
       new byte[0], new byte[] { 1, 2, 3 }, new byte[300], new byte[70000], Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"),
       1.5f, -0.0f, float.NaN, float.MaxValue, 1.5, double.Epsilon, double.NegativeInfinity, 12.5m, -79228162514264337593543950335m, 0.0000001m,
       new DateTime(2026, 3, 4, 5, 6, 7, DateTimeKind.Utc), new DateTime(2026, 3, 4, 5, 6, 7, 123, DateTimeKind.Utc), new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(2600, 1, 1, 0, 0, 0, DateTimeKind.Utc), new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.Zero),
-      E8.A, E8.B, E16.A, E16.B, E64.A, E64.B };
+      E8.A, E8.B, E16.A, E16.B, E64.A, E64.B,
+      new DateTime(1969, 12, 31, 23, 59, 58, 500, DateTimeKind.Utc), new DateTime(1601, 1, 1, 0, 0, 0, 250, DateTimeKind.Utc),
+      'A', '\u00e9', TimeSpan.FromMinutes(90), TimeSpan.FromTicks(-12345), new DateOnly(2026, 9, 29), new TimeOnly(13, 45, 10, 5), new Uri("https://example.com/x?y=1") };
     long[] ints = { 0, 1, 31, 32, 127, 128, 255, 256, 32767, 32768, 65535, 65536, int.MaxValue, 2147483648L, uint.MaxValue, 4294967296L, long.MaxValue, -1, -31, -32, -33, -128, -129, -32768, -32769, int.MinValue, long.MinValue };
     foreach (long i in ints) {
       values.Add(i);
@@ -50,6 +54,7 @@ public static class P {
     var bigMap = new Dictionary<int, int>(); for (int i = 0; i < 70000; i++) bigMap[i] = -i; values.Add(bigMap);
     var nested = new Nested { Name = "n", D = 2.25, F = -3.5f, N = 7, Blob = new byte[] { 9, 8 }, G = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"), When = new DateTime(2026, 1, 1, 12, 0, 0, 500, DateTimeKind.Utc), Off = new DateTimeOffset(2021, 5, 6, 7, 8, 9, TimeSpan.Zero), M = 1.23m, E = E16.A, B = true, Objs = new List<object> { 1, "x", 2.5m, E8.B, new Nested { Name = "inner" } }, Map = new Dictionary<string, long> { { "k", long.MinValue } }, U = ulong.MaxValue, S = -5 };
     values.Add(nested);
+    values.Add(new Bcl { C = 'Z', T = TimeSpan.FromSeconds(-1.5), N = TimeSpan.FromDays(3), D = new DateOnly(1999, 12, 31), O = new TimeOnly(23, 59), U = new Uri("https://example.com/a"), Boxed = new List<object> { TimeSpan.FromHours(1), 'q', new DateOnly(2000, 1, 1) } });
     // Warm-up with the small values only (the property accessors switch to bound delegates after 100 calls)
     for (int warm = 0; warm < 10; warm++)
       foreach (EndianAction endian in Enum.GetValues(typeof(EndianAction)))
@@ -95,6 +100,16 @@ public static class P {
       byte[] ab = MsgPackSerializer.Serialize(a, s2);
       sb.AppendLine($"### attributes schema={schema}: {Hex(ab)}");
       sb.AppendLine("   " + Dump(MsgPackSerializer.Deserialize<Attributed>(ab, s2)));
+    }
+    // An extension that is not registered (here a big-endian Guid as Nerdbank.MessagePack writes it, ext type 2), read into Guid, byte[] and object members
+    byte[] guidBigEndian = { 0x0f, 0x8f, 0xad, 0x5b, 0xd9, 0xcb, 0x46, 0x9f, 0xa1, 0x65, 0x70, 0x86, 0x77, 0x28, 0x95, 0x0e };
+    foreach (string member in new[] { "G", "B", "O" }) {
+      var ext = new MpExt { TypeSpecifier = 2, Value = guidBigEndian };
+      byte[] extMap = new MpMap(new[] { new KeyValuePair<object, object>(member, ext) }, new MsgPackSettings()).ToBytes();
+      string res;
+      try { res = Dump(MsgPackSerializer.Deserialize<WithGuid>(extMap, new MsgPackSettings { UseInexedSchema = false })); } catch (Exception ex) { res = "EX " + ex.GetType().Name; }
+      sb.AppendLine($"### unknown extension in {member}: {Hex(extMap)}");
+      sb.AppendLine("   " + res);
     }
     Console.Write(sb.ToString());
   }

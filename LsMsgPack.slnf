@@ -4,6 +4,7 @@
     "projects": [
       "LsMsgPackNetStandard/LsMsgPack.csproj",
       "LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj",
+      "LsMsgPackInteropTests/LsMsgPackInteropTests.csproj",
       "LsMsgPackFormatters/LsMsgPackFormatters.csproj",
       "LsMsgPackFormattersTests/LsMsgPackFormattersTests.csproj",
       "LsMsgPackWebApiFormatters/LsMsgPackWebApiFormatters.csproj",

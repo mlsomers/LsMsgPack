@@ -147,7 +147,7 @@ namespace LsMsgPack
       for (int t = 0; t < len; t++)
       {
         MsgPackItem item = Unpack(data, _settings);
-        items[t] = item.Value;
+        items[t] = item.UnpackedValue;
 #if KEEPTRACK
         if (_settings._preservePackages) packedItems[t] = item;
         if (item is MpError)

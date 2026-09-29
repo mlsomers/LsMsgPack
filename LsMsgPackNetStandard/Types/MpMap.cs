@@ -230,7 +230,7 @@ namespace LsMsgPack
         MsgPackItem val = MsgPackItem.Unpack(data, _settings);
 #endif 
 
-        value[t] = new KeyValuePair<object, object>(key.Value, val.Value);
+        value[t] = new KeyValuePair<object, object>(key.UnpackedValue, val.UnpackedValue);
 
 #if KEEPTRACK
         if (!_settings._continueProcessingOnBreakingError && (key is MpError || val is MpError))

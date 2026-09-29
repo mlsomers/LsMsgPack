@@ -103,6 +103,15 @@ namespace LsMsgPack
     public abstract byte[] ToBytes();
 
     /// <summary>
+    /// The value unpacked containers hold (and the serializer converts): <see cref="Value"/>, except for an extension without a registered type (see <see cref="MsgPackSettings.CustomExtentionTypes"/>).
+    /// <para>Its value would be indistinguishable from binary data (e.g. a 16 byte extension would be read as a Guid), so the <see cref="MpExt"/> itself is kept, including its type.</para>
+    /// </summary>
+    internal object UnpackedValue
+    {
+      get { return GetType() == typeof(MpExt) ? this : Value; }
+    }
+
+    /// <summary>
     /// Appends the same bytes as <see cref="ToBytes"/> to the target.
     /// <para>Containers override this to write their items directly into the target instead of copying the bytes of every nesting level.</para>
     /// </summary>
@@ -295,6 +304,10 @@ namespace LsMsgPack
         val._settings = settings;
         return val;
       }
+
+      MsgPackItem framework = Meta.FrameworkTypes.Pack(value, valuesType, settings); // char, TimeSpan, DateOnly, TimeOnly and Uri (no settable properties)
+      if (!ReferenceEquals(framework, null))
+        return framework;
 
       return null; // not natively supported  // MsgPackSerializer.SerializeObject(value, settings);
     }
@@ -631,7 +644,7 @@ namespace LsMsgPack
     /// </summary>
     MpBoolFalse = 0xc2,
     /// <summary>
-    /// 5-bit negative (signed) number (up to 31)
+    /// 5-bit negative (signed) number (-32 to -1)
     /// </summary>
     MpSBytePart = 0xE0,
     /// <summary>

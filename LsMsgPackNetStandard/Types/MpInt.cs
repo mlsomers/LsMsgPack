@@ -46,7 +46,7 @@ namespace LsMsgPack
         {
           if (IsSigned())
           {
-            if ((svalue >= -0x1F) && ((svalue <= 0x1F))) return MsgPackTypeId.MpSBytePart;
+            if ((svalue >= -0x20) && ((svalue <= 0x1F))) return MsgPackTypeId.MpSBytePart; // negative fixint: -32 to -1
             if ((svalue >= sbyte.MinValue) && (svalue <= sbyte.MaxValue)) return MsgPackTypeId.MpSByte;
             if ((svalue >= short.MinValue) && (svalue <= short.MaxValue)) return MsgPackTypeId.MpShort;
             if ((svalue >= int.MinValue) && (svalue <= int.MaxValue)) return MsgPackTypeId.MpInt;
@@ -63,6 +63,8 @@ namespace LsMsgPack
         }
         else
         {
+          if (typeId == MsgPackTypeId.MpSBytePart && svalue >= 0)
+            return MsgPackTypeId.MpBytePart; // a small positive sbyte, the negative fixint cannot hold it
           return typeId;
         }
       }
@@ -117,7 +119,7 @@ namespace LsMsgPack
       { // preseve original type in typeId
         if (value is sbyte)
         {
-          typeId = ((sbyte)value >= -0x1F) && ((sbyte)value <= 0x1F) ? MsgPackTypeId.MpSBytePart : MsgPackTypeId.MpSByte;
+          typeId = ((sbyte)value >= -0x20) && ((sbyte)value <= 0x1F) ? MsgPackTypeId.MpSBytePart : MsgPackTypeId.MpSByte; // a fixint (see TypeId for the positive ones)
           svalue = Convert.ToInt64(value);
           uvalue = 0;
         }
@@ -228,7 +230,7 @@ namespace LsMsgPack
 
     private void WriteValue(ByteWriter bytes)
     {
-      MsgPackTypeId targetType = _settings._dynamicallyCompact ? TypeId : typeId;
+      MsgPackTypeId targetType = TypeId;
       byte type = (byte)targetType;
       if (_settings._dynamicallyCompact || targetType == MsgPackTypeId.MpBytePart || targetType == MsgPackTypeId.MpSBytePart)
       {

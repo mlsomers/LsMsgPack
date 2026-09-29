@@ -116,10 +116,7 @@ namespace LsMsgPack
           long sc = BitConverter.ToInt64(SwapIfLittleEndian(settings, vall, 4, 8), 0);
           long tick = nanoSec / 100;
           TimeSpan subSec = TimeSpan.FromTicks(tick);
-          if (sc < 0)
-            return EpochToLocalDateTime(sc) - subSec;
-          else
-            return EpochToLocalDateTime(sc) + subSec;
+          return EpochToLocalDateTime(sc) + subSec; // the nanoseconds are added, also before 1970 (the seconds are rounded down, see DateTimeToEpoch)
       }
 
 #if KEEPTRACK
@@ -232,11 +229,14 @@ namespace LsMsgPack
       return dt;
     }
 
+    /// <summary>
+    /// Whole seconds since 1970-01-01 UTC, rounded down (also before 1970), so the fraction of a second is always positive as the timestamp format requires.
+    /// </summary>
     public static long DateTimeToEpoch(DateTime dateTime)
     {
       DateTime uni = dateTime.ToUniversalTime();
-      TimeSpan diff = uni - Zero;
-      return diff.Ticks / TimeSpan.TicksPerSecond; // Do not use diff.TotalSecconds, it has rounding errors!
+      // Ticks are never negative so dividing them rounds down, Zero is a whole second. Do not use TotalSeconds, it has rounding errors!
+      return uni.Ticks / TimeSpan.TicksPerSecond - Zero.Ticks / TimeSpan.TicksPerSecond;
     }
   }
 }
