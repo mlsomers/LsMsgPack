@@ -18,6 +18,7 @@ namespace LtMsgPack.Writing
     Array, // other collections
     Char, TimeSpan, Uri, DateOnly, TimeOnly,
     RawExtension, // a MsgPackExtension that was read (LsMsgPack writes the MpExt it read as itself)
+    GuidString, DecimalString, DateTimeOffsetArray, // the formats of other libraries (LtMsgPackOptions.GuidFormat, DecimalFormat, DateTimeOffsetFormat)
     Complex // an object with properties
   }
 

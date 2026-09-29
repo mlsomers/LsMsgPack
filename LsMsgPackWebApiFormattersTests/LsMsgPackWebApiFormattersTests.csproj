@@ -20,6 +20,8 @@
     <ProjectReference Include="..\LsMsgPackFormatters\LsMsgPackFormatters.csproj" />
     <ProjectReference Include="..\LsMsgPackWebApiFormatters\LsMsgPackWebApiFormatters.csproj" />
     <!-- Explicit (instead of transitive) so the KEEPTRACK configuration mapping of the formatter projects applies here as well -->
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
+    <!-- LsMsgPack checks that what the formatters (LtMsgPack) write is what LsMsgPack writes and reads -->
     <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
   </ItemGroup>
 

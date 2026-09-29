@@ -7,7 +7,7 @@
     <TargetFramework>net462</TargetFramework>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <PackageId>LsMsgPack.AspNet.Mvc</PackageId>
-    <Description>LsMsgPack model binding and action result for ASP.NET MVC 5 controllers on .NET Framework (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
+    <Description>MsgPack model binding (LtMsgPack) and action result for ASP.NET MVC 5 controllers on .NET Framework (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,8 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Always use LsMsgPack without KEEPTRACK (DebugKeepTrack -> Debug, ReleaseKeepTrack -> Release), its debugging overhead does not belong in a web server -->
-    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
+    <!-- LtMsgPack has no KEEPTRACK, map DebugKeepTrack -> Debug and ReleaseKeepTrack -> Release (as before with LsMsgPack, whose debugging overhead does not belong in a web server) -->
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
   </ItemGroup>
 
 </Project>

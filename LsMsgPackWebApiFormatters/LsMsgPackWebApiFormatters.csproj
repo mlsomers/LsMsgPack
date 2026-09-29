@@ -7,7 +7,7 @@
     <TargetFramework>netstandard2.0</TargetFramework>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <PackageId>LsMsgPack.AspNet.WebApi</PackageId>
-    <Description>LsMsgPack MediaTypeFormatter for ASP.NET Web API 2 and for HttpClient (ObjectContent / ReadAsAsync) on any platform (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
+    <Description>MsgPack MediaTypeFormatter (LtMsgPack) for ASP.NET Web API 2 and for HttpClient (ObjectContent / ReadAsAsync) on any platform (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,8 +15,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Always use LsMsgPack without KEEPTRACK (DebugKeepTrack -> Debug, ReleaseKeepTrack -> Release), its debugging overhead does not belong in a web server -->
-    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
+    <!-- LtMsgPack has no KEEPTRACK, map DebugKeepTrack -> Debug and ReleaseKeepTrack -> Release (as before with LsMsgPack, whose debugging overhead does not belong in a web server) -->
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
   </ItemGroup>
 
 </Project>

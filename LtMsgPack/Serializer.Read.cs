@@ -74,8 +74,11 @@ namespace LtMsgPack
         case TypeKind.Double: return new DoubleReader();
         case TypeKind.String: return new StringReader();
         case TypeKind.Guid: return new GuidReader();
+        case TypeKind.GuidString: return new GuidStringReader();
+        case TypeKind.DecimalString: return new DecimalStringReader();
         case TypeKind.DateTime: return new DateTimeReader();
         case TypeKind.DateTimeOffset: return new DateTimeOffsetReader();
+        case TypeKind.DateTimeOffsetArray: return new DateTimeOffsetArrayReader();
         case TypeKind.TimeSpan: return new TimeSpanReader();
         case TypeKind.Bin:
           if (type == typeof(byte[]))

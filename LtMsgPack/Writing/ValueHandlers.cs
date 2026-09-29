@@ -1,8 +1,10 @@
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LtMsgPack.Extensions;
+using LtMsgPack.IO;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 
 namespace LtMsgPack.Writing
@@ -148,16 +150,65 @@ namespace LtMsgPack.Writing
     internal override bool IncludeByDefault(Guid value, FullPropertyInfo info) { return value != Guid.Empty; }
   }
 
+  /// <summary>
+  /// A Guid as a string of 36 characters (<see cref="GuidFormat.String"/>).
+  /// </summary>
+  internal sealed class GuidStringHandler : ValueHandler<Guid>
+  {
+    internal override void Write(WriteContext c, Guid value, FullPropertyInfo assignedTo) { c.W.String(value.ToString("D")); }
+    internal override bool IncludeByDefault(Guid value, FullPropertyInfo info) { return value != Guid.Empty; }
+  }
+
+  /// <summary>
+  /// A decimal as a string in the invariant culture (<see cref="DecimalFormat.String"/>).
+  /// </summary>
+  internal sealed class DecimalStringHandler : ValueHandler<decimal>
+  {
+    internal override void Write(WriteContext c, decimal value, FullPropertyInfo assignedTo) { c.W.String(value.ToString(CultureInfo.InvariantCulture)); }
+    internal override bool IncludeByDefault(decimal value, FullPropertyInfo info) { return value != 0m; }
+  }
+
   internal sealed class DateTimeHandler : ValueHandler<DateTime>
   {
-    internal override void Write(WriteContext c, DateTime value, FullPropertyInfo assignedTo) { c.W.DateTime(value); }
+    private readonly bool _unspecifiedIsUtc;
+
+    internal DateTimeHandler(bool unspecifiedIsUtc)
+    {
+      _unspecifiedIsUtc = unspecifiedIsUtc;
+    }
+
+    internal override void Write(WriteContext c, DateTime value, FullPropertyInfo assignedTo) { c.W.DateTime(Utc(value, _unspecifiedIsUtc)); }
     internal override bool IncludeByDefault(DateTime value, FullPropertyInfo info) { return value.Ticks != 0; } // DateTime.Equals ignores the Kind
+
+    /// <summary>
+    /// The writer takes Unspecified as local time (as LsMsgPack), unless it should be UTC (<see cref="LtMsgPackOptions.UnspecifiedDateTimeKind"/>).
+    /// </summary>
+    internal static DateTime Utc(DateTime value, bool unspecifiedIsUtc)
+    {
+      return unspecifiedIsUtc && value.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(value, DateTimeKind.Utc) : value;
+    }
   }
 
   internal sealed class DateTimeOffsetHandler : ValueHandler<DateTimeOffset>
   {
     internal override void Write(WriteContext c, DateTimeOffset value, FullPropertyInfo assignedTo) { c.W.DateTime(value.UtcDateTime); } // the offset is lost, as in LsMsgPack
     internal override bool IncludeByDefault(DateTimeOffset value, FullPropertyInfo info) { return !value.Equals(default(DateTimeOffset)); }
+  }
+
+  /// <summary>
+  /// MessagePack-CSharp's DateTimeOffset (<see cref="DateTimeOffsetFormat.ClockTimeAndOffset"/>): [the clock time as a UTC timestamp, the offset in minutes].
+  /// </summary>
+  internal sealed class DateTimeOffsetArrayHandler : ValueHandler<DateTimeOffset>
+  {
+    internal override void Write(WriteContext c, DateTimeOffset value, FullPropertyInfo assignedTo) { WriteArray(c.W, value); }
+    internal override bool IncludeByDefault(DateTimeOffset value, FullPropertyInfo info) { return !value.Equals(default(DateTimeOffset)); }
+
+    internal static void WriteArray(MsgPackWriter w, DateTimeOffset value)
+    {
+      w.ArrayHeader(2);
+      w.DateTime(new DateTime(value.Ticks, DateTimeKind.Utc));
+      w.Int16((short)value.Offset.TotalMinutes);
+    }
   }
 
   internal sealed class DecimalHandler : ValueHandler<decimal>

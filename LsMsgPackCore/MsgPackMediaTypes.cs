@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace LsMsgPack
 {
   /// <summary>
-  /// The media types (Content-Type / Accept) used by the LsMsgPack web formatters, and the settings used for each of them.
+  /// The media types (Content-Type / Accept) used by the web formatters, and the settings used for each of them.
   /// </summary>
   public static class MsgPackMediaTypes
   {
@@ -19,7 +19,7 @@ namespace LsMsgPack
     public const string XMsgPack = "application/x-msgpack";
 
     /// <summary>
-    /// MsgPack using the configured <see cref="MsgPackSettings"/> (by default an indexed schema followed by the body, with type id's where ambiguous). Only LsMsgPack is expected to understand this.
+    /// MsgPack using the configured settings (by default an indexed schema followed by the body, with type id's where ambiguous). Only LsMsgPack and LtMsgPack are expected to understand this.
     /// </summary>
     public const string XLsMsgPack = "application/x-lsmsgpack";
 
@@ -51,10 +51,14 @@ namespace LsMsgPack
     /// <summary>
     /// Returns a copy of the settings that produces plain MsgPack (no indexed schema and no type id's), so the result is not tied to LsMsgPack.
     /// </summary>
-    public static MsgPackSettings ToPlain(MsgPackSettings settings)
+    /// <param name="settings">MsgPackSettings (LsMsgPack) or LtMsgPackOptions (LtMsgPack)</param>
+    public static TOptions ToPlain<TOptions>(TOptions settings) where TOptions : MsgPackOptions
     {
-      MsgPackSettings plain = (settings ?? new MsgPackSettings()).Clone();
+      if (settings is null)
+        throw new ArgumentNullException(nameof(settings));
+      TOptions plain = (TOptions)settings.CloneOptions();
       plain.UseInexedSchema = false;
+      plain.WriteSchemaReference = false;
       plain.AddTypeIdOptions = AddTypeIdOption.Never;
       return plain;
     }

@@ -21,6 +21,9 @@ namespace LsMsgPackWebApiFormattersTests
 
     [HttpGet, Route("animal")]
     public Animal GetAnimal() => new Dog { Name = "Rex", Barks = 3 };
+
+    [HttpGet, Route("order")]
+    public Order GetOrder() => new Order { Id = 42, Customer = "Infotopie", Amounts = new[] { 1.5, 2.25 } };
   }
 
   /// <summary>

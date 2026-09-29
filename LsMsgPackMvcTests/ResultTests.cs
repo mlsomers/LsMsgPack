@@ -1,5 +1,7 @@
 using LsMsgPack;
 using LsMsgPackMvc;
+using LtMsgPack.Http;
+using System.Linq;
 using NUnit.Framework;
 using System.Web.Mvc;
 
@@ -13,7 +15,15 @@ namespace LsMsgPackMvcTests
 
     private static FakeHttpContext Execute(ActionResult result, params string[] acceptTypes)
     {
-      ControllerContext context = Fake.Context(new FakeRequest(null, null, acceptTypes));
+      return Execute(result, null, acceptTypes);
+    }
+
+    private static FakeHttpContext Execute(ActionResult result, string clientSchemas, params string[] acceptTypes)
+    {
+      FakeRequest request = new FakeRequest(null, null, acceptTypes);
+      if (!(clientSchemas is null))
+        request.Headers.Add(LtMsgPackHttpSerializer.SchemasHeader, clientSchemas);
+      ControllerContext context = Fake.Context(request);
       result.ExecuteResult(context);
       return (FakeHttpContext)context.HttpContext;
     }
@@ -71,6 +81,21 @@ namespace LsMsgPackMvcTests
       FakeHttpContext context = Execute(new LsMsgPackResult(null), MsgPackMediaTypes.MsgPack);
 
       Assert.That(context.ResponseBody, Is.EqualTo(new byte[] { 0xC0 }));
+    }
+    [Test]
+    public void SchemaReferenceWhenTheClientHoldsTheSchema()
+    {
+      LtMsgPackHttpSerializer serializer = new LtMsgPackHttpSerializer();
+      FakeHttpContext first = Execute(new LsMsgPackResult(SampleOrder) { Serializer = serializer }, MsgPackMediaTypes.XLsMsgPack);
+      string schemaId = first.ResponseHeaders[LtMsgPackHttpSerializer.SchemaHeader];
+      Assert.That(schemaId, Has.Length.EqualTo(32));
+      Assert.That(first.ResponseHeaders["Vary"], Is.EqualTo(LtMsgPackHttpSerializer.SchemasHeader));
+      Assert.That(first.ResponseBody, Is.EqualTo(MsgPackSerializer.Serialize(SampleOrder)));
+
+      FakeHttpContext second = Execute(new LsMsgPackResult(SampleOrder) { Serializer = serializer }, schemaId, MsgPackMediaTypes.XLsMsgPack);
+      byte[] reference = second.ResponseBody;
+      Assert.That(reference.Take(2), Is.EqualTo(new byte[] { 0xD8, 2 }));
+      Assert.That(MsgPackSerializer.Deserialize<Order>(reference, new MsgPackSettings() { SchemaStore = serializer.SchemaStore }).Customer, Is.EqualTo(SampleOrder.Customer));
     }
   }
 }

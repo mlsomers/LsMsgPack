@@ -134,6 +134,17 @@ namespace LtMsgPack
       return _serializer.Deserialize(type, data, 0, data.Length, out int consumed);
     }
 
+    /// <param name="offset">Where the data starts</param>
+    /// <param name="count">The number of bytes of the data</param>
+    public object Deserialize(Type type, byte[] data, int offset, int count)
+    {
+      if (data is null)
+        throw new ArgumentNullException(nameof(data));
+      if (offset < 0 || count < 0 || data.Length - offset < count)
+        throw new ArgumentOutOfRangeException(nameof(count));
+      return _serializer.Deserialize(type, data, offset, offset + count, out int consumed);
+    }
+
     public object Deserialize(Type type, Stream source)
     {
       if (source is null)

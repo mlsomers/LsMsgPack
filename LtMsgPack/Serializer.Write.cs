@@ -10,6 +10,7 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
@@ -101,8 +102,11 @@ namespace LtMsgPack
         case TypeKind.Double: return new DoubleHandler();
         case TypeKind.String: return new StringHandler();
         case TypeKind.Guid: return new GuidHandler();
-        case TypeKind.DateTime: return new DateTimeHandler();
+        case TypeKind.GuidString: return new GuidStringHandler();
+        case TypeKind.DecimalString: return new DecimalStringHandler();
+        case TypeKind.DateTime: return new DateTimeHandler(Options._unspecifiedIsUtc);
         case TypeKind.DateTimeOffset: return new DateTimeOffsetHandler();
+        case TypeKind.DateTimeOffsetArray: return new DateTimeOffsetArrayHandler();
         case TypeKind.Char: return new CharHandler();
         case TypeKind.TimeSpan: return new TimeSpanHandler();
         case TypeKind.Bin:
@@ -137,7 +141,7 @@ namespace LtMsgPack
     {
       if (_typeInfos.TryGetValue(type, out WriteTypeInfo info))
         return info;
-      return _typeInfos.GetOrAdd(type, t => new WriteTypeInfo(t, Options._extensions));
+      return _typeInfos.GetOrAdd(type, t => new WriteTypeInfo(t, Options));
     }
 
     internal ObjectPlan Plan(Type type, bool names)
@@ -255,7 +259,7 @@ namespace LtMsgPack
       WriteLeaf(c, value, info);
     }
 
-    private static void WriteLeaf(WriteContext c, object value, WriteTypeInfo info)
+    private void WriteLeaf(WriteContext c, object value, WriteTypeInfo info)
     {
       MsgPackWriter w = c.W;
       switch (info.Kind)
@@ -285,8 +289,11 @@ namespace LtMsgPack
           }
           return;
         case TypeKind.Guid: w.Guid((Guid)value); return;
-        case TypeKind.DateTime: w.DateTime((DateTime)value); return;
+        case TypeKind.GuidString: w.String(((Guid)value).ToString("D")); return;
+        case TypeKind.DecimalString: w.String(((decimal)value).ToString(CultureInfo.InvariantCulture)); return;
+        case TypeKind.DateTime: w.DateTime(DateTimeHandler.Utc((DateTime)value, Options._unspecifiedIsUtc)); return;
         case TypeKind.DateTimeOffset: w.DateTime(((DateTimeOffset)value).UtcDateTime); return;
+        case TypeKind.DateTimeOffsetArray: DateTimeOffsetArrayHandler.WriteArray(w, (DateTimeOffset)value); return;
         case TypeKind.Extension: ExtensionHandler<object>.WriteExtensionBoxed(c, info.Extension, value); return;
         case TypeKind.Enum: WriteEnum(w, value, info.Type); return;
         case TypeKind.Char: w.UInt16((char)value); return;
@@ -470,10 +477,16 @@ namespace LtMsgPack
     internal readonly PropertyInfo PairKey;
     internal readonly PropertyInfo PairValue;
 
-    internal WriteTypeInfo(Type type, LtExtension[] extensions)
+    internal WriteTypeInfo(Type type, LtMsgPackOptions options)
     {
       Type = type;
-      Kind = TypeKinds.Classify(type, extensions, out Extension);
+      Kind = TypeKinds.Classify(type, options._extensions, out Extension);
+      if (Kind == TypeKind.Guid && options._guidFormat == GuidFormat.String)
+        Kind = TypeKind.GuidString;
+      else if (Kind == TypeKind.DateTimeOffset && options._dateTimeOffsetFormat == DateTimeOffsetFormat.ClockTimeAndOffset)
+        Kind = TypeKind.DateTimeOffsetArray;
+      else if (type == typeof(decimal) && options._decimalFormat == DecimalFormat.String)
+        Kind = TypeKind.DecimalString; // the extension (if any) still reads
       NeverWrapped = TypeKinds.NeverWrapped(type);
       if (Kind == TypeKind.Map || Kind == TypeKind.Array)
       {

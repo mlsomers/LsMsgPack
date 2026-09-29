@@ -1,4 +1,4 @@
-using LsMsgPack.Meta;
+﻿using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.TypeResolving.Types;
 using System;
@@ -141,6 +141,47 @@ namespace LsMsgPack
       return reference;
     }
 
+    /// <summary>
+    /// The schema as a writer with these settings writes it inline (its lengths in the byte order of the settings), to send it in place of a reference (e.g. to a reader that does not have it).
+    /// <para>The bytes are shared, do not change them.</para>
+    /// </summary>
+    /// <returns>null when the store does not have it</returns>
+    internal byte[] GetInlineSchema(SchemaId id, MsgPackOptions settings)
+    {
+      if (!_schemas.TryGetValue(id, out Entry entry))
+        return null;
+      if (MsgPackOptions.SwapEndianChoice(settings, 2) == MsgPackOptions.SwapEndianChoice(SchemaBytes.Canonical, 2))
+        return entry.Bytes;
+      return entry.OtherByteOrder ?? (entry.OtherByteOrder = Repack(entry.Bytes, SchemaBytes.Canonical, settings));
+    }
+
+    /// <summary>
+    /// Registers the schema at the start of data written with the schema inline (e.g. received from a writer that will refer to it later), as <see cref="Register"/>.
+    /// </summary>
+    /// <param name="settings">The byte order the data was written with</param>
+    /// <returns>The id of the schema</returns>
+    /// <exception cref="MsgPackException">When the data does not start with a schema, or the store holds <see cref="MaxSchemas"/> received schemas</exception>
+    internal SchemaId RegisterInline(byte[] data, int offset, int count, MsgPackOptions settings)
+    {
+      if (count <= 0)
+        throw new MsgPackException("Unexpected end of data.", 0, MsgPackTypeId.NeverUsed);
+      int first = data[offset];
+      if (!SchemaBytes.IsMap(first))
+        throw SchemaBytes.NotASchema(first);
+
+      MemoryStream stream = new MemoryStream(data, offset + 1, count - 1, false);
+      byte[] schema = SchemaBytes.ReadRaw(stream, first, settings);
+      if (MsgPackOptions.SwapEndianChoice(settings, 2) != MsgPackOptions.SwapEndianChoice(SchemaBytes.Canonical, 2))
+        schema = Repack(schema, settings, SchemaBytes.Canonical);
+      return Register(schema);
+    }
+
+    private static byte[] Repack(byte[] schema, MsgPackOptions from, MsgPackOptions to)
+    {
+      IndexedSchemaTypeResolver resolver = new IndexedSchemaTypeResolver() { ByTypeId = SchemaBytes.Parse(schema, from) };
+      return resolver.Pack(to);
+    }
+
     private bool TryReserve()
     {
       if (Interlocked.Increment(ref _received) <= MaxSchemas)
@@ -279,6 +320,11 @@ namespace LsMsgPack
     internal sealed class Entry
     {
       internal readonly byte[] Bytes;
+
+      /// <summary>
+      /// The bytes with the lengths in the other byte order (see <see cref="GetInlineSchema"/>), made when first needed.
+      /// </summary>
+      internal byte[] OtherByteOrder;
       private readonly ConcurrentDictionary<SessionKey, SessionState> _readers = new ConcurrentDictionary<SessionKey, SessionState>();
 
       /// <param name="bytes">Not copied</param>

@@ -4,6 +4,7 @@ using LtMsgPack.Extensions;
 using LtMsgPack.IO;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 
 namespace LtMsgPack.Reading
@@ -212,6 +213,39 @@ namespace LtMsgPack.Reading
     }
   }
 
+  /// <summary>
+  /// <see cref="GuidFormat.String"/>: a string, or bin 16 as LsMsgPack writes it.
+  /// </summary>
+  internal sealed class GuidStringReader : ValueReader<Guid>
+  {
+    internal override Guid Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadGuid(out Guid value)) return value;
+      if (c.R.TryReadString(out string text))
+      {
+        if (Guid.TryParse(text, out value)) return value;
+        throw new MsgPackException($"\"{text}\" is not a Guid.");
+      }
+      if (c.R.TryReadNil()) return Guid.Empty;
+      return Slow(c, start, assignedTo);
+    }
+  }
+
+  /// <summary>
+  /// <see cref="DecimalFormat.String"/>: a string in the invariant culture, anything else (the decimal extension, numbers) as LsMsgPack reads it.
+  /// </summary>
+  internal sealed class DecimalStringReader : ValueReader<decimal>
+  {
+    internal override decimal Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadString(out string text) && decimal.TryParse(text, NumberStyles.Number | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out decimal value))
+        return value;
+      return Slow(c, start, assignedTo);
+    }
+  }
+
   internal sealed class DateTimeReader : ValueReader<DateTime>
   {
     internal override DateTime Read(ReadContext c, FullPropertyInfo assignedTo)
@@ -229,6 +263,23 @@ namespace LtMsgPack.Reading
     {
       int start = c.R.Pos;
       if (c.R.TryReadDateTime(out DateTime value)) return new DateTimeOffset(value); // local time, the offset was not written
+      if (c.R.TryReadNil()) return default(DateTimeOffset);
+      return Slow(c, start, assignedTo);
+    }
+  }
+
+  /// <summary>
+  /// <see cref="DateTimeOffsetFormat.ClockTimeAndOffset"/>: MessagePack-CSharp's [clock time as a UTC timestamp, offset in minutes], or a timestamp as LsMsgPack writes it.
+  /// </summary>
+  internal sealed class DateTimeOffsetArrayReader : ValueReader<DateTimeOffset>
+  {
+    internal override DateTimeOffset Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadArrayHeader() == 2 && c.R.TryReadDateTime(out DateTime clock) && c.R.TryReadInt64(out long minutes))
+        return new DateTimeOffset(clock.ToUniversalTime().Ticks, TimeSpan.FromMinutes(minutes));
+      c.R.Pos = start;
+      if (c.R.TryReadDateTime(out DateTime value)) return new DateTimeOffset(value);
       if (c.R.TryReadNil()) return default(DateTimeOffset);
       return Slow(c, start, assignedTo);
     }

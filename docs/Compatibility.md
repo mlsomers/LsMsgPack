@@ -15,6 +15,34 @@ LsMsgPack always needs `UseInexedSchema = false`, see below.
 
 LtMsgPack (`LtMsgPackSerializer`) writes the same bytes as LsMsgPack with the same settings and reads the same data, so everything here applies to it too (the interop tests run against both) (custom extensions are `LtExtension<T>` there, with the same bytes as LsMsgPack's `ICustomExt` for the same type code).
 
+## LtMsgPack presets
+
+LtMsgPack has ready-made options that match the **default settings** of other libraries (`LtMsgPackPresets`, every call returns new options). The other side only has to read and write objects as maps keyed by property names (MessagePack-CSharp: the contractless resolver or `[MessagePackObject(true)]`), nothing else needs configuring there. Tested by `PresetTests` in `LsMsgPackInteropTests`.
+
+| Preset | Writes | Tested |
+|---|---|---|
+| `LtMsgPackPresets.MessagePackCSharp()` | names, every value, no type ids, Guid and decimal as strings, `DateTimeOffset` as `[clock time, offset in minutes]` (the offset is kept), `DateTimeKind.Unspecified` taken as UTC | the same bytes as `ContractlessStandardResolver.Options` for the 100 invoices and a class with `DateTimeOffset`, `Guid`, `decimal`; both directions |
+| `LtMsgPackPresets.Nerdbank()` | names, every value, no type ids, decimal as extension type 4, reads Nerdbank's Guid (extension type 2); Guids are written as bin 16, which Nerdbank reads | the invoices with a default `MessagePackSerializer`, both directions |
+| `LtMsgPackPresets.Generic()` | Python, JavaScript, Go, Rust...: names, every value, no type ids, Guid and decimal as strings, dates as timestamps | the values as MessagePack-CSharp reads them untyped |
+| `LtMsgPackPresets.LsMsgPack()` | LsMsgPack's defaults (the indexed schema) | `CrossLibraryTests` |
+
+```csharp
+using LtMsgPack;
+
+LtMsgPackSerializer serializer = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+byte[] bytes = serializer.Serialize(invoice); // read by MessagePackSerializer.Deserialize<Invoice>(bytes, ContractlessStandardResolver.Options)
+```
+
+The presets use these LtMsgPack options (LsMsgPack has no equivalent, the defaults write what LsMsgPack writes):
+
+- `GuidFormat`: `Binary` (bin 16, default) or `String` (36 characters, "D" format; reading then accepts both).
+- `DecimalFormat`: `Extension` (the decimal extension, default) or `String` (invariant culture, also when a decimal extension is registered; strings are always read).
+- `DateTimeOffsetFormat`: `Timestamp` (the moment, default) or `ClockTimeAndOffset` (MessagePack-CSharp's array; reading then accepts both).
+- `UnspecifiedDateTimeKind`: `Local` (default, as LsMsgPack) or `Utc` (as MessagePack-CSharp).
+- `LtMsgPack.Extensions.NerdbankGuidExtension`: reads Nerdbank's Guid (extension type 2, big-endian).
+
+The web formatters use the presets for the plain media types: `AddLsMsgPackSerializerFormatters(o => o.Plain = LtMsgPackPresets.MessagePackCSharp())`, see [WebFormatters.md](WebFormatters.md).
+
 ## LsMsgPack settings
 
 ```csharp
