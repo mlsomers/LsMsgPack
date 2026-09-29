@@ -12,9 +12,10 @@ namespace LsMsgPackUnitTests
   /// <summary>
   /// Round-trip tests for types that need conversion while deserializing (nested collections, dictionaries, enums, Guids, nullables...).
   /// </summary>
-  [TestClass]
-  public class DeserializingEdgeCases
+  public abstract class DeserializingEdgeCases
   {
+    protected abstract ISerializerUnderTest Serializer { get; }
+
     public DeserializingEdgeCases()
     {
       MsgPackSerializer.CacheAssemblyTypes(typeof(IIPet));
@@ -129,10 +130,10 @@ namespace LsMsgPackUnitTests
       };
     }
 
-    private static T RoundTrip<T>(T item, MsgPackSettings settings)
+    private T RoundTrip<T>(T item, MsgPackSettings settings)
     {
-      byte[] buffer = MsgPackSerializer.Serialize(item, settings);
-      T ret = MsgPackSerializer.Deserialize<T>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(item, settings);
+      T ret = Serializer.Deserialize<T>(buffer, settings);
 
       string org = JsonConvert.SerializeObject(item);
       string returned = JsonConvert.SerializeObject(ret);
@@ -207,7 +208,7 @@ namespace LsMsgPackUnitTests
 
       if (option == AddTypeIdOption.Never)
       {
-        MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Serialize(GetCollections(), settings));
+        MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(GetCollections(), settings));
         StringAssert.Contains(ex.Message, nameof(AddTypeIdOption.IfAmbiguious));
         return;
       }
@@ -313,20 +314,20 @@ namespace LsMsgPackUnitTests
     public void NilAtRoot(bool useSchema)
     {
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
-      byte[] nil = MsgPackSerializer.Serialize<Cat>(null, settings);
+      byte[] nil = Serializer.Serialize<Cat>(null, settings);
 
-      Assert.IsNull(MsgPackSerializer.Deserialize(typeof(string), nil, settings));
-      Assert.IsNull(MsgPackSerializer.Deserialize<string>(nil, settings));
-      Assert.IsNull(MsgPackSerializer.Deserialize<int?>(nil, settings));
-      Assert.IsNull(MsgPackSerializer.Deserialize<Cat>(nil, settings));
-      Assert.AreEqual(0, MsgPackSerializer.Deserialize<int>(nil, settings));
+      Assert.IsNull(Serializer.Deserialize(typeof(string), nil, settings));
+      Assert.IsNull(Serializer.Deserialize<string>(nil, settings));
+      Assert.IsNull(Serializer.Deserialize<int?>(nil, settings));
+      Assert.IsNull(Serializer.Deserialize<Cat>(nil, settings));
+      Assert.AreEqual(0, Serializer.Deserialize<int>(nil, settings));
     }
 
     [TestMethod]
     public void NilAtRootWithDefaultSettings()
     {
-      byte[] nil = MsgPackSerializer.Serialize<Cat>(null);
-      Assert.IsNull(MsgPackSerializer.Deserialize<Cat>(nil));
+      byte[] nil = Serializer.Serialize<Cat>(null);
+      Assert.IsNull(Serializer.Deserialize<Cat>(nil));
     }
 
     [TestMethod]
@@ -335,8 +336,8 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = Settings(AddTypeIdOption.Never);
       WithObject org = new WithObject() { Anything = new Dictionary<string, int>() { { "one", 1 }, { "two", 2 } } };
 
-      byte[] buffer = MsgPackSerializer.Serialize(org, settings);
-      WithObject ret = MsgPackSerializer.Deserialize<WithObject>(buffer, settings);
+      byte[] buffer = Serializer.Serialize(org, settings);
+      WithObject ret = Serializer.Deserialize<WithObject>(buffer, settings);
 
       // Without a type id there is no way to know the original type, the raw map should be preserved (not replaced by "new object()")
       KeyValuePair<object, object>[] map = ret.Anything as KeyValuePair<object, object>[];
@@ -405,9 +406,9 @@ namespace LsMsgPackUnitTests
 
     private class PetBySignature : IMsgPackTypeResolver
     {
-      public object IdForType(Type type, LsMsgPack.Meta.FullPropertyInfo assignedTo, MsgPackSettings settings) => null;
+      public object IdForType(Type type, LsMsgPack.Meta.FullPropertyInfo assignedTo, MsgPackOptions settings) => null;
 
-      public Type Resolve(object typeId, Type assignedTo, LsMsgPack.Meta.FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
+      public Type Resolve(object typeId, Type assignedTo, LsMsgPack.Meta.FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackOptions settings)
       {
         if (assignedTo != typeof(IIPet))
           return null;
@@ -418,5 +419,17 @@ namespace LsMsgPackUnitTests
         return null;
       }
     }
+  }
+
+  [TestClass]
+  public class LsDeserializingEdgeCases : DeserializingEdgeCases
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+  }
+
+  [TestClass]
+  public class LtDeserializingEdgeCases : DeserializingEdgeCases
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
 }

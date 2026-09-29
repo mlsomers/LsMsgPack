@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\Packaging.props" />
+
+  <PropertyGroup>
+    <!-- 2.1 can ask whether the runtime compiles code (RuntimeFeature.IsDynamicCodeCompiled) -->
+    <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RootNamespace>LtMsgPack</RootNamespace>
+    <PackageId>LtMsgPack</PackageId>
+    <Description>Fast MsgPack serializer for .NET classes, writes and reads the same data as LsMsgPack (indexed schema, schema references, type ids for polymorphic object models) without an intermediate item tree.</Description>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='ReleaseKeepTrack'">
+    <Optimize>True</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Memory" Version="4.6.3" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" />
+  </ItemGroup>
+
+</Project>

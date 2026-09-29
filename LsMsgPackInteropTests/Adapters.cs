@@ -70,4 +70,14 @@ namespace LsMsgPackInteropTests
       Assert.AreEqual(JsonConvert.SerializeObject(expected, Utc), JsonConvert.SerializeObject(actual, Utc), message);
     }
   }
+
+  [TestClass]
+  public static class LtEquivalents
+  {
+    [AssemblyInitialize]
+    public static void Register(TestContext context)
+    {
+      LsMsgPackUnitTests.LtSerializer.ExtensionEquivalents.Add(ext => ext is NerdbankGuidExtension ? new LtMsgPack.Extensions.NerdbankGuidExtension() : null); // LtMsgPack has it built in
+    }
+  }
 }

@@ -150,19 +150,6 @@ namespace LsMsgPack
       return bytes.ToArray();
     }
 
-    /// <summary>
-    /// Writes the same header as <see cref="WriteTo"/> for a map with <paramref name="count"/> entries, the entries should follow (used for the indexed schema).
-    /// </summary>
-    internal static void WriteHeader(ByteWriter bytes, int count, MsgPackSettings settings)
-    {
-      if (count < 16) bytes.Write((byte)((byte)MsgPackTypeId.MpMap4 | count));
-      else
-      {
-        bytes.Write((byte)(count <= ushort.MaxValue ? MsgPackTypeId.MpMap16 : MsgPackTypeId.MpMap32));
-        WriteLength(bytes, count, SupportedLengths.FromShortUpward, settings);
-      }
-    }
-
     internal override void WriteTo(ByteWriter bytes)
     {
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)

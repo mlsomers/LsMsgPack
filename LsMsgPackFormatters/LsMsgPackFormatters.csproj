@@ -7,7 +7,7 @@
     <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <PackageId>LsMsgPack.AspNetCore</PackageId>
-    <Description>LsMsgPack input and output formatters for ASP.NET Core MVC / Web API controllers (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
+    <Description>Input and output formatters (LtMsgPack) for ASP.NET Core MVC / Web API controllers (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
@@ -19,8 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Always use LsMsgPack without KEEPTRACK (DebugKeepTrack -> Debug, ReleaseKeepTrack -> Release), its debugging overhead does not belong in a web server -->
-    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
+    <!-- LtMsgPack has no KEEPTRACK, map DebugKeepTrack -> Debug and ReleaseKeepTrack -> Release (as before with LsMsgPack, whose debugging overhead does not belong in a web server) -->
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
   </ItemGroup>
 
 </Project>

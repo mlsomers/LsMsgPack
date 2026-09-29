@@ -10,9 +10,10 @@ namespace LsMsgPackUnitTests
   /// Extensions without a registered type (see <see cref="MsgPackSettings.CustomExtentionTypes"/>) are not converted to anything but their bytes (byte[]) or themselves (object).
   /// <para>Their bytes used to be converted like binary data, e.g. a Guid written by Nerdbank.MessagePack (extension type 2, big-endian) was silently read as a different Guid.</para>
   /// </summary>
-  [TestClass]
-  public class UnknownExtensions
+  public abstract class UnknownExtensions
   {
+    protected abstract ISerializerUnderTest Serializer { get; }
+
     // 0f8fad5b-d9cb-469f-a165-70867728950e in big-endian (RFC 4122) byte order, not the order of Guid.ToByteArray()
     private static readonly byte[] GuidBigEndian = { 0x0f, 0x8f, 0xad, 0x5b, 0xd9, 0xcb, 0x46, 0x9f, 0xa1, 0x65, 0x70, 0x86, 0x77, 0x28, 0x95, 0x0e };
 
@@ -39,10 +40,10 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void NotReadAsGuid()
     {
-      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Deserialize<WithUnknownExtension>(MapWith(nameof(WithUnknownExtension.Id), Extension()), WithoutSchema));
+      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<WithUnknownExtension>(MapWith(nameof(WithUnknownExtension.Id), Extension()), WithoutSchema));
       StringAssert.Contains(ex.Message, "extension type 2");
 
-      Assert.ThrowsExactly<MsgPackException>(() => MsgPackSerializer.Deserialize<Guid>(Extension().ToBytes(), WithoutSchema));
+      Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<Guid>(Extension().ToBytes(), WithoutSchema));
     }
 
     [TestMethod]
@@ -50,13 +51,13 @@ namespace LsMsgPackUnitTests
     {
       Guid id = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
       byte[] bytes = MapWith(nameof(WithUnknownExtension.Id), new MpBin() { Value = id.ToByteArray() });
-      Assert.AreEqual(id, MsgPackSerializer.Deserialize<WithUnknownExtension>(bytes, WithoutSchema).Id);
+      Assert.AreEqual(id, Serializer.Deserialize<WithUnknownExtension>(bytes, WithoutSchema).Id);
     }
 
     [TestMethod]
     public void ReadAsBytes()
     {
-      WithUnknownExtension ret = MsgPackSerializer.Deserialize<WithUnknownExtension>(MapWith(nameof(WithUnknownExtension.Raw), Extension()), WithoutSchema);
+      WithUnknownExtension ret = Serializer.Deserialize<WithUnknownExtension>(MapWith(nameof(WithUnknownExtension.Raw), Extension()), WithoutSchema);
       CollectionAssert.AreEqual(GuidBigEndian, ret.Raw);
     }
 
@@ -67,28 +68,34 @@ namespace LsMsgPackUnitTests
     public void ReadAsItselfAndWrittenBack()
     {
       byte[] bytes = MapWith(nameof(WithUnknownExtension.Anything), Extension());
-      WithUnknownExtension ret = MsgPackSerializer.Deserialize<WithUnknownExtension>(bytes, WithoutSchema);
+      WithUnknownExtension ret = Serializer.Deserialize<WithUnknownExtension>(bytes, WithoutSchema);
 
-      MpExt ext = ret.Anything as MpExt;
-      Assert.IsNotNull(ext);
-      Assert.AreEqual((sbyte)2, ext.TypeSpecifier);
-      CollectionAssert.AreEqual(GuidBigEndian, (byte[])ext.Value);
+      AssertUnknownExtension(ret.Anything);
 
-      WithUnknownExtension again = MsgPackSerializer.Deserialize<WithUnknownExtension>(MsgPackSerializer.Serialize(ret, WithoutSchema), WithoutSchema);
-      Assert.AreEqual((sbyte)2, ((MpExt)again.Anything).TypeSpecifier);
-      CollectionAssert.AreEqual(GuidBigEndian, (byte[])((MpExt)again.Anything).Value);
+      WithUnknownExtension again = Serializer.Deserialize<WithUnknownExtension>(Serializer.Serialize(ret, WithoutSchema), WithoutSchema);
+      AssertUnknownExtension(again.Anything);
 
-      Assert.IsInstanceOfType<MpExt>(MsgPackSerializer.Deserialize<object>(Extension().ToBytes(), WithoutSchema));
+      AssertUnknownExtension(Serializer.Deserialize<object>(Extension().ToBytes(), WithoutSchema));
+    }
+
+    /// <summary>
+    /// The extension as the serializer keeps it (LsMsgPack: MpExt, LtMsgPack: MsgPackExtension).
+    /// </summary>
+    private void AssertUnknownExtension(object value)
+    {
+      Assert.IsTrue(Serializer.IsUnknownExtension(value, out sbyte typeCode, out byte[] data), value?.GetType().FullName ?? "null");
+      Assert.AreEqual((sbyte)2, typeCode);
+      CollectionAssert.AreEqual(GuidBigEndian, data);
     }
 
     [TestMethod]
     public void InCollections()
     {
       MpArray array = new MpArray(new MsgPackSettings()) { Value = new object[] { 1, Extension(), "x" } };
-      WithUnknownExtension ret = MsgPackSerializer.Deserialize<WithUnknownExtension>(MapWith(nameof(WithUnknownExtension.Items), array), WithoutSchema);
+      WithUnknownExtension ret = Serializer.Deserialize<WithUnknownExtension>(MapWith(nameof(WithUnknownExtension.Items), array), WithoutSchema);
 
       Assert.HasCount(3, ret.Items);
-      Assert.AreEqual((sbyte)2, ((MpExt)ret.Items[1]).TypeSpecifier);
+      AssertUnknownExtension(ret.Items[1]);
 
       object[] raw = (object[])MsgPackItem.Unpack(array.ToBytes()).Value;
       Assert.IsInstanceOfType<MpExt>(raw[1]);
@@ -106,5 +113,17 @@ namespace LsMsgPackUnitTests
       object[] dates = (object[])MsgPackItem.Unpack(new MpArray(new MsgPackSettings()) { Value = new DateTime[] { DateTime.UnixEpoch } }.ToBytes()).Value;
       Assert.IsInstanceOfType<DateTime>(dates[0]);
     }
+  }
+
+  [TestClass]
+  public class LsUnknownExtensions : UnknownExtensions
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+  }
+
+  [TestClass]
+  public class LtUnknownExtensions : UnknownExtensions
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
 }

@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json;
 using System;
@@ -258,6 +258,12 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings indexed = new MsgPackSettings() { UseInexedSchema = true };
       MsgPackSettings named = new MsgPackSettings() { UseInexedSchema = false };
+      SchemaStore store = new SchemaStore(); // one store for writing and reading: in practice the reader has its own, holding the writer's schemas
+      MsgPackSettings reference = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store, WriteSchemaReference = true };
+      MsgPackSettings inlineStore = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store };
+      LtMsgPack.LtMsgPackSerializer ltIndexed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true });
+      LtMsgPack.LtMsgPackSerializer ltReference = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true });
+      LtMsgPack.LtMsgPackSerializer ltNamed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false });
 
       return new ICandidate[]
       {
@@ -276,9 +282,34 @@ namespace LsMsgPackUnitTests
           b => MsgPackSerializer.Deserialize<Invoice>(b, indexed),
           b => b.Length),
 
+        new Candidate<byte[]>("LsMsgPack (inline, store)", // the schema is written like the indexed schema, the reader recognizes it
+          i => MsgPackSerializer.Serialize(i, inlineStore),
+          b => MsgPackSerializer.Deserialize<Invoice>(b, inlineStore),
+          b => b.Length),
+
+        new Candidate<byte[]>("LsMsgPack (schema reference)",
+          i => MsgPackSerializer.Serialize(i, reference),
+          b => MsgPackSerializer.Deserialize<Invoice>(b, reference),
+          b => b.Length),
+
         new Candidate<byte[]>("LsMsgPack (property names)",
           i => MsgPackSerializer.Serialize(i, named),
           b => MsgPackSerializer.Deserialize<Invoice>(b, named),
+          b => b.Length),
+
+        new Candidate<byte[]>("LtMsgPack (indexed schema)",
+          i => ltIndexed.Serialize(i),
+          b => ltIndexed.Deserialize<Invoice>(b),
+          b => b.Length),
+
+        new Candidate<byte[]>("LtMsgPack (schema reference)",
+          i => ltReference.Serialize(i),
+          b => ltReference.Deserialize<Invoice>(b),
+          b => b.Length),
+
+        new Candidate<byte[]>("LtMsgPack (property names)",
+          i => ltNamed.Serialize(i),
+          b => ltNamed.Deserialize<Invoice>(b),
           b => b.Length)
       };
     }

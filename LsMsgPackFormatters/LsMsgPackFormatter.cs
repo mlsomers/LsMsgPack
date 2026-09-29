@@ -1,4 +1,4 @@
-﻿using LsMsgPack;
+﻿using LtMsgPack.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -10,7 +10,7 @@ namespace LsMsgPackFormatters
   public static class LsMsgPackFormatter
   {
     /// <summary>
-    /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter
+    /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter (LtMsgPack with the default <see cref="LtMsgPackHttpOptions"/>)
     /// </summary>
     /// <param name="builder">Mvc Builder</param>
     /// <returns>same Mvc Builder as input (for dasy-chaining)</returns>
@@ -26,9 +26,9 @@ namespace LsMsgPackFormatters
     /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter
     /// </summary>
     /// <param name="builder">Mvc Builder</param>
-    /// <param name="setupAction">Manipulate the settings here.</param>
+    /// <param name="setupAction">Manipulate the settings here, e.g. <c>o =&gt; o.Plain = LtMsgPackPresets.MessagePackCSharp()</c>.</param>
     /// <returns>same Mvc Builder as input (for dasy-chaining)</returns>
-    public static IMvcBuilder AddLsMsgPackSerializerFormatters(this IMvcBuilder builder, Action<MsgPackSettings> setupAction)
+    public static IMvcBuilder AddLsMsgPackSerializerFormatters(this IMvcBuilder builder, Action<LtMsgPackHttpOptions> setupAction)
     {
       builder.Services.Configure(setupAction);
       builder.Services.TryAddEnumerable(ServiceDescriptor.Transient<IConfigureOptions<MvcOptions>, LsMsgPackSettingsSetup>());
@@ -40,27 +40,23 @@ namespace LsMsgPackFormatters
     /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter using default settings
     /// </summary>
     /// <param name="options">MvcOptions</param>
-    /// <param name="settings">MsgPackSettings</param>
     /// <returns>THe same MvcOptions as the input (for dasy-chaining)</returns>
     public static MvcOptions AddLsMsgPackSerializerFormatters(this MvcOptions options)
     {
-      MsgPackSettings settings=new MsgPackSettings();
-      options.InputFormatters.Add(new LsMsgPackInputFormatter(settings));
-      options.OutputFormatters.Add(new LsMsgPackOutputFormatter(settings));
-
-      return options;
+      return options.AddLsMsgPackSerializerFormatters(new LtMsgPackHttpOptions());
     }
 
     /// <summary>
     /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter using the specified settings
     /// </summary>
     /// <param name="options">MvcOptions</param>
-    /// <param name="settings">MsgPackSettings</param>
+    /// <param name="settings">The settings per media type</param>
     /// <returns>THe same MvcOptions as the input (for dasy-chaining)</returns>
-    public static MvcOptions AddLsMsgPackSerializerFormatters(this MvcOptions options, MsgPackSettings settings)
+    public static MvcOptions AddLsMsgPackSerializerFormatters(this MvcOptions options, LtMsgPackHttpOptions settings)
     {
-      options.InputFormatters.Add(new LsMsgPackInputFormatter(settings));
-      options.OutputFormatters.Add(new LsMsgPackOutputFormatter(settings));
+      LtMsgPackHttpSerializer serializer = new LtMsgPackHttpSerializer(settings ?? new LtMsgPackHttpOptions()); // shared, so both formatters use one schema store
+      options.InputFormatters.Add(new LsMsgPackInputFormatter(serializer));
+      options.OutputFormatters.Add(new LsMsgPackOutputFormatter(serializer));
 
       return options;
     }
@@ -68,17 +64,16 @@ namespace LsMsgPackFormatters
 
   public class LsMsgPackSettingsSetup:IConfigureOptions<MvcOptions>
   {
-    private readonly MsgPackSettings _options;
+    private readonly LtMsgPackHttpOptions _options;
 
-    public LsMsgPackSettingsSetup(IOptions<MsgPackSettings> options)
+    public LsMsgPackSettingsSetup(IOptions<LtMsgPackHttpOptions> options)
     {
       _options = options.Value;
     }
 
     public void Configure(MvcOptions options)
     {
-      options.InputFormatters.Add(new LsMsgPackInputFormatter(_options));
-      options.OutputFormatters.Add(new LsMsgPackOutputFormatter(_options));
+      options.AddLsMsgPackSerializerFormatters(_options);
     }
   }
 }

@@ -1,4 +1,5 @@
 using LsMsgPack;
+using LtMsgPack.Http;
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -9,22 +10,22 @@ using System.Web.Mvc;
 namespace LsMsgPackMvc
 {
   /// <summary>
-  /// Deserializes the request body when the Content-Type is application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack (using the given settings).
+  /// Deserializes the request body when the Content-Type is application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack, with LtMsgPack (see <see cref="LtMsgPackHttpOptions"/>).
   /// Other requests are passed on to the binder MVC would have used otherwise.
   /// <para>Errors are added to the ModelState (check ModelState.IsValid) and the model is validated (DataAnnotations etc.) like the default model binder does.</para>
   /// </summary>
   public class LsMsgPackModelBinder : IModelBinder
   {
-    private readonly MsgPackSettings Settings;
-    private readonly MsgPackSettings PlainSettings;
+    private readonly LtMsgPackHttpSerializer Serializer;
 
-    public LsMsgPackModelBinder() : this(new MsgPackSettings()) { }
+    public LsMsgPackModelBinder() : this(new LtMsgPackHttpSerializer()) { }
 
-    /// <param name="settings">Used for application/x-lsmsgpack, a copy is taken so later changes have no effect.</param>
-    public LsMsgPackModelBinder(MsgPackSettings settings)
+    /// <param name="options">Read once, later changes have no effect.</param>
+    public LsMsgPackModelBinder(LtMsgPackHttpOptions options) : this(new LtMsgPackHttpSerializer(options ?? new LtMsgPackHttpOptions())) { }
+
+    public LsMsgPackModelBinder(LtMsgPackHttpSerializer serializer)
     {
-      Settings = (settings ?? new MsgPackSettings()).Clone();
-      PlainSettings = MsgPackMediaTypes.ToPlain(Settings);
+      Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
     }
 
     public object BindModel(ControllerContext controllerContext, ModelBindingContext bindingContext)
@@ -33,21 +34,20 @@ namespace LsMsgPackMvc
       if (!MsgPackMediaTypes.IsSupported(request.ContentType))
         return FallbackBinder(bindingContext.ModelType).BindModel(controllerContext, bindingContext);
 
-      Stream body = request.InputStream;
-      if (body.CanSeek)
+      Stream input = request.InputStream;
+      if (input.CanSeek)
       {
-        if (body.Length == 0)
+        if (input.Length == 0)
           return null;
-        body.Position = 0; // Another parameter may have read it already
+        input.Position = 0; // Another parameter may have read it already
       }
-
-      // A copy per request, since deserializing may flag errors on the settings (KEEPTRACK builds)
-      MsgPackSettings settings = (MsgPackMediaTypes.IsLsMsgPack(request.ContentType) ? Settings : PlainSettings).Clone();
+      MemoryStream body = new MemoryStream();
+      input.CopyTo(body);
 
       object model;
       try
       {
-        model = MsgPackSerializer.Deserialize(bindingContext.ModelType, body, settings);
+        model = Serializer.Deserialize(bindingContext.ModelType, body.GetBuffer(), 0, (int)body.Length, request.ContentType);
         if (!(model is null) && !bindingContext.ModelType.IsInstanceOfType(model)) // The deserializer passes through values it cannot convert (eg. a string where a map was expected)
           throw new MsgPackException("The request body could not be deserialized as " + bindingContext.ModelType.Name + ", it contains a " + model.GetType().Name + ".");
       }

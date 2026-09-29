@@ -13,6 +13,36 @@ MsgPack standardizes the value types (integers, strings, binary data, arrays, ma
 
 LsMsgPack always needs `UseInexedSchema = false`, see below.
 
+LtMsgPack (`LtMsgPackSerializer`) writes the same bytes as LsMsgPack with the same settings and reads the same data, so everything here applies to it too (the interop tests run against both) (custom extensions are `LtExtension<T>` there, with the same bytes as LsMsgPack's `ICustomExt` for the same type code).
+
+## LtMsgPack presets
+
+LtMsgPack has ready-made options that match the **default settings** of other libraries (`LtMsgPackPresets`, every call returns new options). The other side only has to read and write objects as maps keyed by property names (MessagePack-CSharp: the contractless resolver or `[MessagePackObject(true)]`), nothing else needs configuring there. Tested by `PresetTests` in `LsMsgPackInteropTests`.
+
+| Preset | Writes | Tested |
+|---|---|---|
+| `LtMsgPackPresets.MessagePackCSharp()` | names, every value, no type ids, Guid and decimal as strings, `DateTimeOffset` as `[clock time, offset in minutes]` (the offset is kept), `DateTimeKind.Unspecified` taken as UTC | the same bytes as `ContractlessStandardResolver.Options` for the 100 invoices and a class with `DateTimeOffset`, `Guid`, `decimal`; both directions |
+| `LtMsgPackPresets.Nerdbank()` | names, every value, no type ids, decimal as extension type 4, reads Nerdbank's Guid (extension type 2); Guids are written as bin 16, which Nerdbank reads | the invoices with a default `MessagePackSerializer`, both directions |
+| `LtMsgPackPresets.Generic()` | Python, JavaScript, Go, Rust...: names, every value, no type ids, Guid and decimal as strings, dates as timestamps | the values as MessagePack-CSharp reads them untyped |
+| `LtMsgPackPresets.LsMsgPack()` | LsMsgPack's defaults (the indexed schema) | `CrossLibraryTests` |
+
+```csharp
+using LtMsgPack;
+
+LtMsgPackSerializer serializer = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+byte[] bytes = serializer.Serialize(invoice); // read by MessagePackSerializer.Deserialize<Invoice>(bytes, ContractlessStandardResolver.Options)
+```
+
+The presets use these LtMsgPack options (LsMsgPack has no equivalent, the defaults write what LsMsgPack writes):
+
+- `GuidFormat`: `Binary` (bin 16, default) or `String` (36 characters, "D" format; reading then accepts both).
+- `DecimalFormat`: `Extension` (the decimal extension, default) or `String` (invariant culture, also when a decimal extension is registered; strings are always read).
+- `DateTimeOffsetFormat`: `Timestamp` (the moment, default) or `ClockTimeAndOffset` (MessagePack-CSharp's array; reading then accepts both).
+- `UnspecifiedDateTimeKind`: `Local` (default, as LsMsgPack) or `Utc` (as MessagePack-CSharp).
+- `LtMsgPack.Extensions.NerdbankGuidExtension`: reads Nerdbank's Guid (extension type 2, big-endian).
+
+The web formatters use the presets for the plain media types: `AddLsMsgPackSerializerFormatters(o => o.Plain = LtMsgPackPresets.MessagePackCSharp())`, see [WebFormatters.md](WebFormatters.md).
+
 ## LsMsgPack settings
 
 ```csharp
@@ -33,6 +63,7 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 `MsgPackSettings.Default_UseInexedSchema = false` changes the default of all new settings.
 
 - **`UseInexedSchema = false`** (required, for reading and writing). With the indexed schema (the default) LsMsgPack writes two objects: a map of type names with their property names, then the object, with the positions of those names as keys. Other libraries read one object, the schema: MessagePack-CSharp fails to read it as a class but reads it as `object` without an error (the rest is ignored), Python's `unpackb` and JavaScript's `decode` fail with "extra data". Without the schema an object is a map keyed by its property names, the most common layout. LsMsgPack with the schema also expects the schema when reading, so data from other libraries needs this setting too.
+- **Schema references** (`WriteSchemaReference` with a `SchemaStore`). Instead of the schema, the data then starts with a reference to it: an extension (fixext16, type 2) holding the first 16 bytes of the SHA-256 hash of the schema. Only LsMsgPack readers that hold the schema in their `SchemaStore` can read it, other libraries read the extension and stop. Not tested with other libraries, it needs the indexed schema anyway.
 - **Default values** (`DynamicFilters`). By default LsMsgPack leaves out values that equal the default of their type (`FilterDefaultValues`): null, `""`, 0, `false`, `Guid.Empty` and so on. A reader keeps what the constructor set for a missing value, so a class with other initial values does not round trip: `public int Retries { get; set; } = 3;` written as 0 is read as 3 (by LsMsgPack too), and `""` is read as null. The other libraries write every value. Without the filter LsMsgPack writes them all, and then writes the same bytes as MessagePack-CSharp for a class of strings, numbers and booleans (tested). Leaving them out is safe when the classes of all readers start with the default values of the types.
 - **Type ids** (`AddTypeIdOptions`). LsMsgPack adds a type id when a value's type differs from the declared type: an extra key `""` in an object's map, or a map `{ "": "DateTime", "@": value }` around other values (e.g. a `DateTime` in a property of type `object`). Other libraries skip the `""` key of an object, but read a wrapped value as a map. `AddTypeIdOption.Never` writes only the value (tested), then LsMsgPack can no longer restore the types of polymorphic members.
 - **`DateTime`**: use `DateTimeKind.Utc` (or `Local`) values. A timestamp is a moment in UTC. For `Unspecified` LsMsgPack assumes local time (like `ToUniversalTime()`), MessagePack-CSharp assumes UTC (a different moment, unless the machine's time zone is UTC) and Nerdbank.MessagePack refuses it. LsMsgPack reads timestamps as local time, the other libraries as UTC: the same moment.

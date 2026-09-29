@@ -1,36 +1,51 @@
 using LsMsgPack;
+using LtMsgPack.Http;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Formatters;
+using System;
 using System.Threading.Tasks;
 
 namespace LsMsgPackFormatters
 {
   /// <summary>
-  /// Writes responses for Accept application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack (using the given settings).
+  /// Writes responses for Accept application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack, with LtMsgPack (see <see cref="LtMsgPackHttpOptions"/>).
+  /// <para>application/x-lsmsgpack refers to the schema instead of sending it when the request says the client holds it (<see cref="LtMsgPackHttpSerializer"/>).</para>
   /// </summary>
   public class LsMsgPackOutputFormatter : OutputFormatter
   {
-    private readonly MsgPackSettings Settings;
-    private readonly MsgPackSettings PlainSettings;
+    private readonly LtMsgPackHttpSerializer Serializer;
 
-    public LsMsgPackOutputFormatter() : this(new MsgPackSettings()) { }
+    public LsMsgPackOutputFormatter() : this(new LtMsgPackHttpOptions()) { }
 
-    /// <param name="settings">Used for application/x-lsmsgpack, a copy is taken so later changes have no effect.</param>
-    public LsMsgPackOutputFormatter(MsgPackSettings settings)
+    /// <param name="options">Read once, later changes have no effect.</param>
+    public LsMsgPackOutputFormatter(LtMsgPackHttpOptions options) : this(new LtMsgPackHttpSerializer(options ?? new LtMsgPackHttpOptions())) { }
+
+    /// <param name="serializer">Share it with the input formatter (one schema store).</param>
+    public LsMsgPackOutputFormatter(LtMsgPackHttpSerializer serializer)
     {
-      Settings = (settings ?? new MsgPackSettings()).Clone();
-      PlainSettings = MsgPackMediaTypes.ToPlain(Settings);
+      Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
       foreach (string mediaType in MsgPackMediaTypes.All)
         SupportedMediaTypes.Add(mediaType);
     }
 
     public override async Task WriteResponseBodyAsync(OutputFormatterWriteContext context)
     {
-      MsgPackSettings settings = MsgPackMediaTypes.IsLsMsgPack(context.ContentType.Value) ? Settings : PlainSettings;
+      string mediaType = context.ContentType.Value;
+      bool negotiated = Serializer.NegotiatesSchemas && MsgPackMediaTypes.IsLsMsgPack(mediaType);
+      string clientSchemas = negotiated ? context.HttpContext.Request.Headers[LtMsgPackHttpSerializer.SchemasHeader].ToString() : null;
 
       // Serialize to a buffer and write it asynchronously, ASP.NET Core does not allow synchronous writes to the response stream.
-      byte[] buffer = MsgPackSerializer.Serialize(context.Object, context.ObjectType, settings);
-      context.HttpContext.Response.ContentLength = buffer.Length;
-      await context.HttpContext.Response.Body.WriteAsync(buffer, 0, buffer.Length, context.HttpContext.RequestAborted);
+      MsgPackPayload payload = Serializer.Serialize(context.Object, context.ObjectType, mediaType, clientSchemas);
+
+      HttpResponse response = context.HttpContext.Response;
+      if (negotiated)
+      {
+        response.Headers.Append("Vary", LtMsgPackHttpSerializer.SchemasHeader);
+        if (!(payload.SchemaId is null))
+          response.Headers[LtMsgPackHttpSerializer.SchemaHeader] = payload.SchemaId;
+      }
+      response.ContentLength = payload.Length;
+      await payload.WriteToAsync(response.Body, context.HttpContext.RequestAborted);
     }
   }
 }
