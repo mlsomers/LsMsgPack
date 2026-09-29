@@ -41,13 +41,13 @@ public void Test()
 
 Compatibility with other implementations
 ----------------------------------------
-Serializing classes by creating name-value dictionaries of their properties is not an official standard, and to my surprise I found than a majority of MsgPack implementations do not, instead they simply string up a list of values. This is indeed efficient and will work well for the first version, however migrating to a new version may pose some compatibility challenges when introducing new properties over time.
+Serializing classes by creating name-value dictionaries of their properties is not an official standard, and to my surprise I found than a many MsgPack implementations do not. Some just string a list of values into an array. This is indeed efficient and will work well for the first version, however migrating to a new version may pose some compatibility challenges when introducing new properties over time.
 
 For this reason I have submitted a [pull request]( https://github.com/msgpack/msgpack/pull/334/commits/c6a4935b9e0e38818cc1ef878db72621143bfcd7) to the official MsgPack specification, including a more standardized choice of solutions and in addition a standard way to support polymorphic class-hierarchies.
 
 Which settings to use to exchange data with MessagePack-CSharp, Nerdbank.MessagePack, Python, JavaScript and others is described in [docs/Compatibility.md](docs/Compatibility.md).
 
-While using dictionaries diminishes the small size of a MsgPack message, it does help bring up the compatibility level with other serializers (XML / JSON) so that it can be used as a drop-in replacement. I hope to deal with part of the problem later by adding a schema, but let’s first just bring it up to speed with other serializers for now.
+While using dictionaries diminishes the small size of a MsgPack message, it does help bring up the compatibility level with other serializers (XML / JSON) so that it can be used as a drop-in replacement.
 
 Polymorphic class-hierarchy support
 -----------------------------------

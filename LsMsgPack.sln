@@ -61,6 +61,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documentation", "Documentation", "{864B66E3-CB20-4FC7-AFD4-A9FCB0302FE4}"
 	ProjectSection(SolutionItems) = preProject
 		docs\Compatibility.md = docs\Compatibility.md
+		docs\WebFormatters.md = docs\WebFormatters.md
 	EndProjectSection
 EndProject
 Global
