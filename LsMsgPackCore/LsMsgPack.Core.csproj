@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <Import Project="..\Packaging.props" />
 
@@ -7,9 +7,11 @@
     <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <Nullable>disable</Nullable>
-	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <PackageId>LsMsgPack</PackageId>
-    <Description>MsgPack serializer and deserializer for .NET classes (like the xml and json serializers), with an optional indexed schema and type ids for polymorphic object models.</Description>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AssemblyName>LsMsgPack.Core</AssemblyName>
+    <RootNamespace>LsMsgPack</RootNamespace>
+    <PackageId>LsMsgPack.Core</PackageId>
+    <Description>The parts shared by the LsMsgPack serializers: settings, the indexed schema and its store, property metadata, type resolving, attributes and filters.</Description>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
@@ -23,10 +25,6 @@
 
   <ItemGroup>
     <PackageReference Include="System.Memory" Version="4.6.3" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" />
   </ItemGroup>
 
 </Project>

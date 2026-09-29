@@ -33,10 +33,10 @@ namespace LsMsgPack.Meta
 
       Type xType = x.GetType();
 
-      if (MsgPackMeta.NumericTypes.Contains(xType))
+      if (NumericTypes.All.Contains(xType))
       {
         Type yType = y.GetType();
-        if (MsgPackMeta.NumericTypes.Contains(yType))
+        if (NumericTypes.All.Contains(yType))
         {
           try
           {
@@ -60,7 +60,7 @@ namespace LsMsgPack.Meta
       if (TryGetInteger(obj, out long integer))
         return new decimal(integer).GetHashCode(); // the same as Convert.ToDecimal(obj).GetHashCode() below, without the lookup and conversion
 
-      if (MsgPackMeta.NumericTypes.Contains(obj.GetType()))
+      if (NumericTypes.All.Contains(obj.GetType()))
       {
         try
         {

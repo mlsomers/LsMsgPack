@@ -165,33 +165,13 @@ namespace LsMsgPack
     private static MsgPackSettings WithSchema(MsgPackSettings settings, IndexedSchemaTypeResolver resolver)
     {
       MsgPackSettings schemaSettings = settings.Clone();
-      GetSchemaResolvers(settings, resolver, out schemaSettings._typeResolvers, out schemaSettings._propertyNameResolvers);
+      SchemaSession.GetSchemaResolvers(settings, resolver, out schemaSettings._typeResolvers, out schemaSettings._propertyNameResolvers);
 
       // These settings (and resolver) are only used for this session, so the property ids can be cached for all instances of the same type
       schemaSettings._serializedPropsCache = new Dictionary<Type, FullPropertyInfo[]>();
       schemaSettings._staticPropsCache = new Dictionary<Type, FullPropertyInfo[]>();
 
       return schemaSettings;
-    }
-
-    /// <summary>
-    /// The resolvers of the settings, with the given schema added: consulted first for type ids and last for property ids.
-    /// </summary>
-    internal static void GetSchemaResolvers(MsgPackSettings settings, IndexedSchemaTypeResolver resolver, out IMsgPackTypeResolver[] typeResolvers, out IMsgPackPropertyIdResolver[] propertyIdResolvers)
-    {
-      // Resolvers are consulted from last to first, the schema should be consulted first so its type id's cannot be mistaken for those of another resolver.
-      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings._typeResolvers.Length + 1);
-      for (int t = 0; t < settings._typeResolvers.Length; t++)
-        if (!(settings._typeResolvers[t] is IndexedSchemaTypeResolver))
-          resolvers.Add(settings._typeResolvers[t]);
-      resolvers.Add(resolver);
-      typeResolvers = resolvers.ToArray();
-
-      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings._propertyNameResolvers.Length + 1) { resolver };
-      for (int t = 0; t < settings._propertyNameResolvers.Length; t++)
-        if (!(settings._propertyNameResolvers[t] is IndexedSchemaTypeResolver))
-          propNameResolvers.Add(settings._propertyNameResolvers[t]);
-      propertyIdResolvers = propNameResolvers.ToArray();
     }
 
     public static T Deserialize<T>(byte[] source)

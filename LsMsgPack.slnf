@@ -2,6 +2,7 @@
   "solution": {
     "path": "LsMsgPack.sln",
     "projects": [
+      "LsMsgPackCore/LsMsgPack.Core.csproj",
       "LsMsgPackNetStandard/LsMsgPack.csproj",
       "LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj",
       "LsMsgPackInteropTests/LsMsgPackInteropTests.csproj",

@@ -106,11 +106,15 @@ namespace LsMsgPack
     /// </summary>
     public void Export(Stream target)
     {
-      Dictionary<byte[], byte[]> all = new Dictionary<byte[], byte[]>();
-      foreach (KeyValuePair<SchemaId, Entry> entry in _schemas)
-        all.Add(entry.Key.ToByteArray(), entry.Value.Bytes);
-
-      MsgPackSerializer.Serialize(all, target, new MsgPackSettings() { UseInexedSchema = false, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], EndianAction = EndianAction.SwapIfCurrentSystemIsLittleEndian });
+      List<KeyValuePair<SchemaId, Entry>> all = new List<KeyValuePair<SchemaId, Entry>>(_schemas);
+      ByteWriter bytes = new ByteWriter();
+      bytes.WriteMapHeader(all.Count, SchemaBytes.Canonical);
+      for (int t = 0; t < all.Count; t++)
+      {
+        SchemaBytes.WriteBin(bytes, all[t].Key.ToByteArray());
+        SchemaBytes.WriteBin(bytes, all[t].Value.Bytes);
+      }
+      bytes.CopyTo(target);
     }
 
     /// <summary>
@@ -119,13 +123,10 @@ namespace LsMsgPack
     /// <returns>The number of schemas read</returns>
     public int Import(Stream source)
     {
-      Dictionary<byte[], byte[]> all = MsgPackSerializer.Deserialize<Dictionary<byte[], byte[]>>(source, new MsgPackSettings() { UseInexedSchema = false, EndianAction = EndianAction.SwapIfCurrentSystemIsLittleEndian });
-      if (all is null)
-        return 0;
-
-      foreach (KeyValuePair<byte[], byte[]> entry in all)
-        Register(entry.Value);
-      return all.Count;
+      List<byte[]> schemas = SchemaBytes.ReadExport(source);
+      for (int t = 0; t < schemas.Count; t++)
+        Register(schemas[t]);
+      return schemas.Count;
     }
 
     /// <summary>
@@ -153,7 +154,7 @@ namespace LsMsgPack
     /// <summary>
     /// The session used to write values of the given (declared) root type, each root type has its own schema.
     /// </summary>
-    internal SessionState GetWriter(Type root, MsgPackSettings settings)
+    internal SessionState GetWriter(Type root, MsgPackOptions settings)
     {
       SessionKey key = new SessionKey(root, settings);
       if (_writers.TryGetValue(key, out SessionState state))
@@ -229,7 +230,7 @@ namespace LsMsgPack
         Bytes = bytes;
       }
 
-      internal SessionState GetReader(MsgPackSettings settings)
+      internal SessionState GetReader(MsgPackOptions settings)
       {
         SessionKey key = new SessionKey(null, settings);
         if (_readers.TryGetValue(key, out SessionState state))
@@ -275,7 +276,7 @@ namespace LsMsgPack
       private readonly AddTypeIdOption _addTypeIdOptions;
       private readonly EndianAction _endianAction; // inline schemas are read in the byte order of the reader
 
-      internal SessionKey(Type root, MsgPackSettings settings)
+      internal SessionKey(Type root, MsgPackOptions settings)
       {
         _root = root;
         _typeResolvers = settings._typeResolvers;

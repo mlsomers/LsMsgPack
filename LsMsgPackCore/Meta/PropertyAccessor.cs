@@ -88,13 +88,13 @@ namespace LsMsgPack.Meta
     {
       get
       {
-        if (!MsgPackSettings.CompilePropertyAccessors)
+        if (!MsgPackOptions.CompilePropertyAccessors)
           return false;
 
 #if NETSTANDARD2_1_OR_GREATER
         return System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeCompiled;
 #else
-        return true; // .NET Standard 2.0 cannot ask, the runtimes that pick this build (e.g. .NET Framework) have a JIT. Otherwise switch off MsgPackSettings.CompilePropertyAccessors.
+        return true; // .NET Standard 2.0 cannot ask, the runtimes that pick this build (e.g. .NET Framework) have a JIT. Otherwise switch off MsgPackOptions.CompilePropertyAccessors.
 #endif
       }
     }

@@ -35,7 +35,7 @@ namespace LsMsgPack.TypeResolving.Types
     /// </summary>
     internal bool IsFrozen { get; private set; }
 
-    public ComplexTypeDef GetComplex(Type type, MsgPackSettings settings)
+    public ComplexTypeDef GetComplex(Type type, MsgPackOptions settings)
     {
       if (ByType.TryGetValue(type, out ComplexTypeDef complexSchemaBase))
         return complexSchemaBase;
@@ -58,14 +58,14 @@ namespace LsMsgPack.TypeResolving.Types
       return newEntry;
     }
 
-    public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
+    public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackOptions settings)
     {
       return GetComplex(type, settings).TypeId;
     }
 
-    public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
+    public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackOptions settings)
     {
-      if (typeId is null || !MsgPackMeta.NumericTypes.Contains(typeId.GetType())) // e.g. a name used by another resolver
+      if (typeId is null || !NumericTypes.All.Contains(typeId.GetType())) // e.g. a name used by another resolver
         return null;
 
       decimal id = Convert.ToDecimal(typeId);
@@ -92,7 +92,7 @@ namespace LsMsgPack.TypeResolving.Types
     /// <summary>
     /// Resolve the name (stored in the schema) using the other resolvers (they may have provided the name, see <see cref="ComplexTypeDef"/>) or the default name resolver.
     /// </summary>
-    private static Type ResolveTypeName(string typeName, Type assignedTo, MsgPackSettings settings)
+    private static Type ResolveTypeName(string typeName, Type assignedTo, MsgPackOptions settings)
     {
       IMsgPackTypeResolver[] resolvers = settings._typeResolvers;
       Dictionary<object, object> noProperties = new Dictionary<object, object>(0);
@@ -109,7 +109,7 @@ namespace LsMsgPack.TypeResolving.Types
       return TypeResolver.ResolveInternal(typeName, assignedTo, resolvers);
     }
 
-    object IMsgPackPropertyIdResolver.GetId(FullPropertyInfo assignedTo, MsgPackSettings settings)
+    object IMsgPackPropertyIdResolver.GetId(FullPropertyInfo assignedTo, MsgPackOptions settings)
     {
       ComplexTypeDef def;
       if (!ByType.TryGetValue(assignedTo.PropertyInfo.ReflectedType, out def))
@@ -133,7 +133,7 @@ namespace LsMsgPack.TypeResolving.Types
       return null;
     }
 
-    private void ResolveDeserializedTypes(MsgPackSettings settings)
+    private void ResolveDeserializedTypes(MsgPackOptions settings)
     {
 
       foreach (ComplexTypeDef def in ByTypeId)
@@ -159,10 +159,10 @@ namespace LsMsgPack.TypeResolving.Types
     }
 
     /// <param name="settings">Settings used for the rest of the data (e.g. to use the same <see cref="MsgPackSettings.EndianAction"/>)</param>
-    public byte[] Pack(MsgPackSettings settings)
+    public byte[] Pack(MsgPackOptions settings)
     {
       ByteWriter bytes = new ByteWriter();
-      WriteTo(bytes, settings ?? new MsgPackSettings());
+      WriteTo(bytes, settings ?? new DefaultOptions());
       return bytes.ToArray();
     }
 
@@ -170,33 +170,33 @@ namespace LsMsgPack.TypeResolving.Types
     /// A map of type names with an array of property names, written directly (the same bytes as packing them as MpMap, MpArray and MpString items)
     /// </summary>
     /// <param name="settings">Only the <see cref="MsgPackSettings.EndianAction"/> is used (for the lengths of long names and large schemas)</param>
-    private void WriteTo(ByteWriter bytes, MsgPackSettings settings)
+    private void WriteTo(ByteWriter bytes, MsgPackOptions settings)
     {
-      MpMap.WriteHeader(bytes, ByTypeId.Count, settings);
+      bytes.WriteMapHeader(ByTypeId.Count, settings);
       for (int t = 0; t < ByTypeId.Count; t++)
       {
         ComplexTypeDef def = ByTypeId[t];
         WriteName(bytes, def.TypeName, settings);
-        MpArray.WriteHeader(bytes, def.Props.Count, settings);
+        bytes.WriteArrayHeader(def.Props.Count, settings);
         for (int p = 0; p < def.Props.Count; p++)
           WriteName(bytes, def.Props[p], settings);
       }
     }
 
-    private static void WriteName(ByteWriter bytes, string name, MsgPackSettings settings)
+    private static void WriteName(ByteWriter bytes, string name, MsgPackOptions settings)
     {
       if (name is null)
         bytes.Write((byte)MsgPackTypeId.MpNull);
       else
-        MpString.Write(bytes, name, settings);
+        bytes.WriteString(name, settings);
     }
 
     /// <returns>null if the stream starts with nil (null is serialized without a schema)</returns>
     /// <exception cref="MsgPackException">When the stream does not start with a schema</exception>
-    public static IndexedSchemaTypeResolver Unpack(System.IO.Stream bytes, MsgPackSettings settings)
+    public static IndexedSchemaTypeResolver Unpack(System.IO.Stream bytes, MsgPackOptions settings)
     {
       if (settings is null)
-        settings = new MsgPackSettings();
+        settings = new DefaultOptions();
 
       int first = bytes.ReadByte();
       if (first < 0)
@@ -214,7 +214,7 @@ namespace LsMsgPack.TypeResolving.Types
     /// </summary>
     /// <param name="lengthSettings">The <see cref="MsgPackSettings.EndianAction"/> the bytes were read with, null for the byte order of the specification (<see cref="SchemaBytes.Canonical"/>)</param>
     /// <param name="settings">Resolves the types</param>
-    internal static IndexedSchemaTypeResolver FromBytes(byte[] raw, MsgPackSettings lengthSettings, MsgPackSettings settings)
+    internal static IndexedSchemaTypeResolver FromBytes(byte[] raw, MsgPackOptions lengthSettings, MsgPackOptions settings)
     {
       List<ComplexTypeDef> defs = SchemaBytes.Parse(raw, lengthSettings);
       IndexedSchemaTypeResolver ret = new IndexedSchemaTypeResolver() { ByTypeId = defs, ByType = new Dictionary<Type, ComplexTypeDef>(defs.Count) };
@@ -265,7 +265,7 @@ namespace LsMsgPack.TypeResolving.Types
   {
     public ComplexTypeDef() { }
 
-    public ComplexTypeDef(int id, Type type, MsgPackSettings settings)
+    public ComplexTypeDef(int id, Type type, MsgPackOptions settings)
     {
       Type = type;
       TypeId = id;

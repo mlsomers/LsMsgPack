@@ -86,19 +86,6 @@ namespace LsMsgPack
       return bytes.ToArray();
     }
 
-    /// <summary>
-    /// Writes the same header as <see cref="WriteTo"/> for an array with <paramref name="count"/> items, the items should follow (used for the indexed schema).
-    /// </summary>
-    internal static void WriteHeader(ByteWriter bytes, int count, MsgPackSettings settings)
-    {
-      if (count < 16) bytes.Write((byte)((byte)MsgPackTypeId.MpArray4 | count));
-      else
-      {
-        bytes.Write((byte)(count <= ushort.MaxValue ? MsgPackTypeId.MpArray16 : MsgPackTypeId.MpArray32));
-        WriteLength(bytes, count, SupportedLengths.FromShortUpward, settings);
-      }
-    }
-
     internal override void WriteTo(ByteWriter bytes)
     {
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)

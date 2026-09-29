@@ -45,17 +45,16 @@ namespace LsMsgPack
       set { this.value = ReferenceEquals(value, null) ? string.Empty : value.ToString(); }
     }
 
-    private static Encoding defaultEncoding = Encoding.UTF8;
     /// <summary>
     /// Default string encoding will be UTF8 if this property is not changed
     /// </summary>
     public static Encoding DefaultEncoding
     {
-      get { return defaultEncoding; }
-      set { defaultEncoding = value; }
+      get { return MsgPackOptions.StringEncoding; } // shared with the indexed schema (LsMsgPack.Core)
+      set { MsgPackOptions.StringEncoding = value; }
     }
 
-    private Encoding encoding = defaultEncoding;
+    private Encoding encoding = DefaultEncoding;
     /// <summary>
     /// will initially be the statically defined DefaultEncoding, but may also be dynamically changed per instance (note that the chosen encoding will not be persisted)
     /// </summary>
@@ -98,22 +97,6 @@ namespace LsMsgPack
         return;
       }
       WriteValue(target, encoding.GetByteCount(value));
-    }
-
-    /// <summary>
-    /// Writes the same bytes as <c>new MpString(settings) { Value = value }.ToBytes()</c> without creating the item (used for the indexed schema).
-    /// </summary>
-    internal static void Write(ByteWriter bytes, string value, MsgPackSettings settings)
-    {
-      Encoding encoding = DefaultEncoding;
-      int byteCount = encoding.GetByteCount(value);
-      if (byteCount < 32) bytes.Write((byte)((byte)MsgPackTypeId.MpStr5 | byteCount));
-      else
-      {
-        bytes.Write((byte)(byteCount < 256 ? MsgPackTypeId.MpStr8 : byteCount <= ushort.MaxValue ? MsgPackTypeId.MpStr16 : MsgPackTypeId.MpStr32));
-        WriteLength(bytes, byteCount, SupportedLengths.All, settings);
-      }
-      bytes.Write(value, encoding, byteCount);
     }
 
     /// <summary>

@@ -11,7 +11,7 @@ namespace LsMsgPack.Meta
     private static readonly ConcurrentDictionary<PropertyInfo, FullPropertyInfo> Cache = new ConcurrentDictionary<PropertyInfo, FullPropertyInfo>();
     private Dictionary<Type, ConstructorInfo> _constructorTakingType; // per instance (created when first used), constructors differ per AssignedToType
 
-    public static FullPropertyInfo GetFullPropInfo(PropertyInfo propertyInfo, MsgPackSettings settings)
+    public static FullPropertyInfo GetFullPropInfo(PropertyInfo propertyInfo, MsgPackOptions settings)
     {
       if (propertyInfo == null)
         return null;
@@ -33,7 +33,7 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// The first id returned by the <see cref="MsgPackSettings.PropertyNameResolvers"/> (consulted from last to first), or the name of the property.
     /// </summary>
-    private static void ResolvePropertyId(FullPropertyInfo full, MsgPackSettings settings)
+    private static void ResolvePropertyId(FullPropertyInfo full, MsgPackOptions settings)
     {
       full.PropertyId = null;
       for (int t = settings._propertyNameResolvers.Length - 1; t >= 0; t--)
@@ -187,7 +187,7 @@ namespace LsMsgPack.Meta
       });
     }
 
-    internal static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackSettings settings)
+    internal static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackOptions settings)
     {
       Dictionary<Type, FullPropertyInfo[]> sessionCache = settings._serializedPropsCache;
       if (sessionCache is null)
@@ -213,7 +213,7 @@ namespace LsMsgPack.Meta
     // Without property id resolvers the FullPropertyInfo instances (and their StaticallyIgnored) are shared by all settings (see GetFullPropInfo), so the result only depends on the type
     private static readonly ConcurrentDictionary<Type, FullPropertyInfo[]> SerializedPropsCache = new ConcurrentDictionary<Type, FullPropertyInfo[]>();
 
-    private static FullPropertyInfo[] GetSerializedPropsWithoutSession(Type type, MsgPackSettings settings)
+    private static FullPropertyInfo[] GetSerializedPropsWithoutSession(Type type, MsgPackOptions settings)
     {
       bool shared = settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0;
       if (shared && SerializedPropsCache.TryGetValue(type, out FullPropertyInfo[] cached))
@@ -245,7 +245,7 @@ namespace LsMsgPack.Meta
       for (int t = 0; t < props.Length; t++)
       {
         object id = props[t].PropertyId;
-        if (MsgPackSerializer.TypeIdKey.Equals(id) || MsgPackSerializer.ContentKey.Equals(id))
+        if (MsgPackOptions.TypeIdKey.Equals(id) || MsgPackOptions.ContentKey.Equals(id))
           throw new MsgPackException($"The id \"{id}\" of property {type.Name}.{props[t].PropertyInfo.Name} is reserved, the serializer uses it for the type id or the content of a collection.");
 
         for (int i = 0; i < t; i++)
@@ -260,7 +260,7 @@ namespace LsMsgPack.Meta
     /// The properties that pass the static filters, their <see cref="PropertyId"/> is the name of the property (the property id resolvers are not consulted).
     /// <para>Cached for the rest of the session (see <see cref="MsgPackSettings._staticPropsCache"/>), <see cref="GetSerializedProps"/> resolves the ids of the same instances.</para>
     /// </summary>
-    internal static FullPropertyInfo[] GetStaticallyIncludedProps(Type type, MsgPackSettings settings)
+    internal static FullPropertyInfo[] GetStaticallyIncludedProps(Type type, MsgPackOptions settings)
     {
       Dictionary<Type, FullPropertyInfo[]> sessionCache = settings._staticPropsCache;
       if (sessionCache != null && sessionCache.TryGetValue(type, out FullPropertyInfo[] cached))
@@ -284,7 +284,7 @@ namespace LsMsgPack.Meta
       return result;
     }
 
-    private static bool IsStaticallyIncluded(FullPropertyInfo full, MsgPackSettings settings)
+    private static bool IsStaticallyIncluded(FullPropertyInfo full, MsgPackOptions settings)
     {
       if (full.StaticallyIgnored.HasValue) // statically cached
         return !full.StaticallyIgnored.Value;

@@ -197,7 +197,7 @@ namespace LsMsgPackUnitTests
 
     private class Resolver : IMsgPackTypeResolver
     {
-      public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
+      public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackOptions settings)
       {
         if (type == typeof(Dog))
           return 1;
@@ -210,7 +210,7 @@ namespace LsMsgPackUnitTests
         return null;
       }
 
-      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
+      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackOptions settings)
       {
         if (typeId == null)
           return null;
@@ -313,12 +313,12 @@ namespace LsMsgPackUnitTests
 
     private class Resolver2 : IMsgPackTypeResolver
     {
-      public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
+      public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackOptions settings)
       {
         return null; // use default
       }
 
-      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
+      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackOptions settings)
       {
         if (properties.ContainsKey("ClawLengthMilimeters"))
           return typeof(Cat);

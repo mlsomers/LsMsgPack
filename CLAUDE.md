@@ -1,6 +1,6 @@
 # LsMsgPack
 
-MsgPack serializer for .NET classes (like the xml and json serializers) with an optional indexed schema and type ids for polymorphic object models, plus a MsgPack explorer/debugging tool (Windows). The library is `LsMsgPackNetStandard/` (assembly and package `LsMsgPack`). Not published as a NuGet package yet, so format changes are still acceptable when they are deliberate and called out.
+MsgPack serializer for .NET classes (like the xml and json serializers) with an optional indexed schema and type ids for polymorphic object models, plus a MsgPack explorer/debugging tool (Windows). The library is `LsMsgPackNetStandard/` (assembly and package `LsMsgPack`), on top of `LsMsgPackCore/` (assembly and package `LsMsgPack.Core`, shared with the planned tree-less serializer LtMsgPack). Not published as a NuGet package yet, so format changes are still acceptable when they are deliberate and called out.
 
 ## Build and test
 
@@ -16,6 +16,8 @@ dotnet test LsMsgPackInteropTests/LsMsgPackInteropTests.csproj -c Release
 - Configurations: `Debug`, `Release`, `DebugKeepTrack`, `ReleaseKeepTrack`. KeepTrack defines `KEEPTRACK`: items remember offsets and lengths, errors become `MpError` items instead of exceptions (`ContinueProcessingOnBreakingError`), and `PreservePackages` keeps the item trees. The explorer tools use it. Code in `#if KEEPTRACK` blocks must keep compiling, so build a KeepTrack configuration after touching `MsgPackItem` or the `Types/`.
 - `LsMsgPackInteropTests` checks what MessagePack-CSharp and Nerdbank.MessagePack read of LsMsgPack's output and the other way around (the invoice model with property names, byte equality per type, and the known differences: Guid, decimal, `DateTimeKind.Unspecified`, `DateTimeOffset`, polymorphism, omitted defaults, the indexed schema). A format change can make these fail: update the test when the change is intended, and mention it. `docs/Compatibility.md` documents the settings per library (from these tests), keep it in sync.
 - The benchmark tests (`TestCategory=Benchmark`, `BenchmarkInvoices`) compare with Json.NET and report through `TestContext`: run them with `--logger "console;verbosity=detailed"`. They are Inconclusive under KEEPTRACK.
+- **Two assemblies, same namespaces** (`LsMsgPack.*`). `LsMsgPack.Core` has what does not depend on `MsgPackItem`s: `MsgPackOptions` (the format settings, abstract; `MsgPackSettings` derives from it and adds custom extensions, the KEEPTRACK settings and buffers), `MsgPackTypeId`, `MsgPackException`, `Meta/` (`FullPropertyInfo`, `PropertyAccessor`, `TypeResolver`, `CollectionInfo`, `Instances`, `ByteWriter`, `NumericTypes`, `MapConversionEqualityComparer`), all of `TypeResolving/` (interfaces, attributes, filters, resolvers, `IndexedSchemaTypeResolver`) and `Schema/`. `LsMsgPack` keeps the items (`MsgPackItem`, `Types/`), the serializer, `FrameworkTypes`, `MsgPackMeta`. Core's internals are visible to `LsMsgPack`, `LtMsgPack` and `LsMsgPackUnitTests`. Resolver and filter interfaces take `MsgPackOptions`. Core must not reference LsMsgPack: shared helpers live in Core and the old LsMsgPack members delegate (`MsgPackItem.SwapEndianChoice`, `MpString.DefaultEncoding` → `MsgPackOptions.StringEncoding`, `MsgPackMeta.NumericTypes`, the header writers in `ByteWriter`).
+- The old-style Windows projects do not get transitive project references: they reference both `LsMsgPack.csproj` and `LsMsgPack.Core.csproj`.
 - `MicroFramework/` has its own old copies of the sources, it does not link the library files.
 - The version comes from `CommonAssemblyInfo.cs` (read by `Packaging.props`).
 
@@ -44,9 +46,9 @@ dotnet test LsMsgPackInteropTests/LsMsgPackInteropTests.csproj -c Release
 | `FullPropertyInfo.Cache` | PropertyInfo | global, only without property id resolvers. `StaticallyIgnored` is cached on these shared instances, so the static filters of the first settings win |
 | `FullPropertyInfo.SerializedPropsCache` | Type | global, only without property id resolvers and without a session (follows from the above) |
 | `FullPropertyInfo.AttributesCache`, `GetProperties` cache | PropertyInfo / Type | global, static metadata |
-| `MsgPackSettings._serializedPropsCache`, `_staticPropsCache` | Type | one session (set by `WithSchema` or `SchemaSession.Apply`, not copied by `Clone()`). Property ids are schema indexes, never share them between sessions |
+| `MsgPackOptions._serializedPropsCache`, `_staticPropsCache` | Type | one session (set by `WithSchema` or `SchemaSession.Apply`, not copied by `Clone()`/`CloneOptions()`). Property ids are schema indexes, never share them between sessions |
 | `SchemaStore` schemas, inline schemas, writer and reader sessions | `SchemaId` / schema bytes / `SessionKey` | one store (shared by the settings that use it). Received schemas limited by `MaxSchemas`, sessions frozen once published |
-| `PropertyAccessor.Cache` | PropertyInfo | global. Reflection for the first 100 calls, then typed delegates (`Delegate.CreateDelegate` into `TypedAccessor<TTarget, TValue>`), unless the runtime does not compile code or `MsgPackSettings.CompilePropertyAccessors` is off |
+| `PropertyAccessor.Cache` | PropertyInfo | global. Reflection for the first 100 calls, then typed delegates (`Delegate.CreateDelegate` into `TypedAccessor<TTarget, TValue>`), unless the runtime does not compile code or `MsgPackOptions.CompilePropertyAccessors` is off |
 | `CollectionInfo`, `HasParameterlessConstructor`, `FilterDefaultValues.DefaultInstances` | Type | global |
 | `TypeResolver` name caches | name / Type | global, guarded by one (re-entrant) lock |
 

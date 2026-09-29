@@ -17,7 +17,7 @@ namespace LsMsgPack.TypeResolving.Types
         private readonly ConcurrentDictionary<string, Type> _resolve = new ConcurrentDictionary<string, Type>(); // settings (and their resolvers) may be shared between threads
         private readonly ConcurrentDictionary<Type, string> _resolveWriting = new ConcurrentDictionary<Type, string>();
 
-        public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
+        public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackOptions settings)
         {
             if (_resolveWriting.TryGetValue(type, out string value))
                 return value;
@@ -52,7 +52,7 @@ namespace LsMsgPack.TypeResolving.Types
                 RegisterType(types[t]);
         }
 
-        public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
+        public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackOptions settings)
         {
             string name = typeId as string; // null or an id from another resolver
             if (name != null && _resolve.TryGetValue(name, out Type type))

@@ -9,7 +9,10 @@ REPO=$(git -C "$SCRIPTS" rev-parse --show-toplevel)
 
 mkdir -p "$WORK"
 rm -rf "$WORK/baseline" && mkdir -p "$WORK/baseline"
-git -C "$REPO" archive "$BASE_REF" LsMsgPackNetStandard CommonAssemblyInfo.cs Packaging.props | tar -x -C "$WORK/baseline"
+# LsMsgPackCore (LsMsgPack.Core) exists since the library was split, older bases do not have it
+PATHS="LsMsgPackNetStandard CommonAssemblyInfo.cs Packaging.props"
+if [ -n "$(git -C "$REPO" ls-tree --name-only "$BASE_REF" LsMsgPackCore)" ]; then PATHS="$PATHS LsMsgPackCore"; fi
+git -C "$REPO" archive "$BASE_REF" $PATHS | tar -x -C "$WORK/baseline"
 echo "$BASE_REF ($(git -C "$REPO" rev-parse --short "$BASE_REF"))" > "$WORK/baseline/REF"
 
 make_project() { # name, program, library project

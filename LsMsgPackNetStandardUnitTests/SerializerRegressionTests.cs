@@ -392,7 +392,7 @@ namespace LsMsgPackUnitTests
       private readonly object _id;
       public FixedPropertyId(object id) { _id = id; }
 
-      public object GetId(FullPropertyInfo assignedTo, MsgPackSettings settings)
+      public object GetId(FullPropertyInfo assignedTo, MsgPackOptions settings)
       {
         return assignedTo.PropertyInfo.DeclaringType == typeof(TwoNames) ? _id : null;
       }
@@ -425,7 +425,7 @@ namespace LsMsgPackUnitTests
 
     private class NumberedPets : IMsgPackTypeResolver
     {
-      public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackSettings settings)
+      public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackOptions settings)
       {
         if (type == typeof(Dog))
           return 1;
@@ -434,7 +434,7 @@ namespace LsMsgPackUnitTests
         return null;
       }
 
-      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
+      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackOptions settings)
       {
         if (typeId is null || typeId is string)
           return null;

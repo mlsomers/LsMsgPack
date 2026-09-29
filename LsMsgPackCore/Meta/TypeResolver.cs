@@ -50,7 +50,7 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// Returns <paramref name="assignedTo"/> when no (more specific) type could be resolved, it is up to the caller to decide if that type can be instantiated.
     /// </summary>
-    internal static Type Resolve(object typeId, Type assignedTo, FullPropertyInfo rootProp, MsgPackSettings settings, Dictionary<object, object> propVals)
+    internal static Type Resolve(object typeId, Type assignedTo, FullPropertyInfo rootProp, MsgPackOptions settings, Dictionary<object, object> propVals)
     {
       Type result;
       // First give custom resolvers (if any) a chance...

@@ -405,9 +405,9 @@ namespace LsMsgPackUnitTests
 
     private class PetBySignature : IMsgPackTypeResolver
     {
-      public object IdForType(Type type, LsMsgPack.Meta.FullPropertyInfo assignedTo, MsgPackSettings settings) => null;
+      public object IdForType(Type type, LsMsgPack.Meta.FullPropertyInfo assignedTo, MsgPackOptions settings) => null;
 
-      public Type Resolve(object typeId, Type assignedTo, LsMsgPack.Meta.FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackSettings settings)
+      public Type Resolve(object typeId, Type assignedTo, LsMsgPack.Meta.FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackOptions settings)
       {
         if (assignedTo != typeof(IIPet))
           return null;

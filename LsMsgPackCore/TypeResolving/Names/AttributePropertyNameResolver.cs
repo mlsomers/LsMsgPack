@@ -23,7 +23,7 @@ namespace LsMsgPack.TypeResolving.Names
             _customAttributePropertyInfo = customAttribute.GetProperty(customAttributePropertyName);
         }
 
-        public object GetId(FullPropertyInfo assignedTo, MsgPackSettings settings)
+        public object GetId(FullPropertyInfo assignedTo, MsgPackOptions settings)
         {
             if (_customAttribute != null)
             {

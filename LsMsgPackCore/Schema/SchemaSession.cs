@@ -30,13 +30,13 @@ namespace LsMsgPack
     /// </summary>
     internal byte[] Reference;
 
-    internal SchemaSession(IndexedSchemaTypeResolver resolver, MsgPackSettings settings)
+    internal SchemaSession(IndexedSchemaTypeResolver resolver, MsgPackOptions settings)
       : this(resolver, settings, new Dictionary<Type, FullPropertyInfo[]>(), new Dictionary<Type, FullPropertyInfo[]>()) { }
 
-    private SchemaSession(IndexedSchemaTypeResolver resolver, MsgPackSettings settings, Dictionary<Type, FullPropertyInfo[]> serializedProps, Dictionary<Type, FullPropertyInfo[]> staticProps)
+    private SchemaSession(IndexedSchemaTypeResolver resolver, MsgPackOptions settings, Dictionary<Type, FullPropertyInfo[]> serializedProps, Dictionary<Type, FullPropertyInfo[]> staticProps)
     {
       Resolver = resolver;
-      MsgPackSerializer.GetSchemaResolvers(settings, resolver, out _typeResolvers, out _propertyIdResolvers);
+      GetSchemaResolvers(settings, resolver, out _typeResolvers, out _propertyIdResolvers);
       _serializedProps = serializedProps;
       _staticProps = staticProps;
     }
@@ -44,12 +44,32 @@ namespace LsMsgPack
     internal bool IsFrozen { get { return Resolver.IsFrozen; } }
 
     /// <summary>
+    /// The resolvers of the settings, with the given schema added: consulted first for type ids and last for property ids.
+    /// </summary>
+    internal static void GetSchemaResolvers(MsgPackOptions settings, IndexedSchemaTypeResolver resolver, out IMsgPackTypeResolver[] typeResolvers, out IMsgPackPropertyIdResolver[] propertyIdResolvers)
+    {
+      // Resolvers are consulted from last to first, the schema should be consulted first so its type id's cannot be mistaken for those of another resolver.
+      List<IMsgPackTypeResolver> resolvers = new List<IMsgPackTypeResolver>(settings._typeResolvers.Length + 1);
+      for (int t = 0; t < settings._typeResolvers.Length; t++)
+        if (!(settings._typeResolvers[t] is IndexedSchemaTypeResolver))
+          resolvers.Add(settings._typeResolvers[t]);
+      resolvers.Add(resolver);
+      typeResolvers = resolvers.ToArray();
+
+      List<IMsgPackPropertyIdResolver> propNameResolvers = new List<IMsgPackPropertyIdResolver>(settings._propertyNameResolvers.Length + 1) { resolver };
+      for (int t = 0; t < settings._propertyNameResolvers.Length; t++)
+        if (!(settings._propertyNameResolvers[t] is IndexedSchemaTypeResolver))
+          propNameResolvers.Add(settings._propertyNameResolvers[t]);
+      propertyIdResolvers = propNameResolvers.ToArray();
+    }
+
+    /// <summary>
     /// The settings for one call: a copy of the given settings using this session (like MsgPackSerializer.WithSchema, without resolving the types and properties again).
     /// </summary>
     /// <param name="settings">The settings of the call, their <see cref="SchemaStore.SessionKey"/> equals the one of the session</param>
-    internal MsgPackSettings Apply(MsgPackSettings settings)
+    internal T Apply<T>(T settings) where T : MsgPackOptions
     {
-      MsgPackSettings schemaSettings = settings.Clone();
+      T schemaSettings = (T)settings.CloneOptions();
       schemaSettings._typeResolvers = _typeResolvers;
       schemaSettings._propertyNameResolvers = _propertyIdResolvers;
       schemaSettings._serializedPropsCache = _serializedProps;
@@ -61,7 +81,7 @@ namespace LsMsgPack
     /// <summary>
     /// A copy that can be extended. The resolved properties are shared: their ids are indexes into the schema, which only grows.
     /// </summary>
-    internal SchemaSession Thaw(MsgPackSettings settings)
+    internal SchemaSession Thaw(MsgPackOptions settings)
     {
       return new SchemaSession(Resolver.Copy(), settings, new Dictionary<Type, FullPropertyInfo[]>(_serializedProps), new Dictionary<Type, FullPropertyInfo[]>(_staticProps));
     }

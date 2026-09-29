@@ -14,12 +14,12 @@ namespace LsMsgPack
     /// <summary>
     /// Map key holding the type identifier (see <see cref="GetTypeIdentifier"/>).
     /// </summary>
-    internal const string TypeIdKey = "";
+    internal const string TypeIdKey = MsgPackOptions.TypeIdKey;
 
     /// <summary>
     /// Map key holding the packed value of a wrapped item (collections, dictionaries or values that needed a type identifier).
     /// </summary>
-    internal const string ContentKey = "@";
+    internal const string ContentKey = MsgPackOptions.ContentKey;
 
     /// <summary>
     /// Single entry point for converting an unpacked value into the type it will be assigned to.
@@ -108,7 +108,7 @@ namespace LsMsgPack
         throw new Exception(
           $"Cannot create an instance of an interface or abstract type:\r\n  {tType.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers.");
 
-      result = CreateInstance(tType);
+      result = Instances.Create(tType);
       SetProperties(result, tType, propVals, settings);
       return result;
     }
@@ -179,7 +179,7 @@ namespace LsMsgPack
         return typedArr;
       }
 
-      object result = CreateInstance(info.ConcreteType);
+      object result = Instances.Create(info.ConcreteType);
       IDictionary dictionary = result as IDictionary;
       object[] args = dictionary is null ? new object[2] : null;
       for (int t = 0; t < pairs.Length; t++) // keep the original order
@@ -247,201 +247,5 @@ namespace LsMsgPack
       return IsCollection(type) && CollectionInfo.Get(type).IsDictionary;
     }
 
-    /// <summary>
-    /// Whether the type has a (public or non-public) parameterless constructor, without one <see cref="Activator.CreateInstance(Type, bool)"/> would throw (slow) for every instance.
-    /// </summary>
-    private static readonly ConcurrentDictionary<Type, bool> HasParameterlessConstructor = new ConcurrentDictionary<Type, bool>();
-
-    private static object CreateInstance(Type type)
-    {
-      if (HasParameterlessConstructor.GetOrAdd(type, t => t.IsValueType || t.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null))
-      {
-        try
-        {
-          return Activator.CreateInstance(type, true);
-        }
-        catch { } // e.g. the constructor itself throws, fall back to an uninitialized instance
-      }
-
-      try
-      {
-        return System.Runtime.Serialization.FormatterServices.GetSafeUninitializedObject(type);
-      }
-      catch
-      {
-        return System.Runtime.Serialization.FormatterServices.GetUninitializedObject(type);
-      }
-    }
-
-    /// <summary>
-    /// Cached reflection metadata on how to fill a collection (or dictionary) type.
-    /// </summary>
-    private sealed class CollectionInfo
-    {
-      private static readonly ConcurrentDictionary<Type, CollectionInfo> Cache = new ConcurrentDictionary<Type, CollectionInfo>();
-
-      public static CollectionInfo Get(Type type)
-      {
-        return Cache.GetOrAdd(type, t => new CollectionInfo(t));
-      }
-
-      /// <summary>
-      /// T of IEnumerable&lt;T&gt; (KeyValuePair&lt;TKey, TValue&gt; for generic dictionaries), object if unknown.
-      /// </summary>
-      public readonly Type ElementType;
-
-      public readonly bool IsDictionary;
-
-      /// <summary>
-      /// [SerializeEnumerable] on the collection type (or a base class), may be overruled by one on the property.
-      /// </summary>
-      public readonly SerializeEnumerableAttribute Attribute;
-      public readonly Type KeyType;
-      public readonly Type ValueType;
-
-      /// <summary>
-      /// The type to create, differs from the requested type for interfaces like IList&lt;T&gt; or IDictionary&lt;TKey, TValue&gt;
-      /// </summary>
-      public readonly Type ConcreteType;
-
-      /// <summary>
-      /// Constructor taking ElementType[] (usually a constructor taking IEnumerable&lt;T&gt;)
-      /// </summary>
-      private readonly ConstructorInfo _itemsConstructor;
-
-      /// <summary>
-      /// ICollection&lt;T&gt;.Add(T) or IDictionary&lt;TKey, TValue&gt;.Add(TKey, TValue), used when the type does not implement IList or IDictionary
-      /// </summary>
-      public readonly MethodInfo AddMethod;
-
-      /// <summary>
-      /// Stacks are enumerated from top to bottom, and filled from bottom to top by their constructor.
-      /// </summary>
-      private readonly bool _reverseItems;
-
-      private CollectionInfo(Type type)
-      {
-        ElementType = GetElementType(type);
-        Attribute = type.GetCustomAttribute<SerializeEnumerableAttribute>(true);
-
-        if (ElementType.IsGenericType && ElementType.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
-        {
-          IsDictionary = true;
-          KeyType = ElementType.GenericTypeArguments[0];
-          ValueType = ElementType.GenericTypeArguments[1];
-        }
-        else if (typeof(IDictionary).IsAssignableFrom(type)) // Hashtable, ...
-        {
-          IsDictionary = true;
-          KeyType = typeof(object);
-          ValueType = typeof(object);
-        }
-
-        ConcreteType = GetConcreteType(type);
-        if (ConcreteType.IsArray)
-          return;
-
-        if (IsDictionary)
-        {
-          if (!typeof(IDictionary).IsAssignableFrom(ConcreteType))
-          {
-            Type dictInterface = typeof(IDictionary<,>).MakeGenericType(KeyType, ValueType);
-            if (dictInterface.IsAssignableFrom(ConcreteType))
-              AddMethod = dictInterface.GetMethod(nameof(IDictionary.Add));
-          }
-          return;
-        }
-
-        _itemsConstructor = ConcreteType.GetConstructor(new[] { ElementType.MakeArrayType() });
-        if (ConcreteType.IsGenericType)
-        {
-          Type definition = ConcreteType.GetGenericTypeDefinition();
-          _reverseItems = definition == typeof(Stack<>) || definition == typeof(ConcurrentStack<>);
-        }
-
-        if (_itemsConstructor is null && !typeof(IList).IsAssignableFrom(ConcreteType))
-        {
-          Type collInterface = typeof(ICollection<>).MakeGenericType(ElementType);
-          if (collInterface.IsAssignableFrom(ConcreteType))
-            AddMethod = collInterface.GetMethod(nameof(ICollection<object>.Add));
-        }
-      }
-
-      /// <summary>
-      /// Create the collection from the (already converted) elements
-      /// </summary>
-      public object Create(Array elements)
-      {
-        if (ConcreteType.IsArray)
-          return elements;
-
-        if (_itemsConstructor != null)
-        {
-          if (_reverseItems)
-            Array.Reverse(elements);
-          return _itemsConstructor.Invoke(new object[] { elements });
-        }
-
-        object result = CreateInstance(ConcreteType);
-        if (result is IList list)
-        {
-          for (int t = 0; t < elements.Length; t++)
-            list.Add(elements.GetValue(t));
-          return result;
-        }
-
-        if (AddMethod is null)
-          throw new MsgPackException($"Unable to fill a collection of type {ConcreteType.FullName}, it has no constructor taking {ElementType.Name}[] (or IEnumerable<{ElementType.Name}>) and no Add({ElementType.Name}) method.");
-
-        object[] args = new object[1];
-        for (int t = 0; t < elements.Length; t++)
-        {
-          args[0] = elements.GetValue(t);
-          AddMethod.Invoke(result, args);
-        }
-        return result;
-      }
-
-      private static Type GetElementType(Type type)
-      {
-        if (type.IsArray)
-          return type.GetElementType();
-
-        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
-          return type.GenericTypeArguments[0];
-
-        Type[] interfaces = type.GetInterfaces();
-        for (int t = 0; t < interfaces.Length; t++)
-        {
-          if (interfaces[t].IsGenericType && interfaces[t].GetGenericTypeDefinition() == typeof(IEnumerable<>))
-            return interfaces[t].GenericTypeArguments[0];
-        }
-
-        return typeof(object);
-      }
-
-      private Type GetConcreteType(Type type)
-      {
-        if (!(type.IsInterface || type.IsAbstract) || type.IsArray)
-          return type;
-
-        Type[] candidates = IsDictionary
-          ? new[] { typeof(Dictionary<,>).MakeGenericType(KeyType, ValueType) }
-          : new[] {
-            ElementType == typeof(object) ? typeof(object[]) : null, // IEnumerable, ICollection, IList
-            typeof(List<>).MakeGenericType(ElementType), // IEnumerable<T>, IList<T>, IReadOnlyList<T>, ...
-            typeof(HashSet<>).MakeGenericType(ElementType), // ISet<T>
-            ElementType.MakeArrayType()
-          };
-
-        for (int t = 0; t < candidates.Length; t++)
-        {
-          if (candidates[t] != null && type.IsAssignableFrom(candidates[t]))
-            return candidates[t];
-        }
-
-        return type; // Unknown abstraction, will fail on creating an instance
-      }
-    }
   }
 }
