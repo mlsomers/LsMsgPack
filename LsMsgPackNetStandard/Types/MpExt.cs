@@ -13,7 +13,7 @@ using System.ComponentModel;
 #endif
 
 namespace LsMsgPack {
-  public class MpExt: MsgPackVarLen {
+  public class MpExt: MsgPackVarLen, IMsgPackExtension {
 
     public MpExt() : base() { }
     public MpExt(MsgPackSettings settings) : base(settings) { }
@@ -76,6 +76,10 @@ namespace LsMsgPack {
         if(ReferenceEquals(bytes, null)) return;
         if(TypeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(this.value.Length);
       }
+    }
+
+    byte[] IMsgPackExtension.Data {
+      get { return (byte[])Value; }
     }
 
     protected internal byte[] BaseValue {
