@@ -163,6 +163,55 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// Runs <paramref name="work"/> (writing a value) with the shared session of the root type.
+    /// <para>When the work needs something the (frozen) session does not have yet, it throws <see cref="SchemaGrowthException"/> and is repeated, under the lock of the session, with a grown copy that is published in its place (a new schema id).</para>
+    /// </summary>
+    /// <param name="work">Gets the session and the settings to use (a copy of <paramref name="settings"/> using the session), may run twice</param>
+    /// <param name="used">The session the result was made with (its <see cref="SchemaSession.Reference"/> refers to the schema)</param>
+    internal TResult RunWriter<TSettings, TResult>(Type root, TSettings settings, Func<SchemaSession, TSettings, TResult> work, out SchemaSession used) where TSettings : MsgPackOptions
+    {
+      SessionState state = GetWriter(root, settings);
+      SchemaSession session = state.Current;
+      TResult result;
+      if (session != null && TryRun(session, settings, work, out result))
+      {
+        used = session;
+        return result;
+      }
+
+      lock (state)
+      {
+        SchemaSession current = state.Current;
+        if (current != null && current != session && TryRun(current, settings, work, out result)) // grown by another thread in the meantime
+        {
+          used = current;
+          return result;
+        }
+
+        SchemaSession grown = current?.Thaw(settings) ?? new SchemaSession(new IndexedSchemaTypeResolver(), settings);
+        result = work(grown, grown.Apply(settings));
+        PublishWriter(state, grown);
+        used = grown;
+        return result;
+      }
+    }
+
+    /// <returns>false when the (frozen) session needs to grow</returns>
+    private static bool TryRun<TSettings, TResult>(SchemaSession session, TSettings settings, Func<SchemaSession, TSettings, TResult> work, out TResult result) where TSettings : MsgPackOptions
+    {
+      try
+      {
+        result = work(session, session.Apply(settings));
+        return true;
+      }
+      catch (SchemaGrowthException)
+      {
+        result = default(TResult);
+        return false;
+      }
+    }
+
+    /// <summary>
     /// Freezes and publishes a session that was extended while writing: its schema gets an id and can be referred to.
     /// </summary>
     internal void PublishWriter(SessionState state, SchemaSession session)
@@ -200,6 +249,14 @@ namespace LsMsgPack
     /// The cached entry of a schema read inline, null when it is not cached (<see cref="CacheInlineSchemas"/> is off or the store is full).
     /// </summary>
     /// <param name="raw">The schema as read (in the byte order of the reader's settings)</param>
+    /// <summary>
+    /// The cached entry of a schema read inline, without adding it.
+    /// </summary>
+    internal bool TryGetInline(byte[] raw, out Entry entry)
+    {
+      return _inline.TryGetValue(raw, out entry);
+    }
+
     internal Entry GetInline(byte[] raw)
     {
       if (_inline.TryGetValue(raw, out Entry entry))
@@ -236,6 +293,34 @@ namespace LsMsgPack
         if (_readers.TryGetValue(key, out SessionState state))
           return state;
         return _readers.GetOrAdd(key, k => new SessionState(this));
+      }
+
+      /// <summary>
+      /// Runs <paramref name="work"/> (converting what was read) with the session of this schema, shared by all calls that read it with settings of the same <see cref="SessionKey"/>.
+      /// <para>When the work needs something the session does not have yet (e.g. a type that was not read before), it is repeated with a grown copy that replaces the session.</para>
+      /// </summary>
+      /// <param name="lengthSettings">The byte order the schema bytes were read with, null for the one of the specification (see <see cref="IndexedSchemaTypeResolver.FromBytes"/>)</param>
+      /// <param name="work">Gets the session and the settings to use (a copy of <paramref name="settings"/> using the session), may run twice</param>
+      internal TResult RunReader<TSettings, TResult>(TSettings settings, MsgPackOptions lengthSettings, Func<SchemaSession, TSettings, TResult> work) where TSettings : MsgPackOptions
+      {
+        SessionState state = GetReader(settings);
+        SchemaSession session = state.Current;
+        TResult result;
+        if (session != null && TryRun(session, settings, work, out result))
+          return result;
+
+        lock (state)
+        {
+          SchemaSession current = state.Current;
+          if (current != null && current != session && TryRun(current, settings, work, out result)) // grown by another thread in the meantime
+            return result;
+
+          SchemaSession grown = current?.Thaw(settings) ?? new SchemaSession(IndexedSchemaTypeResolver.FromBytes(Bytes, lengthSettings, settings), settings);
+          result = work(grown, grown.Apply(settings));
+          grown.Freeze();
+          state.Current = grown;
+          return result;
+        }
       }
     }
 

@@ -4,6 +4,7 @@
     "projects": [
       "LsMsgPackCore/LsMsgPack.Core.csproj",
       "LsMsgPackNetStandard/LsMsgPack.csproj",
+      "LtMsgPack/LtMsgPack.csproj",
       "LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj",
       "LsMsgPackInteropTests/LsMsgPackInteropTests.csproj",
       "LsMsgPackFormatters/LsMsgPackFormatters.csproj",

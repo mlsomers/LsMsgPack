@@ -118,27 +118,9 @@ namespace LsMsgPack
       if (store is null)
         throw new MsgPackException($"{nameof(MsgPackSettings)}.{nameof(MsgPackSettings.WriteSchemaReference)} needs a {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.SchemaStore)} to keep the schema in.");
 
-      SchemaStore.SessionState state = store.GetWriter(assignedTo, settings);
-      SchemaSession session = state.Current;
-      MsgPackItem packed = session is null ? null : TrySerializeObject(item, assignedTo, session, settings);
-      if (packed is null)
-      {
-        lock (state)
-        {
-          SchemaSession current = state.Current;
-          if (current != null && current != session) // grown by another thread in the meantime
-            packed = TrySerializeObject(item, assignedTo, current, settings);
-
-          if (packed is null)
-          {
-            SchemaSession grown = current?.Thaw(settings) ?? new SchemaSession(new IndexedSchemaTypeResolver(), settings);
-            packed = SerializeObject(item, grown.Apply(settings), new FullPropertyInfo(assignedTo));
-            store.PublishWriter(state, grown);
-            current = grown;
-          }
-          session = current;
-        }
-      }
+      FullPropertyInfo root = new FullPropertyInfo(assignedTo);
+      SchemaSession session;
+      MsgPackItem packed = store.RunWriter(assignedTo, settings, (s, schemaSettings) => SerializeObject(item, schemaSettings, root), out session);
 
       ByteWriter buffer = new ByteWriter();
       buffer.Write(session.Reference);
@@ -146,18 +128,6 @@ namespace LsMsgPack
       buffer.CopyTo(target);
     }
 
-    /// <returns>null when the (frozen) session needs to grow</returns>
-    private static MsgPackItem TrySerializeObject(object item, Type assignedTo, SchemaSession session, MsgPackSettings settings)
-    {
-      try
-      {
-        return SerializeObject(item, session.Apply(settings), new FullPropertyInfo(assignedTo));
-      }
-      catch (SchemaGrowthException)
-      {
-        return null;
-      }
-    }
 
     /// <summary>
     /// Returns a copy of the settings using the given schema, the original settings are not modified so they can safely be shared between threads.
@@ -327,39 +297,7 @@ namespace LsMsgPack
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
       object value = unpacked.UnpackedValue;
 
-      SchemaStore.SessionState state = schema.GetReader(settings);
-      SchemaSession session = state.Current;
-      if (session != null && TryConvert(value, tType, session, settings, out object result))
-        return result;
-
-      lock (state)
-      {
-        SchemaSession current = state.Current;
-        if (current != null && current != session && TryConvert(value, tType, current, settings, out result)) // grown by another thread in the meantime
-          return result;
-
-        SchemaSession grown = current?.Thaw(settings) ?? new SchemaSession(IndexedSchemaTypeResolver.FromBytes(schema.Bytes, lengthSettings, settings), settings);
-        result = ConvertDeserializeValue(value, tType, grown.Apply(settings), null);
-        grown.Freeze();
-        state.Current = grown;
-        return result;
-      }
+      return schema.RunReader(settings, lengthSettings, (s, schemaSettings) => ConvertDeserializeValue(value, tType, schemaSettings, null));
     }
-
-    /// <returns>false when the (frozen) session needs to grow</returns>
-    private static bool TryConvert(object value, Type tType, SchemaSession session, MsgPackSettings settings, out object result)
-    {
-      try
-      {
-        result = ConvertDeserializeValue(value, tType, session.Apply(settings), null);
-        return true;
-      }
-      catch (SchemaGrowthException)
-      {
-        result = null;
-        return false;
-      }
-    }
-
   }
 }

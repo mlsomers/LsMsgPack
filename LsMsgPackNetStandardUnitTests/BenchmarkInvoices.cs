@@ -261,6 +261,9 @@ namespace LsMsgPackUnitTests
       SchemaStore store = new SchemaStore(); // one store for writing and reading: in practice the reader has its own, holding the writer's schemas
       MsgPackSettings reference = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store, WriteSchemaReference = true };
       MsgPackSettings inlineStore = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store };
+      LtMsgPack.LtMsgPackSerializer ltIndexed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true });
+      LtMsgPack.LtMsgPackSerializer ltReference = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true });
+      LtMsgPack.LtMsgPackSerializer ltNamed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false });
 
       return new ICandidate[]
       {
@@ -292,6 +295,21 @@ namespace LsMsgPackUnitTests
         new Candidate<byte[]>("LsMsgPack (property names)",
           i => MsgPackSerializer.Serialize(i, named),
           b => MsgPackSerializer.Deserialize<Invoice>(b, named),
+          b => b.Length),
+
+        new Candidate<byte[]>("LtMsgPack (indexed schema)",
+          i => ltIndexed.Serialize(i),
+          b => ltIndexed.Deserialize<Invoice>(b),
+          b => b.Length),
+
+        new Candidate<byte[]>("LtMsgPack (schema reference)",
+          i => ltReference.Serialize(i),
+          b => ltReference.Deserialize<Invoice>(b),
+          b => b.Length),
+
+        new Candidate<byte[]>("LtMsgPack (property names)",
+          i => ltNamed.Serialize(i),
+          b => ltNamed.Deserialize<Invoice>(b),
           b => b.Length)
       };
     }

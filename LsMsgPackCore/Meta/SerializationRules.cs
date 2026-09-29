@@ -37,7 +37,13 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal static void ThrowIfUnresolvableWithSchema(Type tType, FullPropertyInfo assignedTo, MsgPackOptions settings)
     {
-      if (assignedTo?.AssignedToType is null || assignedTo.AssignedToType == tType || !UsesIndexedSchema(settings))
+      ThrowIfUnresolvableWithSchema(tType, assignedTo, UsesIndexedSchema(settings));
+    }
+
+    /// <param name="usesIndexedSchema">Whether the property ids are indexes of an indexed schema (see <see cref="UsesIndexedSchema"/>)</param>
+    internal static void ThrowIfUnresolvableWithSchema(Type tType, FullPropertyInfo assignedTo, bool usesIndexedSchema)
+    {
+      if (assignedTo?.AssignedToType is null || assignedTo.AssignedToType == tType || !usesIndexedSchema)
         return;
 
       throw new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id while using the indexed schema: the property keys are schema indexes of {tType.Name}, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} (with the schema a type id costs about 1 byte) or set MsgPackSettings.UseInexedSchema = false.");
