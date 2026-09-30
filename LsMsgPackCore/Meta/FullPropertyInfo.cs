@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.Serialization;
 
 namespace LsMsgPack.Meta
 {
@@ -187,6 +188,144 @@ namespace LsMsgPack.Meta
       });
     }
 
+    // One cache per PropertyOrder (the enum values are indexes, checked by MsgPackOptions.PropertyOrder), Reflection uses PropertiesCache
+    private static readonly ConcurrentDictionary<Type, PropertyInfo[]>[] OrderedPropertiesCache = CachePerOrder<PropertyInfo[]>();
+
+    private static ConcurrentDictionary<Type, T>[] CachePerOrder<T>()
+    {
+      ConcurrentDictionary<Type, T>[] caches = new ConcurrentDictionary<Type, T>[(int)MsgPackOptions.LastPropertyOrder + 1];
+      for (int t = 0; t < caches.Length; t++)
+        caches[t] = new ConcurrentDictionary<Type, T>();
+      return caches;
+    }
+
+    /// <summary>
+    /// The properties of <see cref="GetProperties(Type)"/> in the order of the settings (see <see cref="PropertyOrder"/>).
+    /// </summary>
+    private static PropertyInfo[] GetProperties(Type type, MsgPackOptions settings)
+    {
+      PropertyOrder order = settings._propertyOrder;
+      if (order == PropertyOrder.Reflection)
+        return GetProperties(type);
+
+      return OrderedPropertiesCache[(int)order].GetOrAdd(type, t => Sort(GetProperties(t), order));
+    }
+
+    private static PropertyInfo[] Sort(PropertyInfo[] props, PropertyOrder order)
+    {
+      OrderKey[] keys = new OrderKey[props.Length];
+      for (int t = 0; t < props.Length; t++)
+        keys[t] = new OrderKey(props[t], t, order);
+
+      Array.Sort(keys);
+
+      PropertyInfo[] sorted = new PropertyInfo[props.Length];
+      for (int t = 0; t < keys.Length; t++)
+        sorted[t] = keys[t].Property;
+      return sorted;
+    }
+
+    /// <summary>
+    /// The position of a property for a <see cref="PropertyOrder"/>, compared field by field. The reflection index comes last so the sort is stable.
+    /// </summary>
+    private struct OrderKey : IComparable<OrderKey>
+    {
+      internal readonly PropertyInfo Property;
+      private readonly bool _byName;
+      private readonly int _explicitOrder; // int.MaxValue: none (after the ones that have one)
+      private readonly string _typeName; // TypeThenDeclaration, null otherwise
+      private readonly int _depth; // of the class declaring the (overridden) property, base classes first
+      private readonly int _token;
+      private readonly int _index;
+
+      internal OrderKey(PropertyInfo property, int index, PropertyOrder order)
+      {
+        Property = property;
+        _index = index;
+        _byName = order == PropertyOrder.Alphabetical;
+        _explicitOrder = int.MaxValue;
+        _typeName = order == PropertyOrder.TypeThenDeclaration ? property.PropertyType.ToString() : null; // FullName would contain the assemblies of generic arguments, which differ per runtime
+        _depth = 0;
+        _token = 0;
+
+        if (_byName)
+          return;
+
+        if (order == PropertyOrder.Explicit)
+        {
+          // Attribute.GetCustomAttribute also looks at the overridden properties (PropertyInfo.GetCustomAttributes ignores inherit)
+          DataMemberAttribute member = (DataMemberAttribute)Attribute.GetCustomAttribute(property, typeof(DataMemberAttribute), true);
+          if (member != null && member.Order >= 0)
+            _explicitOrder = member.Order;
+        }
+
+        PropertyInfo declared = OriginalDeclaration(property);
+        _depth = Depth(declared.DeclaringType);
+        try
+        {
+          _token = declared.MetadataToken;
+        }
+        catch (InvalidOperationException) // no metadata (e.g. a type being built with Reflection.Emit), keep the reflection order within its class
+        {
+          _token = int.MaxValue;
+        }
+      }
+
+      public int CompareTo(OrderKey other)
+      {
+        if (_explicitOrder != other._explicitOrder)
+          return _explicitOrder.CompareTo(other._explicitOrder);
+        if (_typeName != null)
+        {
+          int byType = string.CompareOrdinal(_typeName, other._typeName);
+          if (byType != 0)
+            return byType;
+        }
+        if (_depth != other._depth)
+          return _depth.CompareTo(other._depth);
+        if (_token != other._token)
+          return _token.CompareTo(other._token);
+        if (_byName)
+        {
+          int byName = string.CompareOrdinal(Property.Name, other.Property.Name);
+          if (byName != 0)
+            return byName;
+        }
+        return _index.CompareTo(other._index);
+      }
+
+      /// <summary>
+      /// The property an override overrides (recursively), so overriding a property in a derived class does not move it.
+      /// </summary>
+      private static PropertyInfo OriginalDeclaration(PropertyInfo property)
+      {
+        MethodInfo accessor = property.GetGetMethod(true) ?? property.GetSetMethod(true);
+        if (accessor is null)
+          return property;
+
+        Type original = accessor.GetBaseDefinition().DeclaringType;
+        if (original is null || original == property.DeclaringType)
+          return property;
+
+        try
+        {
+          return original.GetProperty(property.Name, BindingFlags.DeclaredOnly | BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic) ?? property;
+        }
+        catch (AmbiguousMatchException)
+        {
+          return property;
+        }
+      }
+
+      private static int Depth(Type type)
+      {
+        int depth = 0;
+        for (Type baseType = type?.BaseType; baseType != null; baseType = baseType.BaseType)
+          depth++;
+        return depth;
+      }
+    }
+
     internal static FullPropertyInfo[] GetSerializedProps(Type type, MsgPackOptions settings)
     {
       Dictionary<Type, FullPropertyInfo[]> sessionCache = settings._serializedPropsCache;
@@ -210,16 +349,17 @@ namespace LsMsgPack.Meta
       return props;
     }
 
-    // Without property id resolvers the FullPropertyInfo instances (and their StaticallyIgnored) are shared by all settings (see GetFullPropInfo), so the result only depends on the type
-    private static readonly ConcurrentDictionary<Type, FullPropertyInfo[]> SerializedPropsCache = new ConcurrentDictionary<Type, FullPropertyInfo[]>();
+    // Without property id resolvers the FullPropertyInfo instances (and their StaticallyIgnored) are shared by all settings (see GetFullPropInfo), so the result only depends on the type and the order
+    private static readonly ConcurrentDictionary<Type, FullPropertyInfo[]>[] SerializedPropsCache = CachePerOrder<FullPropertyInfo[]>();
 
     private static FullPropertyInfo[] GetSerializedPropsWithoutSession(Type type, MsgPackOptions settings)
     {
       bool shared = settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0;
-      if (shared && SerializedPropsCache.TryGetValue(type, out FullPropertyInfo[] cached))
+      ConcurrentDictionary<Type, FullPropertyInfo[]> sharedCache = SerializedPropsCache[(int)settings._propertyOrder];
+      if (shared && sharedCache.TryGetValue(type, out FullPropertyInfo[] cached))
         return cached;
 
-      PropertyInfo[] props = GetProperties(type);
+      PropertyInfo[] props = GetProperties(type, settings);
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
       for (int t = 0; t < props.Length; t++)
       {
@@ -232,7 +372,7 @@ namespace LsMsgPack.Meta
       ThrowIfIdsNotUnique(type, result); // custom resolvers are consulted for every call (they may have their own cache), so are their ids
 
       if (shared)
-        return SerializedPropsCache.GetOrAdd(type, result);
+        return sharedCache.GetOrAdd(type, result);
       return result;
     }
 
@@ -269,7 +409,7 @@ namespace LsMsgPack.Meta
       if (settings._schemaFrozen) // a shared session, see SchemaSession
         throw SchemaGrowthException.Instance;
 
-      PropertyInfo[] props = GetProperties(type);
+      PropertyInfo[] props = GetProperties(type, settings);
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
       for (int t = 0; t < props.Length; t++)
       {

@@ -101,6 +101,12 @@ namespace LsMsgPack
     /// </summary>
     public static bool Default_WriteSchemaReference { get; set; } = false;
 
+    /// <summary>
+    /// The <see cref="PropertyOrder"/> of new settings (<see cref="LsMsgPack.PropertyOrder.Reflection"/> by default, the order so far).
+    /// </summary>
+    [IgnoreDataMember]
+    public static PropertyOrder Default_PropertyOrder { get; set; } = PropertyOrder.Reflection;
+
     #endregion
 
     /// <summary>
@@ -123,6 +129,12 @@ namespace LsMsgPack
     internal IMsgPackPropertyIdResolver[] _propertyNameResolvers = Default_PropertyNameResolvers;
     internal SchemaStore _schemaStore = Default_SchemaStore;
     internal bool _writeSchemaReference = Default_WriteSchemaReference;
+    internal PropertyOrder _propertyOrder = Default_PropertyOrder;
+
+    /// <summary>
+    /// The highest <see cref="LsMsgPack.PropertyOrder"/>, the orders are indexes of the caches in FullPropertyInfo.
+    /// </summary>
+    internal const PropertyOrder LastPropertyOrder = PropertyOrder.TypeThenDeclaration;
 
     /// <summary>
     /// The session caches (<see cref="_serializedPropsCache"/>, <see cref="_staticPropsCache"/> and the schema) are shared by several calls and must not change (see <see cref="SchemaSession"/>). Not copied by <see cref="Clone"/>.
@@ -267,6 +279,25 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// The order in which the properties of an object are written (and listed in the indexed schema), <see cref="LsMsgPack.PropertyOrder.Reflection"/> by default.
+    /// <para>Readers look properties up by name (or by their name in the schema), so data written in any order is read by settings with any order.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Property Order")]
+    [Description("The order in which the properties of an object are written (and listed in the indexed schema). Readers look properties up by name, so it does not need to match the writer's.")]
+    [DefaultValue(PropertyOrder.Reflection)]
+    public PropertyOrder PropertyOrder
+    {
+      get { return _propertyOrder; }
+      set
+      {
+        if (value < PropertyOrder.Reflection || value > LastPropertyOrder) // used as an index (see FullPropertyInfo)
+          throw new ArgumentOutOfRangeException(nameof(value), value, "Not a defined PropertyOrder.");
+        _propertyOrder = value;
+      }
+    }
+
+    /// <summary>
     /// A copy of these options (of the same derived type), without the caches of a session (see <see cref="SchemaSession"/>).
     /// </summary>
     internal MsgPackOptions CloneOptions()
@@ -325,6 +356,46 @@ namespace LsMsgPack
     /// </summary>
     [Description("Do not reorder bytes (regardless of current system)")]
     NeverSwap = 2
+  }
+
+  /// <summary>
+  /// The order of the properties of an object (see <see cref="MsgPackOptions.PropertyOrder"/>). Decided once per type, it costs nothing per object.
+  /// </summary>
+  public enum PropertyOrder
+  {
+    /// <summary>
+    /// As <see cref="Type.GetProperties()"/> returns them (default). The runtime does not guarantee this order.
+    /// </summary>
+    [Description("As Type.GetProperties() returns them (default). The runtime does not guarantee this order.")]
+    Reflection = 0,
+
+    /// <summary>
+    /// By name (ordinal, not culture-sensitive).
+    /// </summary>
+    [Description("By name (ordinal, not culture-sensitive).")]
+    Alphabetical = 1,
+
+    /// <summary>
+    /// In the order of the source code: the properties of base classes first, then per class in the order of their metadata tokens (the order the compiler emitted them).
+    /// An overridden property keeps the position of the property it overrides.
+    /// <para>The compiler emits the members of a partial class in the order of its files, so moving code or adding a file can change the order.</para>
+    /// </summary>
+    [Description("In the order of the source code: base classes first, then per class in the order the compiler emitted them. Partial classes follow the order of their files.")]
+    Declaration = 2,
+
+    /// <summary>
+    /// By <see cref="System.Runtime.Serialization.DataMemberAttribute.Order"/> (lowest first, whatever class declares them), then the properties without an order in <see cref="Declaration"/> order.
+    /// Properties with the same order keep their <see cref="Declaration"/> order.
+    /// </summary>
+    [Description("By DataMember(Order = n), lowest first, then the properties without an order in declaration order.")]
+    Explicit = 3,
+
+    /// <summary>
+    /// Grouped by the type of the property (ordinal, by its name without the assembly: <see cref="Type.ToString()"/>, the same on .NET Framework and .NET), then in <see cref="Declaration"/> order.
+    /// <para>Values of the same type follow each other, which may help a reader later on. Changing the type of a property moves it.</para>
+    /// </summary>
+    [Description("Grouped by the type of the property (by its name, without the assembly), then in declaration order.")]
+    TypeThenDeclaration = 4
   }
 
   [Flags]
