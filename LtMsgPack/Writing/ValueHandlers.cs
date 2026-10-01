@@ -155,7 +155,7 @@ namespace LtMsgPack.Writing
   /// </summary>
   internal sealed class GuidStringHandler : ValueHandler<Guid>
   {
-    internal override void Write(WriteContext c, Guid value, FullPropertyInfo assignedTo) { c.W.String(value.ToString("D")); }
+    internal override void Write(WriteContext c, Guid value, FullPropertyInfo assignedTo) { c.W.GuidString(value); }
     internal override bool IncludeByDefault(Guid value, FullPropertyInfo info) { return value != Guid.Empty; }
   }
 
@@ -164,8 +164,8 @@ namespace LtMsgPack.Writing
   /// </summary>
   internal sealed class DecimalStringHandler : ValueHandler<decimal>
   {
-    internal override void Write(WriteContext c, decimal value, FullPropertyInfo assignedTo) { c.W.String(value.ToString(CultureInfo.InvariantCulture)); }
-    internal override bool IncludeByDefault(decimal value, FullPropertyInfo info) { return value != 0m; }
+    internal override void Write(WriteContext c, decimal value, FullPropertyInfo assignedTo) { c.W.DecimalString(value); }
+    internal override bool IncludeByDefault(decimal value, FullPropertyInfo info) { return !DecimalHandler.IsZero(value); }
   }
 
   internal sealed class DateTimeHandler : ValueHandler<DateTime>
@@ -215,13 +215,34 @@ namespace LtMsgPack.Writing
   {
     private readonly LtExtension<decimal> _extension;
 
+    /// <summary>
+    /// The built-in <see cref="DecimalExtension"/>: the 16 bytes of the value, written without asking the extension.
+    /// </summary>
+    private readonly bool _builtIn;
+    private readonly byte _typeCode;
+
     internal DecimalHandler(LtExtension<decimal> extension)
     {
       _extension = extension;
+      _builtIn = extension.GetType() == typeof(DecimalExtension);
+      _typeCode = unchecked((byte)extension.TypeCode);
     }
 
     internal override void Write(WriteContext c, decimal value, FullPropertyInfo assignedTo)
     {
+      if (_builtIn)
+      {
+        MsgPackWriter w = c.W;
+        w.Ensure(18);
+        byte[] b = w.Buf;
+        int at = w.Pos;
+        b[at] = 0xD8; // fixext16
+        b[at + 1] = _typeCode;
+        Unsafe.WriteUnaligned(ref b[at + 2], value); // as DecimalExtension.Write (MemoryMarshal.Write)
+        w.Pos = at + 18;
+        return;
+      }
+
       int max = _extension.GetMaxLength(value);
       if (max == 16)
       {
@@ -238,7 +259,26 @@ namespace LtMsgPack.Writing
       ExtensionHandler<decimal>.WriteExtension(c, _extension, value);
     }
 
-    internal override bool IncludeByDefault(decimal value, FullPropertyInfo info) { return value != 0m; }
+    internal override bool IncludeByDefault(decimal value, FullPropertyInfo info) { return !IsZero(value); }
+
+    /// <summary>
+    /// value == 0m (also -0m and zeros with a scale) without the call: the flags (sign and scale) come first in the memory of a decimal, the 96 bit integer is the rest.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static bool IsZero(decimal value)
+    {
+      DecimalBits bits = Unsafe.As<decimal, DecimalBits>(ref value);
+      return (bits.High | bits.Low64) == 0;
+    }
+
+    private struct DecimalBits
+    {
+#pragma warning disable CS0649 // only read
+      internal uint Flags;
+      internal uint High;
+      internal ulong Low64;
+#pragma warning restore CS0649
+    }
   }
 
   /// <summary>

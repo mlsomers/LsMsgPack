@@ -4,7 +4,11 @@ using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections.Concurrent;
 using System.Reflection;
+#if NETSTANDARD2_1_OR_GREATER
+using System.Reflection.Emit;
+#endif
 using System.Text;
+using System.Threading;
 
 namespace LtMsgPack.Reading
 {
@@ -171,6 +175,11 @@ namespace LtMsgPack.Reading
     internal readonly PropReader[] Props;
     private readonly Func<object> _create;
 
+    /// <summary>
+    /// The binding to the schema read last (see <see cref="BoundSchema.Binding"/>): a payload usually has the same schema as the previous one.
+    /// </summary>
+    internal volatile BoundSchema.Cached LastBinding;
+
     internal ReadPlan(Serializer serializer, Type type, FullPropertyInfo[] infos)
     {
       Type = type;
@@ -231,18 +240,52 @@ namespace LtMsgPack.Reading
     object Create();
   }
 
+  /// <summary>
+  /// Creates instances with the parameterless constructor. <c>new T()</c> of a reference type is Activator.CreateInstance (about 18 ns on .NET 8), once a type has been created
+  /// <see cref="PropertyAccessor.CompileAfterCalls"/> times a compiled delegate takes over (about 11 ns, the allocation), when the runtime compiles code (see <see cref="PropertyAccessor.CanCompile"/>).
+  /// </summary>
   internal sealed class Creator<T> : ICreator where T : new()
   {
+    private Func<object> _compiled;
+    private int _calls;
+
     public object Create()
     {
       try
       {
+        Func<object> compiled = _compiled;
+        if (compiled != null)
+          return compiled();
+        if (Interlocked.Increment(ref _calls) == PropertyAccessor.CompileAfterCalls)
+          _compiled = Compile();
         return new T();
       }
       catch (Exception) // as LsMsgPack: fall back to an uninitialized instance when the constructor throws
       {
         return Instances.Create(typeof(T));
       }
+    }
+
+    private static Func<object> Compile()
+    {
+#if NETSTANDARD2_1_OR_GREATER
+      if (!PropertyAccessor.CanCompile)
+        return null;
+      try
+      {
+        DynamicMethod method = new DynamicMethod("Create" + typeof(T).Name, typeof(object), Type.EmptyTypes, typeof(T).Module, true);
+        ILGenerator il = method.GetILGenerator();
+        il.Emit(OpCodes.Newobj, typeof(T).GetConstructor(Type.EmptyTypes));
+        il.Emit(OpCodes.Ret);
+        return (Func<object>)method.CreateDelegate(typeof(Func<object>));
+      }
+      catch (Exception) // e.g. a runtime that does not allow it after all, keep new T()
+      {
+        return null;
+      }
+#else
+      return null; // .NET Standard 2.0 has no DynamicMethod (and compiling an expression costs milliseconds)
+#endif
     }
   }
 
@@ -265,12 +308,7 @@ namespace LtMsgPack.Reading
     internal bool NameIs(byte[] buffer, int offset, int length)
     {
       byte[] name = _nameBytes;
-      if (name.Length != length)
-        return false;
-      for (int t = 0; t < length; t++)
-        if (buffer[offset + t] != name[t])
-          return false;
-      return true;
+      return name.Length == length && new ReadOnlySpan<byte>(buffer, offset, length).SequenceEqual(name);
     }
 
     internal abstract void Read(ReadContext c, object target);
@@ -342,9 +380,15 @@ namespace LtMsgPack.Reading
     private readonly ConcurrentDictionary<ReadPlan, PropReader[]> _bindings = new ConcurrentDictionary<ReadPlan, PropReader[]>();
     private static readonly PropReader[] NotBound = new PropReader[0];
 
-    internal BoundSchema(IndexedSchemaTypeResolver schema)
+    /// <summary>
+    /// Used by many calls (a frozen session), the plans remember their binding to it.
+    /// </summary>
+    private readonly bool _shared;
+
+    internal BoundSchema(IndexedSchemaTypeResolver schema, bool shared)
     {
       _schema = schema;
+      _shared = shared;
     }
 
     /// <returns>null when the id is not in the schema or its type is unknown</returns>
@@ -355,8 +399,32 @@ namespace LtMsgPack.Reading
       return _schema.ByTypeId[(int)id].Type;
     }
 
+    internal sealed class Cached
+    {
+      internal readonly BoundSchema Schema;
+      internal readonly PropReader[] Props;
+
+      internal Cached(BoundSchema schema, PropReader[] props)
+      {
+        Schema = schema;
+        Props = props;
+      }
+    }
+
     /// <returns>null when the type is not in the schema (LsMsgPack would add it, which is left to it)</returns>
     internal PropReader[] Binding(ReadPlan plan)
+    {
+      Cached last = plan.LastBinding;
+      if (last != null && ReferenceEquals(last.Schema, this))
+        return last.Props;
+
+      PropReader[] props = Bind(plan);
+      if (_shared)
+        plan.LastBinding = new Cached(this, props);
+      return props;
+    }
+
+    private PropReader[] Bind(ReadPlan plan)
     {
       if (_bindings.TryGetValue(plan, out PropReader[] bound))
         return ReferenceEquals(bound, NotBound) ? null : bound;

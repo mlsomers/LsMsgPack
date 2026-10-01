@@ -86,6 +86,11 @@ namespace LsMsgPackWebApiFormatters
       return true;
     }
 
+    /// <summary>
+    /// The buffer is sized by the Content-Length up to this size, larger bodies grow it as they arrive (the header is not trusted with a large allocation).
+    /// </summary>
+    private const int MaxPresized = 1024 * 1024;
+
     public override Task<object> ReadFromStreamAsync(Type type, Stream readStream, HttpContent content, IFormatterLogger formatterLogger)
     {
       return ReadFromStreamAsync(type, readStream, content, formatterLogger, CancellationToken.None);
@@ -94,7 +99,8 @@ namespace LsMsgPackWebApiFormatters
     public override async Task<object> ReadFromStreamAsync(Type type, Stream readStream, HttpContent content, IFormatterLogger formatterLogger, CancellationToken cancellationToken)
     {
       // Buffer the body asynchronously, the deserializer reads synchronously.
-      MemoryStream body = new MemoryStream();
+      long? length = content?.Headers.ContentLength;
+      MemoryStream body = length > 0 && length <= MaxPresized ? new MemoryStream((int)length) : new MemoryStream(); // sized, so it does not grow while copying
       await readStream.CopyToAsync(body, 81920, cancellationToken).ConfigureAwait(false);
       if (body.Length == 0)
         return GetDefaultValueForType(type);

@@ -68,7 +68,7 @@ namespace LtMsgPack
 
     public byte[] Serialize<T>(T value)
     {
-      _serializer.Serialize(typeof(T), value == null, TypedWriter<T>.Get(_serializer, value), null, out byte[] result);
+      _serializer.Serialize(typeof(T), value, TypedWriter<T>.Write, null, out byte[] result);
       return result;
     }
 
@@ -76,7 +76,7 @@ namespace LtMsgPack
     {
       if (target is null)
         throw new ArgumentNullException(nameof(target));
-      _serializer.Serialize(typeof(T), value == null, TypedWriter<T>.Get(_serializer, value), target, out byte[] result);
+      _serializer.Serialize(typeof(T), value, TypedWriter<T>.Write, target, out byte[] result);
     }
 
     /// <summary>
@@ -85,7 +85,7 @@ namespace LtMsgPack
     /// <param name="assignedTo">The declared type the value is assigned to, a type id is only added when the value's type differs (depending on <see cref="MsgPackOptions.AddTypeIdOptions"/>). Null: the type of the value.</param>
     public byte[] Serialize(object value, Type assignedTo)
     {
-      _serializer.Serialize(assignedTo ?? value?.GetType() ?? typeof(object), value is null, BoxedWriter(value), null, out byte[] result);
+      _serializer.Serialize(assignedTo ?? value?.GetType() ?? typeof(object), value, BoxedWriter, null, out byte[] result);
       return result;
     }
 
@@ -93,27 +93,23 @@ namespace LtMsgPack
     {
       if (target is null)
         throw new ArgumentNullException(nameof(target));
-      _serializer.Serialize(assignedTo ?? value?.GetType() ?? typeof(object), value is null, BoxedWriter(value), target, out byte[] result);
+      _serializer.Serialize(assignedTo ?? value?.GetType() ?? typeof(object), value, BoxedWriter, target, out byte[] result);
     }
 
-    private Action<Writing.WriteContext, LsMsgPack.Meta.FullPropertyInfo> BoxedWriter(object value)
-    {
-      Serializer serializer = _serializer;
-      return (c, root) => serializer.WriteBoxed(c, value, root);
-    }
+    // The writers of the root value (in WriteContext.Root), without a closure per call
+
+    private static readonly Action<Writing.WriteContext, LsMsgPack.Meta.FullPropertyInfo> BoxedWriter = (c, root) => c.Serializer.WriteBoxed(c, c.Root, root);
 
     private static class TypedWriter<T>
     {
-      internal static Action<Writing.WriteContext, LsMsgPack.Meta.FullPropertyInfo> Get(Serializer serializer, T value)
+      internal static readonly Action<Writing.WriteContext, LsMsgPack.Meta.FullPropertyInfo> Write = (c, root) =>
       {
-        return (c, root) =>
-        {
-          if (value == null)
-            c.W.Nil();
-          else
-            serializer.Handler<T>(null).Write(c, value, root);
-        };
-      }
+        object value = c.Root;
+        if (value == null)
+          c.W.Nil();
+        else
+          c.Serializer.Handler<T>(null).Write(c, (T)value, root);
+      };
     }
 
     #endregion

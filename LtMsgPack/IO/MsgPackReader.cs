@@ -3,6 +3,7 @@ using LtMsgPack.Extensions;
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace LtMsgPack.IO
 {
@@ -265,6 +266,28 @@ namespace LtMsgPack.IO
       return true;
     }
 
+#if NETSTANDARD2_1_OR_GREATER
+    /// <summary>
+    /// A string of at most <paramref name="chars"/>.Length bytes, decoded into <paramref name="chars"/> (formatted values: no string is made).
+    /// </summary>
+    /// <returns>false when the next value is not such a string (the position is unchanged)</returns>
+    internal bool TryReadShortString(Span<char> chars, out int count)
+    {
+      int start = Pos;
+      Encoding encoding = MsgPackOptions.StringEncoding;
+      int length = TryReadStringHeader();
+      if (length < 0 || length > chars.Length || !(encoding is UTF8Encoding)) // UTF-8 has no more chars than bytes
+      {
+        Pos = start;
+        count = 0;
+        return false;
+      }
+      count = encoding.GetChars(new ReadOnlySpan<byte>(Buf, Pos, length), chars);
+      Pos += length;
+      return true;
+    }
+#endif
+
     /// <returns>-1 when the next value is not binary data, otherwise the length (the position is at the first byte)</returns>
     internal int TryReadBinHeader()
     {
@@ -339,6 +362,13 @@ namespace LtMsgPack.IO
     /// </summary>
     internal bool TryReadDateTime(out DateTime value)
     {
+      if (End - Pos >= 2 && Buf[Pos + 1] == 0xFF) // the 32 and 64 bit formats, without the general extension header
+      {
+        byte c = Buf[Pos];
+        if (c == 0xD6) { Pos += 2; value = ReadTimestamp(MsgPackTypeId.MpFExt4, 4); return true; }
+        if (c == 0xD7) { Pos += 2; value = ReadTimestamp(MsgPackTypeId.MpFExt8, 8); return true; }
+      }
+
       int start = Pos;
       if (!TryReadExtHeader(out sbyte typeCode, out int length, out MsgPackTypeId format) || typeCode != -1)
       {
