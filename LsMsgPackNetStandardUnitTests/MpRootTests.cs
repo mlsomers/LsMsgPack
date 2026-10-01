@@ -33,6 +33,18 @@ namespace LsMsgPackUnitTests
         Assert.IsTrue(MsgPackTests.AreEqualish(expected, actual), string.Concat("The returned value ", actual, " differs from the input value ", expected));
       }
     }
+
+    [TestMethod]
+    public void LastItemOfOneByte()
+    {
+      // Two positive fixints, the last byte used to be left unread
+      MpRoot result = MsgPackItem.UnpackMultiple(new byte[] { 0x01, 0x02 });
+      Assert.AreEqual(2, result.Count);
+      Assert.AreEqual(2, System.Convert.ToInt32(result[1].Value));
+
+      Assert.AreEqual(1, MsgPackItem.UnpackMultiple(new byte[] { 0xC0 }).Count);
+      Assert.AreEqual(0, MsgPackItem.UnpackMultiple(new byte[0]).Count);
+    }
   }
 
 }
