@@ -96,10 +96,20 @@ namespace MsgPackExplorer
             set { _endianHandling = value; }
         }
 
-        /// <summary>
-        /// Clears all the data and starts with an empty slate
-        /// </summary>
-        public void Clear()
+    public bool ObjectsVisible {
+      get{ 
+        return objectsPane.Visible;
+      }
+      set{
+        splitterObj.Visible = value;
+        objectsPane.Visible = value;
+      } 
+    }
+
+    /// <summary>
+    /// Clears all the data and starts with an empty slate
+    /// </summary>
+    public void Clear()
         {
             Data = null;
         }

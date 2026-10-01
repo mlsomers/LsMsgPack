@@ -47,10 +47,16 @@
       this.imageListValidation = new System.Windows.Forms.ImageList(this.components);
       this.splitter4 = new System.Windows.Forms.Splitter();
       this.errorDetails = new System.Windows.Forms.TextBox();
+      this.objectsPane = new System.Windows.Forms.Panel();
+      this.treeViewObjects = new System.Windows.Forms.TreeView();
+      this.splitter6 = new System.Windows.Forms.Splitter();
+      this.propertyGridObjects = new System.Windows.Forms.PropertyGrid();
+      this.splitterObj = new System.Windows.Forms.Splitter();
       this.panel1.SuspendLayout();
       this.statusStrip1.SuspendLayout();
       this.panel2.SuspendLayout();
       this.panel3.SuspendLayout();
+      this.objectsPane.SuspendLayout();
       this.SuspendLayout();
       // 
       // treeView1
@@ -256,6 +262,61 @@
       this.errorDetails.TabIndex = 3;
       this.errorDetails.Visible = false;
       // 
+      // objectsPane
+      // 
+      this.objectsPane.Controls.Add(this.treeViewObjects);
+      this.objectsPane.Controls.Add(this.splitter6);
+      this.objectsPane.Controls.Add(this.propertyGridObjects);
+      this.objectsPane.Dock = System.Windows.Forms.DockStyle.Bottom;
+      this.objectsPane.Location = new System.Drawing.Point(0, 359);
+      this.objectsPane.Name = "objectsPane";
+      this.objectsPane.Size = new System.Drawing.Size(639, 343);
+      this.objectsPane.TabIndex = 6;
+      this.objectsPane.Visible = false;
+      // 
+      // treeViewObjects
+      // 
+      this.treeViewObjects.Dock = System.Windows.Forms.DockStyle.Fill;
+      this.treeViewObjects.DrawMode = System.Windows.Forms.TreeViewDrawMode.OwnerDrawText;
+      this.treeViewObjects.FullRowSelect = true;
+      this.treeViewObjects.HideSelection = false;
+      this.treeViewObjects.ImageIndex = 0;
+      this.treeViewObjects.ImageList = this.imageList1;
+      this.treeViewObjects.Location = new System.Drawing.Point(0, 0);
+      this.treeViewObjects.Name = "treeViewObjects";
+      this.treeViewObjects.SelectedImageIndex = 0;
+      this.treeViewObjects.Size = new System.Drawing.Size(277, 343);
+      this.treeViewObjects.StateImageList = this.imageList1;
+      this.treeViewObjects.TabIndex = 1;
+      // 
+      // splitter6
+      // 
+      this.splitter6.Dock = System.Windows.Forms.DockStyle.Right;
+      this.splitter6.Location = new System.Drawing.Point(277, 0);
+      this.splitter6.Name = "splitter6";
+      this.splitter6.Size = new System.Drawing.Size(7, 343);
+      this.splitter6.TabIndex = 2;
+      this.splitter6.TabStop = false;
+      // 
+      // propertyGridObjects
+      // 
+      this.propertyGridObjects.CategoryForeColor = System.Drawing.SystemColors.InactiveCaptionText;
+      this.propertyGridObjects.Dock = System.Windows.Forms.DockStyle.Right;
+      this.propertyGridObjects.Location = new System.Drawing.Point(284, 0);
+      this.propertyGridObjects.Name = "propertyGridObjects";
+      this.propertyGridObjects.Size = new System.Drawing.Size(355, 343);
+      this.propertyGridObjects.TabIndex = 3;
+      // 
+      // splitterObj
+      // 
+      this.splitterObj.Dock = System.Windows.Forms.DockStyle.Bottom;
+      this.splitterObj.Location = new System.Drawing.Point(0, 352);
+      this.splitterObj.Name = "splitterObj";
+      this.splitterObj.Size = new System.Drawing.Size(639, 7);
+      this.splitterObj.TabIndex = 7;
+      this.splitterObj.TabStop = false;
+      this.splitterObj.Visible = false;
+      // 
       // LsMsgPackExplorer
       // 
       this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -263,8 +324,10 @@
       this.Controls.Add(this.panel2);
       this.Controls.Add(this.splitter1);
       this.Controls.Add(this.panel1);
+      this.Controls.Add(this.splitterObj);
+      this.Controls.Add(this.objectsPane);
       this.Name = "LsMsgPackExplorer";
-      this.Size = new System.Drawing.Size(639, 352);
+      this.Size = new System.Drawing.Size(639, 702);
       this.panel1.ResumeLayout(false);
       this.panel1.PerformLayout();
       this.statusStrip1.ResumeLayout(false);
@@ -272,6 +335,7 @@
       this.panel2.ResumeLayout(false);
       this.panel3.ResumeLayout(false);
       this.panel3.PerformLayout();
+      this.objectsPane.ResumeLayout(false);
       this.ResumeLayout(false);
 
     }
@@ -297,5 +361,10 @@
     private System.Windows.Forms.Panel panel3;
     private System.Windows.Forms.Splitter splitter4;
     private System.Windows.Forms.TextBox errorDetails;
+    private System.Windows.Forms.Panel objectsPane;
+    private System.Windows.Forms.Splitter splitterObj;
+    private System.Windows.Forms.TreeView treeViewObjects;
+    private System.Windows.Forms.Splitter splitter6;
+    private System.Windows.Forms.PropertyGrid propertyGridObjects;
   }
 }

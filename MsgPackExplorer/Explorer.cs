@@ -186,6 +186,10 @@ namespace MsgPackExplorer
         MessageBox.Show(string.Concat("Removal failed with the following message:\r\n", ex.Message, "\r\n\r\nYou may have more luck (depending on the error) running with administration privileges."), "Not removed", MessageBoxButtons.OK, MessageBoxIcon.Error);
       }
     }
+	
+	  private void objectsMenuItem_CheckedChanged(object sender, EventArgs e){
+		  msgPackExplorer1.ObjectsVisible = objectsMenuItem.Checked;
+    }
   }
 
   public class EndianChoice
