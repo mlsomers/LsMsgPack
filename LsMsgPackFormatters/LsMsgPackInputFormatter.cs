@@ -4,6 +4,11 @@ using Microsoft.AspNetCore.Mvc.Formatters;
 using System;
 using System.IO;
 using System.Threading.Tasks;
+#if NETCOREAPP3_0_OR_GREATER
+using System.Buffers;
+using System.IO.Pipelines;
+using System.Runtime.InteropServices;
+#endif
 
 namespace LsMsgPackFormatters
 {
@@ -29,15 +34,62 @@ namespace LsMsgPackFormatters
 
     public override async Task<InputFormatterResult> ReadRequestBodyAsync(InputFormatterContext context)
     {
+#if NETCOREAPP3_0_OR_GREATER
+      // Buffer the body asynchronously in the pipe of the request, the deserializer reads synchronously which ASP.NET Core does not allow on the request stream
+      PipeReader reader = context.HttpContext.Request.BodyReader;
+      ReadResult read = await reader.ReadAsync(context.HttpContext.RequestAborted);
+      while (!read.IsCompleted && !read.IsCanceled)
+      {
+        reader.AdvanceTo(read.Buffer.Start, read.Buffer.End); // nothing consumed yet, wait for the rest
+        read = await reader.ReadAsync(context.HttpContext.RequestAborted);
+      }
+
+      ReadOnlySequence<byte> body = read.Buffer;
+      byte[] rented = null;
+      try
+      {
+        if (body.Length == 0)
+          return context.TreatEmptyInputAsDefaultValue ? InputFormatterResult.Success(GetDefaultValueForType(context.ModelType)) : InputFormatterResult.NoValue();
+
+        // Read in place when the body is in one buffer (LtMsgPack copies what it keeps), otherwise from a pooled copy
+        if (!body.IsSingleSegment || !MemoryMarshal.TryGetArray(body.First, out ArraySegment<byte> data))
+        {
+          rented = ArrayPool<byte>.Shared.Rent(checked((int)body.Length));
+          body.CopyTo(rented);
+          data = new ArraySegment<byte>(rented, 0, (int)body.Length);
+        }
+        return Deserialize(context, data.Array, data.Offset, data.Count);
+      }
+      finally
+      {
+        if (rented != null)
+          ArrayPool<byte>.Shared.Return(rented);
+        reader.AdvanceTo(body.End);
+      }
+#else
       // Buffer the body asynchronously, the deserializer reads synchronously which ASP.NET Core does not allow on the request stream.
-      MemoryStream body = new MemoryStream();
+      long? contentLength = context.HttpContext.Request.ContentLength;
+      MemoryStream body = contentLength > 0 && contentLength <= MaxPresized ? new MemoryStream((int)contentLength) : new MemoryStream();
       await context.HttpContext.Request.Body.CopyToAsync(body, 81920, context.HttpContext.RequestAborted);
       if (body.Length == 0)
         return context.TreatEmptyInputAsDefaultValue ? InputFormatterResult.Success(GetDefaultValueForType(context.ModelType)) : InputFormatterResult.NoValue();
 
+      return Deserialize(context, body.GetBuffer(), 0, (int)body.Length);
+#endif
+    }
+
+#if !NETCOREAPP3_0_OR_GREATER
+    /// <summary>
+    /// The buffer is sized by the Content-Length up to this size, larger bodies grow it as they arrive (the header is not trusted with a large allocation).
+    /// </summary>
+    private const int MaxPresized = 1024 * 1024;
+#endif
+
+    private InputFormatterResult Deserialize(InputFormatterContext context, byte[] data, int offset, int count)
+    {
       try
       {
-        object model = Serializer.Deserialize(context.ModelType, body.GetBuffer(), 0, (int)body.Length, context.HttpContext.Request.ContentType);
+        object model = Serializer.Deserialize(context.ModelType, data, offset, count, context.HttpContext.Request.ContentType);
         if (!(model is null) && !context.ModelType.IsInstanceOfType(model)) // The deserializer passes through values it cannot convert (eg. a string where a map was expected)
           return Fail(context, new InputFormatterException("The request body could not be deserialized as " + context.ModelType.Name + "."));
         return InputFormatterResult.Success(model);

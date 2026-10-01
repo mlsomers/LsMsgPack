@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace LsMsgPack
@@ -462,20 +463,23 @@ namespace LsMsgPack
       public bool Equals(byte[] x, byte[] y)
       {
         if (ReferenceEquals(x, y)) return true;
-        if (x is null || y is null || x.Length != y.Length) return false;
-        for (int t = 0; t < x.Length; t++)
-          if (x[t] != y[t]) return false;
-        return true;
+        if (x is null || y is null) return false;
+        return new ReadOnlySpan<byte>(x).SequenceEqual(y); // vectorized, also compares the lengths
       }
 
       public int GetHashCode(byte[] bytes)
       {
         unchecked
         {
-          uint hash = 2166136261; // FNV-1a
-          for (int t = 0; t < bytes.Length; t++)
-            hash = (hash ^ bytes[t]) * 16777619;
-          return (int)hash;
+          // FNV-1a over 8 bytes at a time (only used in this process, the value may change between versions)
+          ulong hash = 14695981039346656037UL ^ (ulong)bytes.Length;
+          ReadOnlySpan<ulong> words = MemoryMarshal.Cast<byte, ulong>(bytes);
+          for (int w = 0; w < words.Length; w++)
+            hash = (hash ^ words[w]) * 1099511628211UL;
+          int t = words.Length * 8;
+          for (; t < bytes.Length; t++)
+            hash = (hash ^ bytes[t]) * 1099511628211UL;
+          return (int)(hash ^ (hash >> 32));
         }
       }
     }

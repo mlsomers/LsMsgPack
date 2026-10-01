@@ -59,14 +59,17 @@ namespace LtMsgPack
     /// <summary>
     /// Writes the payload: the value (names mode), or the schema (or a reference to it) followed by the value.
     /// </summary>
+    /// <param name="value">The value, written by <paramref name="write"/> (it is <see cref="WriteContext.Root"/>)</param>
     /// <param name="write">Writes the value (typed or boxed), may run twice with a schema reference (when the cached schema grows)</param>
-    internal void Serialize(Type assignedTo, bool isNull, Action<WriteContext, FullPropertyInfo> write, Stream target, out byte[] result)
+    internal void Serialize(Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, Stream target, out byte[] result)
     {
       result = null;
+      bool isNull = value is null;
       WriteState state = RentState();
       try
       {
         WriteContext c = state.Context;
+        c.Root = value;
         c.Depth = 0;
         c.W = state.Body;
         c.W.Reset(Options);
@@ -86,6 +89,24 @@ namespace LtMsgPack
           SchemaStore store = Options._schemaStore;
           if (store is null)
             throw new MsgPackException("MsgPackSettings.WriteSchemaReference needs a MsgPackSettings.SchemaStore to keep the schema in.");
+
+          // The published session of the root type, shared with other calls (as SchemaStore.RunWriter, without its allocations)
+          SchemaStore.SessionState writer = WriterState(store, assignedTo);
+          SchemaSession current = writer.Current;
+          if (current != null)
+          {
+            try
+            {
+              c.Mode = IdMode.Session;
+              c.IdSettings = WriterShared(current).Settings(Options);
+              write(c, root);
+              Output(current.Reference, current.Reference.Length, c.W, target, out result);
+              return;
+            }
+            catch (SchemaGrowthException) // something the session does not have yet, RunWriter grows it
+            {
+            }
+          }
 
           SchemaSession session;
           store.RunWriter(assignedTo, Options, (s, sessionSettings) =>
@@ -127,8 +148,50 @@ namespace LtMsgPack
       }
       finally
       {
+        state.Context.Root = null;
         ReturnState(state);
       }
+    }
+
+    /// <summary>
+    /// The writer sessions of the root type read last: (store, root type) to SessionState, which SchemaStore.GetWriter finds by a key of the settings, which do not change.
+    /// </summary>
+    private volatile WriterHit _lastWriter;
+
+    private sealed class WriterHit
+    {
+      internal readonly SchemaStore Store;
+      internal readonly Type Root;
+      internal readonly SchemaStore.SessionState State;
+
+      internal WriterHit(SchemaStore store, Type root, SchemaStore.SessionState state)
+      {
+        Store = store;
+        Root = root;
+        State = state;
+      }
+    }
+
+    private volatile SessionShared _lastWriterSession; // apart from the one of reading, a serializer may do both
+
+    private SessionShared WriterShared(SchemaSession session)
+    {
+      SessionShared last = _lastWriterSession;
+      if (last != null && ReferenceEquals(last.Session, session))
+        return last;
+      last = _sessions.GetValue(session, s => new SessionShared(s));
+      _lastWriterSession = last;
+      return last;
+    }
+
+    private SchemaStore.SessionState WriterState(SchemaStore store, Type root)
+    {
+      WriterHit last = _lastWriter;
+      if (last != null && last.Root == root && ReferenceEquals(last.Store, store))
+        return last.State;
+      SchemaStore.SessionState state = store.GetWriter(root, Options);
+      _lastWriter = new WriterHit(store, root, state);
+      return state;
     }
 
     private static void Output(byte[] head, int headLength, MsgPackWriter body, Stream target, out byte[] result)

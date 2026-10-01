@@ -35,6 +35,11 @@ namespace LtMsgPack.Writing
   {
     internal readonly Serializer Serializer;
     internal MsgPackWriter W;
+
+    /// <summary>
+    /// The value of the Serialize call.
+    /// </summary>
+    internal object Root;
     internal IdMode Mode;
     internal InlineSchema Inline;
 
@@ -109,10 +114,20 @@ namespace LtMsgPack.Writing
           return plan.IndexKeys;
 
         default:
+          ObjectPlan.SessionIds last = plan.LastSession;
+          if (last != null && ReferenceEquals(last.Settings, IdSettings)) // the same frozen session: the same answer as below
+          {
+            infos = last.Infos;
+            return last.Keys;
+          }
+
           infos = FullPropertyInfo.GetSerializedProps(plan.Type, IdSettings);
           if (infos.Length != plan.Props.Length)
             throw new InvalidOperationException($"The properties of {plan.Type.FullName} differ from the ones of the schema session.");
-          return Serializer.SessionKeys(infos);
+          byte[][] keys = Serializer.SessionKeys(infos);
+          if (IdSettings._schemaFrozen) // shared by the calls that use the session (see Serializer.SessionShared), a session of one call is not worth it
+            plan.LastSession = new ObjectPlan.SessionIds(IdSettings, infos, keys);
+          return keys;
       }
     }
 
@@ -149,6 +164,11 @@ namespace LtMsgPack.Writing
     internal string Name;
     internal bool IsCollection;
     internal string[] PropertyNames;
+
+    /// <summary>
+    /// Not for collections: the entry of the type in the schema (its name and the array of its property names), encoded when it is first written. The settings of the serializer do not change.
+    /// </summary>
+    internal byte[] Entry;
   }
 
   /// <summary>
@@ -204,12 +224,28 @@ namespace LtMsgPack.Writing
       for (int t = 0; t < _types.Count; t++)
       {
         SchemaTypeInfo info = _types[t];
+        if (!info.IsCollection)
+        {
+          writer.Raw(info.Entry ?? (info.Entry = EncodeEntry(writer, info)));
+          continue;
+        }
+
         WriteName(writer, info.Name);
         IList<string> props = info.IsCollection ? (IList<string>)_collectionProps[t] : info.PropertyNames;
         writer.ArrayHeader(props.Count);
         for (int p = 0; p < props.Count; p++)
           WriteName(writer, props[p]);
       }
+    }
+
+    private static byte[] EncodeEntry(MsgPackWriter like, SchemaTypeInfo info)
+    {
+      MsgPackWriter writer = like.Like(64);
+      WriteName(writer, info.Name);
+      writer.ArrayHeader(info.PropertyNames.Length);
+      for (int p = 0; p < info.PropertyNames.Length; p++)
+        WriteName(writer, info.PropertyNames[p]);
+      return writer.ToArray();
     }
 
     private static void WriteName(MsgPackWriter writer, string name)

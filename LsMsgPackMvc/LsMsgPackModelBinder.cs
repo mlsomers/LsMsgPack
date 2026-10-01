@@ -28,6 +28,11 @@ namespace LsMsgPackMvc
       Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
     }
 
+    /// <summary>
+    /// The buffer is sized by the length of the body up to this size, larger bodies grow it as they arrive (the header is not trusted with a large allocation).
+    /// </summary>
+    private const int MaxPresized = 1024 * 1024;
+
     public object BindModel(ControllerContext controllerContext, ModelBindingContext bindingContext)
     {
       HttpRequestBase request = controllerContext.HttpContext.Request;
@@ -35,13 +40,15 @@ namespace LsMsgPackMvc
         return FallbackBinder(bindingContext.ModelType).BindModel(controllerContext, bindingContext);
 
       Stream input = request.InputStream;
+      long length = request.ContentLength;
       if (input.CanSeek)
       {
         if (input.Length == 0)
           return null;
         input.Position = 0; // Another parameter may have read it already
+        length = input.Length;
       }
-      MemoryStream body = new MemoryStream();
+      MemoryStream body = length > 0 && length <= MaxPresized ? new MemoryStream((int)length) : new MemoryStream(); // sized, so it does not grow while copying
       input.CopyTo(body);
 
       object model;

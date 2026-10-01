@@ -5,12 +5,15 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// Compares the performance and payload size of LsMsgPack with Json.NET using a set of typical invoices.
+  /// Compares the performance and payload size of LsMsgPack and LtMsgPack with System.Text.Json (the baseline, with its default options as ASP.NET Core uses it) using a set of typical invoices.
+  /// <para>System.Text.Json with source generation and Json.NET are listed as well.</para>
   /// <para>Results are written to the test output; timings are not asserted since they depend on the machine (and build configuration).</para>
   /// </summary>
   [TestClass]
@@ -271,12 +274,19 @@ namespace LsMsgPackUnitTests
       LtMsgPack.LtMsgPackSerializer ltIndexedTrimmed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array, TrimTrailingNulls = true });
       LtMsgPack.LtMsgPackSerializer ltPositional = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration });
 
+      JsonSerializerOptions stj = new JsonSerializerOptions(); // one instance, it caches the metadata
+
       return new ICandidate[]
       {
-        new Candidate<string>("Json.NET (string)",
-          i => JsonConvert.SerializeObject(i),
-          s => JsonConvert.DeserializeObject<Invoice>(s),
-          s => Encoding.UTF8.GetByteCount(s)),
+        new Candidate<byte[]>("System.Text.Json", // the baseline
+          i => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(i, stj),
+          b => System.Text.Json.JsonSerializer.Deserialize<Invoice>(b, stj),
+          b => b.Length),
+
+        new Candidate<byte[]>("System.Text.Json (src gen)",
+          i => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(i, BenchmarkJsonContext.Default.Invoice),
+          b => System.Text.Json.JsonSerializer.Deserialize(b, BenchmarkJsonContext.Default.Invoice),
+          b => b.Length),
 
         new Candidate<byte[]>("Json.NET (UTF-8 bytes)",
           i => Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(i)),
@@ -347,13 +357,13 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    public void Invoices_Write_LsMsgPack_vs_JsonNet()
+    public void Invoices_Write_LsMsgPack_vs_SystemTextJson()
     {
       Benchmark("Serialize", (candidate, invoices) => candidate.Write(invoices));
     }
 
     [TestMethod]
-    public void Invoices_Read_LsMsgPack_vs_JsonNet()
+    public void Invoices_Read_LsMsgPack_vs_SystemTextJson()
     {
       Benchmark("Deserialize", (candidate, invoices) => candidate.Read());
     }
@@ -416,9 +426,17 @@ namespace LsMsgPackUnitTests
           fastest[0].TotalMilliseconds / fastest[c].TotalMilliseconds));
       }
       sb.AppendLine();
-      sb.AppendLine("Size is relative to Json.NET, Speed is how many times faster than Json.NET (higher is better).");
+      sb.AppendLine("Size is relative to System.Text.Json, Speed is how many times faster than System.Text.Json (higher is better).");
 
       TestContext.WriteLine(sb.ToString());
     }
+  }
+
+  /// <summary>
+  /// System.Text.Json source generation for the invoices (its fastest mode, no reflection at run time).
+  /// </summary>
+  [JsonSerializable(typeof(BenchmarkInvoices.Invoice))]
+  internal partial class BenchmarkJsonContext : JsonSerializerContext
+  {
   }
 }

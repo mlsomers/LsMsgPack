@@ -123,6 +123,25 @@ namespace LsMsgPackFormattersTests
       }
     }
 
+    [TestCase(MsgPackMediaTypes.MsgPack)]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack)]
+    public async Task LargeBodyRoundTrips(string mediaType)
+    {
+      // Larger than one buffer of the request pipe: the input formatter reads it from a copy
+      Order large = new Order { Id = 7, Customer = new string('c', 5000), Amounts = Enumerable.Range(0, 50000).Select(i => i * 0.5).ToArray() };
+      MsgPackSettings settings = mediaType == MsgPackMediaTypes.MsgPack ? Plain : new MsgPackSettings();
+      (IHost host, HttpClient client) = await StartAsync();
+      using (host)
+      {
+        HttpResponseMessage response = await client.SendAsync(Post(MsgPackSerializer.Serialize(large, settings), mediaType, mediaType));
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
+        Order echoed = MsgPackSerializer.Deserialize<Order>(await response.Content.ReadAsByteArrayAsync(), settings);
+        Assert.That(echoed.Customer, Is.EqualTo(large.Customer));
+        Assert.That(echoed.Amounts, Is.EqualTo(large.Amounts));
+      }
+    }
+
     [Test]
     public async Task LsMsgPackRoundTripsWithConfiguredSettings()
     {

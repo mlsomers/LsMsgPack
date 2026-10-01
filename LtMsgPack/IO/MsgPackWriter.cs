@@ -31,6 +31,14 @@ namespace LtMsgPack.IO
 
     internal bool Compact { get { return _compact; } }
 
+    /// <summary>
+    /// An empty writer with the same settings (byte order, compact integers).
+    /// </summary>
+    internal MsgPackWriter Like(int capacity)
+    {
+      return new MsgPackWriter(capacity) { _compact = _compact, _littleEndian = _littleEndian };
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void Ensure(int count)
     {
@@ -62,7 +70,7 @@ namespace LtMsgPack.IO
         Buf[Pos++] = bytes[offset];
       else
       {
-        Buffer.BlockCopy(bytes, offset, Buf, Pos, count);
+        new ReadOnlySpan<byte>(bytes, offset, count).CopyTo(new Span<byte>(Buf, Pos, count)); // Buffer.BlockCopy checks the array types first, which costs more than copying a short key
         Pos += count;
       }
     }
@@ -250,15 +258,139 @@ namespace LtMsgPack.IO
     internal void String(string value)
     {
       Encoding encoding = MsgPackOptions.StringEncoding;
+      int length = value.Length;
+      if (length <= MaxOnePassLength && IsUtf8(encoding))
+      {
+        if (length <= MaxAsciiLoopLength && Ascii(value))
+          return;
+
+        // One pass: UTF-8 has at least one byte per char, so the header is reserved for that many bytes and moved when the string turns out longer (only non-ASCII text near a boundary)
+        Ensure(encoding.GetMaxByteCount(length) + 5);
+        int reserved = StringHeaderSize(length);
+#if NETSTANDARD2_1_OR_GREATER
+        int count = encoding.GetBytes(value.AsSpan(), new Span<byte>(Buf, Pos + reserved, Buf.Length - Pos - reserved));
+#else
+        int count = encoding.GetBytes(value, 0, length, Buf, Pos + reserved);
+#endif
+        int needed = StringHeaderSize(count);
+        if (needed != reserved)
+          Buffer.BlockCopy(Buf, Pos + reserved, Buf, Pos + needed, count);
+        StringHeader(count);
+        Pos += count;
+        return;
+      }
+
       int byteCount = encoding.GetByteCount(value);
       Ensure(byteCount + 5);
+      StringHeader(byteCount);
+      Pos += encoding.GetBytes(value, 0, length, Buf, Pos);
+    }
+
+    /// <summary>
+    /// Longer strings are measured first, so the buffer does not grow to three times their length.
+    /// </summary>
+    private const int MaxOnePassLength = 1 << 16;
+
+    /// <summary>
+    /// Up to this length a loop over the chars is faster than the encoder (which costs 10-15 ns per call).
+    /// </summary>
+    private const int MaxAsciiLoopLength = 16;
+
+    private static Encoding _utf8; // the StringEncoding that was found to be UTF-8 (the type check is a call)
+
+    private static bool IsUtf8(Encoding encoding)
+    {
+      if (ReferenceEquals(encoding, _utf8))
+        return true;
+      if (!(encoding is UTF8Encoding))
+        return false;
+      _utf8 = encoding;
+      return true;
+    }
+
+    /// <summary>
+    /// Writes a short string of ASCII chars (a fixstr: one byte per char), false (nothing written) when it has other chars.
+    /// </summary>
+    private bool Ascii(string value)
+    {
+      int length = value.Length;
+      Ensure(length + 1);
+      byte[] b = Buf;
+      int at = Pos + 1;
+      for (int t = 0; t < length; t++)
+      {
+        char c = value[t];
+        if (c >= 0x80)
+          return false;
+        b[at + t] = (byte)c;
+      }
+      b[Pos] = (byte)(0xA0 | length);
+      Pos = at + length;
+      return true;
+    }
+
+    private static int StringHeaderSize(int byteCount)
+    {
+      return byteCount < 32 ? 1 : byteCount < 256 ? 2 : byteCount <= ushort.MaxValue ? 3 : 5;
+    }
+
+    // Callers ensure the space
+    private void StringHeader(int byteCount)
+    {
       byte[] b = Buf;
       if (byteCount < 32) b[Pos++] = (byte)(0xA0 | byteCount);
       else if (byteCount < 256) { b[Pos++] = 0xD9; b[Pos++] = (byte)byteCount; }
       else if (byteCount <= ushort.MaxValue) { b[Pos++] = 0xDA; U16((ushort)byteCount); }
       else { b[Pos++] = 0xDB; U32((uint)byteCount); }
-      Pos += encoding.GetBytes(value, 0, value.Length, b, Pos);
     }
+
+    /// <summary>
+    /// A decimal as a string in the invariant culture (<see cref="DecimalFormat.String"/>), formatted in place.
+    /// </summary>
+    internal void DecimalString(decimal value)
+    {
+#if NETSTANDARD2_1_OR_GREATER
+      Span<char> chars = stackalloc char[32]; // at most 31: sign, 29 digits and the point
+      if (IsUtf8(MsgPackOptions.StringEncoding) && value.TryFormat(chars, out int length, default, System.Globalization.CultureInfo.InvariantCulture)) // ASCII, the same bytes in UTF-8
+      {
+        AsciiString(chars.Slice(0, length));
+        return;
+      }
+#endif
+      String(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// A Guid as a string of 36 characters (<see cref="GuidFormat.String"/>), formatted in place.
+    /// </summary>
+    internal void GuidString(Guid value)
+    {
+#if NETSTANDARD2_1_OR_GREATER
+      Span<char> chars = stackalloc char[36];
+      if (IsUtf8(MsgPackOptions.StringEncoding) && value.TryFormat(chars, out int length, "D")) // ASCII, the same bytes in UTF-8
+      {
+        AsciiString(chars.Slice(0, length));
+        return;
+      }
+#endif
+      String(value.ToString("D"));
+    }
+
+#if NETSTANDARD2_1_OR_GREATER
+    /// <summary>
+    /// A string of ASCII chars shorter than 256 (formatted numbers, Guids): one byte per char.
+    /// </summary>
+    private void AsciiString(ReadOnlySpan<char> chars)
+    {
+      int length = chars.Length;
+      Ensure(length + 2);
+      StringHeader(length);
+      byte[] b = Buf;
+      for (int t = 0; t < length; t++)
+        b[Pos + t] = (byte)chars[t];
+      Pos += length;
+    }
+#endif
 
     internal void BinHeader(int length)
     {

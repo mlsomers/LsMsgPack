@@ -289,8 +289,8 @@ namespace LtMsgPack
           }
           return;
         case TypeKind.Guid: w.Guid((Guid)value); return;
-        case TypeKind.GuidString: w.String(((Guid)value).ToString("D")); return;
-        case TypeKind.DecimalString: w.String(((decimal)value).ToString(CultureInfo.InvariantCulture)); return;
+        case TypeKind.GuidString: w.GuidString((Guid)value); return;
+        case TypeKind.DecimalString: w.DecimalString((decimal)value); return;
         case TypeKind.DateTime: w.DateTime(DateTimeHandler.Utc((DateTime)value, Options._unspecifiedIsUtc)); return;
         case TypeKind.DateTimeOffset: w.DateTime(((DateTimeOffset)value).UtcDateTime); return;
         case TypeKind.DateTimeOffsetArray: DateTimeOffsetArrayHandler.WriteArray(w, (DateTimeOffset)value); return;

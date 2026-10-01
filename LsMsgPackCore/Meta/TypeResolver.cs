@@ -21,6 +21,7 @@ namespace LsMsgPack.Meta
     // 2nd tier cache
     private static readonly Dictionary<Type, Assembly> AssemblyCache = new Dictionary<Type, Assembly>(); // assembly previously found for this "assign-to" type
     internal static readonly HashSet<Assembly> CachedAssembies = new HashSet<Assembly>(); // keep track of what has been cached
+    private static readonly ConcurrentDictionary<Assembly, bool> CachedAssembliesLockFree = new ConcurrentDictionary<Assembly, bool>(); // the same, read without the lock (both serializers cache the assembly of the root type on every call)
 
     // 3rd tier cache
     private static readonly Dictionary<string, HashSet<Type>> NameCache = new Dictionary<string, HashSet<Type>>(); // Can contain duplicate names
@@ -314,6 +315,9 @@ namespace LsMsgPack.Meta
 
     internal static Type CacheAssembly(Assembly assembly, string typeName)
     {
+      if (CachedAssembliesLockFree.ContainsKey(assembly)) // assemblies are only added: the answer of the lock below
+        return null;
+
       lock (SyncRoot)
       {
         return CacheAssemblyLocked(assembly, typeName);
@@ -352,6 +356,7 @@ namespace LsMsgPack.Meta
         }
       }
       CachedAssembies.Add(assembly);
+      CachedAssembliesLockFree.TryAdd(assembly, true);
       return found;
     }
   }

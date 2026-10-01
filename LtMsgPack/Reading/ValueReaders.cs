@@ -222,6 +222,14 @@ namespace LtMsgPack.Reading
     {
       int start = c.R.Pos;
       if (c.R.TryReadGuid(out Guid value)) return value;
+#if NETSTANDARD2_1_OR_GREATER
+      Span<char> chars = stackalloc char[64];
+      if (c.R.TryReadShortString(chars, out int count))
+      {
+        if (Guid.TryParse(chars.Slice(0, count), out value)) return value;
+        throw new MsgPackException($"\"{chars.Slice(0, count).ToString()}\" is not a Guid.");
+      }
+#endif
       if (c.R.TryReadString(out string text))
       {
         if (Guid.TryParse(text, out value)) return value;
@@ -240,6 +248,15 @@ namespace LtMsgPack.Reading
     internal override decimal Read(ReadContext c, FullPropertyInfo assignedTo)
     {
       int start = c.R.Pos;
+#if NETSTANDARD2_1_OR_GREATER
+      Span<char> chars = stackalloc char[64];
+      if (c.R.TryReadShortString(chars, out int count))
+      {
+        if (decimal.TryParse(chars.Slice(0, count), NumberStyles.Number | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out decimal parsed))
+          return parsed;
+        return Slow(c, start, assignedTo);
+      }
+#endif
       if (c.R.TryReadString(out string text) && decimal.TryParse(text, NumberStyles.Number | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out decimal value))
         return value;
       return Slow(c, start, assignedTo);
@@ -324,6 +341,34 @@ namespace LtMsgPack.Reading
       else if (c.R.TryReadNil())
         return default(T);
       return Slow(c, start, assignedTo);
+    }
+  }
+
+  /// <summary>
+  /// decimal with the built-in <see cref="DecimalExtension"/>: fixext16 with the 16 bytes of the value, read in place.
+  /// </summary>
+  internal sealed class DecimalReader : ValueReader<decimal>
+  {
+    private readonly byte _typeCode;
+    private readonly ExtensionReader<decimal> _other;
+
+    internal DecimalReader(DecimalExtension extension)
+    {
+      _typeCode = unchecked((byte)extension.TypeCode);
+      _other = new ExtensionReader<decimal>(extension);
+    }
+
+    internal override decimal Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      MsgPackReader r = c.R;
+      int at = r.Pos;
+      if (r.End - at >= 18 && r.Buf[at] == 0xD8 && r.Buf[at + 1] == _typeCode)
+      {
+        decimal value = Unsafe.ReadUnaligned<decimal>(ref r.Buf[at + 2]); // as DecimalExtension.Read (MemoryMarshal.Read)
+        r.Pos = at + 18;
+        return value;
+      }
+      return _other.Read(c, assignedTo);
     }
   }
 

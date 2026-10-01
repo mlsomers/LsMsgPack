@@ -17,7 +17,7 @@ namespace LtMsgPack
   {
     private readonly ConcurrentDictionary<Type, ValueReader> _readers = new ConcurrentDictionary<Type, ValueReader>();
     private readonly ConcurrentDictionary<Type, ReadPlan> _readPlans = new ConcurrentDictionary<Type, ReadPlan>();
-    private readonly ConditionalWeakTable<SchemaSession, BoundSchema> _bound = new ConditionalWeakTable<SchemaSession, BoundSchema>();
+    private readonly ConditionalWeakTable<SchemaSession, SessionShared> _sessions = new ConditionalWeakTable<SchemaSession, SessionShared>();
 
     /// <summary>
     /// Objects are read as LsMsgPack does (not by the typed readers): custom property id resolvers decide the keys, custom type resolvers may pick a type by the properties.
@@ -28,6 +28,68 @@ namespace LtMsgPack
     /// Caches the inline schemas that are read, when the options have no <see cref="SchemaStore"/>.
     /// </summary>
     private SchemaStore _inlineStore;
+
+    /// <summary>
+    /// The schema read last (inline or a reference, cached in the store): the next payload usually starts with the same bytes, which are compared instead of measured, copied and looked up.
+    /// </summary>
+    private volatile SchemaHit _lastSchema;
+
+    private sealed class SchemaHit
+    {
+      /// <summary>
+      /// The schema as it was read, or the reference to it.
+      /// </summary>
+      internal readonly byte[] Bytes;
+      internal readonly SchemaStore.Entry Entry;
+      internal readonly MsgPackOptions LengthSettings;
+
+      /// <summary>
+      /// The sessions of the schema for the options of this serializer (they do not change).
+      /// </summary>
+      internal readonly SchemaStore.SessionState State;
+
+      internal SchemaHit(byte[] bytes, SchemaStore.Entry entry, MsgPackOptions lengthSettings, SchemaStore.SessionState state)
+      {
+        Bytes = bytes;
+        Entry = entry;
+        LengthSettings = lengthSettings;
+        State = state;
+      }
+    }
+
+    /// <summary>
+    /// What the calls with a frozen (published) session share: the settings using the session, and for reading the binding of the schema to the local types.
+    /// Only read, by any number of threads: LtMsgPack does not change settings while it uses them.
+    /// </summary>
+    private sealed class SessionShared
+    {
+      internal readonly SchemaSession Session;
+      private BoundSchema _bound;
+      private MsgPackOptions _settings;
+
+      internal SessionShared(SchemaSession session)
+      {
+        Session = session;
+      }
+
+      internal BoundSchema Bound
+      {
+        get { return _bound ?? (_bound = new BoundSchema(Session.Resolver, true)); }
+      }
+
+      /// <param name="options">The options of the serializer</param>
+      internal MsgPackOptions Settings(MsgPackOptions options)
+      {
+        return _settings ?? (_settings = Session.Apply(options));
+      }
+    }
+
+    private volatile SessionShared _lastSession;
+
+    /// <summary>
+    /// The type whose assembly was cached last (see <see cref="DeserializeWithSchema"/>).
+    /// </summary>
+    private volatile Type _cachedRoot;
 
     internal bool CustomTypeResolvers { get { return _customTypeResolvers; } }
 
@@ -85,6 +147,8 @@ namespace LtMsgPack
             return new BinReader();
           break;
         case TypeKind.Extension:
+          if (type == typeof(decimal) && info.Extension is DecimalExtension builtIn && builtIn.TypeCode != -1) // -1 is the timestamp, read as such (as LsMsgPack)
+            return new DecimalReader(builtIn);
           Type typedExtension = typeof(LtExtension<>).MakeGenericType(type);
           if (typedExtension.IsInstanceOfType(info.Extension))
             return (ValueReader)Activator.CreateInstance(typeof(ExtensionReader<>).MakeGenericType(type), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { info.Extension }, null);
@@ -126,8 +190,19 @@ namespace LtMsgPack
     private BoundSchema BoundFor(SchemaSession session, bool shared)
     {
       if (!shared)
-        return new BoundSchema(session.Resolver);
-      return _bound.GetValue(session, s => new BoundSchema(s.Resolver));
+        return new BoundSchema(session.Resolver, false);
+      return Shared(session).Bound;
+    }
+
+    /// <param name="session">Frozen</param>
+    private SessionShared Shared(SchemaSession session)
+    {
+      SessionShared last = _lastSession;
+      if (last != null && ReferenceEquals(last.Session, session))
+        return last;
+      last = _sessions.GetValue(session, s => new SessionShared(s));
+      _lastSession = last;
+      return last;
     }
 
     #endregion
@@ -157,7 +232,11 @@ namespace LtMsgPack
 
     private object DeserializeWithSchema(ReadContext c, Type type)
     {
-      TypeResolver.CacheAssembly(type.Assembly, type.Name); // as MsgPackSerializer.CacheAssemblyTypes(type)
+      if (type != _cachedRoot)
+      {
+        TypeResolver.CacheAssembly(type.Assembly, type.Name); // as MsgPackSerializer.CacheAssemblyTypes(type)
+        _cachedRoot = type;
+      }
 
       MsgPackReader r = c.R;
       if (r.Pos >= r.End)
@@ -172,8 +251,17 @@ namespace LtMsgPack
 
       SchemaStore.Entry schema;
       MsgPackOptions lengthSettings;
+      SchemaStore.SessionState state = null;
       byte[] raw = null;
-      if (first == (int)MsgPackTypeId.MpFExt16)
+      SchemaHit last = _lastSchema;
+      if (last != null && StartsWith(r, last.Bytes)) // a MsgPack value ends where its bytes end, so a payload starting with the bytes of the schema (or reference) starts with that schema
+      {
+        schema = last.Entry;
+        lengthSettings = last.LengthSettings;
+        state = last.State;
+        r.Pos += last.Bytes.Length;
+      }
+      else if (first == (int)MsgPackTypeId.MpFExt16)
       {
         if (r.End - r.Pos < SchemaStore.ReferenceLength)
           throw MsgPackReader.EndOfData();
@@ -187,6 +275,7 @@ namespace LtMsgPack
           throw new MsgPackException($"The data refers to the cached schema {id}, reading it needs a MsgPackSettings.SchemaStore that holds the schema.");
         schema = store.GetById(id);
         lengthSettings = null;
+        raw = Slice(r.Buf, r.Pos, SchemaStore.ReferenceLength);
         r.Pos += SchemaStore.ReferenceLength;
       }
       else if (IsMap(first))
@@ -212,16 +301,41 @@ namespace LtMsgPack
         return ReadBody(c, type, bodyStart, session, session.Apply(Options), false);
       }
 
+      if (state is null)
+      {
+        state = schema.GetReader(Options);
+        _lastSchema = new SchemaHit(raw, schema, lengthSettings, state); // the store keeps its entries
+      }
+
+      // The published session, shared with other calls (as Entry.RunReader, without its allocations)
+      SchemaSession current = state.Current;
+      if (current != null)
+      {
+        SessionShared reading = Shared(current);
+        try
+        {
+          return ReadBody(c, type, bodyStart, reading.Bound, reading.Settings(Options));
+        }
+        catch (SchemaGrowthException) // something the session does not have yet, RunReader grows it
+        {
+        }
+      }
+
       return schema.RunReader(Options, lengthSettings, (session, sessionSettings) => ReadBody(c, type, bodyStart, session, sessionSettings, true));
     }
 
     private object ReadBody(ReadContext c, Type type, int bodyStart, SchemaSession session, MsgPackOptions sessionSettings, bool shared)
     {
+      return ReadBody(c, type, bodyStart, BoundFor(session, shared && session.IsFrozen), sessionSettings);
+    }
+
+    private object ReadBody(ReadContext c, Type type, int bodyStart, BoundSchema bound, MsgPackOptions sessionSettings)
+    {
       c.R.Pos = bodyStart;
       c.Depth = 0;
       c.Schema = true;
       c.SlowSettings = sessionSettings;
-      c.Bound = BoundFor(session, shared && session.IsFrozen);
+      c.Bound = bound;
       return ReadRoot(c, type);
     }
 
@@ -235,6 +349,11 @@ namespace LtMsgPack
       {
         return unconverted.Value;
       }
+    }
+
+    private static bool StartsWith(MsgPackReader r, byte[] bytes)
+    {
+      return r.End - r.Pos >= bytes.Length && new ReadOnlySpan<byte>(r.Buf, r.Pos, bytes.Length).SequenceEqual(bytes);
     }
 
     private static bool IsMap(int first)

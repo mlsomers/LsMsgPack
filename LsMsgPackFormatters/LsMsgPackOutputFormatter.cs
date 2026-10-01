@@ -45,7 +45,15 @@ namespace LsMsgPackFormatters
           response.Headers[LtMsgPackHttpSerializer.SchemaHeader] = payload.SchemaId;
       }
       response.ContentLength = payload.Length;
+#if NETCOREAPP3_0_OR_GREATER
+      System.IO.Pipelines.PipeWriter writer = response.BodyWriter; // copied into the buffers of the response, one flush
+      if (payload.Schema.Count > 0)
+        System.Buffers.BuffersExtensions.Write(writer, new ReadOnlySpan<byte>(payload.Schema.Array, payload.Schema.Offset, payload.Schema.Count));
+      System.Buffers.BuffersExtensions.Write(writer, new ReadOnlySpan<byte>(payload.Body.Array, payload.Body.Offset, payload.Body.Count));
+      await writer.FlushAsync(context.HttpContext.RequestAborted);
+#else
       await payload.WriteToAsync(response.Body, context.HttpContext.RequestAborted);
+#endif
     }
   }
 }

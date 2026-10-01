@@ -35,6 +35,25 @@ namespace LtMsgPack.Writing
 
     internal readonly SchemaTypeInfo Schema;
 
+    /// <summary>
+    /// <see cref="IdMode.Session"/>: the ids of the frozen session used last (see <see cref="WriteContext.BeginObject"/>).
+    /// </summary>
+    internal volatile SessionIds LastSession;
+
+    internal sealed class SessionIds
+    {
+      internal readonly MsgPackOptions Settings;
+      internal readonly FullPropertyInfo[] Infos;
+      internal readonly byte[][] Keys;
+
+      internal SessionIds(MsgPackOptions settings, FullPropertyInfo[] infos, byte[][] keys)
+      {
+        Settings = settings;
+        Infos = infos;
+        Keys = keys;
+      }
+    }
+
     internal ObjectPlan(Serializer serializer, Type type, bool names)
     {
       Type = type;
