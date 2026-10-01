@@ -65,6 +65,11 @@ namespace LtMsgPack.Writing
     internal void Write(WriteContext c, object value, bool typeId, FullPropertyInfo assignedTo)
     {
       byte[][] keys = c.BeginObject(this, out FullPropertyInfo[] infos); // before the type id, as LsMsgPack resolves the ids first
+      if (c.Serializer.Options._objectLayout == ObjectLayout.Array)
+      {
+        WriteArray(c, value, typeId, assignedTo, infos);
+        return;
+      }
 
       int max = Props.Length + 1;
       int at = c.W.ReserveMapHeader(max);
@@ -86,6 +91,30 @@ namespace LtMsgPack.Writing
       c.LeaveContainer();
 
       c.W.PatchMapHeader(at, max, count);
+    }
+
+    /// <summary>
+    /// <see cref="ObjectLayout.Array"/> (LsMsgPack: SerializeAsArray): the values in the order of the properties, nil when the filters leave one out, wrapped in a map with the type id when needed.
+    /// </summary>
+    private void WriteArray(WriteContext c, object value, bool typeId, FullPropertyInfo assignedTo, FullPropertyInfo[] infos)
+    {
+      if (typeId)
+      {
+        c.W.MapHeader(2);
+        c.W.String(string.Empty);
+        c.WriteTypeId(Type, assignedTo);
+        c.W.String(MsgPackOptions.ContentKey);
+      }
+      else
+        SerializationRules.ThrowIfUnresolvableAsArray(Type, assignedTo);
+
+      c.EnterContainer();
+      PropWriter[] props = Props;
+      c.W.ArrayHeader(props.Length);
+      for (int t = 0; t < props.Length; t++)
+        if (!props[t].Write(c, value, null, infos[t]))
+          c.W.Nil();
+      c.LeaveContainer();
     }
 
     /// <summary>
@@ -137,7 +166,8 @@ namespace LtMsgPack.Writing
       BoxedFilters = serializer.Filters == FilterMode.Custom || info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute));
     }
 
-    /// <returns>false when the filters left the value out</returns>
+    /// <param name="key">The encoded property id, null for the array layout (only the value)</param>
+    /// <returns>false when the filters left the value out (nothing was written)</returns>
     internal abstract bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info);
 
     protected bool IncludeBoxed(object value, FullPropertyInfo info)
@@ -208,7 +238,8 @@ namespace LtMsgPack.Writing
           return false;
       }
 
-      c.W.Raw(key);
+      if (key != null)
+        c.W.Raw(key);
       if (value == null)
         c.W.Nil();
       else
@@ -235,7 +266,8 @@ namespace LtMsgPack.Writing
       if (!NoFilters && !IncludeBoxed(value, info))
         return false;
 
-      c.W.Raw(key);
+      if (key != null)
+        c.W.Raw(key);
       Serializer.WriteBoxed(c, value, info);
       return true;
     }

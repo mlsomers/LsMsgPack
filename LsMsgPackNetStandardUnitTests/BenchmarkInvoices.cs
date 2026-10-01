@@ -264,6 +264,10 @@ namespace LsMsgPackUnitTests
       LtMsgPack.LtMsgPackSerializer ltIndexed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true });
       LtMsgPack.LtMsgPackSerializer ltReference = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true });
       LtMsgPack.LtMsgPackSerializer ltNamed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false });
+      MsgPackSettings indexedArrays = new MsgPackSettings() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array };
+      LtMsgPack.LtMsgPackSerializer ltIndexedArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array });
+      LtMsgPack.LtMsgPackSerializer ltReferenceArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array });
+      LtMsgPack.LtMsgPackSerializer ltPositional = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration });
 
       return new ICandidate[]
       {
@@ -310,6 +314,27 @@ namespace LsMsgPackUnitTests
         new Candidate<byte[]>("LtMsgPack (property names)",
           i => ltNamed.Serialize(i),
           b => ltNamed.Deserialize<Invoice>(b),
+          b => b.Length),
+
+        // ObjectLayout.Array: objects as arrays of their values
+        new Candidate<byte[]>("LsMsgPack (arrays, indexed)",
+          i => MsgPackSerializer.Serialize(i, indexedArrays),
+          b => MsgPackSerializer.Deserialize<Invoice>(b, indexedArrays),
+          b => b.Length),
+
+        new Candidate<byte[]>("LtMsgPack (arrays, indexed)",
+          i => ltIndexedArrays.Serialize(i),
+          b => ltIndexedArrays.Deserialize<Invoice>(b),
+          b => b.Length),
+
+        new Candidate<byte[]>("LtMsgPack (arrays, reference)",
+          i => ltReferenceArrays.Serialize(i),
+          b => ltReferenceArrays.Deserialize<Invoice>(b),
+          b => b.Length),
+
+        new Candidate<byte[]>("LtMsgPack (arrays, no schema)", // positional only: the reader needs the same order
+          i => ltPositional.Serialize(i),
+          b => ltPositional.Deserialize<Invoice>(b),
           b => b.Length)
       };
     }

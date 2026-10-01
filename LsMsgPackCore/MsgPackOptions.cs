@@ -107,6 +107,12 @@ namespace LsMsgPack
     [IgnoreDataMember]
     public static PropertyOrder Default_PropertyOrder { get; set; } = PropertyOrder.Reflection;
 
+    /// <summary>
+    /// The <see cref="ObjectLayout"/> of new settings (<see cref="LsMsgPack.ObjectLayout.Map"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static ObjectLayout Default_ObjectLayout { get; set; } = ObjectLayout.Map;
+
     #endregion
 
     /// <summary>
@@ -130,6 +136,7 @@ namespace LsMsgPack
     internal SchemaStore _schemaStore = Default_SchemaStore;
     internal bool _writeSchemaReference = Default_WriteSchemaReference;
     internal PropertyOrder _propertyOrder = Default_PropertyOrder;
+    internal ObjectLayout _objectLayout = Default_ObjectLayout;
 
     /// <summary>
     /// The highest <see cref="LsMsgPack.PropertyOrder"/>, the orders are indexes of the caches in FullPropertyInfo.
@@ -298,6 +305,25 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// How objects with properties are written: a map of property ids and values (default), or an array of the values in <see cref="PropertyOrder"/>.
+    /// <para>Only affects writing: readers take an array for an object as its values by position. Without the indexed schema the reader needs the same <see cref="PropertyOrder"/> (and properties) as the writer, with the schema the positions are matched by name.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Object Layout")]
+    [Description("How objects are written: a map of property ids and values (default), or an array of the values in the property order. Readers read either.")]
+    [DefaultValue(ObjectLayout.Map)]
+    public ObjectLayout ObjectLayout
+    {
+      get { return _objectLayout; }
+      set
+      {
+        if (value != ObjectLayout.Map && value != ObjectLayout.Array)
+          throw new ArgumentOutOfRangeException(nameof(value), value, "Not a defined ObjectLayout.");
+        _objectLayout = value;
+      }
+    }
+
+    /// <summary>
     /// A copy of these options (of the same derived type), without the caches of a session (see <see cref="SchemaSession"/>).
     /// </summary>
     internal MsgPackOptions CloneOptions()
@@ -396,6 +422,26 @@ namespace LsMsgPack
     /// </summary>
     [Description("Grouped by the type of the property (by its name, without the assembly), then in declaration order.")]
     TypeThenDeclaration = 4
+  }
+
+  /// <summary>
+  /// How an object with properties is written (see <see cref="MsgPackOptions.ObjectLayout"/>). Collections and dictionaries are always arrays and maps.
+  /// </summary>
+  public enum ObjectLayout
+  {
+    /// <summary>
+    /// A map of property ids (names, or indexes of the indexed schema) and values (default). Values left out by the dynamic filters (e.g. default values) are not written.
+    /// </summary>
+    [Description("A map of property ids (names, or indexes of the indexed schema) and values (default).")]
+    Map = 0,
+
+    /// <summary>
+    /// An array of the values in <see cref="MsgPackOptions.PropertyOrder"/>, without keys. A value left out by the dynamic filters is written as nil.
+    /// <para>Readers leave a property as the constructor made it when its value is nil or missing (the array is shorter), as they do for a property that is not in a map. Values after the known properties are skipped.</para>
+    /// <para>A type id wraps the array: { "": typeId, "@": [values] }. Without the indexed schema the reader needs the same order and properties as the writer.</para>
+    /// </summary>
+    [Description("An array of the values in the property order, without keys (nil for values left out by the filters). Without the indexed schema the reader needs the same order and properties.")]
+    Array = 1
   }
 
   [Flags]

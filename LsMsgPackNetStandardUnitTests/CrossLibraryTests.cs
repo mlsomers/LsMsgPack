@@ -215,11 +215,22 @@ namespace LsMsgPackUnitTests
       foreach (EndianAction endian in Enum.GetValues(typeof(EndianAction)))
         foreach (bool compact in new[] { true, false })
           foreach (SchemaMode mode in Enum.GetValues(typeof(SchemaMode)))
-            yield return new object[] { endian, compact, mode };
+            foreach (ObjectLayout layout in Enum.GetValues(typeof(ObjectLayout)))
+              yield return new object[] { endian, compact, mode, layout };
     }
 
-    private static void Configure(MsgPackOptions options, EndianAction endian, bool compact, SchemaMode mode)
+    private static IEnumerable<object[]> Orders()
     {
+      foreach (PropertyOrder order in Enum.GetValues(typeof(PropertyOrder)))
+        foreach (SchemaMode mode in Enum.GetValues(typeof(SchemaMode)))
+          foreach (ObjectLayout layout in Enum.GetValues(typeof(ObjectLayout)))
+            yield return new object[] { order, mode, layout };
+    }
+
+    private static void Configure(MsgPackOptions options, EndianAction endian, bool compact, SchemaMode mode, ObjectLayout layout = ObjectLayout.Map, PropertyOrder order = PropertyOrder.Reflection)
+    {
+      options.ObjectLayout = layout;
+      options.PropertyOrder = order;
       options.EndianAction = endian;
       options.DynamicallyCompact = compact;
       options.UseInexedSchema = mode != SchemaMode.Names;
@@ -229,14 +240,28 @@ namespace LsMsgPackUnitTests
 
     [TestMethod]
     [DynamicData(nameof(Settings))]
-    public void SameBytesAndValues(EndianAction endian, bool compact, SchemaMode mode)
+    public void SameBytesAndValues(EndianAction endian, bool compact, SchemaMode mode, ObjectLayout layout)
     {
       MsgPackSettings ls = new MsgPackSettings();
-      Configure(ls, endian, compact, mode);
+      Configure(ls, endian, compact, mode, layout);
       LtMsgPackOptions ltOptions = new LtMsgPackOptions();
-      Configure(ltOptions, endian, compact, mode);
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(ltOptions);
+      Configure(ltOptions, endian, compact, mode, layout);
+      CompareCorpus(ls, new LtMsgPackSerializer(ltOptions));
+    }
 
+    [TestMethod]
+    [DynamicData(nameof(Orders))]
+    public void SameBytesAndValuesPerOrder(PropertyOrder order, SchemaMode mode, ObjectLayout layout)
+    {
+      MsgPackSettings ls = new MsgPackSettings();
+      Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout, order);
+      LtMsgPackOptions ltOptions = new LtMsgPackOptions();
+      Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout, order);
+      CompareCorpus(ls, new LtMsgPackSerializer(ltOptions));
+    }
+
+    private void CompareCorpus(MsgPackSettings ls, LtMsgPackSerializer lt)
+    {
       List<string> differences = new List<string>();
       int n = 0;
       foreach (object value in Corpus())

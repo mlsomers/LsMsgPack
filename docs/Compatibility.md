@@ -81,7 +81,7 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 | `Guid` | bin 16 in the byte order of `Guid.ToByteArray()` | a string of 36 characters | configure MessagePack-CSharp (`NativeGuidResolver` writes the same bytes as LsMsgPack) |
 | `decimal` | extension type 1: the 16 bytes of `System.Decimal` | a string (`"1234.50"`) | LsMsgPack reads the string, MessagePack-CSharp needs a formatter for the extension |
 | `DateTimeOffset` | timestamp of the moment (the offset is lost) | array of the local time and the offset in minutes | incompatible |
-| class | map keyed by property names (or the indexed schema) | array (`[Key(0)]`), or map keyed by names (`[Key("Name")]`, contractless) | maps only, LsMsgPack cannot read arrays |
+| class | map keyed by property names (or the indexed schema), or with `ObjectLayout.Array` an array of the values | array (`[Key(0)]`), or map keyed by names (`[Key("Name")]`, contractless) | maps: tested. Arrays: the same bytes with `ObjectLayout.Array` in the order of the keys (see below), tested |
 | polymorphic value | type id in the object's map (key `""`) | `[Union]`: array of the union key and the object | incompatible |
 | default values | left out | written | see above |
 
@@ -135,7 +135,7 @@ With these options MessagePack-CSharp also writes what LsMsgPack reads.
 
 **MessagePack-CSharp writes, LsMsgPack reads.**
 
-- Write objects as maps keyed by property names (contractless, `keyAsPropertyName: true`, or string keys equal to the property names). Integer keys write arrays, LsMsgPack only reads objects from maps.
+- Write objects as maps keyed by property names (contractless, `keyAsPropertyName: true`, or string keys equal to the property names), or use integer keys (arrays) with the settings below.
 - Write Guids with `NativeGuidResolver`, LsMsgPack does not read the default string.
 - Decimals: LsMsgPack reads the default string.
 - Do not use LZ4 compression (`WithCompression`, extension types 98 and 99) or the typeless serializer (extension type 100).
@@ -148,7 +148,22 @@ byte[] bytes = MessagePackSerializer.Serialize(invoice, options);
 Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, new MsgPackSettings() { UseInexedSchema = false });
 ```
 
-**Incompatible**: integer keys (arrays), `[Union]`, `DateTimeOffset` and `DateTimeKind.Unspecified` (see the settings above).
+**Integer keys** (`[Key(0)]`, `[Key(1)]`... arrays): LsMsgPack writes and reads the same bytes with `ObjectLayout.Array` when its `PropertyOrder` puts the properties in the order of the keys. With keys that follow the declaration order (0, 1, 2... without gaps, base class first) that is `PropertyOrder.Declaration`. LsMsgPack does not read the `Key` attributes themselves, and does not write gaps (nil for missing keys).
+
+```csharp
+MsgPackSettings positional = new MsgPackSettings()
+{
+  UseInexedSchema = false,
+  ObjectLayout = ObjectLayout.Array,
+  PropertyOrder = PropertyOrder.Declaration,
+  AddTypeIdOptions = AddTypeIdOption.Never,
+  DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] // MessagePack-CSharp writes every value
+};
+```
+
+LsMsgPack leaves a property as the constructor made it when its value is nil, MessagePack-CSharp sets it to null.
+
+**Incompatible**: `[Union]`, `DateTimeOffset` and `DateTimeKind.Unspecified` (see the settings above).
 
 ## Nerdbank.MessagePack
 

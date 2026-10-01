@@ -1,4 +1,5 @@
 ﻿using LsMsgPack.TypeResolving.Attributes;
+using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -132,14 +133,23 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// Converts the items of a MsgPack array into an array or collection of the given type.
+    /// Converts the items of a MsgPack array into an array or collection of the given type, or into an object written as an array (<see cref="ObjectLayout.Array"/>).
     /// </summary>
     private static object ConvertArray(object[] items, Type assignType, MsgPackOptions settings)
     {
       if (!IsCollection(assignType))
       {
         if (!assignType.IsInstanceOfType(items))
+        {
+          Type objectType = Nullable.GetUnderlyingType(assignType) ?? assignType;
+          if (IsObjectType(objectType))
+          {
+            FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(objectType, settings);
+            if (props.Length > 0 || items.Length == 0)
+              return ConvertPositional(items, objectType, props, settings);
+          }
           return items; // will probably fail when assigned, but not our call to make
+        }
         assignType = typeof(object[]); // object, still convert the elements (they may contain type identifiers)
       }
 
@@ -149,6 +159,67 @@ namespace LsMsgPack.Meta
         elements.SetValue(ConvertDeserializeValue(items[t], info.ElementType, settings, null), t);
 
       return info.Create(elements);
+    }
+
+    /// <summary>
+    /// A type that is written as an object with properties (not a value the serializers write themselves, like a DateTime or a Guid, which have no settable properties).
+    /// </summary>
+    private static bool IsObjectType(Type type)
+    {
+      return !type.IsPrimitive && !type.IsEnum && type != typeof(string) && type != typeof(decimal) && !type.IsAbstract && !type.IsInterface && !type.ContainsGenericParameters;
+    }
+
+    /// <summary>
+    /// The values of an object written as an array: by position in the order of the properties, or with the indexed schema by the names of the schema.
+    /// <para>A nil or missing value leaves the property as the constructor made it (like a property that is not in a map), values after the known properties are skipped.</para>
+    /// </summary>
+    private static object ConvertPositional(object[] items, Type type, FullPropertyInfo[] props, MsgPackOptions settings)
+    {
+      FullPropertyInfo[] byPosition = PropertiesByPosition(type, props, settings);
+      object result = Instances.Create(type);
+      int count = Math.Min(items.Length, byPosition.Length);
+      for (int t = 0; t < count; t++)
+      {
+        FullPropertyInfo prop = byPosition[t];
+        if (prop is null || items[t] is null)
+          continue;
+        prop.SetValue(result, ConvertDeserializeValue(items[t], prop.PropertyInfo.PropertyType, settings, prop));
+      }
+      return result;
+    }
+
+    /// <returns>The property of each position: the properties themselves, or with the indexed schema the ones named by the schema of the data (null when not a property here)</returns>
+    private static FullPropertyInfo[] PropertiesByPosition(Type type, FullPropertyInfo[] props, MsgPackOptions settings)
+    {
+      IndexedSchemaTypeResolver schema = SerializationRules.GetIndexedSchema(settings);
+      if (schema is null || !schema.ByType.TryGetValue(type, out ComplexTypeDef def) || def.IsCollection)
+        return props;
+
+      FullPropertyInfo[] byPosition = new FullPropertyInfo[def.Props.Count];
+      int next = 0; // usually in the same order
+      for (int t = 0; t < byPosition.Length; t++)
+      {
+        string name = def.Props[t];
+        if (name is null)
+          continue;
+
+        if (next < props.Length && props[next].PropertyInfo.Name == name)
+        {
+          byPosition[t] = props[next++];
+          continue;
+        }
+
+        for (int p = 0; p < props.Length; p++)
+        {
+          if (props[p].PropertyInfo.Name == name)
+          {
+            byPosition[t] = props[p];
+            next = p + 1;
+            break;
+          }
+        }
+      }
+      return byPosition;
     }
 
     /// <summary>

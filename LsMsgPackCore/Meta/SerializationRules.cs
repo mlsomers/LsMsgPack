@@ -49,6 +49,25 @@ namespace LsMsgPack.Meta
       throw new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id while using the indexed schema: the property keys are schema indexes of {tType.Name}, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} (with the schema a type id costs about 1 byte) or set MsgPackSettings.UseInexedSchema = false.");
     }
 
+    /// <summary>
+    /// An object written as an array (<see cref="ObjectLayout.Array"/>) has no property ids at all, so without a type id the reader can only read it as the type it is assigned to.
+    /// </summary>
+    internal static void ThrowIfUnresolvableAsArray(Type tType, FullPropertyInfo assignedTo)
+    {
+      if (assignedTo?.AssignedToType is null || assignedTo.AssignedToType == tType)
+        return;
+
+      throw new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id as an array ({nameof(ObjectLayout)}.{nameof(ObjectLayout.Array)}): the values have no property ids, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} or {nameof(ObjectLayout)}.{nameof(ObjectLayout.Map)}.");
+    }
+
+    internal static IndexedSchemaTypeResolver GetIndexedSchema(MsgPackOptions settings)
+    {
+      for (int t = 0; t < settings._propertyNameResolvers.Length; t++)
+        if (settings._propertyNameResolvers[t] is IndexedSchemaTypeResolver schema)
+          return schema;
+      return null;
+    }
+
     internal static bool UsesIndexedSchema(MsgPackOptions settings)
     {
       for (int t = 0; t < settings._propertyNameResolvers.Length; t++)
