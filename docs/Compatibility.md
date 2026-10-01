@@ -11,7 +11,7 @@ MsgPack standardizes the value types (integers, strings, binary data, arrays, ma
 | [Python, JavaScript](#python-and-javascript) | decode Guids and decimals (snippets below) | Guids as bytes in .NET order, decimals as strings |
 | [Other libraries](#other-libraries-not-tested) | maps keyed by property names | maps keyed by property names |
 
-LsMsgPack always needs `UseInexedSchema = false`, see below.
+LsMsgPack always needs `UseInexedSchema = false`, and for writing `ObjectLayout = ObjectLayout.Map` (objects are arrays by default), see below.
 
 LtMsgPack (`LtMsgPackSerializer`) writes the same bytes as LsMsgPack with the same settings and reads the same data, so everything here applies to it too (the interop tests run against both) (custom extensions are `LtExtension<T>` there, with the same bytes as LsMsgPack's `ICustomExt` for the same type code).
 
@@ -52,6 +52,7 @@ using LsMsgPack.TypeResolving.Interfaces;
 MsgPackSettings compatible = new MsgPackSettings()
 {
   UseInexedSchema = false, // required: the indexed schema is LsMsgPack's own format
+  ObjectLayout = ObjectLayout.Map, // required for writing: objects as maps keyed by property names
   DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], // optional: also write null, "", 0 and false
   AddTypeIdOptions = AddTypeIdOption.Never // optional: no type ids, only when nothing is polymorphic
 };
@@ -60,9 +61,10 @@ byte[] bytes = MsgPackSerializer.Serialize(invoice, compatible);
 Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 ```
 
-`MsgPackSettings.Default_UseInexedSchema = false` changes the default of all new settings.
+`MsgPackSettings.Default_UseInexedSchema = false` and `MsgPackSettings.Default_ObjectLayout = ObjectLayout.Map` change the defaults of all new settings. `MsgPackMediaTypes.ToPlain(settings)` makes a copy with the indexed schema off, objects as maps and no type ids.
 
 - **`UseInexedSchema = false`** (required, for reading and writing). With the indexed schema (the default) LsMsgPack writes two objects: a map of type names with their property names, then the object, with the positions of those names as keys. Other libraries read one object, the schema: MessagePack-CSharp fails to read it as a class but reads it as `object` without an error (the rest is ignored), Python's `unpackb` and JavaScript's `decode` fail with "extra data". Without the schema an object is a map keyed by its property names, the most common layout. LsMsgPack with the schema also expects the schema when reading, so data from other libraries needs this setting too.
+- **`ObjectLayout = ObjectLayout.Map`** (required for writing). By default LsMsgPack writes an object as an array of its values (`ObjectLayout.Array`), which a reader can only map onto properties when it knows their order. Other libraries read objects from maps keyed by property names, except MessagePack-CSharp's integer keys (see below). Reading does not need it: LsMsgPack reads objects from maps and arrays.
 - **Schema references** (`WriteSchemaReference` with a `SchemaStore`). Instead of the schema, the data then starts with a reference to it: an extension (fixext16, type 2) holding the first 16 bytes of the SHA-256 hash of the schema. Only LsMsgPack readers that hold the schema in their `SchemaStore` can read it, other libraries read the extension and stop. Not tested with other libraries, it needs the indexed schema anyway.
 - **Default values** (`DynamicFilters`). By default LsMsgPack leaves out values that equal the default of their type (`FilterDefaultValues`): null, `""`, 0, `false`, `Guid.Empty` and so on. A reader keeps what the constructor set for a missing value, so a class with other initial values does not round trip: `public int Retries { get; set; } = 3;` written as 0 is read as 3 (by LsMsgPack too), and `""` is read as null. The other libraries write every value. Without the filter LsMsgPack writes them all, and then writes the same bytes as MessagePack-CSharp for a class of strings, numbers and booleans (tested). Leaving them out is safe when the classes of all readers start with the default values of the types.
 - **Type ids** (`AddTypeIdOptions`). LsMsgPack adds a type id when a value's type differs from the declared type: an extra key `""` in an object's map, or a map `{ "": "DateTime", "@": value }` around other values (e.g. a `DateTime` in a property of type `object`). Other libraries skip the `""` key of an object, but read a wrapped value as a map. `AddTypeIdOption.Never` writes only the value (tested), then LsMsgPack can no longer restore the types of polymorphic members.
@@ -81,7 +83,7 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 | `Guid` | bin 16 in the byte order of `Guid.ToByteArray()` | a string of 36 characters | configure MessagePack-CSharp (`NativeGuidResolver` writes the same bytes as LsMsgPack) |
 | `decimal` | extension type 1: the 16 bytes of `System.Decimal` | a string (`"1234.50"`) | LsMsgPack reads the string, MessagePack-CSharp needs a formatter for the extension |
 | `DateTimeOffset` | timestamp of the moment (the offset is lost) | array of the local time and the offset in minutes | incompatible |
-| class | map keyed by property names (or the indexed schema) | array (`[Key(0)]`), or map keyed by names (`[Key("Name")]`, contractless) | maps only, LsMsgPack cannot read arrays |
+| class | map keyed by property names (or the indexed schema), or with `ObjectLayout.Array` an array of the values | array (`[Key(0)]`), or map keyed by names (`[Key("Name")]`, contractless) | maps: tested. Arrays: the same bytes with `ObjectLayout.Array` in the order of the keys (see below), tested |
 | polymorphic value | type id in the object's map (key `""`) | `[Union]`: array of the union key and the object | incompatible |
 | default values | left out | written | see above |
 
@@ -135,7 +137,7 @@ With these options MessagePack-CSharp also writes what LsMsgPack reads.
 
 **MessagePack-CSharp writes, LsMsgPack reads.**
 
-- Write objects as maps keyed by property names (contractless, `keyAsPropertyName: true`, or string keys equal to the property names). Integer keys write arrays, LsMsgPack only reads objects from maps.
+- Write objects as maps keyed by property names (contractless, `keyAsPropertyName: true`, or string keys equal to the property names), or use integer keys (arrays) with the settings below.
 - Write Guids with `NativeGuidResolver`, LsMsgPack does not read the default string.
 - Decimals: LsMsgPack reads the default string.
 - Do not use LZ4 compression (`WithCompression`, extension types 98 and 99) or the typeless serializer (extension type 100).
@@ -148,7 +150,22 @@ byte[] bytes = MessagePackSerializer.Serialize(invoice, options);
 Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, new MsgPackSettings() { UseInexedSchema = false });
 ```
 
-**Incompatible**: integer keys (arrays), `[Union]`, `DateTimeOffset` and `DateTimeKind.Unspecified` (see the settings above).
+**Integer keys** (`[Key(0)]`, `[Key(1)]`... arrays): LsMsgPack writes and reads the same bytes with `ObjectLayout.Array` when its `PropertyOrder` puts the properties in the order of the keys. With keys that follow the declaration order (0, 1, 2... without gaps, base class first) that is `PropertyOrder.Declaration`. LsMsgPack does not read the `Key` attributes themselves, and does not write gaps (nil for missing keys).
+
+```csharp
+MsgPackSettings positional = new MsgPackSettings()
+{
+  UseInexedSchema = false,
+  ObjectLayout = ObjectLayout.Array,
+  PropertyOrder = PropertyOrder.Declaration,
+  AddTypeIdOptions = AddTypeIdOption.Never,
+  DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] // MessagePack-CSharp writes every value
+};
+```
+
+LsMsgPack leaves a property as the constructor made it when its value is nil, MessagePack-CSharp sets it to null.
+
+**Incompatible**: `[Union]`, `DateTimeOffset` and `DateTimeKind.Unspecified` (see the settings above).
 
 ## Nerdbank.MessagePack
 
@@ -185,6 +202,7 @@ using LsMsgPack.Types.Extensions;
 MsgPackSettings fromNerdbank = new MsgPackSettings()
 {
   UseInexedSchema = false,
+  ObjectLayout = ObjectLayout.Map,
   CustomExtentionTypes = new ICustomExt[]
   {
     new MpDecimal((MsgPackSettings)null), // extension type 1, used for writing
@@ -224,7 +242,7 @@ Without the Guid extension LsMsgPack throws a `MsgPackException` that names exte
 
 ## Python and JavaScript
 
-Tested by hand with msgpack 1.2.2 (Python) and @msgpack/msgpack 3.1.3 (JavaScript), and LsMsgPack with `UseInexedSchema = false`. These libraries have no classes: an object is a dict or a plain object keyed by property names.
+Tested by hand with msgpack 1.2.2 (Python) and @msgpack/msgpack 3.1.3 (JavaScript), and LsMsgPack with `UseInexedSchema = false` and `ObjectLayout = ObjectLayout.Map`. These libraries have no classes: an object is a dict or a plain object keyed by property names.
 
 **Reading LsMsgPack's output:**
 
@@ -295,14 +313,14 @@ const bytes = encode({ Id: dotnetGuidBytes(id), SubTotal: '64764.60', InvoiceDat
 
 The same rules apply: read and write objects as maps keyed by the property names, Guids as 16 bytes in .NET's order, decimals as strings (or LsMsgPack's extension type 1), dates as timestamps.
 
-- Go, [vmihailenco/msgpack](https://github.com/vmihailenco/msgpack): writes structs as maps keyed by field names (or `msgpack` tags) by default. `UseArrayEncodedStructs` and the `as_array` tag write arrays, which LsMsgPack cannot read.
+- Go, [vmihailenco/msgpack](https://github.com/vmihailenco/msgpack): writes structs as maps keyed by field names (or `msgpack` tags) by default. `UseArrayEncodedStructs` and the `as_array` tag write arrays, which LsMsgPack reads by position (`ObjectLayout.Array` is LsMsgPack's default for writing) when its `PropertyOrder` puts the properties in the order of the fields.
 - Rust, [rmp-serde](https://github.com/3Hren/msgpack-rust): `to_vec` writes structs as arrays, use `to_vec_named` (maps).
 - [MsgPack.Cli](https://github.com/msgpack/msgpack-cli), the older .NET library: writes arrays and enums by name by default. Use `SerializationMethod.Map` and `EnumSerializationMethod.ByUnderlyingValue`.
 
 ## What settings cannot match
 
 - The indexed schema: only LsMsgPack reads it.
-- Objects written as arrays (MessagePack-CSharp's integer keys, rmp-serde's `to_vec`, MsgPack.Cli's default): LsMsgPack reads objects from maps only.
+- Objects written as arrays in an order that no `PropertyOrder` gives (e.g. integer keys with gaps, or in another order than the declaration): LsMsgPack reads arrays by position in its own order.
 - Polymorphism: each library has its own convention (LsMsgPack a `""` key in the object, MessagePack-CSharp and Nerdbank.MessagePack an array of a key and the object).
 - `DateTimeOffset` with MessagePack-CSharp: write a UTC `DateTime` (and the offset separately when it matters).
 - Guids as strings (MessagePack-CSharp's default): configure the writer to write them as binary.

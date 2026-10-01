@@ -141,6 +141,7 @@ namespace LsMsgPackUnitTests
 
       MsgPackSettings settings = new MsgPackSettings()
       {
+        ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
         UseInexedSchema = false,
         AddTypeIdOptions = addTypeName
       };
@@ -173,6 +174,7 @@ namespace LsMsgPackUnitTests
 
       MsgPackSettings settings = new MsgPackSettings()
       {
+        ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
         UseInexedSchema = false,
         AddTypeIdOptions = addTypeName,
       };
@@ -243,6 +245,7 @@ namespace LsMsgPackUnitTests
 
       MsgPackSettings settings = new MsgPackSettings()
       {
+        ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
         UseInexedSchema = false,
         AddTypeIdOptions = addTypeName,
       };
@@ -270,6 +273,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings()
       {
+        ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
         UseInexedSchema = true,
         AddTypeIdOptions = AddTypeIdOption.Never,
       };
@@ -292,6 +296,7 @@ namespace LsMsgPackUnitTests
 
       MsgPackSettings settings = new MsgPackSettings()
       {
+        ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
         UseInexedSchema = true,
         AddTypeIdOptions = AddTypeIdOption.IfAmbiguious,
       };
@@ -341,6 +346,7 @@ namespace LsMsgPackUnitTests
 
       MsgPackSettings settings = new MsgPackSettings()
       {
+        ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
         UseInexedSchema = false,
         AddTypeIdOptions = addTypeName,
       };
@@ -372,6 +378,7 @@ namespace LsMsgPackUnitTests
 
       MsgPackSettings settings = new MsgPackSettings()
       {
+        ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
         UseInexedSchema = true,
         AddTypeIdOptions = addTypeName,
       };
@@ -392,6 +399,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings()
       {
+        ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
         UseInexedSchema = false,
       };
 

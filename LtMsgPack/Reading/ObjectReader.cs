@@ -33,7 +33,12 @@ namespace LtMsgPack.Reading
 
       int count = c.R.TryReadMapHeader();
       if (count < 0)
-        return Slow(c, start, assignedTo);
+      {
+        int items = c.R.TryReadArrayHeader(); // ObjectLayout.Array
+        if (items < 0 || Plan is null)
+          return Slow(c, start, assignedTo);
+        return ReadPositional(c, Plan, items, start, assignedTo);
+      }
 
       ReadPlan plan = null;
       if (count > 0 && c.R.Peek() == 0xA0) // the type id (key "") is written first
@@ -46,6 +51,15 @@ namespace LtMsgPack.Reading
         if (plan is null || !typeof(T).IsAssignableFrom(type))
           return Slow(c, start, assignedTo);
         count--;
+
+        if (count == 1 && c.R.Pos + 1 < c.R.End &&c.R.Buf[c.R.Pos] == 0xA1 && c.R.Buf[c.R.Pos + 1] == (byte)'@') // ObjectLayout.Array with a type id: { "": typeId, "@": [values] }
+        {
+          c.R.Pos += 2;
+          int items = c.R.TryReadArrayHeader();
+          if (items < 0)
+            return Slow(c, start, assignedTo);
+          return ReadPositional(c, plan, items, start, assignedTo);
+        }
       }
       else
       {
@@ -88,6 +102,34 @@ namespace LtMsgPack.Reading
           c.R.Skip(c.Depth); // not a property of this type (removed, or ignored here)
         else
           prop.Read(c, result);
+      }
+      c.Depth = depth;
+      return (T)result;
+    }
+
+    /// <summary>
+    /// An object written as an array (<see cref="ObjectLayout.Array"/>), the header is read: the values by position, or with the schema by the names of the schema.
+    /// A nil value leaves the property as the constructor made it (LsMsgPack: ValueConverter.ConvertPositional).
+    /// </summary>
+    private T ReadPositional(ReadContext c, ReadPlan plan, int items, int start, FullPropertyInfo assignedTo)
+    {
+      PropReader[] props = plan.Props;
+      if (c.Schema && items > 0)
+      {
+        props = c.Bound.Binding(plan);
+        if (props is null) // not in the schema (LsMsgPack takes the properties in its own order)
+          return Slow(c, start, assignedTo);
+      }
+
+      int depth = c.Depth;
+      c.Enter();
+      object result = plan.Create();
+      for (int t = 0; t < items; t++)
+      {
+        if (t >= props.Length || props[t] is null)
+          c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
+        else if (!c.R.TryReadNil())
+          props[t].Read(c, result);
       }
       c.Depth = depth;
       return (T)result;

@@ -16,7 +16,7 @@ namespace LsMsgPackInteropTests
   /// <para>MsgPack standardizes the value types and their bytes (and the timestamp extension), not how objects are mapped onto them, so each library has its own conventions:</para>
   /// <list type="bullet">
   /// <item>Objects: LsMsgPack writes maps keyed by property names, or by indexes into a schema that precedes them (<see cref="MsgPackSettings.UseInexedSchema"/>, the default).
-  /// MessagePack-CSharp writes arrays ([Key(int)], its recommendation) or maps keyed by names (contractless or [Key(string)]).</item>
+  /// MessagePack-CSharp writes arrays ([Key(int)], its recommendation) or maps keyed by names (contractless or [Key(string)]). LsMsgPack reads and writes such arrays with <see cref="ObjectLayout.Array"/> in the same order.</item>
   /// <item>Guid: LsMsgPack bin 16 in the order of Guid.ToByteArray(), MessagePack-CSharp a string (NativeGuidResolver writes the same bytes as LsMsgPack).</item>
   /// <item>decimal: LsMsgPack extension type 1 (the 16 bytes of System.Decimal), MessagePack-CSharp a string (LsMsgPack reads that).</item>
   /// <item>Polymorphism: LsMsgPack a type id in the object's map (key ""), MessagePack-CSharp [Union]: a two element array [key, object].</item>
@@ -27,7 +27,7 @@ namespace LsMsgPackInteropTests
     protected abstract LsMsgPackUnitTests.ISerializerUnderTest Serializer { get; }
 
     private static readonly MsgPackSettings Indexed = new MsgPackSettings() { UseInexedSchema = true };
-    private static readonly MsgPackSettings Named = new MsgPackSettings() { UseInexedSchema = false };
+    private static readonly MsgPackSettings Named = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }; // contractless reads maps keyed by names
 
     private static readonly MessagePackSerializerOptions Standard = MessagePackSerializerOptions.Standard;
     private static readonly MessagePackSerializerOptions Contractless = ContractlessStandardResolver.Options;
@@ -44,6 +44,25 @@ namespace LsMsgPackInteropTests
     private static readonly MessagePackSerializerOptions ContractlessLsMsgPack = Standard.WithResolver(CompositeResolver.Create(
       new IMessagePackFormatter[] { LsMsgPackDecimalFormatter.Instance },
       new IFormatterResolver[] { NativeGuidResolver.Instance, ContractlessStandardResolver.Instance }));
+
+    /// <summary>
+    /// Integer keys ([Key(n)], arrays), Guids and decimals as LsMsgPack writes them
+    /// </summary>
+    private static readonly MessagePackSerializerOptions StandardLsMsgPack = Standard.WithResolver(CompositeResolver.Create(
+      new IMessagePackFormatter[] { LsMsgPackDecimalFormatter.Instance },
+      new IFormatterResolver[] { NativeGuidResolver.Instance, StandardResolver.Instance }));
+
+    /// <summary>
+    /// What MessagePack-CSharp writes for integer keys: arrays in the order of the keys (here the declaration order), every value, no type ids
+    /// </summary>
+    private static readonly MsgPackSettings Positional = new MsgPackSettings()
+    {
+      UseInexedSchema = false,
+      ObjectLayout = ObjectLayout.Array,
+      PropertyOrder = PropertyOrder.Declaration,
+      AddTypeIdOptions = AddTypeIdOption.Never,
+      DynamicFilters = new IMsgPackPropertyIncludeDynamically[0]
+    };
 
     private static readonly Invoice[] AllInvoices = Invoices.Create(100);
 
@@ -92,16 +111,21 @@ namespace LsMsgPackInteropTests
     }
 
     /// <summary>
-    /// MessagePack-CSharp's recommended layout (integer keys) writes objects as arrays, LsMsgPack reads objects from maps only.
+    /// MessagePack-CSharp's recommended layout (integer keys) writes objects as arrays, LsMsgPack does so with <see cref="ObjectLayout.Array"/> in the same order: the same bytes.
     /// </summary>
     [TestMethod]
-    public void IntegerKeys_NotReadableByLsMsgPack()
+    public void IntegerKeys_SameBytesAsArrays()
     {
-      InvoiceK keyed = JsonConvert.DeserializeObject<InvoiceK>(JsonConvert.SerializeObject(AllInvoices[1]));
-      byte[] bytes = MessagePackSerializer.Serialize(keyed, Standard);
+      foreach (Invoice invoice in AllInvoices)
+      {
+        InvoiceK keyed = JsonConvert.DeserializeObject<InvoiceK>(JsonConvert.SerializeObject(invoice));
+        byte[] mp = MessagePackSerializer.Serialize(keyed, StandardLsMsgPack);
 
-      Same.AssertEqual(keyed, MessagePackSerializer.Deserialize<InvoiceK>(bytes, Standard));
-      Assert.Throws<InvalidCastException>(() => Serializer.Deserialize<Invoice>(bytes, Named));
+        Same.AssertEqual(keyed, Serializer.Deserialize<InvoiceK>(mp, Positional), $"{invoice.InvoiceNumber} read by LsMsgPack");
+        byte[] ls = Serializer.Serialize(keyed, Positional);
+        Same.AssertEqual(keyed, MessagePackSerializer.Deserialize<InvoiceK>(ls, StandardLsMsgPack), $"{invoice.InvoiceNumber} read by MessagePack-CSharp");
+        CollectionAssert.AreEqual(mp, ls, invoice.InvoiceNumber);
+      }
     }
 
     [TestMethod]
@@ -251,7 +275,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void DefaultValues_WrittenWithoutDynamicFilters()
     {
-      MsgPackSettings everything = new MsgPackSettings() { UseInexedSchema = false, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
+      MsgPackSettings everything = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
       DefaultsProbe probe = new DefaultsProbe() { Text = "", Retries = 0, Enabled = false, Items = null };
       byte[] bytes = Serializer.Serialize(probe, everything);
 
@@ -278,7 +302,7 @@ namespace LsMsgPackInteropTests
       object withTypeId = MessagePackSerializer.Deserialize<WithObjectMember>(Serializer.Serialize(item, Named), Contractless).When;
       Assert.IsInstanceOfType<IDictionary<object, object>>(withTypeId);
 
-      MsgPackSettings noTypeIds = new MsgPackSettings() { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never };
+      MsgPackSettings noTypeIds = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, AddTypeIdOptions = AddTypeIdOption.Never };
       Assert.AreEqual(item.When, MessagePackSerializer.Deserialize<WithObjectMember>(Serializer.Serialize(item, noTypeIds), Contractless).When);
     }
   }

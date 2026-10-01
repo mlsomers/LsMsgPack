@@ -76,7 +76,7 @@ namespace LsMsgPackFormattersTests
     private static readonly Order SampleOrder = new Order { Id = 42, Customer = "Infotopie", Amounts = new[] { 1.5, 2.25 } };
     internal static readonly Guid ReceiptId = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
 
-    private static MsgPackSettings Plain => new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never };
+    private static MsgPackSettings Plain => new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never, ObjectLayout = ObjectLayout.Map };
 
     private static async Task<(IHost host, HttpClient client)> StartAsync(Action<IMvcBuilder> addFormatters)
     {

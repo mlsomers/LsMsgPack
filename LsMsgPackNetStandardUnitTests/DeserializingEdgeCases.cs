@@ -188,7 +188,10 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = Settings(option);
       if (option == AddTypeIdOption.Never)
+      {
         settings.TypeResolvers = new IMsgPackTypeResolver[] { new PetBySignature() };
+        settings.ObjectLayout = ObjectLayout.Map; // resolving by signature needs the property names
+      }
 
       RoundTrip(GetCollections(), settings);
     }

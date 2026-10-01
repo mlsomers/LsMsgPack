@@ -44,6 +44,9 @@ namespace LsMsgPack
 
       // Any complex object with properties
       FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
+      if (settings._objectLayout == ObjectLayout.Array)
+        return SerializeAsArray(item, tType, props, settings, assignedTo);
+
       KeyValuePair<object, object>[] propVals = new KeyValuePair<object, object>[props.Length + 1];
       int count = 0;
 
@@ -55,6 +58,56 @@ namespace LsMsgPack
       count = AddProperties(item, props, propVals, count, settings);
 
       return ToMap(propVals, count, settings);
+    }
+
+    /// <summary>
+    /// <see cref="ObjectLayout.Array"/>: the values in the order of the properties (nil when the dynamic filters leave one out), wrapped in a map when a type id is needed: { "": typeId, "@": [values] }.
+    /// <para>The ids are resolved before the type id and the values (GetSerializedProps), as for a map, so the indexed schema lists the types in the same order.</para>
+    /// </summary>
+    private static MsgPackItem SerializeAsArray(object item, Type tType, FullPropertyInfo[] props, MsgPackSettings settings, FullPropertyInfo assignedTo)
+    {
+      object typeId = null;
+      bool addTypeId = SerializationRules.NeedsTypeId(tType, assignedTo, settings);
+      if (addTypeId)
+        typeId = SerializationRules.GetTypeIdentifier(tType, settings, assignedTo);
+      else
+        SerializationRules.ThrowIfUnresolvableAsArray(tType, assignedTo);
+
+      MsgPackItem[] values = new MsgPackItem[props.Length];
+      int count = 0; // after the last value that is not nil
+      for (int t = 0; t < props.Length; t++)
+      {
+        FullPropertyInfo prop = props[t];
+        object value = prop.GetValue(item);
+        if (value is null || !IncludeDynamically(prop, value, settings))
+          values[t] = new MpNull(settings);
+        else
+        {
+          values[t] = SerializeObject(value, settings, prop);
+          count = t + 1;
+        }
+      }
+
+      if (settings._trimTrailingNulls && count != values.Length)
+        Array.Resize(ref values, count);
+
+      MpArray array = new MpArray(settings) { Value = values };
+      if (!addTypeId)
+        return array;
+
+      return new MpMap(new KeyValuePair<object, object>[]
+      {
+        new KeyValuePair<object, object>(TypeIdKey, typeId),
+        new KeyValuePair<object, object>(ContentKey, array)
+      }, settings);
+    }
+
+    private static bool IncludeDynamically(FullPropertyInfo prop, object value, MsgPackSettings settings)
+    {
+      for (int i = settings._dynamicFilters.Length - 1; i >= 0; i--)
+        if (!settings._dynamicFilters[i].IncludeProperty(prop, value))
+          return false;
+      return true;
     }
 
     /// <summary>

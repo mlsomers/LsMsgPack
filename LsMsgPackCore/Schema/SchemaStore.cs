@@ -395,7 +395,7 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// The settings that decide what a session contains: the type names (type resolvers, <see cref="AddTypeIdOption.FullName"/>), the properties (static filters) and their ids (property id resolvers).
+    /// The settings that decide what a session contains: the type names (type resolvers, <see cref="AddTypeIdOption.FullName"/>), the properties (static filters), their order (<see cref="PropertyOrder"/>, the schema lists them in that order) and their ids (property id resolvers).
     /// The arrays are compared by reference: settings that share them (e.g. the defaults) share the sessions.
     /// </summary>
     internal struct SessionKey : IEquatable<SessionKey>
@@ -406,6 +406,7 @@ namespace LsMsgPack
       private readonly IMsgPackPropertyIdResolver[] _propertyIdResolvers;
       private readonly AddTypeIdOption _addTypeIdOptions;
       private readonly EndianAction _endianAction; // inline schemas are read in the byte order of the reader
+      private readonly PropertyOrder _propertyOrder;
 
       internal SessionKey(Type root, MsgPackOptions settings)
       {
@@ -415,6 +416,7 @@ namespace LsMsgPack
         _propertyIdResolvers = settings._propertyNameResolvers;
         _addTypeIdOptions = settings._addTypeIdOptions;
         _endianAction = settings._endianAction;
+        _propertyOrder = settings._propertyOrder;
       }
 
       public bool Equals(SessionKey other)
@@ -424,7 +426,8 @@ namespace LsMsgPack
           && ReferenceEquals(_staticFilters, other._staticFilters)
           && ReferenceEquals(_propertyIdResolvers, other._propertyIdResolvers)
           && _addTypeIdOptions == other._addTypeIdOptions
-          && _endianAction == other._endianAction;
+          && _endianAction == other._endianAction
+          && _propertyOrder == other._propertyOrder;
       }
 
       public override bool Equals(object obj)
@@ -441,7 +444,8 @@ namespace LsMsgPack
           hash = hash * 31 + RuntimeHelpers.GetHashCode(_staticFilters);
           hash = hash * 31 + RuntimeHelpers.GetHashCode(_propertyIdResolvers);
           hash = hash * 31 + (int)_addTypeIdOptions;
-          return hash * 31 + (int)_endianAction;
+          hash = hash * 31 + (int)_endianAction;
+          return hash * 31 + (int)_propertyOrder;
         }
       }
     }

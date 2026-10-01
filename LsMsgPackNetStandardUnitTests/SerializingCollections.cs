@@ -97,7 +97,9 @@ namespace LsMsgPackUnitTests
         CatsByName = new Dictionary<string, Cat>() { { "Mia", new Cat() { Name = "Mia" } } },
         Pets = new Dictionary<int, IIPet>() { { 1, new Dog() { Name = "Rex" } } },
       };
-      byte[] buffer = Serializer.Serialize(org, Settings());
+      MsgPackSettings settings = Settings();
+      settings.ObjectLayout = ObjectLayout.Map; // the test looks the properties up by name
+      byte[] buffer = Serializer.Serialize(org, settings);
       Dictionary<object, object> root = UnpackMap(buffer);
 
       object[] cats = root["Cats"] as object[]; // a plain array, not { "@": [...] }

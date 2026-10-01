@@ -2,6 +2,7 @@ using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
+using LtMsgPack.IO;
 using System;
 using System.ComponentModel;
 using System.Reflection;
@@ -65,6 +66,11 @@ namespace LtMsgPack.Writing
     internal void Write(WriteContext c, object value, bool typeId, FullPropertyInfo assignedTo)
     {
       byte[][] keys = c.BeginObject(this, out FullPropertyInfo[] infos); // before the type id, as LsMsgPack resolves the ids first
+      if (c.Serializer.Options._objectLayout == ObjectLayout.Array)
+      {
+        WriteArray(c, value, typeId, assignedTo, infos);
+        return;
+      }
 
       int max = Props.Length + 1;
       int at = c.W.ReserveMapHeader(max);
@@ -86,6 +92,60 @@ namespace LtMsgPack.Writing
       c.LeaveContainer();
 
       c.W.PatchMapHeader(at, max, count);
+    }
+
+    /// <summary>
+    /// <see cref="ObjectLayout.Array"/> (LsMsgPack: SerializeAsArray): the values in the order of the properties, nil when the filters leave one out, wrapped in a map with the type id when needed.
+    /// </summary>
+    private void WriteArray(WriteContext c, object value, bool typeId, FullPropertyInfo assignedTo, FullPropertyInfo[] infos)
+    {
+      if (typeId)
+      {
+        c.W.MapHeader(2);
+        c.W.String(string.Empty);
+        c.WriteTypeId(Type, assignedTo);
+        c.W.String(MsgPackOptions.ContentKey);
+      }
+      else
+        SerializationRules.ThrowIfUnresolvableAsArray(Type, assignedTo);
+
+      c.EnterContainer();
+      PropWriter[] props = Props;
+      if (c.Serializer.Options._trimTrailingNulls)
+        WriteTrimmed(c, value, infos);
+      else
+      {
+        c.W.ArrayHeader(props.Length);
+        for (int t = 0; t < props.Length; t++)
+          if (!props[t].Write(c, value, null, infos[t]))
+            c.W.Nil();
+      }
+      c.LeaveContainer();
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.TrimTrailingNulls"/>: the nils after the last other value are taken back, the header is written for the values that are left.
+    /// </summary>
+    private void WriteTrimmed(WriteContext c, object value, FullPropertyInfo[] infos)
+    {
+      MsgPackWriter w = c.W;
+      PropWriter[] props = Props;
+      int at = w.ReserveArrayHeader(props.Length);
+      int count = 0;
+      int end = w.Pos; // after the last value that is not nil
+      for (int t = 0; t < props.Length; t++)
+      {
+        int start = w.Pos;
+        if (!props[t].Write(c, value, null, infos[t]))
+          w.Nil();
+        if (w.Pos != start + 1 || w.Buf[start] != 0xC0) // nil is the only value of one byte 0xC0
+        {
+          count = t + 1;
+          end = w.Pos;
+        }
+      }
+      w.Pos = end;
+      w.PatchArrayHeader(at, props.Length, count);
     }
 
     /// <summary>
@@ -137,7 +197,8 @@ namespace LtMsgPack.Writing
       BoxedFilters = serializer.Filters == FilterMode.Custom || info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute));
     }
 
-    /// <returns>false when the filters left the value out</returns>
+    /// <param name="key">The encoded property id, null for the array layout (only the value)</param>
+    /// <returns>false when the filters left the value out (nothing was written)</returns>
     internal abstract bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info);
 
     protected bool IncludeBoxed(object value, FullPropertyInfo info)
@@ -208,7 +269,8 @@ namespace LtMsgPack.Writing
           return false;
       }
 
-      c.W.Raw(key);
+      if (key != null)
+        c.W.Raw(key);
       if (value == null)
         c.W.Nil();
       else
@@ -235,7 +297,8 @@ namespace LtMsgPack.Writing
       if (!NoFilters && !IncludeBoxed(value, info))
         return false;
 
-      c.W.Raw(key);
+      if (key != null)
+        c.W.Raw(key);
       Serializer.WriteBoxed(c, value, info);
       return true;
     }

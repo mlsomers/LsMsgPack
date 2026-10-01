@@ -101,6 +101,24 @@ namespace LsMsgPack
     /// </summary>
     public static bool Default_WriteSchemaReference { get; set; } = false;
 
+    /// <summary>
+    /// The <see cref="PropertyOrder"/> of new settings (<see cref="LsMsgPack.PropertyOrder.Reflection"/> by default, the order so far).
+    /// </summary>
+    [IgnoreDataMember]
+    public static PropertyOrder Default_PropertyOrder { get; set; } = PropertyOrder.Reflection;
+
+    /// <summary>
+    /// The <see cref="ObjectLayout"/> of new settings (<see cref="LsMsgPack.ObjectLayout.Array"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static ObjectLayout Default_ObjectLayout { get; set; } = ObjectLayout.Array;
+
+    /// <summary>
+    /// The <see cref="TrimTrailingNulls"/> of new settings (false by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool Default_TrimTrailingNulls { get; set; } = false;
+
     #endregion
 
     /// <summary>
@@ -123,6 +141,14 @@ namespace LsMsgPack
     internal IMsgPackPropertyIdResolver[] _propertyNameResolvers = Default_PropertyNameResolvers;
     internal SchemaStore _schemaStore = Default_SchemaStore;
     internal bool _writeSchemaReference = Default_WriteSchemaReference;
+    internal PropertyOrder _propertyOrder = Default_PropertyOrder;
+    internal ObjectLayout _objectLayout = Default_ObjectLayout;
+    internal bool _trimTrailingNulls = Default_TrimTrailingNulls;
+
+    /// <summary>
+    /// The highest <see cref="LsMsgPack.PropertyOrder"/>, the orders are indexes of the caches in FullPropertyInfo.
+    /// </summary>
+    internal const PropertyOrder LastPropertyOrder = PropertyOrder.TypeThenDeclaration;
 
     /// <summary>
     /// The session caches (<see cref="_serializedPropsCache"/>, <see cref="_staticPropsCache"/> and the schema) are shared by several calls and must not change (see <see cref="SchemaSession"/>). Not copied by <see cref="Clone"/>.
@@ -267,6 +293,59 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// The order in which the properties of an object are written (and listed in the indexed schema), <see cref="LsMsgPack.PropertyOrder.Reflection"/> by default.
+    /// <para>Readers look properties up by name (or by their name in the schema), so data written in any order is read by settings with any order.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Property Order")]
+    [Description("The order in which the properties of an object are written (and listed in the indexed schema). Readers look properties up by name, so it does not need to match the writer's.")]
+    [DefaultValue(PropertyOrder.Reflection)]
+    public PropertyOrder PropertyOrder
+    {
+      get { return _propertyOrder; }
+      set
+      {
+        if (value < PropertyOrder.Reflection || value > LastPropertyOrder) // used as an index (see FullPropertyInfo)
+          throw new ArgumentOutOfRangeException(nameof(value), value, "Not a defined PropertyOrder.");
+        _propertyOrder = value;
+      }
+    }
+
+    /// <summary>
+    /// How objects with properties are written: an array of the values in <see cref="PropertyOrder"/> (default), or a map of property ids and values.
+    /// <para>Only affects writing: readers take an array for an object as its values by position. Without the indexed schema the reader needs the same <see cref="PropertyOrder"/> (and properties) as the writer, with the schema the positions are matched by name.</para>
+    /// <para>Other libraries mostly read objects as maps keyed by property names (see <see cref="MsgPackMediaTypes.ToPlain"/>).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Object Layout")]
+    [Description("How objects are written: an array of the values in the property order (default), or a map of property ids and values. Readers read either.")]
+    [DefaultValue(ObjectLayout.Array)]
+    public ObjectLayout ObjectLayout
+    {
+      get { return _objectLayout; }
+      set
+      {
+        if (value != ObjectLayout.Map && value != ObjectLayout.Array)
+          throw new ArgumentOutOfRangeException(nameof(value), value, "Not a defined ObjectLayout.");
+        _objectLayout = value;
+      }
+    }
+
+    /// <summary>
+    /// <see cref="ObjectLayout.Array"/>: leave out the nil values at the end of an object's array (null values and values the dynamic filters leave out), false by default.
+    /// <para>Smaller, and readers treat a missing value like a nil (the property keeps what the constructor made). Off by default because MessagePack-CSharp writes every value (integer keys), so the bytes are the same.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Trim Trailing Nulls")]
+    [Description("Arrays of objects (ObjectLayout.Array): leave out the nil values at the end. Readers treat a missing value like a nil.")]
+    [DefaultValue(false)]
+    public bool TrimTrailingNulls
+    {
+      get { return _trimTrailingNulls; }
+      set { _trimTrailingNulls = value; }
+    }
+
+    /// <summary>
     /// A copy of these options (of the same derived type), without the caches of a session (see <see cref="SchemaSession"/>).
     /// </summary>
     internal MsgPackOptions CloneOptions()
@@ -325,6 +404,67 @@ namespace LsMsgPack
     /// </summary>
     [Description("Do not reorder bytes (regardless of current system)")]
     NeverSwap = 2
+  }
+
+  /// <summary>
+  /// The order of the properties of an object (see <see cref="MsgPackOptions.PropertyOrder"/>). Decided once per type, it costs nothing per object.
+  /// </summary>
+  public enum PropertyOrder
+  {
+    /// <summary>
+    /// As <see cref="Type.GetProperties()"/> returns them (default). The runtime does not guarantee this order.
+    /// </summary>
+    [Description("As Type.GetProperties() returns them (default). The runtime does not guarantee this order.")]
+    Reflection = 0,
+
+    /// <summary>
+    /// By name (ordinal, not culture-sensitive).
+    /// </summary>
+    [Description("By name (ordinal, not culture-sensitive).")]
+    Alphabetical = 1,
+
+    /// <summary>
+    /// In the order of the source code: the properties of base classes first, then per class in the order of their metadata tokens (the order the compiler emitted them).
+    /// An overridden property keeps the position of the property it overrides.
+    /// <para>The compiler emits the members of a partial class in the order of its files, so moving code or adding a file can change the order.</para>
+    /// </summary>
+    [Description("In the order of the source code: base classes first, then per class in the order the compiler emitted them. Partial classes follow the order of their files.")]
+    Declaration = 2,
+
+    /// <summary>
+    /// By <see cref="System.Runtime.Serialization.DataMemberAttribute.Order"/> (lowest first, whatever class declares them), then the properties without an order in <see cref="Declaration"/> order.
+    /// Properties with the same order keep their <see cref="Declaration"/> order.
+    /// </summary>
+    [Description("By DataMember(Order = n), lowest first, then the properties without an order in declaration order.")]
+    Explicit = 3,
+
+    /// <summary>
+    /// Grouped by the type of the property (ordinal, by its name without the assembly: <see cref="Type.ToString()"/>, the same on .NET Framework and .NET), then in <see cref="Declaration"/> order.
+    /// <para>Values of the same type follow each other, which may help a reader later on. Changing the type of a property moves it.</para>
+    /// </summary>
+    [Description("Grouped by the type of the property (by its name, without the assembly), then in declaration order.")]
+    TypeThenDeclaration = 4
+  }
+
+  /// <summary>
+  /// How an object with properties is written (see <see cref="MsgPackOptions.ObjectLayout"/>). Collections and dictionaries are always arrays and maps.
+  /// </summary>
+  public enum ObjectLayout
+  {
+    /// <summary>
+    /// A map of property ids (names, or indexes of the indexed schema) and values. Values left out by the dynamic filters (e.g. default values) are not written.
+    /// <para>What other libraries read without configuration (keyed by property names, see <see cref="MsgPackMediaTypes.ToPlain"/>).</para>
+    /// </summary>
+    [Description("A map of property ids (names, or indexes of the indexed schema) and values. What other libraries read without configuration.")]
+    Map = 0,
+
+    /// <summary>
+    /// An array of the values in <see cref="MsgPackOptions.PropertyOrder"/>, without keys (default). A value left out by the dynamic filters is written as nil, nils at the end are left out with <see cref="MsgPackOptions.TrimTrailingNulls"/>.
+    /// <para>Readers leave a property as the constructor made it when its value is nil or missing (the array is shorter), as they do for a property that is not in a map. Values after the known properties are skipped.</para>
+    /// <para>A type id wraps the array: { "": typeId, "@": [values] }. Without the indexed schema the reader needs the same order and properties as the writer.</para>
+    /// </summary>
+    [Description("An array of the values in the property order, without keys (nil for values left out by the filters). Without the indexed schema the reader needs the same order and properties.")]
+    Array = 1
   }
 
   [Flags]

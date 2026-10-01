@@ -106,7 +106,7 @@ namespace LsMsgPackWebApiFormattersTests
 
       byte[] expected = lsMsgPack
         ? MsgPackSerializer.Serialize(SampleOrder, new MsgPackSettings())
-        : MsgPackSerializer.Serialize(SampleOrder, new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never });
+        : MsgPackSerializer.Serialize(SampleOrder, new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never, ObjectLayout = ObjectLayout.Map });
       Assert.That(await response.Content.ReadAsByteArrayAsync(), Is.EqualTo(expected));
     }
 
