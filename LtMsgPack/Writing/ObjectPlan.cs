@@ -2,6 +2,7 @@ using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
+using LtMsgPack.IO;
 using System;
 using System.ComponentModel;
 using System.Reflection;
@@ -110,11 +111,41 @@ namespace LtMsgPack.Writing
 
       c.EnterContainer();
       PropWriter[] props = Props;
-      c.W.ArrayHeader(props.Length);
-      for (int t = 0; t < props.Length; t++)
-        if (!props[t].Write(c, value, null, infos[t]))
-          c.W.Nil();
+      if (c.Serializer.Options._trimTrailingNulls)
+        WriteTrimmed(c, value, infos);
+      else
+      {
+        c.W.ArrayHeader(props.Length);
+        for (int t = 0; t < props.Length; t++)
+          if (!props[t].Write(c, value, null, infos[t]))
+            c.W.Nil();
+      }
       c.LeaveContainer();
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.TrimTrailingNulls"/>: the nils after the last other value are taken back, the header is written for the values that are left.
+    /// </summary>
+    private void WriteTrimmed(WriteContext c, object value, FullPropertyInfo[] infos)
+    {
+      MsgPackWriter w = c.W;
+      PropWriter[] props = Props;
+      int at = w.ReserveArrayHeader(props.Length);
+      int count = 0;
+      int end = w.Pos; // after the last value that is not nil
+      for (int t = 0; t < props.Length; t++)
+      {
+        int start = w.Pos;
+        if (!props[t].Write(c, value, null, infos[t]))
+          w.Nil();
+        if (w.Pos != start + 1 || w.Buf[start] != 0xC0) // nil is the only value of one byte 0xC0
+        {
+          count = t + 1;
+          end = w.Pos;
+        }
+      }
+      w.Pos = end;
+      w.PatchArrayHeader(at, props.Length, count);
     }
 
     /// <summary>

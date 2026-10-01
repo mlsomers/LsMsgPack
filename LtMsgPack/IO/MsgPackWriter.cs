@@ -361,6 +361,7 @@ namespace LtMsgPack.IO
       else { Buf[Pos++] = 0xDF; U32((uint)count); }
     }
 
+    // The same for arrays and maps
     private static int MapHeaderSize(int count)
     {
       return count < 16 ? 1 : count <= ushort.MaxValue ? 3 : 5;
@@ -381,6 +382,24 @@ namespace LtMsgPack.IO
 
     internal void PatchMapHeader(int at, int maxCount, int count)
     {
+      PatchHeader(at, maxCount, count, true);
+    }
+
+    /// <summary>
+    /// <see cref="ReserveMapHeader"/> for an array whose number of items is known after writing them (see <see cref="MsgPackOptions.TrimTrailingNulls"/>).
+    /// </summary>
+    internal int ReserveArrayHeader(int maxCount)
+    {
+      return ReserveMapHeader(maxCount);
+    }
+
+    internal void PatchArrayHeader(int at, int maxCount, int count)
+    {
+      PatchHeader(at, maxCount, count, false);
+    }
+
+    private void PatchHeader(int at, int maxCount, int count, bool map)
+    {
       int reserved = MapHeaderSize(maxCount);
       int needed = MapHeaderSize(count);
       if (needed != reserved) // move the entries (fewer were written than the maximum)
@@ -393,7 +412,10 @@ namespace LtMsgPack.IO
 
       int end = Pos;
       Pos = at;
-      MapHeader(count);
+      if (map)
+        MapHeader(count);
+      else
+        ArrayHeader(count);
       Pos = end;
     }
 

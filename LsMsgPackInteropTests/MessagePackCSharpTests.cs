@@ -27,7 +27,7 @@ namespace LsMsgPackInteropTests
     protected abstract LsMsgPackUnitTests.ISerializerUnderTest Serializer { get; }
 
     private static readonly MsgPackSettings Indexed = new MsgPackSettings() { UseInexedSchema = true };
-    private static readonly MsgPackSettings Named = new MsgPackSettings() { UseInexedSchema = false };
+    private static readonly MsgPackSettings Named = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }; // contractless reads maps keyed by names
 
     private static readonly MessagePackSerializerOptions Standard = MessagePackSerializerOptions.Standard;
     private static readonly MessagePackSerializerOptions Contractless = ContractlessStandardResolver.Options;
@@ -275,7 +275,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void DefaultValues_WrittenWithoutDynamicFilters()
     {
-      MsgPackSettings everything = new MsgPackSettings() { UseInexedSchema = false, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
+      MsgPackSettings everything = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
       DefaultsProbe probe = new DefaultsProbe() { Text = "", Retries = 0, Enabled = false, Items = null };
       byte[] bytes = Serializer.Serialize(probe, everything);
 
@@ -302,7 +302,7 @@ namespace LsMsgPackInteropTests
       object withTypeId = MessagePackSerializer.Deserialize<WithObjectMember>(Serializer.Serialize(item, Named), Contractless).When;
       Assert.IsInstanceOfType<IDictionary<object, object>>(withTypeId);
 
-      MsgPackSettings noTypeIds = new MsgPackSettings() { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never };
+      MsgPackSettings noTypeIds = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, AddTypeIdOptions = AddTypeIdOption.Never };
       Assert.AreEqual(item.When, MessagePackSerializer.Deserialize<WithObjectMember>(Serializer.Serialize(item, noTypeIds), Contractless).When);
     }
   }

@@ -300,10 +300,11 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings()
       {
         UseInexedSchema = useSchema,
+        ObjectLayout = ObjectLayout.Map, // omitted values are only visible in a map (an array has nil in their place)
         DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() }
       };
 
-      byte[] withoutSchema = Serializer.Serialize(new AllZero(), new MsgPackSettings() { UseInexedSchema = false, DynamicFilters = settings.DynamicFilters });
+      byte[] withoutSchema = Serializer.Serialize(new AllZero(), new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = settings.DynamicFilters });
       Assert.AreEqual(1, ((MpMap)MsgPackItem.Unpack(withoutSchema)).Count, "Only Name should be serialized");
 
       AllZero org = new AllZero() { L = 1, F = 2, D = 3, B = 4, SB = -5, S = 6, US = 7, UI = 8, UL = 9, M = 10 };

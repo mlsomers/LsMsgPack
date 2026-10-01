@@ -118,7 +118,7 @@ namespace LsMsgPackUnitTests
       LtMsgPackSerializer lt = new LtMsgPackSerializer(options);
       options.UseInexedSchema = true; // too late for this serializer
       Assert.IsFalse(lt.Options.UseInexedSchema);
-      Assert.AreEqual((byte)0x81, lt.Serialize(new LtNode { Name = "x" })[0]); // a map, no schema
+      Assert.AreEqual((byte)0x92, lt.Serialize(new LtNode { Name = "x" })[0]); // the object as an array (Name, Next), no schema
     }
 
     [TestMethod]

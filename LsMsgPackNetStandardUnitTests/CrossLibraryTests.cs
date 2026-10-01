@@ -260,6 +260,19 @@ namespace LsMsgPackUnitTests
       CompareCorpus(ls, new LtMsgPackSerializer(ltOptions));
     }
 
+    [TestMethod]
+    [DataRow(SchemaMode.Names)]
+    [DataRow(SchemaMode.Inline)]
+    [DataRow(SchemaMode.Reference)]
+    public void SameBytesAndValuesTrimmed(SchemaMode mode)
+    {
+      MsgPackSettings ls = new MsgPackSettings() { TrimTrailingNulls = true };
+      Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, ObjectLayout.Array);
+      LtMsgPackOptions ltOptions = new LtMsgPackOptions() { TrimTrailingNulls = true };
+      Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, ObjectLayout.Array);
+      CompareCorpus(ls, new LtMsgPackSerializer(ltOptions));
+    }
+
     private void CompareCorpus(MsgPackSettings ls, LtMsgPackSerializer lt)
     {
       List<string> differences = new List<string>();

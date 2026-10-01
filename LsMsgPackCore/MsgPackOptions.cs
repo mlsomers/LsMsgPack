@@ -108,10 +108,16 @@ namespace LsMsgPack
     public static PropertyOrder Default_PropertyOrder { get; set; } = PropertyOrder.Reflection;
 
     /// <summary>
-    /// The <see cref="ObjectLayout"/> of new settings (<see cref="LsMsgPack.ObjectLayout.Map"/> by default).
+    /// The <see cref="ObjectLayout"/> of new settings (<see cref="LsMsgPack.ObjectLayout.Array"/> by default).
     /// </summary>
     [IgnoreDataMember]
-    public static ObjectLayout Default_ObjectLayout { get; set; } = ObjectLayout.Map;
+    public static ObjectLayout Default_ObjectLayout { get; set; } = ObjectLayout.Array;
+
+    /// <summary>
+    /// The <see cref="TrimTrailingNulls"/> of new settings (false by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool Default_TrimTrailingNulls { get; set; } = false;
 
     #endregion
 
@@ -137,6 +143,7 @@ namespace LsMsgPack
     internal bool _writeSchemaReference = Default_WriteSchemaReference;
     internal PropertyOrder _propertyOrder = Default_PropertyOrder;
     internal ObjectLayout _objectLayout = Default_ObjectLayout;
+    internal bool _trimTrailingNulls = Default_TrimTrailingNulls;
 
     /// <summary>
     /// The highest <see cref="LsMsgPack.PropertyOrder"/>, the orders are indexes of the caches in FullPropertyInfo.
@@ -305,13 +312,14 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// How objects with properties are written: a map of property ids and values (default), or an array of the values in <see cref="PropertyOrder"/>.
+    /// How objects with properties are written: an array of the values in <see cref="PropertyOrder"/> (default), or a map of property ids and values.
     /// <para>Only affects writing: readers take an array for an object as its values by position. Without the indexed schema the reader needs the same <see cref="PropertyOrder"/> (and properties) as the writer, with the schema the positions are matched by name.</para>
+    /// <para>Other libraries mostly read objects as maps keyed by property names (see <see cref="MsgPackMediaTypes.ToPlain"/>).</para>
     /// </summary>
     [Category("Control")]
     [DisplayName("Object Layout")]
-    [Description("How objects are written: a map of property ids and values (default), or an array of the values in the property order. Readers read either.")]
-    [DefaultValue(ObjectLayout.Map)]
+    [Description("How objects are written: an array of the values in the property order (default), or a map of property ids and values. Readers read either.")]
+    [DefaultValue(ObjectLayout.Array)]
     public ObjectLayout ObjectLayout
     {
       get { return _objectLayout; }
@@ -321,6 +329,20 @@ namespace LsMsgPack
           throw new ArgumentOutOfRangeException(nameof(value), value, "Not a defined ObjectLayout.");
         _objectLayout = value;
       }
+    }
+
+    /// <summary>
+    /// <see cref="ObjectLayout.Array"/>: leave out the nil values at the end of an object's array (null values and values the dynamic filters leave out), false by default.
+    /// <para>Smaller, and readers treat a missing value like a nil (the property keeps what the constructor made). Off by default because MessagePack-CSharp writes every value (integer keys), so the bytes are the same.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Trim Trailing Nulls")]
+    [Description("Arrays of objects (ObjectLayout.Array): leave out the nil values at the end. Readers treat a missing value like a nil.")]
+    [DefaultValue(false)]
+    public bool TrimTrailingNulls
+    {
+      get { return _trimTrailingNulls; }
+      set { _trimTrailingNulls = value; }
     }
 
     /// <summary>
@@ -430,13 +452,14 @@ namespace LsMsgPack
   public enum ObjectLayout
   {
     /// <summary>
-    /// A map of property ids (names, or indexes of the indexed schema) and values (default). Values left out by the dynamic filters (e.g. default values) are not written.
+    /// A map of property ids (names, or indexes of the indexed schema) and values. Values left out by the dynamic filters (e.g. default values) are not written.
+    /// <para>What other libraries read without configuration (keyed by property names, see <see cref="MsgPackMediaTypes.ToPlain"/>).</para>
     /// </summary>
-    [Description("A map of property ids (names, or indexes of the indexed schema) and values (default).")]
+    [Description("A map of property ids (names, or indexes of the indexed schema) and values. What other libraries read without configuration.")]
     Map = 0,
 
     /// <summary>
-    /// An array of the values in <see cref="MsgPackOptions.PropertyOrder"/>, without keys. A value left out by the dynamic filters is written as nil.
+    /// An array of the values in <see cref="MsgPackOptions.PropertyOrder"/>, without keys (default). A value left out by the dynamic filters is written as nil, nils at the end are left out with <see cref="MsgPackOptions.TrimTrailingNulls"/>.
     /// <para>Readers leave a property as the constructor made it when its value is nil or missing (the array is shorter), as they do for a property that is not in a map. Values after the known properties are skipped.</para>
     /// <para>A type id wraps the array: { "": typeId, "@": [values] }. Without the indexed schema the reader needs the same order and properties as the writer.</para>
     /// </summary>

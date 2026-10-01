@@ -13,7 +13,7 @@ namespace LtMsgPack
   public static class LtMsgPackPresets
   {
     /// <summary>
-    /// The same data as LsMsgPack with its default settings: the indexed schema, type ids where the type differs, default values left out, Guids as bin 16, decimals as extension type 1.
+    /// The same data as LsMsgPack with its default settings: the indexed schema, objects as arrays, type ids where the type differs, default values as nil, Guids as bin 16, decimals as extension type 1.
     /// </summary>
     public static LtMsgPackOptions LsMsgPack()
     {
@@ -63,6 +63,7 @@ namespace LtMsgPack
       {
         UseInexedSchema = false,
         AddTypeIdOptions = AddTypeIdOption.Never,
+        ObjectLayout = ObjectLayout.Map,
         DynamicFilters = new IMsgPackPropertyIncludeDynamically[0]
       };
     }

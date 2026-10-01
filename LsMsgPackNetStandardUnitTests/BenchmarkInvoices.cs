@@ -256,17 +256,19 @@ namespace LsMsgPackUnitTests
 
     private static ICandidate[] CreateCandidates()
     {
-      MsgPackSettings indexed = new MsgPackSettings() { UseInexedSchema = true };
-      MsgPackSettings named = new MsgPackSettings() { UseInexedSchema = false };
+      // The rows without "arrays" in their name write maps (ObjectLayout.Map), the layout of the measurements so far
+      MsgPackSettings indexed = new MsgPackSettings() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings named = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
       SchemaStore store = new SchemaStore(); // one store for writing and reading: in practice the reader has its own, holding the writer's schemas
-      MsgPackSettings reference = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store, WriteSchemaReference = true };
-      MsgPackSettings inlineStore = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store };
-      LtMsgPack.LtMsgPackSerializer ltIndexed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true });
-      LtMsgPack.LtMsgPackSerializer ltReference = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true });
-      LtMsgPack.LtMsgPackSerializer ltNamed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false });
+      MsgPackSettings reference = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store, WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings inlineStore = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store, ObjectLayout = ObjectLayout.Map };
+      LtMsgPack.LtMsgPackSerializer ltIndexed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map });
+      LtMsgPack.LtMsgPackSerializer ltReference = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map });
+      LtMsgPack.LtMsgPackSerializer ltNamed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
       MsgPackSettings indexedArrays = new MsgPackSettings() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array };
       LtMsgPack.LtMsgPackSerializer ltIndexedArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array });
       LtMsgPack.LtMsgPackSerializer ltReferenceArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array });
+      LtMsgPack.LtMsgPackSerializer ltIndexedTrimmed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array, TrimTrailingNulls = true });
       LtMsgPack.LtMsgPackSerializer ltPositional = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration });
 
       return new ICandidate[]
@@ -325,6 +327,11 @@ namespace LsMsgPackUnitTests
         new Candidate<byte[]>("LtMsgPack (arrays, indexed)",
           i => ltIndexedArrays.Serialize(i),
           b => ltIndexedArrays.Deserialize<Invoice>(b),
+          b => b.Length),
+
+        new Candidate<byte[]>("LtMsgPack (arrays, trimmed)", // indexed schema, TrimTrailingNulls (the invoices end with values that are never left out)
+          i => ltIndexedTrimmed.Serialize(i),
+          b => ltIndexedTrimmed.Deserialize<Invoice>(b),
           b => b.Length),
 
         new Candidate<byte[]>("LtMsgPack (arrays, reference)",

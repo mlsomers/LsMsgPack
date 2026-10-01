@@ -74,14 +74,22 @@ namespace LsMsgPack
         SerializationRules.ThrowIfUnresolvableAsArray(tType, assignedTo);
 
       MsgPackItem[] values = new MsgPackItem[props.Length];
+      int count = 0; // after the last value that is not nil
       for (int t = 0; t < props.Length; t++)
       {
         FullPropertyInfo prop = props[t];
         object value = prop.GetValue(item);
-        values[t] = value is null || !IncludeDynamically(prop, value, settings)
-          ? new MpNull(settings)
-          : SerializeObject(value, settings, prop);
+        if (value is null || !IncludeDynamically(prop, value, settings))
+          values[t] = new MpNull(settings);
+        else
+        {
+          values[t] = SerializeObject(value, settings, prop);
+          count = t + 1;
+        }
       }
+
+      if (settings._trimTrailingNulls && count != values.Length)
+        Array.Resize(ref values, count);
 
       MpArray array = new MpArray(settings) { Value = values };
       if (!addTypeId)

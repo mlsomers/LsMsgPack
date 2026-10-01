@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 
 namespace LsMsgPackUnitTests
 {
@@ -66,6 +67,33 @@ namespace LsMsgPackUnitTests
     {
       public AlPoint Center { get; set; }
       public AlPoint[] Corners { get; set; }
+    }
+
+    public class AlBark
+    {
+      [DefaultValue("Woof")]
+      public string Verb { get; set; } = "Woof";
+    }
+
+    public class AlWide // more than 15 values: an array 16 header of 3 bytes
+    {
+      public int V1 { get; set; }
+      public int V2 { get; set; }
+      public int V3 { get; set; }
+      public int V4 { get; set; }
+      public int V5 { get; set; }
+      public int V6 { get; set; }
+      public int V7 { get; set; }
+      public int V8 { get; set; }
+      public int V9 { get; set; }
+      public int V10 { get; set; }
+      public int V11 { get; set; }
+      public int V12 { get; set; }
+      public int V13 { get; set; }
+      public int V14 { get; set; }
+      public int V15 { get; set; }
+      public int V16 { get; set; }
+      public int V17 { get; set; }
     }
 
     public enum SchemaMode { Names, Inline, Reference }
@@ -254,6 +282,74 @@ namespace LsMsgPackUnitTests
       // Values of the declared type need no type id
       AlAddress address = new AlAddress() { Street = "s", Number = 2 };
       Assert.AreEqual(Json(address), Json(RoundTrip(address, settings)));
+    }
+
+    [TestMethod]
+    public void ArraysByDefault()
+    {
+      Assert.AreEqual(ObjectLayout.Array, new MsgPackSettings().ObjectLayout);
+      Assert.IsFalse(new MsgPackSettings().TrimTrailingNulls);
+      CollectionAssert.AreEqual(new byte[] { 0x92, 0xA1, (byte)'a', 0x05 }, Serializer.Serialize(new AlAddress() { Street = "a", Number = 5 }, new MsgPackSettings() { UseInexedSchema = false, PropertyOrder = PropertyOrder.Declaration }));
+    }
+
+    [TestMethod]
+    public void TrailingNullsTrimmed()
+    {
+      MsgPackSettings settings = Settings(SchemaMode.Names);
+      settings.TrimTrailingNulls = true;
+      CollectionAssert.AreEqual(new byte[] { 0x91, 0xA1, (byte)'a' }, Serializer.Serialize(new AlAddress() { Street = "a" }, settings));
+      CollectionAssert.AreEqual(new byte[] { 0x92, 0xC0, 0x05 }, Serializer.Serialize(new AlAddress() { Number = 5 }, settings)); // only at the end
+      CollectionAssert.AreEqual(new byte[] { 0x90 }, Serializer.Serialize(new AlAddress(), settings));
+
+      settings.TrimTrailingNulls = false;
+      CollectionAssert.AreEqual(new byte[] { 0x92, 0xA1, (byte)'a', 0xC0 }, Serializer.Serialize(new AlAddress() { Street = "a" }, settings));
+    }
+
+    [TestMethod]
+    public void TrimmedHeaderBecomesSmaller()
+    {
+      MsgPackSettings settings = Settings(SchemaMode.Names);
+      settings.TrimTrailingNulls = true;
+      byte[] data = Serializer.Serialize(new AlWide() { V1 = 1, V2 = 2 }, settings);
+      CollectionAssert.AreEqual(new byte[] { 0x92, 0x01, 0x02 }, data, BitConverter.ToString(data)); // reserved for 17 values (DC 00 11), 2 are left
+
+      AlWide full = new AlWide() { V1 = 1, V17 = 17 };
+      data = Serializer.Serialize(full, settings);
+      Assert.AreEqual(0xDC, data[0]);
+      Assert.AreEqual(Json(full), Json(Serializer.Deserialize<AlWide>(data, settings)));
+    }
+
+    [TestMethod]
+    [DataRow(SchemaMode.Names)]
+    [DataRow(SchemaMode.Inline)]
+    [DataRow(SchemaMode.Reference)]
+    public void TrimmedRoundTrip(SchemaMode mode)
+    {
+      MsgPackSettings settings = Settings(mode);
+      settings.TrimTrailingNulls = true;
+      AlPerson person = Person();
+      person.Born = default(DateTime); // the last values are left out
+      person.Note = null;
+      AlPerson read = RoundTrip(person, settings);
+      Assert.AreEqual(Json(RoundTrip(person, Settings(mode))), Json(read));
+
+      AlOwner owner = new AlOwner() { Pet = new AlDog() { Name = "Rex" }, Pets = new List<IAlPet>() { new AlCat() { Name = "Tom" } } };
+      Assert.AreEqual(Json(owner), Json(RoundTrip(owner, settings)));
+    }
+
+    /// <summary>
+    /// The known difference with maps: a null that the filters keep (here it is not the [DefaultValue]) is nil, which the reader takes as "not written", so the property keeps what the constructor made.
+    /// </summary>
+    [TestMethod]
+    public void ExplicitNullKeepsTheConstructorValue()
+    {
+      MsgPackSettings asArray = Settings(SchemaMode.Names);
+      MsgPackSettings asMap = Settings(SchemaMode.Names);
+      asMap.ObjectLayout = ObjectLayout.Map;
+      AlBark silent = new AlBark() { Verb = null };
+
+      Assert.IsNull(RoundTrip(silent, asMap).Verb);
+      Assert.AreEqual("Woof", RoundTrip(silent, asArray).Verb);
     }
 
     [TestMethod]

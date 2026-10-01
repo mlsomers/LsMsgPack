@@ -131,7 +131,7 @@ namespace LsMsgPackUnitTests
       LtExtension[] extensions = Extensions(settings.CustomExtentionTypes);
       object key = (settings.UseInexedSchema, settings.DynamicallyCompact, settings.EndianAction, settings.AddTypeIdOptions,
         settings.TypeResolvers, settings.StaticFilters, settings.DynamicFilters, settings.PropertyNameResolvers,
-        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout));
+        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls));
       return _serializers.GetOrAdd(key, k => new LtMsgPackSerializer(new LtMsgPackOptions()
       {
         UseInexedSchema = settings.UseInexedSchema,
@@ -146,6 +146,7 @@ namespace LsMsgPackUnitTests
         WriteSchemaReference = settings.WriteSchemaReference,
         PropertyOrder = settings.PropertyOrder,
         ObjectLayout = settings.ObjectLayout,
+        TrimTrailingNulls = settings.TrimTrailingNulls,
         Extensions = extensions
       }));
     }

@@ -54,7 +54,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(PropertyOrder order, bool schema)
     {
-      return new MsgPackSettings() { PropertyOrder = order, UseInexedSchema = schema };
+      return new MsgPackSettings() { PropertyOrder = order, UseInexedSchema = schema, ObjectLayout = ObjectLayout.Map }; // the names are only in the data as map keys (or in the schema)
     }
 
     /// <summary>
