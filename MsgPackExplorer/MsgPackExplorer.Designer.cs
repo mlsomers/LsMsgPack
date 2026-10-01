@@ -288,6 +288,8 @@
       this.treeViewObjects.Size = new System.Drawing.Size(277, 343);
       this.treeViewObjects.StateImageList = this.imageList1;
       this.treeViewObjects.TabIndex = 1;
+      this.treeViewObjects.DrawNode += new System.Windows.Forms.DrawTreeNodeEventHandler(this.treeView1_DrawNode);
+      this.treeViewObjects.AfterSelect += new System.Windows.Forms.TreeViewEventHandler(this.treeViewObjects_AfterSelect);
       // 
       // splitter6
       // 
@@ -304,6 +306,7 @@
       this.propertyGridObjects.Dock = System.Windows.Forms.DockStyle.Right;
       this.propertyGridObjects.Location = new System.Drawing.Point(284, 0);
       this.propertyGridObjects.Name = "propertyGridObjects";
+      this.propertyGridObjects.PropertySort = System.Windows.Forms.PropertySort.Categorized;
       this.propertyGridObjects.Size = new System.Drawing.Size(355, 343);
       this.propertyGridObjects.TabIndex = 3;
       // 

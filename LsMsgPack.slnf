@@ -5,6 +5,7 @@
       "LsMsgPackCore/LsMsgPack.Core.csproj",
       "LsMsgPackNetStandard/LsMsgPack.csproj",
       "LtMsgPack/LtMsgPack.csproj",
+      "ObjectDebugger/ObjectDebugger.csproj",
       "LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj",
       "LsMsgPackInteropTests/LsMsgPackInteropTests.csproj",
       "LsMsgPackFormatters/LsMsgPackFormatters.csproj",

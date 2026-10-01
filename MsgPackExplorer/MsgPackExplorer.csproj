@@ -95,6 +95,9 @@
     <Compile Include="MsgPackExplorer.Designer.cs">
       <DependentUpon>MsgPackExplorer.cs</DependentUpon>
     </Compile>
+    <Compile Include="MsgPackExplorer.Objects.cs">
+      <DependentUpon>MsgPackExplorer.cs</DependentUpon>
+    </Compile>
     <Compile Include="TestFileSuiteCreator.cs" />
     <EmbeddedResource Include="AboutBox.resx">
       <DependentUpon>AboutBox.cs</DependentUpon>
@@ -149,6 +152,10 @@
     <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj">
       <Project>{341c8f0f-1d80-4129-92cf-a8494dd78fd0}</Project>
       <Name>LsMsgPack.Core</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj">
+      <Project>{2a186111-c928-49c4-8164-bb36e5bc5f55}</Project>
+      <Name>ObjectDebugger</Name>
     </ProjectReference>
     <ProjectReference Include="..\LsMsgPackVisualStudioPlugin\DebuggerProxy\DebuggerProxy.csproj">
       <Project>{e87b099b-63e8-4238-b0b0-cea44ed72b4f}</Project>

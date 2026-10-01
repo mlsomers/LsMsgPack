@@ -28,6 +28,7 @@ namespace MsgPackExplorer
             {
                 item = value;
                 RefreshTree();
+                RefreshObjects();
             }
         }
 
@@ -101,8 +102,10 @@ namespace MsgPackExplorer
         return objectsPane.Visible;
       }
       set{
+        _objectsVisible = value;
         splitterObj.Visible = value;
         objectsPane.Visible = value;
+        RefreshObjects(); // skipped while hidden
       } 
     }
 

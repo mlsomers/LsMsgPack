@@ -1,38 +1,124 @@
-﻿using LsMsgPack;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 
 namespace ObjectDebugger
 {
-
-  public class PrimitiveObject
+  public enum ObjectKind
   {
-    public string Type { get; set; }
-
-    public MsgPackItem FirstItemRef { get; set; }
-    public MsgPackItem LastItemRef { get; set; }
-
-    
+    /// <summary>An object with properties (a map, or an array of its values with <c>ObjectLayout.Array</c>)</summary>
+    Object,
+    /// <summary>The elements of a collection (an array), with its properties when it was written with them</summary>
+    Collection,
+    /// <summary>The entries of a dictionary (a map whose keys are not property ids)</summary>
+    Dictionary,
+    /// <summary>An entry of a dictionary with a key that is not a primitive value (holds the members "Key" and "Value")</summary>
+    Entry,
+    /// <summary>A root that holds a single primitive value</summary>
+    Value,
+    /// <summary>A root holding several payloads that follow each other (each one a <see cref="RootObject"/>)</summary>
+    Sequence
   }
 
-  public class ComplexObject:PrimitiveObject
+  /// <summary>
+  /// An object, collection or dictionary of the reconstructed object tree.
+  /// </summary>
+  public class ComplexObject : PrimitiveObject
   {
-    // shown as children in the treeview
-    public List<ComplexObject> ComplexProperties { get; set; }=new List<ComplexObject>();
+    public ObjectKind Kind { get; set; }
 
-    // shown as children in treeview under complex props
-    public List<ComplexObject> CollectionProperties { get; set; } = new List<ComplexObject>();// type will probably change
+    /// <summary>
+    /// The type in the indexed schema, when the data has one and the type is known.
+    /// </summary>
+    public SchemaType SchemaType { get; set; }
 
-    // shown in the property grid
-    public List<PrimitiveProperty> PrimitiveProperties { get; set; } = new List<PrimitiveProperty>();
+    /// <summary>
+    /// The properties, elements or entries in the order of the data.
+    /// </summary>
+    public List<PrimitiveObject> Members { get; } = new List<PrimitiveObject>();
 
-    // a place to backreference a treeNode
-    public object Tag { get; set; }
+    /// <summary>
+    /// The objects and collections in <see cref="Members"/> (the children in a tree view).
+    /// </summary>
+    public IEnumerable<ComplexObject> Children
+    {
+      get { return Members.OfType<ComplexObject>(); }
+    }
+
+    /// <summary>
+    /// Shown as children in the tree view.
+    /// </summary>
+    public IEnumerable<ComplexObject> ComplexProperties
+    {
+      get { return Children.Where(c => !c.IsCollection); }
+    }
+
+    /// <summary>
+    /// Shown as children in the tree view.
+    /// </summary>
+    public IEnumerable<ComplexObject> CollectionProperties
+    {
+      get { return Children.Where(c => c.IsCollection); }
+    }
+
+    /// <summary>
+    /// The members that are neither objects nor collections (shown in the property grid).
+    /// </summary>
+    public IEnumerable<PrimitiveObject> PrimitiveProperties
+    {
+      get { return Members.Where(m => !(m is ComplexObject)); }
+    }
+
+    public bool IsCollection
+    {
+      get { return Kind == ObjectKind.Collection || Kind == ObjectKind.Dictionary || Kind == ObjectKind.Sequence; }
+    }
+
+    /// <summary>
+    /// Identifies where the value is in the object model (the declared type of a property, or of the elements of a collection), so values in the same place get the same inferred type.
+    /// </summary>
+    internal string Slot { get; set; }
+
+    public override string ValueText
+    {
+      get
+      {
+        switch (Kind)
+        {
+          case ObjectKind.Collection:
+          case ObjectKind.Dictionary:
+          case ObjectKind.Sequence:
+            return string.Concat("Count = ", Members.Count.ToString(CultureInfo.InvariantCulture));
+          default:
+            return TypeText;
+        }
+      }
+    }
+
+    public override string TypeText
+    {
+      get
+      {
+        if (Type != null)
+          return Type;
+        switch (Kind)
+        {
+          case ObjectKind.Collection: return "collection";
+          case ObjectKind.Dictionary: return "dictionary";
+          case ObjectKind.Entry: return "entry";
+          case ObjectKind.Sequence: return "sequence";
+          case ObjectKind.Value: return base.TypeText;
+          default: return "object";
+        }
+      }
+    }
+
+    public override string ToString()
+    {
+      string text = string.IsNullOrEmpty(Name) ? TypeText : string.Concat(Name, " : ", TypeText);
+      if (IsCollection)
+        text = string.Concat(text, " (", Members.Count.ToString(CultureInfo.InvariantCulture), ")");
+      return text;
+    }
   }
-  
-  public class PrimitiveProperty: PrimitiveObject // may ofcourse also be a complex object or a collection
-  {
-    public string Name { get; set; }
-  }
-
-  // public class collection ...
 }
