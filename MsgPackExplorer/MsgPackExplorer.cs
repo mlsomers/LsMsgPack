@@ -159,6 +159,7 @@ namespace MsgPackExplorer
                 Traverse(root, item);
                 if (_nodeCount > _displayLimit)
                     root.Nodes.Add(string.Concat("Limit of ", _displayLimit, " displayed items reached..."));
+                ColorSchemaNodes(root);
 
                 treeView1.Nodes.Add(root);
                 treeView1.ExpandAll();
@@ -438,6 +439,8 @@ namespace MsgPackExplorer
                         splitter4.Visible = false;
                     }
                 }
+
+                SelectObjectFor(e.Node);
             }
         }
 

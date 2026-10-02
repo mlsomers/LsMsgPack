@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ObjectDebugger;
 using System;
@@ -417,6 +417,28 @@ namespace LsMsgPackUnitTests
       RootObject address = (RootObject)root.Members[1];
       Assert.AreEqual(nameof(OdAddress), address.Type);
       AssertValue("Springfield", address, "City");
+    }
+
+    [TestMethod]
+    public void FindSchemaItems()
+    {
+      MsgPackSettings inline = Settings(ObjectLayout.Array, true);
+      MsgPackSettings reference = Settings(ObjectLayout.Array, true);
+      reference.SchemaStore = new SchemaStore();
+      reference.WriteSchemaReference = true;
+      byte[] first = MsgPackSerializer.Serialize(CreateInvoice(), inline);
+      byte[] second = MsgPackSerializer.Serialize(CreateInvoice().Billing, reference);
+
+      MpRoot root = MsgPackItem.UnpackMultiple(first.Concat(second).ToArray(), new MsgPackSettings());
+      List<MsgPackItem> schemas = RootObject.FindSchemaItems(root);
+
+      Assert.HasCount(2, schemas);
+      Assert.AreSame(root[0], schemas[0]);
+      Assert.IsInstanceOfType(schemas[0], typeof(MpMap));
+      Assert.AreSame(root[2], schemas[1]);
+      Assert.IsInstanceOfType(schemas[1], typeof(MpExt));
+
+      Assert.IsEmpty(RootObject.FindSchemaItems(MsgPackItem.UnpackMultiple(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Map, false)), new MsgPackSettings())));
     }
 
     [TestMethod]

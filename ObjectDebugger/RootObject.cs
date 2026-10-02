@@ -100,6 +100,22 @@ namespace ObjectDebugger
       }
     }
 
+    /// <summary>
+    /// The items holding a schema (or a reference to one) in the data, e.g. to show them differently. The same as <see cref="Reconstruct(MsgPackItem, SchemaStore)"/> recognizes them, without reconstructing the objects.
+    /// </summary>
+    /// <param name="item">An <see cref="MpRoot"/> or a single item (which is never a schema)</param>
+    public static List<MsgPackItem> FindSchemaItems(MsgPackItem item)
+    {
+      List<MsgPackItem> found = new List<MsgPackItem>();
+      if (!(item is MpRoot root))
+        return found;
+
+      foreach (Payload payload in SplitPayloads(new List<MsgPackItem>(root), null))
+        if (payload.SchemaItem != null)
+          found.Add(payload.SchemaItem);
+      return found;
+    }
+
     private sealed class Payload
     {
       public MsgPackItem SchemaItem;
@@ -118,7 +134,8 @@ namespace ObjectDebugger
       while (t < items.Count)
       {
         Payload payload = new Payload() { Body = items[t] };
-        if (t + 1 < items.Count)
+        // Only a map (the schema) or an extension (a reference) can start a payload with a schema
+        if (t + 1 < items.Count && (items[t] is MpMap || items[t] is MpExt))
         {
           Node first = Node.FromItem(items[t]);
           SchemaInfo schema = ReadInlineSchema(first);

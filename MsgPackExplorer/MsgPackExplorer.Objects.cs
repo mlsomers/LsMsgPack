@@ -15,6 +15,16 @@ namespace MsgPackExplorer {
     private bool _objectsVisible;
 
     /// <summary>
+    /// The node of the objects tree each item belongs to: the items of an object and of its primitive members (keys and values).
+    /// </summary>
+    private readonly Dictionary<MsgPackItem, TreeNode> _objectNodes = new Dictionary<MsgPackItem, TreeNode>();
+
+    /// <summary>
+    /// Set while one tree selects in the other, so that one does not select back.
+    /// </summary>
+    private bool _syncingSelection;
+
+    /// <summary>
     /// Reconstructs the objects of the data (types and property names, as far as the data tells them) and shows them in the objects pane, only while it is visible.
     /// </summary>
     public void RefreshObjects() {
@@ -22,6 +32,7 @@ namespace MsgPackExplorer {
       try {
         treeViewObjects.Nodes.Clear();
         propertyGridObjects.SelectedObject = null;
+        _objectNodes.Clear();
         if (!_objectsVisible || ReferenceEquals(item, null))
           return;
 
@@ -40,10 +51,17 @@ namespace MsgPackExplorer {
         if (count >= _displayLimit)
           rootNode.Nodes.Add(string.Concat("Limit of ", _displayLimit, " displayed items reached..."));
 
+        RegisterObjectItems(root);
+
         treeViewObjects.ShowNodeToolTips = true;
         treeViewObjects.Nodes.Add(rootNode);
         treeViewObjects.ExpandAll();
-        treeViewObjects.SelectedNode = rootNode;
+        _syncingSelection = true; // a new tree, keep the selection of the MsgPack tree
+        try {
+          treeViewObjects.SelectedNode = rootNode;
+        } finally {
+          _syncingSelection = false;
+        }
       } finally {
         treeViewObjects.EndUpdate();
         Cursor = Cursors.Default;
@@ -106,9 +124,119 @@ namespace MsgPackExplorer {
       }
     }
 
+    /// <summary>
+    /// Inner objects are registered after their parent, so an item that belongs to both (the key of an entry and the key itself) selects the innermost.
+    /// </summary>
+    private void RegisterObjectItems(ComplexObject obj) {
+      TreeNode node = obj.Tag as TreeNode;
+      if (node is null)
+        return; // beyond the display limit, its items select the parent that holds them
+
+      RegisterItem(obj.FirstItemRef, node);
+      RegisterItem(obj.LastItemRef, node);
+      foreach (PrimitiveObject member in obj.Members) {
+        ComplexObject complex = member as ComplexObject;
+        if (complex != null) {
+          RegisterObjectItems(complex);
+        } else {
+          RegisterItem(member.FirstItemRef, node);
+          RegisterItem(member.LastItemRef, node);
+        }
+      }
+    }
+
+    private void RegisterItem(MsgPackItem item, TreeNode node) {
+      if (!ReferenceEquals(item, null))
+        _objectNodes[item] = node;
+    }
+
     private void treeViewObjects_AfterSelect(object sender, TreeViewEventArgs e) {
       ComplexObject obj = e.Node?.Tag as ComplexObject;
       propertyGridObjects.SelectedObject = obj is null ? null : new ObjectPropertiesView(obj);
+      if (obj is null || _syncingSelection)
+        return;
+
+      // Select the first item of the object in the MsgPack tree, and all of its bytes in the hex view
+      _syncingSelection = true;
+      try {
+        TreeNode itemNode = GetItemNode(obj.FirstItemRef) ?? GetItemNode(obj.LastItemRef);
+        if (itemNode != null)
+          treeView1.SelectedNode = itemNode;
+        ColorItemRangeInHexView(obj.FirstItemRef, obj.LastItemRef);
+      } finally {
+        _syncingSelection = false;
+      }
+    }
+
+    /// <summary>
+    /// Selects the object an item of the MsgPack tree belongs to: the item's own object, or the one of the closest container it is in (the root for the schema).
+    /// </summary>
+    private void SelectObjectFor(TreeNode itemNode) {
+      if (_syncingSelection || treeViewObjects.Nodes.Count == 0)
+        return;
+
+      TreeNode target = null;
+      for (TreeNode node = itemNode; node != null && target is null; node = node.Parent) {
+        MsgPackItem nodeItem = node.Tag as MsgPackItem;
+        if (nodeItem != null)
+          _objectNodes.TryGetValue(nodeItem, out target);
+      }
+      if (target is null)
+        target = treeViewObjects.Nodes[0];
+
+      _syncingSelection = true;
+      try {
+        treeViewObjects.SelectedNode = target;
+      } finally {
+        _syncingSelection = false;
+      }
+    }
+
+    private static TreeNode GetItemNode(MsgPackItem item) {
+      if (ReferenceEquals(item, null))
+        return null;
+      EditorMetaData meta = item.Tag as EditorMetaData;
+      return meta?.Node;
+    }
+
+    /// <summary>
+    /// From the first byte of the first item to the last byte of the last item (e.g. the key and the value of a property).
+    /// </summary>
+    private void ColorItemRangeInHexView(MsgPackItem first, MsgPackItem last) {
+      EditorMetaData firstMeta = first?.Tag as EditorMetaData;
+      EditorMetaData lastMeta = last?.Tag as EditorMetaData;
+      if (firstMeta is null)
+        firstMeta = lastMeta;
+      if (lastMeta is null)
+        lastMeta = firstMeta;
+      if (firstMeta is null)
+        return;
+
+      int start = Math.Min(firstMeta.CharOffset, lastMeta.CharOffset) / 3;
+      int end = Math.Max(firstMeta.CharOffset / 3 + firstMeta.Length, lastMeta.CharOffset / 3 + lastMeta.Length);
+      ColorSelectedNodeInHexView(new EditorMetaData() { CharOffset = start * 3, Length = end - start });
+    }
+
+    /// <summary>
+    /// The schema (or schema reference) and everything in it in navy, it is not part of the objects.
+    /// </summary>
+    private void ColorSchemaNodes(TreeNode rootNode) {
+      List<MsgPackItem> schemas = RootObject.FindSchemaItems(item);
+      if (schemas.Count == 0)
+        return;
+
+      foreach (TreeNode node in rootNode.Nodes) {
+        MsgPackItem nodeItem = node.Tag as MsgPackItem;
+        if (nodeItem != null && schemas.Contains(nodeItem))
+          ColorSubtree(node, Color.Navy);
+      }
+    }
+
+    private static void ColorSubtree(TreeNode node, Color color) {
+      if (node.ForeColor.IsEmpty) // keep the gray of unreliable items (after an error)
+        node.ForeColor = color;
+      foreach (TreeNode child in node.Nodes)
+        ColorSubtree(child, color);
     }
 
     /// <summary>
