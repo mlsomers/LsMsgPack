@@ -97,9 +97,11 @@
     </Compile>
     <Compile Include="MsgPackExplorer.Objects.cs">
       <DependentUpon>MsgPackExplorer.cs</DependentUpon>
+      <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="MsgPackExplorer.Search.cs">
       <DependentUpon>MsgPackExplorer.cs</DependentUpon>
+      <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="TestFileSuiteCreator.cs" />
     <EmbeddedResource Include="AboutBox.resx">
@@ -107,6 +109,7 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Explorer.resx">
       <DependentUpon>Explorer.cs</DependentUpon>
+      <SubType>Designer</SubType>
     </EmbeddedResource>
     <EmbeddedResource Include="Properties\Resources.resx">
       <Generator>ResXFileCodeGenerator</Generator>

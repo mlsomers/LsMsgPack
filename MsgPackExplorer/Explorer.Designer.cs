@@ -53,6 +53,7 @@
       this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
       this.openFileDialog1 = new System.Windows.Forms.OpenFileDialog();
       this.saveTestSuiteDialog = new System.Windows.Forms.SaveFileDialog();
+      this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
       this.msgPackExplorer1 = new MsgPackExplorer.LsMsgPackExplorer();
       this.toolStrip1.SuspendLayout();
       this.SuspendLayout();
@@ -62,7 +63,6 @@
       this.toolStrip1.GripMargin = new System.Windows.Forms.Padding(0);
       this.toolStrip1.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
       this.toolStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.toolStripDropDownButton1,
             this.toolStripDropDownButton3,
             this.toolStripDropDownButton2,
             this.toolViewMenu,
@@ -71,16 +71,18 @@
             this.ddLimitItems,
             this.toolStripLabel2,
             this.ddEndianess,
+            this.toolStripDropDownButton1,
+            this.toolStripSeparator3,
             this.searchMatchCase,
             this.searchTextBox,
             this.searchPrev,
             this.searchNext,
             this.searchPosCount,
-            this.toolStripSeparator3});
+            this.toolStripSeparator4});
       this.toolStrip1.Location = new System.Drawing.Point(0, 0);
       this.toolStrip1.Name = "toolStrip1";
       this.toolStrip1.Padding = new System.Windows.Forms.Padding(0);
-      this.toolStrip1.Size = new System.Drawing.Size(959, 25);
+      this.toolStrip1.Size = new System.Drawing.Size(986, 25);
       this.toolStrip1.TabIndex = 1;
       this.toolStrip1.Text = "toolStrip1";
       // 
@@ -203,7 +205,7 @@
       // 
       this.toolViewMenu.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.objectsMenuItem});
-      this.toolViewMenu.Image = ((System.Drawing.Image)(resources.GetObject("toolViewMenu.Image")));
+      this.toolViewMenu.Image = global::MsgPackExplorer.Properties.Resources.Explore16;
       this.toolViewMenu.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.toolViewMenu.Name = "toolViewMenu";
       this.toolViewMenu.Size = new System.Drawing.Size(61, 22);
@@ -212,8 +214,9 @@
       // objectsMenuItem
       // 
       this.objectsMenuItem.CheckOnClick = true;
+      this.objectsMenuItem.Image = global::MsgPackExplorer.Properties.Resources.Explore16;
       this.objectsMenuItem.Name = "objectsMenuItem";
-      this.objectsMenuItem.Size = new System.Drawing.Size(114, 22);
+      this.objectsMenuItem.Size = new System.Drawing.Size(180, 22);
       this.objectsMenuItem.Text = "Objects";
       this.objectsMenuItem.CheckedChanged += new System.EventHandler(this.objectsMenuItem_CheckedChanged);
       // 
@@ -277,30 +280,31 @@
       this.searchTextBox.Font = new System.Drawing.Font("Segoe UI", 9F);
       this.searchTextBox.Name = "searchTextBox";
       this.searchTextBox.Size = new System.Drawing.Size(100, 25);
-      this.searchTextBox.ToolTipText = "Search strings containing the text, and values it converts to (numbers, true/false, null, Guid, dates). Hold Escape to stop searching.";
+      this.searchTextBox.ToolTipText = "Search strings containing the text, and values it converts to (numbers, true/fals" +
+    "e, null, Guid, dates). Hold Escape to stop searching.";
       this.searchTextBox.KeyDown += new System.Windows.Forms.KeyEventHandler(this.searchTextBox_KeyDown);
       this.searchTextBox.TextChanged += new System.EventHandler(this.searchTextBox_TextChanged);
       // 
       // searchPrev
       // 
-      this.searchPrev.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+      this.searchPrev.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+      this.searchPrev.Enabled = false;
       this.searchPrev.Image = ((System.Drawing.Image)(resources.GetObject("searchPrev.Image")));
       this.searchPrev.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.searchPrev.Name = "searchPrev";
-      this.searchPrev.Enabled = false;
       this.searchPrev.Size = new System.Drawing.Size(23, 22);
-      this.searchPrev.Text = "Previous";
+      this.searchPrev.Text = "<";
       this.searchPrev.Click += new System.EventHandler(this.searchPrev_Click);
       // 
       // searchNext
       // 
-      this.searchNext.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+      this.searchNext.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+      this.searchNext.Enabled = false;
       this.searchNext.Image = ((System.Drawing.Image)(resources.GetObject("searchNext.Image")));
       this.searchNext.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.searchNext.Name = "searchNext";
-      this.searchNext.Enabled = false;
       this.searchNext.Size = new System.Drawing.Size(23, 22);
-      this.searchNext.Text = "Next";
+      this.searchNext.Text = ">";
       this.searchNext.Click += new System.EventHandler(this.searchNext_Click);
       // 
       // searchPosCount
@@ -326,6 +330,11 @@
       this.saveTestSuiteDialog.FileName = "FileName will be ignored";
       this.saveTestSuiteDialog.Title = "Save Test Suite files";
       // 
+      // toolStripSeparator4
+      // 
+      this.toolStripSeparator4.Name = "toolStripSeparator4";
+      this.toolStripSeparator4.Size = new System.Drawing.Size(6, 25);
+      // 
       // msgPackExplorer1
       // 
       this.msgPackExplorer1.ContinueOnError = false;
@@ -338,7 +347,7 @@
       this.msgPackExplorer1.Location = new System.Drawing.Point(0, 25);
       this.msgPackExplorer1.Name = "msgPackExplorer1";
       this.msgPackExplorer1.ObjectsVisible = false;
-      this.msgPackExplorer1.Size = new System.Drawing.Size(959, 578);
+      this.msgPackExplorer1.Size = new System.Drawing.Size(986, 578);
       this.msgPackExplorer1.TabIndex = 0;
       this.msgPackExplorer1.ItemChanged += new System.EventHandler(this.msgPackExplorer1_ItemChanged);
       // 
@@ -346,7 +355,7 @@
       // 
       this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
       this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-      this.ClientSize = new System.Drawing.Size(959, 603);
+      this.ClientSize = new System.Drawing.Size(986, 603);
       this.Controls.Add(this.msgPackExplorer1);
       this.Controls.Add(this.toolStrip1);
       this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
@@ -391,6 +400,7 @@
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
     private System.Windows.Forms.ToolStripDropDownButton toolViewMenu;
     private System.Windows.Forms.ToolStripMenuItem objectsMenuItem;
+    private System.Windows.Forms.ToolStripSeparator toolStripSeparator4;
   }
 }
 
