@@ -45,6 +45,7 @@
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
       this.toolStripLabel2 = new System.Windows.Forms.ToolStripLabel();
       this.ddEndianess = new System.Windows.Forms.ToolStripComboBox();
+      this.searchMatchCase = new System.Windows.Forms.ToolStripButton();
       this.searchTextBox = new System.Windows.Forms.ToolStripTextBox();
       this.searchPrev = new System.Windows.Forms.ToolStripButton();
       this.searchNext = new System.Windows.Forms.ToolStripButton();
@@ -70,6 +71,7 @@
             this.ddLimitItems,
             this.toolStripLabel2,
             this.ddEndianess,
+            this.searchMatchCase,
             this.searchTextBox,
             this.searchPrev,
             this.searchNext,
@@ -260,11 +262,24 @@
       this.ddEndianess.DropDownClosed += new System.EventHandler(this.ddEndianess_DropDownClosed);
       this.ddEndianess.TextChanged += new System.EventHandler(this.ddEndianess_DropDownClosed);
       // 
+      // searchMatchCase
+      // 
+      this.searchMatchCase.CheckOnClick = true;
+      this.searchMatchCase.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+      this.searchMatchCase.Name = "searchMatchCase";
+      this.searchMatchCase.Size = new System.Drawing.Size(25, 22);
+      this.searchMatchCase.Text = "Aa";
+      this.searchMatchCase.ToolTipText = "Match case (of strings containing the text)";
+      this.searchMatchCase.CheckedChanged += new System.EventHandler(this.searchMatchCase_CheckedChanged);
+      // 
       // searchTextBox
       // 
       this.searchTextBox.Font = new System.Drawing.Font("Segoe UI", 9F);
       this.searchTextBox.Name = "searchTextBox";
       this.searchTextBox.Size = new System.Drawing.Size(100, 25);
+      this.searchTextBox.ToolTipText = "Search strings containing the text, and values it converts to (numbers, true/false, null, Guid, dates). Hold Escape to stop searching.";
+      this.searchTextBox.KeyDown += new System.Windows.Forms.KeyEventHandler(this.searchTextBox_KeyDown);
+      this.searchTextBox.TextChanged += new System.EventHandler(this.searchTextBox_TextChanged);
       // 
       // searchPrev
       // 
@@ -272,8 +287,10 @@
       this.searchPrev.Image = ((System.Drawing.Image)(resources.GetObject("searchPrev.Image")));
       this.searchPrev.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.searchPrev.Name = "searchPrev";
+      this.searchPrev.Enabled = false;
       this.searchPrev.Size = new System.Drawing.Size(23, 22);
-      this.searchPrev.Text = "toolStripButton1";
+      this.searchPrev.Text = "Previous";
+      this.searchPrev.Click += new System.EventHandler(this.searchPrev_Click);
       // 
       // searchNext
       // 
@@ -281,8 +298,10 @@
       this.searchNext.Image = ((System.Drawing.Image)(resources.GetObject("searchNext.Image")));
       this.searchNext.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.searchNext.Name = "searchNext";
+      this.searchNext.Enabled = false;
       this.searchNext.Size = new System.Drawing.Size(23, 22);
-      this.searchNext.Text = "toolStripButton2";
+      this.searchNext.Text = "Next";
+      this.searchNext.Click += new System.EventHandler(this.searchNext_Click);
       // 
       // searchPosCount
       // 
@@ -321,6 +340,7 @@
       this.msgPackExplorer1.ObjectsVisible = false;
       this.msgPackExplorer1.Size = new System.Drawing.Size(959, 578);
       this.msgPackExplorer1.TabIndex = 0;
+      this.msgPackExplorer1.ItemChanged += new System.EventHandler(this.msgPackExplorer1_ItemChanged);
       // 
       // Explorer
       // 
@@ -363,6 +383,7 @@
     private System.Windows.Forms.ToolStripMenuItem fromClipboardToolStripMenuItem;
     private System.Windows.Forms.ToolStripMenuItem menUnistallFiddler;
     private System.Windows.Forms.ToolStripMenuItem menUninstallVisualStudio;
+    private System.Windows.Forms.ToolStripButton searchMatchCase;
     private System.Windows.Forms.ToolStripTextBox searchTextBox;
     private System.Windows.Forms.ToolStripButton searchPrev;
     private System.Windows.Forms.ToolStripButton searchNext;

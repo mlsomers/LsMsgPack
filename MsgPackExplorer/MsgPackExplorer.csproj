@@ -98,6 +98,9 @@
     <Compile Include="MsgPackExplorer.Objects.cs">
       <DependentUpon>MsgPackExplorer.cs</DependentUpon>
     </Compile>
+    <Compile Include="MsgPackExplorer.Search.cs">
+      <DependentUpon>MsgPackExplorer.cs</DependentUpon>
+    </Compile>
     <Compile Include="TestFileSuiteCreator.cs" />
     <EmbeddedResource Include="AboutBox.resx">
       <DependentUpon>AboutBox.cs</DependentUpon>

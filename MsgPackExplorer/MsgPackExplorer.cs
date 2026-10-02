@@ -28,8 +28,40 @@ namespace MsgPackExplorer
             {
                 item = value;
                 RefreshTree();
+
+                // The handlers may show or hide the objects (see HasSchema), which are then built once below
+                _settingItem = true;
+                try
+                {
+                    ItemChanged?.Invoke(this, EventArgs.Empty);
+                }
+                finally
+                {
+                    _settingItem = false;
+                }
                 RefreshObjects();
             }
+        }
+
+        private bool _settingItem;
+
+        /// <summary>
+        /// Raised after new data was loaded (<see cref="Item"/> or <see cref="Data"/>).
+        /// </summary>
+        [Category("MsgPack")]
+        [Description("Raised after new data was loaded.")]
+        public event EventHandler ItemChanged;
+
+        private List<MsgPackItem> _schemaItems = new List<MsgPackItem>();
+
+        /// <summary>
+        /// The data starts with an indexed schema (or a reference to one), so it was written from objects.
+        /// </summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool HasSchema
+        {
+            get { return _schemaItems.Count > 0; }
         }
 
         private bool _continueOnError;
@@ -99,13 +131,16 @@ namespace MsgPackExplorer
 
     public bool ObjectsVisible {
       get{ 
-        return objectsPane.Visible;
+        return _objectsVisible; // objectsPane.Visible is false while the form is not shown yet
       }
       set{
+        if (value == _objectsVisible)
+          return;
         _objectsVisible = value;
         splitterObj.Visible = value;
         objectsPane.Visible = value;
-        RefreshObjects(); // skipped while hidden
+        if (!_settingItem)
+          RefreshObjects(); // skipped while hidden
       } 
     }
 
@@ -152,6 +187,7 @@ namespace MsgPackExplorer
                 richTextBox1.Clear();
                 lineairList.Clear();
                 listView1.Items.Clear();
+                _schemaItems = ReferenceEquals(item, null) ? new List<MsgPackItem>() : ObjectDebugger.RootObject.FindSchemaItems(item);
                 if (ReferenceEquals(item, null)) return;
 
                 TreeNode root = GetTreeNodeFor(item);

@@ -221,13 +221,12 @@ namespace MsgPackExplorer {
     /// The schema (or schema reference) and everything in it in navy, it is not part of the objects.
     /// </summary>
     private void ColorSchemaNodes(TreeNode rootNode) {
-      List<MsgPackItem> schemas = RootObject.FindSchemaItems(item);
-      if (schemas.Count == 0)
+      if (_schemaItems.Count == 0)
         return;
 
       foreach (TreeNode node in rootNode.Nodes) {
         MsgPackItem nodeItem = node.Tag as MsgPackItem;
-        if (nodeItem != null && schemas.Contains(nodeItem))
+        if (nodeItem != null && _schemaItems.Contains(nodeItem))
           ColorSubtree(node, Color.Navy);
       }
     }
