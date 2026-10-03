@@ -51,7 +51,19 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// Returns <paramref name="assignedTo"/> when no (more specific) type could be resolved, it is up to the caller to decide if that type can be instantiated.
     /// </summary>
+    /// <exception cref="MsgPackException">When the resolved type cannot be assigned to <paramref name="assignedTo"/> or the <see cref="MsgPackOptions.TypeGuard"/> refuses it (see docs/security.md)</exception>
     internal static Type Resolve(object typeId, Type assignedTo, FullPropertyInfo rootProp, MsgPackOptions settings, Dictionary<object, object> propVals)
+    {
+      Type result = ResolveUnchecked(typeId, assignedTo, rootProp, settings, propVals);
+      if (result != assignedTo && result != null) // the data picked the type: before anything creates an instance of it
+      {
+        ThrowIfNotAssignable(result, assignedTo, typeId);
+        ThrowIfNotAllowed(result, assignedTo, rootProp, settings, typeId);
+      }
+      return result;
+    }
+
+    private static Type ResolveUnchecked(object typeId, Type assignedTo, FullPropertyInfo rootProp, MsgPackOptions settings, Dictionary<object, object> propVals)
     {
       Type result;
       // First give custom resolvers (if any) a chance...
@@ -69,6 +81,35 @@ namespace LsMsgPack.Meta
         return ResolveInternal(typeName, assignedTo, settings?.TypeResolvers);
 
       return assignedTo;
+    }
+
+    /// <summary>
+    /// A type picked by the data must fit where it goes, otherwise any type the resolvers can find would be created and its setters called (only then would assigning it fail).
+    /// </summary>
+    internal static void ThrowIfNotAssignable(Type type, Type assignedTo, object typeId)
+    {
+      Type target = Nullable.GetUnderlyingType(assignedTo) ?? assignedTo;
+      if (!target.IsAssignableFrom(type))
+        throw new MsgPackException($"The type id {DescribeTypeId(typeId)} resolves to {type.FullName}, which cannot be assigned to {assignedTo.FullName}. Deserializing stops before creating it (see docs/security.md).");
+    }
+
+    /// <summary>
+    /// Asks the <see cref="MsgPackOptions.TypeGuard"/> (if any) about a type picked by the data, assignable to <paramref name="assignedTo"/>.
+    /// </summary>
+    internal static void ThrowIfNotAllowed(Type type, Type assignedTo, FullPropertyInfo prop, MsgPackOptions settings, object typeId)
+    {
+      IMsgPackTypeGuard guard = settings?._typeGuard;
+      if (guard != null && !guard.IsAllowed(type, assignedTo, prop, settings))
+        throw new MsgPackException($"The type id {DescribeTypeId(typeId)} resolves to {type.FullName}, which the {nameof(MsgPackOptions.TypeGuard)} ({guard.GetType().Name}) does not allow{(prop is null ? "" : $" for {prop.PropertyInfo.DeclaringType?.Name}.{prop.PropertyInfo.Name}")} (declared as {assignedTo.FullName}, see docs/security.md).");
+    }
+
+    private static string DescribeTypeId(object typeId)
+    {
+      if (typeId is null)
+        return "(none, a type resolver picked the type)";
+      if (typeId is Type type) // LtMsgPack: the type was found by a name or schema index
+        return $"\"{type.Name}\"";
+      return typeId is string ? $"\"{typeId}\"" : typeId.ToString();
     }
 
     internal static Type ResolveInternal(string typeName, Type assignedTo, IMsgPackTypeResolver[] resolvers)
@@ -208,6 +249,12 @@ namespace LsMsgPack.Meta
       typeof(ObservableCollection<>).Assembly // System.Collections.ObjectModel
     };
 
+    /// <summary>
+    /// Characters of assembly-qualified names, bracketed generic arguments ("List`1[[System.Diagnostics.Process, System]]"), pointers and references: the serializers never write them in a type name
+    /// (generic arguments are written as "List&lt;Process&gt;" and split before they get here), and <see cref="Type.GetType(string)"/> or <see cref="Assembly.GetType(string)"/> would load the assemblies they name.
+    /// </summary>
+    private static readonly char[] UnsafeNameChars = new[] { ',', '[', ']', '&', '*' };
+
     private static Type ResolveName(string typeName, Type assignedTo)
     {
       Type result;
@@ -216,6 +263,9 @@ namespace LsMsgPack.Meta
         return result;
       if (UsedNameCache.TryGetValue(typeName, out result))
         return result;
+
+      if (typeName.IndexOfAny(UnsafeNameChars) >= 0) // the data must not choose assemblies to load (see docs/security.md)
+        throw new MsgPackException($"The type name \"{typeName}\" is not resolved: assembly-qualified names and bracketed generic arguments could load assemblies. Use a custom IMsgPackTypeResolver to resolve such names.");
 
       // First try offloading this work to the framework...
       result = Type.GetType(typeName, false, true);

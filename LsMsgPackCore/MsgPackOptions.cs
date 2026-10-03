@@ -63,6 +63,12 @@ namespace LsMsgPack
     public static IMsgPackTypeResolver[] Default_TypeResolvers = new IMsgPackTypeResolver[0];
 
     /// <summary>
+    /// The <see cref="TypeGuard"/> of new settings (null by default: the data may pick any type that is assignable to the declared type).
+    /// </summary>
+    [IgnoreDataMember]
+    public static IMsgPackTypeGuard Default_TypeGuard { get; set; } = null;
+
+    /// <summary>
     /// Included:
     /// <list type="bullet">
     /// <item>FilterIgnoredAttribute</item>
@@ -136,6 +142,7 @@ namespace LsMsgPack
     internal AddTypeIdOption _addTypeIdOptions = Default_AddTypeIdOptions;
 
     internal IMsgPackTypeResolver[] _typeResolvers = Default_TypeResolvers;
+    internal IMsgPackTypeGuard _typeGuard = Default_TypeGuard;
     internal IMsgPackPropertyIncludeStatically[] _staticFilters = Default_StaticFilters;
     internal IMsgPackPropertyIncludeDynamically[] _dynamicFilters = Default_DynamicFilters;
     internal IMsgPackPropertyIdResolver[] _propertyNameResolvers = Default_PropertyNameResolvers;
@@ -240,6 +247,15 @@ namespace LsMsgPack
     /// </para>
     /// </summary>
     public IMsgPackTypeResolver[] TypeResolvers { get { return _typeResolvers; } set { _typeResolvers = value; } }
+
+    /// <summary>
+    /// Decides which types the data may pick when deserializing (null by default), see docs/security.md and <see cref="TypeResolving.Types.AllowedTypesGuard"/>.
+    /// <para>A type id (or a type resolver) can only pick a type that is assignable to the declared type, also without a guard. A property, element or root declared as <c>object</c>,
+    /// an interface or a base class therefore accepts every type that the type resolvers can find: limit them with a guard when the data comes from somewhere you do not trust.</para>
+    /// <para>Only asked when the data picks another type than the declared one, before the instance is created.</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public IMsgPackTypeGuard TypeGuard { get { return _typeGuard; } set { _typeGuard = value; } }
 
 
     /// <summary>

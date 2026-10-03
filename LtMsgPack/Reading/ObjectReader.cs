@@ -52,8 +52,10 @@ namespace LtMsgPack.Reading
         if (type is null)
           return Slow(c, start, assignedTo);
         plan = type == typeof(T) ? Plan : _serializer.GetReadPlan(type);
-        if (plan is null || !typeof(T).IsAssignableFrom(type))
+        if (plan is null || !typeof(T).IsAssignableFrom(type)) // LsMsgPack's way refuses a type that is not assignable
           return Slow(c, start, assignedTo);
+        if (type != typeof(T) && _serializer.Options._typeGuard != null) // the type guard, before the instance is created (see docs/security.md)
+          TypeResolver.ThrowIfNotAllowed(type, typeof(T), assignedTo, _serializer.Options, type);
         count--;
 
         if (count == 1 && c.R.Pos + 1 < c.R.End &&c.R.Buf[c.R.Pos] == 0xA1 && c.R.Buf[c.R.Pos + 1] == (byte)'@') // ObjectLayout.Array with a type id: { "": typeId, "@": [values] }

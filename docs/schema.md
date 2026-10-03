@@ -43,6 +43,14 @@ For a single small object the schema is overhead. It pays off once objects repea
 
 Both sides must use the same `UseInexedSchema` setting. Data written with the schema starts with the schema map, and data written without it does not. Reading data with the wrong setting throws a `MsgPackException`.
 
+### Why not just use `List<object>`?
+
+Every setting above that writes type ids lets the *data* decide which class is created, wherever the declared type allows it. With `List<IPet>` (or `IPet[]`), only implementations of `IPet` fit, and a type id naming anything else is refused before it's created. With `List<object>`, every element can carry a type id for any type the reader can find, because everything is assignable to `object`. Whoever writes the data then chooses which constructors and property setters run on your side. The same goes for `object[]`, `Dictionary<string, object>`, non-generic collections and `Deserialize<object>()`.
+
+It also costs more. The writer can't leave out a type id for an element whose type it can't tell from the declaration, and the reader looks up a type for every element instead of using the declared one.
+
+Declare the most specific type you can. When you need `object` and read data you don't trust, limit the allowed types with a `TypeGuard`. See [Security: type injection](security.md).
+
 Plain maps
 ----------
 
@@ -62,7 +70,7 @@ Cons:
 - Property names are repeated for every object, which makes large collections big.
 - No type information is included. A property declared as an interface, an abstract class or `object` can't be deserialized unless a custom [type resolver](#resolving-by-signature) recognizes the type from its properties. For the example above, reading it back throws *"Cannot create an instance of an interface or abstract type"*.
 
-This is what the web formatters send for `application/msgpack` and `application/x-msgpack` (see [ASP.NET integration](aspnet.md)).
+This is what the web formatters send for `application/msgpack` and `application/x-msgpack` (see [Web formatters](WebFormatters.md)).
 
 Type ids
 --------
@@ -131,36 +139,40 @@ One of my frustrations with other serializers is that they don't handle class hi
 
 Suppose you have an interface `IPet` with classes `Cat`, `Dog` and `Fish` that implement it. A class containing an array (or another collection) of pets serializes and deserializes correctly without any extra code, as long as [type ids](#type-ids) are enabled (they are by default).
 
-To deserialize, LsMsgPack has to turn the type id back into a `Type`. It finds the type by name, starting with the assembly where the declared type is defined:
+To deserialize, the type id has to become a `Type` again. A type id is the short name of the type by default (`Cat`), and it's looked up in this order:
+
+1. Names resolved before (the fastest), and types that `Type.GetType` finds by itself.
+2. The assembly of the declared type (and of its generic arguments): all its types are cached by name the first time. With the indexed schema (the default), the assembly of the type you deserialize is cached as well.
+3. The names of all types in the assemblies cached so far.
+
+So the implementations of `IPet` are found without any registration when they're in the assembly of `IPet` (declared as `IPet`, `List<IPet>`, `IPet[]`...), or in the assembly of the class you deserialize:
 
 ```csharp
 public List<IPet> Pets { get; set; }   // Cat and Dog are found in the assembly that defines IPet
 ```
 
-There are limits and edge cases, though. For example:
+Register an assembly yourself when that isn't the case, once, before deserializing:
 
 ```csharp
+// The property is declared as object, so the reader has no assembly to look in:
 public IEnumerable<object> Pets { get; set; } = new HashSet<IPet> { new Cat(), new Dog() };
+
+MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));    // LsMsgPack
+LtMsgPackSerializer.CacheAssemblyTypes(typeof(IPet));  // LtMsgPack (the same cache, either call will do)
 ```
 
-Here the declared element type is `object`, which gives no hint about where to look. In this case, call the following once, somewhere before deserializing:
+The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins): register each of them. And `Deserialize<List<Cat>>()` only looks in the assembly of `List<T>`, so register the assembly of `Cat` when it isn't reachable from the root type.
 
-```csharp
-MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));          // caches the types of the assembly that defines IPet
-MsgPackSerializer.CacheAssemblyTypes(typeof(IPet).Assembly); // same thing
-```
-
-Pre-caching is also needed when some of the derived types live in a different assembly than the interface or base class they're assigned to.
-
-The type lookup uses several cache tiers:
-1. The fastest is the cache of full names and previously used names. Once a type has been resolved, looking it up again is a dictionary hit.
-2. Next come the names of all types in cached assemblies. Not all assemblies are cached by default (that would waste memory). Assemblies are added through `CacheAssemblyTypes` or when the declared type's assembly is searched.
-3. You can also opt in to scanning all loaded assemblies with the included [`WildGooseChaseResolver`](#wildgoosechaseresolver).
+- **Short names must be unique** among the cached assemblies. Two cached classes called `Cat` (in different namespaces) make reading throw "Type assignment dilamma". Use `AddTypeIdOptions = AddTypeIdOption.FullName` (bigger payloads) or your own `IMsgPackTypeResolver` in `TypeResolvers`.
+- **Let it search**: the included [`WildGooseChaseResolver`](#wildgoosechaseresolver) searches all assemblies loaded in the AppDomain for a name it can't find otherwise (and caches the assemblies it searched). Convenient, but slower the first time, and it keeps more names in memory.
+- **Your own mapping**: implement `IMsgPackTypeResolver` to choose the ids and the types (e.g. a fixed table of names, or [`XmlRootAttributeTypeResolver`](#xmlrootattributetyperesolver) to use the names of `[XmlRoot]`).
 
 Type resolvers
 --------------
 
 Type resolvers (`IMsgPackTypeResolver`) decide which id is written for a type and which type an id is read back as. Configure them in `MsgPackSettings.TypeResolvers` (or `MsgPackSettings.Default_TypeResolvers` for all new settings). They're consulted from last to first. If none of them returns a result, the built-in name resolver described above is used.
+
+Whichever resolver picks the type, the result must be assignable to the declared type, and names that would load an assembly are refused. To limit the types the data may pick further (e.g. for properties declared as `object`), set a type guard (`MsgPackOptions.TypeGuard`, such as `AllowedTypesGuard`). A resolver is the wrong place for that: resolvers are asked in turn until one returns a type, so one of them can't veto what another one returns. See [Security: type injection](security.md).
 
 ### WildGooseChaseResolver
 
@@ -172,6 +184,7 @@ When a name can't be found, this resolver searches `AppDomain.CurrentDomain.GetA
 
 - Pro: no pre-registering needed.
 - Con: slow the first time a type is missed, and it caches lots of types you may never need. Handy during development, but not recommended for production.
+- Con: the data can then name types in every loaded assembly. Don't use it for data you don't trust, or limit the types with a [type guard](security.md#the-type-guard).
 
 ### XmlRootAttributeTypeResolver
 
@@ -187,6 +200,7 @@ public class Cat : IPet { ... }
 This resolver uses the name from the `[XmlRoot("...")]` attribute as the type id.
 
 - Pro: short, stable names that don't change when you rename or move a class, and you may already have these attributes for the XML serializer.
+- Pro or con: using different names than the class names obfuscates the type (intentionally or not) making debugging harder, but may also be used for intentionally obscuring information. E.g. one may call the `Dog` class "cat" and the `Cat` class "dog", or just a single character like "%".
 - Con: types must be registered before deserializing, and only types with the attribute are handled (the others fall back to the default name).
 
 ### Custom type resolvers
@@ -238,7 +252,9 @@ public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToP
 }
 ```
 
-Use this with `UseInexedSchema = false` and `AddTypeIdOptions = AddTypeIdOption.Never` to read polymorphic data written by other implementations that don't add type ids. It doesn't work with the indexed schema, because the property keys there are indexes rather than names (see [the indexed schema](#the-indexed-schema)).
+Use this with `UseInexedSchema = false` and `AddTypeIdOptions = AddTypeIdOption.Never` to read polymorphic data written by other implementations that don't add type ids.
+
+This is the way typical serialization libraries often solve polymorphism (ISerializationBinder). The extra code needed and trouble of maintaining this code is the reason for our [indexed schemas](#the-indexed-schema) and `AddTypeIdOption.IfAmbiguious` features. However the freedom to write custom resolvers is fully supported.
 
 Property names and filters
 --------------------------
@@ -257,4 +273,4 @@ Choosing your settings
 - **Other MsgPack implementations need to read the data**: set `UseInexedSchema = false`. Keep `IfAmbiguious` if you have polymorphic properties (the others can ignore the `""` key), or use `Never` for fully plain maps.
 - **Reading data from other implementations**: `UseInexedSchema = false`. If the data contains polymorphic values without type ids, add a [signature resolver](#resolving-by-signature).
 - **Class names may change, or you want shorter ids without a schema**: use `XmlRootAttributeTypeResolver` or a [custom type resolver](#custom-type-resolvers).
-- **Web APIs**: the [ASP.NET packages](aspnet.md) handle this per request. `application/msgpack` is plain MsgPack for everyone, and `application/x-lsmsgpack` uses your settings (by default the schema) between LsMsgPack endpoints.
+- **Web APIs**: the [web formatters](WebFormatters.md) handle this per request. `application/msgpack` is plain MsgPack for everyone (or a preset for another library), and `application/x-lsmsgpack` uses the schema between LsMsgPack / LtMsgPack endpoints.
