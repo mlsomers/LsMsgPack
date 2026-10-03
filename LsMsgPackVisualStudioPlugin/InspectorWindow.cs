@@ -8,13 +8,16 @@ namespace LsMsgPackVisualStudioPlugin
   public partial class InspectorWindow : Form
   {
     public LsMsgPackExplorer Explorer;
+    private readonly ExplorerSearch _search;
 
     public InspectorWindow()
     {
       Explorer=new LsMsgPackExplorer();
 
       InitializeComponent();
-      
+      Explorer.ItemChanged += Explorer_ItemChanged;
+      _search = new ExplorerSearch(Explorer, searchTextBox, searchMatchCase, searchPrev, searchNext, searchPosCount);
+
       ddLimitItems.SelectedIndex = 0;
 
       ddEndianess.Items.AddRange(new[]{
@@ -47,6 +50,7 @@ namespace LsMsgPackVisualStudioPlugin
       else
         Explorer.DisplayLimit = long.MaxValue;
       Explorer.RefreshTree();
+      _search.Reset(); // other items are shown
     }
 
     private void ddEndianess_DropDownClosed(object sender, EventArgs e) {
@@ -55,6 +59,17 @@ namespace LsMsgPackVisualStudioPlugin
         return;
       Explorer.EndianHandling = choice.Value;
       Explorer.Data = Explorer.Data;
+    }
+
+    private void btnObjects_CheckedChanged(object sender, EventArgs e)
+    {
+      Explorer.ObjectsVisible = btnObjects.Checked;
+    }
+
+    private void Explorer_ItemChanged(object sender, EventArgs e)
+    {
+      // Data with a schema was written from objects, show them (the button can still hide them)
+      btnObjects.Checked = Explorer.HasSchema;
     }
   }
 }

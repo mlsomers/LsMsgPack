@@ -89,6 +89,7 @@
     <Compile Include="Installer.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="ExplorerSearch.cs" />
     <Compile Include="MsgPackExplorer.cs">
       <SubType>UserControl</SubType>
     </Compile>

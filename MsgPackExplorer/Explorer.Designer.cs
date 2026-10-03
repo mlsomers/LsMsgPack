@@ -273,7 +273,6 @@
       this.searchMatchCase.Size = new System.Drawing.Size(25, 22);
       this.searchMatchCase.Text = "Aa";
       this.searchMatchCase.ToolTipText = "Match case (of strings containing the text)";
-      this.searchMatchCase.CheckedChanged += new System.EventHandler(this.searchMatchCase_CheckedChanged);
       // 
       // searchTextBox
       // 
@@ -282,8 +281,6 @@
       this.searchTextBox.Size = new System.Drawing.Size(100, 25);
       this.searchTextBox.ToolTipText = "Search strings containing the text, and values it converts to (numbers, true/fals" +
     "e, null, Guid, dates). Hold Escape to stop searching.";
-      this.searchTextBox.KeyDown += new System.Windows.Forms.KeyEventHandler(this.searchTextBox_KeyDown);
-      this.searchTextBox.TextChanged += new System.EventHandler(this.searchTextBox_TextChanged);
       // 
       // searchPrev
       // 
@@ -294,7 +291,6 @@
       this.searchPrev.Name = "searchPrev";
       this.searchPrev.Size = new System.Drawing.Size(23, 22);
       this.searchPrev.Text = "<";
-      this.searchPrev.Click += new System.EventHandler(this.searchPrev_Click);
       // 
       // searchNext
       // 
@@ -305,7 +301,6 @@
       this.searchNext.Name = "searchNext";
       this.searchNext.Size = new System.Drawing.Size(23, 22);
       this.searchNext.Text = ">";
-      this.searchNext.Click += new System.EventHandler(this.searchNext_Click);
       // 
       // searchPosCount
       // 

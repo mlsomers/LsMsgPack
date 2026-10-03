@@ -8,11 +8,14 @@ namespace MsgPackExplorer
 {
   public partial class Explorer : Form
   {
+    private readonly ExplorerSearch _search;
+
     public Explorer()
     {
       MsgPackSettings.Default_CustomExtentionTypes = new ICustomExt[0]; // exclude custom decimal type for general purpose debugger
 
       InitializeComponent();
+      _search = new ExplorerSearch(msgPackExplorer1, searchTextBox, searchMatchCase, searchPrev, searchNext, searchPosCount);
       ddLimitItems.SelectedIndex = 0;
 
       ddEndianess.Items.AddRange(new[]{
@@ -57,7 +60,7 @@ namespace MsgPackExplorer
       else
         msgPackExplorer1.DisplayLimit = long.MaxValue;
       msgPackExplorer1.RefreshTree();
-      ResetSearch(); // other items are shown
+      _search.Reset(); // other items are shown
     }
 
     private void ddEndianess_DropDownClosed(object sender, EventArgs e)
@@ -196,115 +199,7 @@ namespace MsgPackExplorer
     {
       // Data with a schema was written from objects, show them (the menu item can still hide them)
       objectsMenuItem.Checked = msgPackExplorer1.HasSchema;
-      ResetSearch();
     }
-
-    #region Search
-
-    /// <summary>
-    /// Null until previous or next is clicked after the text (or the data) changed.
-    /// </summary>
-    private LsMsgPackExplorer.SearchResult _searchResult;
-    private int _searchPosition;
-
-    private void searchTextBox_TextChanged(object sender, EventArgs e)
-    {
-      ResetSearch();
-    }
-
-    private void searchMatchCase_CheckedChanged(object sender, EventArgs e)
-    {
-      ResetSearch();
-    }
-
-    /// <summary>
-    /// The next click on previous or next searches again.
-    /// </summary>
-    private void ResetSearch()
-    {
-      _searchResult = null;
-      bool hasText = searchTextBox.Text.Length > 0;
-      searchPrev.Enabled = hasText;
-      searchNext.Enabled = hasText;
-      searchPosCount.Text = "0/0";
-      searchPosCount.ToolTipText = null;
-    }
-
-    private void searchTextBox_KeyDown(object sender, KeyEventArgs e)
-    {
-      if (e.KeyCode != Keys.Enter)
-        return;
-      e.Handled = true;
-      e.SuppressKeyPress = true; // no beep
-      if (e.Shift)
-      {
-        if (searchPrev.Enabled)
-          SearchStep(-1);
-      }
-      else if (searchNext.Enabled)
-        SearchStep(1);
-    }
-
-    private void searchPrev_Click(object sender, EventArgs e)
-    {
-      SearchStep(-1);
-    }
-
-    private void searchNext_Click(object sender, EventArgs e)
-    {
-      SearchStep(1);
-    }
-
-    /// <summary>
-    /// The first click after a change searches the whole data and goes to the first item found, the next ones move through the items found.
-    /// </summary>
-    private void SearchStep(int step)
-    {
-      if (_searchResult is null)
-      {
-        Cursor.Current = Cursors.WaitCursor;
-        try
-        {
-          _searchResult = msgPackExplorer1.Search(searchTextBox.Text, searchMatchCase.Checked);
-        }
-        finally
-        {
-          Cursor.Current = Cursors.Default;
-        }
-        _searchPosition = 0;
-      }
-      else
-        _searchPosition += step;
-
-      ShowSearchPosition();
-    }
-
-    private void ShowSearchPosition()
-    {
-      int count = _searchResult.Displayed.Count;
-      int total = _searchResult.TotalCount;
-      _searchPosition = Math.Max(0, Math.Min(_searchPosition, count - 1));
-
-      // Items beyond the display limit are not in the tree, so they are counted but cannot be selected
-      string text = string.Concat(count == 0 ? 0 : _searchPosition + 1, "/", count);
-      if (total > count)
-        text = string.Concat(text, "/", total);
-      searchPosCount.Text = text;
-
-      if (_searchResult.Interrupted)
-        searchPosCount.ToolTipText = "Searching was stopped (Escape), these are the items found so far.";
-      else if (total > count)
-        searchPosCount.ToolTipText = "Position / found within the display limit / found in all the data.";
-      else
-        searchPosCount.ToolTipText = "Position / found.";
-
-      searchPrev.Enabled = _searchPosition > 0;
-      searchNext.Enabled = _searchPosition < count - 1;
-      if (count > 0)
-        msgPackExplorer1.SelectItem(_searchResult.Displayed[_searchPosition]);
-    }
-
-    #endregion
   }
 
   public class EndianChoice
