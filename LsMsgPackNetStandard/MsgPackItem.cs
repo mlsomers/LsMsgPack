@@ -34,6 +34,11 @@ namespace LsMsgPack
 #endif
     protected MsgPackSettings _settings;
 
+    /// <summary>
+    /// The nesting level of an unpacked item (0 for the root), the arrays and maps unpack their items one level deeper (see <see cref="MsgPackOptions.MaxDepth"/>).
+    /// </summary>
+    internal int _depth;
+
     [XmlIgnore]
 #if KEEPTRACK
     [Category("Control")]
@@ -461,6 +466,24 @@ namespace LsMsgPack
 
     public static MsgPackItem Unpack(Stream stream, MsgPackSettings settings)
     {
+      return Unpack(stream, settings, 0);
+    }
+
+    /// <summary>
+    /// Marks (in <see cref="Exception.Data"/>) the exception thrown when the data is nested deeper than <see cref="MsgPackOptions.MaxDepth"/>: the levels above pass it on as it is instead of wrapping it each.
+    /// </summary>
+    private const string TooDeepKey = "LsMsgPack.TooDeep";
+
+    private static MsgPackException TooDeep(int maxDepth, long offset, MsgPackTypeId typeId)
+    {
+      MsgPackException ex = new MsgPackException($"The data is nested deeper than {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.MaxDepth)} ({maxDepth}).", offset, typeId);
+      ex.Data[TooDeepKey] = true;
+      return ex;
+    }
+
+    /// <param name="depth">The nesting level of the item (0 for the root), arrays and maps at <see cref="MsgPackOptions.MaxDepth"/> are refused: deeper nesting could exhaust the stack</param>
+    internal static MsgPackItem Unpack(Stream stream, MsgPackSettings settings, int depth)
+    {
       int typeByte = stream.ReadByte();
 #if KEEPTRACK
       if (typeByte < 0) return new MpError(settings, stream.Position, MsgPackTypeId.NeverUsed, "Unexpected end of data.");
@@ -538,6 +561,9 @@ namespace LsMsgPack
           item.storedOffset = stream.Position - 1;
 #endif
           item._settings = settings; // maybe redundent, but want to be sure
+          if (depth >= settings._maxDepth && (item is MpArray || item is MpMap))
+            throw TooDeep(settings._maxDepth, stream.Position - 1, type);
+          item._depth = depth;
           MsgPackItem ret = item.Read(type, stream);
 #if KEEPTRACK
           item.storedLength = stream.Position - item.storedOffset;
@@ -562,6 +588,9 @@ namespace LsMsgPack
         }
       }
       catch (Exception ex)
+#if !KEEPTRACK
+        when (!ex.Data.Contains(TooDeepKey))
+#endif
       {
 #if KEEPTRACK
         long pos = stream.Position - 1;

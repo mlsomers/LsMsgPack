@@ -133,7 +133,7 @@ namespace LsMsgPack
 #endif
       for (int t = 0; t < len; t++)
       {
-        MsgPackItem item = Unpack(data, _settings);
+        MsgPackItem item = Unpack(data, _settings, _depth + 1);
         items[t] = item.UnpackedValue;
 #if KEEPTRACK
         if (_settings._preservePackages) packedItems[t] = item;

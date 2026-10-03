@@ -71,12 +71,15 @@ namespace LsMsgPack
     /// <summary>
     /// Included:
     /// <list type="bullet">
+    /// <item>FilterNonSettable</item>
     /// <item>FilterIgnoredAttribute</item>
+    /// <item>FilterStatic</item>
     /// </list>
     /// </summary>
     public static IMsgPackPropertyIncludeStatically[] Default_StaticFilters = new IMsgPackPropertyIncludeStatically[]{
             new FilterNonSettable(),
-            new FilterIgnoredAttribute()
+            new FilterIgnoredAttribute(),
+            new FilterStatic()
         };
 
     /// <summary>
@@ -125,6 +128,12 @@ namespace LsMsgPack
     [IgnoreDataMember]
     public static bool Default_TrimTrailingNulls { get; set; } = false;
 
+    /// <summary>
+    /// The <see cref="MaxDepth"/> of new settings, 256 by default.
+    /// </summary>
+    [IgnoreDataMember]
+    public static int Default_MaxDepth { get; set; } = 256;
+
     #endregion
 
     /// <summary>
@@ -151,6 +160,7 @@ namespace LsMsgPack
     internal PropertyOrder _propertyOrder = Default_PropertyOrder;
     internal ObjectLayout _objectLayout = Default_ObjectLayout;
     internal bool _trimTrailingNulls = Default_TrimTrailingNulls;
+    internal int _maxDepth = Default_MaxDepth;
 
     /// <summary>
     /// The highest <see cref="LsMsgPack.PropertyOrder"/>, the orders are indexes of the caches in FullPropertyInfo.
@@ -259,9 +269,11 @@ namespace LsMsgPack
 
 
     /// <summary>
-    /// Included:
+    /// Included by default (<see cref="Default_StaticFilters"/>):
     /// <list type="bullet">
+    /// <item>FilterNonSettable</item>
     /// <item>FilterIgnoredAttribute</item>
+    /// <item>FilterStatic</item>
     /// </list>
     /// </summary>
     public IMsgPackPropertyIncludeStatically[] StaticFilters { get { return _staticFilters; } set { _staticFilters = value; } }
@@ -359,6 +371,21 @@ namespace LsMsgPack
     {
       get { return _trimTrailingNulls; }
       set { _trimTrailingNulls = value; }
+    }
+
+    /// <summary>
+    /// The deepest nesting read and written before a <see cref="MsgPackException"/> is thrown, 256 by default (<see cref="Default_MaxDepth"/>).
+    /// <para>Reading: arrays and maps in the data. Writing: objects and collections in the object graph (a cycle ends here instead of in a stack overflow).</para>
+    /// <para>A limit, because hostile data can nest deep enough to exhaust the stack, which ends the process (see docs/security.md).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max Depth")]
+    [Description("The deepest nesting of arrays and maps read (and of objects and collections written) before an exception is thrown. Protects against data nested deep enough to exhaust the stack.")]
+    [DefaultValue(256)]
+    public int MaxDepth
+    {
+      get { return _maxDepth; }
+      set { _maxDepth = value; }
     }
 
     /// <summary>

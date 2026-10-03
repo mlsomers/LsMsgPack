@@ -8,7 +8,6 @@ LsMsgPack and LtMsgPack support polymorphic object models out of the box: when a
 - [The type guard](#the-type-guard)
 - [Declare the types you expect](#declare-the-types-you-expect)
 - [What else to keep in mind](#what-else-to-keep-in-mind)
-- [Cost](#cost)
 
 The threat
 ----------
@@ -124,7 +123,8 @@ What else to keep in mind
 -------------------------
 
 - **Your own setters run with the sender's values.** Allowing a type means its constructor and setters may run with any values. Validate in setters that do more than store a value, or validate the object after deserializing.
-- **Types without a parameterless constructor** are created without running a constructor (`FormatterServices.GetUninitializedObject`), and their properties are then set. An allow-list limits which types this can happen to.
-- **Public static properties** with a setter are currently serialized, and they're set again when deserializing. This is a known issue that isn't fixed yet, because fixing it changes the output of such types. Don't put settable static properties on types you deserialize from untrusted data.
-- **Resource use** (very large lengths, deep nesting) is a separate topic. LtMsgPack stops at `LtMsgPackOptions.MaxDepth` (256 levels). A `SchemaStore` caches at most `MaxSchemas` received schemas.
+- **Types without a parameterless constructor** (or whose constructor throws) are created without running a constructor (`FormatterServices.GetUninitializedObject`), and their properties are then set. Such an object still gets finalized, and some finalizers fail on an object that was never constructed. For example, `System.Threading.PeriodicTimer` throws a `NullReferenceException` in its finalizer and `System.WeakReference` crashes the runtime, and either one ends the process. Both are reachable by their short names, so a 23-byte message to a model with an `object` property ends the process unless a [type guard](#the-type-guard) refuses them (measured with both serializers on .NET 8).
+- **Static properties** are left out by `FilterStatic`, one of the default `StaticFilters`, so the data can't change state that the whole application shares. If you replace the static filters, keep `FilterStatic` in the list. Without it, settable public static properties are written with every instance and set again when reading.
+- **Deep nesting**: both serializers refuse data with arrays and maps nested deeper than `MsgPackOptions.MaxDepth` (256 by default) and throw a `MsgPackException`. Without a limit, a few kilobytes of nested arrays exhaust the stack, and a stack overflow ends the process. Writing stops at the same depth, so an object graph with a cycle throws instead of overflowing the stack.
+- **Other resource use** (such as very large lengths) is a separate topic. A `SchemaStore` caches at most `MaxSchemas` received schemas.
 - **Custom type resolvers** are your code: a resolver that maps names to types decides what the data can reach. The guard is still asked about the types it returns.

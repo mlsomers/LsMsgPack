@@ -6,7 +6,7 @@ using System.Runtime.Serialization;
 namespace LtMsgPack
 {
   /// <summary>
-  /// The settings of <see cref="LtMsgPackSerializer"/>: the format settings shared with LsMsgPack (<see cref="MsgPackOptions"/>) plus custom extensions and limits for untrusted data.
+  /// The settings of <see cref="LtMsgPackSerializer"/>: the format settings shared with LsMsgPack (<see cref="MsgPackOptions"/>) plus custom extensions and the formats of other libraries (the limits for untrusted data, such as <see cref="MsgPackOptions.MaxDepth"/>, are shared).
   /// <para>The serializer takes a copy when it is created, change the options before creating it.</para>
   /// </summary>
   public class LtMsgPackOptions : MsgPackOptions
@@ -17,15 +17,7 @@ namespace LtMsgPack
     [IgnoreDataMember]
     public static LtExtension[] Default_Extensions = new LtExtension[] { new DecimalExtension() };
 
-    /// <summary>
-    /// The deepest nesting of arrays and maps read (and written) before a <see cref="MsgPackException"/> is thrown, 256 by default.
-    /// <para>A limit, because hostile data can nest deep enough to exhaust the stack.</para>
-    /// </summary>
-    [IgnoreDataMember]
-    public static int Default_MaxDepth { get; set; } = 256;
-
     internal LtExtension[] _extensions = Default_Extensions;
-    internal int _maxDepth = Default_MaxDepth;
 
     /// <summary>
     /// Custom extensions: values of their types are written as MsgPack extensions (the first extension that supports the type), and extensions of their type code are read by them.
@@ -36,16 +28,6 @@ namespace LtMsgPack
     {
       get { return _extensions; }
       set { _extensions = value ?? new LtExtension[0]; }
-    }
-
-    /// <summary>
-    /// The deepest nesting of arrays and maps (see <see cref="Default_MaxDepth"/>).
-    /// </summary>
-    [IgnoreDataMember]
-    public int MaxDepth
-    {
-      get { return _maxDepth; }
-      set { _maxDepth = value; }
     }
 
     internal GuidFormat _guidFormat = GuidFormat.Binary;
