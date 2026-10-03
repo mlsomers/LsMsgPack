@@ -134,6 +134,12 @@ namespace LsMsgPack
     [IgnoreDataMember]
     public static int Default_MaxDepth { get; set; } = 256;
 
+    /// <summary>
+    /// The <see cref="ObjectCreation"/> of new settings (<see cref="LsMsgPack.ObjectCreation.ConstructorOrUninitialized"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static ObjectCreation Default_ObjectCreation { get; set; } = ObjectCreation.ConstructorOrUninitialized;
+
     #endregion
 
     /// <summary>
@@ -161,6 +167,7 @@ namespace LsMsgPack
     internal ObjectLayout _objectLayout = Default_ObjectLayout;
     internal bool _trimTrailingNulls = Default_TrimTrailingNulls;
     internal int _maxDepth = Default_MaxDepth;
+    internal ObjectCreation _objectCreation = Default_ObjectCreation;
 
     /// <summary>
     /// The highest <see cref="LsMsgPack.PropertyOrder"/>, the orders are indexes of the caches in FullPropertyInfo.
@@ -389,6 +396,20 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// How the objects with properties are created when reading, <see cref="LsMsgPack.ObjectCreation.ConstructorOrUninitialized"/> by default (see docs/security.md).
+    /// <para>Collections and dictionaries always use their constructor (with <see cref="LsMsgPack.ObjectCreation.Constructor"/> only their constructor).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Object Creation")]
+    [Description("How objects are created when reading: with their parameterless constructor, without running a constructor, or the constructor when there is one (default).")]
+    [DefaultValue(ObjectCreation.ConstructorOrUninitialized)]
+    public ObjectCreation ObjectCreation
+    {
+      get { return _objectCreation; }
+      set { _objectCreation = value; }
+    }
+
+    /// <summary>
     /// A copy of these options (of the same derived type), without the caches of a session (see <see cref="SchemaSession"/>).
     /// </summary>
     internal MsgPackOptions CloneOptions()
@@ -508,6 +529,33 @@ namespace LsMsgPack
     /// </summary>
     [Description("An array of the values in the property order, without keys (nil for values left out by the filters). Without the indexed schema the reader needs the same order and properties.")]
     Array = 1
+  }
+
+  /// <summary>
+  /// How the objects with properties are created when reading (see <see cref="MsgPackOptions.ObjectCreation"/>).
+  /// <para>An object created without a constructor (uninitialized) has all its fields zero: the constructor and the initializers of fields and properties do not run,
+  /// so a property that is not in the data stays null (or 0) instead of getting the value the class gives it.</para>
+  /// </summary>
+  public enum ObjectCreation
+  {
+    /// <summary>
+    /// Only with the parameterless constructor (public or not). Reading a type without one throws a <see cref="MsgPackException"/>, an exception of the constructor is passed on as it is.
+    /// </summary>
+    [Description("Only with the parameterless constructor: reading a type without one throws, exceptions of the constructor are passed on.")]
+    Constructor = 0,
+
+    /// <summary>
+    /// With the parameterless constructor (an exception of it is passed on as it is), uninitialized when the type has none (default).
+    /// <para>The finalizer of an uninitialized object is suppressed (<see cref="GC.SuppressFinalize"/>): some finalizers fail on an object that was never constructed, which ends the process (see docs/security.md).</para>
+    /// </summary>
+    [Description("With the parameterless constructor, uninitialized (without its finalizer) when the type has none.")]
+    ConstructorOrUninitialized = 1,
+
+    /// <summary>
+    /// Always uninitialized, no constructor runs (like DataContractSerializer), and the finalizer is suppressed. For data from a trusted source.
+    /// </summary>
+    [Description("Always uninitialized: no constructor or initializer runs, the finalizer is suppressed. For trusted data.")]
+    Uninitialized = 2
   }
 
   [Flags]

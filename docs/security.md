@@ -7,6 +7,7 @@ LsMsgPack and LtMsgPack support polymorphic object models out of the box: when a
 - [Protection built in](#protection-built-in)
 - [The type guard](#the-type-guard)
 - [Declare the types you expect](#declare-the-types-you-expect)
+- [How objects are created](#how-objects-are-created)
 - [What else to keep in mind](#what-else-to-keep-in-mind)
 
 The threat
@@ -119,11 +120,34 @@ The declared types of your model are your first line of defense, and they cost n
 - Prefer your own interfaces and base classes over framework interfaces. Many unrelated framework types implement `IEnumerable` or `IDisposable`.
 - If you do need `object` (e.g. a property bag), add a [type guard](#the-type-guard).
 
+How objects are created
+-----------------------
+
+`MsgPackOptions.ObjectCreation` decides how both serializers create the objects they fill in:
+
+| Choice | Constructor | Without a parameterless constructor |
+|---|---|---|
+| `Constructor` | The parameterless one (public or not), its exceptions are passed on | `MsgPackException` |
+| `ConstructorOrUninitialized` (**default**) | The parameterless one, its exceptions are passed on | Created uninitialized |
+| `Uninitialized` | Never | Created uninitialized |
+
+The finalizer of an object created uninitialized is always suppressed (`GC.SuppressFinalize`).
+
+An *uninitialized* object (`RuntimeHelpers.GetUninitializedObject`) has all its fields zero. Its constructor doesn't run, and neither do the initializers of its fields and properties, so a property that isn't in the data stays `null` or `0` instead of getting the value the class gives it. DataContractSerializer creates `[DataContract]` types this way, while System.Text.Json, Json.NET and XmlSerializer always run a constructor.
+
+Why the finalizer is suppressed: an object that was never constructed still gets finalized, and some finalizers fail on such an object. `System.Threading.PeriodicTimer` throws a `NullReferenceException` in its finalizer, which ends the process. It's found by its short name, so before this setting, a 23-byte message to a model with an `object` property ended the process at the next garbage collection (tested with both serializers on .NET 8).
+
+Weak references (`WeakReference`, `WeakReference<T>` and classes derived from them) are never created without their constructor, in any mode. The garbage collector cleans them up itself, ignores `GC.SuppressFinalize`, and crashes the process on an uninitialized one (a segmentation fault on .NET 8, 9 and 10). Reading one throws a `MsgPackException`.
+
+A [type guard](#the-type-guard) refuses all such framework types before they're created. Of the 12 public CoreLib classes with a finalizer, these were the only ones that ended the process when created uninitialized.
+
+Collections and dictionaries always use their constructor when they have one, in every mode, because an uninitialized collection doesn't work. With `Constructor`, a collection without a parameterless constructor (and without a constructor taking its elements) is refused too.
+
 What else to keep in mind
 -------------------------
 
 - **Your own setters run with the sender's values.** Allowing a type means its constructor and setters may run with any values. Validate in setters that do more than store a value, or validate the object after deserializing.
-- **Types without a parameterless constructor** (or whose constructor throws) are created without running a constructor (`FormatterServices.GetUninitializedObject`), and their properties are then set. Such an object still gets finalized, and some finalizers fail on an object that was never constructed. For example, `System.Threading.PeriodicTimer` throws a `NullReferenceException` in its finalizer and `System.WeakReference` crashes the runtime, and either one ends the process. Both are reachable by their short names, so a 23-byte message to a model with an `object` property ends the process unless a [type guard](#the-type-guard) refuses them (measured with both serializers on .NET 8).
+- **Types without a parameterless constructor** are created without running a constructor, by default without their finalizer. See [How objects are created](#how-objects-are-created).
 - **Static properties** are left out by `FilterStatic`, one of the default `StaticFilters`, so the data can't change state that the whole application shares. If you replace the static filters, keep `FilterStatic` in the list. Without it, settable public static properties are written with every instance and set again when reading.
 - **Deep nesting**: both serializers refuse data with arrays and maps nested deeper than `MsgPackOptions.MaxDepth` (256 by default) and throw a `MsgPackException`. Without a limit, a few kilobytes of nested arrays exhaust the stack, and a stack overflow ends the process. Writing stops at the same depth, so an object graph with a cycle throws instead of overflowing the stack.
 - **Other resource use** (such as very large lengths) is a separate topic. A `SchemaStore` caches at most `MaxSchemas` received schemas.

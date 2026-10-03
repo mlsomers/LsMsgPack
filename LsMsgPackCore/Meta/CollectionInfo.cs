@@ -104,7 +104,8 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// Create the collection from the (already converted) elements
     /// </summary>
-    public object Create(Array elements)
+    /// <param name="settings">Decides whether a collection without a parameterless constructor may be created uninitialized (see <see cref="MsgPackOptions.ObjectCreation"/>)</param>
+    public object Create(Array elements, MsgPackOptions settings = null)
     {
       if (ConcreteType.IsArray)
         return elements;
@@ -116,7 +117,7 @@ namespace LsMsgPack.Meta
         return _itemsConstructor.Invoke(new object[] { elements });
       }
 
-      object result = Instances.Create(ConcreteType);
+      object result = Instances.CreateCollection(ConcreteType, settings);
       if (result is IList list)
       {
         for (int t = 0; t < elements.Length; t++)

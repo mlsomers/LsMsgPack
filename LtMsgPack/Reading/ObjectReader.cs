@@ -4,6 +4,7 @@ using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 #if NETSTANDARD2_1_OR_GREATER
 using System.Reflection.Emit;
 #endif
@@ -188,7 +189,7 @@ namespace LtMsgPack.Reading
       Props = new PropReader[infos.Length];
       for (int t = 0; t < infos.Length; t++)
         Props[t] = PropReader.Create(serializer, infos[t]);
-      _create = Creator(type);
+      _create = Creator(type, serializer.Options._objectCreation);
     }
 
     internal object Create()
@@ -221,8 +222,14 @@ namespace LtMsgPack.Reading
       return null;
     }
 
-    private static Func<object> Creator(Type type)
+    /// <summary>
+    /// Creates the instances as <see cref="MsgPackOptions.ObjectCreation"/> says (decided once per type, the options of a serializer do not change).
+    /// </summary>
+    private static Func<object> Creator(Type type, ObjectCreation creation)
     {
+      if (creation == ObjectCreation.Uninitialized)
+        return () => Instances.Uninitialized(type);
+
       if (type.GetConstructor(Type.EmptyTypes) != null)
       {
         try
@@ -233,7 +240,7 @@ namespace LtMsgPack.Reading
         {
         }
       }
-      return () => Instances.Create(type);
+      return () => Instances.Create(type, creation); // a non-public constructor, or none (uninitialized, or refused with ObjectCreation.Constructor)
     }
   }
 
@@ -253,18 +260,19 @@ namespace LtMsgPack.Reading
 
     public object Create()
     {
+      Func<object> compiled = _compiled;
+      if (compiled != null)
+        return compiled(); // an exception of the constructor is passed on as it is
+      if (Interlocked.Increment(ref _calls) == PropertyAccessor.CompileAfterCalls)
+        _compiled = Compile();
       try
       {
-        Func<object> compiled = _compiled;
-        if (compiled != null)
-          return compiled();
-        if (Interlocked.Increment(ref _calls) == PropertyAccessor.CompileAfterCalls)
-          _compiled = Compile();
         return new T();
       }
-      catch (Exception) // as LsMsgPack: fall back to an uninitialized instance when the constructor throws
+      catch (TargetInvocationException ex) when (ex.InnerException != null) // new T() is Activator.CreateInstance<T>(), which wraps the exception of the constructor: pass it on as it is (as LsMsgPack and the compiled delegate)
       {
-        return Instances.Create(typeof(T));
+        ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+        throw; // not reached
       }
     }
 
