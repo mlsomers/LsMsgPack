@@ -135,6 +135,8 @@ The finalizer of an object created uninitialized is always suppressed (`GC.Suppr
 
 An *uninitialized* object (`RuntimeHelpers.GetUninitializedObject`) has all its fields zero. Its constructor doesn't run, and neither do the initializers of its fields and properties, so a property that isn't in the data stays `null` or `0` instead of getting the value the class gives it. DataContractSerializer creates `[DataContract]` types this way, while System.Text.Json, Json.NET and XmlSerializer always run a constructor.
 
+`Uninitialized` could make reading faster on .NET Framework (untested), but not on .NET (Core).
+
 Why the finalizer is suppressed: an object that was never constructed still gets finalized, and some finalizers fail on such an object. `System.Threading.PeriodicTimer` throws a `NullReferenceException` in its finalizer, which ends the process. It's found by its short name, so before this setting, a 23-byte message to a model with an `object` property ended the process at the next garbage collection (tested with both serializers on .NET 8).
 
 Weak references (`WeakReference`, `WeakReference<T>` and classes derived from them) are never created without their constructor, in any mode. The garbage collector cleans them up itself, ignores `GC.SuppressFinalize`, and crashes the process on an uninitialized one (a segmentation fault on .NET 8, 9 and 10). Reading one throws a `MsgPackException`.

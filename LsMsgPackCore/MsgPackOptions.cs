@@ -553,6 +553,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// Always uninitialized, no constructor runs (like DataContractSerializer), and the finalizer is suppressed. For data from a trusted source.
+    /// <para>Could be faster on .NET Framework, but not on modern .NET Core (needs benchmarking to be sure if it also applies to code in .Net standard)</para>
     /// </summary>
     [Description("Always uninitialized: no constructor or initializer runs, the finalizer is suppressed. For trusted data.")]
     Uninitialized = 2
