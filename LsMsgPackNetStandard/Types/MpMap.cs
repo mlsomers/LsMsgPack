@@ -197,7 +197,7 @@ namespace LsMsgPack
 #endif
       for (int t = 0; t < len; t++)
       {
-        MsgPackItem key = MsgPackItem.Unpack(data, _settings);
+        MsgPackItem key = MsgPackItem.Unpack(data, _settings, _depth + 1);
 #if KEEPTRACK
         MsgPackItem val;
         if (key is MpError)
@@ -207,14 +207,14 @@ namespace LsMsgPack
             _settings.FileContainsErrors = true;
             errorOccurred = true;
             if (data.Position >= data.Length) val = new MpNull(_settings);
-            else val = MsgPackItem.Unpack(data, _settings);
+            else val = MsgPackItem.Unpack(data, _settings, _depth + 1);
           }
           else val = new MpNull(_settings);
         }
-        else val = MsgPackItem.Unpack(data, _settings);
+        else val = MsgPackItem.Unpack(data, _settings, _depth + 1);
         if (_settings._preservePackages) packedItems[t] = new KeyValuePair<MsgPackItem, MsgPackItem>(key, val);
 #else
-        MsgPackItem val = MsgPackItem.Unpack(data, _settings);
+        MsgPackItem val = MsgPackItem.Unpack(data, _settings, _depth + 1);
 #endif 
 
         value[t] = new KeyValuePair<object, object>(key.UnpackedValue, val.UnpackedValue);

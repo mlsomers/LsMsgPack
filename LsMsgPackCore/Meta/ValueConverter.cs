@@ -100,7 +100,7 @@ namespace LsMsgPack.Meta
         throw new Exception(
           $"Cannot create an instance of an interface or abstract type:\r\n  {tType.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers.");
 
-      result = Instances.Create(tType);
+      result = Instances.CreateObject(tType, settings);
       SetProperties(result, tType, propVals, settings);
       return result;
     }
@@ -158,7 +158,7 @@ namespace LsMsgPack.Meta
       for (int t = items.Length - 1; t >= 0; t--)
         elements.SetValue(ConvertDeserializeValue(items[t], info.ElementType, settings, null), t);
 
-      return info.Create(elements);
+      return info.Create(elements, settings);
     }
 
     /// <summary>
@@ -176,7 +176,7 @@ namespace LsMsgPack.Meta
     private static object ConvertPositional(object[] items, Type type, FullPropertyInfo[] props, MsgPackOptions settings)
     {
       FullPropertyInfo[] byPosition = PropertiesByPosition(type, props, settings);
-      object result = Instances.Create(type);
+      object result = Instances.CreateObject(type, settings);
       int count = Math.Min(items.Length, byPosition.Length);
       for (int t = 0; t < count; t++)
       {
@@ -241,7 +241,7 @@ namespace LsMsgPack.Meta
         return typedArr;
       }
 
-      object result = Instances.Create(info.ConcreteType);
+      object result = Instances.CreateCollection(info.ConcreteType, settings);
       IDictionary dictionary = result as IDictionary;
       object[] args = dictionary is null ? new object[2] : null;
       for (int t = 0; t < pairs.Length; t++) // keep the original order

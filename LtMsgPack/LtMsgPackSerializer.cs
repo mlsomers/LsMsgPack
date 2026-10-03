@@ -26,7 +26,7 @@ namespace LtMsgPack
     }
 
     /// <summary>
-    /// Makes the types of the assembly known by their names, for type ids the reader cannot find by itself (see the README: e.g. the implementations of an interface in another assembly, assigned to an object property).
+    /// Makes the types of the assembly known by their names, for type ids the reader cannot find by itself (see docs/schema.md: e.g. the implementations of an interface in another assembly, assigned to an object property).
     /// <para>The type caches are shared with LsMsgPack (MsgPackSerializer.CacheAssemblyTypes does the same).</para>
     /// </summary>
     public static void CacheAssemblyTypes(Assembly assembly)

@@ -63,14 +63,23 @@ namespace LsMsgPack
     public static IMsgPackTypeResolver[] Default_TypeResolvers = new IMsgPackTypeResolver[0];
 
     /// <summary>
+    /// The <see cref="TypeGuard"/> of new settings (null by default: the data may pick any type that is assignable to the declared type).
+    /// </summary>
+    [IgnoreDataMember]
+    public static IMsgPackTypeGuard Default_TypeGuard { get; set; } = null;
+
+    /// <summary>
     /// Included:
     /// <list type="bullet">
+    /// <item>FilterNonSettable</item>
     /// <item>FilterIgnoredAttribute</item>
+    /// <item>FilterStatic</item>
     /// </list>
     /// </summary>
     public static IMsgPackPropertyIncludeStatically[] Default_StaticFilters = new IMsgPackPropertyIncludeStatically[]{
             new FilterNonSettable(),
-            new FilterIgnoredAttribute()
+            new FilterIgnoredAttribute(),
+            new FilterStatic()
         };
 
     /// <summary>
@@ -119,6 +128,18 @@ namespace LsMsgPack
     [IgnoreDataMember]
     public static bool Default_TrimTrailingNulls { get; set; } = false;
 
+    /// <summary>
+    /// The <see cref="MaxDepth"/> of new settings, 256 by default.
+    /// </summary>
+    [IgnoreDataMember]
+    public static int Default_MaxDepth { get; set; } = 256;
+
+    /// <summary>
+    /// The <see cref="ObjectCreation"/> of new settings (<see cref="LsMsgPack.ObjectCreation.ConstructorOrUninitialized"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static ObjectCreation Default_ObjectCreation { get; set; } = ObjectCreation.ConstructorOrUninitialized;
+
     #endregion
 
     /// <summary>
@@ -136,6 +157,7 @@ namespace LsMsgPack
     internal AddTypeIdOption _addTypeIdOptions = Default_AddTypeIdOptions;
 
     internal IMsgPackTypeResolver[] _typeResolvers = Default_TypeResolvers;
+    internal IMsgPackTypeGuard _typeGuard = Default_TypeGuard;
     internal IMsgPackPropertyIncludeStatically[] _staticFilters = Default_StaticFilters;
     internal IMsgPackPropertyIncludeDynamically[] _dynamicFilters = Default_DynamicFilters;
     internal IMsgPackPropertyIdResolver[] _propertyNameResolvers = Default_PropertyNameResolvers;
@@ -144,6 +166,8 @@ namespace LsMsgPack
     internal PropertyOrder _propertyOrder = Default_PropertyOrder;
     internal ObjectLayout _objectLayout = Default_ObjectLayout;
     internal bool _trimTrailingNulls = Default_TrimTrailingNulls;
+    internal int _maxDepth = Default_MaxDepth;
+    internal ObjectCreation _objectCreation = Default_ObjectCreation;
 
     /// <summary>
     /// The highest <see cref="LsMsgPack.PropertyOrder"/>, the orders are indexes of the caches in FullPropertyInfo.
@@ -241,11 +265,22 @@ namespace LsMsgPack
     /// </summary>
     public IMsgPackTypeResolver[] TypeResolvers { get { return _typeResolvers; } set { _typeResolvers = value; } }
 
+    /// <summary>
+    /// Decides which types the data may pick when deserializing (null by default), see docs/security.md and <see cref="TypeResolving.Types.AllowedTypesGuard"/>.
+    /// <para>A type id (or a type resolver) can only pick a type that is assignable to the declared type, also without a guard. A property, element or root declared as <c>object</c>,
+    /// an interface or a base class therefore accepts every type that the type resolvers can find: limit them with a guard when the data comes from somewhere you do not trust.</para>
+    /// <para>Only asked when the data picks another type than the declared one, before the instance is created.</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public IMsgPackTypeGuard TypeGuard { get { return _typeGuard; } set { _typeGuard = value; } }
+
 
     /// <summary>
-    /// Included:
+    /// Included by default (<see cref="Default_StaticFilters"/>):
     /// <list type="bullet">
+    /// <item>FilterNonSettable</item>
     /// <item>FilterIgnoredAttribute</item>
+    /// <item>FilterStatic</item>
     /// </list>
     /// </summary>
     public IMsgPackPropertyIncludeStatically[] StaticFilters { get { return _staticFilters; } set { _staticFilters = value; } }
@@ -343,6 +378,35 @@ namespace LsMsgPack
     {
       get { return _trimTrailingNulls; }
       set { _trimTrailingNulls = value; }
+    }
+
+    /// <summary>
+    /// The deepest nesting read and written before a <see cref="MsgPackException"/> is thrown, 256 by default (<see cref="Default_MaxDepth"/>).
+    /// <para>Reading: arrays and maps in the data. Writing: objects and collections in the object graph (a cycle ends here instead of in a stack overflow).</para>
+    /// <para>A limit, because hostile data can nest deep enough to exhaust the stack, which ends the process (see docs/security.md).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max Depth")]
+    [Description("The deepest nesting of arrays and maps read (and of objects and collections written) before an exception is thrown. Protects against data nested deep enough to exhaust the stack.")]
+    [DefaultValue(256)]
+    public int MaxDepth
+    {
+      get { return _maxDepth; }
+      set { _maxDepth = value; }
+    }
+
+    /// <summary>
+    /// How the objects with properties are created when reading, <see cref="LsMsgPack.ObjectCreation.ConstructorOrUninitialized"/> by default (see docs/security.md).
+    /// <para>Collections and dictionaries always use their constructor (with <see cref="LsMsgPack.ObjectCreation.Constructor"/> only their constructor).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Object Creation")]
+    [Description("How objects are created when reading: with their parameterless constructor, without running a constructor, or the constructor when there is one (default).")]
+    [DefaultValue(ObjectCreation.ConstructorOrUninitialized)]
+    public ObjectCreation ObjectCreation
+    {
+      get { return _objectCreation; }
+      set { _objectCreation = value; }
     }
 
     /// <summary>
@@ -465,6 +529,34 @@ namespace LsMsgPack
     /// </summary>
     [Description("An array of the values in the property order, without keys (nil for values left out by the filters). Without the indexed schema the reader needs the same order and properties.")]
     Array = 1
+  }
+
+  /// <summary>
+  /// How the objects with properties are created when reading (see <see cref="MsgPackOptions.ObjectCreation"/>).
+  /// <para>An object created without a constructor (uninitialized) has all its fields zero: the constructor and the initializers of fields and properties do not run,
+  /// so a property that is not in the data stays null (or 0) instead of getting the value the class gives it.</para>
+  /// </summary>
+  public enum ObjectCreation
+  {
+    /// <summary>
+    /// Only with the parameterless constructor (public or not). Reading a type without one throws a <see cref="MsgPackException"/>, an exception of the constructor is passed on as it is.
+    /// </summary>
+    [Description("Only with the parameterless constructor: reading a type without one throws, exceptions of the constructor are passed on.")]
+    Constructor = 0,
+
+    /// <summary>
+    /// With the parameterless constructor (an exception of it is passed on as it is), uninitialized when the type has none (default).
+    /// <para>The finalizer of an uninitialized object is suppressed (<see cref="GC.SuppressFinalize"/>): some finalizers fail on an object that was never constructed, which ends the process (see docs/security.md).</para>
+    /// </summary>
+    [Description("With the parameterless constructor, uninitialized (without its finalizer) when the type has none.")]
+    ConstructorOrUninitialized = 1,
+
+    /// <summary>
+    /// Always uninitialized, no constructor runs (like DataContractSerializer), and the finalizer is suppressed. For data from a trusted source.
+    /// <para>Could be faster on .NET Framework, but not on modern .NET Core (needs benchmarking to be sure if it also applies to code in .Net standard)</para>
+    /// </summary>
+    [Description("Always uninitialized: no constructor or initializer runs, the finalizer is suppressed. For trusted data.")]
+    Uninitialized = 2
   }
 
   [Flags]
