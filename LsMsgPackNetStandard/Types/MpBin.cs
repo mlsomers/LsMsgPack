@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using LsMsgPack.Meta;
 
 namespace LsMsgPack {
   [Serializable]
@@ -53,20 +54,32 @@ namespace LsMsgPack {
     }
 
     public override byte[] ToBytes() {
-      List<byte> bytes = new List<byte>(value.Length + 5); // current max length limit is 4 bytes + identifier
+      ByteWriter bytes = new ByteWriter(value.Length + 5); // current max length limit is 4 bytes + identifier
+      WriteValue(bytes);
+      return bytes.ToArray();
+    }
+
+    internal override void WriteTo(ByteWriter target) {
+      if (GetType() != typeof(MpBin)) { // a derived type may override ToBytes
+        base.WriteTo(target);
+        return;
+      }
+      WriteValue(target);
+    }
+
+    private void WriteValue(ByteWriter bytes) {
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       MsgPackTypeId typeId = GetTypeId(value.LongLength);
 #else
       MsgPackTypeId typeId = GetTypeId(value.Length);
 #endif
-      bytes.Add((byte)typeId);
+      bytes.Write((byte)typeId);
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
-      bytes.AddRange(GetLengthBytes(value.LongLength, SupportedLengths.All));
+      WriteLength(bytes, value.LongLength, SupportedLengths.All);
 #else
-      bytes.AddRange(GetLengthBytes(value.Length, SupportedLengths.All));
+      WriteLength(bytes, value.Length, SupportedLengths.All);
 #endif
-      bytes.AddRange(value);
-      return bytes.ToArray();
+      bytes.Write(value);
     }
 
     public override MsgPackItem Read(MsgPackTypeId typeId, Stream data) {

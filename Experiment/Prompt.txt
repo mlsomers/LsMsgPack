@@ -1,0 +1,62 @@
+No action this time, just brainstorming, considering an idea (but feel free to read the source, test ideas, profile stuff, etc):
+
+Rough idea using cached Indexed Schemas on both ends.
+In a new static class CachedSchemasSerializer (maybe inherit form MsgPackSerializer?):
+
+Add a public method “ExtractSchemas” that takes as parameters:
+ - An assembly
+ - OptionEnum
+   - Serializable (only creates schemas of classes tagged with a [serializable] attribute)
+   - All (all classes in the assembly will be included in the schema)
+   - Auto (does some effort to distinguish DTO’s/Poco’s from classes doing work)
+Classes will be scanned and the schema will be cached in:
+A dictionary with a hash of the namespace + class name + IndexedSchemaTypeResolver as key (from now on just called hash) and IndexedSchemaTypeResolver instance as value.
+Optionally we can have some extra lookup dictionaries as needed for example:
+- dictionary of namespace + class name, and the hash as value.
+- dictionary of class Type as key and IndexedSchemaTypeResolver instance as value.
+The method should return the number of classes found and cached.
+
+A method “GetSchemas()” that returns a stream containing MsgPack encoded dictionary of the 1st dictionary <hash, schema>.
+Consumers can call this to get all schemas at once (during startup).
+
+A method “GetSchema(hash)” that takes a hash and returns the single schema in a MsgPack stream.
+Consumers can call this to lazy load schemas when not found in their cache.
+
+A method “GetSchemaHashes()” that returns an array of hashes (as MsgPack stream).
+Consumers can check if their (persisted) cache is stale (during startup).
+
+Serializing:
+
+A method (overload) static MsgPackItem SerializeObject(object item, MsgPackSettings settings)
+Serializes the item, but instead of including the schema it includes only the hash.
+If ExtractSchemas was not yet called call it with the assembly of item and with a default static OptionEnum property named DefaultOptionEnum (default to all).
+
+Deserializing:
+
+Uses:
+
+A static dictionary<hash, IndexedSchemaTypeResolver> RecievedTypes.
+
+A static public (callback) Func<hash, stream> GetSchema called when the schema is not found in RecievedTypes.
+
+The Deserialize function will get the schema hash from the payload, check if it is in the dictionary, if not call GetSchema and use IndexedSchemaTypeResolver.Unpack() to store it in RecievedTypes.
+It will then deserialize the payload using the cached schema.
+
+There will also be a method to preload RecievedTypes from a collection that may have been received by calling GetSchemas() or from a cached persistence.
+
+
+The ASP.net formatters can opt in to use the CachedSchemasSerializer by letting the host provide an implementation of an interface.
+
+The OutputFormatter must be able to serve schemas when requested (from a custom endpoint).
+
+The InputFormatter must be able to call the source back to get missing schemas (configured endpoints, where the correct one must be derived from the original request URL, since multiple servers can be using LsMsgPack).
+Special scenario: when an endpoint is load balanced and one node has been upgraded, the hashes may differ (that’s why the entire schema needs to be hashed). When the inputFormatter calls back to get the new schema, it may receive a 404 from another not-yet-upgraded node, so it may have to do a configured number of retries. Two versions of the schemas for a single type may exist until all nodes are upgraded and the client’s cache is flushed.
+
+Obviously the payloads will be smaller once schemas have been exchanged.
+
+How viable is this idea and how much impact would this have on the performance.
+Any points I have overlooked or over simplified?
+How much would we save in performance?
+Could we beat json.net this way without building Source generators?
+
+I’m not planning to release any NuGet packages for the formatters until we can beat Json.net else we are just adding complexity and obfuscating the data without any real benefit. I find it hard to believe that parsing values back from strings can be faster than bitconversion, unless the data exists mainly of strings. Maybe I should make another benchmark targeting another target audience like GIS data or so, but they already have their own specialized optimized formats that would beat the generic MsgPack format easily, so I can’t really think of a good target other than general use like invoices, orders, etc.

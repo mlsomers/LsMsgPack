@@ -1,34 +1,34 @@
-using LsMsgPack;
+using LtMsgPack.Http;
 using System.Linq;
 using System.Web.Mvc;
 
 namespace LsMsgPackMvc
 {
   /// <summary>
-  /// Registers MsgPack model binding for ASP.NET MVC 5, call <see cref="Register(MsgPackSettings)"/> from Application_Start.
+  /// Registers MsgPack model binding for ASP.NET MVC 5, call <see cref="Register(LtMsgPackHttpOptions)"/> from Application_Start (LtMsgPack).
   /// </summary>
   public static class LsMsgPackMvc
   {
-    private static MsgPackSettings _settings = new MsgPackSettings();
+    private static LtMsgPackHttpSerializer _serializer = new LtMsgPackHttpSerializer();
 
     /// <summary>
-    /// The settings used for application/x-lsmsgpack by the model binder and by <see cref="LsMsgPackResult"/> (unless the result has its own settings).
+    /// The serializers used by the model binder and by <see cref="LsMsgPackResult"/> (unless the result has its own).
     /// </summary>
-    public static MsgPackSettings Settings => _settings;
+    public static LtMsgPackHttpSerializer Serializer => _serializer;
 
     /// <summary>
     /// Binds complex action parameters from the request body when the Content-Type is application/msgpack, application/x-msgpack or application/x-lsmsgpack.
     /// Other requests are bound as usual.
     /// </summary>
-    /// <param name="settings">Used for application/x-lsmsgpack, a copy is taken so later changes have no effect.</param>
-    public static void Register(MsgPackSettings settings = null)
+    /// <param name="options">The settings per media type (e.g. <c>Plain = LtMsgPackPresets.MessagePackCSharp()</c>), read once so later changes have no effect.</param>
+    public static void Register(LtMsgPackHttpOptions options = null)
     {
-      _settings = (settings ?? new MsgPackSettings()).Clone();
+      _serializer = new LtMsgPackHttpSerializer(options ?? new LtMsgPackHttpOptions());
 
       ModelBinderProviderCollection providers = ModelBinderProviders.BinderProviders;
       foreach (LsMsgPackModelBinderProvider existing in providers.OfType<LsMsgPackModelBinderProvider>().ToList())
         providers.Remove(existing);
-      providers.Insert(0, new LsMsgPackModelBinderProvider(_settings));
+      providers.Insert(0, new LsMsgPackModelBinderProvider(_serializer));
     }
 
     /// <summary>

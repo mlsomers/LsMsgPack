@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Xml.Serialization;
+using LsMsgPack.Meta;
 
 namespace LsMsgPack
 {
@@ -44,17 +45,16 @@ namespace LsMsgPack
       set { this.value = ReferenceEquals(value, null) ? string.Empty : value.ToString(); }
     }
 
-    private static Encoding defaultEncoding = Encoding.UTF8;
     /// <summary>
     /// Default string encoding will be UTF8 if this property is not changed
     /// </summary>
     public static Encoding DefaultEncoding
     {
-      get { return defaultEncoding; }
-      set { defaultEncoding = value; }
+      get { return MsgPackOptions.StringEncoding; } // shared with the indexed schema (LsMsgPack.Core)
+      set { MsgPackOptions.StringEncoding = value; }
     }
 
-    private Encoding encoding = defaultEncoding;
+    private Encoding encoding = DefaultEncoding;
     /// <summary>
     /// will initially be the statically defined DefaultEncoding, but may also be dynamically changed per instance (note that the chosen encoding will not be persisted)
     /// </summary>
@@ -83,27 +83,35 @@ namespace LsMsgPack
 
     public override byte[] ToBytes()
     {
-      byte[] strBytes = StrAsBytes;
-      List<byte> bytes = new List<byte>(strBytes.Length + 5); // current max length limit is 4 bytes + string identifier
-
-#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
-      MsgPackTypeId typeId = GetTypeId(strBytes.LongLength);
-#else
-      MsgPackTypeId typeId = GetTypeId(strBytes.Length);
-#endif
-
-
-      if (typeId == MsgPackTypeId.MpStr5) bytes.Add(GetLengthBytes(typeId, strBytes.Length));
-      else {
-        bytes.Add((byte)typeId);
-#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
-        bytes.AddRange(GetLengthBytes(strBytes.LongLength, SupportedLengths.All));
-#else
-        bytes.AddRange(GetLengthBytes(strBytes.Length, SupportedLengths.All));
-#endif
-      }
-      bytes.AddRange(strBytes);
+      int byteCount = encoding.GetByteCount(value);
+      ByteWriter bytes = new ByteWriter(byteCount + 5); // current max length limit is 4 bytes + string identifier
+      WriteValue(bytes, byteCount);
       return bytes.ToArray();
+    }
+
+    internal override void WriteTo(ByteWriter target)
+    {
+      if (GetType() != typeof(MpString)) // a derived type may override ToBytes
+      {
+        base.WriteTo(target);
+        return;
+      }
+      WriteValue(target, encoding.GetByteCount(value));
+    }
+
+    /// <summary>
+    /// Encodes the string directly into the target (instead of allocating <see cref="StrAsBytes"/>)
+    /// </summary>
+    private void WriteValue(ByteWriter bytes, int byteCount)
+    {
+      MsgPackTypeId typeId = GetTypeId(byteCount);
+
+      if (typeId == MsgPackTypeId.MpStr5) bytes.Write(GetLengthBytes(typeId, byteCount));
+      else {
+        bytes.Write((byte)typeId);
+        WriteLength(bytes, byteCount, SupportedLengths.All);
+      }
+      bytes.Write(value, encoding, byteCount);
     }
 
     public override MsgPackItem Read(MsgPackTypeId typeId, Stream data)

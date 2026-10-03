@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\Packaging.props" />
+
+  <PropertyGroup>
+    <!-- 2.1 can ask whether the runtime compiles code (RuntimeFeature.IsDynamicCodeCompiled, see PropertyAccessor) -->
+    <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <AssemblyName>LsMsgPack.Core</AssemblyName>
+    <RootNamespace>LsMsgPack</RootNamespace>
+    <PackageId>LsMsgPack.Core</PackageId>
+    <Description>The parts shared by the LsMsgPack serializers: settings, the indexed schema and its store, property metadata, type resolving, attributes and filters.</Description>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
+    <Optimize>True</Optimize>
+    <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugKeepTrack|AnyCPU'">
+    <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Memory" Version="4.6.3" />
+  </ItemGroup>
+
+</Project>

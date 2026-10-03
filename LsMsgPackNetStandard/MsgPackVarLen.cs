@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Globalization;
 using System.IO;
+using LsMsgPack.Meta;
 using System.Xml.Serialization;
 #if KEEPTRACK
 using System.ComponentModel;
@@ -37,6 +38,20 @@ namespace LsMsgPack {
       return bytes;
     }
 
+    /// <summary>
+    /// Writes the same bytes as <see cref="GetLengthBytes(long, SupportedLengths)"/> without allocating them.
+    /// </summary>
+    internal void WriteLength(ByteWriter bytes, long length, SupportedLengths supported) {
+      WriteLength(bytes, length, supported, Settings);
+    }
+
+    internal static void WriteLength(ByteWriter bytes, long length, SupportedLengths supported, MsgPackSettings settings) {
+      if(length < 256 && (supported & SupportedLengths.Byte1) > 0) bytes.Write((byte)length);
+      else if(length <= ushort.MaxValue && (supported & SupportedLengths.Short2) > 0) bytes.WriteEndian((ulong)length, 2, settings);
+      else if(length <= uint.MaxValue && (supported & SupportedLengths.Int4) > 0) bytes.WriteEndian((ulong)length, 4, settings);
+      else bytes.WriteEndian((ulong)length, 8, settings);
+    }
+
     protected byte GetLengthBytes(MsgPackTypeId maskTypeId, int length) {
       byte len = (byte)length;
       return (byte)((byte)maskTypeId | len);
@@ -56,8 +71,12 @@ namespace LsMsgPack {
     }
 
     protected long ReadLen(Stream data, int bytes) {
+      if(bytes == 1) {
+        int len = data.ReadByte();
+        return len < 0 ? 0 : len; // at the end of the data, the same as reading into a new (zeroed) buffer below
+      }
       byte[] buffer = new byte[bytes];
-      data.Read(buffer, 0, bytes);
+      ReadExactly(data, buffer, bytes);
       if(bytes == 1) return (long)buffer[0];
       ReorderIfLittleEndian(Settings, buffer);
       switch(bytes) {
@@ -75,7 +94,7 @@ namespace LsMsgPack {
     protected byte[] ReadBytes(Stream data, long len) {
       byte[] buffer = new byte[len];
       if(len < int.MaxValue) { // TODO: implement reading larger portions.
-        data.Read(buffer, 0, (int)len);
+        ReadExactly(data, buffer, (int)len);
       } else throw new MsgPackException(
         $"Not implemented. At this time we cannot read chunks larger than {int.MaxValue} bytes in one stread. This is a \"ToDo\" item.{data.Position}{TypeId}");
       return buffer;

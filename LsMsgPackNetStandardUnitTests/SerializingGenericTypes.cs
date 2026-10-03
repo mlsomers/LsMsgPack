@@ -8,9 +8,10 @@ using System.Collections.ObjectModel;
 
 namespace LsMsgPackUnitTests
 {
-  [TestClass]
-  public class  SerializingGenericTypes
+  public abstract class SerializingGenericTypes
   {
+    protected abstract ISerializerUnderTest Serializer { get; }
+
 
     
     [TestMethod]
@@ -30,12 +31,12 @@ namespace LsMsgPackUnitTests
 
       MsgPackSettings settings = new MsgPackSettings(){ UseInexedSchema=false};
 
-      byte[] buffer = MsgPackSerializer.Serialize(collection, settings);
+      byte[] buffer = Serializer.Serialize(collection, settings);
 
       //if(preregister)
       //  MsgPackSerializer.CacheAssemblyTypes(generic);
 
-      object ret = MsgPackSerializer.Deserialize(generic, buffer, settings);
+      object ret = Serializer.Deserialize(generic, buffer, settings);
 
       Assert.AreEqual(generic, ret.GetType());
 
@@ -44,5 +45,17 @@ namespace LsMsgPackUnitTests
 
 
     }
+  }
+
+  [TestClass]
+  public class LsSerializingGenericTypes : SerializingGenericTypes
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+  }
+
+  [TestClass]
+  public class LtSerializingGenericTypes : SerializingGenericTypes
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
 }

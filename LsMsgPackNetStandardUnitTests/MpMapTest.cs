@@ -33,6 +33,18 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
+    public void SettingNullClearsTheMap()
+    {
+      MpMap map = new MpMap() { Value = new Dictionary<object, object>() { { "a", 1 } } };
+      Assert.AreEqual(1, map.Count);
+
+      map.Value = null;
+
+      Assert.AreEqual(0, map.Count);
+      CollectionAssert.AreEqual(new byte[] { (byte)MsgPackTypeId.MpMap4 }, map.ToBytes());
+    }
+
+    [TestMethod]
     [DataRow(false, 47)]
     [DataRow(true, 47)]
     public void AssortedMix(bool preserveTypes, int expectedLength)

@@ -41,13 +41,16 @@ public void Test()
 
 Compatibility with other implementations
 ----------------------------------------
-Serializing classes by creating name-value dictionaries of their properties is not an official standard, and to my surprise I found than a majority of MsgPack implementations do not, instead they simply string up a list of values. This is indeed efficient and will work well for the first version, however migrating to a new version may pose some compatibility challenges when introducing new properties over time.
+Serializing classes by creating name-value dictionaries of their properties is not an official standard, and to my surprise I found than a many MsgPack implementations do not. Some just string a list of values into an array. This is indeed efficient and will work well for the first version, however migrating to a new version may pose some compatibility challenges when introducing new properties over time.
 
 For this reason I have submitted a [pull request]( https://github.com/msgpack/msgpack/pull/334/commits/c6a4935b9e0e38818cc1ef878db72621143bfcd7) to the official MsgPack specification, including a more standardized choice of solutions and in addition a standard way to support polymorphic class-hierarchies.
 
+Which settings to use to exchange data with MessagePack-CSharp, Nerdbank.MessagePack, Python, JavaScript and others is described in [docs/Compatibility.md](docs/Compatibility.md).
+
 While using dictionaries diminishes the small size of a MsgPack message, it does help bring up the compatibility level with other serializers (XML / JSON) so that it can be used as a drop-in replacement.
 
-To win back most of that size, LsMsgPack has a few options in `MsgPackSettings`:
+Polymorphic class-hierarchy support
+-----------------------------------
 
 - **Indexed schema** (`UseInexedSchema`, on by default): each message starts with a small schema listing every type and its property names once. The body then refers to them by index. This roughly halves the size of messages with repeating objects, and it stays tolerant to adding or removing properties. Other MsgPack implementations don't understand it, so turn it off when they need to read your data.
 - **Type ids** (`AddTypeIdOptions`, `IfAmbiguious` by default): adds the type name (or a custom id) when a property holds a derived type. This gives polymorphic class hierarchies (a `List<IPet>` holding cats and dogs) out of the box, without `XmlInclude`-style attributes.
@@ -70,21 +73,27 @@ Three NuGet packages add MsgPack support to ASP.NET controllers and to HttpClien
 
 ASP.NET Core example:
 
-```csharp
-builder.Services.AddControllers()
-  .AddLsMsgPackSerializerFormatters(); // optionally: (settings => settings.UseInexedSchema = false) for application/x-lsmsgpack
+How the type is found again: a value whose type differs from the declared type gets a type id, the short name of its type by default (`Cat`). When reading, the name is looked up in this order:
 
-[ApiController]
-[Route("api/orders")]
-public class OrdersController : ControllerBase
-{
-  [HttpPost]
-  public ActionResult<Order> Post(Order order) => order; // MsgPack in and out when the client asks for it, JSON otherwise
-}
+1. Names resolved before (the fastest), and types that `Type.GetType` finds by themselves.
+2. The assembly of the declared type (and of its generic arguments): all its types are cached by name the first time. With the indexed schema (the default) the assembly of the type you deserialize is cached as well.
+3. The names of all types in the assemblies cached so far.
+
+So the implementations of `IPet` are found without any registration when they are in the assembly of `IPet` (declared as `IPet`, `List<IPet>`, `IPet[]`...), or in the assembly of the class you deserialize. Register an assembly yourself when that is not the case, once, before deserializing:
+
+```csharp
+// The property is declared as object, so the reader has no assembly to look in:
+public IEnumerable<object> Pets { get; set; } = new HashSet<IPet> { new Cat(), new Dog() };
+
+MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));    // LsMsgPack
+LtMsgPackSerializer.CacheAssemblyTypes(typeof(IPet));  // LtMsgPack (the same cache, either call will do)
 ```
 
-See [docs/aspnet.md](docs/aspnet.md) for installation, configuration, error handling and complete examples for each package.
+The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins): register each of them.
 
+- **Short names must be unique** among the cached assemblies. Two cached classes called `Cat` (in different namespaces) make reading throw "Type assignment dilamma". Use `AddTypeIdOptions = AddTypeIdOption.FullName` (bigger payloads) or your own `IMsgPackTypeResolver` in `TypeResolvers`.
+- **Let it search**: `TypeResolvers = new IMsgPackTypeResolver[] { new WildGooseChaseResolver() }` searches all assemblies loaded in the AppDomain for a name it cannot find otherwise (and caches the assemblies it searched). Convenient, but slower the first time and it keeps more names in memory.
+- **Your own mapping**: implement `IMsgPackTypeResolver` to choose the ids and the types (e.g. a fixed table of names, or `XmlRootAttributeTypeResolver` to use the names of `[XmlRoot]`).
 
 Fiddler Integration
 -------------------

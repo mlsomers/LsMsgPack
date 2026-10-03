@@ -1,4 +1,5 @@
 ﻿using System;
+using LsMsgPack.Meta;
 
 namespace LsMsgPack {
   [Serializable]
@@ -15,6 +16,14 @@ namespace LsMsgPack {
 
     public override byte[] ToBytes() {
       return new byte[1] { (byte)TypeId };
+    }
+
+    internal override void WriteTo(ByteWriter target) {
+      if (GetType() != typeof(MpBool)) { // a derived type may override ToBytes
+        base.WriteTo(target);
+        return;
+      }
+      target.Write((byte)TypeId);
     }
 
     public override MsgPackItem Read(MsgPackTypeId typeId, System.IO.Stream data) {

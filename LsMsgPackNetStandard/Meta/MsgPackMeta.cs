@@ -189,19 +189,6 @@ namespace LsMsgPack
     }
 
 
-    public static readonly HashSet<Type> NumericTypes = new HashSet<Type>(new[]
-    {
-     typeof(sbyte),
-     typeof(short),
-     typeof(int),
-     typeof(long),
-     typeof(byte),
-     typeof(ushort),
-     typeof(uint),
-     typeof(ulong),
-     typeof(float),
-     typeof(double),
-     typeof(decimal),
-    });
+    public static readonly HashSet<Type> NumericTypes = Meta.NumericTypes.All; // the same set as LsMsgPack.Core
   }
 }

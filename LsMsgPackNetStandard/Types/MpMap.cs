@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using LsMsgPack.Meta;
 #if KEEPTRACK
 using System.ComponentModel;
 using System.Xml.Serialization;
@@ -60,10 +61,21 @@ namespace LsMsgPack
       {
         if (ReferenceEquals(value, null))
         {
-          value = new KeyValuePair<object, object>[0];
+          this.value = new KeyValuePair<object, object>[0];
           return;
         }
-        if (value is IDictionary dict)
+        if (value.GetType() == typeof(Dictionary<object, object>)) // the generic enumerator does not box every entry
+        {
+          Dictionary<object, object> generic = (Dictionary<object, object>)value;
+          this.value = new KeyValuePair<object, object>[generic.Count];
+          int t = 0;
+          foreach (KeyValuePair<object, object> entry in generic)
+          {
+            this.value[t] = entry;
+            t++;
+          }
+        }
+        else if (value is IDictionary dict)
         {
           this.value = new KeyValuePair<object, object>[dict.Count];
           int t = 0;
@@ -133,20 +145,25 @@ namespace LsMsgPack
 
     public override byte[] ToBytes()
     {
-      List<byte> bytes = new List<byte>();// cannot estimate this one
+      ByteWriter bytes = new ByteWriter();// cannot estimate this one
+      WriteTo(bytes);
+      return bytes.ToArray();
+    }
 
+    internal override void WriteTo(ByteWriter bytes)
+    {
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       MsgPackTypeId typeId = GetTypeId(value.LongLength);
 #else
       MsgPackTypeId typeId = GetTypeId(value.Length);
 #endif
-      if(typeId == MsgPackTypeId.MpMap4) bytes.Add(GetLengthBytes(typeId, value.Length));
+      if(typeId == MsgPackTypeId.MpMap4) bytes.Write(GetLengthBytes(typeId, value.Length));
       else {
-        bytes.Add((byte)typeId);
+        bytes.Write((byte)typeId);
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
-        bytes.AddRange(GetLengthBytes(value.LongLength, SupportedLengths.FromShortUpward));
+        WriteLength(bytes, value.LongLength, SupportedLengths.FromShortUpward);
 #else
-        bytes.AddRange(GetLengthBytes(value.Length, SupportedLengths.FromShortUpward));
+        WriteLength(bytes, value.Length, SupportedLengths.FromShortUpward);
 #endif
       }
       for (int t = 0; t < value.Length; t++)
@@ -154,10 +171,9 @@ namespace LsMsgPack
         // TODO: call MsgPackSerializer.GetTypedOrUntyped for keys as well as values
         MsgPackItem key = value[t].Key as MsgPackItem ?? MsgPackItem.Pack(value[t].Key, _settings) ?? MsgPackSerializer.SerializeObject(value[t].Key, _settings); // may already be packed by the serializer
         MsgPackItem val = value[t].Value as MsgPackItem ?? MsgPackItem.Pack(value[t].Value, _settings) ?? MsgPackSerializer.SerializeObject(value[t].Value, _settings);
-        bytes.AddRange(key.ToBytes());
-        bytes.AddRange(val.ToBytes());
+        key.WriteTo(bytes);
+        val.WriteTo(bytes);
       }
-      return bytes.ToArray();
     }
 
     public override MsgPackItem Read(MsgPackTypeId typeId, Stream data)
@@ -201,7 +217,7 @@ namespace LsMsgPack
         MsgPackItem val = MsgPackItem.Unpack(data, _settings);
 #endif 
 
-        value[t] = new KeyValuePair<object, object>(key.Value, val.Value);
+        value[t] = new KeyValuePair<object, object>(key.UnpackedValue, val.UnpackedValue);
 
 #if KEEPTRACK
         if (!_settings._continueProcessingOnBreakingError && (key is MpError || val is MpError))

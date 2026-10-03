@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using LsMsgPack.Meta;
 
 namespace LsMsgPack
 {
@@ -8,7 +9,7 @@ namespace LsMsgPack
 
     public MpDateTime() : base() { TypeSpecifier = -1; }
     public MpDateTime(MsgPackSettings settings) : base(settings) { TypeSpecifier = -1; }
-    public MpDateTime(MpExt ext) : base()
+    public MpDateTime(MpExt ext) : base(ext.Settings) // not base(), that creates default settings that CopyBaseDataFrom replaces
     {
       CopyBaseDataFrom(ext);
       value = ConvertExt(Settings, ext).ToUniversalTime();
@@ -26,6 +27,8 @@ namespace LsMsgPack
       {
         if (value is DateTime)
           this.value = ((DateTime)value).ToUniversalTime();
+        else if (value is DateTimeOffset)
+          this.value = ((DateTimeOffset)value).UtcDateTime; // not IConvertible, Convert.ToDateTime would throw an InvalidCastException
         else
           this.value = Convert.ToDateTime(value).ToUniversalTime();
 
@@ -53,6 +56,20 @@ namespace LsMsgPack
       return base.ToBytes();
     }
 
+    internal override void WriteTo(ByteWriter target)
+    {
+      if (GetType() != typeof(MpDateTime)) // a derived type may override ToBytes
+      {
+        target.Write(ToBytes());
+        return;
+      }
+
+      if (base.Value is null || ((byte[])base.Value).Length <= 0)
+        FromDateTime(Settings, value).WriteTo(target);
+      else
+        WriteExt(target);
+    }
+
     public override string ToString()
     {
       return
@@ -76,13 +93,8 @@ namespace LsMsgPack
           return EpochToLocalDateTime(seconds);
 
         case MsgPackTypeId.MpFExt8:
-          byte[] bitVal = (byte[])ext.Value;
-
-          if (BitConverter.IsLittleEndian)
-          {
-            SwapIfLittleEndian(settings, bitVal, 0, 4);
-            SwapIfLittleEndian(settings, bitVal, 4, 4);
-          }
+          // One big-endian 64 bit value: 30 bits nanoseconds followed by 34 bits seconds
+          byte[] bitVal = SwapIfLittleEndian(settings, (byte[])ext.Value); // a copy when swapped, the value of the ext is not changed
 
           ulong bytes = BitConverter.ToUInt64(bitVal, 0);
           ulong nanoSecc;
@@ -104,10 +116,7 @@ namespace LsMsgPack
           long sc = BitConverter.ToInt64(SwapIfLittleEndian(settings, vall, 4, 8), 0);
           long tick = nanoSec / 100;
           TimeSpan subSec = TimeSpan.FromTicks(tick);
-          if (sc < 0)
-            return EpochToLocalDateTime(sc) - subSec;
-          else
-            return EpochToLocalDateTime(sc) + subSec;
+          return EpochToLocalDateTime(sc) + subSec; // the nanoseconds are added, also before 1970 (the seconds are rounded down, see DateTimeToEpoch)
       }
 
 #if KEEPTRACK
@@ -175,11 +184,7 @@ namespace LsMsgPack
       ulong prepareBytes = nanoSec << 34;
       prepareBytes = prepareBytes | seconds;
       byte[] bitVal = BitConverter.GetBytes(prepareBytes);
-      if (BitConverter.IsLittleEndian)
-      {
-        SwapIfLittleEndian(settings, bitVal, 0, 4);
-        SwapIfLittleEndian(settings, bitVal, 4, 4);
-      }
+      ReorderIfLittleEndian(settings, bitVal); // one big-endian 64 bit value: 30 bits nanoseconds followed by 34 bits seconds
       return bitVal;
     }
 
@@ -224,11 +229,14 @@ namespace LsMsgPack
       return dt;
     }
 
+    /// <summary>
+    /// Whole seconds since 1970-01-01 UTC, rounded down (also before 1970), so the fraction of a second is always positive as the timestamp format requires.
+    /// </summary>
     public static long DateTimeToEpoch(DateTime dateTime)
     {
       DateTime uni = dateTime.ToUniversalTime();
-      TimeSpan diff = uni - Zero;
-      return diff.Ticks / TimeSpan.TicksPerSecond; // Do not use diff.TotalSecconds, it has rounding errors!
+      // Ticks are never negative so dividing them rounds down, Zero is a whole second. Do not use TotalSeconds, it has rounding errors!
+      return uni.Ticks / TimeSpan.TicksPerSecond - Zero.Ticks / TimeSpan.TicksPerSecond;
     }
   }
 }

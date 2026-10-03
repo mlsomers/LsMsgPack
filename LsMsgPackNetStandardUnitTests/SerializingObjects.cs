@@ -6,9 +6,10 @@ using System.Xml.Serialization;
 
 namespace LsMsgPackUnitTests
 {
-  [TestClass]
-  public class SerializingObjects
+  public abstract class SerializingObjects
   {
+    protected abstract ISerializerUnderTest Serializer { get; }
+
 
     public class MyComplexObject
     {
@@ -67,9 +68,9 @@ namespace LsMsgPackUnitTests
         GuidNullable = Guid.NewGuid()
       };
 
-      byte[] buffer = MsgPackSerializer.Serialize(testObj);
+      byte[] buffer = Serializer.Serialize(testObj);
 
-      MyComplexObject ret = MsgPackSerializer.Deserialize<MyComplexObject>(buffer);
+      MyComplexObject ret = Serializer.Deserialize<MyComplexObject>(buffer);
 
       Assert.AreEqual(testObj.Name, ret.Name);
       Assert.AreEqual(testObj.Value, ret.Value);
@@ -105,14 +106,26 @@ namespace LsMsgPackUnitTests
       };
 
       // Serialize
-      byte[] buffer = MsgPackSerializer.Serialize(message);
+      byte[] buffer = Serializer.Serialize(message);
 
       // Deserialize
-      MyClass creceiveMessage = MsgPackSerializer.Deserialize<MyClass>(buffer);
+      MyClass creceiveMessage = Serializer.Deserialize<MyClass>(buffer);
 
       Assert.AreEqual(message.Name, creceiveMessage.Name);
       Assert.AreEqual(message.Quantity, creceiveMessage.Quantity);
       MsgPackTests.AreEqualish(message.Anything, creceiveMessage.Anything);
     }
+  }
+
+  [TestClass]
+  public class LsSerializingObjects : SerializingObjects
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+  }
+
+  [TestClass]
+  public class LtSerializingObjects : SerializingObjects
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
 }

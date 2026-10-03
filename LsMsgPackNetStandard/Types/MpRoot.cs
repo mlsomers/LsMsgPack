@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using LsMsgPack.Meta;
 
 namespace LsMsgPack
 {
@@ -71,12 +72,17 @@ namespace LsMsgPack
 
     public override byte[] ToBytes()
     {
-      List<byte> bytes = new List<byte>();
+      ByteWriter bytes = new ByteWriter();
+      WriteTo(bytes);
+      return bytes.ToArray();
+    }
+
+    internal override void WriteTo(ByteWriter bytes)
+    {
       for (int t = 0; t < packedItems.Count; t++)
       {
-        bytes.AddRange(packedItems[t].ToBytes());
+        packedItems[t].WriteTo(bytes);
       }
-      return bytes.ToArray();
     }
 
     protected override MsgPackTypeId GetTypeId(long len)

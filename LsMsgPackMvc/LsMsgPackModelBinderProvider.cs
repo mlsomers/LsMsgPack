@@ -1,4 +1,4 @@
-using LsMsgPack;
+using LtMsgPack.Http;
 using System;
 using System.ComponentModel;
 using System.Web.Mvc;
@@ -13,9 +13,9 @@ namespace LsMsgPackMvc
   {
     private readonly LsMsgPackModelBinder binder;
 
-    public LsMsgPackModelBinderProvider(MsgPackSettings settings)
+    public LsMsgPackModelBinderProvider(LtMsgPackHttpSerializer serializer)
     {
-      binder = new LsMsgPackModelBinder(settings);
+      binder = new LsMsgPackModelBinder(serializer);
     }
 
     public IModelBinder GetBinder(Type modelType)

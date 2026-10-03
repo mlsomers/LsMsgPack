@@ -102,6 +102,24 @@ namespace LsMsgPack
 
     public abstract byte[] ToBytes();
 
+    /// <summary>
+    /// The value unpacked containers hold (and the serializer converts): <see cref="Value"/>, except for an extension without a registered type (see <see cref="MsgPackSettings.CustomExtentionTypes"/>).
+    /// <para>Its value would be indistinguishable from binary data (e.g. a 16 byte extension would be read as a Guid), so the <see cref="MpExt"/> itself is kept, including its type.</para>
+    /// </summary>
+    internal object UnpackedValue
+    {
+      get { return GetType() == typeof(MpExt) ? this : Value; }
+    }
+
+    /// <summary>
+    /// Appends the same bytes as <see cref="ToBytes"/> to the target.
+    /// <para>Containers override this to write their items directly into the target instead of copying the bytes of every nesting level.</para>
+    /// </summary>
+    internal virtual void WriteTo(Meta.ByteWriter target)
+    {
+      target.Write(ToBytes());
+    }
+
     public abstract MsgPackItem Read(MsgPackTypeId typeId, Stream data);
 
     [XmlIgnore]
@@ -113,11 +131,7 @@ namespace LsMsgPack
 
     public static bool SwapEndianChoice(MsgPackSettings settings, int length)
     {
-      if (settings._endianAction == EndianAction.NeverSwap || length <= 1)
-        return false;
-      if (settings._endianAction == EndianAction.SwapIfCurrentSystemIsLittleEndian && !BitConverter.IsLittleEndian)
-        return false;
-      return true;
+      return MsgPackOptions.SwapEndianChoice(settings, length);
     }
 
     protected static void ReorderIfLittleEndian(MsgPackSettings settings, List<byte> bytes)
@@ -125,15 +139,7 @@ namespace LsMsgPack
       if (!SwapEndianChoice(settings, bytes.Count))
         return;
 
-      byte[] swapped = new byte[bytes.Count];
-      int c = 0;
-      for (int t = swapped.Length - 1; t >= 0; t--)
-      {
-        swapped[t] = bytes[c];
-        c++;
-      }
-      bytes.Clear();
-      bytes.AddRange(swapped);
+      bytes.Reverse();
     }
 
     protected static void ReorderIfLittleEndian(MsgPackSettings settings, byte[] bytes)
@@ -141,14 +147,26 @@ namespace LsMsgPack
       if (!SwapEndianChoice(settings, bytes.Length))
         return;
 
-      byte[] swapped = new byte[bytes.Length];
-      int c = 0;
-      for (int t = swapped.Length - 1; t >= 0; t--)
+      Array.Reverse(bytes);
+    }
+
+    /// <summary>
+    /// Reads count bytes into the buffer. <see cref="Stream.Read(byte[], int, int)"/> may return fewer bytes than requested (e.g. network streams), so keep reading until all bytes arrived.
+    /// <para>At the end of the data the remaining bytes are zeroed (the same as reading into a new buffer).</para>
+    /// </summary>
+    protected static void ReadExactly(Stream data, byte[] buffer, int count)
+    {
+      int offset = 0;
+      while (offset < count)
       {
-        swapped[t] = bytes[c];
-        c++;
+        int read = data.Read(buffer, offset, count - offset);
+        if (read <= 0)
+        {
+          Array.Clear(buffer, offset, count - offset);
+          return;
+        }
+        offset += read;
       }
-      for (int t = bytes.Length - 1; t >= 0; t--) bytes[t] = swapped[t];
     }
 
     protected static byte[] SwapIfLittleEndian(MsgPackSettings settings, byte[] bytes)
@@ -282,6 +300,10 @@ namespace LsMsgPack
         val._settings = settings;
         return val;
       }
+
+      MsgPackItem framework = Meta.FrameworkTypes.Pack(value, valuesType, settings); // char, TimeSpan, DateOnly, TimeOnly and Uri (no settable properties)
+      if (!ReferenceEquals(framework, null))
+        return framework;
 
       return null; // not natively supported  // MsgPackSerializer.SerializeObject(value, settings);
     }
@@ -600,161 +622,5 @@ namespace LsMsgPack
       return new MsgPackMeta.PackDef(typeId, $"Undefined (0x{BitConverter.ToString(new byte[] { (byte)typeId })})",
         "This value is either invalid or new to the specification since the implementation of this library. Check the specification and check for updates if the value is defined.");
     }
-  }
-
-
-  public enum MsgPackTypeId : byte
-  {
-    /// <summary>
-    /// NULL
-    /// </summary>
-    MpNull = 0xc0,
-    /// <summary>
-    /// True
-    /// </summary>
-    MpBoolTrue = 0xc3,
-    /// <summary>
-    /// False
-    /// </summary>
-    MpBoolFalse = 0xc2,
-    /// <summary>
-    /// 5-bit negative (signed) number (up to 31)
-    /// </summary>
-    MpSBytePart = 0xE0,
-    /// <summary>
-    /// Unsigned up to 127
-    /// </summary>
-    MpBytePart = 0x00,
-    /// <summary>
-    /// Normal unsigned Byte
-    /// </summary>
-    MpUByte = 0xcc,
-    /// <summary>
-    /// Unsigned Short (UInt16)
-    /// </summary>
-    MpUShort = 0xcd,
-    /// <summary>
-    /// Unsigned UInt32
-    /// </summary>
-    MpUInt = 0xce,
-    /// <summary>
-    /// Unsigned UInt64
-    /// </summary>
-    MpULong = 0xcf,
-    /// <summary>
-    /// Signed Byte
-    /// </summary>
-    MpSByte = 0xd0,
-    /// <summary>
-    /// Signed Short (Int16)
-    /// </summary>
-    MpShort = 0xd1,
-    /// <summary>
-    /// Signd Int (int32)
-    /// </summary>
-    MpInt = 0xd2,
-    /// <summary>
-    /// Signed Long (Int64)
-    /// </summary>
-    MpLong = 0xd3,
-    /// <summary>
-    /// 32bit Float
-    /// </summary>
-    MpFloat = 0xca,
-    /// <summary>
-    /// 64bit Float
-    /// </summary>
-    MpDouble = 0xcb,
-    /// <summary>
-    /// String up to 31 bytes
-    /// </summary>
-    MpStr5 = 0xa0,
-    /// <summary>
-    /// String up to 255 bytes
-    /// </summary>
-    MpStr8 = 0xd9,
-    /// <summary>
-    /// String with a length (in bytes) that fits in 16 bits
-    /// </summary>
-    MpStr16 = 0xda,
-    /// <summary>
-    /// String with a length (in bytes) that fits in 32 bits
-    /// </summary>
-    MpStr32 = 0xdb,
-    /// <summary>
-    /// Byte array with less than 256 bytes
-    /// </summary>
-    MpBin8 = 0xc4,
-    /// <summary>
-    /// Byte array where the length fits in 16 bits
-    /// </summary>
-    MpBin16 = 0xc5,
-    /// <summary>
-    /// Byte array where the length fits in 32 bits
-    /// </summary>
-    MpBin32 = 0xc6,
-    /// <summary>
-    /// Array with less than 16 items
-    /// </summary>
-    MpArray4 = 0x90,
-    /// <summary>
-    /// Array where the number of items fits in 16 bits
-    /// </summary>
-    MpArray16 = 0xdc,
-    /// <summary>
-    /// Array where the number of items fits in 32 bits
-    /// </summary>
-    MpArray32 = 0xdd,
-    /// <summary>
-    /// Array of key-value pairs with less than 16 items
-    /// </summary>
-    MpMap4 = 0x80,
-    /// <summary>
-    /// Array of key-value pairs where the number of items fits in 16 bits
-    /// </summary>
-    MpMap16 = 0xde,
-    /// <summary>
-    /// Array of key-value pairs where the number of items fits in 32 bits
-    /// </summary>
-    MpMap32 = 0xdf,
-
-    /// <summary>
-    /// fixext 1 stores an Integer and a byte array whose length is 1 byte
-    /// </summary>
-    MpFExt1 = 0xd4,
-    /// <summary>
-    /// fixext 2 stores an integer and a byte array whose length is 2 bytes
-    /// </summary>
-    MpFExt2 = 0xd5,
-    /// <summary>
-    /// fixext 4 stores an integer and a byte array whose length is 4 bytes
-    /// </summary>
-    MpFExt4 = 0xd6,
-    /// <summary>
-    /// fixext 8 stores an integer and a byte array whose length is 8 bytes
-    /// </summary>
-    MpFExt8 = 0xd7,
-    /// <summary>
-    /// fixext 16 stores an integer and a byte array whose length is 16 bytes
-    /// </summary>
-    MpFExt16 = 0xd8,
-
-    /// <summary>
-    /// ext 8 stores an integer and a byte array whose length is upto (2^8)-1 bytes
-    /// </summary>
-    MpExt8 = 0xc7,
-    /// <summary>
-    /// ext 16 stores an integer and a byte array whose length is upto (2^16)-1 bytes
-    /// </summary>
-    MpExt16 = 0xc8,
-    /// <summary>
-    /// ext 32 stores an integer and a byte array whose length is upto (2^32)-1 bytes
-    /// </summary>
-    MpExt32 = 0xc9,
-
-    /// <summary>
-    /// An uninitialised ext might have this value, but it should actually never be used
-    /// </summary>
-    NeverUsed = 0xc1
   }
 }

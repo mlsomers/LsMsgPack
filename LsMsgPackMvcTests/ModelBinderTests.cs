@@ -9,7 +9,7 @@ namespace LsMsgPackMvcTests
   public class ModelBinderTests
   {
     private static readonly Order SampleOrder = new Order { Id = 42, Customer = "Infotopie", Quantity = 3, Amounts = new[] { 1.5, 2.25 } };
-    private static readonly MsgPackSettings Plain = new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never };
+    private static readonly MsgPackSettings Plain = new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never, ObjectLayout = ObjectLayout.Map };
 
     private static (object model, ModelStateDictionary modelState) Bind<T>(byte[] body, string contentType)
     {

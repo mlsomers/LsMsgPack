@@ -94,6 +94,42 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
+    public void FractionalSecondsAreBigEndian()
+    {
+      DateTime dt = new DateTime(2021, 1, 1, 0, 0, 0, 500, DateTimeKind.Utc);
+      // Timestamp 64 from the spec: 30 bits nanoseconds (500000000) and 34 bits seconds (1609459200) in one big-endian 64 bit value
+      byte[] expected = new byte[] { (byte)MsgPackTypeId.MpFExt8, 0xFF, 0x77, 0x35, 0x94, 0x00, 0x5F, 0xEE, 0x66, 0x00 };
+
+      CollectionAssert.AreEqual(expected, MsgPackItem.Pack(dt).ToBytes());
+      Assert.AreEqual(dt, ((DateTime)MsgPackItem.Unpack(expected).Value).ToUniversalTime());
+    }
+
+    /// <summary>
+    /// Timestamp 96 stores seconds (signed) plus nanoseconds (always positive), so before 1970 the seconds are rounded down: -1.5 seconds is -2 seconds plus 0.5 seconds.
+    /// </summary>
+    [TestMethod]
+    public void FractionalSecondsBefore1970()
+    {
+      DateTime dt = new DateTime(1969, 12, 31, 23, 59, 58, 500, DateTimeKind.Utc);
+      byte[] expected = new byte[] { (byte)MsgPackTypeId.MpExt8, 12, 0xFF, 0x1D, 0xCD, 0x65, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE };
+
+      CollectionAssert.AreEqual(expected, MsgPackItem.Pack(dt).ToBytes());
+      Assert.AreEqual(dt, ((DateTime)MsgPackItem.Unpack(expected).Value).ToUniversalTime());
+      Assert.AreEqual(-2, MpDateTime.DateTimeToEpoch(dt));
+    }
+
+    /// <summary>
+    /// A DateTimeOffset is packed as its UTC time (the round trip through the serializer: SerializingPrimitives).
+    /// </summary>
+    [TestMethod]
+    public void DateTimeOffsetIsPackedAsUtc()
+    {
+      DateTimeOffset when = new DateTimeOffset(2021, 1, 1, 12, 30, 15, 250, TimeSpan.FromHours(3));
+      MsgPackItem item = MsgPackItem.Pack(when);
+      Assert.AreEqual(when.UtcDateTime, ((DateTime)item.Value).ToUniversalTime());
+    }
+
+    [TestMethod]
     public void TestTheory()
     {
       DateTime epoch = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);

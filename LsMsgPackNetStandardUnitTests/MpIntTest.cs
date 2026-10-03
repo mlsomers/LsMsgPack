@@ -3,6 +3,7 @@ using LsMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NUnit.Framework;
 using System;
+using Assert = Microsoft.VisualStudio.TestTools.UnitTesting.Assert;
 
 namespace LsMsgPackUnitTests
 {
@@ -24,6 +25,7 @@ namespace LsMsgPackUnitTests
     [DataRow((sbyte)-1)]   
     [DataRow((sbyte)-15)]  
     [DataRow((sbyte)-31)]  
+    [DataRow((sbyte)-32)]  
     public void RoundTripNegativeFixnum(sbyte value)
     {
       MsgPackTests.RoundTripTest<MpInt, sbyte>(value, 1, MsgPackTypeId.MpBytePart);
@@ -39,12 +41,45 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow((sbyte)-32)]   
+    [DataRow((sbyte)-33)]   
     [DataRow((sbyte)-100)]  
     [DataRow((sbyte)-128)]  
     public void RoundTripInt8(sbyte value)
     {
       MsgPackTests.RoundTripTest<MpInt, sbyte>(value, 2, MsgPackTypeId.MpSByte);
+    }
+
+    /// <summary>
+    /// The negative fixint holds -32 to -1, every integer type uses it when dynamically compacting.
+    /// </summary>
+    [TestMethod]
+    public void MinusThirtyTwoIsANegativeFixint()
+    {
+      MsgPackSettings compact = new MsgPackSettings() { UseInexedSchema = false };
+      foreach (object value in new object[] { (sbyte)-32, (short)-32, -32, -32L })
+      {
+        CollectionAssert.AreEqual(new byte[] { 0xE0 }, MsgPackItem.Pack(value).ToBytes(), value.GetType().Name);
+      }
+    }
+
+    /// <summary>
+    /// Without compacting, small sbytes are written as a fixint: 0 to 31 as a positive one (they used to be written as a negative fixint, 0 was read as -32).
+    /// </summary>
+    [TestMethod]
+    [DataRow((sbyte)0, new byte[] { 0x00 })]
+    [DataRow((sbyte)1, new byte[] { 0x01 })]
+    [DataRow((sbyte)31, new byte[] { 0x1F })]
+    [DataRow((sbyte)32, new byte[] { 0xD0, 0x20 })]
+    [DataRow((sbyte)-1, new byte[] { 0xFF })]
+    [DataRow((sbyte)-32, new byte[] { 0xE0 })]
+    [DataRow((sbyte)-33, new byte[] { 0xD0, 0xDF })]
+    public void SByteWithoutCompacting(sbyte value, byte[] expected)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { DynamicallyCompact = false, UseInexedSchema = false };
+      MsgPackItem item = MsgPackItem.Pack(value, settings);
+      CollectionAssert.AreEqual(expected, item.ToBytes());
+      Assert.AreEqual(value, item.Value); // still the original type
+      Assert.AreEqual(value, MsgPackItem.Unpack(expected).GetTypedValue<sbyte>());
     }
 
     [TestMethod]
@@ -165,7 +200,8 @@ namespace LsMsgPackUnitTests
 
     [DataRow((long)-1, 1, MsgPackTypeId.MpSBytePart)]                   [TestCase((long)-1, 1, MsgPackTypeId.MpSBytePart)]
     [DataRow((long)-31, 1, MsgPackTypeId.MpSBytePart)]                  [TestCase((long)-31, 1, MsgPackTypeId.MpSBytePart)]
-    [DataRow((long)-32, 2, MsgPackTypeId.MpSByte)]                      [TestCase((long)-32, 2, MsgPackTypeId.MpSByte)]
+    [DataRow((long)-32, 1, MsgPackTypeId.MpSBytePart)]                  [TestCase((long)-32, 1, MsgPackTypeId.MpSBytePart)]
+    [DataRow((long)-33, 2, MsgPackTypeId.MpSByte)]                      [TestCase((long)-33, 2, MsgPackTypeId.MpSByte)]
     [DataRow((long)-128, 2, MsgPackTypeId.MpSByte)]                     [TestCase((long)-128, 2, MsgPackTypeId.MpSByte)]
     [DataRow((long)-129, 3, MsgPackTypeId.MpShort)]                     [TestCase((long)-129, 3, MsgPackTypeId.MpShort)]
     [DataRow((long)short.MinValue, 3, MsgPackTypeId.MpShort)]           [TestCase((long)short.MinValue, 3, MsgPackTypeId.MpShort)]
@@ -176,7 +212,8 @@ namespace LsMsgPackUnitTests
 
     [DataRow((int)-1, 1, MsgPackTypeId.MpSBytePart)]                    [TestCase((int)-1, 1, MsgPackTypeId.MpSBytePart)]
     [DataRow((int)-31, 1, MsgPackTypeId.MpSBytePart)]                   [TestCase((int)-31, 1, MsgPackTypeId.MpSBytePart)]
-    [DataRow((int)-32, 2, MsgPackTypeId.MpSByte)]                       [TestCase((int)-32, 2, MsgPackTypeId.MpSByte)]
+    [DataRow((int)-32, 1, MsgPackTypeId.MpSBytePart)]                   [TestCase((int)-32, 1, MsgPackTypeId.MpSBytePart)]
+    [DataRow((int)-33, 2, MsgPackTypeId.MpSByte)]                       [TestCase((int)-33, 2, MsgPackTypeId.MpSByte)]
     [DataRow((int)-128, 2, MsgPackTypeId.MpSByte)]                      [TestCase((int)-128, 2, MsgPackTypeId.MpSByte)]
     [DataRow((int)-129, 3, MsgPackTypeId.MpShort)]                      [TestCase((int)-129, 3, MsgPackTypeId.MpShort)]
     [DataRow((int)short.MinValue, 3, MsgPackTypeId.MpShort)]            [TestCase((int)short.MinValue, 3, MsgPackTypeId.MpShort)]
@@ -185,14 +222,16 @@ namespace LsMsgPackUnitTests
 
     [DataRow((short)-1, 1, MsgPackTypeId.MpSBytePart)]                  [TestCase((short)-1, 1, MsgPackTypeId.MpSBytePart)]
     [DataRow((short)-31, 1, MsgPackTypeId.MpSBytePart)]                 [TestCase((short)-31, 1, MsgPackTypeId.MpSBytePart)]
-    [DataRow((short)-32, 2, MsgPackTypeId.MpSByte)]                     [TestCase((short)-32, 2, MsgPackTypeId.MpSByte)]
+    [DataRow((short)-32, 1, MsgPackTypeId.MpSBytePart)]                 [TestCase((short)-32, 1, MsgPackTypeId.MpSBytePart)]
+    [DataRow((short)-33, 2, MsgPackTypeId.MpSByte)]                     [TestCase((short)-33, 2, MsgPackTypeId.MpSByte)]
     [DataRow((short)-128, 2, MsgPackTypeId.MpSByte)]                    [TestCase((short)-128, 2, MsgPackTypeId.MpSByte)]
     [DataRow((short)-129, 3, MsgPackTypeId.MpShort)]                    [TestCase((short)-129, 3, MsgPackTypeId.MpShort)]
     [DataRow(short.MinValue, 3, MsgPackTypeId.MpShort)]                 [TestCase(short.MinValue, 3, MsgPackTypeId.MpShort)]
 
     [DataRow((sbyte)-1, 1, MsgPackTypeId.MpSBytePart)]                  [TestCase((sbyte)-1, 1, MsgPackTypeId.MpSBytePart)]
     [DataRow((sbyte)-31, 1, MsgPackTypeId.MpSBytePart)]                 [TestCase((sbyte)-31, 1, MsgPackTypeId.MpSBytePart)]
-    [DataRow((sbyte)-32, 2, MsgPackTypeId.MpSByte)]                     [TestCase((sbyte)-32, 2, MsgPackTypeId.MpSByte)]
+    [DataRow((sbyte)-32, 1, MsgPackTypeId.MpSBytePart)]                 [TestCase((sbyte)-32, 1, MsgPackTypeId.MpSBytePart)]
+    [DataRow((sbyte)-33, 2, MsgPackTypeId.MpSByte)]                     [TestCase((sbyte)-33, 2, MsgPackTypeId.MpSByte)]
     [DataRow((sbyte)-128, 2, MsgPackTypeId.MpSByte)]                    [TestCase((sbyte)-128, 2, MsgPackTypeId.MpSByte)]
     public void AutoCompactTest<T>(T value, int expectedLength, MsgPackTypeId expectedType)
     {
@@ -259,7 +298,8 @@ namespace LsMsgPackUnitTests
     [DataRow((short)-129, 3, MsgPackTypeId.MpShort)]                  [TestCase((short)-129, 3, MsgPackTypeId.MpShort)]
     [DataRow(short.MinValue, 3, MsgPackTypeId.MpShort)]               [TestCase(short.MinValue, 3, MsgPackTypeId.MpShort)]
 
-    [DataRow((sbyte)-32, 2, MsgPackTypeId.MpSByte)]                   [TestCase((sbyte)-32, 2, MsgPackTypeId.MpSByte)]
+    [DataRow((sbyte)-32, 1, MsgPackTypeId.MpSBytePart)]               [TestCase((sbyte)-32, 1, MsgPackTypeId.MpSBytePart)]
+    [DataRow((sbyte)-33, 2, MsgPackTypeId.MpSByte)]                   [TestCase((sbyte)-33, 2, MsgPackTypeId.MpSByte)]
     [DataRow((sbyte)-128, 2, MsgPackTypeId.MpSByte)]                  [TestCase((sbyte)-128, 2, MsgPackTypeId.MpSByte)]
     public void PreserveTypeTest<T>(T value, int expectedLength, MsgPackTypeId expectedType)
     {
