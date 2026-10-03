@@ -28,7 +28,40 @@ namespace MsgPackExplorer
             {
                 item = value;
                 RefreshTree();
+
+                // The handlers may show or hide the objects (see HasSchema), which are then built once below
+                _settingItem = true;
+                try
+                {
+                    ItemChanged?.Invoke(this, EventArgs.Empty);
+                }
+                finally
+                {
+                    _settingItem = false;
+                }
+                RefreshObjects();
             }
+        }
+
+        private bool _settingItem;
+
+        /// <summary>
+        /// Raised after new data was loaded (<see cref="Item"/> or <see cref="Data"/>).
+        /// </summary>
+        [Category("MsgPack")]
+        [Description("Raised after new data was loaded.")]
+        public event EventHandler ItemChanged;
+
+        private List<MsgPackItem> _schemaItems = new List<MsgPackItem>();
+
+        /// <summary>
+        /// The data starts with an indexed schema (or a reference to one), so it was written from objects.
+        /// </summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool HasSchema
+        {
+            get { return _schemaItems.Count > 0; }
         }
 
         private bool _continueOnError;
@@ -96,10 +129,25 @@ namespace MsgPackExplorer
             set { _endianHandling = value; }
         }
 
-        /// <summary>
-        /// Clears all the data and starts with an empty slate
-        /// </summary>
-        public void Clear()
+    public bool ObjectsVisible {
+      get{ 
+        return _objectsVisible; // objectsPane.Visible is false while the form is not shown yet
+      }
+      set{
+        if (value == _objectsVisible)
+          return;
+        _objectsVisible = value;
+        splitterObj.Visible = value;
+        objectsPane.Visible = value;
+        if (!_settingItem)
+          RefreshObjects(); // skipped while hidden
+      } 
+    }
+
+    /// <summary>
+    /// Clears all the data and starts with an empty slate
+    /// </summary>
+    public void Clear()
         {
             Data = null;
         }
@@ -139,6 +187,7 @@ namespace MsgPackExplorer
                 richTextBox1.Clear();
                 lineairList.Clear();
                 listView1.Items.Clear();
+                _schemaItems = ReferenceEquals(item, null) ? new List<MsgPackItem>() : ObjectDebugger.RootObject.FindSchemaItems(item);
                 if (ReferenceEquals(item, null)) return;
 
                 TreeNode root = GetTreeNodeFor(item);
@@ -146,6 +195,7 @@ namespace MsgPackExplorer
                 Traverse(root, item);
                 if (_nodeCount > _displayLimit)
                     root.Nodes.Add(string.Concat("Limit of ", _displayLimit, " displayed items reached..."));
+                ColorSchemaNodes(root);
 
                 treeView1.Nodes.Add(root);
                 treeView1.ExpandAll();
@@ -425,6 +475,8 @@ namespace MsgPackExplorer
                         splitter4.Visible = false;
                     }
                 }
+
+                SelectObjectFor(e.Node);
             }
         }
 

@@ -8,11 +8,14 @@ namespace MsgPackExplorer
 {
   public partial class Explorer : Form
   {
+    private readonly ExplorerSearch _search;
+
     public Explorer()
     {
       MsgPackSettings.Default_CustomExtentionTypes = new ICustomExt[0]; // exclude custom decimal type for general purpose debugger
 
       InitializeComponent();
+      _search = new ExplorerSearch(msgPackExplorer1, searchTextBox, searchMatchCase, searchPrev, searchNext, searchPosCount);
       ddLimitItems.SelectedIndex = 0;
 
       ddEndianess.Items.AddRange(new[]{
@@ -57,6 +60,7 @@ namespace MsgPackExplorer
       else
         msgPackExplorer1.DisplayLimit = long.MaxValue;
       msgPackExplorer1.RefreshTree();
+      _search.Reset(); // other items are shown
     }
 
     private void ddEndianess_DropDownClosed(object sender, EventArgs e)
@@ -185,6 +189,16 @@ namespace MsgPackExplorer
       {
         MessageBox.Show(string.Concat("Removal failed with the following message:\r\n", ex.Message, "\r\n\r\nYou may have more luck (depending on the error) running with administration privileges."), "Not removed", MessageBoxButtons.OK, MessageBoxIcon.Error);
       }
+    }
+	
+	  private void objectsMenuItem_CheckedChanged(object sender, EventArgs e){
+		  msgPackExplorer1.ObjectsVisible = objectsMenuItem.Checked;
+    }
+
+    private void msgPackExplorer1_ItemChanged(object sender, EventArgs e)
+    {
+      // Data with a schema was written from objects, show them (the menu item can still hide them)
+      objectsMenuItem.Checked = msgPackExplorer1.HasSchema;
     }
   }
 

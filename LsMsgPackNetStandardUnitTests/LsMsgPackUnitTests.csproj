@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
     <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
+    <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj" />
   </ItemGroup>
 
 </Project>

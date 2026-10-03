@@ -47,14 +47,27 @@ namespace MsgPackExplorer {
 
     private static readonly string[] files = new[] {
       "LsMsgPack.dll",
+      "LsMsgPack.Core.dll",
+      "ObjectDebugger.dll",
       "LsMsgPackFiddlerInspector.dll",
-      "MsgPackExplorer.exe" 
+      "MsgPackExplorer.exe"
     };
 
     private static readonly string[] filesVs = new[] {
       "LsMsgPack.dll",
+      "LsMsgPack.Core.dll",
+      "ObjectDebugger.dll",
       "LsMsgPackVisualStudioPlugin.dll",
-      "MsgPackExplorer.exe" 
+      "MsgPackExplorer.exe"
+    };
+
+    // The netstandard2.0 libraries use System.Memory (Span), which .NET Framework does not have.
+    // Copied when the build placed them next to the explorer, the host (Fiddler, Visual Studio) may already have them.
+    private static readonly string[] dependencies = new[] {
+      "System.Memory.dll",
+      "System.Buffers.dll",
+      "System.Numerics.Vectors.dll",
+      "System.Runtime.CompilerServices.Unsafe.dll"
     };
 
     public static bool FiddlerIsRunning {
@@ -73,14 +86,20 @@ namespace MsgPackExplorer {
 
     public static string TryInstall(bool vs) {
 
-      string[] source = new string[vs ? filesVs.Length : files.Length];
+      List<string> sourceFiles = new List<string>();
       string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-      for (int t = source.Length - 1; t >= 0; t--) {
-        string path = Path.Combine(baseDir, vs ? filesVs[t] : files[t]);
+      foreach (string file in vs ? filesVs : files) {
+        string path = Path.Combine(baseDir, file);
         if (!File.Exists(path))
           throw new Exception("Could not find source file " + path);
-        source[t] = path;
+        sourceFiles.Add(path);
       }
+      foreach (string file in dependencies) {
+        string path = Path.Combine(baseDir, file);
+        if (File.Exists(path))
+          sourceFiles.Add(path);
+      }
+      string[] source = sourceFiles.ToArray();
 
       List<string> filesCopied= new List<string>();
 
@@ -134,6 +153,7 @@ namespace MsgPackExplorer {
     {
       HashSet<string> src= new HashSet<string>(files);
       src.UnionWith(filesVs);
+      src.UnionWith(dependencies);
       string[] source= src.ToArray();
 
       List<string> filesRemoved = new List<string>();

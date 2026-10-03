@@ -40,6 +40,13 @@ namespace LsMsgPackVisualStudioPlugin
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
       this.toolStripLabel2 = new System.Windows.Forms.ToolStripLabel();
       this.ddEndianess = new System.Windows.Forms.ToolStripComboBox();
+      this.btnObjects = new System.Windows.Forms.ToolStripButton();
+      this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
+      this.searchMatchCase = new System.Windows.Forms.ToolStripButton();
+      this.searchTextBox = new System.Windows.Forms.ToolStripTextBox();
+      this.searchPrev = new System.Windows.Forms.ToolStripButton();
+      this.searchNext = new System.Windows.Forms.ToolStripButton();
+      this.searchPosCount = new System.Windows.Forms.ToolStripLabel();
       this.toolStrip1.SuspendLayout();
       this.SuspendLayout();
       // 
@@ -50,11 +57,18 @@ namespace LsMsgPackVisualStudioPlugin
       this.toolStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.toolStripDropDownButton1,
             this.toolStripButton1,
+            this.btnObjects,
             this.toolStripSeparator1,
             this.toolStripLabel1,
             this.ddLimitItems,
             this.toolStripLabel2,
-            this.ddEndianess});
+            this.ddEndianess,
+            this.toolStripSeparator2,
+            this.searchMatchCase,
+            this.searchTextBox,
+            this.searchPrev,
+            this.searchNext,
+            this.searchPosCount});
       this.toolStrip1.Location = new System.Drawing.Point(0, 0);
       this.toolStrip1.Name = "toolStrip1";
       this.toolStrip1.Padding = new System.Windows.Forms.Padding(0);
@@ -140,6 +154,64 @@ namespace LsMsgPackVisualStudioPlugin
       this.ddEndianess.DropDownClosed += new System.EventHandler(this.ddEndianess_DropDownClosed);
       this.ddEndianess.TextChanged += new System.EventHandler(this.ddEndianess_DropDownClosed);
       // 
+      // btnObjects
+      // 
+      this.btnObjects.CheckOnClick = true;
+      this.btnObjects.Image = global::LsMsgPackVisualStudioPlugin.Properties.Resources.Explore16;
+      this.btnObjects.ImageTransparentColor = System.Drawing.Color.Magenta;
+      this.btnObjects.Name = "btnObjects";
+      this.btnObjects.Size = new System.Drawing.Size(66, 22);
+      this.btnObjects.Text = "Objects";
+      this.btnObjects.ToolTipText = "Show the objects the data was written from (switched on when the data starts with" +
+    " a schema)";
+      this.btnObjects.CheckedChanged += new System.EventHandler(this.btnObjects_CheckedChanged);
+      // 
+      // toolStripSeparator2
+      // 
+      this.toolStripSeparator2.Name = "toolStripSeparator2";
+      this.toolStripSeparator2.Size = new System.Drawing.Size(6, 25);
+      // 
+      // searchMatchCase
+      // 
+      this.searchMatchCase.CheckOnClick = true;
+      this.searchMatchCase.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+      this.searchMatchCase.Name = "searchMatchCase";
+      this.searchMatchCase.Size = new System.Drawing.Size(25, 22);
+      this.searchMatchCase.Text = "Aa";
+      this.searchMatchCase.ToolTipText = "Match case (of strings containing the text)";
+      // 
+      // searchTextBox
+      // 
+      this.searchTextBox.Font = new System.Drawing.Font("Segoe UI", 9F);
+      this.searchTextBox.Name = "searchTextBox";
+      this.searchTextBox.Size = new System.Drawing.Size(100, 25);
+      this.searchTextBox.ToolTipText = "Search strings containing the text, and values it converts to (numbers, true/fals" +
+    "e, null, Guid, dates). Hold Escape to stop searching.";
+      // 
+      // searchPrev
+      // 
+      this.searchPrev.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+      this.searchPrev.Enabled = false;
+      this.searchPrev.Name = "searchPrev";
+      this.searchPrev.Size = new System.Drawing.Size(23, 22);
+      this.searchPrev.Text = "<";
+      this.searchPrev.ToolTipText = "Previous (Shift+Enter)";
+      // 
+      // searchNext
+      // 
+      this.searchNext.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+      this.searchNext.Enabled = false;
+      this.searchNext.Name = "searchNext";
+      this.searchNext.Size = new System.Drawing.Size(23, 22);
+      this.searchNext.Text = ">";
+      this.searchNext.ToolTipText = "Next (Enter)";
+      // 
+      // searchPosCount
+      // 
+      this.searchPosCount.Name = "searchPosCount";
+      this.searchPosCount.Size = new System.Drawing.Size(24, 22);
+      this.searchPosCount.Text = "0/0";
+      // 
       // InspectorWindow
       // 
       this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
@@ -167,5 +239,12 @@ namespace LsMsgPackVisualStudioPlugin
     private System.Windows.Forms.ToolStripComboBox ddLimitItems;
     private System.Windows.Forms.ToolStripLabel toolStripLabel2;
     private System.Windows.Forms.ToolStripComboBox ddEndianess;
+    private System.Windows.Forms.ToolStripButton btnObjects;
+    private System.Windows.Forms.ToolStripSeparator toolStripSeparator2;
+    private System.Windows.Forms.ToolStripButton searchMatchCase;
+    private System.Windows.Forms.ToolStripTextBox searchTextBox;
+    private System.Windows.Forms.ToolStripButton searchPrev;
+    private System.Windows.Forms.ToolStripButton searchNext;
+    private System.Windows.Forms.ToolStripLabel searchPosCount;
   }
 }

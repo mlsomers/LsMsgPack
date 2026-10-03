@@ -429,7 +429,7 @@ namespace LsMsgPack
 #else
       MpRoot items = new MpRoot(settings);
 #endif
-      long len = stream.Length - 1;
+      long len = stream.Length;
       long lastpos = stream.Position;
       while (stream.Position < len)
       {

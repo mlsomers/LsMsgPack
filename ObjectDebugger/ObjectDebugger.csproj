@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+    <Description>Reconstructs the object tree of a MsgPack payload (written by LsMsgPack) without having its types, for debugging tools.</Description>
+  </PropertyGroup>
+
+  <!-- With KEEPTRACK the items of arrays and maps are kept (PreservePackages), so every value can refer to its item (offsets for the hex view) -->
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
+    <Optimize>True</Optimize>
+    <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugKeepTrack|AnyCPU'">
+    <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
+  </ItemGroup>
+
+</Project>

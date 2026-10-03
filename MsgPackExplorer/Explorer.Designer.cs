@@ -38,13 +38,22 @@
       this.menUnistallFiddler = new System.Windows.Forms.ToolStripMenuItem();
       this.installAsVsPluginToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.menUninstallVisualStudio = new System.Windows.Forms.ToolStripMenuItem();
+      this.toolViewMenu = new System.Windows.Forms.ToolStripDropDownButton();
+      this.objectsMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
       this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
       this.toolStripLabel2 = new System.Windows.Forms.ToolStripLabel();
       this.ddEndianess = new System.Windows.Forms.ToolStripComboBox();
+      this.searchMatchCase = new System.Windows.Forms.ToolStripButton();
+      this.searchTextBox = new System.Windows.Forms.ToolStripTextBox();
+      this.searchPrev = new System.Windows.Forms.ToolStripButton();
+      this.searchNext = new System.Windows.Forms.ToolStripButton();
+      this.searchPosCount = new System.Windows.Forms.ToolStripLabel();
+      this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
       this.openFileDialog1 = new System.Windows.Forms.OpenFileDialog();
       this.saveTestSuiteDialog = new System.Windows.Forms.SaveFileDialog();
+      this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
       this.msgPackExplorer1 = new MsgPackExplorer.LsMsgPackExplorer();
       this.toolStrip1.SuspendLayout();
       this.SuspendLayout();
@@ -54,18 +63,26 @@
       this.toolStrip1.GripMargin = new System.Windows.Forms.Padding(0);
       this.toolStrip1.GripStyle = System.Windows.Forms.ToolStripGripStyle.Hidden;
       this.toolStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.toolStripDropDownButton1,
             this.toolStripDropDownButton3,
             this.toolStripDropDownButton2,
+            this.toolViewMenu,
             this.toolStripSeparator1,
             this.toolStripLabel1,
             this.ddLimitItems,
             this.toolStripLabel2,
-            this.ddEndianess});
+            this.ddEndianess,
+            this.toolStripDropDownButton1,
+            this.toolStripSeparator3,
+            this.searchMatchCase,
+            this.searchTextBox,
+            this.searchPrev,
+            this.searchNext,
+            this.searchPosCount,
+            this.toolStripSeparator4});
       this.toolStrip1.Location = new System.Drawing.Point(0, 0);
       this.toolStrip1.Name = "toolStrip1";
       this.toolStrip1.Padding = new System.Windows.Forms.Padding(0);
-      this.toolStrip1.Size = new System.Drawing.Size(929, 25);
+      this.toolStrip1.Size = new System.Drawing.Size(986, 25);
       this.toolStrip1.TabIndex = 1;
       this.toolStrip1.Text = "toolStrip1";
       // 
@@ -164,7 +181,7 @@
       // menUnistallFiddler
       // 
       this.menUnistallFiddler.Name = "menUnistallFiddler";
-      this.menUnistallFiddler.Size = new System.Drawing.Size(180, 22);
+      this.menUnistallFiddler.Size = new System.Drawing.Size(120, 22);
       this.menUnistallFiddler.Text = "Uninstall";
       this.menUnistallFiddler.Click += new System.EventHandler(this.menUnistallFiddler_Click);
       // 
@@ -180,9 +197,28 @@
       // menUninstallVisualStudio
       // 
       this.menUninstallVisualStudio.Name = "menUninstallVisualStudio";
-      this.menUninstallVisualStudio.Size = new System.Drawing.Size(180, 22);
+      this.menUninstallVisualStudio.Size = new System.Drawing.Size(120, 22);
       this.menUninstallVisualStudio.Text = "Uninstall";
       this.menUninstallVisualStudio.Click += new System.EventHandler(this.menUninstallVisualStudio_Click);
+      // 
+      // toolViewMenu
+      // 
+      this.toolViewMenu.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.objectsMenuItem});
+      this.toolViewMenu.Image = global::MsgPackExplorer.Properties.Resources.Explore16;
+      this.toolViewMenu.ImageTransparentColor = System.Drawing.Color.Magenta;
+      this.toolViewMenu.Name = "toolViewMenu";
+      this.toolViewMenu.Size = new System.Drawing.Size(61, 22);
+      this.toolViewMenu.Text = "View";
+      // 
+      // objectsMenuItem
+      // 
+      this.objectsMenuItem.CheckOnClick = true;
+      this.objectsMenuItem.Image = global::MsgPackExplorer.Properties.Resources.Explore16;
+      this.objectsMenuItem.Name = "objectsMenuItem";
+      this.objectsMenuItem.Size = new System.Drawing.Size(180, 22);
+      this.objectsMenuItem.Text = "Objects";
+      this.objectsMenuItem.CheckedChanged += new System.EventHandler(this.objectsMenuItem_CheckedChanged);
       // 
       // toolStripSeparator1
       // 
@@ -229,6 +265,54 @@
       this.ddEndianess.DropDownClosed += new System.EventHandler(this.ddEndianess_DropDownClosed);
       this.ddEndianess.TextChanged += new System.EventHandler(this.ddEndianess_DropDownClosed);
       // 
+      // searchMatchCase
+      // 
+      this.searchMatchCase.CheckOnClick = true;
+      this.searchMatchCase.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+      this.searchMatchCase.Name = "searchMatchCase";
+      this.searchMatchCase.Size = new System.Drawing.Size(25, 22);
+      this.searchMatchCase.Text = "Aa";
+      this.searchMatchCase.ToolTipText = "Match case (of strings containing the text)";
+      // 
+      // searchTextBox
+      // 
+      this.searchTextBox.Font = new System.Drawing.Font("Segoe UI", 9F);
+      this.searchTextBox.Name = "searchTextBox";
+      this.searchTextBox.Size = new System.Drawing.Size(100, 25);
+      this.searchTextBox.ToolTipText = "Search strings containing the text, and values it converts to (numbers, true/fals" +
+    "e, null, Guid, dates). Hold Escape to stop searching.";
+      // 
+      // searchPrev
+      // 
+      this.searchPrev.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+      this.searchPrev.Enabled = false;
+      this.searchPrev.Image = ((System.Drawing.Image)(resources.GetObject("searchPrev.Image")));
+      this.searchPrev.ImageTransparentColor = System.Drawing.Color.Magenta;
+      this.searchPrev.Name = "searchPrev";
+      this.searchPrev.Size = new System.Drawing.Size(23, 22);
+      this.searchPrev.Text = "<";
+      // 
+      // searchNext
+      // 
+      this.searchNext.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
+      this.searchNext.Enabled = false;
+      this.searchNext.Image = ((System.Drawing.Image)(resources.GetObject("searchNext.Image")));
+      this.searchNext.ImageTransparentColor = System.Drawing.Color.Magenta;
+      this.searchNext.Name = "searchNext";
+      this.searchNext.Size = new System.Drawing.Size(23, 22);
+      this.searchNext.Text = ">";
+      // 
+      // searchPosCount
+      // 
+      this.searchPosCount.Name = "searchPosCount";
+      this.searchPosCount.Size = new System.Drawing.Size(24, 22);
+      this.searchPosCount.Text = "0/0";
+      // 
+      // toolStripSeparator3
+      // 
+      this.toolStripSeparator3.Name = "toolStripSeparator3";
+      this.toolStripSeparator3.Size = new System.Drawing.Size(6, 25);
+      // 
       // openFileDialog1
       // 
       this.openFileDialog1.DefaultExt = "MsgPack";
@@ -241,6 +325,11 @@
       this.saveTestSuiteDialog.FileName = "FileName will be ignored";
       this.saveTestSuiteDialog.Title = "Save Test Suite files";
       // 
+      // toolStripSeparator4
+      // 
+      this.toolStripSeparator4.Name = "toolStripSeparator4";
+      this.toolStripSeparator4.Size = new System.Drawing.Size(6, 25);
+      // 
       // msgPackExplorer1
       // 
       this.msgPackExplorer1.ContinueOnError = false;
@@ -252,14 +341,16 @@
       this.msgPackExplorer1.Item = null;
       this.msgPackExplorer1.Location = new System.Drawing.Point(0, 25);
       this.msgPackExplorer1.Name = "msgPackExplorer1";
-      this.msgPackExplorer1.Size = new System.Drawing.Size(929, 470);
+      this.msgPackExplorer1.ObjectsVisible = false;
+      this.msgPackExplorer1.Size = new System.Drawing.Size(986, 578);
       this.msgPackExplorer1.TabIndex = 0;
+      this.msgPackExplorer1.ItemChanged += new System.EventHandler(this.msgPackExplorer1_ItemChanged);
       // 
       // Explorer
       // 
       this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
       this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-      this.ClientSize = new System.Drawing.Size(929, 495);
+      this.ClientSize = new System.Drawing.Size(986, 603);
       this.Controls.Add(this.msgPackExplorer1);
       this.Controls.Add(this.toolStrip1);
       this.Icon = ((System.Drawing.Icon)(resources.GetObject("$this.Icon")));
@@ -296,6 +387,15 @@
     private System.Windows.Forms.ToolStripMenuItem fromClipboardToolStripMenuItem;
     private System.Windows.Forms.ToolStripMenuItem menUnistallFiddler;
     private System.Windows.Forms.ToolStripMenuItem menUninstallVisualStudio;
+    private System.Windows.Forms.ToolStripButton searchMatchCase;
+    private System.Windows.Forms.ToolStripTextBox searchTextBox;
+    private System.Windows.Forms.ToolStripButton searchPrev;
+    private System.Windows.Forms.ToolStripButton searchNext;
+    private System.Windows.Forms.ToolStripLabel searchPosCount;
+    private System.Windows.Forms.ToolStripSeparator toolStripSeparator3;
+    private System.Windows.Forms.ToolStripDropDownButton toolViewMenu;
+    private System.Windows.Forms.ToolStripMenuItem objectsMenuItem;
+    private System.Windows.Forms.ToolStripSeparator toolStripSeparator4;
   }
 }
 
