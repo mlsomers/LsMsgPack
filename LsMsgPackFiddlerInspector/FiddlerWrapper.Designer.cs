@@ -28,12 +28,12 @@
       this.toolStripDropDownButton1 = new System.Windows.Forms.ToolStripDropDownButton();
       this.aboutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripButton1 = new System.Windows.Forms.ToolStripButton();
+      this.btnObjects = new System.Windows.Forms.ToolStripButton();
       this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
       this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
       this.toolStripLabel2 = new System.Windows.Forms.ToolStripLabel();
       this.ddEndianess = new System.Windows.Forms.ToolStripComboBox();
-      this.btnObjects = new System.Windows.Forms.ToolStripButton();
       this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
       this.searchMatchCase = new System.Windows.Forms.ToolStripButton();
       this.searchTextBox = new System.Windows.Forms.ToolStripTextBox();
@@ -66,7 +66,7 @@
       this.toolStrip1.Location = new System.Drawing.Point(0, 0);
       this.toolStrip1.Name = "toolStrip1";
       this.toolStrip1.Padding = new System.Windows.Forms.Padding(0);
-      this.toolStrip1.Size = new System.Drawing.Size(769, 25);
+      this.toolStrip1.Size = new System.Drawing.Size(800, 25);
       this.toolStrip1.TabIndex = 0;
       this.toolStrip1.Text = "toolStrip1";
       // 
@@ -86,22 +86,36 @@
       // 
       this.aboutToolStripMenuItem.Image = global::LsMsgPackFiddlerInspector.Properties.Resources.Info;
       this.aboutToolStripMenuItem.Name = "aboutToolStripMenuItem";
-      this.aboutToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+      this.aboutToolStripMenuItem.Size = new System.Drawing.Size(107, 22);
       this.aboutToolStripMenuItem.Text = "About";
       this.aboutToolStripMenuItem.Click += new System.EventHandler(this.aboutToolStripMenuItem_Click);
       // 
       // toolStripButton1
       // 
       this.toolStripButton1.CheckOnClick = true;
+      this.toolStripButton1.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
       this.toolStripButton1.Image = global::LsMsgPackFiddlerInspector.Properties.Resources.Broken;
       this.toolStripButton1.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.toolStripButton1.Name = "toolStripButton1";
-      this.toolStripButton1.Size = new System.Drawing.Size(173, 22);
+      this.toolStripButton1.Size = new System.Drawing.Size(23, 22);
       this.toolStripButton1.Text = "Keep processing after errors";
       this.toolStripButton1.ToolTipText = "Enable this to get a \"best effort\" view of contents after an error. Note that the" +
     " structure and remainder are totally unreliable and this feature is only for deb" +
     "ugging purposes.";
       this.toolStripButton1.CheckedChanged += new System.EventHandler(this.toolStripButton1_CheckedChanged);
+      // 
+      // btnObjects
+      // 
+      this.btnObjects.CheckOnClick = true;
+      this.btnObjects.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+      this.btnObjects.Image = global::LsMsgPackFiddlerInspector.Properties.Resources.Explore16;
+      this.btnObjects.ImageTransparentColor = System.Drawing.Color.Magenta;
+      this.btnObjects.Name = "btnObjects";
+      this.btnObjects.Size = new System.Drawing.Size(23, 22);
+      this.btnObjects.Text = "Objects";
+      this.btnObjects.ToolTipText = "Show the objects the data was written from (switched on when the data starts with" +
+    " a schema)";
+      this.btnObjects.CheckedChanged += new System.EventHandler(this.btnObjects_CheckedChanged);
       // 
       // toolStripSeparator1
       // 
@@ -111,8 +125,8 @@
       // toolStripLabel1
       // 
       this.toolStripLabel1.Name = "toolStripLabel1";
-      this.toolStripLabel1.Size = new System.Drawing.Size(100, 22);
-      this.toolStripLabel1.Text = "Limit items in list:";
+      this.toolStripLabel1.Size = new System.Drawing.Size(37, 22);
+      this.toolStripLabel1.Text = "Limit:";
       // 
       // ddLimitItems
       // 
@@ -125,7 +139,7 @@
             "100000",
             "All (no limit)"});
       this.ddLimitItems.Name = "ddLimitItems";
-      this.ddLimitItems.Size = new System.Drawing.Size(121, 25);
+      this.ddLimitItems.Size = new System.Drawing.Size(90, 25);
       this.ddLimitItems.ToolTipText = "More items take longer to process and it may seem like the application freezes fo" +
     "r a while";
       this.ddLimitItems.DropDownClosed += new System.EventHandler(this.ddLimitItems_TextChanged);
@@ -147,18 +161,6 @@
       this.ddEndianess.ToolTipText = resources.GetString("ddEndianess.ToolTipText");
       this.ddEndianess.DropDownClosed += new System.EventHandler(this.ddEndianess_DropDownClosed);
       this.ddEndianess.TextChanged += new System.EventHandler(this.ddEndianess_DropDownClosed);
-      // 
-      // btnObjects
-      // 
-      this.btnObjects.CheckOnClick = true;
-      this.btnObjects.Image = global::LsMsgPackFiddlerInspector.Properties.Resources.Explore16;
-      this.btnObjects.ImageTransparentColor = System.Drawing.Color.Magenta;
-      this.btnObjects.Name = "btnObjects";
-      this.btnObjects.Size = new System.Drawing.Size(66, 22);
-      this.btnObjects.Text = "Objects";
-      this.btnObjects.ToolTipText = "Show the objects the data was written from (switched on when the data starts with" +
-    " a schema)";
-      this.btnObjects.CheckedChanged += new System.EventHandler(this.btnObjects_CheckedChanged);
       // 
       // toolStripSeparator2
       // 
@@ -217,7 +219,8 @@
       this.lsMsgPackExplorer1.Item = null;
       this.lsMsgPackExplorer1.Location = new System.Drawing.Point(0, 25);
       this.lsMsgPackExplorer1.Name = "lsMsgPackExplorer1";
-      this.lsMsgPackExplorer1.Size = new System.Drawing.Size(769, 337);
+      this.lsMsgPackExplorer1.ObjectsVisible = false;
+      this.lsMsgPackExplorer1.Size = new System.Drawing.Size(800, 575);
       this.lsMsgPackExplorer1.TabIndex = 1;
       this.lsMsgPackExplorer1.ItemChanged += new System.EventHandler(this.lsMsgPackExplorer1_ItemChanged);
       // 
@@ -228,7 +231,7 @@
       this.Controls.Add(this.lsMsgPackExplorer1);
       this.Controls.Add(this.toolStrip1);
       this.Name = "FiddlerWrapper";
-      this.Size = new System.Drawing.Size(769, 362);
+      this.Size = new System.Drawing.Size(800, 600);
       this.toolStrip1.ResumeLayout(false);
       this.toolStrip1.PerformLayout();
       this.ResumeLayout(false);
