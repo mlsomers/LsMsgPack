@@ -21,6 +21,7 @@ namespace MsgPackExplorer {
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2017\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2019\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 2022\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.MyDocuments,"Visual Studio 18\\Visualizers"), // Visual Studio 2026 uses its version number
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 8\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 9.0\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFilesX86,"Microsoft Visual Studio 10.0\\Common7\\Packages\\Debugger\\Visualizers"),
@@ -42,7 +43,11 @@ namespace MsgPackExplorer {
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2019\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Community\\Common7\\Packages\\Debugger\\Visualizers"),
       new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Professional\\Common7\\Packages\\Debugger\\Visualizers"),
-      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers")
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\2022\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\18\\Community\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\18\\Professional\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\18\\Enterprise\\Common7\\Packages\\Debugger\\Visualizers"),
+      new KeyValuePair<Environment.SpecialFolder,string> (Environment.SpecialFolder.ProgramFiles,"Microsoft Visual Studio\\18\\Insiders\\Common7\\Packages\\Debugger\\Visualizers")
     };
 
     private static readonly string[] files = new[] {
@@ -140,7 +145,7 @@ namespace MsgPackExplorer {
                 throw new Exception("Unable to remove old version:\r\n  " + ex.Message);
               }
             }
-            File.Copy("DebuggerProxy.dll", destPath, true);
+            File.Copy(Path.Combine(baseDir, "DebuggerProxy.dll"), destPath, true);
             filesCopied.Add(destPath);
           }
         }
