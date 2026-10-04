@@ -1,6 +1,7 @@
 ﻿using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.Threading;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -32,7 +33,7 @@ namespace MsgPackDebuggerExtension
       if (shell == null || ErrorHandler.Failed(shell.GetProperty((int)__VSSPROPID2.VSSPROPID_VisualStudioDir, out userDir)) || !(userDir is string))
         return;
 
-      await TaskScheduler.Default;
+      await System.Threading.Tasks.TaskScheduler.Default; // continue on a background thread
       string sourceDir = Path.Combine(Path.GetDirectoryName(typeof(VisualizerDeploymentPackage).Assembly.Location), "Debugger", "Visualizers");
       string destDir = Path.Combine((string)userDir, "Visualizers");
       List<string> errors = new List<string>();
