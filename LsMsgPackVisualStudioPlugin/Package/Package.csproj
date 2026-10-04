@@ -91,6 +91,11 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
+    <Content Include="..\..\MsgPackExplorer\bin\ReleaseKeepTrack\LsMsgPack.Core.dll">
+      <Link>Debugger\Visualizers\LsMsgPack.Core.dll</Link>
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <Content Include="..\..\MsgPackExplorer\bin\ReleaseKeepTrack\LsMsgPackFiddlerInspector.dll">
       <Link>Debugger\Visualizers\LsMsgPackFiddlerInspector.dll</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
