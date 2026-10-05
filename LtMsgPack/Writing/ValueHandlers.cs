@@ -1,4 +1,4 @@
-using LsMsgPack.Meta;
+﻿using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LtMsgPack.Extensions;
 using LtMsgPack.IO;
@@ -135,7 +135,7 @@ namespace LtMsgPack.Writing
   internal sealed class StringHandler : ValueHandler<string>
   {
     internal override void Write(WriteContext c, string value, FullPropertyInfo assignedTo) { c.W.String(value); }
-    internal override bool IncludeByDefault(string value, FullPropertyInfo info) { return !string.IsNullOrEmpty(value); }
+    internal override bool IncludeByDefault(string value, FullPropertyInfo info) { return value != null; } // an empty string is not a default value (FilterDefaultValues)
   }
 
   internal sealed class BinHandler : ValueHandler<byte[]>

@@ -1,4 +1,4 @@
-# Web formatters (ASP.NET and HttpClient)
+﻿# Web formatters (ASP.NET and HttpClient)
 
 Three packages let controllers receive and return MsgPack the same way they handle JSON. They serialize with [LtMsgPack](../README.md#which-package), which writes the same data as LsMsgPack, only faster.
 
@@ -61,6 +61,20 @@ builder.Services.AddControllers()
     o.XLsMsgPack.TypeResolvers = new IMsgPackTypeResolver[] { new XmlRootAttributeTypeResolver() };
   });
 ```
+
+When the models were made for another serializer, leave out the same properties as that one. By default any "ignore" attribute leaves a property out, `[XmlIgnore]` too. With the API's Json.NET models, for example (set it on both media types):
+
+```csharp
+builder.Services.AddControllers()
+  .AddLsMsgPackSerializerFormatters(o =>
+  {
+    IMsgPackPropertyIncludeStatically[] likeJsonNet = { new FilterNonSettable(), FilterIgnoredAttribute.LikeNewtonsoft, new FilterStatic() };
+    o.XLsMsgPack.StaticFilters = likeJsonNet;
+    o.Plain.StaticFilters = likeJsonNet;
+  });
+```
+
+See [Property names and filters](schema.md#property-names-and-filters) for the other presets and for empty strings and default values.
 
 Alternatively, add them to `MvcOptions` directly, with or without an `LtMsgPackHttpOptions` instance:
 
