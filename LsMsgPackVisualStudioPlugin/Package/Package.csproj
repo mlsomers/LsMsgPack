@@ -72,6 +72,11 @@
       <Link>Properties\CommonAssemblyInfo.cs</Link>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="DebuggerBridgeHandler.cs" />
+    <Compile Include="McpBridge.cs" />
+    <Compile Include="McpOptionsPage.cs">
+      <SubType>Component</SubType>
+    </Compile>
     <Compile Include="VisualizerDeploymentPackage.cs" />
   </ItemGroup>
   <ItemGroup>

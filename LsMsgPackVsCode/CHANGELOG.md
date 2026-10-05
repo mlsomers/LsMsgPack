@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- AI agents (MCP): the extension registers the LsMsgPack MCP server with VS Code (chat agent mode) and lets it read MsgPack from the debugger: where the program is paused, the variables that hold bytes, and their bytes decoded into JSON with comments. Other agents (Claude Code...) find the window through a lock file in `~/.lsmsgpack/ide`. **MsgPack: Copy MCP Server Configuration...** copies their configuration. Settings `lsmsgpack.mcp.enabled` and `lsmsgpack.mcp.allowAnyExpression` (only variable and member paths by default).
+- The extension now starts when VS Code has started (`onStartupFinished`), so agents can reach the debugger without opening the explorer first.
+
 ## 2026.10.5
 
 - First version: the MsgPack Explorer of the Visual Studio visualizer for VS Code. Item tree, hex view, properties, validation, objects (indexed schema), search, display limit, endianness and ignore errors.

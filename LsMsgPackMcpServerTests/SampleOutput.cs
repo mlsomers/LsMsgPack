@@ -41,6 +41,10 @@ namespace LsMsgPackMcpServerTests
       Write(dir, "invoice-reference-missing", reference, new RenderOptions());
       Write(dir, "invoice-reference-found", reference, new RenderOptions(), store);
       Write(dir, "number", MsgPackSerializer.Serialize(42), new RenderOptions());
+      System.Collections.Generic.List<McpInvoice> many = new System.Collections.Generic.List<McpInvoice>();
+      for (int t = 0; t < 20000; t++)
+        many.Add(Payloads.Invoice());
+      File.WriteAllBytes(Path.Combine(dir, "invoices-20000.msgpack"), Payloads.Serialize(many, ObjectLayout.Array, true));
 
       PayloadDocument doc = new PayloadDocument(corrupt, "corrupt", new DecodeOptions());
       File.WriteAllText(Path.Combine(dir, "explain-corrupt.txt"), TextRenderer.ExplainOffset(doc, corrupt.Length / 2, new RenderOptions()));

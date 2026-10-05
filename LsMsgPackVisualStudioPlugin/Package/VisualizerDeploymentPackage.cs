@@ -1,4 +1,6 @@
-﻿using Microsoft.VisualStudio;
+﻿using EnvDTE;
+using EnvDTE80;
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
@@ -12,20 +14,31 @@ using Task = System.Threading.Tasks.Task;
 namespace MsgPackDebuggerExtension
 {
   /// <summary>
+  /// Also runs the debugger bridge for AI agents (<see cref="McpBridge"/>): the MsgPack MCP server reads bytes from the paused program through it.
+  /// <para>
   /// Visual Studio looks for debugger visualizers in Common7\Packages\Debugger\Visualizers of its install folder and in
   /// Documents\Visual Studio NN\Visualizers, not in the folders of extensions, and a VSIX cannot install into either
   /// (InstallRoot only allows a few other folders). So the VSIX carries the visualizer in Debugger\Visualizers and this
   /// package copies it to the user's Visualizers folder when Visual Studio starts, before a debugging session looks for it.
+  /// </para>
   /// </summary>
   [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
   [Guid(PackageGuidString)]
   [ProvideAutoLoad(VSConstants.UICONTEXT.ShellInitialized_string, PackageAutoLoadFlags.BackgroundLoad)]
+  [ProvideOptionPage(typeof(McpOptionsPage), "MsgPack Explorer", "AI agents (MCP)", 0, 0, true)]
   public sealed class VisualizerDeploymentPackage : AsyncPackage
   {
     public const string PackageGuidString = "4cb0c0e2-8acb-46ea-93df-f64bfb300ded";
 
+    private McpBridge _bridge;
+    private DebuggerBridgeHandler _bridgeHandler;
+
+    // Kept: DTE stops raising the events of an event object that is collected
+    private SolutionEvents _solutionEvents;
+
     protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
     {
+      await StartMcpBridgeAsync(cancellationToken);
       await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
       IVsShell shell = await GetServiceAsync(typeof(SVsShell)) as IVsShell;
       object userDir = null;
@@ -45,6 +58,60 @@ namespace MsgPackDebuggerExtension
         foreach (string error in errors)
           ActivityLog.TryLogWarning(nameof(VisualizerDeploymentPackage), error);
       }
+    }
+
+    /// <summary>
+    /// Listens for the MsgPack MCP server, unless Tools &gt; Options &gt; MsgPack Explorer &gt; AI agents (MCP) does not allow it. A failure does not stop the visualizer.
+    /// </summary>
+    private async Task StartMcpBridgeAsync(CancellationToken cancellationToken)
+    {
+      try
+      {
+        object service = await GetServiceAsync(typeof(SDTE));
+        await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken); // DTE and the options page live on the main thread
+        DTE2 dte = service as DTE2;
+        if (dte == null || !((McpOptionsPage)GetDialogPage(typeof(McpOptionsPage))).Enabled)
+          return;
+
+        DebuggerBridgeHandler handler = new DebuggerBridgeHandler(this, dte);
+        McpBridge bridge = new McpBridge(handler);
+        bridge.Start();
+        bridge.WriteLockFile(handler.Name, handler.WorkspaceFolders());
+        _bridge = bridge;
+        _bridgeHandler = handler;
+
+        // The MCP server picks the instance whose solution holds its working directory
+        _solutionEvents = dte.Events.SolutionEvents;
+        _solutionEvents.Opened += UpdateLockFile;
+        _solutionEvents.AfterClosing += UpdateLockFile;
+      }
+      catch (Exception ex)
+      {
+        ActivityLog.TryLogWarning(nameof(VisualizerDeploymentPackage), "The debugger bridge for AI agents could not start: " + ex.Message);
+      }
+    }
+
+    private void UpdateLockFile()
+    {
+      ThreadHelper.ThrowIfNotOnUIThread();
+      try
+      {
+        _bridge?.WriteLockFile(_bridgeHandler.Name, _bridgeHandler.WorkspaceFolders());
+      }
+      catch (Exception ex)
+      {
+        ActivityLog.TryLogWarning(nameof(VisualizerDeploymentPackage), "Could not update the lock file of the debugger bridge: " + ex.Message);
+      }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+      if (disposing)
+      {
+        _bridge?.Dispose();
+        _bridge = null;
+      }
+      base.Dispose(disposing);
     }
 
     /// <summary>

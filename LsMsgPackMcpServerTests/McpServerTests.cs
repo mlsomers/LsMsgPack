@@ -232,6 +232,9 @@ namespace LsMsgPackMcpServerTests
         // The document can be explained afterwards
         AssertContains(await session.Call("msgpack_explain_offset", new JsonObject() { ["doc"] = "doc1", ["offset"] = 0 }), "fixmap of 3 entries");
 
+        // A string holding the bytes comes as text (Visual Studio)
+        AssertContains(await session.Call("msgpack_debug_read", new JsonObject() { ["expression"] = "hexText" }), "\ntrue\n");
+
         // The IDE's error reaches the agent
         AssertContains(await session.Call("msgpack_debug_read", new JsonObject() { ["expression"] = "nope" }, true), "The name 'nope' does not exist");
         Assert.IsTrue(ide.Requests.All(r => (string)r["token"] == "secret"));

@@ -32,6 +32,15 @@ Other debuggers:
 
 Large values are read up to `lsmsgpack.maxBytes` (16 MB by default).
 
+## AI agents (MCP)
+
+AI agents can read MsgPack while you debug, through the MCP server that comes with the extension ([LsMsgPack MCP server](https://github.com/mlsomers/LsMsgPack/blob/HEAD/LsMsgPackMcpServer/README.md)). It decodes the data into JSON with comments (types from the indexed schema and type ids, timestamps, decimals, errors with their offsets), so the agent doesn't have to decode hex.
+
+- **VS Code chat (agent mode)**: the server "MsgPack (LsMsgPack)" is listed in the MCP servers, nothing to configure.
+- **Other agents** (Claude Code, Cursor, Claude Desktop...): **MsgPack: Copy MCP Server Configuration...** copies the command or JSON for them. Their server finds this window through a lock file in `~/.lsmsgpack/ide`, and uses the window whose folder holds its working directory.
+
+The agent asks where the program is paused (`msgpack_debug_status`), which variables hold bytes (`msgpack_debug_locals`), and reads one (`msgpack_debug_read`), the same values as **View as MsgPack**. It only reads variable and member paths (`buffer`, `this._payload`, `items[2].Data`), unless `lsmsgpack.mcp.allowAnyExpression` allows any expression. A stream that cannot seek is only read after you confirm. A notification shows what is being read, and you can cancel it.
+
 ## Files and text
 
 - `.msgpack`, `.MsgPack` and `.mpk` files open in the explorer (**Reopen Editor With...** switches to the text or hex editor). Other files: **MsgPack: Open File...**. The view follows changes of the file.
@@ -39,7 +48,7 @@ Large values are read up to `lsmsgpack.maxBytes` (16 MB by default).
 
 ## Requirements
 
-The data is read by the LsMsgPack library itself (the same code as the Visual Studio visualizer), in a small .NET program that comes with the extension. It needs the **.NET runtime 8 or later** (`dotnet` on the PATH, or set `lsmsgpack.dotnetPath`).
+The data is read by the LsMsgPack library itself (the same code as the Visual Studio visualizer), in small .NET programs that come with the extension (the inspector, and the MCP server for AI agents). It needs the **.NET runtime 8 or later** (`dotnet` on the PATH, or set `lsmsgpack.dotnetPath`).
 
 ## Settings
 
@@ -49,6 +58,8 @@ The data is read by the LsMsgPack library itself (the same code as the Visual St
 | `lsmsgpack.displayLimit` | 1000 | The number of items shown at first (0: no limit). |
 | `lsmsgpack.maxBytes` | 16777216 | The most bytes read from the debugged program. |
 | `lsmsgpack.chunkSize` | 49152 | Bytes per evaluation in the debugger (made smaller automatically when the debugger shortens long strings). |
+| `lsmsgpack.mcp.enabled` | `true` | Lets AI agents read from the debugger through the MCP server (the bridge on 127.0.0.1 with a random token, and its lock file). |
+| `lsmsgpack.mcp.allowAnyExpression` | `false` | Lets AI agents read any expression, including method calls that can change the program. User settings only. |
 
 ## Views:
 

@@ -74,11 +74,14 @@ namespace LsMsgPackMcp
     /// <summary>
     /// The IDE that started this process (environment), otherwise the IDEs with a lock file whose process still runs.
     /// </summary>
+    /// <exception cref="IdeBridgeException">The IDE that started this server does not allow reading from its debugger (port 0)</exception>
     public static List<IdeConnection> Discover()
     {
       List<IdeConnection> found = new List<IdeConnection>();
       string port = Environment.GetEnvironmentVariable(PortVariable);
       string token = Environment.GetEnvironmentVariable(TokenVariable);
+      if (port == "0")
+        throw new IdeBridgeException("The IDE that started this server does not let AI agents read from its debugger (VS Code: the setting lsmsgpack.mcp.enabled). msgpack_decode still decodes data and files.");
       int portNumber;
       if (!string.IsNullOrEmpty(port) && int.TryParse(port, out portNumber) && !string.IsNullOrEmpty(token))
       {

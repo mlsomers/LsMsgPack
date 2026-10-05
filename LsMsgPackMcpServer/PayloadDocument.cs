@@ -331,7 +331,8 @@ namespace LsMsgPackMcp
       MsgPackValidation.ValidationItem[] issues;
       try
       {
-        issues = MsgPackValidation.ValidateItem(node.Item, 10000);
+        // The limit of the explorers: the duplicate key check of a map costs about sqrt(limit) times its entries
+        issues = MsgPackValidation.ValidateItem(node.Item, 1000);
       }
       catch (Exception ex)
       {

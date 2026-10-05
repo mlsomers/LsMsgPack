@@ -389,12 +389,14 @@ namespace LsMsgPackMcp
         parameters["schemaId"] = schemaId;
       // Large values take many evaluations, and a stream that cannot seek waits for the user to agree
       JsonNode result = await IdeBridge.RequestAsync(ide, "read", parameters, TimeSpan.FromMinutes(5), cancellation).ConfigureAwait(false);
+      // The bytes, or the text of a string holding them (base64, hex...) as the IDE read it
       string base64 = (string)result?["base64"];
-      if (base64 is null)
+      string text = (string)result?["text"];
+      if (base64 is null && text is null)
         throw new IdeBridgeException("The IDE answered without bytes.");
       return new ReadResult()
       {
-        Bytes = Convert.FromBase64String(base64),
+        Bytes = base64 != null ? Convert.FromBase64String(base64) : ByteText.Parse(text),
         Description = (string)result["description"] ?? "bytes",
         Session = (string)result["session"] ?? ide.Name ?? ide.Ide,
         Warning = (string)result["warning"]

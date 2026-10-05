@@ -112,6 +112,11 @@ VS Code Integration
 
 [LsMsgPackVsCode](LsMsgPackVsCode/README.md) is the same explorer as a VS Code extension (any OS, needs the .NET 8 runtime): right-click a `byte[]`, `Stream`, `List<byte>`, `Memory<byte>`, HTTP content or base64 string in the Variables view while debugging and choose **View as MsgPack**, or open a `.msgpack` file. It also reads typed arrays in JavaScript and bytes in Python.
 
+AI agents (MCP)
+---------------
+
+[LsMsgPackMcpServer](LsMsgPackMcpServer/README.md) (`lsmsgpack-mcp`) is an MCP server and command line tool for AI agents. It decodes MsgPack into JSON with comments (types from the indexed schema and type ids, timestamps, decimals, errors with their offsets). It also reads the bytes of a variable while a program is paused in VS Code or Visual Studio, through their MsgPack extensions. See [docs/Mcp.md](docs/Mcp.md).
+
 Source documentation
 --------------------
 

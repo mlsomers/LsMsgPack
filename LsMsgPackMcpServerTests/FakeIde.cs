@@ -122,6 +122,8 @@ namespace LsMsgPackMcpServerTests
             string expression = (string)parameters["expression"];
             string schemaId = (string)parameters["schemaId"];
             byte[] bytes;
+            if (expression == "hexText")
+              return new JsonObject() { ["result"] = new JsonObject() { ["text"] = "c3", ["description"] = "string", ["session"] = "Launch Api" } };
             if (schemaId != null ? Schemas.TryGetValue(string.Concat(expression, "|", schemaId), out bytes) : Values.TryGetValue(expression, out bytes))
               return new JsonObject() { ["result"] = new JsonObject() { ["base64"] = Convert.ToBase64String(bytes), ["description"] = "byte[]", ["length"] = bytes.Length, ["session"] = "Launch Api" } };
             return new JsonObject() { ["error"] = string.Concat("error CS0103: The name '", expression, "' does not exist in the current context") };
