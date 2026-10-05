@@ -15,6 +15,16 @@
     <RollForward>Major</RollForward>
     <InvariantGlobalization>false</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Title>MsgPack Explorer for VsCode</Title>
+    <Authors>mlsomers</Authors>
+    <ApplicationIcon>Explore.ico</ApplicationIcon>
+    <Copyright>Copyright © Matheu Louis Somers 2015-2026</Copyright>
+    <PackageProjectUrl>https://github.com/mlsomers/LsMsgPack</PackageProjectUrl>
+    <PackageIcon>Explore_256.png</PackageIcon>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
+    <Optimize>True</Optimize>
   </PropertyGroup>
 
   <ItemGroup>

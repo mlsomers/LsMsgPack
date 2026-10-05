@@ -67,6 +67,15 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ObjectDebugger", "ObjectDebugger\ObjectDebugger.csproj", "{2A186111-C928-49C4-8164-BB36E5BC5F55}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "VsCode", "VsCode", "{8ED1C66C-EF0E-A7FD-A61E-968B857E6316}"
+	ProjectSection(SolutionItems) = preProject
+		LsMsgPackVsCode\CHANGELOG.md = LsMsgPackVsCode\CHANGELOG.md
+		LsMsgPackVsCode\LICENSE = LsMsgPackVsCode\LICENSE
+		LsMsgPackVsCode\package-lock.json = LsMsgPackVsCode\package-lock.json
+		LsMsgPackVsCode\package.json = LsMsgPackVsCode\package.json
+		LsMsgPackVsCode\README.md = LsMsgPackVsCode\README.md
+		LsMsgPackVsCode\Server\Screenshot.png = LsMsgPackVsCode\Server\Screenshot.png
+		LsMsgPackVsCode\tsconfig.json = LsMsgPackVsCode\tsconfig.json
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPackInspector", "LsMsgPackVsCode\Server\LsMsgPackInspector.csproj", "{013E7BE9-F74A-4EBB-A265-533EE0CA8A8F}"
 EndProject
