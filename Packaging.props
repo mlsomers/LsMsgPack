@@ -9,6 +9,8 @@
     <RepositoryUrl>https://github.com/mlsomers/LsMsgPack</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>msgpack;messagepack;serializer;serialization</PackageTags>
+    <!-- Each packable project has its own README.md (shown on nuget.org: absolute links only, no mermaid) -->
+    <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- Version, company, copyright and product come from CommonAssemblyInfo.cs -->
     <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
@@ -20,5 +22,8 @@
 
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)CommonAssemblyInfo.cs" Link="Meta\CommonAssemblyInfo.cs" />
+    <!-- Remove first: the SDK already includes README.md as a None item, except in the outer build of multi-targeted projects (which packs them) -->
+    <None Remove="README.md" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

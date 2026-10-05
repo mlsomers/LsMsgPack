@@ -24,6 +24,7 @@ dotnet test LsMsgPackInteropTests/LsMsgPackInteropTests.csproj -c Release
 - **ObjectDebugger** (`ObjectDebugger/`, netstandard2.0, KeepTrack configurations like the library): rebuilds the object tree of a payload without its types (`RootObject.Reconstruct(MpRoot, SchemaStore)`, for the objects pane of MsgPackExplorer in `MsgPackExplorer.Objects.cs`, later a VS Code tool). Untyped values with a schema are inferred in `ObjectReconstructor` (schema order = first occurrence depth first, shape, slots, kinds), marked `TypeIsGuess`. Tests: `ObjectDebuggerTests`.
 - `MicroFramework/` has its own old copies of the sources, it does not link the library files.
 - The version comes from `CommonAssemblyInfo.cs` (read by `Packaging.props`).
+- Each packable project has a `README.md` next to its project file, packed by `Packaging.props` as the package's page on nuget.org: absolute links (nuget.org can't follow relative ones), no mermaid. Keep their examples in sync with `docs/` when the public API changes.
 
 ## Language and targets
 
