@@ -142,7 +142,7 @@
     "build:server": "dotnet publish Server/LsMsgPackInspector.csproj -c Release -o dist/inspector --nologo -p:DebugType=none -p:DebugSymbols=false",
     "test": "npm run compile && node --test test/*.test.js",
     "vscode:prepublish": "npm run build:server && npm run compile",
-    "package": "vsce package"
+    "package": "vsce package --baseContentUrl https://github.com/mlsomers/LsMsgPack/blob/HEAD/LsMsgPackVsCode --baseImagesUrl https://github.com/mlsomers/LsMsgPack/raw/HEAD/LsMsgPackVsCode"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
