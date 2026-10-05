@@ -1,0 +1,153 @@
+{
+  "name": "lsmsgpack-explorer",
+  "displayName": "MsgPack Explorer (LsMsgPack)",
+  "description": "Inspect MsgPack data while debugging (byte[], Stream, List<byte>, Memory<byte>, HttpContent...) and in .msgpack files: item tree, hex view, properties, validation, objects with the indexed schema of LsMsgPack.",
+  "version": "2026.10.5",
+  "publisher": "mlsomers",
+  "license": "Apache-2.0",
+  "icon": "media/icon.png",
+  "homepage": "https://github.com/mlsomers/LsMsgPack",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mlsomers/LsMsgPack.git",
+    "directory": "LsMsgPackVsCode"
+  },
+  "bugs": {
+    "url": "https://github.com/mlsomers/LsMsgPack/issues"
+  },
+  "keywords": [
+    "msgpack",
+    "messagepack",
+    "debugger",
+    "visualizer",
+    "hex"
+  ],
+  "categories": [
+    "Debuggers",
+    "Visualization",
+    "Other"
+  ],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "lsmsgpack.viewVariable",
+        "title": "View as MsgPack",
+        "category": "MsgPack"
+      },
+      {
+        "command": "lsmsgpack.inspectExpression",
+        "title": "Inspect Expression...",
+        "category": "MsgPack"
+      },
+      {
+        "command": "lsmsgpack.openFile",
+        "title": "Open File...",
+        "category": "MsgPack"
+      },
+      {
+        "command": "lsmsgpack.fromClipboard",
+        "title": "Explore Bytes from Clipboard",
+        "category": "MsgPack"
+      },
+      {
+        "command": "lsmsgpack.fromSelection",
+        "title": "Explore Selected Text as MsgPack",
+        "category": "MsgPack"
+      }
+    ],
+    "menus": {
+      "debug/variables/context": [
+        {
+          "command": "lsmsgpack.viewVariable",
+          "group": "navigation@100"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "lsmsgpack.fromSelection",
+          "when": "editorHasSelection",
+          "group": "9_cutcopypaste@100"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "lsmsgpack.viewVariable",
+          "when": "false"
+        },
+        {
+          "command": "lsmsgpack.inspectExpression",
+          "when": "inDebugMode"
+        },
+        {
+          "command": "lsmsgpack.fromSelection",
+          "when": "editorHasSelection"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "lsmsgpack.explorer",
+        "displayName": "MsgPack Explorer",
+        "selector": [
+          {
+            "filenamePattern": "*.msgpack"
+          },
+          {
+            "filenamePattern": "*.MsgPack"
+          },
+          {
+            "filenamePattern": "*.mpk"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "configuration": {
+      "title": "MsgPack Explorer",
+      "properties": {
+        "lsmsgpack.dotnetPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The `dotnet` executable that runs the inspector (.NET 8 or later). Empty: `dotnet` on the PATH."
+        },
+        "lsmsgpack.displayLimit": {
+          "type": "number",
+          "default": 1000,
+          "minimum": 0,
+          "markdownDescription": "The number of items shown at first (0: no limit). More items take longer to show."
+        },
+        "lsmsgpack.maxBytes": {
+          "type": "number",
+          "default": 16777216,
+          "minimum": 1,
+          "markdownDescription": "The most bytes read from the debugged program. Larger values are read up to this length."
+        },
+        "lsmsgpack.chunkSize": {
+          "type": "number",
+          "default": 49152,
+          "minimum": 3,
+          "markdownDescription": "The bytes read per evaluation in the debugger (as base64). Smaller chunks are used when the debugger shortens long strings."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "build:server": "dotnet publish Server/LsMsgPackInspector.csproj -c Release -o dist/inspector --nologo -p:DebugType=none -p:DebugSymbols=false",
+    "test": "npm run compile && node --test test/*.test.js",
+    "vscode:prepublish": "npm run build:server && npm run compile",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "~1.90.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.6.0"
+  }
+}

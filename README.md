@@ -1,5 +1,5 @@
 # LsMsgPack
-MsgPack serializers for .NET classes (like the xml and json serializers), with an optional indexed schema and type ids for polymorphic object models, ASP.NET formatters, and a MsgPack debugging and validation tool (MsgPack Explorer) that also works as a Fiddler plugin and a Visual Studio debugger visualizer.
+MsgPack serializers for .NET classes (like the xml and json serializers), with an optional indexed schema and type ids for polymorphic object models, ASP.NET formatters, and a MsgPack debugging and validation tool (MsgPack Explorer) that also works as a Fiddler plugin, a Visual Studio debugger visualizer and a VS Code extension.
 
 More info about MsgPack Explorer (and screenshots) can be found at:
 http://www.infotopie.nl/open-source/msgpack-explorer
@@ -107,7 +107,12 @@ Visual Studio Integration
 
 The tool can also be used as a debugging Visualizer in Visual Studio. It can be installed via the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=mlsomers.V2025102900).
 
+VS Code Integration
+-------------------
+
+[LsMsgPackVsCode](LsMsgPackVsCode/README.md) is the same explorer as a VS Code extension (any OS, needs the .NET 8 runtime): right-click a `byte[]`, `Stream`, `List<byte>`, `Memory<byte>`, HTTP content or base64 string in the Variables view while debugging and choose **View as MsgPack**, or open a `.msgpack` file. It also reads typed arrays in JavaScript and bytes in Python.
+
 Source documentation
 --------------------
 
-The repository holds the shared core (`LsMsgPack.Core`), the two serializers (`LsMsgPack` with its item tree, `LtMsgPack` without it), the web formatters, MsgPack Explorer with its Fiddler and Visual Studio wrappers, and their tests. See [docs/Architecture.md](docs/Architecture.md) for what each project does, how the serializers work, and the class diagrams.
+The repository holds the shared core (`LsMsgPack.Core`), the two serializers (`LsMsgPack` with its item tree, `LtMsgPack` without it), the web formatters, MsgPack Explorer with its Fiddler and Visual Studio wrappers, the VS Code extension, and their tests. See [docs/Architecture.md](docs/Architecture.md) for what each project does, how the serializers work, and the class diagrams.
