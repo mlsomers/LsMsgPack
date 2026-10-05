@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RootNamespace>LsMsgPackInspector</RootNamespace>
+    <AssemblyName>LsMsgPackInspector</AssemblyName>
+    <Description>The backend of the MsgPack Explorer extension for VS Code: reads MsgPack data with LsMsgPack (KEEPTRACK) and answers the extension's requests (JSON lines over stdin/stdout).</Description>
+    <!-- Framework-dependent and portable: the extension runs it with the user's dotnet (any OS) -->
+    <SelfContained>false</SelfContained>
+    <UseAppHost>false</UseAppHost>
+    <RollForward>Major</RollForward>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <Title>MsgPack Explorer for VsCode</Title>
+    <Authors>mlsomers</Authors>
+    <ApplicationIcon>Explore.ico</ApplicationIcon>
+    <Copyright>Copyright © Matheu Louis Somers 2015-2026</Copyright>
+    <PackageProjectUrl>https://github.com/mlsomers/LsMsgPack</PackageProjectUrl>
+    <PackageIcon>Explore_256.png</PackageIcon>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
+    <Optimize>True</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\CommonAssemblyInfo.cs" Link="CommonAssemblyInfo.cs" />
+  </ItemGroup>
+
+  <!-- The offsets, lengths, MpError items and validation only exist in the KeepTrack builds of the library, whatever configuration this project is built in
+       (a solution build would build them, and their references, in the configuration of the solution: AdditionalProperties wins over it,
+       without the solution properties the references of ObjectDebugger keep it too) -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\ObjectDebugger\ObjectDebugger.csproj" AdditionalProperties="Configuration=ReleaseKeepTrack" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <ProjectReference Include="..\..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=ReleaseKeepTrack" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <ProjectReference Include="..\..\LsMsgPackCore\LsMsgPack.Core.csproj" AdditionalProperties="Configuration=ReleaseKeepTrack" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+  </ItemGroup>
+
+</Project>

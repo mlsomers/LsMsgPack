@@ -13,12 +13,15 @@
 | `MsgPackExplorer` | `MsgPackExplorer.exe` | The WinForms debugging tool (Windows, .NET Framework). The `MsgPackExplorer` UserControl can be used in other tools, like the two below. |
 | `LsMsgPackFiddlerInspector` | `LsMsgPackFiddlerInspector.dll` | A tiny wrapper that makes MsgPack Explorer a Fiddler Inspector. |
 | `LsMsgPackVisualStudioPlugin` | Visual Studio extension | MsgPack Explorer as a debugger visualizer for `byte[]`, `List<byte>`, streams and more. |
+| `ObjectDebugger` | `ObjectDebugger.dll` | Rebuilds the objects of a payload without their types (type and property names from the indexed schema), and the search of the explorers. Used by MsgPack Explorer and the VS Code extension. |
+| `LsMsgPackVsCode` | VS Code extension | MsgPack Explorer for VS Code (TypeScript webview), for values of the debugged program and `.msgpack` files. `Server/` (`LsMsgPackInspector`, net8.0) reads the data with LsMsgPack (KEEPTRACK) and ObjectDebugger for it. See its [README](../LsMsgPackVsCode/README.md). |
 | `MicroFramework` | | An old copy of the sources for the .NET Micro Framework. It doesn't link the current library files. |
 
 Tests:
 - `LsMsgPackNetStandardUnitTests` (`LsMsgPackUnitTests`): most test classes run against both serializers (an `Ls...` and an `Lt...` subclass each), `CrossLibraryTests` checks that they write the same bytes in all settings, and `BenchmarkInvoices` compares them with System.Text.Json.
 - `LsMsgPackInteropTests`: what MessagePack-CSharp and Nerdbank.MessagePack read of our output and the other way around, the source of [Compatibility.md](Compatibility.md).
 - `LsMsgPackFormattersTests`, `LsMsgPackWebApiFormattersTests`, `LsMsgPackMvcTests`: the web formatters, in process.
+- `LsMsgPackVsCode/test`: the VS Code extension (`npm test`): reading bytes from debuggers, text formats, and the inspector process.
 
 `LsMsgPack.slnf` contains the projects that build on any platform (what CI builds). `LsMsgPack.sln` also has the Windows-only projects (the explorer, the Fiddler inspector and the Visual Studio plugin).
 

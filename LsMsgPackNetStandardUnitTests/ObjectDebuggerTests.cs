@@ -456,5 +456,43 @@ namespace LsMsgPackUnitTests
       Assert.IsInstanceOfType(customer.LastItemRef, typeof(MpString));
       Assert.AreEqual("Alice", customer.LastItemRef.Value);
     }
+
+    /// <summary>
+    /// <see cref="ItemSearch"/> (the search of the explorers and of the VS Code extension): strings containing the text and the values it converts to.
+    /// </summary>
+    [TestMethod]
+    public void SearchItems()
+    {
+      MsgPackSettings settings = new MsgPackSettings();
+      PropertyInfo preserve = typeof(MsgPackSettings).GetProperty("PreservePackages");
+      if (preserve is null)
+        return; // without KEEPTRACK the items of arrays and maps are not kept, only the root's own items are searched
+      preserve.SetValue(settings, true);
+      MpRoot data = MsgPackItem.UnpackMultiple(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Map, true)), settings);
+
+      List<MsgPackItem> Find(string text, bool matchCase = false)
+      {
+        List<MsgPackItem> matches = new List<MsgPackItem>();
+        Assert.IsTrue(new ItemSearch(text, matchCase).FindAll(data, matches));
+        return matches;
+      }
+
+      List<MsgPackItem> found = Find("alice");
+      Assert.HasCount(1, found);
+      Assert.AreEqual("Alice", found[0].Value);
+      Assert.IsEmpty(Find("alice", true));
+      Assert.HasCount(2, Find("street", true)); // Main street, Side street (not the property name Street of the schema)
+
+      Assert.IsTrue(Find("42").Any(item => item is MpInt && Convert.ToInt32(item.Value) == 42));
+      Assert.HasCount(1, Find("0.75")); // a decimal (extension type 1, not registered by the explorers)
+      Assert.HasCount(1, Find("2026-10-01 12:00:00Z")); // the timestamp, to the second
+      Assert.IsEmpty(Find("true"));
+
+      // Stopped: the matches found so far are kept
+      List<MsgPackItem> partial = new List<MsgPackItem>();
+      MsgPackItem[] many = Enumerable.Range(0, 3000).Select(t => (MsgPackItem)new MpString(new MsgPackSettings()) { Value = "x" }).ToArray();
+      Assert.IsFalse(new ItemSearch("x", false).FindAll(new MpRoot(new MsgPackSettings(), many), partial, () => true));
+      Assert.HasCount(1022, partial); // stopped at the 1024th item visited, the root was the first
+    }
   }
 }
