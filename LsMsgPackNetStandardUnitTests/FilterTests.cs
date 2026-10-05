@@ -92,24 +92,36 @@ namespace LsMsgPackUnitTests
       CollectionAssert.AreEqual(Sorted("Plain", "StjNever", "StjWhenNull", "Skip"), Keys(Serializer.Serialize(IgnoreProbe.Filled(), settings)));
     }
 
-    public static IEnumerable<object[]> Presets()
+    // The rows only carry the name: Visual Studio serializes the arguments of each row (DataContractJsonSerializer), a filter does not round trip
+    private static readonly Dictionary<string, (FilterIgnoredAttribute Filter, string[] Expected)> Presets = new Dictionary<string, (FilterIgnoredAttribute, string[])>()
     {
-      yield return new object[] { "All", new FilterIgnoredAttribute(), Sorted("Plain", "StjNever", "StjWhenNull", "Skip") };
-      yield return new object[] { "Newtonsoft", FilterIgnoredAttribute.LikeNewtonsoft, Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Custom", "Skip") };
-      yield return new object[] { "SystemTextJson", FilterIgnoredAttribute.LikeSystemTextJson, Sorted("Plain", "Xml", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Custom", "Skip") };
-      yield return new object[] { "XmlSerializer", FilterIgnoredAttribute.LikeXmlSerializer, Sorted("Plain", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Custom", "Skip") };
-      yield return new object[] { "DataContract", FilterIgnoredAttribute.LikeDataContract, Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "Custom", "Skip") };
-      yield return new object[] { "OtherIgnore", new FilterIgnoredAttribute(IgnoreAttributes.OtherIgnore), Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Skip") };
-      yield return new object[] { "None", new FilterIgnoredAttribute(IgnoreAttributes.None), Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Custom", "Skip") };
-      yield return new object[] { "Name", new FilterIgnoredAttribute(IgnoreAttributes.None, "SkipInMsgPack"), Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Custom") };
-      yield return new object[] { "ClassName", new FilterIgnoredAttribute(IgnoreAttributes.XmlIgnore, nameof(SkipInMsgPackAttribute)), Sorted("Plain", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Custom") };
-      yield return new object[] { "FullName", new FilterIgnoredAttribute(IgnoreAttributes.None, typeof(SkipInMsgPackAttribute).FullName, typeof(CustomIgnoreMeAttribute).FullName), Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember") };
-    }
+      { "All", (new FilterIgnoredAttribute(), Sorted("Plain", "StjNever", "StjWhenNull", "Skip")) },
+      { "Newtonsoft", (FilterIgnoredAttribute.LikeNewtonsoft, Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Custom", "Skip")) },
+      { "SystemTextJson", (FilterIgnoredAttribute.LikeSystemTextJson, Sorted("Plain", "Xml", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Custom", "Skip")) },
+      { "XmlSerializer", (FilterIgnoredAttribute.LikeXmlSerializer, Sorted("Plain", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Custom", "Skip")) },
+      { "DataContract", (FilterIgnoredAttribute.LikeDataContract, Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "Custom", "Skip")) },
+      { "OtherIgnore", (new FilterIgnoredAttribute(IgnoreAttributes.OtherIgnore), Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Skip")) },
+      { "None", (new FilterIgnoredAttribute(IgnoreAttributes.None), Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Custom", "Skip")) },
+      { "Name", (new FilterIgnoredAttribute(IgnoreAttributes.None, "SkipInMsgPack"), Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Custom")) },
+      { "ClassName", (new FilterIgnoredAttribute(IgnoreAttributes.XmlIgnore, nameof(SkipInMsgPackAttribute)), Sorted("Plain", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember", "Custom")) },
+      { "FullName", (new FilterIgnoredAttribute(IgnoreAttributes.None, typeof(SkipInMsgPackAttribute).FullName, typeof(CustomIgnoreMeAttribute).FullName), Sorted("Plain", "Xml", "Stj", "StjNever", "StjWhenNull", "Newtonsoft", "DataMember")) },
+    };
 
     [TestMethod]
-    [DynamicData(nameof(Presets))]
-    public void IgnoredAttributesAreConfigurable(string name, FilterIgnoredAttribute filter, string[] expected)
+    [DataRow("All")]
+    [DataRow("Newtonsoft")]
+    [DataRow("SystemTextJson")]
+    [DataRow("XmlSerializer")]
+    [DataRow("DataContract")]
+    [DataRow("OtherIgnore")]
+    [DataRow("None")]
+    [DataRow("Name")]
+    [DataRow("ClassName")]
+    [DataRow("FullName")]
+    public void IgnoredAttributesAreConfigurable(string name)
     {
+      FilterIgnoredAttribute filter = Presets[name].Filter;
+      string[] expected = Presets[name].Expected;
       foreach (bool useSchema in new[] { false, true })
       {
         MsgPackSettings settings = Settings(filter, useSchema);
