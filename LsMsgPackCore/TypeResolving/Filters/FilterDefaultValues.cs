@@ -9,9 +9,26 @@ namespace LsMsgPack.TypeResolving.Filters
     /// <summary>
     /// When a property has a default value, omit the whole property from the dictionary.
     /// Also takes [System.ComponentModel.DefaultValueAttribute] into account.
+    /// <para>An empty string is not a default value (the default of a string is null), as in the JSON serializers: it is written, unless <see cref="OmitEmptyStrings"/> is set.</para>
     /// </summary>
     public class FilterDefaultValues : IMsgPackPropertyIncludeDynamically
     {
+        /// <summary>
+        /// Leaves out default values, empty strings are written.
+        /// </summary>
+        public FilterDefaultValues() { } // kept parameterless (compiled callers, Activator)
+
+        /// <param name="omitEmptyStrings">Also leave out empty strings (read back as the value the constructor sets, often null)</param>
+        public FilterDefaultValues(bool omitEmptyStrings)
+        {
+            OmitEmptyStrings = omitEmptyStrings;
+        }
+
+        /// <summary>
+        /// Empty strings are left out like default values (smaller, but they are read back as the value the constructor sets, often null). Off by default.
+        /// </summary>
+        public bool OmitEmptyStrings { get; }
+
         /// <summary>
         /// Boxed default values of other value types (enums, decimal, DateTime, structs...), so they are not created for every property value
         /// </summary>
@@ -39,7 +56,7 @@ namespace LsMsgPack.TypeResolving.Filters
 
             if (!type.IsValueType)
             {
-                if (type == typeof(string)) return !value.Equals(string.Empty);
+                if (OmitEmptyStrings && type == typeof(string)) return ((string)value).Length != 0;
                 return true;
             }
 

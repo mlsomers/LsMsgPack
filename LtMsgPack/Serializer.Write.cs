@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Filters;
@@ -53,7 +53,8 @@ namespace LtMsgPack
     {
       if (options._dynamicFilters is null || options._dynamicFilters.Length == 0)
         mode = FilterMode.None;
-      else if (options._dynamicFilters.Length == 1 && options._dynamicFilters[0] != null && options._dynamicFilters[0].GetType() == typeof(FilterDefaultValues))
+      else if (options._dynamicFilters.Length == 1 && options._dynamicFilters[0] != null && options._dynamicFilters[0].GetType() == typeof(FilterDefaultValues)
+        && !((FilterDefaultValues)options._dynamicFilters[0]).OmitEmptyStrings) // the typed handlers decide as the default filter (DefaultFilter.Instance)
         mode = FilterMode.DefaultValues;
       else
         mode = FilterMode.Custom;
