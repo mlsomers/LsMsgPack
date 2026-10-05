@@ -35,14 +35,16 @@
     <ProjectGuid>{58C33F66-24C9-4F12-9DB1-83590A7299B7}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Package</RootNamespace>
-    <AssemblyName>Package</AssemblyName>
+    <RootNamespace>MsgPackDebuggerExtension</RootNamespace>
+    <AssemblyName>MsgPackDebuggerExtension</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
-    <GeneratePkgDefFile>false</GeneratePkgDefFile>
-    <IncludeAssemblyInVSIXContainer>false</IncludeAssemblyInVSIXContainer>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <!-- Registers the package with "CodeBase"="$PackageFolder$\MsgPackDebuggerExtension.dll", without it Visual Studio looks for the assembly by name and does not find it. -->
+    <UseCodebase>true</UseCodebase>
+    <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     <IncludeDebugSymbolsInVSIXContainer>false</IncludeDebugSymbolsInVSIXContainer>
     <IncludeDebugSymbolsInLocalVSIXDeployment>false</IncludeDebugSymbolsInLocalVSIXDeployment>
-    <CopyBuildOutputToOutputDirectory>false</CopyBuildOutputToOutputDirectory>
+    <CopyBuildOutputToOutputDirectory>true</CopyBuildOutputToOutputDirectory>
     <CopyOutputSymbolsToOutputDirectory>false</CopyOutputSymbolsToOutputDirectory>
     <StartAction>Program</StartAction>
     <StartProgram Condition="'$(DevEnvDir)' != ''">$(DevEnvDir)devenv.exe</StartProgram>
@@ -70,6 +72,7 @@
       <Link>Properties\CommonAssemblyInfo.cs</Link>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="VisualizerDeploymentPackage.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="source.extension.vsixmanifest">
@@ -96,8 +99,8 @@
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>
-    <Content Include="..\..\MsgPackExplorer\bin\ReleaseKeepTrack\LsMsgPackFiddlerInspector.dll">
-      <Link>Debugger\Visualizers\LsMsgPackFiddlerInspector.dll</Link>
+    <Content Include="..\..\MsgPackExplorer\bin\ReleaseKeepTrack\ObjectDebugger.dll">
+      <Link>Debugger\Visualizers\ObjectDebugger.dll</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>

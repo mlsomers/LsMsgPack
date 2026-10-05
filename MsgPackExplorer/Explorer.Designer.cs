@@ -25,8 +25,6 @@
     private void InitializeComponent() {
       System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Explorer));
       this.toolStrip1 = new System.Windows.Forms.ToolStrip();
-      this.toolStripDropDownButton1 = new System.Windows.Forms.ToolStripDropDownButton();
-      this.aboutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripDropDownButton3 = new System.Windows.Forms.ToolStripDropDownButton();
       this.btnOpen = new System.Windows.Forms.ToolStripMenuItem();
       this.fromClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -45,15 +43,17 @@
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
       this.toolStripLabel2 = new System.Windows.Forms.ToolStripLabel();
       this.ddEndianess = new System.Windows.Forms.ToolStripComboBox();
+      this.toolStripDropDownButton1 = new System.Windows.Forms.ToolStripDropDownButton();
+      this.aboutToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+      this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
       this.searchMatchCase = new System.Windows.Forms.ToolStripButton();
       this.searchTextBox = new System.Windows.Forms.ToolStripTextBox();
       this.searchPrev = new System.Windows.Forms.ToolStripButton();
       this.searchNext = new System.Windows.Forms.ToolStripButton();
       this.searchPosCount = new System.Windows.Forms.ToolStripLabel();
-      this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
+      this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
       this.openFileDialog1 = new System.Windows.Forms.OpenFileDialog();
       this.saveTestSuiteDialog = new System.Windows.Forms.SaveFileDialog();
-      this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
       this.msgPackExplorer1 = new MsgPackExplorer.LsMsgPackExplorer();
       this.toolStrip1.SuspendLayout();
       this.SuspendLayout();
@@ -85,26 +85,6 @@
       this.toolStrip1.Size = new System.Drawing.Size(986, 25);
       this.toolStrip1.TabIndex = 1;
       this.toolStrip1.Text = "toolStrip1";
-      // 
-      // toolStripDropDownButton1
-      // 
-      this.toolStripDropDownButton1.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
-      this.toolStripDropDownButton1.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
-      this.toolStripDropDownButton1.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.aboutToolStripMenuItem});
-      this.toolStripDropDownButton1.Image = global::MsgPackExplorer.Properties.Resources.Help;
-      this.toolStripDropDownButton1.ImageTransparentColor = System.Drawing.Color.Magenta;
-      this.toolStripDropDownButton1.Name = "toolStripDropDownButton1";
-      this.toolStripDropDownButton1.Size = new System.Drawing.Size(29, 22);
-      this.toolStripDropDownButton1.Text = "toolStripDropDownButton1";
-      // 
-      // aboutToolStripMenuItem
-      // 
-      this.aboutToolStripMenuItem.Image = global::MsgPackExplorer.Properties.Resources.Info;
-      this.aboutToolStripMenuItem.Name = "aboutToolStripMenuItem";
-      this.aboutToolStripMenuItem.Size = new System.Drawing.Size(107, 22);
-      this.aboutToolStripMenuItem.Text = "About";
-      this.aboutToolStripMenuItem.Click += new System.EventHandler(this.aboutToolStripMenuItem_Click);
       // 
       // toolStripDropDownButton3
       // 
@@ -216,7 +196,7 @@
       this.objectsMenuItem.CheckOnClick = true;
       this.objectsMenuItem.Image = global::MsgPackExplorer.Properties.Resources.Explore16;
       this.objectsMenuItem.Name = "objectsMenuItem";
-      this.objectsMenuItem.Size = new System.Drawing.Size(180, 22);
+      this.objectsMenuItem.Size = new System.Drawing.Size(114, 22);
       this.objectsMenuItem.Text = "Objects";
       this.objectsMenuItem.CheckedChanged += new System.EventHandler(this.objectsMenuItem_CheckedChanged);
       // 
@@ -228,8 +208,8 @@
       // toolStripLabel1
       // 
       this.toolStripLabel1.Name = "toolStripLabel1";
-      this.toolStripLabel1.Size = new System.Drawing.Size(100, 22);
-      this.toolStripLabel1.Text = "Limit items in list:";
+      this.toolStripLabel1.Size = new System.Drawing.Size(37, 22);
+      this.toolStripLabel1.Text = "Limit:";
       // 
       // ddLimitItems
       // 
@@ -242,7 +222,7 @@
             "100000",
             "All (no limit)"});
       this.ddLimitItems.Name = "ddLimitItems";
-      this.ddLimitItems.Size = new System.Drawing.Size(121, 25);
+      this.ddLimitItems.Size = new System.Drawing.Size(90, 25);
       this.ddLimitItems.ToolTipText = "More items take longer to process and it may seem like the application freezes fo" +
     "r a while";
       this.ddLimitItems.DropDownClosed += new System.EventHandler(this.ddLimitItems_TextChanged);
@@ -264,6 +244,31 @@
       this.ddEndianess.ToolTipText = resources.GetString("ddEndianess.ToolTipText");
       this.ddEndianess.DropDownClosed += new System.EventHandler(this.ddEndianess_DropDownClosed);
       this.ddEndianess.TextChanged += new System.EventHandler(this.ddEndianess_DropDownClosed);
+      // 
+      // toolStripDropDownButton1
+      // 
+      this.toolStripDropDownButton1.Alignment = System.Windows.Forms.ToolStripItemAlignment.Right;
+      this.toolStripDropDownButton1.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Image;
+      this.toolStripDropDownButton1.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.aboutToolStripMenuItem});
+      this.toolStripDropDownButton1.Image = global::MsgPackExplorer.Properties.Resources.Help;
+      this.toolStripDropDownButton1.ImageTransparentColor = System.Drawing.Color.Magenta;
+      this.toolStripDropDownButton1.Name = "toolStripDropDownButton1";
+      this.toolStripDropDownButton1.Size = new System.Drawing.Size(29, 22);
+      this.toolStripDropDownButton1.Text = "toolStripDropDownButton1";
+      // 
+      // aboutToolStripMenuItem
+      // 
+      this.aboutToolStripMenuItem.Image = global::MsgPackExplorer.Properties.Resources.Info;
+      this.aboutToolStripMenuItem.Name = "aboutToolStripMenuItem";
+      this.aboutToolStripMenuItem.Size = new System.Drawing.Size(107, 22);
+      this.aboutToolStripMenuItem.Text = "About";
+      this.aboutToolStripMenuItem.Click += new System.EventHandler(this.aboutToolStripMenuItem_Click);
+      // 
+      // toolStripSeparator3
+      // 
+      this.toolStripSeparator3.Name = "toolStripSeparator3";
+      this.toolStripSeparator3.Size = new System.Drawing.Size(6, 25);
       // 
       // searchMatchCase
       // 
@@ -308,10 +313,10 @@
       this.searchPosCount.Size = new System.Drawing.Size(24, 22);
       this.searchPosCount.Text = "0/0";
       // 
-      // toolStripSeparator3
+      // toolStripSeparator4
       // 
-      this.toolStripSeparator3.Name = "toolStripSeparator3";
-      this.toolStripSeparator3.Size = new System.Drawing.Size(6, 25);
+      this.toolStripSeparator4.Name = "toolStripSeparator4";
+      this.toolStripSeparator4.Size = new System.Drawing.Size(6, 25);
       // 
       // openFileDialog1
       // 
@@ -324,11 +329,6 @@
       this.saveTestSuiteDialog.DefaultExt = "MsgPack";
       this.saveTestSuiteDialog.FileName = "FileName will be ignored";
       this.saveTestSuiteDialog.Title = "Save Test Suite files";
-      // 
-      // toolStripSeparator4
-      // 
-      this.toolStripSeparator4.Name = "toolStripSeparator4";
-      this.toolStripSeparator4.Size = new System.Drawing.Size(6, 25);
       // 
       // msgPackExplorer1
       // 
