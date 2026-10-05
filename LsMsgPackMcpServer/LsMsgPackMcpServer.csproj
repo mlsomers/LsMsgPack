@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\Packaging.props" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+    <RootNamespace>LsMsgPackMcp</RootNamespace>
+    <AssemblyName>LsMsgPackMcp</AssemblyName>
+    <Description>MsgPack for AI agents: an MCP server (stdio) and command line tool that decode MsgPack data (LsMsgPack's indexed schema, type ids, extensions) into text an AI can read, and that read the bytes of variables of a program paused in the debugger of VS Code or Visual Studio (through the MsgPack Explorer extensions).</Description>
+    <!-- Framework-dependent and portable: runs with the user's dotnet on any OS (also as a .NET tool) -->
+    <SelfContained>false</SelfContained>
+    <UseAppHost>false</UseAppHost>
+    <RollForward>Major</RollForward>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>lsmsgpack-mcp</ToolCommandName>
+    <PackageId>LsMsgPack.Mcp</PackageId>
+    <Title>LsMsgPack MCP server</Title>
+    <PackageTags>msgpack;messagepack;mcp;debugger;ai</PackageTags>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
+    <Optimize>True</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LsMsgPackMcpServerTests" />
+  </ItemGroup>
+
+  <!-- Offsets, MpError items and validation only exist in the KeepTrack builds of the library: as LsMsgPackInspector, whatever configuration this project is built in -->
+  <ItemGroup>
+    <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj" AdditionalProperties="Configuration=ReleaseKeepTrack" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=ReleaseKeepTrack" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" AdditionalProperties="Configuration=ReleaseKeepTrack" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+  </ItemGroup>
+
+</Project>

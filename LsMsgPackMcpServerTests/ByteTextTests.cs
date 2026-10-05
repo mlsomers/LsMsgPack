@@ -1,0 +1,48 @@
+using LsMsgPackMcp;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
+
+namespace LsMsgPackMcpServerTests
+{
+  /// <summary>
+  /// The same formats as the VS Code extension's bytesFromText.ts.
+  /// </summary>
+  [TestClass]
+  public class ByteTextTests
+  {
+    private static readonly byte[] Expected = new byte[] { 0x82, 0xA4, 0x4E, 0xFF };
+
+    [TestMethod]
+    public void Formats()
+    {
+      CollectionAssert.AreEqual(Expected, ByteText.Parse("82a44eff"));
+      CollectionAssert.AreEqual(Expected, ByteText.Parse("0x82A44EFF"));
+      CollectionAssert.AreEqual(Expected, ByteText.Parse("82 A4 4E FF"));
+      CollectionAssert.AreEqual(Expected, ByteText.Parse("0x82, 0xa4, 0x4e, 0xff"));
+      CollectionAssert.AreEqual(Expected, ByteText.Parse("[130, 164, 78, 255]"));
+      CollectionAssert.AreEqual(Expected, ByteText.Parse(Convert.ToBase64String(Expected)));
+      CollectionAssert.AreEqual(Expected, ByteText.Parse("gqRO_w")); // base64url without padding
+      CollectionAssert.AreEqual(Expected, ByteText.Parse("b'\\x82\\xa4N\\xff'"));
+      CollectionAssert.AreEqual(new byte[] { 10, 0, 92, 113 }, ByteText.Parse("b'\\n\\0\\q'"));
+      CollectionAssert.AreEqual(new byte[0], ByteText.Parse("  "));
+    }
+
+    [TestMethod]
+    public void MultiLineBase64()
+    {
+      byte[] bytes = new byte[100];
+      for (int t = 0; t < bytes.Length; t++)
+        bytes[t] = (byte)(t * 7);
+      string base64 = Convert.ToBase64String(bytes);
+      CollectionAssert.AreEqual(bytes, ByteText.Parse(base64.Substring(0, 60) + "\n" + base64.Substring(60)));
+    }
+
+    [TestMethod]
+    public void Errors()
+    {
+      Assert.ThrowsExactly<FormatException>(() => ByteText.Parse("12, 300"));
+      Assert.ThrowsExactly<FormatException>(() => ByteText.Parse("hello world"));
+      Assert.ThrowsExactly<FormatException>(() => ByteText.Parse("b'\\xZZ'"));
+    }
+  }
+}
