@@ -89,6 +89,7 @@ namespace LsMsgPackMcpServerTests
       AssertContains(text, "\"Tags\": null // ERROR: Unexpected end of data.");
       AssertContains(text, "Errors:");
       AssertContains(text, "(Tags): Unexpected end of data.");
+      Assert.IsFalse(text.Contains('\r'), "Lines end with \\n on every OS (the error messages of the library use Environment.NewLine)");
     }
 
     [TestMethod]
@@ -106,6 +107,7 @@ namespace LsMsgPackMcpServerTests
       AssertContains(explained, "0xC1, as a type byte: never used (invalid)");
       AssertContains(explained, "ERROR: The specification specifically states that the value 0xC1 should never be used.");
       AssertContains(explained, "[C1]");
+      Assert.IsFalse(text.Contains('\r') || explained.Contains('\r'), "Lines end with \\n on every OS");
     }
 
     [TestMethod]

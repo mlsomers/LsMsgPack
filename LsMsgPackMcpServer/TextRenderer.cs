@@ -87,12 +87,12 @@ namespace LsMsgPackMcp
 
       if (options.View != DecodeView.Items)
       {
-        sb.AppendLine();
+        sb.Append('\n');
         WriteObjects(sb, doc, options);
       }
       if (options.View != DecodeView.Objects)
       {
-        sb.AppendLine();
+        sb.Append('\n');
         WriteItems(sb, doc, options);
       }
       WriteIssues(sb, doc, options.Issues);
@@ -109,30 +109,30 @@ namespace LsMsgPackMcp
       sb.Append(doc.Data.Length.ToString(CultureInfo.InvariantCulture)).Append(" bytes");
       if (!string.IsNullOrEmpty(doc.Source))
         sb.Append(" from ").Append(doc.Source);
-      sb.AppendLine(".");
+      sb.Append(".").Append('\n');
       foreach (string note in doc.Notes)
-        sb.Append("Note: ").AppendLine(note);
+        sb.Append("Note: ").Append(note).Append('\n');
       if (doc.Options.Endian != EndianAction.SwapIfCurrentSystemIsLittleEndian)
-        sb.Append("Read with endian ").Append(doc.Options.Endian.ToString()).AppendLine(" (not the byte order of the specification).");
+        sb.Append("Read with endian ").Append(doc.Options.Endian.ToString()).Append(" (not the byte order of the specification).").Append('\n');
 
       if (doc.Data.Length == 0)
       {
-        sb.AppendLine("There is no data.");
+        sb.Append("There is no data.").Append('\n');
         return;
       }
       if (doc.ReadError != null)
       {
-        sb.Append("The data could not be read: ").AppendLine(doc.ReadError);
-        sb.AppendLine("Read it with continueOnError to see what can be read before and after the error.");
+        sb.Append("The data could not be read: ").Append(doc.ReadError).Append('\n');
+        sb.Append("Read it with continueOnError to see what can be read before and after the error.").Append('\n');
         return;
       }
       if (doc.Root is null)
         return;
 
-      sb.Append("Structure: ").AppendLine(DescribeStructure(doc));
+      sb.Append("Structure: ").Append(DescribeStructure(doc)).Append('\n');
       long end = doc.Root.Offset + doc.Root.Length;
       if (end < doc.Data.Length)
-        sb.Append("Bytes ").Append(Hex(end)).Append(" to ").Append(Hex(doc.Data.Length - 1)).AppendLine(" are not part of any item.");
+        sb.Append("Bytes ").Append(Hex(end)).Append(" to ").Append(Hex(doc.Data.Length - 1)).Append(" are not part of any item.").Append('\n');
 
       int errors = 0;
       int warnings = 0;
@@ -144,7 +144,7 @@ namespace LsMsgPackMcp
           warnings++;
       }
       sb.Append(errors == 0 ? "No errors" : string.Concat(errors.ToString(CultureInfo.InvariantCulture), errors == 1 ? " error" : " errors"));
-      sb.Append(", ").Append(warnings.ToString(CultureInfo.InvariantCulture)).AppendLine(warnings == 1 ? " warning or comment." : " warnings or comments.");
+      sb.Append(", ").Append(warnings.ToString(CultureInfo.InvariantCulture)).Append(warnings == 1 ? " warning or comment." : " warnings or comments.").Append('\n');
 
       RootObject objects = doc.Objects;
       if (objects is null)
@@ -154,7 +154,7 @@ namespace LsMsgPackMcp
       foreach (PrimitiveObject obj in PayloadDocument.Walk(objects))
         if (obj is RootObject root)
           foreach (string warning in root.Warnings)
-            sb.Append("Warning: ").AppendLine(warning);
+            sb.Append("Warning: ").Append(warning).Append('\n');
     }
 
     private static IEnumerable<SchemaInfo> Schemas(RootObject objects)
@@ -203,24 +203,24 @@ namespace LsMsgPackMcp
     {
       if (schema.Source == SchemaSource.Reference && !schema.IsAvailable)
       {
-        sb.Append("Schema ").Append(schema.Id).AppendLine(" is not available: property ids and type ids show as their index in it.");
-        sb.AppendLine("Pass the schema (or an export of the SchemaStore of the program) to resolve the names.");
+        sb.Append("Schema ").Append(schema.Id).Append(" is not available: property ids and type ids show as their index in it.").Append('\n');
+        sb.Append("Pass the schema (or an export of the SchemaStore of the program) to resolve the names.").Append('\n');
         return;
       }
       if (schema.Types.Count == 0)
       {
-        sb.AppendLine("Schema (inline): empty, the body has no objects.");
+        sb.Append("Schema (inline): empty, the body has no objects.").Append('\n');
         return;
       }
       sb.Append(schema.Source == SchemaSource.Inline ? "Schema (inline)" : string.Concat("Schema ", schema.Id))
-        .AppendLine(": type ids and property ids in the body are indexes into these lists.");
+        .Append(": type ids and property ids in the body are indexes into these lists.").Append('\n');
       foreach (SchemaType type in schema.Types)
       {
         sb.Append("  #").Append(type.Index.ToString(CultureInfo.InvariantCulture)).Append(' ').Append(type.Name).Append(": ")
           .Append(string.Join(", ", type.Properties.ConvertAll(p => p ?? "(null)")));
         if (!type.IsUsed)
           sb.Append(" (no value matched)");
-        sb.AppendLine();
+        sb.Append('\n');
       }
     }
 
@@ -246,7 +246,7 @@ namespace LsMsgPackMcp
         start = doc.FindObject(options.Path);
         if (start is null)
         {
-          sb.Append("No value at path \"").Append(options.Path).AppendLine("\". Paths look like Lines[2].Product (as the objects view shows them).");
+          sb.Append("No value at path \"").Append(options.Path).Append("\". Paths look like Lines[2].Product (as the objects view shows them).").Append('\n');
           return;
         }
       }
@@ -256,16 +256,16 @@ namespace LsMsgPackMcp
       sb.Append("Objects");
       if (start != doc.Objects)
         sb.Append(" at ").Append(start.Path);
-      sb.AppendLine(" (JSON with // comments: a type name comes from a type id, a name with ~ is inferred from the schema; dictionary keys that are not strings are not quoted):");
+      sb.Append(" (JSON with // comments: a type name comes from a type id, a name with ~ is inferred from the schema; dictionary keys that are not strings are not quoted):").Append('\n');
 
       Budget budget = new Budget() { Left = Math.Max(1, options.MaxNodes), FirstError = doc.FirstErrorOffset };
       if (budget.FirstError >= 0)
-        sb.Append("The values after the first error (at ").Append(Hex(budget.FirstError)).AppendLine(") were read on at the next byte: they may be wrong (marked \"after the error\").");
+        sb.Append("The values after the first error (at ").Append(Hex(budget.FirstError)).Append(") were read on at the next byte: they may be wrong (marked \"after the error\").").Append('\n');
       string comment;
       string text = Value(start, options, 0, budget, false, out comment);
       sb.Append(text);
       AppendComment(sb, comment);
-      sb.AppendLine();
+      sb.Append('\n');
     }
 
     /// <summary>
@@ -308,7 +308,7 @@ namespace LsMsgPackMcp
       int newline = text.IndexOf('\n');
       if (newline >= 0 && comment.Length > 0)
       {
-        text = string.Concat(text.Substring(0, newline).TrimEnd(), " // ", comment, Environment.NewLine, text.Substring(newline + 1));
+        text = string.Concat(text.Substring(0, newline).TrimEnd(), " // ", comment, "\n", text.Substring(newline + 1));
         comment = string.Empty;
       }
       return text;
@@ -389,7 +389,7 @@ namespace LsMsgPackMcp
       string pad = new string(' ', (indent + 1) * 2);
       for (int t = 0; t < lines.Count; t++)
       {
-        sb.AppendLine();
+        sb.Append('\n');
         sb.Append(pad);
         if (lines[t][0] != null)
           sb.Append(lines[t][0]).Append(": ");
@@ -400,11 +400,11 @@ namespace LsMsgPackMcp
       }
       if (hidden > 0)
       {
-        sb.AppendLine();
+        sb.Append('\n');
         sb.Append(pad).Append("// ... ").Append(hidden.ToString(CultureInfo.InvariantCulture)).Append(" more not shown (maxNodes reached): ask for the path ")
           .Append(string.IsNullOrEmpty(obj.Path) ? "of a member" : string.Concat("\"", obj.Path, "\"")).Append(" or a larger maxNodes");
       }
-      sb.AppendLine();
+      sb.Append('\n');
       sb.Append(' ', indent * 2).Append(close);
       return sb.ToString();
     }
@@ -496,7 +496,7 @@ namespace LsMsgPackMcp
       sb.Append("Items (offset, then the MsgPack encoding and value, nested items indented; map entries are a key followed by its value");
       if (options.From > 0 || options.To < long.MaxValue)
         sb.Append("; only the items holding bytes ").Append(Hex(options.From)).Append(" to ").Append(options.To == long.MaxValue ? "the end" : Hex(options.To));
-      sb.AppendLine("):");
+      sb.Append("):").Append('\n');
 
       int budget = Math.Max(1, options.MaxNodes);
       int skipped = 0;
@@ -535,10 +535,10 @@ namespace LsMsgPackMcp
             notes.Add(obj.Path);
         }
         AppendComment(sb, string.Join(", ", notes));
-        sb.AppendLine();
+        sb.Append('\n');
       }
       if (skipped > 0)
-        sb.Append("... ").Append(skipped.ToString(CultureInfo.InvariantCulture)).AppendLine(" more items not shown (maxNodes reached): ask for a range (from, to) or a larger maxNodes.");
+        sb.Append("... ").Append(skipped.ToString(CultureInfo.InvariantCulture)).Append(" more items not shown (maxNodes reached): ask for a range (from, to) or a larger maxNodes.").Append('\n');
     }
 
     /// <summary>
@@ -612,13 +612,13 @@ namespace LsMsgPackMcp
       int others = doc.Issues.Count - shown.Count;
       if (shown.Count > 0)
       {
-        sb.AppendLine();
-        sb.AppendLine(level == IssueLevel.All ? "Issues:" : "Errors:");
+        sb.Append('\n');
+        sb.Append(level == IssueLevel.All ? "Issues:" : "Errors:").Append('\n');
         const int max = 50;
         for (int t = 0; t < shown.Count && t < max; t++)
-          sb.Append("  ").AppendLine(DescribeIssue(doc, shown[t]));
+          sb.Append("  ").Append(DescribeIssue(doc, shown[t])).Append('\n');
         if (shown.Count > max)
-          sb.Append("  ... ").Append((shown.Count - max).ToString(CultureInfo.InvariantCulture)).AppendLine(" more.");
+          sb.Append("  ... ").Append((shown.Count - max).ToString(CultureInfo.InvariantCulture)).Append(" more.").Append('\n');
       }
       if (others > 0)
       {
@@ -626,11 +626,11 @@ namespace LsMsgPackMcp
         foreach (Issue issue in doc.Issues)
           if (!issue.IsError)
             wasted += issue.WastedBytes;
-        sb.AppendLine();
+        sb.Append('\n');
         sb.Append(others.ToString(CultureInfo.InvariantCulture)).Append(others == 1 ? " warning or comment" : " warnings or comments").Append(" not listed (issues: all lists them)");
         if (wasted > 0)
           sb.Append(", smaller encodings would save ").Append(wasted.ToString(CultureInfo.InvariantCulture)).Append(" bytes");
-        sb.AppendLine(".");
+        sb.Append(".").Append('\n');
       }
     }
 
@@ -660,31 +660,31 @@ namespace LsMsgPackMcp
       StringBuilder sb = new StringBuilder();
       if (offset < 0 || offset >= doc.Data.Length)
       {
-        sb.Append("Offset ").Append(Hex(offset)).Append(" is outside the data (").Append(doc.Data.Length.ToString(CultureInfo.InvariantCulture)).AppendLine(" bytes).");
+        sb.Append("Offset ").Append(Hex(offset)).Append(" is outside the data (").Append(doc.Data.Length.ToString(CultureInfo.InvariantCulture)).Append(" bytes).").Append('\n');
         return sb.ToString();
       }
 
       byte b = doc.Data[offset];
       sb.Append("Offset ").Append(Hex(offset)).Append(" (").Append(offset.ToString(CultureInfo.InvariantCulture)).Append(") of ").Append(doc.Data.Length.ToString(CultureInfo.InvariantCulture))
-        .Append(" bytes: 0x").Append(b.ToString("X2", CultureInfo.InvariantCulture)).Append(", as a type byte: ").Append(DescribeTypeByte(b)).AppendLine(".");
+        .Append(" bytes: 0x").Append(b.ToString("X2", CultureInfo.InvariantCulture)).Append(", as a type byte: ").Append(DescribeTypeByte(b)).Append(".").Append('\n');
 
       ItemNode node = doc.FindItemAt(offset);
       if (node is null)
       {
-        sb.AppendLine("No item holds this byte (it comes after the data that could be read, or the data could not be read).");
+        sb.Append("No item holds this byte (it comes after the data that could be read, or the data could not be read).").Append('\n');
       }
       else
       {
         List<ItemNode> chain = new List<ItemNode>();
         for (ItemNode n = node; n != null; n = n.Parent)
           chain.Insert(0, n);
-        sb.AppendLine("Items holding it (outermost first):");
+        sb.Append("Items holding it (outermost first):").Append('\n');
         foreach (ItemNode n in chain)
         {
           sb.Append("  ").Append(Hex(n.Offset)).Append(" (").Append(n.Length.ToString(CultureInfo.InvariantCulture)).Append(" bytes) ");
           if (n.Role != null && n.Depth > 0)
             sb.Append(n.Role).Append(' ');
-          sb.AppendLine(DescribeItem(n.Item, options));
+          sb.Append(DescribeItem(n.Item, options)).Append('\n');
         }
 
         PrimitiveObject obj = doc.GetObject(node);
@@ -694,7 +694,7 @@ namespace LsMsgPackMcp
           string value = Value(obj, new RenderOptions() { MaxNodes = 20, MaxString = options.MaxString, MaxBytes = options.MaxBytes }, 0, new Budget() { Left = 20, FirstError = doc.FirstErrorOffset }, false, out comment);
           sb.Append("Object: ").Append(string.IsNullOrEmpty(obj.Path) ? "(root)" : obj.Path).Append(" = ").Append(FirstLine(value));
           AppendComment(sb, comment);
-          sb.AppendLine();
+          sb.Append('\n');
         }
 
         if (!(node.Item is MpRoot) && node.Offset >= 0)
@@ -713,11 +713,11 @@ namespace LsMsgPackMcp
           }
           if (node.Length > length)
             sb.Append(" ...");
-          sb.AppendLine();
+          sb.Append('\n');
         }
       }
 
-      sb.AppendLine("Bytes around it ([..] marks the offset):");
+      sb.Append("Bytes around it ([..] marks the offset):").Append('\n');
       long from = Math.Max(0, offset / 16 * 16 - 16);
       long to = Math.Min(doc.Data.Length, offset / 16 * 16 + 32);
       int width = Math.Max(4, (doc.Data.Length - 1).ToString("X", CultureInfo.InvariantCulture).Length);
@@ -729,7 +729,7 @@ namespace LsMsgPackMcp
           string hex = doc.Data[t].ToString("X2", CultureInfo.InvariantCulture);
           sb.Append(t == offset ? string.Concat("[", hex, "]") : string.Concat(t == offset + 1 ? string.Empty : " ", hex));
         }
-        sb.AppendLine();
+        sb.Append('\n');
       }
       return sb.ToString();
     }
@@ -815,14 +815,14 @@ namespace LsMsgPackMcp
       StringBuilder sb = new StringBuilder();
       if (doc.Root is null || string.IsNullOrEmpty(text))
       {
-        sb.AppendLine("Nothing to search.");
+        sb.Append("Nothing to search.").Append('\n');
         return sb.ToString();
       }
 
       List<MsgPackItem> matches = new List<MsgPackItem>();
       new ItemSearch(text, matchCase).FindAll(doc.Root.Item, matches);
       sb.Append(matches.Count.ToString(CultureInfo.InvariantCulture)).Append(matches.Count == 1 ? " item holds \"" : " items hold \"").Append(text)
-        .AppendLine("\" (strings containing it, and values it converts to):");
+        .Append("\" (strings containing it, and values it converts to):").Append('\n');
       int max = Math.Max(1, Math.Min(options.MaxNodes, 200));
       for (int t = 0; t < matches.Count && t < max; t++)
       {
@@ -836,10 +836,10 @@ namespace LsMsgPackMcp
           AppendComment(sb, obj.Path);
         if (node != null && node.IsSchema)
           AppendComment(sb, "in the indexed schema");
-        sb.AppendLine();
+        sb.Append('\n');
       }
       if (matches.Count > max)
-        sb.Append("  ... ").Append((matches.Count - max).ToString(CultureInfo.InvariantCulture)).AppendLine(" more.");
+        sb.Append("  ... ").Append((matches.Count - max).ToString(CultureInfo.InvariantCulture)).Append(" more.").Append('\n');
       return sb.ToString();
     }
 
