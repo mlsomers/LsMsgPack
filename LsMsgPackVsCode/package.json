@@ -2,7 +2,7 @@
   "name": "lsmsgpack-explorer",
   "displayName": "MsgPack Explorer (LsMsgPack)",
   "description": "Inspect MsgPack data while debugging (byte[], Stream, List<byte>, Memory<byte>, HttpContent...) and in .msgpack files: item tree, hex view, properties, validation, objects with the indexed schema of LsMsgPack.",
-  "version": "2026.10.6",
+  "version": "2026.10.7",
   "publisher": "mlsomers",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
