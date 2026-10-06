@@ -245,6 +245,10 @@ namespace LtMsgPack
         case TypeKind.Complex:
           Plan(type, c.Mode == IdMode.Names).Write(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options), assignedTo);
           return;
+
+        case TypeKind.Pair:
+          WritePair(c, value, type, assignedTo);
+          return;
       }
 
       if (assignedTo is null || info.NeverWrapped || !SerializationRules.NeedsTypeId(type, assignedTo, Options))
@@ -329,6 +333,39 @@ namespace LtMsgPack
     /// <summary>
     /// LsMsgPack: SerializeCollection. The elements as an array (a map for dictionaries), wrapped in a map when a type id or properties are needed.
     /// </summary>
+    /// <summary>
+    /// LsMsgPack: SerializePair. [key, value], wrapped like a collection when it needs a type id (the key and value first, they may add types to the schema).
+    /// </summary>
+    private void WritePair(WriteContext c, object value, Type type, FullPropertyInfo assignedTo)
+    {
+      FrameworkTypeInfo.PairInfo pair = FrameworkTypeInfo.GetPair(type);
+      bool addTypeId = SerializationRules.NeedsTypeId(type, assignedTo, Options);
+      MsgPackWriter main = c.W;
+      MsgPackWriter content = addTypeId ? c.RentWriter() : main;
+      c.W = content;
+      c.EnterContainer();
+      try
+      {
+        content.ArrayHeader(2);
+        WriteBoxed(c, pair.Key.GetValue(value), pair.KeyInfo);
+        WriteBoxed(c, pair.Value.GetValue(value), pair.ValueInfo);
+      }
+      finally
+      {
+        c.LeaveContainer();
+        c.W = main;
+      }
+      if (!addTypeId)
+        return;
+
+      main.MapHeader(2);
+      main.String(MsgPackOptions.TypeIdKey);
+      c.WriteTypeId(type, assignedTo);
+      main.String(MsgPackOptions.ContentKey);
+      main.Raw(content.Buf, 0, content.Pos);
+      c.ReturnWriter(content);
+    }
+
     private void WriteCollection(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
     {
       SerializeEnumerableAttribute handleItems = SerializationRules.GetEnumerableAttribute(type, assignedTo);

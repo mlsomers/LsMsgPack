@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
@@ -13,6 +15,47 @@ namespace LsMsgPack.Meta
   {
     internal static readonly Type DateOnlyType = typeof(DateTime).Assembly.GetType("System.DateOnly");
     internal static readonly Type TimeOnlyType = typeof(DateTime).Assembly.GetType("System.TimeOnly");
+
+    private static readonly ConcurrentDictionary<Type, PairInfo> Pairs = new ConcurrentDictionary<Type, PairInfo>();
+
+    /// <summary>
+    /// KeyValuePair&lt;TKey, TValue&gt; (Key and Value have no setters): an array [key, value], as MessagePack-CSharp writes it. Collections of pairs are maps (see CollectionInfo).
+    /// </summary>
+    internal static bool IsKeyValuePair(Type type)
+    {
+      return type.IsGenericType && type.GetGenericTypeDefinition() == typeof(KeyValuePair<,>);
+    }
+
+    /// <summary>
+    /// How to read and create a KeyValuePair&lt;TKey, TValue&gt; (see <see cref="IsKeyValuePair"/>).
+    /// </summary>
+    internal static PairInfo GetPair(Type type)
+    {
+      return Pairs.GetOrAdd(type, t => new PairInfo(t));
+    }
+
+    internal sealed class PairInfo
+    {
+      internal readonly PropertyInfo Key;
+      internal readonly PropertyInfo Value;
+      internal readonly FullPropertyInfo KeyInfo;
+      internal readonly FullPropertyInfo ValueInfo;
+      private readonly Type _type;
+
+      internal PairInfo(Type type)
+      {
+        _type = type;
+        Key = type.GetProperty(nameof(KeyValuePair<object, object>.Key));
+        Value = type.GetProperty(nameof(KeyValuePair<object, object>.Value));
+        KeyInfo = new FullPropertyInfo(type.GenericTypeArguments[0]);
+        ValueInfo = new FullPropertyInfo(type.GenericTypeArguments[1]);
+      }
+
+      internal object Create(object key, object value)
+      {
+        return Activator.CreateInstance(_type, key, value);
+      }
+    }
 
     internal static readonly PropertyInfo DayNumber = DateOnlyType?.GetProperty("DayNumber");
     private static readonly MethodInfo FromDayNumber = DateOnlyType?.GetMethod("FromDayNumber", new[] { typeof(int) });

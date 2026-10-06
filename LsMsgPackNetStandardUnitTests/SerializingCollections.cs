@@ -172,6 +172,53 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual("1=a, 2=b", Show(Serializer.Deserialize<GenericOnlyDictionary<long, string>>(Serializer.Serialize(genericOnly, settings), settings)));
     }
 
+    public class PairAddress
+    {
+      public string Street { get; set; }
+    }
+
+    public class SinglePairs
+    {
+      public KeyValuePair<long, string> Simple { get; set; }
+      public KeyValuePair<string, KeyValuePair<int, PairAddress>> Nested { get; set; }
+      public KeyValuePair<int, string>? Nullable { get; set; }
+      public object Boxed { get; set; }
+    }
+
+    /// <summary>
+    /// Key and Value have no setters: a single pair was written as an empty object. Now [key, value], as MessagePack-CSharp writes it.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false, ObjectLayout.Map)]
+    [DataRow(true, ObjectLayout.Map)]
+    [DataRow(false, ObjectLayout.Array)]
+    [DataRow(true, ObjectLayout.Array)]
+    public void SingleKeyValuePair(bool useSchema, ObjectLayout layout)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      SinglePairs value = new SinglePairs()
+      {
+        Simple = new KeyValuePair<long, string>(1, "a"),
+        Nested = new KeyValuePair<string, KeyValuePair<int, PairAddress>>("home", new KeyValuePair<int, PairAddress>(7, new PairAddress() { Street = "Main street" })),
+        Nullable = new KeyValuePair<int, string>(2, "b"),
+        Boxed = new KeyValuePair<int, string>(3, "c") // another type than declared: a type id
+      };
+
+      SinglePairs read = Serializer.Deserialize<SinglePairs>(Serializer.Serialize(value, settings), settings);
+      Assert.AreEqual(new KeyValuePair<long, string>(1, "a"), read.Simple);
+      Assert.AreEqual("home", read.Nested.Key);
+      Assert.AreEqual(7, read.Nested.Value.Key);
+      Assert.AreEqual("Main street", read.Nested.Value.Value.Street);
+      Assert.AreEqual(new KeyValuePair<int, string>(2, "b"), read.Nullable);
+      Assert.AreEqual(new KeyValuePair<int, string>(3, "c"), read.Boxed);
+
+      KeyValuePair<long, string> root = new KeyValuePair<long, string>(1, "a");
+      byte[] bytes = Serializer.Serialize(root, settings);
+      if (!useSchema)
+        CollectionAssert.AreEqual(new byte[] { 0x92, 0x01, 0xA1, 0x61 }, bytes); // the bytes of MessagePack-CSharp
+      Assert.AreEqual(root, Serializer.Deserialize<KeyValuePair<long, string>>(bytes, settings));
+    }
+
     private static MsgPackSettings Settings(AddTypeIdOption option = AddTypeIdOption.IfAmbiguious)
     {
       return new MsgPackSettings() { UseInexedSchema = false, AddTypeIdOptions = option };

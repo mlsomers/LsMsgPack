@@ -51,6 +51,9 @@ namespace LsMsgPack
         }, settings);
       }
 
+      if (FrameworkTypeInfo.IsKeyValuePair(tType))
+        return SerializePair(item, tType, settings, assignedTo, depth);
+
       // Any complex object with properties
       ThrowIfTooDeep(depth, settings);
       FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
@@ -68,6 +71,31 @@ namespace LsMsgPack
       count = AddProperties(item, props, propVals, count, settings, depth);
 
       return ToMap(propVals, count, settings);
+    }
+
+    /// <summary>
+    /// A KeyValuePair is an array [key, value] (as MessagePack-CSharp writes it), its Key and Value have no setters. Wrapped like a collection when it needs a type id: the key and value come first (they may add types to the schema).
+    /// </summary>
+    private static MsgPackItem SerializePair(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth)
+    {
+      ThrowIfTooDeep(depth, settings);
+      FrameworkTypeInfo.PairInfo pair = FrameworkTypeInfo.GetPair(tType);
+      MpArray array = new MpArray(settings)
+      {
+        Value = new MsgPackItem[]
+        {
+          SerializeObject(pair.Key.GetValue(item), settings, pair.KeyInfo, depth + 1),
+          SerializeObject(pair.Value.GetValue(item), settings, pair.ValueInfo, depth + 1)
+        }
+      };
+      if (!SerializationRules.NeedsTypeId(tType, assignedTo, settings))
+        return array;
+
+      return new MpMap(new KeyValuePair<object, object>[]
+      {
+        new KeyValuePair<object, object>(TypeIdKey, SerializationRules.GetTypeIdentifier(tType, settings, assignedTo)),
+        new KeyValuePair<object, object>(ContentKey, array)
+      }, settings);
     }
 
     private static void ThrowIfTooDeep(int depth, MsgPackSettings settings)

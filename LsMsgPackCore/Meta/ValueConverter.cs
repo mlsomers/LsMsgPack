@@ -144,6 +144,11 @@ namespace LsMsgPack.Meta
         if (!assignType.IsInstanceOfType(items))
         {
           Type objectType = Nullable.GetUnderlyingType(assignType) ?? assignType;
+          if (items.Length == 2 && FrameworkTypeInfo.IsKeyValuePair(objectType)) // [key, value]
+          {
+            FrameworkTypeInfo.PairInfo pair = FrameworkTypeInfo.GetPair(objectType);
+            return pair.Create(ConvertDeserializeValue(items[0], pair.KeyInfo.AssignedToType, settings, null), ConvertDeserializeValue(items[1], pair.ValueInfo.AssignedToType, settings, null));
+          }
           if (IsObjectType(objectType))
           {
             if (Array.Exists(items, i => i != null)) // before the ids are resolved, which would add an entry for the class
