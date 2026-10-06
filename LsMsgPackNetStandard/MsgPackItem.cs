@@ -157,7 +157,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// Reads count bytes into the buffer. <see cref="Stream.Read(byte[], int, int)"/> may return fewer bytes than requested (e.g. network streams), so keep reading until all bytes arrived.
-    /// <para>At the end of the data the remaining bytes are zeroed (the same as reading into a new buffer).</para>
+    /// <para>Data that ends before all bytes arrived throws (as LtMsgPack does): zeroing the rest made truncated data read as other values without an error.</para>
     /// </summary>
     protected static void ReadExactly(Stream data, byte[] buffer, int count)
     {
@@ -166,12 +166,25 @@ namespace LsMsgPack
       {
         int read = data.Read(buffer, offset, count - offset);
         if (read <= 0)
-        {
-          Array.Clear(buffer, offset, count - offset);
-          return;
-        }
+          throw UnexpectedEnd(data);
         offset += read;
       }
+    }
+
+    /// <summary>
+    /// Reads one byte, throws at the end of the data (<see cref="Stream.ReadByte"/> returns -1, which would read as a value).
+    /// </summary>
+    protected static byte ReadByteExactly(Stream data)
+    {
+      int value = data.ReadByte();
+      if (value < 0)
+        throw UnexpectedEnd(data);
+      return (byte)value;
+    }
+
+    private static MsgPackException UnexpectedEnd(Stream data)
+    {
+      return new MsgPackException("Unexpected end of data.", data.Position, MsgPackTypeId.NeverUsed);
     }
 
     protected static byte[] SwapIfLittleEndian(MsgPackSettings settings, byte[] bytes)

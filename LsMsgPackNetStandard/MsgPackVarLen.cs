@@ -71,10 +71,8 @@ namespace LsMsgPack {
     }
 
     protected long ReadLen(Stream data, int bytes) {
-      if(bytes == 1) {
-        int len = data.ReadByte();
-        return len < 0 ? 0 : len; // at the end of the data, the same as reading into a new (zeroed) buffer below
-      }
+      if(bytes == 1)
+        return ReadByteExactly(data);
       byte[] buffer = new byte[bytes];
       ReadExactly(data, buffer, bytes);
       if(bytes == 1) return (long)buffer[0];

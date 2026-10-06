@@ -83,7 +83,7 @@ Custom property id resolvers without the schema are consulted on every call (by 
 - **Exceptions of property getters/setters** are rethrown as they are (not as `TargetInvocationException`), whether the accessor still uses reflection or a bound delegate.
 - The parameterless `MsgPackItem()` constructor allocates a new `MsgPackSettings` (50-70 ns). Use the constructors taking the settings in hot paths (see `AbstractCustomExt.CreateNew`).
 - **Culture-sensitive string APIs are slow on Linux** (ICU): always pass `StringComparison.Ordinal` (`EndsWith`, `StartsWith`, `IndexOf(string)`, `Compare`).
-- Reading from a `Stream`: use `ReadExactly` (`MsgPackItem`), `Stream.Read` may return fewer bytes than asked (network streams).
+- Reading from a `Stream`: use `ReadExactly` and `ReadByteExactly` (`MsgPackItem`), `Stream.Read` may return fewer bytes than asked (network streams). Data that ends early throws "Unexpected end of data." like LtMsgPack (LsMsgPack used to read the missing bytes as zeros: `cd 01` became 256).
 - Endianness: MsgPack is big-endian, `EndianAction` can override it. `ByteWriter.WriteEndian` writes the same bytes as `BitConverter.GetBytes` followed by `SwapEndianChoice`.
 - `DateTime` values are returned as local time (`MpDateTime.Value` calls `ToLocalTime`), MsgPack timestamps do not keep the `DateTimeKind`: compare with `ToUniversalTime()` in tests. `DateTimeOffset` is written as its UTC time, the offset is lost. Timestamps before 1970 round the seconds down, the nanoseconds are always added (`MpDateTime.DateTimeToEpoch`), as the spec requires.
 - Reading maps uses `MapConversionEqualityComparer`: numbers are equal across types (`(byte)3` equals the property id `(int)3`), strings and integers take a fast path.

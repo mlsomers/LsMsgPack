@@ -137,6 +137,9 @@ namespace LsMsgPackMcp
         PrimitiveObject obj;
         if (!(n.Item is null) && _objects.TryGetValue(n.Item, out obj))
           return obj;
+        // The objects of an item that could not be read are made from its PartialItem
+        if (n.Item is MpError error && !(error.PartialItem is null) && _objects.TryGetValue(error.PartialItem, out obj))
+          return obj;
       }
       return null;
     }
@@ -247,7 +250,7 @@ namespace LsMsgPackMcp
       foreach (ItemNode node in Items)
       {
         Validate(node);
-        if (node.Item is MpError error && error.PartialItem is null && (FirstErrorOffset < 0 || node.Offset < FirstErrorOffset))
+        if (node.Item is MpError error && !error.IsInNestedItem && (FirstErrorOffset < 0 || node.Offset < FirstErrorOffset))
           FirstErrorOffset = node.Offset;
       }
 

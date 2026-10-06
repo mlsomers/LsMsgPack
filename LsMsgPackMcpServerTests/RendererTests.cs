@@ -85,11 +85,34 @@ namespace LsMsgPackMcpServerTests
       byte[] truncated = new byte[invoice.Length - 20];
       Array.Copy(invoice, truncated, truncated.Length);
       string text = Render(truncated);
+      // The data ends in the Guid (bin 8, 16 bytes) of Reference, which used to be read with zeros, the error came at Tags
       AssertContains(text, "1 error");
-      AssertContains(text, "\"Tags\": null // ERROR: Unexpected end of data.");
+      AssertContains(text, "\"Reference\": \"\", // bin, 0 bytes, ERROR: Error while reading data.");
       AssertContains(text, "Errors:");
-      AssertContains(text, "(Tags): Unexpected end of data.");
+      AssertContains(text, "(Reference): Error while reading data. (Unexpected end of data.)");
       Assert.IsFalse(text.Contains('\r'), "Lines end with \\n on every OS (the error messages of the library use Environment.NewLine)");
+    }
+
+    /// <summary>
+    /// The bytes missing at the end used to read as zeros: "A\0\0" without an error.
+    /// </summary>
+    [TestMethod]
+    public void TruncatedString_IsAnError()
+    {
+      string text = Render(new byte[] { 0xA3, 0x41 }); // fixstr of 3, 1 byte
+      AssertContains(text, "1 error");
+      AssertContains(text, "Unexpected end of data.");
+      Assert.IsFalse(text.Contains("\\u0000", StringComparison.Ordinal), text);
+    }
+
+    /// <summary>
+    /// An array holding an error is an MpError item (type "never used"), the structure names the array.
+    /// </summary>
+    [TestMethod]
+    public void StructureOfAnArrayHoldingAnError()
+    {
+      AssertContains(Render(new byte[] { 0x92, 0xC1, 0xC0 }), "Structure: a single fixarray holding an error");
+      AssertContains(Render(new byte[] { 0xA3, 0x41 }), "Structure: a single fixstr that could not be read");
     }
 
     [TestMethod]
