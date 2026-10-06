@@ -68,6 +68,14 @@ namespace LsMsgPack.Meta
       return null;
     }
 
+    /// <summary>
+    /// Before reading a payload with the indexed schema: the classes that are read into other classes than the writer's (see <see cref="IndexedSchemaTypeResolver.BindReaderTypes"/>).
+    /// </summary>
+    internal static void BindReaderTypes(Type root, MsgPackOptions schemaSettings)
+    {
+      GetIndexedSchema(schemaSettings)?.BindReaderTypes(root);
+    }
+
     internal static bool UsesIndexedSchema(MsgPackOptions settings)
     {
       for (int t = 0; t < settings._propertyNameResolvers.Length; t++)

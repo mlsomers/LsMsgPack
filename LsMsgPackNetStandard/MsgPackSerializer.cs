@@ -261,6 +261,7 @@ namespace LsMsgPack
       MsgPackSettings schemaSettings = WithSchema(settings, resolver);
       try
       {
+        SerializationRules.BindReaderTypes(tType, schemaSettings);
         MsgPackItem unpacked = MsgPackItem.Unpack(stream, schemaSettings);
         return ConvertDeserializeValue(unpacked.UnpackedValue, tType, schemaSettings, null);
       }
@@ -300,7 +301,11 @@ namespace LsMsgPack
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
       object value = unpacked.UnpackedValue;
 
-      return schema.RunReader(settings, lengthSettings, (s, schemaSettings) => ConvertDeserializeValue(value, tType, schemaSettings, null));
+      return schema.RunReader(settings, lengthSettings, (s, schemaSettings) =>
+      {
+        SerializationRules.BindReaderTypes(tType, schemaSettings);
+        return ConvertDeserializeValue(value, tType, schemaSettings, null);
+      });
     }
   }
 }

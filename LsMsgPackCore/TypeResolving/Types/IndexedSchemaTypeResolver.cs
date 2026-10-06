@@ -2,8 +2,10 @@
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Interfaces;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.Serialization;
 using System.Xml.Serialization;
 
@@ -133,6 +135,139 @@ namespace LsMsgPack.TypeResolving.Types
     /// The entries whose names were not resolved when the schema was read.
     /// </summary>
     private int _unresolved;
+
+    // The root types BindReaderTypes was called for (the last one checked without a lookup)
+    private volatile Type _lastBoundRoot;
+    private ConcurrentDictionary<Type, bool> _boundRoots;
+
+    /// <summary>
+    /// Reading into other classes than the writer used (e.g. a DTO into an entity): the values of an object only say which property of the writer's class they are (an index into its entry),
+    /// not which class that was. The root of the payload is the first entry of the schema, and the other classes follow from the properties both sides have:
+    /// the writer's class of a property is the declared type of the writer's property with the same name (also of collection elements, dictionary values and nullables).
+    /// Adds an entry for each class that is read this way (the entry of the writer's class), so the values are matched by name. Does nothing when the root class is in the schema.
+    /// <para>Once per root type and schema. Needs the writer's classes (resolved from their names). A class that would get two different entries gets none.</para>
+    /// </summary>
+    /// <exception cref="SchemaGrowthException">When a frozen schema would get an entry (a copy remembers it)</exception>
+    internal void BindReaderTypes(Type root)
+    {
+      if (_lastBoundRoot == root)
+        return;
+      if (_boundRoots != null && _boundRoots.ContainsKey(root))
+      {
+        _lastBoundRoot = root;
+        return;
+      }
+
+      Dictionary<Type, ComplexTypeDef> aliases = ReaderAliases(root);
+      if (aliases.Count > 0)
+      {
+        if (IsFrozen)
+          throw SchemaGrowthException.Instance;
+        foreach (KeyValuePair<Type, ComplexTypeDef> alias in aliases)
+          ByType[alias.Key] = alias.Value;
+      }
+
+      if (_boundRoots is null)
+        _boundRoots = new ConcurrentDictionary<Type, bool>();
+      _boundRoots.TryAdd(root, true);
+      _lastBoundRoot = root;
+    }
+
+    private Dictionary<Type, ComplexTypeDef> ReaderAliases(Type root)
+    {
+      Dictionary<Type, ComplexTypeDef> aliases = new Dictionary<Type, ComplexTypeDef>();
+      Type reader = ObjectTypeOf(root, 0);
+      if (reader is null || ByTypeId.Count == 0 || HasOwnEntry(reader))
+        return aliases;
+      ComplexTypeDef first = ByTypeId[0]; // the writer adds the entries depth first: the first one is the class of the root (or of the first element of a root collection)
+      if (first.Type is null || first.IsCollection)
+        return aliases;
+
+      HashSet<Type> conflicts = new HashSet<Type>();
+      HashSet<KeyValuePair<Type, Type>> visited = new HashSet<KeyValuePair<Type, Type>>();
+      Queue<KeyValuePair<Type, Type>> pairs = new Queue<KeyValuePair<Type, Type>>();
+      pairs.Enqueue(new KeyValuePair<Type, Type>(reader, first.Type));
+      while (pairs.Count > 0)
+      {
+        KeyValuePair<Type, Type> pair = pairs.Dequeue();
+        Type read = pair.Key;
+        Type written = pair.Value;
+        if (read == written || !visited.Add(pair))
+          continue;
+        if (!ByType.TryGetValue(written, out ComplexTypeDef def) || def.IsCollection || HasOwnEntry(read))
+          continue; // nothing was written with the writer's class, or the reader's class has its own entry (and its own properties below it)
+
+        if (aliases.TryGetValue(read, out ComplexTypeDef earlier) && !ReferenceEquals(earlier, def))
+          conflicts.Add(read);
+        aliases[read] = def;
+
+        foreach (PropertyInfo readProp in read.GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        {
+          if (readProp.GetIndexParameters().Length > 0)
+            continue;
+          PropertyInfo writtenProp = NonIndexedProperty(written, readProp.Name);
+          if (writtenProp is null)
+            continue;
+          Type readValue = ObjectTypeOf(readProp.PropertyType, 0);
+          Type writtenValue = ObjectTypeOf(writtenProp.PropertyType, 0);
+          if (readValue != null && writtenValue != null)
+            pairs.Enqueue(new KeyValuePair<Type, Type>(readValue, writtenValue));
+        }
+      }
+
+      foreach (Type conflict in conflicts)
+        aliases.Remove(conflict);
+      return aliases;
+    }
+
+    private bool HasOwnEntry(Type type)
+    {
+      return ByType.ContainsKey(type) || (_unresolved > 0 && (FindUnresolved(TypeResolver.GetTypeName(type, true)) ?? FindUnresolved(TypeResolver.GetTypeName(type, false))) != null);
+    }
+
+    private static PropertyInfo NonIndexedProperty(Type type, string name)
+    {
+      foreach (PropertyInfo prop in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        if (string.Equals(prop.Name, name, StringComparison.Ordinal) && prop.GetIndexParameters().Length == 0)
+          return prop;
+      return null;
+    }
+
+    /// <summary>
+    /// The class of the objects a value of this type holds: itself, the element type of a collection, the value type of a dictionary, the type of a nullable. Null for values that are not objects (numbers, strings...).
+    /// </summary>
+    private static Type ObjectTypeOf(Type type, int depth)
+    {
+      if (type is null || depth > 8)
+        return null;
+      type = Nullable.GetUnderlyingType(type) ?? type;
+      if (type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal) || type == typeof(object) || type.IsPointer || type.ContainsGenericParameters)
+        return null;
+      if (ValueConverter.IsCollection(type))
+      {
+        CollectionInfo collection = CollectionInfo.Get(type);
+        return ObjectTypeOf(collection.IsDictionary ? collection.ValueType : collection.ElementType, depth + 1);
+      }
+      return type;
+    }
+
+    /// <summary>
+    /// Reading an object (with values) of a class that has no entry: its values are indexes into an entry of the writer's class, but which one is not known.
+    /// Until the differences can be reported, this throws rather than matching the values by position.
+    /// </summary>
+    internal void ThrowIfNoEntry(Type type, MsgPackOptions settings)
+    {
+      if (TryGetDef(type, out ComplexTypeDef _))
+        return;
+      if (FullPropertyInfo.GetStaticallyIncludedProps(type, settings).Length == 0)
+        return; // not an object with properties (e.g. a DateTimeOffset written as an array)
+      for (int t = 0; t < settings._propertyNameResolvers.Length; t++)
+        if (!(settings._propertyNameResolvers[t] is IndexedSchemaTypeResolver))
+          return; // custom property ids are not indexes into the schema
+      throw new MsgPackException($"The data has no schema entry for {type.FullName}, so its values cannot be matched to its properties. "
+        + $"The data was written with another class ({string.Join(", ", ByTypeId.Select(d => d.TypeName))}), and none of them could be paired with {type.Name} "
+        + "(the root is the first class of the schema, the other classes follow from the properties both classes have, and the reader needs the writer's classes).");
+    }
 
     private static Exception UnresolvedType(ComplexTypeDef def, MsgPackOptions settings)
     {

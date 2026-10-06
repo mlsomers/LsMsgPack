@@ -100,6 +100,8 @@ namespace LsMsgPack.Meta
         throw new Exception(
           $"Cannot create an instance of an interface or abstract type:\r\n  {tType.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers.");
 
+      if (propVals.Count > (hasTypeId ? 1 : 0))
+        SerializationRules.GetIndexedSchema(settings)?.ThrowIfNoEntry(tType, settings);
       result = Instances.CreateObject(tType, settings);
       SetProperties(result, tType, propVals, settings);
       return result;
@@ -144,6 +146,8 @@ namespace LsMsgPack.Meta
           Type objectType = Nullable.GetUnderlyingType(assignType) ?? assignType;
           if (IsObjectType(objectType))
           {
+            if (Array.Exists(items, i => i != null)) // before the ids are resolved, which would add an entry for the class
+              SerializationRules.GetIndexedSchema(settings)?.ThrowIfNoEntry(objectType, settings);
             FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(objectType, settings);
             if (props.Length > 0 || items.Length == 0)
               return ConvertPositional(items, objectType, props, settings);

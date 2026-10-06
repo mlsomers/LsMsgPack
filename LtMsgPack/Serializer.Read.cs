@@ -334,6 +334,7 @@ namespace LtMsgPack
 
     private object ReadBody(ReadContext c, Type type, int bodyStart, BoundSchema bound, MsgPackOptions sessionSettings)
     {
+      SerializationRules.BindReaderTypes(type, sessionSettings); // once per root type and schema
       c.R.Pos = bodyStart;
       c.Depth = 0;
       c.Schema = true;
