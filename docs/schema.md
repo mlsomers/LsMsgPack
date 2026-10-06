@@ -281,6 +281,12 @@ MsgPackSettings settings = new MsgPackSettings()
 FilterIgnoredAttribute custom = new FilterIgnoredAttribute(IgnoreAttributes.XmlIgnore | IgnoreAttributes.SystemTextJson | IgnoreAttributes.Newtonsoft, "SkipInMsgPack");
 ```
 
+The libraries also differ in where they look for the attributes. Json.NET also sees them on the property a property overrides (for inherited attributes, so not `[IgnoreDataMember]`) and on an interface property of the same name, Nerdbank.MessagePack on the overridden property, DataContractSerializer on the overridden property (also `[IgnoreDataMember]`), and System.Text.Json, XmlSerializer and MessagePack-CSharp only on the property itself. The presets look where their library does. The default filter and the constructors without `IgnoreAttributeLookup` look everywhere (`IgnoreAttributeLookup.All`), so the override of an ignored property is ignored too. To look only at the property itself:
+
+```csharp
+FilterIgnoredAttribute declaredOnly = new FilterIgnoredAttribute(IgnoreAttributes.All, IgnoreAttributeLookup.Declared);
+```
+
 The attributes are recognized by their names, LsMsgPack does not reference the libraries that define them. System.Text.Json's `[JsonIgnore]` only leaves a property out with `Condition = JsonIgnoreCondition.Always` (its default): `Never`, `WhenWritingNull` and `WhenWritingDefault` keep it (the latter two leave out values, which is up to the dynamic filters). The filters are the same for reading and writing. `MsgPackSettings.Default_StaticFilters` holds the defaults of new settings.
 
 Choosing your settings
