@@ -37,12 +37,6 @@ namespace LsMsgPack.TypeResolving.Filters
         private readonly HashSet<string> _alsoIgnore;
 
         /// <summary>
-        /// The decision per property when the attributes are looked up beyond the property itself (reflection over the base types and interfaces).
-        /// The static filters run once per type and filter array, but with the indexed schema once per session (call).
-        /// </summary>
-        private readonly ConcurrentDictionary<PropertyInfo, bool> _decisions;
-
-        /// <summary>
         /// Leaves out the properties with any of the <see cref="IgnoreAttributes.All"/> attributes, also on the properties they override or implement (<see cref="IgnoreAttributeLookup.All"/>).
         /// </summary>
         public FilterIgnoredAttribute() : this(IgnoreAttributes.All) { }
@@ -60,8 +54,6 @@ namespace LsMsgPack.TypeResolving.Filters
             _lookup = lookup;
             if (alsoIgnore != null && alsoIgnore.Length > 0)
                 _alsoIgnore = new HashSet<string>(alsoIgnore, StringComparer.Ordinal);
-            if (lookup != IgnoreAttributeLookup.Declared)
-                _decisions = new ConcurrentDictionary<PropertyInfo, bool>();
         }
 
         /// <summary>
@@ -112,8 +104,14 @@ namespace LsMsgPack.TypeResolving.Filters
         /// <inheritdoc cref="IMsgPackPropertyIncludeStatically.IncludeProperty(FullPropertyInfo)"/>
         public bool IncludeProperty(FullPropertyInfo info)
         {
-            if (_decisions != null && info.PropertyInfo != null)
-                return _decisions.GetOrAdd(info.PropertyInfo, p => !IgnoresAny(LookedUpAttributes(p)));
+            if (_lookup != IgnoreAttributeLookup.Declared && info.Attributes != null)
+            {
+                // Read once per property (FullPropertyInfo.Attributes), most of these arrays are empty
+                PropertyAttributeSet attributes = info.Attributes;
+                return !IgnoresAny((_lookup & IgnoreAttributeLookup.Overridden) != 0 ? attributes.Inheritable : attributes.Declared)
+                    && ((_lookup & IgnoreAttributeLookup.OverriddenAll) == 0 || !IgnoresAny(attributes.Overridden))
+                    && ((_lookup & IgnoreAttributeLookup.Interfaces) == 0 || !IgnoresAny(attributes.Interfaces));
+            }
 
             if (info.PropertyInfo != null && info.CustomAttributes.ContainsKey(JsonIgnoreName))
             {
@@ -131,71 +129,12 @@ namespace LsMsgPack.TypeResolving.Filters
             return true;
         }
 
-        private bool IgnoresAny(List<object> attributes)
+        private bool IgnoresAny(object[] attributes)
         {
-            foreach (object att in attributes)
-                if (Ignores(att))
+            for (int t = 0; t < attributes.Length; t++)
+                if (Ignores(attributes[t]))
                     return true;
             return false;
-        }
-
-        /// <summary>
-        /// The attributes of the property and, depending on <see cref="Lookup"/>, of the properties it overrides and of the interface properties of the same name.
-        /// </summary>
-        private List<object> LookedUpAttributes(PropertyInfo property)
-        {
-            List<object> attributes = new List<object>();
-            // Attribute.GetCustomAttributes also looks at the overridden properties, for the inherited attributes (PropertyInfo.GetCustomAttributes ignores inherit)
-            attributes.AddRange((_lookup & IgnoreAttributeLookup.Overridden) != 0 ? Attribute.GetCustomAttributes(property, true) : property.GetCustomAttributes(false));
-
-            if ((_lookup & IgnoreAttributeLookup.OverriddenAll) != 0)
-                foreach (PropertyInfo overridden in OverriddenProperties(property))
-                    attributes.AddRange(overridden.GetCustomAttributes(false));
-
-            if ((_lookup & IgnoreAttributeLookup.Interfaces) != 0 && property.DeclaringType != null)
-            {
-                // As Json.NET: the interfaces of the declaring type, a property of the same name, type and index parameters
-                Type[] index = Array.ConvertAll(property.GetIndexParameters(), p => p.ParameterType);
-                foreach (Type face in property.DeclaringType.GetInterfaces())
-                {
-                    PropertyInfo implemented = face.GetProperty(property.Name, BindingFlags.Instance | BindingFlags.Public, null, property.PropertyType, index, null);
-                    if (implemented != null)
-                        attributes.AddRange(implemented.GetCustomAttributes(false));
-                }
-            }
-            return attributes;
-        }
-
-        /// <summary>
-        /// The properties of the base types that the property overrides (the same virtual slot: a property hiding another one with <c>new</c> does not override it).
-        /// </summary>
-        private static IEnumerable<PropertyInfo> OverriddenProperties(PropertyInfo property)
-        {
-            MethodInfo accessor = property.GetGetMethod(true) ?? property.GetSetMethod(true);
-            if (accessor is null || !accessor.IsVirtual || property.DeclaringType is null)
-                yield break;
-            MethodInfo slot = accessor.GetBaseDefinition();
-            if (SameMethod(slot, accessor))
-                yield break; // declares the slot, overrides nothing
-
-            for (Type type = property.DeclaringType.BaseType; type != null; type = type.BaseType)
-            {
-                // Not GetProperty(name): indexers share the name "Item"
-                foreach (PropertyInfo candidate in type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
-                {
-                    if (!string.Equals(candidate.Name, property.Name, StringComparison.Ordinal))
-                        continue;
-                    MethodInfo candidateAccessor = candidate.GetGetMethod(true) ?? candidate.GetSetMethod(true);
-                    if (candidateAccessor != null && SameMethod(candidateAccessor.GetBaseDefinition(), slot))
-                        yield return candidate;
-                }
-            }
-        }
-
-        // MethodInfo equality also compares the type it was reflected from
-        private static bool SameMethod(MethodInfo a, MethodInfo b)
-        {
-            return a.MetadataToken == b.MetadataToken && a.Module == b.Module;
         }
 
         private bool Ignores(object attribute)
