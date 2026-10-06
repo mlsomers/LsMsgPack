@@ -187,9 +187,9 @@ namespace LsMsgPackMcp
 
         // Several: the status of each
         StringBuilder all = new StringBuilder();
-        all.Append(connections.Count.ToString(CultureInfo.InvariantCulture)).AppendLine(" IDEs are running (pass ide to choose one in the other tools; without it the one whose workspace holds the working directory is used):");
+        all.Append(connections.Count.ToString(CultureInfo.InvariantCulture)).Append(" IDEs are running (pass ide to choose one in the other tools; without it the one whose workspace holds the working directory is used):").Append('\n');
         foreach (IdeConnection connection in connections)
-          all.AppendLine(await StatusTextAsync(connection, cancellation).ConfigureAwait(false));
+          all.Append(await StatusTextAsync(connection, cancellation).ConfigureAwait(false)).Append('\n');
         return ToolResult.Ok(all.ToString());
       }
       IdeConnection ide = IdeBridge.Pick(connections, wanted, CurrentDirectory);
@@ -218,12 +218,12 @@ namespace LsMsgPackMcp
         folders = ide.WorkspaceFolders;
       if (folders.Count > 0)
         sb.Append(", workspace ").Append(string.Join(", ", folders));
-      sb.AppendLine();
+      sb.Append('\n');
 
       JsonArray sessions = status?["sessions"] as JsonArray;
       if (sessions is null || sessions.Count == 0)
       {
-        sb.AppendLine("  Not debugging.");
+        sb.Append("  Not debugging.").Append('\n');
       }
       else
       {
@@ -232,19 +232,19 @@ namespace LsMsgPackMcp
           sb.Append("  Debug session \"").Append((string)session?["name"]).Append("\" (").Append((string)session?["type"]).Append(')');
           if ((bool?)session?["active"] == true)
             sb.Append(", active");
-          sb.AppendLine();
+          sb.Append('\n');
         }
       }
       JsonNode frame = status?["frame"];
       if (frame != null)
-        sb.Append("  Paused in ").AppendLine(DescribeFrame(frame));
+        sb.Append("  Paused in ").Append(DescribeFrame(frame)).Append('\n');
       else if (sessions != null && sessions.Count > 0)
-        sb.AppendLine("  No stack frame is selected: the program is running, or no thread is paused. Pause it (a breakpoint) before reading variables.");
+        sb.Append("  No stack frame is selected: the program is running, or no thread is paused. Pause it (a breakpoint) before reading variables.").Append('\n');
       string expressions = (string)status?["expressions"];
       if (expressions == "paths")
-        sb.AppendLine("  Expressions: variable and member paths only (the IDE's setting allows no method calls).");
+        sb.Append("  Expressions: variable and member paths only (the IDE's setting allows no method calls).").Append('\n');
       else if (expressions == "any")
-        sb.AppendLine("  Expressions: any (the IDE's setting allows them).");
+        sb.Append("  Expressions: any (the IDE's setting allows them).").Append('\n');
       return sb.ToString().TrimEnd();
     }
 
@@ -274,7 +274,7 @@ namespace LsMsgPackMcp
       StringBuilder sb = new StringBuilder();
       JsonNode frame = result?["frame"];
       if (frame != null)
-        sb.Append("Frame: ").AppendLine(DescribeFrame(frame));
+        sb.Append("Frame: ").Append(DescribeFrame(frame)).Append('\n');
       JsonArray variables = result?["variables"] as JsonArray ?? new JsonArray();
       List<JsonNode> likely = new List<JsonNode>();
       List<JsonNode> others = new List<JsonNode>();
@@ -289,18 +289,18 @@ namespace LsMsgPackMcp
       }
 
       if (likely.Count == 0)
-        sb.AppendLine("No variable has a type that holds bytes (look into members, e.g. this._buffer or request.Body, and pass that path to msgpack_debug_read).");
+        sb.Append("No variable has a type that holds bytes (look into members, e.g. this._buffer or request.Body, and pass that path to msgpack_debug_read).").Append('\n');
       else
-        sb.AppendLine("* can hold MsgPack bytes, pass the expression to msgpack_debug_read:");
+        sb.Append("* can hold MsgPack bytes, pass the expression to msgpack_debug_read:").Append('\n');
       foreach (JsonNode variable in likely)
-        sb.Append("* ").AppendLine(DescribeVariable(variable));
+        sb.Append("* ").Append(DescribeVariable(variable)).Append('\n');
       if (all)
         foreach (JsonNode variable in others)
-          sb.Append("  ").AppendLine(DescribeVariable(variable));
+          sb.Append("  ").Append(DescribeVariable(variable)).Append('\n');
       else if (others.Count > 0)
-        sb.Append("(").Append(others.Count.ToString(CultureInfo.InvariantCulture)).AppendLine(" other variables not listed.)");
+        sb.Append("(").Append(others.Count.ToString(CultureInfo.InvariantCulture)).Append(" other variables not listed.)").Append('\n');
       if ((bool?)result?["truncated"] == true)
-        sb.AppendLine("(More variables than listed.)");
+        sb.Append("(More variables than listed.)").Append('\n');
       return ToolResult.Ok(sb.ToString());
     }
 
