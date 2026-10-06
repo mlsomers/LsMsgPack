@@ -56,6 +56,7 @@ public static class P {
     values.Add(new Bcl { C = 'Z', T = TimeSpan.FromSeconds(-1.5), N = TimeSpan.FromDays(3), D = new DateOnly(1999, 12, 31), O = new TimeOnly(23, 59), U = new Uri("https://example.com/a"), Boxed = new List<object> { TimeSpan.FromHours(1), 'q', new DateOnly(2000, 1, 1) } });
     values.Add(new Poly { Any = new Nested { Name = "p" }, Base = new Attributed { A = "x", Kids = new List<Attributed> { new Attributed() } }, Items = new List<object> { 1L, "s", new WithGuid { G = Guid.Empty, O = 3 }, null, new int[] { 1, 2 } }, Ints = new[] { 5, -5, 500 }, Bag = new Dictionary<string, object> { { "a", 1 }, { "b", new Nested() }, { "c", null } } });
     values.Add(new string('é', 16)); values.Add(new string('é', 30)); values.Add(new string('é', 200)); values.Add(new string('✓', 85)); values.Add(new string('✓', 40000)); values.Add(new string('é', 70000)); values.Add("\ud800x"); values.Add(new string('a', 65537));
+    values.Add(new Nested { Name = "", Objs = new List<object> { "", null } }); // empty strings are written (FilterDefaultValues), null is left out
     values.Add(new WithDefault { Sound = null, Zero = 0, Last = null }); values.Add(new WithDefault { Sound = "Woof", Zero = 7, Last = "l" });
     values.Add(new Bench.Invoice[] { }); values.AddRange(Bench.Invoices.Take(3));
     return values;

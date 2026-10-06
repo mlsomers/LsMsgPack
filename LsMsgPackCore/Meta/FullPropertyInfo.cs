@@ -1,7 +1,9 @@
-﻿using System;
+﻿using LsMsgPack.TypeResolving.Interfaces;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
 
 namespace LsMsgPack.Meta
@@ -120,9 +122,8 @@ namespace LsMsgPack.Meta
     public Dictionary<string, object> CustomAttributes { get; set; }
 
     /// <summary>
-    /// Cached, only use it for attributes or other static metadata.
-    /// <para>Do not set this when checking for null or default values.</para>
-    /// Once this is set to true, no future calls to IMsgPackPropertyInclude....IncludeProperty() will be made for this property.
+    /// Whether the static filters left this property out (for display), set on the properties of a session or of custom property id resolvers.
+    /// <para>Not set on the instances that all settings share (no property id resolvers, no session): different static filters may decide differently, the kept properties are cached per filter array instead.</para>
     /// </summary>
     public bool? StaticallyIgnored { get; set; }
 
@@ -349,22 +350,53 @@ namespace LsMsgPack.Meta
       return props;
     }
 
-    // Without property id resolvers the FullPropertyInfo instances (and their StaticallyIgnored) are shared by all settings (see GetFullPropInfo), so the result only depends on the type and the order
-    private static readonly ConcurrentDictionary<Type, FullPropertyInfo[]>[] SerializedPropsCache = CachePerOrder<FullPropertyInfo[]>();
+    /// <summary>
+    /// The serialized properties per type, one dictionary per <see cref="PropertyOrder"/>, for one array of static filters.
+    /// <para>Without property id resolvers the FullPropertyInfo instances are shared by all settings (see GetFullPropInfo), so the result only depends on the type, the order and the static filters.
+    /// The filters are compared by reference (like SchemaStore.SessionKey): settings with another array get their own cache, an array that is changed in place keeps its old results.</para>
+    /// </summary>
+    internal sealed class SharedPropsCache
+    {
+      internal readonly IMsgPackPropertyIncludeStatically[] Filters;
+      internal readonly ConcurrentDictionary<Type, FullPropertyInfo[]>[] PerOrder = CachePerOrder<FullPropertyInfo[]>();
+
+      internal SharedPropsCache(IMsgPackPropertyIncludeStatically[] filters) { Filters = filters; }
+    }
+
+    // Weak keys: arrays of filters that are no longer used (e.g. settings created per call) take their caches with them
+    private static readonly ConditionalWeakTable<IMsgPackPropertyIncludeStatically[], SharedPropsCache> SharedPropsCaches = new ConditionalWeakTable<IMsgPackPropertyIncludeStatically[], SharedPropsCache>();
+    private static readonly IMsgPackPropertyIncludeStatically[] NoStaticFilters = new IMsgPackPropertyIncludeStatically[0];
+
+    private static ConcurrentDictionary<Type, FullPropertyInfo[]> GetSharedPropsCache(MsgPackOptions settings)
+    {
+      // The settings remember the cache of their filters, so the table is only consulted when the filters change (or for new settings)
+      IMsgPackPropertyIncludeStatically[] filters = settings._staticFilters ?? NoStaticFilters;
+      SharedPropsCache cache = settings._sharedPropsCache;
+      if (cache is null || !ReferenceEquals(cache.Filters, filters))
+        settings._sharedPropsCache = cache = SharedPropsCaches.GetValue(filters, f => new SharedPropsCache(f));
+      return cache.PerOrder[(int)settings._propertyOrder];
+    }
 
     private static FullPropertyInfo[] GetSerializedPropsWithoutSession(Type type, MsgPackOptions settings)
     {
       bool shared = settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0;
-      ConcurrentDictionary<Type, FullPropertyInfo[]> sharedCache = SerializedPropsCache[(int)settings._propertyOrder];
-      if (shared && sharedCache.TryGetValue(type, out FullPropertyInfo[] cached))
-        return cached;
+      ConcurrentDictionary<Type, FullPropertyInfo[]> sharedCache = null;
+      if (shared)
+      {
+        sharedCache = GetSharedPropsCache(settings);
+        if (sharedCache.TryGetValue(type, out FullPropertyInfo[] cached))
+          return cached;
+      }
 
       PropertyInfo[] props = GetProperties(type, settings);
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
       for (int t = 0; t < props.Length; t++)
       {
         FullPropertyInfo full = FullPropertyInfo.GetFullPropInfo(props[t], settings);
-        if (IsStaticallyIncluded(full, settings))
+        bool keep = IsStaticallyIncluded(full, settings);
+        if (!shared)
+          full.StaticallyIgnored = !keep;
+        if (keep)
           keptProps.Add(full);
       }
 
@@ -414,7 +446,9 @@ namespace LsMsgPack.Meta
       for (int t = 0; t < props.Length; t++)
       {
         FullPropertyInfo full = new FullPropertyInfo(props[t]) { PropertyId = props[t].Name };
-        if (IsStaticallyIncluded(full, settings))
+        bool keep = IsStaticallyIncluded(full, settings);
+        full.StaticallyIgnored = !keep;
+        if (keep)
           keptProps.Add(full);
       }
 
@@ -424,17 +458,17 @@ namespace LsMsgPack.Meta
       return result;
     }
 
+    // Not cached on the property: the shared instances are used with different filters, the callers cache the kept properties
     private static bool IsStaticallyIncluded(FullPropertyInfo full, MsgPackOptions settings)
     {
-      if (full.StaticallyIgnored.HasValue) // statically cached
-        return !full.StaticallyIgnored.Value;
+      IMsgPackPropertyIncludeStatically[] filters = settings._staticFilters;
+      if (filters is null)
+        return true;
 
-      bool keep = true;
-      for (int i = settings._staticFilters.Length - 1; i >= 0; i--)
-        if (!settings._staticFilters[i].IncludeProperty(full)) { keep = false; break; }
-
-      full.StaticallyIgnored = !keep;
-      return keep;
+      for (int i = filters.Length - 1; i >= 0; i--)
+        if (!filters[i].IncludeProperty(full))
+          return false;
+      return true;
     }
 
   }

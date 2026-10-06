@@ -54,6 +54,7 @@ public static class P {
     var bigMap = new Dictionary<int, int>(); for (int i = 0; i < 70000; i++) bigMap[i] = -i; values.Add(bigMap);
     var nested = new Nested { Name = "n", D = 2.25, F = -3.5f, N = 7, Blob = new byte[] { 9, 8 }, G = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"), When = new DateTime(2026, 1, 1, 12, 0, 0, 500, DateTimeKind.Utc), Off = new DateTimeOffset(2021, 5, 6, 7, 8, 9, TimeSpan.Zero), M = 1.23m, E = E16.A, B = true, Objs = new List<object> { 1, "x", 2.5m, E8.B, new Nested { Name = "inner" } }, Map = new Dictionary<string, long> { { "k", long.MinValue } }, U = ulong.MaxValue, S = -5 };
     values.Add(nested);
+    values.Add(new Nested { Name = "", Objs = new List<object> { "", null } }); // empty strings are written (FilterDefaultValues), null is left out
     values.Add(new Bcl { C = 'Z', T = TimeSpan.FromSeconds(-1.5), N = TimeSpan.FromDays(3), D = new DateOnly(1999, 12, 31), O = new TimeOnly(23, 59), U = new Uri("https://example.com/a"), Boxed = new List<object> { TimeSpan.FromHours(1), 'q', new DateOnly(2000, 1, 1) } });
     // Warm-up with the small values only (the property accessors switch to bound delegates after 100 calls)
     for (int warm = 0; warm < 10; warm++)

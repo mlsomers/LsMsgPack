@@ -1,4 +1,4 @@
-# Schema, type ids and polymorphic class hierarchies
+﻿# Schema, type ids and polymorphic class hierarchies
 
 LsMsgPack serializes .NET objects the same way the XML and JSON serializers do: as maps of property names and values. How those maps look on the wire is controlled by a couple of settings in `MsgPackSettings`. This document explains each option, what it costs and when to use it.
 
@@ -262,9 +262,26 @@ Property names and filters
 These settings also affect the size and the contract of the data:
 
 - **Property names**: by default, the .NET property name is used. Add an `AttributePropertyNameResolver` to `MsgPackSettings.PropertyNameResolvers` to use the name from `[JsonPropertyName]` (System.Text.Json), `[XmlAttribute]` or `[XmlElement]`, or from a custom attribute of your own (`new AttributePropertyNameResolver(typeof(MyNameAttribute), nameof(MyNameAttribute.Name))`). With the indexed schema, these names end up in the schema.
-- **Static filters** (`StaticFilters`) decide once per type which properties are serialized. By default, properties without a public setter (`FilterNonSettable`) are skipped. So are properties with an attribute whose name contains "Ignore" (`FilterIgnoredAttribute`), such as `[IgnoreDataMember]`, `[XmlIgnore]` or `[JsonIgnore]`, and static properties (`FilterStatic`, see [Security](security.md#what-else-to-keep-in-mind)). Keep `FilterStatic` in the list if you set your own static filters.
-- **Dynamic filters** (`DynamicFilters`) decide per value. By default, `FilterDefaultValues` omits properties that are `null`, an empty string, their type's default value, or the value of their `[DefaultValue]` attribute. Use `FilterNullValues` instead to omit only `null` values, or use no dynamic filters to write every property.
+- **Static filters** (`StaticFilters`) decide once per type which properties are serialized. By default, properties without a public setter (`FilterNonSettable`) are skipped. So are properties with an "ignore" attribute of another serializer (`FilterIgnoredAttribute`): `[XmlIgnore]`, `[JsonIgnore]` (System.Text.Json and Json.NET), `[IgnoreDataMember]`, `[IgnoreMember]` (MessagePack-CSharp), `[PropertyShape(Ignore = true)]` (Nerdbank.MessagePack) and any other attribute with "Ignore" in its name. And static properties are skipped (`FilterStatic`, see [Security](security.md#what-else-to-keep-in-mind)). Keep `FilterStatic` in the list if you set your own static filters.
+- **Dynamic filters** (`DynamicFilters`) decide per value. By default, `FilterDefaultValues` omits properties that are `null`, their type's default value, or the value of their `[DefaultValue]` attribute. An empty string is written, as the JSON serializers do (`new FilterDefaultValues(omitEmptyStrings: true)` omits it too, it is then read back as the value the constructor sets, often `null`). Use `FilterNullValues` instead to omit only `null` values, or use no dynamic filters to write every property.
 - **Collections**: `[SerializeEnumerable]` on a collection class or property sets the element type, and controls whether the collection's own properties and/or its elements are serialized.
+
+### Ignoring the same properties as another serializer
+
+To leave out the same properties as the serializer your classes were made for, replace `FilterIgnoredAttribute` by one of its presets: `LikeNewtonsoft` (`[Newtonsoft.Json.JsonIgnore]` and `[IgnoreDataMember]`), `LikeSystemTextJson`, `LikeXmlSerializer`, `LikeDataContract`, `LikeMessagePackCSharp` or `LikeNerdbank` (tested against those libraries). Or pick the attributes yourself with `IgnoreAttributes` flags, and add the names of your own attributes:
+
+```csharp
+MsgPackSettings settings = new MsgPackSettings()
+{
+  // A new array: the serializers cache the result per filter array, do not change the default array in place
+  StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(), FilterIgnoredAttribute.LikeNewtonsoft, new FilterStatic() }
+};
+
+// [XmlIgnore] and [JsonIgnore] of both JSON serializers, and the project's own [SkipInMsgPack]
+FilterIgnoredAttribute custom = new FilterIgnoredAttribute(IgnoreAttributes.XmlIgnore | IgnoreAttributes.SystemTextJson | IgnoreAttributes.Newtonsoft, "SkipInMsgPack");
+```
+
+The attributes are recognized by their names, LsMsgPack does not reference the libraries that define them. System.Text.Json's `[JsonIgnore]` only leaves a property out with `Condition = JsonIgnoreCondition.Always` (its default): `Never`, `WhenWritingNull` and `WhenWritingDefault` keep it (the latter two leave out values, which is up to the dynamic filters). The filters are the same for reading and writing. `MsgPackSettings.Default_StaticFilters` holds the defaults of new settings.
 
 Choosing your settings
 ----------------------

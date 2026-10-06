@@ -1,4 +1,4 @@
-# LsMsgPack.Core
+﻿# LsMsgPack.Core
 
 The parts shared by the [LtMsgPack](https://www.nuget.org/packages/LtMsgPack) and [LsMsgPack](https://www.nuget.org/packages/LsMsgPack) MsgPack serializers. You don't need to add it yourself: both serializers depend on it.
 
@@ -6,7 +6,7 @@ Its types are in the `LsMsgPack.*` namespaces, so they work the same with either
 
 - `MsgPackOptions`: the format settings (`UseInexedSchema`, `ObjectLayout`, `AddTypeIdOptions`, `PropertyOrder`, `TypeGuard`...), the base class of `LtMsgPackOptions` and `MsgPackSettings`.
 - Type resolvers (`IMsgPackTypeResolver`, `XmlRootAttributeTypeResolver`) and property id resolvers (`IMsgPackPropertyIdResolver`, `AttributePropertyNameResolver`): choose the ids written for types and properties.
-- Filters (`FilterDefaultValues`, `FilterNullValues`, `FilterIgnoredAttribute`...): decide which properties are written.
+- Filters (`FilterDefaultValues`, `FilterNullValues`, `FilterIgnoredAttribute`...): decide which properties are written. `FilterIgnoredAttribute.LikeNewtonsoft`, `LikeSystemTextJson` and the other presets leave out the same properties as those serializers ([property names and filters](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md#property-names-and-filters)).
 - Type guards (`IMsgPackTypeGuard`, `AllowedTypesGuard`): limit the types the data may create.
 - `SchemaStore`: keeps indexed schemas between calls, so messages can refer to a schema instead of carrying it.
 - `MsgPackMediaTypes`: the MsgPack media types (`application/msgpack`, `application/x-msgpack`, `application/x-lsmsgpack`).

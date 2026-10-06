@@ -253,6 +253,7 @@ namespace LsMsgPackInteropTests
 
     /// <summary>
     /// LsMsgPack omits values that equal the default of their type (FilterDefaultValues), a reader then keeps what the constructor set.
+    /// An empty string is not a default value (the default of a string is null), it is written as in the JSON serializers.
     /// MessagePack-CSharp writes every value.
     /// </summary>
     [TestMethod]
@@ -261,7 +262,7 @@ namespace LsMsgPackInteropTests
       DefaultsProbe probe = new DefaultsProbe() { Text = "", Retries = 0, Enabled = false, Items = null };
 
       DefaultsProbe read = MessagePackSerializer.Deserialize<DefaultsProbe>(Serializer.Serialize(probe, Named), Contractless);
-      Assert.IsNull(read.Text);
+      Assert.AreEqual("", read.Text);
       Assert.AreEqual(3, read.Retries);
       Assert.IsTrue(read.Enabled);
       Assert.IsNotNull(read.Items);

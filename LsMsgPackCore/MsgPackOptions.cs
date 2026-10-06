@@ -170,6 +170,12 @@ namespace LsMsgPack
     internal ObjectCreation _objectCreation = Default_ObjectCreation;
 
     /// <summary>
+    /// The cache of the serialized properties for <see cref="_staticFilters"/> (see FullPropertyInfo.GetSerializedProps without a session), looked up again when the filters are replaced.
+    /// <para>Copied by <see cref="Clone"/>: it belongs to the filter array, not to these settings.</para>
+    /// </summary>
+    internal Meta.FullPropertyInfo.SharedPropsCache _sharedPropsCache;
+
+    /// <summary>
     /// The highest <see cref="LsMsgPack.PropertyOrder"/>, the orders are indexes of the caches in FullPropertyInfo.
     /// </summary>
     internal const PropertyOrder LastPropertyOrder = PropertyOrder.TypeThenDeclaration;
