@@ -80,13 +80,64 @@ namespace LsMsgPack.TypeResolving.Types
       if (IsFrozen)
         throw SchemaGrowthException.Instance;
 
+      // Not resolved when the schema was read (another assembly, or a name of several types): now the declared type helps
       Type type = ResolveTypeName(def.TypeName, assignedTo, settings);
-      if (type != null)
-      {
-        def.Type = type;
-        ByType[type] = def;
-      }
+      if (type is null)
+        throw UnresolvedType(def, settings);
+      def.Type = type;
+      ByType[type] = def;
       return type;
+    }
+
+    /// <summary>
+    /// The entry of the schema of a type that is read: the one its name was resolved to when the schema was read, otherwise an entry with its name (short or full) whose name was not resolved,
+    /// e.g. a type of an assembly that was not known yet.
+    /// </summary>
+    /// <exception cref="SchemaGrowthException">When the entry is found by name in a frozen schema (a copy remembers it)</exception>
+    internal bool TryGetDef(Type type, out ComplexTypeDef def)
+    {
+      if (ByType.TryGetValue(type, out def))
+        return true;
+      if (_unresolved == 0)
+        return false;
+
+      def = FindUnresolved(TypeResolver.GetTypeName(type, true)) ?? FindUnresolved(TypeResolver.GetTypeName(type, false));
+      if (def is null)
+        return false;
+
+      if (IsFrozen)
+        throw SchemaGrowthException.Instance;
+      def.Type = type;
+      ByType[type] = def;
+      _unresolved--;
+      return true;
+    }
+
+    private ComplexTypeDef FindUnresolved(string name)
+    {
+      ComplexTypeDef found = null;
+      for (int t = 0; t < ByTypeId.Count; t++)
+      {
+        ComplexTypeDef def = ByTypeId[t];
+        if (def.Type is null && string.Equals(def.TypeName, name, StringComparison.Ordinal))
+        {
+          if (found != null)
+            return null; // two types of the writer with this (short) name: not this way
+          found = def;
+        }
+      }
+      return found;
+    }
+
+    /// <summary>
+    /// The entries whose names were not resolved when the schema was read.
+    /// </summary>
+    private int _unresolved;
+
+    private static Exception UnresolvedType(ComplexTypeDef def, MsgPackOptions settings)
+    {
+      return new MsgPackException($"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}\r\nIt may help to pre-register your type like this:\r\n  MsgPackSerializer.CacheAssemblyTypes(typeof({def.TypeName}));"
+        + (def.ResolveError is null ? "" : string.Concat("\r\n", def.ResolveError)));
     }
 
     /// <summary>
@@ -106,13 +157,13 @@ namespace LsMsgPack.TypeResolving.Types
           return type;
       }
 
-      return TypeResolver.ResolveInternal(typeName, assignedTo, resolvers);
+      return TypeResolver.ResolveInternal(typeName, assignedTo, resolvers, false);
     }
 
     object IMsgPackPropertyIdResolver.GetId(FullPropertyInfo assignedTo, MsgPackOptions settings)
     {
       ComplexTypeDef def;
-      if (!ByType.TryGetValue(assignedTo.PropertyInfo.ReflectedType, out def))
+      if (!TryGetDef(assignedTo.PropertyInfo.ReflectedType, out def))
       {
         if (assignedTo.AssignedToType is null)
           return null;
@@ -138,15 +189,26 @@ namespace LsMsgPack.TypeResolving.Types
 
       foreach (ComplexTypeDef def in ByTypeId)
       {
-        // string typeName = MsgPackSerializer.GetTypeName(type, (settings._addTypeName & AddTypeIdOption.FullName) > 0);
+        if (def.Type is null)
+        {
+          // Without the declared type (not known yet) a name may not resolve: another assembly, or a short name of several types. That is decided where the entry is used (Resolve, TryGetDef)
+          try
+          {
+            def.Type = ResolveTypeName(def.TypeName, null, settings);
+          }
+          catch (MsgPackException)
+          {
+            throw; // e.g. a name that could load an assembly
+          }
+          catch (Exception ex)
+          {
+            def.ResolveError = ex.Message;
+          }
+        }
 
         if (def.Type is null)
-          def.Type = ResolveTypeName(def.TypeName, null, settings);
-
-        if (def.Type is null)
-          throw new Exception($"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}\r\nIt may help to pre-register your type like this:\r\n  MsgPackSerializer.CacheAssemblyTypes(typeof({def.TypeName}));");
-
-        if (!ByType.ContainsKey(def.Type))
+          _unresolved++;
+        else if (!ByType.ContainsKey(def.Type))
           ByType.Add(def.Type, def);
       }
     }
@@ -230,14 +292,15 @@ namespace LsMsgPack.TypeResolving.Types
       IndexedSchemaTypeResolver copy = new IndexedSchemaTypeResolver()
       {
         ByTypeId = new List<ComplexTypeDef>(ByTypeId.Count),
-        ByType = new Dictionary<Type, ComplexTypeDef>(ByType.Count)
+        ByType = new Dictionary<Type, ComplexTypeDef>(ByType.Count),
+        _unresolved = _unresolved
       };
 
       Dictionary<ComplexTypeDef, ComplexTypeDef> copies = new Dictionary<ComplexTypeDef, ComplexTypeDef>(ByTypeId.Count);
       for (int t = 0; t < ByTypeId.Count; t++)
       {
         ComplexTypeDef def = ByTypeId[t];
-        ComplexTypeDef defCopy = new ComplexTypeDef() { Type = def.Type, TypeName = def.TypeName, TypeId = def.TypeId, Props = new List<string>(def.Props) };
+        ComplexTypeDef defCopy = new ComplexTypeDef() { Type = def.Type, TypeName = def.TypeName, TypeId = def.TypeId, Props = new List<string>(def.Props), ResolveError = def.ResolveError };
         copy.ByTypeId.Add(defCopy);
         copies.Add(def, defCopy);
       }
@@ -321,6 +384,11 @@ namespace LsMsgPack.TypeResolving.Types
     // used to have PropType as value, but there is no need to preserve more info than the name.
     [XmlElement("P")]
     public List<string> Props { get; set; } = new List<string>();
+
+    /// <summary>
+    /// Why the name was not resolved when the schema was read (for the message when it is needed).
+    /// </summary>
+    internal string ResolveError;
 
 
     private Dictionary<string, int> _idByName;

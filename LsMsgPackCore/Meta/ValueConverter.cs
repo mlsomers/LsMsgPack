@@ -192,7 +192,7 @@ namespace LsMsgPack.Meta
     private static FullPropertyInfo[] PropertiesByPosition(Type type, FullPropertyInfo[] props, MsgPackOptions settings)
     {
       IndexedSchemaTypeResolver schema = SerializationRules.GetIndexedSchema(settings);
-      if (schema is null || !schema.ByType.TryGetValue(type, out ComplexTypeDef def) || def.IsCollection)
+      if (schema is null || !schema.TryGetDef(type, out ComplexTypeDef def) || def.IsCollection)
         return props;
 
       FullPropertyInfo[] byPosition = new FullPropertyInfo[def.Props.Count];

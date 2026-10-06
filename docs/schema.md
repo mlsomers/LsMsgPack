@@ -142,7 +142,7 @@ Suppose you have an interface `IPet` with classes `Cat`, `Dog` and `Fish` that i
 To deserialize, the type id has to become a `Type` again. A type id is the short name of the type by default (`Cat`), and it's looked up in this order:
 
 1. Names resolved before (the fastest), and types that `Type.GetType` finds by itself.
-2. The assembly of the declared type (and of its generic arguments): all its types are cached by name the first time. With the indexed schema (the default), the assembly of the type you deserialize is cached as well.
+2. The assembly of the declared type (and of its generic arguments): all its types are cached by name the first time. The assemblies of the type you deserialize are cached as well, and of the types it reaches: generic arguments, element types, base classes and the types of public properties (not the framework's), once per type.
 3. The names of all types in the assemblies cached so far.
 
 So the implementations of `IPet` are found without any registration when they're in the assembly of `IPet` (declared as `IPet`, `List<IPet>`, `IPet[]`...), or in the assembly of the class you deserialize:
@@ -161,9 +161,9 @@ MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));    // LsMsgPack
 LtMsgPackSerializer.CacheAssemblyTypes(typeof(IPet));  // LtMsgPack (the same cache, either call will do)
 ```
 
-The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins): register each of them. And `Deserialize<List<Cat>>()` only looks in the assembly of `List<T>`, so register the assembly of `Cat` when it isn't reachable from the root type.
+The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins), and nothing you deserialize reaches them: register each of them. `Deserialize<List<Cat>>()` finds `Cat` (it's reachable from the root type).
 
-- **Short names must be unique** among the cached assemblies. Two cached classes called `Cat` (in different namespaces) make reading throw "Type assignment dilamma". Use `AddTypeIdOptions = AddTypeIdOption.FullName` (bigger payloads) or your own `IMsgPackTypeResolver` in `TypeResolvers`.
+- **Short names should be unique** among the cached assemblies. When several cached classes have the name, the one that fits where the value goes is used: a type id names the type of an instance, so abstract classes and interfaces don't count (your own `Attribute` class is found, not `System.Attribute`), nor do classes that can't be assigned to the declared type. When more than one fits (e.g. two classes called `Cat` in a property of type `object`), reading throws "Type assignment dilamma". Use `AddTypeIdOptions = AddTypeIdOption.FullName` (bigger payloads) or your own `IMsgPackTypeResolver` in `TypeResolvers`.
 - **Let it search**: the included [`WildGooseChaseResolver`](#wildgoosechaseresolver) searches all assemblies loaded in the AppDomain for a name it can't find otherwise (and caches the assemblies it searched). Convenient, but slower the first time, and it keeps more names in memory.
 - **Your own mapping**: implement `IMsgPackTypeResolver` to choose the ids and the types (e.g. a fixed table of names, or [`XmlRootAttributeTypeResolver`](#xmlrootattributetyperesolver) to use the names of `[XmlRoot]`).
 

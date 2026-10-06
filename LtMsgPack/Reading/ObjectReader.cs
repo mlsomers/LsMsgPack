@@ -440,7 +440,7 @@ namespace LtMsgPack.Reading
         return ReferenceEquals(bound, NotBound) ? null : bound;
 
       bound = NotBound;
-      if (_schema.ByType.TryGetValue(plan.Type, out ComplexTypeDef def) && !def.IsCollection)
+      if (_schema.TryGetDef(plan.Type, out ComplexTypeDef def) && !def.IsCollection)
       {
         bound = new PropReader[def.Props.Count];
         for (int t = 0; t < bound.Length; t++)

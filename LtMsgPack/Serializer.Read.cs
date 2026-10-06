@@ -216,6 +216,14 @@ namespace LtMsgPack
     /// <param name="consumed">The position after the payload</param>
     internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed)
     {
+      if (type != _cachedRoot)
+      {
+        // The names in the data (type ids, the schema) are resolved in the cached assemblies: the ones of the types the root type reaches (the T of List<T>...)
+        TypeResolver.CacheAssembly(type.Assembly, type.Name); // as MsgPackSerializer.CacheAssemblyTypes(type)
+        TypeResolver.CacheReachableAssemblies(type);
+        _cachedRoot = type;
+      }
+
       ReadContext c = new ReadContext(this) { R = new MsgPackReader(buffer, offset, end, Options) };
       object result;
       if (!Options._useInexedSchema)
@@ -232,11 +240,6 @@ namespace LtMsgPack
 
     private object DeserializeWithSchema(ReadContext c, Type type)
     {
-      if (type != _cachedRoot)
-      {
-        TypeResolver.CacheAssembly(type.Assembly, type.Name); // as MsgPackSerializer.CacheAssemblyTypes(type)
-        _cachedRoot = type;
-      }
 
       MsgPackReader r = c.R;
       if (r.Pos >= r.End)

@@ -17,7 +17,7 @@ When data picks the type, whoever writes the data picks the code that runs while
 
 Two things decide how exposed you are:
 
-1. **Which types the data can name.** A type id is resolved by name (see [Polymorphic class-hierarchy support](schema.md#polymorphic-class-hierarchy-support)): the framework's core library, the framework's collection assemblies, and every assembly that has been cached so far (your root types' assemblies, the assemblies of declared types, and what you registered with `CacheAssemblyTypes`). `WildGooseChaseResolver` extends this to every assembly loaded in the process.
+1. **Which types the data can name.** A type id is resolved by name (see [Polymorphic class-hierarchy support](schema.md#polymorphic-class-hierarchy-support)): the framework's core library, the framework's collection assemblies, and every assembly that has been cached so far (your root types' assemblies and the assemblies of the types they reach through generic arguments, base classes and public properties, the assemblies of declared types, and what you registered with `CacheAssemblyTypes`). `WildGooseChaseResolver` extends this to every assembly loaded in the process.
 2. **Where the data can use them.** A type id is only consulted where a value is read, and the declared type of that place (a property, a collection element or the root you deserialize) limits what fits there.
 
 What the schema hashes do and don't protect
