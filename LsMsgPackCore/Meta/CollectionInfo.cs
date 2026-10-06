@@ -44,9 +44,20 @@ namespace LsMsgPack.Meta
     private readonly ConstructorInfo _itemsConstructor;
 
     /// <summary>
-    /// ICollection&lt;T&gt;.Add(T) or IDictionary&lt;TKey, TValue&gt;.Add(TKey, TValue), used when the type does not implement IList or IDictionary
+    /// ICollection&lt;T&gt;.Add(T), a public Add(T) (as XmlSerializer uses it) or IDictionary&lt;TKey, TValue&gt;.Add(TKey, TValue), used when the type does not implement IList or IDictionary
     /// </summary>
     public readonly MethodInfo AddMethod;
+
+    /// <summary>
+    /// KeyValuePair&lt;TKey, TValue&gt;.Key and .Value when the elements are pairs (written as a map, like a dictionary).
+    /// </summary>
+    public readonly PropertyInfo PairKey;
+    public readonly PropertyInfo PairValue;
+
+    /// <summary>
+    /// A collection of pairs that is not a dictionary (no IDictionary or IDictionary&lt;TKey, TValue&gt;): filled with KeyValuePair elements, like other collections.
+    /// </summary>
+    public readonly bool FillsPairs;
 
     /// <summary>
     /// Stacks are enumerated from top to bottom, and filled from bottom to top by their constructor.
@@ -63,6 +74,8 @@ namespace LsMsgPack.Meta
         IsDictionary = true;
         KeyType = ElementType.GenericTypeArguments[0];
         ValueType = ElementType.GenericTypeArguments[1];
+        PairKey = ElementType.GetProperty(nameof(KeyValuePair<object, object>.Key));
+        PairValue = ElementType.GetProperty(nameof(KeyValuePair<object, object>.Value));
       }
       else if (typeof(IDictionary).IsAssignableFrom(type)) // Hashtable, ...
       {
@@ -77,13 +90,15 @@ namespace LsMsgPack.Meta
 
       if (IsDictionary)
       {
-        if (!typeof(IDictionary).IsAssignableFrom(ConcreteType))
+        if (typeof(IDictionary).IsAssignableFrom(ConcreteType))
+          return;
+        Type dictInterface = typeof(IDictionary<,>).MakeGenericType(KeyType, ValueType);
+        if (dictInterface.IsAssignableFrom(ConcreteType))
         {
-          Type dictInterface = typeof(IDictionary<,>).MakeGenericType(KeyType, ValueType);
-          if (dictInterface.IsAssignableFrom(ConcreteType))
-            AddMethod = dictInterface.GetMethod(nameof(IDictionary.Add));
+          AddMethod = dictInterface.GetMethod(nameof(IDictionary.Add));
+          return;
         }
-        return;
+        FillsPairs = true; // e.g. List<KeyValuePair<TKey, TValue>>: a constructor or an Add of the pairs, as below
       }
 
       _itemsConstructor = ConcreteType.GetConstructor(new[] { ElementType.MakeArrayType() });
@@ -98,7 +113,20 @@ namespace LsMsgPack.Meta
         Type collInterface = typeof(ICollection<>).MakeGenericType(ElementType);
         if (collInterface.IsAssignableFrom(ConcreteType))
           AddMethod = collInterface.GetMethod(nameof(ICollection<object>.Add));
+        else // IEnumerable<T> with an Add(T), which is what XmlSerializer needs
+          AddMethod = ConcreteType.GetMethod(nameof(ICollection<object>.Add), BindingFlags.Public | BindingFlags.Instance, null, new[] { ElementType }, null);
       }
+    }
+
+    /// <summary>
+    /// The entries of a collection of KeyValuePair elements (<see cref="PairKey"/> is not null), for writing it as a map.
+    /// </summary>
+    public KeyValuePair<object, object>[] ToPairs(IEnumerable pairs)
+    {
+      List<KeyValuePair<object, object>> entries = pairs is ICollection collection ? new List<KeyValuePair<object, object>>(collection.Count) : new List<KeyValuePair<object, object>>();
+      foreach (object pair in pairs)
+        entries.Add(new KeyValuePair<object, object>(PairKey.GetValue(pair), PairValue.GetValue(pair)));
+      return entries.ToArray();
     }
 
     /// <summary>

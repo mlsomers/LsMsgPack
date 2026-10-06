@@ -241,6 +241,18 @@ namespace LsMsgPack.Meta
         return typedArr;
       }
 
+      if (info.FillsPairs) // a collection of KeyValuePair elements that is not a dictionary
+      {
+        Array elements = Array.CreateInstance(info.ElementType, pairs.Length);
+        for (int t = 0; t < pairs.Length; t++)
+        {
+          object key = ConvertDeserializeValue(pairs[t].Key, info.KeyType, settings, null);
+          object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
+          elements.SetValue(Activator.CreateInstance(info.ElementType, key, value), t);
+        }
+        return info.Create(elements, settings);
+      }
+
       object result = Instances.CreateCollection(info.ConcreteType, settings);
       IDictionary dictionary = result as IDictionary;
       object[] args = dictionary is null ? new object[2] : null;

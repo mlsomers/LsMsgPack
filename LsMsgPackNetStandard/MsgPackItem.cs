@@ -308,6 +308,13 @@ namespace LsMsgPack
       if (valuesType.IsEnum) return new MpInt(settings).SetEnumVal(value);
       if (IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap(settings) { Value = value };
       if (value is IDictionary) return new MpMap(settings) { Value = value };
+      if (value is IEnumerable enumerable && !valuesType.IsArray)
+      {
+        // Other collections of KeyValuePair elements (List<KeyValuePair<,>>, IDictionary<,> without IDictionary...) are a map too, their pairs have no settable properties
+        Meta.CollectionInfo info = Meta.CollectionInfo.Get(valuesType);
+        if (info.PairKey != null)
+          return new MpMap(settings) { Value = info.ToPairs(enumerable) };
+      }
       if (valuesType.IsArray) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
       if (typeof(IEnumerable).IsAssignableFrom(valuesType)) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
 

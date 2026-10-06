@@ -59,7 +59,8 @@ namespace LtMsgPack.Writing
       if (IsArrayOfKeyValuePairs(type)) return TypeKind.Map;
       if (typeof(IDictionary).IsAssignableFrom(type)) return TypeKind.Map;
       if (type.IsArray) return TypeKind.Array;
-      if (typeof(IEnumerable).IsAssignableFrom(type)) return TypeKind.Array;
+      if (typeof(IEnumerable).IsAssignableFrom(type))
+        return CollectionInfo.Get(type).PairKey != null ? TypeKind.Map : TypeKind.Array; // List<KeyValuePair<,>>, IDictionary<,> without IDictionary...: their pairs have no settable properties
       if (type == typeof(MsgPackExtension)) return TypeKind.RawExtension;
       if (type == typeof(char)) return TypeKind.Char;
       if (type == typeof(TimeSpan)) return TypeKind.TimeSpan;

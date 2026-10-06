@@ -78,6 +78,7 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 | integers, `float`, `double`, `bool`, `string`, `byte[]`, null | the formats of the spec, integers in the smallest one | the same bytes | tested |
 | enums | their number | the same bytes | tested |
 | arrays and lists, dictionaries | array, map | the same bytes | tested |
+| other collections of `KeyValuePair<,>` (`List<KeyValuePair<,>>`...) | map, like a dictionary (duplicate keys are kept) | array of `[key, value]` arrays (Nerdbank.MessagePack: array of maps `{ Key, Value }`) | incompatible (measured, not in the interop tests) |
 | `DateTime` | timestamp (extension type -1) | the same bytes (except `Unspecified`, see above) | tested |
 | `char`, `TimeSpan`, `DateOnly`, `TimeOnly`, `Uri` | number, ticks, day number, ticks, string | the same bytes | tested |
 | `Guid` | bin 16 in the byte order of `Guid.ToByteArray()` | a string of 36 characters | configure MessagePack-CSharp (`NativeGuidResolver` writes the same bytes as LsMsgPack) |

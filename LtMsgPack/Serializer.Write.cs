@@ -420,6 +420,16 @@ namespace LtMsgPack
             WriteBoxed(c, entries.Value, valueInfo);
           }
         }
+        else if (!(value is Array)) // other collections of KeyValuePair<TKey, TValue>
+        {
+          KeyValuePair<object, object>[] pairs = info.Collection.ToPairs((IEnumerable)value);
+          c.W.MapHeader(pairs.Length);
+          for (int t = 0; t < pairs.Length; t++)
+          {
+            WriteBoxed(c, pairs[t].Key, keyInfo);
+            WriteBoxed(c, pairs[t].Value, valueInfo);
+          }
+        }
         else // KeyValuePair<TKey, TValue>[]
         {
           Array pairs = (Array)value;
@@ -473,6 +483,7 @@ namespace LtMsgPack
     internal readonly LtExtension Extension;
     internal readonly bool NeverWrapped;
     internal readonly FullPropertyInfo ElementInfo;
+    internal readonly CollectionInfo Collection;
     internal readonly FullPropertyInfo KeyInfo;
     internal readonly FullPropertyInfo ValueInfo;
     internal readonly PropertyInfo PairKey;
@@ -492,6 +503,7 @@ namespace LtMsgPack
       if (Kind == TypeKind.Map || Kind == TypeKind.Array)
       {
         CollectionInfo collection = CollectionInfo.Get(type);
+        Collection = collection;
         ElementInfo = new FullPropertyInfo(collection.ElementType);
         KeyInfo = new FullPropertyInfo(collection.KeyType ?? typeof(object));
         ValueInfo = new FullPropertyInfo(collection.ValueType ?? typeof(object));
