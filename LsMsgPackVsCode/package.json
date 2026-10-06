@@ -1,7 +1,7 @@
 {
   "name": "lsmsgpack-explorer",
   "displayName": "MsgPack Explorer (LsMsgPack)",
-  "description": "Inspect MsgPack data while debugging (byte[], Stream, List<byte>, Memory<byte>, HttpContent...) and in .msgpack files: item tree, hex view, properties, validation, objects with the indexed schema of LsMsgPack.",
+  "description": "Inspect MsgPack data while debugging (byte[], Stream, List<byte>, Memory<byte>, HttpContent...) and in .msgpack files: item tree, hex view, properties, validation, objects with the indexed schema of LsMsgPack. Lets AI agents (MCP) read and decode MsgPack while debugging.",
   "version": "2026.10.7",
   "publisher": "mlsomers",
   "license": "Apache-2.0",
@@ -20,7 +20,9 @@
     "messagepack",
     "debugger",
     "visualizer",
-    "hex"
+    "hex",
+    "mcp",
+    "ai"
   ],
   "categories": [
     "Debuggers",
@@ -31,7 +33,9 @@
     "vscode": "^1.90.0"
   },
   "main": "./out/extension.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
       {
@@ -57,6 +61,11 @@
       {
         "command": "lsmsgpack.fromSelection",
         "title": "Explore Selected Text as MsgPack",
+        "category": "MsgPack"
+      },
+      {
+        "command": "lsmsgpack.copyMcpConfiguration",
+        "title": "Copy MCP Server Configuration...",
         "category": "MsgPack"
       }
     ],
@@ -132,16 +141,34 @@
           "default": 49152,
           "minimum": 3,
           "markdownDescription": "The bytes read per evaluation in the debugger (as base64). Smaller chunks are used when the debugger shortens long strings."
+        },
+        "lsmsgpack.mcp.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Lets AI agents read MsgPack bytes from the debugger through the MCP server of this extension (the chat agent mode of VS Code, and MCP servers started by other clients such as Claude Code, found through a lock file in `~/.lsmsgpack/ide`). The server listens on 127.0.0.1 and requires a random token."
+        },
+        "lsmsgpack.mcp.allowAnyExpression": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "markdownDescription": "Lets AI agents read any expression, including method calls that can change the debugged program. Off: only variable and member paths (e.g. `buffer`, `this._payload`, `items[2].Data`). User settings only, a workspace cannot turn it on."
         }
       }
-    }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "lsmsgpack.mcp",
+        "label": "MsgPack (LsMsgPack)"
+      }
+    ]
   },
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "build:server": "dotnet publish Server/LsMsgPackInspector.csproj -c Release -o dist/inspector --nologo -p:DebugType=none -p:DebugSymbols=false",
+    "build:mcp": "dotnet publish ../LsMsgPackMcpServer/LsMsgPackMcpServer.csproj -c Release -o dist/mcp --nologo -p:DebugType=none -p:DebugSymbols=false",
     "test": "npm run compile && node --test test/*.test.js",
-    "vscode:prepublish": "npm run build:server && npm run compile",
+    "vscode:prepublish": "npm run build:server && npm run build:mcp && npm run compile",
     "package": "vsce package --baseContentUrl https://github.com/mlsomers/LsMsgPack/blob/HEAD/LsMsgPackVsCode --baseImagesUrl https://github.com/mlsomers/LsMsgPack/raw/HEAD/LsMsgPackVsCode"
   },
   "devDependencies": {

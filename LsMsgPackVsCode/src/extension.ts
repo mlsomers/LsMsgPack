@@ -2,9 +2,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { bytesFromText } from './bytesFromText';
-import { CancelledError, DebugAccess, DebugVariable, EvaluateResult, readBytes, ReadResult } from './debugBytes';
+import { createDebugAccess } from './debugAccess';
+import { CancelledError, DebugVariable, readBytes, ReadResult } from './debugBytes';
 import { ByteSource, ExplorerView } from './explorerView';
 import { InspectorClient } from './inspectorClient';
+import { activateMcp } from './mcp';
 
 let client: InspectorClient | undefined;
 let clientKey = '';
@@ -83,6 +85,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
     { dispose: () => client?.dispose() }
   );
+
+  activateMcp(context);
 }
 
 export function deactivate(): void {
@@ -178,36 +182,6 @@ async function readFromDebugger(name: string, expression: string | undefined, va
       }
       return source;
     }) : undefined
-  };
-}
-
-/**
- * The debug requests in the stack frame selected in the Call Stack view (where the Variables view is).
- */
-function createDebugAccess(): DebugAccess & { sessionName: string } {
-  const item = vscode.debug.activeStackItem;
-  const session = item?.session ?? vscode.debug.activeDebugSession;
-  if (!session) {
-    throw new Error('There is no debug session.');
-  }
-  const frameId = item instanceof vscode.DebugStackFrame ? item.frameId : undefined;
-  return {
-    sessionType: session.type,
-    sessionName: session.name,
-    async evaluate(expression: string): Promise<EvaluateResult> {
-      const response = await session.customRequest('evaluate', { expression, frameId, context: 'repl' });
-      return { result: String(response.result ?? ''), type: response.type, variablesReference: response.variablesReference ?? 0, indexedVariables: response.indexedVariables };
-    },
-    async variables(variablesReference: number, start?: number, count?: number): Promise<DebugVariable[]> {
-      const args: { variablesReference: number; filter?: string; start?: number; count?: number } = { variablesReference };
-      if (start !== undefined) {
-        args.filter = 'indexed';
-        args.start = start;
-        args.count = count;
-      }
-      const response = await session.customRequest('variables', args);
-      return response.variables ?? [];
-    }
   };
 }
 

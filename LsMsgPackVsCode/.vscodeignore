@@ -6,3 +6,4 @@
 !media/**
 !out/*.js
 !dist/inspector/**
+!dist/mcp/**

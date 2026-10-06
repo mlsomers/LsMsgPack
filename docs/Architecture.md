@@ -15,6 +15,7 @@
 | `LsMsgPackVisualStudioPlugin` | Visual Studio extension | MsgPack Explorer as a debugger visualizer for `byte[]`, `List<byte>`, streams and more. |
 | `ObjectDebugger` | `ObjectDebugger.dll` | Rebuilds the objects of a payload without their types (type and property names from the indexed schema), and the search of the explorers. Used by MsgPack Explorer and the VS Code extension. |
 | `LsMsgPackVsCode` | VS Code extension | MsgPack Explorer for VS Code (TypeScript webview), for values of the debugged program and `.msgpack` files. `Server/` (`LsMsgPackInspector`, net8.0) reads the data with LsMsgPack (KEEPTRACK) and ObjectDebugger for it. See its [README](../LsMsgPackVsCode/README.md). |
+| `LsMsgPackMcpServer` | `LsMsgPackMcp` (.NET tool `lsmsgpack-mcp`) | MsgPack for AI agents: an MCP server and command line tool that decode payloads into text (with ObjectDebugger), and read bytes from the debugger of VS Code or Visual Studio through their extensions. See [Mcp.md](Mcp.md). |
 | `MicroFramework` | | An old copy of the sources for the .NET Micro Framework. It doesn't link the current library files. |
 
 Tests:
