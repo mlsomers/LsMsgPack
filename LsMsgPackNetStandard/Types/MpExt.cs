@@ -137,7 +137,7 @@ namespace LsMsgPack {
         case MsgPackTypeId.MpExt32:  len = ReadLen(data, 4); break;
         default: throw new MsgPackException($"Ext does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position-1, typeId);
       }
-      typeSpecifier = (sbyte)data.ReadByte();
+      typeSpecifier = unchecked((sbyte)ReadByteExactly(data)); // at the end of the data ReadByte returns -1: the timestamp type
       value = ReadBytes(data, len);
 
       if (typeSpecifier == -1)

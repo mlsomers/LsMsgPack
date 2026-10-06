@@ -185,6 +185,14 @@ namespace LsMsgPackMcp
       {
         parts.Add(string.Concat(root.Count.ToString(CultureInfo.InvariantCulture), " items that follow each other"));
       }
+      else if (doc.Root.Item is MpError error)
+      {
+        // An item that could not be read is replaced by an MpError (its TypeId is "never used"), the item is its PartialItem
+        if (error.PartialItem is null)
+          parts.Add("an error");
+        else
+          parts.Add(string.Concat("a single ", TypeName(error.PartialItem), error.IsInNestedItem ? " holding an error" : " that could not be read"));
+      }
       else
       {
         parts.Add(string.Concat("a single ", TypeName(doc.Root.Item)));
@@ -896,7 +904,7 @@ namespace LsMsgPackMcp
     /// </summary>
     internal static string ErrorText(MpError error)
     {
-      if (!(error.PartialItem is null))
+      if (error.IsInNestedItem)
         return "ERROR inside: the item below was read up to the error";
       return string.Concat("ERROR: ", ErrorMessage(error));
     }

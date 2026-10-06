@@ -219,6 +219,10 @@ namespace LsMsgPack
       if (settings is null)
         settings = new MsgPackSettings();
 
+      // The names in the data (type ids, the schema) are resolved in the cached assemblies: the ones of the types the root type reaches (the T of List<T>...)
+      CacheAssemblyTypes(tType);
+      TypeResolver.CacheReachableAssemblies(tType);
+
       if (settings.UseInexedSchema)
         return DeserializeWithSchema(tType, stream, settings);
 
@@ -228,7 +232,6 @@ namespace LsMsgPack
 
     private static object DeserializeWithSchema(Type tType, Stream stream, MsgPackSettings settings)
     {
-      CacheAssemblyTypes(tType);
 
       int first = stream.ReadByte();
       if (first < 0)
@@ -258,6 +261,7 @@ namespace LsMsgPack
       MsgPackSettings schemaSettings = WithSchema(settings, resolver);
       try
       {
+        SerializationRules.BindReaderTypes(tType, schemaSettings);
         MsgPackItem unpacked = MsgPackItem.Unpack(stream, schemaSettings);
         return ConvertDeserializeValue(unpacked.UnpackedValue, tType, schemaSettings, null);
       }
@@ -297,7 +301,11 @@ namespace LsMsgPack
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
       object value = unpacked.UnpackedValue;
 
-      return schema.RunReader(settings, lengthSettings, (s, schemaSettings) => ConvertDeserializeValue(value, tType, schemaSettings, null));
+      return schema.RunReader(settings, lengthSettings, (s, schemaSettings) =>
+      {
+        SerializationRules.BindReaderTypes(tType, schemaSettings);
+        return ConvertDeserializeValue(value, tType, schemaSettings, null);
+      });
     }
   }
 }

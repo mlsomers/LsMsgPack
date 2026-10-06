@@ -51,26 +51,20 @@ namespace LsMsgPack.Meta
     }
 
     // Attributes are static metadata, so they are read once per property (even when the FullPropertyInfo itself cannot be cached because of custom property id resolvers)
-    private static readonly ConcurrentDictionary<PropertyInfo, Dictionary<string, object>> AttributesCache = new ConcurrentDictionary<PropertyInfo, Dictionary<string, object>>();
+    private static readonly ConcurrentDictionary<PropertyInfo, PropertyAttributeSet> AttributesCache = new ConcurrentDictionary<PropertyInfo, PropertyAttributeSet>();
 
     private FullPropertyInfo(PropertyInfo prop)
     {
       PropertyInfo = prop;
-      CustomAttributes = AttributesCache.GetOrAdd(prop, p => ReadCustomAttributes(p));
+      Attributes = AttributesCache.GetOrAdd(prop, p => new PropertyAttributeSet(p));
+      CustomAttributes = Attributes.ByName;
       AssignedToType = prop.PropertyType;
     }
 
-    private static Dictionary<string, object> ReadCustomAttributes(PropertyInfo prop)
-    {
-      object[] atts = prop.GetCustomAttributes(true);
-      Dictionary<string, object> attributes = new Dictionary<string, object>(atts.Length);
-      for (int t = atts.Length - 1; t >= 0; t--)
-      {
-        string attName = atts[t].GetType().Name;
-        attributes.TryAdd(attName, atts[t]);
-      }
-      return attributes;
-    }
+    /// <summary>
+    /// The attributes of the property, also the ones it may inherit (shared by all FullPropertyInfo of the property). Null without a property.
+    /// </summary>
+    internal readonly PropertyAttributeSet Attributes;
 
     public FullPropertyInfo(Type assignToType)
     {

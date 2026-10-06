@@ -128,7 +128,8 @@ Cons:
 - Other MsgPack implementations can parse the data but won't understand it without extra work: they see a schema map followed by a map with integer keys. Use it between LsMsgPack endpoints, or switch it off for public APIs (the web formatters do this for `application/msgpack`).
 - For a single small object, the schema is larger than what it saves.
 - Resolving by signature isn't possible. The property keys are schema indexes, so the reader can't guess the type from its property names. Serializing a polymorphic value without a type id (`AddTypeIdOption.Never`) with the schema switched on throws a `MsgPackException` right away rather than producing data that would be read as the wrong type.
-- All types named in the schema must be resolvable when reading (see [type resolvers](#type-resolvers)). Otherwise, deserializing throws with a hint to pre-register the type.
+- The types named in the schema must be resolvable when reading where they are needed (see [type resolvers](#type-resolvers)): for a type id, or to read into another class (below). Otherwise, deserializing throws with a hint to pre-register the type. A type that is read into a class of the same name is found by that name.
+- Reading into **another class** than the writer used (e.g. a DTO into an entity) needs the writer's classes: the values of an object only say which property of the writer's class they are. The root is the first class of the schema, and the other classes follow from the properties both classes have (the writer's class of `Address` is the declared type of the writer's `Address`, also for elements of collections and values of dictionaries). The values are then matched by name, like for the same class. An object whose class can't be paired with one of the writer's (e.g. one class of the reader for two classes of the writer) throws a `MsgPackException` rather than being read by position.
 
 `null` is written without a schema (a single MsgPack `nil`), and deserializing it returns `null`.
 
@@ -142,7 +143,7 @@ Suppose you have an interface `IPet` with classes `Cat`, `Dog` and `Fish` that i
 To deserialize, the type id has to become a `Type` again. A type id is the short name of the type by default (`Cat`), and it's looked up in this order:
 
 1. Names resolved before (the fastest), and types that `Type.GetType` finds by itself.
-2. The assembly of the declared type (and of its generic arguments): all its types are cached by name the first time. With the indexed schema (the default), the assembly of the type you deserialize is cached as well.
+2. The assembly of the declared type (and of its generic arguments): all its types are cached by name the first time. The assemblies of the type you deserialize are cached as well, and of the types it reaches: generic arguments, element types, base classes and the types of public properties (not the framework's), once per type.
 3. The names of all types in the assemblies cached so far.
 
 So the implementations of `IPet` are found without any registration when they're in the assembly of `IPet` (declared as `IPet`, `List<IPet>`, `IPet[]`...), or in the assembly of the class you deserialize:
@@ -161,9 +162,9 @@ MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));    // LsMsgPack
 LtMsgPackSerializer.CacheAssemblyTypes(typeof(IPet));  // LtMsgPack (the same cache, either call will do)
 ```
 
-The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins): register each of them. And `Deserialize<List<Cat>>()` only looks in the assembly of `List<T>`, so register the assembly of `Cat` when it isn't reachable from the root type.
+The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins), and nothing you deserialize reaches them: register each of them. `Deserialize<List<Cat>>()` finds `Cat` (it's reachable from the root type).
 
-- **Short names must be unique** among the cached assemblies. Two cached classes called `Cat` (in different namespaces) make reading throw "Type assignment dilamma". Use `AddTypeIdOptions = AddTypeIdOption.FullName` (bigger payloads) or your own `IMsgPackTypeResolver` in `TypeResolvers`.
+- **Short names should be unique** among the cached assemblies. When several cached classes have the name, the one that fits where the value goes is used: a type id names the type of an instance, so abstract classes and interfaces don't count (your own `Attribute` class is found, not `System.Attribute`), nor do classes that can't be assigned to the declared type. When more than one fits (e.g. two classes called `Cat` in a property of type `object`), reading throws "Type assignment dilamma". Use `AddTypeIdOptions = AddTypeIdOption.FullName` (bigger payloads) or your own `IMsgPackTypeResolver` in `TypeResolvers`.
 - **Let it search**: the included [`WildGooseChaseResolver`](#wildgoosechaseresolver) searches all assemblies loaded in the AppDomain for a name it can't find otherwise (and caches the assemblies it searched). Convenient, but slower the first time, and it keeps more names in memory.
 - **Your own mapping**: implement `IMsgPackTypeResolver` to choose the ids and the types (e.g. a fixed table of names, or [`XmlRootAttributeTypeResolver`](#xmlrootattributetyperesolver) to use the names of `[XmlRoot]`).
 
@@ -279,6 +280,12 @@ MsgPackSettings settings = new MsgPackSettings()
 
 // [XmlIgnore] and [JsonIgnore] of both JSON serializers, and the project's own [SkipInMsgPack]
 FilterIgnoredAttribute custom = new FilterIgnoredAttribute(IgnoreAttributes.XmlIgnore | IgnoreAttributes.SystemTextJson | IgnoreAttributes.Newtonsoft, "SkipInMsgPack");
+```
+
+The libraries also differ in where they look for the attributes. Json.NET also sees them on the property a property overrides (for inherited attributes, so not `[IgnoreDataMember]`) and on an interface property of the same name, Nerdbank.MessagePack on the overridden property, DataContractSerializer on the overridden property (also `[IgnoreDataMember]`), and System.Text.Json, XmlSerializer and MessagePack-CSharp only on the property itself. The presets look where their library does. The default filter and the constructors without `IgnoreAttributeLookup` look everywhere (`IgnoreAttributeLookup.All`), so the override of an ignored property is ignored too. To look only at the property itself:
+
+```csharp
+FilterIgnoredAttribute declaredOnly = new FilterIgnoredAttribute(IgnoreAttributes.All, IgnoreAttributeLookup.Declared);
 ```
 
 The attributes are recognized by their names, LsMsgPack does not reference the libraries that define them. System.Text.Json's `[JsonIgnore]` only leaves a property out with `Condition = JsonIgnoreCondition.Always` (its default): `Never`, `WhenWritingNull` and `WhenWritingDefault` keep it (the latter two leave out values, which is up to the dynamic filters). The filters are the same for reading and writing. `MsgPackSettings.Default_StaticFilters` holds the defaults of new settings.

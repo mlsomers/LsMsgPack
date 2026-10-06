@@ -289,11 +289,11 @@ namespace LsMsgPack
       switch ((MsgPackTypeId)typeId)
       {
         case MsgPackTypeId.MpSByte:
-          svalue = (sbyte)data.ReadByte();
+          svalue = unchecked((sbyte)ReadByteExactly(data));
           if (svalue > 0) uvalue = (ulong)svalue;
           return this;
         case MsgPackTypeId.MpUByte:
-          uvalue = (byte)data.ReadByte();
+          uvalue = ReadByteExactly(data);
           return this;
 
         case MsgPackTypeId.MpShort:

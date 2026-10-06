@@ -56,6 +56,35 @@ namespace LsMsgPackUnitTests
       [Newtonsoft.Json.JsonIgnore] public string Newtonsoft { get; set; }
     }
 
+    public class KeyedEntity
+    {
+      [Newtonsoft.Json.JsonIgnore] public virtual long PrimaryKey { get; set; }
+      public string Name { get; set; }
+    }
+
+    /// <summary>
+    /// A view whose key is not to be set: the attribute is only on the base property.
+    /// </summary>
+    public class KeyedView : KeyedEntity
+    {
+      public override long PrimaryKey
+      {
+        get { return 7; }
+        set { throw new InvalidOperationException("Do not set the primary key of a view"); }
+      }
+    }
+
+    public interface INamedProbe
+    {
+      [Newtonsoft.Json.JsonIgnore] string Secret { get; set; }
+    }
+
+    public class ImplementsNamedProbe : INamedProbe
+    {
+      public string Name { get; set; }
+      public string Secret { get; set; }
+    }
+
     public class TextProbe
     {
       public string Text { get; set; }
@@ -145,6 +174,35 @@ namespace LsMsgPackUnitTests
       CollectionAssert.AreEqual(Sorted("Plain"), Keys(Serializer.Serialize(value, Settings(FilterIgnoredAttribute.LikeNewtonsoft))));
       CollectionAssert.AreEqual(Sorted("Both", "Plain"), Keys(Serializer.Serialize(value, Settings(FilterIgnoredAttribute.LikeSystemTextJson))));
       CollectionAssert.AreEqual(Sorted("Plain"), Keys(Serializer.Serialize(value, Settings(new FilterIgnoredAttribute()))));
+    }
+
+    /// <summary>
+    /// PropertyInfo.GetCustomAttributes ignores inherit: the attribute of an overridden or implemented property was not seen, the setter of the override was called when reading.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void InheritedIgnoreAttributes(bool useSchema)
+    {
+      foreach (FilterIgnoredAttribute filter in new[] { FilterIgnoredAttribute.LikeNewtonsoft, new FilterIgnoredAttribute() })
+      {
+        MsgPackSettings settings = Settings(filter, useSchema);
+        byte[] view = Serializer.Serialize(new KeyedView() { Name = "v" }, settings);
+        if (!useSchema)
+          CollectionAssert.AreEqual(Sorted("Name"), Keys(view));
+        Assert.AreEqual("v", Serializer.Deserialize<KeyedView>(view, settings).Name);
+
+        byte[] named = Serializer.Serialize(new ImplementsNamedProbe() { Name = "n", Secret = "s" }, settings);
+        if (!useSchema)
+          CollectionAssert.AreEqual(Sorted("Name"), Keys(named));
+        Assert.IsNull(Serializer.Deserialize<ImplementsNamedProbe>(named, settings).Secret);
+      }
+
+      // Only the property itself: like System.Text.Json, the override is written
+      MsgPackSettings declared = Settings(new FilterIgnoredAttribute(IgnoreAttributes.All, IgnoreAttributeLookup.Declared), useSchema);
+      if (!useSchema)
+        CollectionAssert.AreEqual(Sorted("Name", "PrimaryKey"), Keys(Serializer.Serialize(new KeyedView() { Name = "v" }, declared)));
+      Assert.ThrowsExactly<InvalidOperationException>(() => Serializer.Deserialize<KeyedView>(Serializer.Serialize(new KeyedView() { Name = "v" }, declared), declared));
     }
 
     /// <summary>

@@ -112,22 +112,23 @@ namespace LsMsgPack.Meta
       return typeId is string ? $"\"{typeId}\"" : typeId.ToString();
     }
 
-    internal static Type ResolveInternal(string typeName, Type assignedTo, IMsgPackTypeResolver[] resolvers)
+    /// <param name="orAssignedTo">Return <paramref name="assignedTo"/> when the name is not found (it is up to the caller to fail), otherwise null</param>
+    internal static Type ResolveInternal(string typeName, Type assignedTo, IMsgPackTypeResolver[] resolvers, bool orAssignedTo = true)
     {
       lock (SyncRoot)
       {
-        return ResolveInternalLocked(typeName, assignedTo, resolvers);
+        return ResolveInternalLocked(typeName, assignedTo, resolvers, orAssignedTo);
       }
     }
 
-    private static Type ResolveInternalLocked(string typeName, Type assignedTo, IMsgPackTypeResolver[] resolvers)
+    private static Type ResolveInternalLocked(string typeName, Type assignedTo, IMsgPackTypeResolver[] resolvers, bool orAssignedTo)
     {
       Type result;
 
       if (typeName.EndsWith("[]", StringComparison.Ordinal))
       {
         string nm = typeName.Substring(0, typeName.Length - 2);
-        Type arr = ResolveInternalLocked(nm, assignedTo, resolvers);
+        Type arr = ResolveInternalLocked(nm, assignedTo?.IsArray == true ? assignedTo.GetElementType() : null, resolvers, false);
         if (arr != null)
           return arr.MakeArrayType();
       }
@@ -148,7 +149,7 @@ namespace LsMsgPack.Meta
         }
       }
 
-      return ResolveName(typeName, assignedTo);
+      return ResolveName(typeName, assignedTo, orAssignedTo);
     }
 
     private static Type SplitByParsing(string args, IMsgPackTypeResolver[] resolvers)
@@ -233,7 +234,7 @@ namespace LsMsgPack.Meta
         }
       }
 
-      result = ResolveName(typeName, null);
+      result = ResolveName(typeName, null, false);
       if (result is null)
         throw new Exception(
           $"Unable to resolve the type \"{typeName}\".\r\nEither create a resolver by implementing and using IMsgPackTypeResolver or pre-cache your type like this:\r\n  MsgPackSerializer.CacheAssemblyTypes(typeof({typeName}));"); // Or add an assembly to NativeAssemblies
@@ -255,7 +256,7 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static readonly char[] UnsafeNameChars = new[] { ',', '[', ']', '&', '*' };
 
-    private static Type ResolveName(string typeName, Type assignedTo)
+    private static Type ResolveName(string typeName, Type assignedTo, bool orAssignedTo)
     {
       Type result;
       // 1st tier
@@ -319,19 +320,7 @@ namespace LsMsgPack.Meta
           {
             // The assembly has previously been cached, but the type was not found by full name...
             if (NameCache.TryGetValue(typeName, out choices))
-            {
-              if (choices.Count == 1)
-              {
-                result = choices.First();
-                UsedNameCache.Add(typeName, result);
-                return result;
-              }
-              if (choices.Count > 1)
-              {
-                throw new Exception(
-                  $"Type assignment dilamma for \"{typeName}\" with the following choices:\r\n  {string.Join("\r\n  ", choices.Select(t => t.FullName))}\r\nFix this by either serializing with full name or implementing a IMsgPackTypeResolver and add it to MsgPackSettings._typeResolvers.");
-              }
-            }
+              result = Pick(typeName, choices, assignedTo);
           }
 
           if (result != null)
@@ -346,21 +335,90 @@ namespace LsMsgPack.Meta
 
       // 3rd tier, cached names (generic types)
       if (NameCache.TryGetValue(typeName, out choices))
+        return Pick(typeName, choices, assignedTo);
+
+      return orAssignedTo ? assignedTo : null; // will probably fail
+    }
+
+    /// <summary>
+    /// One of the types with the same (short) name. A name in the data names a runtime type, so abstract types and interfaces do not count (e.g. System.Attribute),
+    /// nor do types that cannot be assigned to <paramref name="assignedTo"/>. A name that is unique is remembered, a name that fits only one type here is not (it may fit another one elsewhere).
+    /// </summary>
+    private static Type Pick(string typeName, HashSet<Type> choices, Type assignedTo)
+    {
+      if (choices.Count == 1)
       {
-        if (choices.Count == 1)
-        {
-          result = choices.First();
-          UsedNameCache.Add(typeName, result);
-          return result;
-        }
-        if (choices.Count > 1)
-        {
-          throw new Exception(
-            $"Type assignment dilamma for \"{typeName}\" with the following choices:\r\n  {string.Join("\r\n  ", choices.Select(t => t.FullName))}\r\nFix this by either serializing with full name or implementing a IMsgPackTypeResolver and add it to MsgPackSettings._typeResolvers.");
-        }
+        Type only = choices.First();
+        UsedNameCache.Add(typeName, only);
+        return only;
       }
 
-      return assignedTo; // will probably fail
+      Type target = assignedTo is null ? null : Nullable.GetUnderlyingType(assignedTo) ?? assignedTo;
+      Type fitting = null;
+      int count = 0;
+      foreach (Type choice in choices)
+      {
+        if (choice.IsAbstract || choice.IsInterface || (target != null && !target.IsAssignableFrom(choice)))
+          continue;
+        fitting = choice;
+        count++;
+      }
+      if (count == 1)
+        return fitting;
+
+      throw new Exception(
+        $"Type assignment dilamma for \"{typeName}\" with the following choices:\r\n  {string.Join("\r\n  ", choices.Select(t => t.FullName))}\r\nFix this by either serializing with full name or implementing a IMsgPackTypeResolver and add it to MsgPackSettings._typeResolvers.");
+    }
+
+    // The root types whose reachable assemblies have been cached
+    private static readonly ConcurrentDictionary<Type, bool> ReachableCached = new ConcurrentDictionary<Type, bool>();
+
+    /// <summary>
+    /// Caches the assemblies of the types that can be reached from <paramref name="root"/>: generic arguments, element types, base types and the types of public properties (not of framework types).
+    /// <para>The names in a schema are resolved before the values are read: a type in another assembly (e.g. the T of List&lt;T&gt;) was not known yet.</para>
+    /// </summary>
+    internal static void CacheReachableAssemblies(Type root)
+    {
+      if (ReachableCached.ContainsKey(root))
+        return;
+
+      HashSet<Type> visited = new HashSet<Type>();
+      Stack<Type> todo = new Stack<Type>();
+      todo.Push(root);
+      while (todo.Count > 0)
+      {
+        Type type = todo.Pop();
+        if (type is null || type.IsGenericParameter || !visited.Add(type))
+          continue;
+
+        if (type.IsArray || type.IsPointer || type.IsByRef)
+        {
+          todo.Push(type.GetElementType());
+          continue;
+        }
+        foreach (Type arg in type.GenericTypeArguments)
+          todo.Push(arg);
+
+        if (IsFrameworkAssembly(type.Assembly))
+          continue; // the framework's types are found otherwise, and do not reach the model
+
+        CacheAssembly(type.Assembly, null);
+        todo.Push(type.BaseType);
+        foreach (PropertyInfo prop in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
+          todo.Push(prop.PropertyType);
+      }
+      ReachableCached.TryAdd(root, true);
+    }
+
+    private static bool IsFrameworkAssembly(Assembly assembly)
+    {
+      if (assembly == typeof(object).Assembly)
+        return true;
+      for (int t = 0; t < NativeAssemblies.Length; t++)
+        if (NativeAssemblies[t] == assembly)
+          return true;
+      string name = assembly.GetName().Name;
+      return name == "mscorlib" || name == "netstandard" || name == "System" || name.StartsWith("System.", StringComparison.Ordinal) || name.StartsWith("Microsoft.", StringComparison.Ordinal);
     }
 
     internal static Type CacheAssembly(Assembly assembly, string typeName)
@@ -394,19 +452,18 @@ namespace LsMsgPack.Meta
           NameCache[name].Add(type);
 
         // check if found but don't bail out when found, once we start cahcing an assembly we'll finish the job!
-        if (found == null)
-        {
-          if (fullName == typeName)
-            found = type; // already added to FullNameCache above
-          else if (name == typeName)
-          {
-            UsedNameCache.TryAdd(name, type);
-            found = type;
-          }
-        }
+        if (found == null && fullName == typeName)
+          found = type; // already added to FullNameCache above
       }
       CachedAssembies.Add(assembly);
       CachedAssembliesLockFree.TryAdd(assembly, true);
+
+      // A short name only when it is the name of one type (of all cached assemblies), otherwise the callers pick one that fits (Pick)
+      if (found == null && !string.IsNullOrEmpty(typeName) && NameCache.TryGetValue(typeName, out HashSet<Type> choices) && choices.Count == 1)
+      {
+        found = choices.First();
+        UsedNameCache.TryAdd(typeName, found);
+      }
       return found;
     }
   }

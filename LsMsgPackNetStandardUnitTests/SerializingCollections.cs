@@ -69,6 +69,156 @@ namespace LsMsgPackUnitTests
       public string Name { get; set; }
     }
 
+    /// <summary>
+    /// IEnumerable&lt;T&gt; and a public Add(T), as XmlSerializer wants it: not an IList or ICollection&lt;T&gt;.
+    /// </summary>
+    public class AddOnlyCollection<T> : IEnumerable<T>
+    {
+      private readonly List<T> _items = new List<T>();
+      public void Add(T item) { _items.Add(item); }
+      public IEnumerator<T> GetEnumerator() { return _items.GetEnumerator(); }
+      IEnumerator IEnumerable.GetEnumerator() { return GetEnumerator(); }
+    }
+
+    public class ConstructedCollection<T> : IEnumerable<T>
+    {
+      private readonly List<T> _items;
+      public ConstructedCollection(IEnumerable<T> items) { _items = new List<T>(items); }
+      public IEnumerator<T> GetEnumerator() { return _items.GetEnumerator(); }
+      IEnumerator IEnumerable.GetEnumerator() { return GetEnumerator(); }
+    }
+
+    /// <summary>
+    /// A dictionary with only the generic interface (no IDictionary).
+    /// </summary>
+    public class GenericOnlyDictionary<TKey, TValue> : IDictionary<TKey, TValue>
+    {
+      private readonly Dictionary<TKey, TValue> _items = new Dictionary<TKey, TValue>();
+      public TValue this[TKey key] { get { return _items[key]; } set { _items[key] = value; } }
+      public ICollection<TKey> Keys { get { return _items.Keys; } }
+      public ICollection<TValue> Values { get { return _items.Values; } }
+      public int Count { get { return _items.Count; } }
+      public bool IsReadOnly { get { return false; } }
+      public void Add(TKey key, TValue value) { _items.Add(key, value); }
+      public void Add(KeyValuePair<TKey, TValue> item) { _items.Add(item.Key, item.Value); }
+      public void Clear() { _items.Clear(); }
+      public bool Contains(KeyValuePair<TKey, TValue> item) { return ((ICollection<KeyValuePair<TKey, TValue>>)_items).Contains(item); }
+      public bool ContainsKey(TKey key) { return _items.ContainsKey(key); }
+      public void CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex) { ((ICollection<KeyValuePair<TKey, TValue>>)_items).CopyTo(array, arrayIndex); }
+      public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator() { return _items.GetEnumerator(); }
+      public bool Remove(TKey key) { return _items.Remove(key); }
+      public bool Remove(KeyValuePair<TKey, TValue> item) { return ((ICollection<KeyValuePair<TKey, TValue>>)_items).Remove(item); }
+      public bool TryGetValue(TKey key, out TValue value) { return _items.TryGetValue(key, out value); }
+      IEnumerator IEnumerable.GetEnumerator() { return GetEnumerator(); }
+    }
+
+    public class PairCollections
+    {
+      public List<KeyValuePair<long, string>> List { get; set; }
+      public System.Collections.ObjectModel.Collection<KeyValuePair<long, string>> Collection { get; set; }
+      public AddOnlyCollection<KeyValuePair<long, string>> AddOnly { get; set; }
+      public ConstructedCollection<KeyValuePair<long, string>> Constructed { get; set; }
+      public GenericOnlyDictionary<long, string> GenericOnly { get; set; }
+      public IEnumerable<KeyValuePair<long, string>> Enumerable { get; set; }
+    }
+
+    private static readonly KeyValuePair<long, string>[] SamplePairs = { new KeyValuePair<long, string>(1, "a"), new KeyValuePair<long, string>(2, "b"), new KeyValuePair<long, string>(1, "duplicate key") };
+
+    private static string Show(IEnumerable<KeyValuePair<long, string>> pairs)
+    {
+      return pairs is null ? "null" : string.Join(", ", pairs.Select(p => $"{p.Key}={p.Value}"));
+    }
+
+    /// <summary>
+    /// Only arrays of KeyValuePair were written as a map, other collections of pairs wrote each pair as an empty object (a KeyValuePair has no settable properties): the keys and values were lost.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false, ObjectLayout.Map)]
+    [DataRow(true, ObjectLayout.Map)]
+    [DataRow(false, ObjectLayout.Array)]
+    [DataRow(true, ObjectLayout.Array)]
+    public void CollectionsOfKeyValuePairs(bool useSchema, ObjectLayout layout)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      AddOnlyCollection<KeyValuePair<long, string>> addOnly = new AddOnlyCollection<KeyValuePair<long, string>>();
+      foreach (KeyValuePair<long, string> pair in SamplePairs)
+        addOnly.Add(pair);
+      GenericOnlyDictionary<long, string> genericOnly = new GenericOnlyDictionary<long, string>() { { 1, "a" }, { 2, "b" } };
+      PairCollections value = new PairCollections()
+      {
+        List = SamplePairs.ToList(),
+        Collection = new System.Collections.ObjectModel.Collection<KeyValuePair<long, string>>(SamplePairs.ToList()),
+        AddOnly = addOnly,
+        Constructed = new ConstructedCollection<KeyValuePair<long, string>>(SamplePairs),
+        GenericOnly = genericOnly,
+        Enumerable = SamplePairs.ToList()
+      };
+
+      PairCollections read = Serializer.Deserialize<PairCollections>(Serializer.Serialize(value, settings), settings);
+      string expected = Show(SamplePairs); // duplicate keys are kept, in order
+      Assert.AreEqual(expected, Show(read.List));
+      Assert.AreEqual(expected, Show(read.Collection));
+      Assert.AreEqual(expected, Show(read.AddOnly));
+      Assert.AreEqual(expected, Show(read.Constructed));
+      Assert.AreEqual("1=a, 2=b", Show(read.GenericOnly));
+      Assert.AreEqual(expected, Show(read.Enumerable));
+
+      // As the root, the same bytes as an array of pairs
+      byte[] asArray = Serializer.Serialize(SamplePairs, settings);
+      CollectionAssert.AreEqual(asArray, Serializer.Serialize(SamplePairs.ToList(), settings));
+      CollectionAssert.AreEqual(asArray, Serializer.Serialize(addOnly, settings));
+      Assert.AreEqual(expected, Show(Serializer.Deserialize<AddOnlyCollection<KeyValuePair<long, string>>>(asArray, settings)));
+      Assert.AreEqual(expected, Show(Serializer.Deserialize<List<KeyValuePair<long, string>>>(asArray, settings)));
+      Assert.AreEqual("1=a, 2=b", Show(Serializer.Deserialize<GenericOnlyDictionary<long, string>>(Serializer.Serialize(genericOnly, settings), settings)));
+    }
+
+    public class PairAddress
+    {
+      public string Street { get; set; }
+    }
+
+    public class SinglePairs
+    {
+      public KeyValuePair<long, string> Simple { get; set; }
+      public KeyValuePair<string, KeyValuePair<int, PairAddress>> Nested { get; set; }
+      public KeyValuePair<int, string>? Nullable { get; set; }
+      public object Boxed { get; set; }
+    }
+
+    /// <summary>
+    /// Key and Value have no setters: a single pair was written as an empty object. Now [key, value], as MessagePack-CSharp writes it.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false, ObjectLayout.Map)]
+    [DataRow(true, ObjectLayout.Map)]
+    [DataRow(false, ObjectLayout.Array)]
+    [DataRow(true, ObjectLayout.Array)]
+    public void SingleKeyValuePair(bool useSchema, ObjectLayout layout)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      SinglePairs value = new SinglePairs()
+      {
+        Simple = new KeyValuePair<long, string>(1, "a"),
+        Nested = new KeyValuePair<string, KeyValuePair<int, PairAddress>>("home", new KeyValuePair<int, PairAddress>(7, new PairAddress() { Street = "Main street" })),
+        Nullable = new KeyValuePair<int, string>(2, "b"),
+        Boxed = new KeyValuePair<int, string>(3, "c") // another type than declared: a type id
+      };
+
+      SinglePairs read = Serializer.Deserialize<SinglePairs>(Serializer.Serialize(value, settings), settings);
+      Assert.AreEqual(new KeyValuePair<long, string>(1, "a"), read.Simple);
+      Assert.AreEqual("home", read.Nested.Key);
+      Assert.AreEqual(7, read.Nested.Value.Key);
+      Assert.AreEqual("Main street", read.Nested.Value.Value.Street);
+      Assert.AreEqual(new KeyValuePair<int, string>(2, "b"), read.Nullable);
+      Assert.AreEqual(new KeyValuePair<int, string>(3, "c"), read.Boxed);
+
+      KeyValuePair<long, string> root = new KeyValuePair<long, string>(1, "a");
+      byte[] bytes = Serializer.Serialize(root, settings);
+      if (!useSchema)
+        CollectionAssert.AreEqual(new byte[] { 0x92, 0x01, 0xA1, 0x61 }, bytes); // the bytes of MessagePack-CSharp
+      Assert.AreEqual(root, Serializer.Deserialize<KeyValuePair<long, string>>(bytes, settings));
+    }
+
     private static MsgPackSettings Settings(AddTypeIdOption option = AddTypeIdOption.IfAmbiguious)
     {
       return new MsgPackSettings() { UseInexedSchema = false, AddTypeIdOptions = option };

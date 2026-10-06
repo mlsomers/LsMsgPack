@@ -23,6 +23,7 @@ namespace LsMsgPack {
         ? "Inspect the PartialItem to view the part of the message that could be read. Since the option 'ContinueProcessingOnBreakingError' is used, the 'IsBestGuess' property of each subitem will indicate if it was read before or after the error."
         : "Inspect the PartialItem to view the part of the message that could be read.")) {
       PartialItem = partialItemWithNestedError;
+      IsInNestedItem = true;
     }
 
     internal MpError(MsgPackSettings settings, params object[] exceptionMessage):this(settings, 0, MsgPackTypeId.NeverUsed, exceptionMessage) { }
@@ -37,6 +38,13 @@ namespace LsMsgPack {
     [DisplayName("Partial Data")]
     [Description("Part of the data up to the point that it could be read.")]
     public MsgPackItem PartialItem { get; set; }
+
+    /// <summary>
+    /// True when the error occurred in an item of the <see cref="PartialItem"/> (an array or map), which has its own error item.
+    /// False when it occurred here: the PartialItem, if any, is the item that was being read (e.g. a string at the end of the data).
+    /// </summary>
+    [Browsable(false)]
+    public bool IsInNestedItem { get; private set; }
 
     public override MsgPackTypeId TypeId {
       get {

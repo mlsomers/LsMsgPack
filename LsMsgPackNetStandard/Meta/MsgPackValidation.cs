@@ -22,7 +22,7 @@ namespace LsMsgPack
 
         private static void ValidateError(MpError item, List<ValidationItem> issues)
         {
-            if (!ReferenceEquals(item.PartialItem, null)) return; // Only log an error for the exact place where it occurred (not for all parents)
+            if (item.IsInNestedItem) return; // Only log an error for the exact place where it occurred (not for all parents)
             issues.Add(new ValidationItem(item, ValidationSeverity.ReadAbortError, 0, item.ToString()));
         }
 

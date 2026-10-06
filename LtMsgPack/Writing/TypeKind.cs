@@ -15,6 +15,7 @@ namespace LtMsgPack.Writing
     Bin, // byte[] (and sbyte[], which the CLR considers a byte[])
     Guid, DateTime, DateTimeOffset, Extension, Enum,
     Map, // dictionaries and arrays of KeyValuePair<,>
+    Pair, // a KeyValuePair<,>: [key, value]
     Array, // other collections
     Char, TimeSpan, Uri, DateOnly, TimeOnly,
     RawExtension, // a MsgPackExtension that was read (LsMsgPack writes the MpExt it read as itself)
@@ -56,10 +57,12 @@ namespace LtMsgPack.Writing
       }
 
       if (type.IsEnum) return TypeKind.Enum;
+      if (FrameworkTypeInfo.IsKeyValuePair(type)) return TypeKind.Pair;
       if (IsArrayOfKeyValuePairs(type)) return TypeKind.Map;
       if (typeof(IDictionary).IsAssignableFrom(type)) return TypeKind.Map;
       if (type.IsArray) return TypeKind.Array;
-      if (typeof(IEnumerable).IsAssignableFrom(type)) return TypeKind.Array;
+      if (typeof(IEnumerable).IsAssignableFrom(type))
+        return CollectionInfo.Get(type).PairKey != null ? TypeKind.Map : TypeKind.Array; // List<KeyValuePair<,>>, IDictionary<,> without IDictionary...: their pairs have no settable properties
       if (type == typeof(MsgPackExtension)) return TypeKind.RawExtension;
       if (type == typeof(char)) return TypeKind.Char;
       if (type == typeof(TimeSpan)) return TypeKind.TimeSpan;

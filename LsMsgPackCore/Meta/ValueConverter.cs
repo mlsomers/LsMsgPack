@@ -100,6 +100,8 @@ namespace LsMsgPack.Meta
         throw new Exception(
           $"Cannot create an instance of an interface or abstract type:\r\n  {tType.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers.");
 
+      if (propVals.Count > (hasTypeId ? 1 : 0))
+        SerializationRules.GetIndexedSchema(settings)?.ThrowIfNoEntry(tType, settings);
       result = Instances.CreateObject(tType, settings);
       SetProperties(result, tType, propVals, settings);
       return result;
@@ -142,8 +144,15 @@ namespace LsMsgPack.Meta
         if (!assignType.IsInstanceOfType(items))
         {
           Type objectType = Nullable.GetUnderlyingType(assignType) ?? assignType;
+          if (items.Length == 2 && FrameworkTypeInfo.IsKeyValuePair(objectType)) // [key, value]
+          {
+            FrameworkTypeInfo.PairInfo pair = FrameworkTypeInfo.GetPair(objectType);
+            return pair.Create(ConvertDeserializeValue(items[0], pair.KeyInfo.AssignedToType, settings, null), ConvertDeserializeValue(items[1], pair.ValueInfo.AssignedToType, settings, null));
+          }
           if (IsObjectType(objectType))
           {
+            if (Array.Exists(items, i => i != null)) // before the ids are resolved, which would add an entry for the class
+              SerializationRules.GetIndexedSchema(settings)?.ThrowIfNoEntry(objectType, settings);
             FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(objectType, settings);
             if (props.Length > 0 || items.Length == 0)
               return ConvertPositional(items, objectType, props, settings);
@@ -192,7 +201,7 @@ namespace LsMsgPack.Meta
     private static FullPropertyInfo[] PropertiesByPosition(Type type, FullPropertyInfo[] props, MsgPackOptions settings)
     {
       IndexedSchemaTypeResolver schema = SerializationRules.GetIndexedSchema(settings);
-      if (schema is null || !schema.ByType.TryGetValue(type, out ComplexTypeDef def) || def.IsCollection)
+      if (schema is null || !schema.TryGetDef(type, out ComplexTypeDef def) || def.IsCollection)
         return props;
 
       FullPropertyInfo[] byPosition = new FullPropertyInfo[def.Props.Count];
@@ -239,6 +248,18 @@ namespace LsMsgPack.Meta
           typedArr.SetValue(Activator.CreateInstance(info.ElementType, key, value), t);
         }
         return typedArr;
+      }
+
+      if (info.FillsPairs) // a collection of KeyValuePair elements that is not a dictionary
+      {
+        Array elements = Array.CreateInstance(info.ElementType, pairs.Length);
+        for (int t = 0; t < pairs.Length; t++)
+        {
+          object key = ConvertDeserializeValue(pairs[t].Key, info.KeyType, settings, null);
+          object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
+          elements.SetValue(Activator.CreateInstance(info.ElementType, key, value), t);
+        }
+        return info.Create(elements, settings);
       }
 
       object result = Instances.CreateCollection(info.ConcreteType, settings);
