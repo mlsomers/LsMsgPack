@@ -119,8 +119,8 @@ namespace LsMsgPackVisualStudioPlugin
       this.btnObjects.Name = "btnObjects";
       this.btnObjects.Size = new System.Drawing.Size(23, 22);
       this.btnObjects.Text = "Objects";
-      this.btnObjects.ToolTipText = "Show the objects the data was written from (switched on when the data starts with" +
-    " a schema)";
+      this.btnObjects.ToolTipText = "Show the objects the data was written from (switched on when the data looks like " +
+    "objects)";
       this.btnObjects.CheckedChanged += new System.EventHandler(this.btnObjects_CheckedChanged);
       // 
       // toolStripSeparator1

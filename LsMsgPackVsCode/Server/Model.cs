@@ -28,6 +28,16 @@ namespace LsMsgPackInspector
     /// </summary>
     public bool HasSchema { get; set; }
 
+    /// <summary>
+    /// How sure the inspector is that the data was written from objects (<see cref="ObjectDebugger.ObjectConfidence"/>: None, Low, Medium, High, Certain).
+    /// </summary>
+    public string ObjectConfidence { get; set; }
+
+    /// <summary>
+    /// Why (empty for None).
+    /// </summary>
+    public string ObjectReason { get; set; }
+
     public List<IssueModel> Issues { get; set; } = new List<IssueModel>();
 
     /// <summary>

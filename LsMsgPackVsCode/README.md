@@ -56,6 +56,7 @@ The data is read by the LsMsgPack library itself (the same code as the Visual St
 |---|---|---|
 | `lsmsgpack.dotnetPath` | `dotnet` | The `dotnet` executable that runs the inspector. |
 | `lsmsgpack.displayLimit` | 1000 | The number of items shown at first (0: no limit). |
+| `lsmsgpack.showObjectsAt` | `high` | When the objects pane opens by itself: `certain` (an indexed schema or type ids of LsMsgPack), `high` (also maps with the same names as keys, e.g. a list of objects from Python or JavaScript), `medium` (also one map with names as keys and values of different kinds), `low` (any map with text keys). |
 | `lsmsgpack.maxBytes` | 16777216 | The most bytes read from the debugged program. |
 | `lsmsgpack.chunkSize` | 49152 | Bytes per evaluation in the debugger (made smaller automatically when the debugger shortens long strings). |
 | `lsmsgpack.mcp.enabled` | `true` | Lets AI agents read from the debugger through the MCP server (the bridge on 127.0.0.1 with a random token, and its lock file). |
@@ -67,7 +68,7 @@ The data is read by the LsMsgPack library itself (the same code as the Visual St
 - **Bytes**: the hex view. The type byte of each item is red, the bytes holding a length are blue, bytes after the data are gray. The selected item is highlighted, clicking a byte selects its item.
 - **Properties**: what the explorer's property grid shows for the selected item (type, offset, length, count, value...), with the description of the selected property.
 - **Validation**: issues of the data (a smaller encoding would have saved bytes, keys of different types, duplicate keys, where reading stopped). Clicking one selects the item.
-- **Objects**: the objects the data was written from, reconstructed without the types: type names and property names from the indexed schema of [LsMsgPack](https://github.com/mlsomers/LsMsgPack) (shown automatically when the data has a schema), or the values by position. Selecting an object selects its bytes.
+- **Objects**: the objects the data was written from, reconstructed without the types: type names and property names from the indexed schema of [LsMsgPack](https://github.com/mlsomers/LsMsgPack), names from the keys of maps (data without a schema, e.g. from other languages), or the values by position. Shown automatically when the data looks like objects (`lsmsgpack.showObjectsAt`, the tooltip of the Objects button tells why). Selecting an object selects its bytes.
 - **Search**: strings containing the text, and values the text converts to (numbers, true/false, null, Guids, dates and times). Enter for the next, Shift+Enter for the previous.
 - **Limit**, **Endian** and **Ignore errors** like the Visual Studio visualizer: show more items, read numbers in another byte order, keep reading after a breaking error (best effort).
 - **Save**, **Copy hex**, **Copy base64** and **Refresh** (read the value again while the program is paused, or the file again).

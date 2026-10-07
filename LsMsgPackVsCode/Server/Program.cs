@@ -1,4 +1,5 @@
 using LsMsgPack;
+using ObjectDebugger;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -13,7 +14,7 @@ namespace LsMsgPackInspector
   /// <summary>
   /// The backend of the VS Code extension. Reads one JSON request per line from stdin and writes one JSON response per line to stdout:
   /// <code>
-  /// {"id":1,"method":"load","doc":"a","data":"&lt;base64&gt;","continueOnError":false,"endian":"SwapIfCurrentSystemIsLittleEndian","displayLimit":1000,"objects":"auto"}
+  /// {"id":1,"method":"load","doc":"a","data":"&lt;base64&gt;","continueOnError":false,"endian":"SwapIfCurrentSystemIsLittleEndian","displayLimit":1000,"objects":"auto","showObjectsAt":"high"}
   /// {"id":2,"method":"search","doc":"a","text":"abc","matchCase":false}
   /// {"id":3,"method":"close","doc":"a"}
   /// {"id":4,"method":"version"}
@@ -132,6 +133,9 @@ namespace LsMsgPackInspector
       string objects = GetString(root, "objects");
       if (!string.IsNullOrEmpty(objects))
         settings.Objects = (ObjectsMode)Enum.Parse(typeof(ObjectsMode), objects, true);
+      string showObjectsAt = GetString(root, "showObjectsAt");
+      if (!string.IsNullOrEmpty(showObjectsAt))
+        settings.ShowObjectsAt = (ObjectConfidence)Enum.Parse(typeof(ObjectConfidence), showObjectsAt, true);
 
       return document.Load(data is null ? null : Convert.FromBase64String(data), settings);
     }

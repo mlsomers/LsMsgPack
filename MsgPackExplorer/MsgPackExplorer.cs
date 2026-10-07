@@ -29,7 +29,7 @@ namespace MsgPackExplorer
                 item = value;
                 RefreshTree();
 
-                // The handlers may show or hide the objects (see HasSchema), which are then built once below
+                // The handlers may show or hide the objects (see ObjectsLikely), which are then built once below
                 _settingItem = true;
                 try
                 {
@@ -62,6 +62,42 @@ namespace MsgPackExplorer
         public bool HasSchema
         {
             get { return _schemaItems.Count > 0; }
+        }
+
+        private ObjectDebugger.ObjectAssessment _objectAssessment;
+
+        /// <summary>
+        /// Why the data looks like it was written from objects (empty when it does not).
+        /// </summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public string ObjectsReason
+        {
+            get { return _objectAssessment?.Reason ?? string.Empty; }
+        }
+
+        private ObjectDebugger.ObjectConfidence _showObjectsAt = ObjectDebugger.ObjectConfidence.High;
+
+        /// <summary>
+        /// How sure we must be that the data was written from objects (see <see cref="ObjectsLikely"/>): Certain only for an indexed schema or type ids, High also for maps with the same names as keys (e.g. written in other languages).
+        /// <para>Not in the designer: the projects using this control do not reference ObjectDebugger.</para>
+        /// </summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public ObjectDebugger.ObjectConfidence ShowObjectsAt
+        {
+            get { return _showObjectsAt; }
+            set { _showObjectsAt = value; }
+        }
+
+        /// <summary>
+        /// The data was likely written from objects (<see cref="ShowObjectsAt"/>), so the objects are worth showing.
+        /// </summary>
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public bool ObjectsLikely
+        {
+            get { return _objectAssessment != null && _objectAssessment.Confidence >= _showObjectsAt; }
         }
 
         private bool _continueOnError;
@@ -188,6 +224,7 @@ namespace MsgPackExplorer
                 lineairList.Clear();
                 listView1.Items.Clear();
                 _schemaItems = ReferenceEquals(item, null) ? new List<MsgPackItem>() : ObjectDebugger.RootObject.FindSchemaItems(item);
+                _objectAssessment = ReferenceEquals(item, null) ? null : ObjectDebugger.ObjectAssessment.Assess(item);
                 if (ReferenceEquals(item, null)) return;
 
                 TreeNode root = GetTreeNodeFor(item);

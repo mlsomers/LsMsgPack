@@ -66,10 +66,14 @@ namespace LsMsgPackVisualStudioPlugin
       Explorer.ObjectsVisible = btnObjects.Checked;
     }
 
+    private const string ObjectsToolTip = "Show the objects the data was written from (switched on when the data looks like objects)";
+
     private void Explorer_ItemChanged(object sender, EventArgs e)
     {
-      // Data with a schema was written from objects, show them (the button can still hide them)
-      btnObjects.Checked = Explorer.HasSchema;
+      // Data that was likely written from objects: show them (the button can still hide them)
+      btnObjects.Checked = Explorer.ObjectsLikely;
+      string reason = Explorer.ObjectsReason;
+      btnObjects.ToolTipText = reason.Length == 0 ? ObjectsToolTip : string.Concat(ObjectsToolTip, "\r\n", reason);
     }
   }
 }
