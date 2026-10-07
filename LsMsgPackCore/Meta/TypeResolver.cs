@@ -237,7 +237,7 @@ namespace LsMsgPack.Meta
       result = ResolveName(typeName, null, false);
       if (result is null)
         throw new Exception(
-          $"Unable to resolve the type \"{typeName}\".\r\nEither create a resolver by implementing and using IMsgPackTypeResolver or pre-cache your type like this:\r\n  MsgPackSerializer.CacheAssemblyTypes(typeof({typeName}));"); // Or add an assembly to NativeAssemblies
+          $"Unable to resolve the type \"{typeName}\".\r\nEither create a resolver by implementing and using IMsgPackTypeResolver or pre-cache your type like this:\r\n  MsgPackTypes.CacheAssemblyTypes(typeof({typeName}));"); // Or add an assembly to NativeAssemblies
 
       return result;
     }
@@ -419,6 +419,23 @@ namespace LsMsgPack.Meta
           return true;
       string name = assembly.GetName().Name;
       return name == "mscorlib" || name == "netstandard" || name == "System" || name.StartsWith("System.", StringComparison.Ordinal) || name.StartsWith("Microsoft.", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Makes one type known by its names (without the other types of its assembly, see <see cref="TypeResolving.Types.AllowedTypesGuard.Allow"/>).
+    /// </summary>
+    internal static void CacheType(Type type)
+    {
+      if (type.FullName is null || CachedAssembliesLockFree.ContainsKey(type.Assembly))
+        return;
+
+      lock (SyncRoot)
+      {
+        FullNameCache.TryAdd(type.FullName, type);
+        if (!NameCache.TryGetValue(type.Name, out HashSet<Type> choices))
+          NameCache.Add(type.Name, choices = new HashSet<Type>());
+        choices.Add(type);
+      }
     }
 
     internal static Type CacheAssembly(Assembly assembly, string typeName)

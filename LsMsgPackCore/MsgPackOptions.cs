@@ -140,6 +140,18 @@ namespace LsMsgPack
     [IgnoreDataMember]
     public static ObjectCreation Default_ObjectCreation { get; set; } = ObjectCreation.ConstructorOrUninitialized;
 
+    /// <summary>
+    /// The <see cref="UnspecifiedDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Local"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static DateTimeKind Default_UnspecifiedDateTimeKind { get; set; } = DateTimeKind.Local;
+
+    /// <summary>
+    /// The <see cref="ReadDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Local"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static DateTimeKind Default_ReadDateTimeKind { get; set; } = DateTimeKind.Local;
+
     #endregion
 
     /// <summary>
@@ -168,6 +180,8 @@ namespace LsMsgPack
     internal bool _trimTrailingNulls = Default_TrimTrailingNulls;
     internal int _maxDepth = Default_MaxDepth;
     internal ObjectCreation _objectCreation = Default_ObjectCreation;
+    internal bool _unspecifiedIsUtc = Default_UnspecifiedDateTimeKind == DateTimeKind.Utc;
+    internal DateTimeKind _readDateTimeKind = Default_ReadDateTimeKind;
 
     /// <summary>
     /// The cache of the serialized properties for <see cref="_staticFilters"/> (see FullPropertyInfo.GetSerializedProps without a session), looked up again when the filters are replaced.
@@ -413,6 +427,71 @@ namespace LsMsgPack
     {
       get { return _objectCreation; }
       set { _objectCreation = value; }
+    }
+
+    /// <summary>
+    /// What a DateTime of <see cref="System.DateTimeKind.Unspecified"/> is taken to be when it is written as a timestamp (a moment in UTC): <see cref="System.DateTimeKind.Local"/> (the default)
+    /// or <see cref="System.DateTimeKind.Utc"/> (as MessagePack-CSharp; with <see cref="ReadDateTimeKind"/> = Unspecified the clock time comes back unchanged in any time zone).
+    /// </summary>
+    [Category("Dates")]
+    [DisplayName("Unspecified DateTime Kind")]
+    [Description("What a DateTime of Kind Unspecified is taken to be when it is written as a timestamp (a moment in UTC): Local (default) or Utc (the clock time is written as it is).")]
+    [DefaultValue(DateTimeKind.Local)]
+    public DateTimeKind UnspecifiedDateTimeKind
+    {
+      get { return _unspecifiedIsUtc ? DateTimeKind.Utc : DateTimeKind.Local; }
+      set { _unspecifiedIsUtc = value == DateTimeKind.Utc; }
+    }
+
+    /// <summary>
+    /// The Kind of the DateTime values read from timestamps (which hold a moment in UTC, not the Kind): <see cref="System.DateTimeKind.Local"/> (the default, converted to local time),
+    /// <see cref="System.DateTimeKind.Utc"/>, or <see cref="System.DateTimeKind.Unspecified"/> (the UTC clock time, for values written as Unspecified with <see cref="UnspecifiedDateTimeKind"/> = Utc).
+    /// <para>A DateTimeOffset read from a timestamp has the local offset with Local, offset zero otherwise (the same moment).</para>
+    /// </summary>
+    [Category("Dates")]
+    [DisplayName("Read DateTime Kind")]
+    [Description("The Kind of the DateTime values read from timestamps: Local (default, converted to local time), Utc, or Unspecified (the UTC clock time, for values written as Unspecified with Unspecified DateTime Kind = Utc).")]
+    [DefaultValue(DateTimeKind.Local)]
+    public DateTimeKind ReadDateTimeKind
+    {
+      get { return _readDateTimeKind; }
+      set { _readDateTimeKind = value; }
+    }
+
+    /// <summary>
+    /// The moment a DateTime written as a timestamp stands for, in UTC (see <see cref="UnspecifiedDateTimeKind"/>).
+    /// </summary>
+    internal DateTime ToTimestamp(DateTime value)
+    {
+      if (_unspecifiedIsUtc && value.Kind == DateTimeKind.Unspecified)
+        return DateTime.SpecifyKind(value, DateTimeKind.Utc);
+      return value.ToUniversalTime();
+    }
+
+    /// <summary>
+    /// A DateTime read from a timestamp (<paramref name="utc"/>) as <see cref="ReadDateTimeKind"/> asks.
+    /// </summary>
+    internal DateTime FromTimestamp(DateTime utc)
+    {
+      return FromTimestamp(utc, _readDateTimeKind);
+    }
+
+    internal static DateTime FromTimestamp(DateTime utc, DateTimeKind kind)
+    {
+      switch (kind)
+      {
+        case DateTimeKind.Utc: return utc;
+        case DateTimeKind.Unspecified: return DateTime.SpecifyKind(utc, DateTimeKind.Unspecified);
+        default: return utc.ToLocalTime();
+      }
+    }
+
+    /// <summary>
+    /// A DateTimeOffset of a DateTime read from a timestamp (see <see cref="FromTimestamp(DateTime)"/>): Unspecified is the UTC clock time, not local time as the DateTimeOffset constructor takes it.
+    /// </summary>
+    internal static DateTimeOffset OffsetOfTimestamp(DateTime read)
+    {
+      return read.Kind == DateTimeKind.Unspecified ? new DateTimeOffset(read.Ticks, TimeSpan.Zero) : new DateTimeOffset(read);
     }
 
     /// <summary>

@@ -279,7 +279,7 @@ namespace LtMsgPack.Reading
     internal override DateTimeOffset Read(ReadContext c, FullPropertyInfo assignedTo)
     {
       int start = c.R.Pos;
-      if (c.R.TryReadDateTime(out DateTime value)) return new DateTimeOffset(value); // local time, the offset was not written
+      if (c.R.TryReadDateTime(out DateTime value)) return MsgPackOptions.OffsetOfTimestamp(value); // the offset was not written: the local one or zero (ReadDateTimeKind)
       if (c.R.TryReadNil()) return default(DateTimeOffset);
       return Slow(c, start, assignedTo);
     }
@@ -293,10 +293,10 @@ namespace LtMsgPack.Reading
     internal override DateTimeOffset Read(ReadContext c, FullPropertyInfo assignedTo)
     {
       int start = c.R.Pos;
-      if (c.R.TryReadArrayHeader() == 2 && c.R.TryReadDateTime(out DateTime clock) && c.R.TryReadInt64(out long minutes))
-        return new DateTimeOffset(clock.ToUniversalTime().Ticks, TimeSpan.FromMinutes(minutes));
+      if (c.R.TryReadArrayHeader() == 2 && c.R.TryReadTimestamp(out DateTime clock) && c.R.TryReadInt64(out long minutes))
+        return new DateTimeOffset(clock.Ticks, TimeSpan.FromMinutes(minutes));
       c.R.Pos = start;
-      if (c.R.TryReadDateTime(out DateTime value)) return new DateTimeOffset(value);
+      if (c.R.TryReadDateTime(out DateTime value)) return MsgPackOptions.OffsetOfTimestamp(value);
       if (c.R.TryReadNil()) return default(DateTimeOffset);
       return Slow(c, start, assignedTo);
     }

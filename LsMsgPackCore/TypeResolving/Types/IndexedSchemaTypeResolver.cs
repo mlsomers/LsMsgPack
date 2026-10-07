@@ -271,7 +271,7 @@ namespace LsMsgPack.TypeResolving.Types
 
     private static Exception UnresolvedType(ComplexTypeDef def, MsgPackOptions settings)
     {
-      return new MsgPackException($"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}\r\nIt may help to pre-register your type like this:\r\n  MsgPackSerializer.CacheAssemblyTypes(typeof({def.TypeName}));"
+      return new MsgPackException($"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}\r\nIt may help to pre-register your type like this:\r\n  MsgPackTypes.CacheAssemblyTypes(typeof({def.TypeName}));"
         + (def.ResolveError is null ? "" : string.Concat("\r\n", def.ResolveError)));
     }
 
