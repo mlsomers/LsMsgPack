@@ -169,6 +169,67 @@ namespace LsMsgPackUnitTests
       AssertTruncated<object>(bytes, MapsWithoutSchema(), 1, hex);
     }
 
+    private static byte[] Hex(string hex)
+    {
+      return hex.Split(' ').Select(b => Convert.ToByte(b, 16)).ToArray();
+    }
+
+    /// <summary>
+    /// A header of a few bytes can claim billions of items or bytes: refused before anything is allocated for them. The explorers (KEEPTRACK,
+    /// reading on after errors) allocated and walked all of them: 6 bytes took 40 s and 6 GB, 134 million claimed items ended the process.
+    /// </summary>
+    [TestMethod]
+    [DataRow("dd 7f ff ff ff 01")] // array32
+    [DataRow("dd 01 00 00 00 01")]
+    [DataRow("df 7f ff ff ff 01 02")] // map32
+    [DataRow("df 00 10 00 00")]
+    [DataRow("c6 7f ff ff ff 01")] // bin32
+    [DataRow("db 7f ff ff ff 41")] // str32
+    [DataRow("c9 7f ff ff ff 01 02")] // ext32
+    public void ClaimedLength_RefusedWithoutAllocatingIt(string hex)
+    {
+      byte[] bytes = Hex(hex);
+      AssertTruncated<object>(bytes, MapsWithoutSchema(), 1, hex); // once for the caches
+      long before = GC.GetAllocatedBytesForCurrentThread();
+      AssertTruncated<object>(bytes, MapsWithoutSchema(), 1, hex);
+      long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+      Assert.IsLessThan(1 << 20, allocated, $"{hex}: {allocated} bytes allocated");
+    }
+
+    /// <summary>
+    /// The explorers (KEEPTRACK with <c>ContinueProcessingOnBreakingError</c>) show a truncated array or map up to where the data ends,
+    /// the readers refuse it at its header.
+    /// </summary>
+    [TestMethod]
+    [DataRow("dd 7f ff ff ff 01 02", new object[] { 1, 2 })]
+    [DataRow("93 01", new object[] { 1 })]
+    [DataRow("df 7f ff ff ff 01 02 03", new object[] { 1, 2, 3 })] // the key of the second entry without its value
+    public void ClaimedCount_ReadUpToTheEnd(string hex, object[] expected)
+    {
+      byte[] bytes = Hex(hex);
+      if (!(KeepTrack && Serializer is LsSerializer))
+      {
+        MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<object>(bytes, MapsWithoutSchema()));
+        StringAssert.Contains(ex.ToString(), "more than the remaining");
+        return;
+      }
+
+      MsgPackSettings settings = MapsWithoutSchema();
+      typeof(MsgPackSettings).GetProperty("ContinueProcessingOnBreakingError").SetValue(settings, true);
+      typeof(MsgPackSettings).GetProperty("PreservePackages").SetValue(settings, true);
+      MsgPackItem read = MsgPackItem.Unpack(new System.IO.MemoryStream(bytes), settings);
+      Assert.AreEqual("MpError", read.GetType().Name, hex);
+      MsgPackItem partial = (MsgPackItem)read.GetType().GetProperty("PartialItem").GetValue(read);
+      List<object> values = new List<object>();
+      if (partial is MpArray)
+        values.AddRange((object[])partial.Value);
+      else
+        foreach (KeyValuePair<object, object> entry in (KeyValuePair<object, object>[])partial.Value)
+          values.AddRange(new[] { entry.Key, entry.Value });
+      Assert.IsLessThanOrEqualTo(bytes.Length * 2, values.Count, "slots for what the data can hold, not for the count it claims");
+      CollectionAssert.AreEqual(expected, values.Where(v => v != null && !(v is Exception)).Select(v => (object)Convert.ToInt32(v)).ToArray(), hex);
+    }
+
     public class TruncationProbe
     {
       public string Name { get; set; }

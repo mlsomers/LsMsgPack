@@ -352,7 +352,7 @@ namespace ObjectDebugger
       {
         if (remembered == CollectionSlot && node.Kind == ValueKind.Array)
           return null;
-        if (remembered >= 0 && GetFit(_types[remembered], node) != Fit.None)
+        if (remembered >= 0 && GetFit(_types[remembered], node) != Fit.None && Score(_types[remembered], node, Fit.Partial) != int.MinValue)
         {
           MarkSeen(_types[remembered]);
           return _types[remembered];
@@ -367,6 +367,8 @@ namespace ObjectDebugger
         if (fit == Fit.None)
           continue;
         int score = Score(candidate, node, fit);
+        if (score == int.MinValue)
+          continue;
         if (score > bestScore) // the next type that was not seen yet comes first, so it wins a tie
         {
           best = candidate;
@@ -421,12 +423,13 @@ namespace ObjectDebugger
         foreach (Node node in nodes)
         {
           Fit fit = GetFit(candidate, node);
-          if (fit == Fit.None)
+          int nodeScore = fit == Fit.None ? int.MinValue : Score(candidate, node, fit);
+          if (nodeScore == int.MinValue)
           {
             score = long.MinValue;
             break;
           }
-          score += Score(candidate, node, fit);
+          score += nodeScore;
         }
         if (score != long.MinValue && score > bestScore)
         {
@@ -500,6 +503,9 @@ namespace ObjectDebugger
       return node.Entries.Length == count ? Fit.Exact : Fit.Partial;
     }
 
+    /// <returns><see cref="int.MinValue"/> when a value can not be of the type: a property has one encoding per declared type (a primitive value
+    /// assigned to a property of another type gets a type id), so a primitive kind differing from one seen before at that position rules the
+    /// type out. Objects and collections only count against it: a value of a derived type is wrapped for its type id.</returns>
     private int Score(SchemaType type, Node node, Fit fit)
     {
       int score = fit == Fit.Exact ? 2 : 0;
@@ -525,9 +531,15 @@ namespace ObjectDebugger
           position = (int)index;
         }
 
-        if (value.Kind == ValueKind.Nil || position >= signature.Length || signature[position] == ValueKind.Nil)
+        ValueKind kind = ComparableKind(value);
+        if (kind == ValueKind.Nil || position >= signature.Length || signature[position] == ValueKind.Nil)
           continue;
-        score += value.Kind == signature[position] ? 1 : -3;
+        if (kind == signature[position])
+          score++;
+        else if (IsContainerKind(kind) && IsContainerKind(signature[position]))
+          score -= 3;
+        else
+          return int.MinValue;
       }
       return score;
     }
@@ -540,18 +552,24 @@ namespace ObjectDebugger
       if (node.Elements.Length == 0)
         return int.MaxValue; // an object without values is not in the schema
 
+      // An element of a derived type is wrapped for its type id: { "": typeId, "@": [values] } is in the place of an array
       Node first = null;
+      ValueKind firstKind = ValueKind.Nil;
       foreach (Node element in node.Elements)
       {
-        if (element.Kind == ValueKind.Nil)
+        ValueKind kind = ComparableKind(element);
+        if (kind == ValueKind.Nil)
           continue;
         if (first is null)
+        {
           first = element;
-        else if (element.Kind != first.Kind)
+          firstKind = kind;
+        }
+        else if (kind != firstKind)
           return int.MinValue;
       }
 
-      if (first is null || !first.IsContainer)
+      if (first is null || !IsContainerKind(firstKind))
         return 2;
 
       // Elements that are objects themselves: when the first one can not be an object of the schema, this is more likely an object with object values
@@ -580,7 +598,7 @@ namespace ObjectDebugger
       ValueKind[] signature = GetSignature(type);
       for (int t = 0; t < array.Elements.Length && t < signature.Length; t++)
         if (signature[t] == ValueKind.Nil)
-          signature[t] = array.Elements[t].Kind;
+          signature[t] = ComparableKind(array.Elements[t]);
     }
 
     private void RecordSignature(SchemaType type, List<KeyValuePair<Node, Node>> entries)
@@ -590,8 +608,30 @@ namespace ObjectDebugger
       {
         long index;
         if (entry.Key.TryGetIndex(out index) && index >= 0 && index < signature.Length && signature[index] == ValueKind.Nil)
-          signature[index] = entry.Value.Kind;
+          signature[index] = ComparableKind(entry.Value);
       }
+    }
+
+    /// <summary>
+    /// The kind a value is compared by: an object or collection wrapped for its type id by its content (an object of a derived type written as
+    /// an array is <c>{ "": typeId, "@": [values] }</c>), an error as unknown (<see cref="ValueKind.Nil"/>). A wrapped primitive stays a map:
+    /// a property declared as another type (e.g. object) always wraps its primitive values.
+    /// </summary>
+    private static ValueKind ComparableKind(Node node)
+    {
+      if (node.Kind == ValueKind.Error)
+        return ValueKind.Nil;
+      if (node.Kind != ValueKind.Map || node.Entries.Length == 0 || !node.Entries[0].Key.IsString(TypeIdKey))
+        return node.Kind;
+      foreach (KeyValuePair<Node, Node> entry in node.Entries)
+        if (entry.Key.IsString(ContentKey))
+          return entry.Value.IsContainer ? entry.Value.Kind : ValueKind.Map;
+      return ValueKind.Map; // an object with its type id written as a map
+    }
+
+    private static bool IsContainerKind(ValueKind kind)
+    {
+      return kind == ValueKind.Array || kind == ValueKind.Map;
     }
 
     private ValueKind[] GetSignature(SchemaType type)

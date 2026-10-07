@@ -1,0 +1,34 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.github.mlsomers/lsmsgpack",
+  "title": "MsgPack (LsMsgPack)",
+  "description": "Decodes MsgPack (LsMsgPack schemas, type ids) as text and reads it from variables while debugging.",
+  "version": "2026.10.7.1",
+  "websiteUrl": "https://github.com/mlsomers/LsMsgPack/blob/master/docs/Mcp.md",
+  "repository": {
+    "url": "https://github.com/mlsomers/LsMsgPack",
+    "source": "github",
+    "id": "48927714",
+    "subfolder": "LsMsgPackMcpServer"
+  },
+  "icons": [
+    {
+      "src": "https://github.com/mlsomers/LsMsgPack/raw/HEAD/LsMsgPackVsCode/media/icon.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "256x256"
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "nuget",
+      "registryBaseUrl": "https://api.nuget.org",
+      "identifier": "LsMsgPack.Mcp",
+      "version": "2026.10.7.1",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

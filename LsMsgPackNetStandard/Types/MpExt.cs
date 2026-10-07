@@ -41,7 +41,7 @@ namespace LsMsgPack {
     private byte[] value;
 
     public override int Count {
-      get { return value.Length; }
+      get { return value is null ? 0 : value.Length; } // null when the data ended before the content (KEEPTRACK keeps the item)
     }
 
     ///<summary>

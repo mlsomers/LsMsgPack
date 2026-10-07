@@ -22,6 +22,7 @@ export function bytesFromText(text: string): Uint8Array {
   let allHex = true;
   let allNumeric = true;
   let all2chars = true;
+  let hexPrefix = false;
   const parts: string[] = [];
   for (let part of trimmed.split(/[\r\n;\t ,.\-|[\]{}()]+/)) {
     part = part.trim();
@@ -30,6 +31,7 @@ export function bytesFromText(text: string): Uint8Array {
     }
     if (part.startsWith('0x') || part.startsWith('0X')) {
       part = part.substring(2);
+      hexPrefix = true;
     }
     if (allHex) {
       for (const ch of part) {
@@ -61,6 +63,16 @@ export function bytesFromText(text: string): Uint8Array {
   }
   if (all2chars && allHex) { // delimited hex
     return fromHex(parts.join(''));
+  }
+  if (hexPrefix && allHex) { // delimited hex values not all written with two digits (0x92, 0x1): hex, not decimal
+    const bytes = new Uint8Array(parts.length);
+    for (let t = 0; t < parts.length; t++) {
+      if (parts[t].length > 2) {
+        throw new Error(`Failure parsing delimited hex values: 0x${parts[t]} is not a byte (0x00..0xff).`);
+      }
+      bytes[t] = parseInt(parts[t], 16);
+    }
+    return bytes;
   }
   if (allNumeric) { // csv, or an array copied from a debugger
     const bytes = new Uint8Array(parts.length);

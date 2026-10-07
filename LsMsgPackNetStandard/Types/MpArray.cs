@@ -125,10 +125,11 @@ namespace LsMsgPack
         }
       }
 
-      object[] items = new object[len]; // typed, Array.SetValue is slow
+      long slots = SlotsFor(data, len, 1);
+      object[] items = new object[slots]; // typed, Array.SetValue is slow
       value = items;
 #if KEEPTRACK
-      packedItems = new MsgPackItem[len];
+      packedItems = new MsgPackItem[slots];
       bool errorOccurred = false; // keep a local copy in order not to wrap all items after an error in error nodes (just the one the error occurred in, and all parents)
 #endif
       for (int t = 0; t < len; t++)

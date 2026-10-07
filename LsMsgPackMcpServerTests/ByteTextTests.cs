@@ -27,6 +27,18 @@ namespace LsMsgPackMcpServerTests
       CollectionAssert.AreEqual(new byte[0], ByteText.Parse("  "));
     }
 
+    /// <summary>
+    /// Values with 0x are hex also when they are not all written with two digits: "0x92, 1, 2" was read as the decimal values 92, 1 and 2.
+    /// </summary>
+    [TestMethod]
+    public void HexValuesWithoutTwoDigits()
+    {
+      CollectionAssert.AreEqual(new byte[] { 0x92, 0x01, 0x02 }, ByteText.Parse("[0x92, 1, 2]"));
+      CollectionAssert.AreEqual(new byte[] { 0x92, 0x01, 0x0A }, ByteText.Parse("{ 0x92, 0x1, 0xA }"));
+      CollectionAssert.AreEqual(new byte[] { 0x92, 0x10 }, ByteText.Parse("0X92 10"));
+      Assert.ThrowsExactly<FormatException>(() => ByteText.Parse("0x92, 0x100"));
+    }
+
     [TestMethod]
     public void MultiLineBase64()
     {
