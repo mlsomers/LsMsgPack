@@ -79,6 +79,12 @@
     <Compile Include="AboutBox.Designer.cs">
       <DependentUpon>AboutBox.cs</DependentUpon>
     </Compile>
+    <Compile Include="ActionReport.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="ActionReport.Designer.cs">
+      <DependentUpon>ActionReport.cs</DependentUpon>
+    </Compile>
     <Compile Include="ClipboardSupport.cs" />
     <Compile Include="Explorer.cs">
       <SubType>Form</SubType>
@@ -107,6 +113,9 @@
     <Compile Include="TestFileSuiteCreator.cs" />
     <EmbeddedResource Include="AboutBox.resx">
       <DependentUpon>AboutBox.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="ActionReport.resx">
+      <DependentUpon>ActionReport.cs</DependentUpon>
     </EmbeddedResource>
     <EmbeddedResource Include="Explorer.resx">
       <DependentUpon>Explorer.cs</DependentUpon>

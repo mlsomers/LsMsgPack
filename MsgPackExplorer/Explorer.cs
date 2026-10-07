@@ -84,9 +84,9 @@ namespace MsgPackExplorer
         }
 
         if (Installer.FiddlerIsRunning)
-          MessageBox.Show($"Installed successfully.\r\nFiddler is currently running.\r\nYou will need to restart Fiddler in order to use the MsgPack inspector.\r\n\r\nFiles installed:\r\n{success}", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+          ActionReport.ShowDiag($"Installed successfully.\r\nFiddler is currently running.\r\nYou will need to restart Fiddler in order to use the MsgPack inspector.\r\n\r\nFiles installed:\r\n{success}", "Installed");
         else
-          MessageBox.Show($"Installed successfully.\r\n\r\nFiles installed:\r\n{success}", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+          ActionReport.ShowDiag($"Installed successfully.\r\n\r\nFiles installed:\r\n{success}", "Installed");
 
       }
       catch (Exception ex)
@@ -107,9 +107,9 @@ namespace MsgPackExplorer
         }
 
         if (Installer.VsIsRunning)
-          MessageBox.Show($"Installed successfully.\r\nVisual Studio is currently running.\r\nYou will need to restart Visual Studio in order to use the MsgPack inspector.\r\n\r\nFiles installed:\r\n{success}", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
+          ActionReport.ShowDiag($"Installed successfully.\r\nVisual Studio is currently running.\r\nYou will need to restart Visual Studio in order to use the MsgPack inspector.\r\n\r\nFiles installed:\r\n{success}", "Installed");
         else
-          MessageBox.Show($"Installed successfully.\r\n\r\nFiles installed:\r\n{success}", "Installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+          ActionReport.ShowDiag($"Installed successfully.\r\n\r\nFiles installed:\r\n{success}", "Installed");
 
       }
       catch (Exception ex)

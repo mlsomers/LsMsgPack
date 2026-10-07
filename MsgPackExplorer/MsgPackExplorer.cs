@@ -175,8 +175,14 @@ namespace MsgPackExplorer
         _objectsVisible = value;
         splitterObj.Visible = value;
         objectsPane.Visible = value;
-        if (!_settingItem)
+        lblObj.Visible = value;
+        lblProps.Visible = value;
+        if (!_settingItem) { 
           RefreshObjects(); // skipped while hidden
+          lblObj.Top = splitterObj.Top + 2;
+          lblProps.Top = splitterObj.Top + 2;
+          lblProps.Left = splittObjProps.Left + 9;
+        }
       } 
     }
 
@@ -642,6 +648,32 @@ namespace MsgPackExplorer
             listView1.Items.Add(lvi);
         }
 
-
+    private void splitterObj_SplitterMoved(object sender, SplitterEventArgs e)
+    {
+      lblObj.Top = splitterObj.Top+2;
+      lblProps.Top = splitterObj.Top + 2;
     }
+
+    private void splittObjProps_SplitterMoved(object sender, SplitterEventArgs e)
+    {
+      lblProps.Left = splittObjProps.Left + 9;
+    }
+
+    private void splitterObj_VisibleChanged(object sender, EventArgs e)
+    {
+      lblObj.Top = splitterObj.Top + 2;
+      lblProps.Top = splitterObj.Top + 2;
+    }
+
+    private void splittObjProps_VisibleChanged(object sender, EventArgs e)
+    {
+      lblProps.Left = splittObjProps.Left + 9;
+    }
+
+    private void splitterObj_Layout(object sender, LayoutEventArgs e)
+    {
+      lblObj.Top = splitterObj.Top + 2;
+      lblProps.Top = splitterObj.Top + 2;
+    }
+  }
 }
