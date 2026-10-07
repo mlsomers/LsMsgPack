@@ -12,7 +12,7 @@ namespace LsMsgPackInspector
   public enum ObjectsMode
   {
     /// <summary>
-    /// Shown when the data has a schema (it was written from objects), as the explorer does when data is loaded.
+    /// Shown when the data was likely written from objects (<see cref="InspectorSettings.ShowObjectsAt"/>), as the explorer does when data is loaded.
     /// </summary>
     Auto,
     Show,
@@ -28,6 +28,11 @@ namespace LsMsgPackInspector
     public EndianAction Endian { get; set; } = EndianAction.SwapIfCurrentSystemIsLittleEndian;
     public long DisplayLimit { get; set; } = 1000;
     public ObjectsMode Objects { get; set; } = ObjectsMode.Auto;
+
+    /// <summary>
+    /// <see cref="ObjectsMode.Auto"/> shows the objects from this confidence on (see <see cref="ObjectAssessment"/>).
+    /// </summary>
+    public ObjectConfidence ShowObjectsAt { get; set; } = ObjectConfidence.High;
   }
 
   /// <summary>
@@ -94,6 +99,9 @@ namespace LsMsgPackInspector
 
       _schemaItems = RootObject.FindSchemaItems(_item);
       result.HasSchema = _schemaItems.Count > 0;
+      ObjectAssessment assessment = ObjectAssessment.Assess(_item);
+      result.ObjectConfidence = assessment.Confidence.ToString();
+      result.ObjectReason = assessment.Reason;
 
       _nodeCount = 0;
       int rootId = AddItem(result, _item, -1, null, false);
@@ -102,7 +110,7 @@ namespace LsMsgPackInspector
 
       Validate(result, rootId);
 
-      bool showObjects = settings.Objects == ObjectsMode.Show || settings.Objects == ObjectsMode.Auto && result.HasSchema;
+      bool showObjects = settings.Objects == ObjectsMode.Show || settings.Objects == ObjectsMode.Auto && assessment.Confidence >= settings.ShowObjectsAt;
       if (showObjects)
         result.Objects = BuildObjects();
       return result;

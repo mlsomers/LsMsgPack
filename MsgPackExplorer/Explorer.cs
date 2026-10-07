@@ -197,8 +197,8 @@ namespace MsgPackExplorer
 
     private void msgPackExplorer1_ItemChanged(object sender, EventArgs e)
     {
-      // Data with a schema was written from objects, show them (the menu item can still hide them)
-      objectsMenuItem.Checked = msgPackExplorer1.HasSchema;
+      // Data that was likely written from objects: show them (the menu item can still hide them)
+      objectsMenuItem.Checked = msgPackExplorer1.ObjectsLikely;
     }
   }
 

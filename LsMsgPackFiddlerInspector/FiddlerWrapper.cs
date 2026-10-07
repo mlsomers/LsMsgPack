@@ -50,9 +50,13 @@ namespace LsMsgPackFiddlerInspector {
       lsMsgPackExplorer1.ObjectsVisible = btnObjects.Checked;
     }
 
+    private const string ObjectsToolTip = "Show the objects the data was written from (switched on when the data looks like objects)";
+
     private void lsMsgPackExplorer1_ItemChanged(object sender, EventArgs e) {
-      // Data with a schema was written from objects, show them (the button can still hide them)
-      btnObjects.Checked = lsMsgPackExplorer1.HasSchema;
+      // Data that was likely written from objects: show them (the button can still hide them)
+      btnObjects.Checked = lsMsgPackExplorer1.ObjectsLikely;
+      string reason = lsMsgPackExplorer1.ObjectsReason;
+      btnObjects.ToolTipText = reason.Length == 0 ? ObjectsToolTip : string.Concat(ObjectsToolTip, "\r\n", reason);
     }
   }
 

@@ -5,6 +5,8 @@ import { ChildProcess, spawn } from 'child_process';
 
 export type EndianAction = 'SwapIfCurrentSystemIsLittleEndian' | 'NeverSwap' | 'AlwaysSwap';
 export type ObjectsMode = 'auto' | 'show' | 'hide';
+/** How sure the inspector must be that the data was written from objects to show them in the 'auto' mode */
+export type ObjectConfidence = 'certain' | 'high' | 'medium' | 'low';
 
 export interface LoadSettings {
   continueOnError: boolean;
@@ -12,6 +14,8 @@ export interface LoadSettings {
   /** 0: no limit */
   displayLimit: number;
   objects: ObjectsMode;
+  /** Default 'high' */
+  showObjectsAt?: ObjectConfidence;
 }
 
 interface Pending {

@@ -494,5 +494,94 @@ namespace LsMsgPackUnitTests
       Assert.IsFalse(new ItemSearch("x", false).FindAll(new MpRoot(new MsgPackSettings(), many), partial, () => true));
       Assert.HasCount(1022, partial); // stopped at the 1024th item visited, the root was the first
     }
+
+    /// <summary>
+    /// The explorers open the objects pane from <see cref="ObjectConfidence.High"/> on (<see cref="ObjectAssessment"/>): written from objects by LsMsgPack, or records written in other languages (no schema).
+    /// </summary>
+    [TestMethod]
+    public void AssessWrittenByLsMsgPack()
+    {
+      OdZoo zoo = new OdZoo() { Animals = new List<OdAnimal>() { new OdDog() { Name = "Rex", Barks = true } } };
+      SchemaStore store = new SchemaStore();
+      MsgPackSettings reference = Settings(ObjectLayout.Array, true);
+      reference.SchemaStore = store;
+      reference.WriteSchemaReference = true;
+
+      Assert.AreEqual(ObjectConfidence.Certain, Assess(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Array, true))));
+      Assert.AreEqual(ObjectConfidence.Certain, Assess(MsgPackSerializer.Serialize(CreateInvoice(), reference))); // even without the store
+      Assert.AreEqual(ObjectConfidence.Certain, Assess(MsgPackSerializer.Serialize(zoo, Settings(ObjectLayout.Map, false))));
+      Assert.AreEqual(ObjectConfidence.Certain, Assess(MsgPackSerializer.Serialize(zoo, Settings(ObjectLayout.Array, false)))); // { "": typeId, "@": [values] }
+      Assert.AreEqual(ObjectConfidence.High, Assess(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Map, false)))); // two addresses, two lines
+      Assert.AreEqual(ObjectConfidence.None, Assess(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Array, false)))); // no names in the data
+
+      ObjectAssessment assessment = ObjectAssessment.Assess(null);
+      Assert.AreEqual(ObjectConfidence.None, assessment.Confidence);
+      Assert.AreEqual(string.Empty, assessment.Reason);
+    }
+
+    [TestMethod]
+    public void AssessPlainData()
+    {
+      // Records, as Python or JavaScript write a list of dicts / objects
+      object[] people = new object[]
+      {
+        Map("name", "Alice", "age", 30, "email", "alice@example.com"),
+        Map("email", "bob@example.com", "name", "Bob", "age", 41) // another order
+      };
+      ObjectAssessment records = AssessBytes(Plain(people));
+      Assert.AreEqual(ObjectConfidence.High, records.Confidence, records.Reason);
+      StringAssert.Contains(records.Reason, "age, email, name");
+
+      Assert.AreEqual(ObjectConfidence.High, Assess(Plain(Map("from", Map("city", "Paris", "zip", "75001"), "to", Map("city", "Lyon", "zip", "69001")))));
+      Assert.AreEqual(ObjectConfidence.High, Assess(Plain(Map("user_id", 1, "items", new object[] { Map("sku", "A1", "qty", 2), Map("sku", "B2", "qty", 1) }))));
+
+      // One object: names with values of different kinds
+      Assert.AreEqual(ObjectConfidence.Medium, Assess(Plain(Map("id", 7, "title", "Hello", "tags", new object[] { "a", "b" }, "draft", false))));
+
+      // Dictionaries: values of one kind, or keys that are data
+      Assert.AreEqual(ObjectConfidence.Low, Assess(Plain(Map("apples", 3, "pears", 5.5, "plums", 1))));
+      Assert.AreEqual(ObjectConfidence.Low, Assess(Plain(Map("3f2504e0-4f89-11d3-9a0c-0305e82c3301", "x", "8c0e6b4e-2b52-4a0c-a7c4-1f1c2c3d4e5f", 2))));
+      Assert.AreEqual(ObjectConfidence.Low, Assess(Plain(new object[] { Map("2026-10-01", 3, "count", "x"), Map("2026-10-01", 4, "count", "y") })));
+      Assert.AreEqual(ObjectConfidence.Low, Assess(Plain(Map("New York", "x", "Amsterdam", 1))));
+
+      // Nothing to name
+      Assert.AreEqual(ObjectConfidence.None, Assess(Plain(new object[] { 1, "two", new object[] { 3.0, true } })));
+      Assert.AreEqual(ObjectConfidence.None, Assess(Plain(Map(1, "one", 2, "two"))));
+      Assert.AreEqual(ObjectConfidence.None, Assess(Plain(Map())));
+      Assert.AreEqual(ObjectConfidence.None, Assess(Plain("text")));
+    }
+
+    private static ObjectConfidence Assess(byte[] bytes)
+    {
+      return AssessBytes(bytes).Confidence;
+    }
+
+    private static ObjectAssessment AssessBytes(byte[] bytes)
+    {
+      MsgPackSettings settings = new MsgPackSettings();
+      PropertyInfo preserve = typeof(MsgPackSettings).GetProperty("PreservePackages"); // only with KEEPTRACK
+      if (preserve != null)
+        preserve.SetValue(settings, true);
+
+      // As the explorers pass it: a single item when there is only one
+      MpRoot root = MsgPackItem.UnpackMultiple(bytes, settings);
+      return ObjectAssessment.Assess(root.Count == 1 ? root[0] : root);
+    }
+
+    private static KeyValuePair<object, object>[] Map(params object[] keysAndValues)
+    {
+      KeyValuePair<object, object>[] entries = new KeyValuePair<object, object>[keysAndValues.Length / 2];
+      for (int t = 0; t < entries.Length; t++)
+        entries[t] = new KeyValuePair<object, object>(keysAndValues[t * 2], keysAndValues[t * 2 + 1]);
+      return entries;
+    }
+
+    /// <summary>
+    /// Maps and arrays without anything LsMsgPack adds (type ids, schema), as other libraries write them.
+    /// </summary>
+    private static byte[] Plain(object value)
+    {
+      return MsgPackItem.Pack(value, new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.Never }).ToBytes();
+    }
   }
 }

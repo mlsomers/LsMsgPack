@@ -75,7 +75,8 @@ export class ExplorerView implements vscode.Disposable {
       warning: this.source.warning,
       data: Buffer.from(this.source.bytes).toString('base64'),
       canRefresh: !!this.source.refresh,
-      displayLimit: config.get<number>('displayLimit', 1000)
+      displayLimit: config.get<number>('displayLimit', 1000),
+      showObjectsAt: config.get<string>('showObjectsAt', 'high')
     });
   }
 

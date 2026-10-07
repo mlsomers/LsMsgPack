@@ -38,7 +38,8 @@
       continueOnError: !!saved.continueOnError,
       endian: saved.endian || 'SwapIfCurrentSystemIsLittleEndian',
       displayLimit: typeof saved.displayLimit === 'number' ? saved.displayLimit : 1000,
-      objects: 'auto'
+      objects: 'auto',
+      showObjectsAt: 'high'
     },
     /** @type {any} */
     model: null,
@@ -510,7 +511,7 @@
     }, 'Ignore errors');
     ui.objects = el('button', {
       className: 'toggle', 'aria-pressed': 'false',
-      title: 'Show the objects the data was written from (switched on when the data starts with an indexed schema).',
+      title: objectsTitle(''),
       onclick: () => {
         state.settings.objects = ui.objects.getAttribute('aria-pressed') === 'true' ? 'hide' : 'show';
         load();
@@ -645,6 +646,12 @@
     select.value = String(state.settings.displayLimit);
   }
 
+  /** @param {string} reason Why the data looks like objects (empty when it does not) */
+  function objectsTitle(reason) {
+    const title = 'Show the objects the data was written from (switched on when the data looks like objects, see the setting lsmsgpack.showObjectsAt).';
+    return reason ? `${title}\n${reason}` : title;
+  }
+
   function post(message) {
     vscode.postMessage(message);
   }
@@ -697,9 +704,10 @@
     ui.hex.setData(state.bytes, items);
     showIssues(model.issues || []);
 
-    // The objects: shown when asked, or when the data has a schema (then the button can still hide them)
+    // The objects: shown when asked, or when the data was likely written from objects (then the button can still hide them)
     const objects = model.objects;
     ui.objects.setAttribute('aria-pressed', String(!!objects));
+    ui.objects.title = objectsTitle(model.objectReason || '');
     ui.objectsPane.hidden = !objects;
     ui.objectsSplitter.hidden = !objects;
     if (objects) {
@@ -928,8 +936,11 @@
         if (typeof saved.displayLimit !== 'number' && typeof message.displayLimit === 'number') {
           state.settings.displayLimit = message.displayLimit;
         }
-        // New data: the objects are shown when it has a schema
+        // New data: the objects are shown when it was likely written from objects
         state.settings.objects = 'auto';
+        if (typeof message.showObjectsAt === 'string') {
+          state.settings.showObjectsAt = message.showObjectsAt;
+        }
         ui.refresh.disabled = !state.canRefresh;
         ui.statusSource.textContent = state.description;
         ui.statusSource.title = state.description;

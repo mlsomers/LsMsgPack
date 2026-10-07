@@ -130,6 +130,18 @@
           "minimum": 0,
           "markdownDescription": "The number of items shown at first (0: no limit). More items take longer to show."
         },
+        "lsmsgpack.showObjectsAt": {
+          "type": "string",
+          "enum": ["certain", "high", "medium", "low"],
+          "enumDescriptions": [
+            "Only data written by LsMsgPack or LtMsgPack from objects (an indexed schema or type ids).",
+            "Also maps with the same names as keys (records of one type), e.g. a list of objects written in Python or JavaScript.",
+            "Also a single map with names as keys and values of different kinds.",
+            "Any map with text keys."
+          ],
+          "default": "high",
+          "markdownDescription": "When the objects pane opens by itself for new data (the Objects button still shows or hides it). Without a schema the names come from the map keys."
+        },
         "lsmsgpack.maxBytes": {
           "type": "number",
           "default": 16777216,
