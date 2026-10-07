@@ -2,7 +2,7 @@
   "name": "lsmsgpack-explorer",
   "displayName": "MsgPack Explorer (LsMsgPack)",
   "description": "Inspect MsgPack data while debugging (byte[], Stream, List<byte>, Memory<byte>, HttpContent...) and in .msgpack files: item tree, hex view, properties, validation, objects with the indexed schema of LsMsgPack. Lets AI agents (MCP) read and decode MsgPack while debugging.",
-  "version": "2026.10.8",
+  "version": "2026.10.9",
   "publisher": "mlsomers",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
@@ -132,7 +132,12 @@
         },
         "lsmsgpack.showObjectsAt": {
           "type": "string",
-          "enum": ["certain", "high", "medium", "low"],
+          "enum": [
+            "certain",
+            "high",
+            "medium",
+            "low"
+          ],
           "enumDescriptions": [
             "Only data written by LsMsgPack or LtMsgPack from objects (an indexed schema or type ids).",
             "Also maps with the same names as keys (records of one type), e.g. a list of objects written in Python or JavaScript.",

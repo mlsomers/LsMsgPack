@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
     <Metadata>
-        <Identity Id="Package.f8d5e777-aa48-4592-897b-28d145246378" Version="2026.10.6.4" Language="en-US" Publisher="Louis Somers" />
+        <Identity Id="Package.f8d5e777-aa48-4592-897b-28d145246378" Version="2026.10.7.1" Language="en-US" Publisher="Louis Somers" />
         <DisplayName>MsgPack Debugger Extension</DisplayName>
         <Description xml:space="preserve">Custom visualizer for debugging MsgPack formatted byte arrays. Also lets AI agents read MsgPack from the debugger through the LsMsgPack MCP server (lsmsgpack-mcp), see Tools &gt; Options &gt; MsgPack Explorer.</Description>
         <MoreInfo>https://github.com/mlsomers/LsMsgPack</MoreInfo>
@@ -27,11 +27,11 @@
         <Dependency Id="Microsoft.Framework.NDP" DisplayName="Microsoft .NET Framework" d:Source="Manual" Version="[4.5,)" />
     </Dependencies>
     <Assets>
-        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPackVisualStudioPlugin.dll" AssemblyName="LsMsgPackVisualStudioPlugin, Version=2026.10.6.4, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
-        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPack.dll" AssemblyName="LsMsgPack, Version=2026.10.6.4, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
-        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPack.Core.dll" AssemblyName="LsMsgPack.Core, Version=2026.10.6.4, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
-        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\netstandard2.0\DebuggerProxy.dll" AssemblyName="DebuggerProxy, Version=2026.10.6.4, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers\netstandard2.0" />
-        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\MsgPackExplorer.exe" AssemblyName="MsgPackExplorer, Version=2026.10.6.4, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
+        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPackVisualStudioPlugin.dll" AssemblyName="LsMsgPackVisualStudioPlugin, Version=2026.10.7.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
+        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPack.dll" AssemblyName="LsMsgPack, Version=2026.10.7.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
+        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPack.Core.dll" AssemblyName="LsMsgPack.Core, Version=2026.10.7.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
+        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\netstandard2.0\DebuggerProxy.dll" AssemblyName="DebuggerProxy, Version=2026.10.7.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers\netstandard2.0" />
+        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\MsgPackExplorer.exe" AssemblyName="MsgPackExplorer, Version=2026.10.7.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
         <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
     </Assets>
     <Prerequisites>
