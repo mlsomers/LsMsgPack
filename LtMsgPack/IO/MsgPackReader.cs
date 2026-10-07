@@ -19,6 +19,7 @@ namespace LtMsgPack.IO
     private readonly bool _littleEndian;
     private readonly int _maxDepth;
     private readonly LtExtension[] _extensions;
+    private readonly DateTimeKind _dateTimeKind;
 
     internal MsgPackReader(byte[] buffer, int offset, int end, LtMsgPackOptions options)
     {
@@ -28,6 +29,7 @@ namespace LtMsgPack.IO
       _littleEndian = BitConverter.IsLittleEndian != MsgPackOptions.SwapEndianChoice(options, 2);
       _maxDepth = options._maxDepth;
       _extensions = options._extensions;
+      _dateTimeKind = options._readDateTimeKind;
     }
 
     internal int MaxDepth { get { return _maxDepth; } }
@@ -358,9 +360,23 @@ namespace LtMsgPack.IO
     private static readonly DateTime Zero = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
 
     /// <summary>
-    /// A timestamp (extension type -1), returned as local time like MpDateTime.Value.
+    /// A timestamp (extension type -1), returned with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (local time by default) like MpDateTime.Value.
     /// </summary>
     internal bool TryReadDateTime(out DateTime value)
+    {
+      if (!TryReadTimestamp(out DateTime utc))
+      {
+        value = default(DateTime);
+        return false;
+      }
+      value = MsgPackOptions.FromTimestamp(utc, _dateTimeKind);
+      return true;
+    }
+
+    /// <summary>
+    /// A timestamp (extension type -1) in UTC.
+    /// </summary>
+    internal bool TryReadTimestamp(out DateTime value)
     {
       if (End - Pos >= 2 && Buf[Pos + 1] == 0xFF) // the 32 and 64 bit formats, without the general extension header
       {
@@ -381,24 +397,24 @@ namespace LtMsgPack.IO
     }
 
     /// <summary>
-    /// The data of a timestamp (after its header), as MpDateTime.ConvertExt.
+    /// The data of a timestamp (after its header) in UTC, as MpDateTime.ConvertExt.
     /// </summary>
     private DateTime ReadTimestamp(MsgPackTypeId format, int length)
     {
       if (format == MsgPackTypeId.MpFExt4)
-        return Zero.AddSeconds(U32()).ToLocalTime();
+        return Zero.AddSeconds(U32());
 
       if (format == MsgPackTypeId.MpFExt8)
       {
         ulong bits = U64();
-        return Zero.AddSeconds(bits & 0x3FFFFFFFF).Add(new TimeSpan((long)(bits >> 34) / 100)).ToLocalTime();
+        return Zero.AddSeconds(bits & 0x3FFFFFFFF).Add(new TimeSpan((long)(bits >> 34) / 100));
       }
 
       if (format == MsgPackTypeId.MpExt8 && length == 12)
       {
         uint nanoseconds = U32();
         long seconds = (long)U64();
-        return Zero.AddSeconds(seconds).ToLocalTime() + TimeSpan.FromTicks(nanoseconds / 100); // the nanoseconds are added, also before 1970
+        return Zero.AddSeconds(seconds) + TimeSpan.FromTicks(nanoseconds / 100); // the nanoseconds are added, also before 1970
       }
 
       throw new MsgPackException($"The extension type -1 with base type {format} and {length} bytes is not recognised as a DatTime or TimeStamp.", 0, format);
@@ -409,7 +425,7 @@ namespace LtMsgPack.IO
     #region Plain values (as LsMsgPack unpacks them: MsgPackItem.UnpackedValue)
 
     /// <summary>
-    /// Reads any value: null, bool, the integer type of the format (byte for positive fixints, sbyte for negative ones, ...), float or double, string, byte[], a local DateTime (timestamps),
+    /// Reads any value: null, bool, the integer type of the format (byte for positive fixints, sbyte for negative ones, ...), float or double, string, byte[], a DateTime (timestamps, see MsgPackOptions.ReadDateTimeKind),
     /// the value of a custom extension, <see cref="MsgPackExtension"/> (other extensions), object[] (arrays) or KeyValuePair&lt;object, object&gt;[] (maps).
     /// </summary>
     internal object ReadPlain(int depth)
@@ -495,7 +511,7 @@ namespace LtMsgPack.IO
     {
       TryReadExtHeader(out sbyte typeCode, out int length, out MsgPackTypeId format);
       if (typeCode == -1) // timestamps first, as MpExt.Read does
-        return ReadTimestamp(format, length);
+        return MsgPackOptions.FromTimestamp(ReadTimestamp(format, length), _dateTimeKind);
 
       LtExtension[] extensions = _extensions;
       for (int t = 0; t < extensions.Length; t++)

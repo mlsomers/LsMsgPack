@@ -33,7 +33,6 @@ namespace LtMsgPack
     internal GuidFormat _guidFormat = GuidFormat.Binary;
     internal DecimalFormat _decimalFormat = DecimalFormat.Extension;
     internal DateTimeOffsetFormat _dateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp;
-    internal bool _unspecifiedIsUtc;
 
     /// <summary>
     /// How Guids are written, bin 16 by default (as LsMsgPack). <see cref="LtMsgPack.GuidFormat.String"/> for other libraries (see <see cref="LtMsgPackPresets"/>).
@@ -63,16 +62,6 @@ namespace LtMsgPack
     {
       get { return _dateTimeOffsetFormat; }
       set { _dateTimeOffsetFormat = value; }
-    }
-
-    /// <summary>
-    /// What a DateTime of <see cref="DateTimeKind.Unspecified"/> is taken to be when it is written as a timestamp (a moment in UTC): <see cref="DateTimeKind.Local"/> (the default, as LsMsgPack) or <see cref="DateTimeKind.Utc"/> (as MessagePack-CSharp).
-    /// </summary>
-    [IgnoreDataMember]
-    public DateTimeKind UnspecifiedDateTimeKind
-    {
-      get { return _unspecifiedIsUtc ? DateTimeKind.Utc : DateTimeKind.Local; }
-      set { _unspecifiedIsUtc = value == DateTimeKind.Utc; }
     }
 
     /// <summary>

@@ -15,22 +15,25 @@ namespace LsMsgPack
       value = ConvertExt(Settings, ext).ToUniversalTime();
     }
 
-    private DateTime value;
+    private DateTime value; // UTC
 
+    /// <summary>
+    /// The DateTime with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (local time by default). A DateTime of Kind Unspecified is set as <see cref="MsgPackOptions.UnspecifiedDateTimeKind"/> says.
+    /// </summary>
     public override object Value
     {
       get
       {
-        return value.ToLocalTime();
+        return Settings.FromTimestamp(value);
       }
       set
       {
         if (value is DateTime)
-          this.value = ((DateTime)value).ToUniversalTime();
+          this.value = Settings.ToTimestamp((DateTime)value);
         else if (value is DateTimeOffset)
           this.value = ((DateTimeOffset)value).UtcDateTime; // not IConvertible, Convert.ToDateTime would throw an InvalidCastException
         else
-          this.value = Convert.ToDateTime(value).ToUniversalTime();
+          this.value = Settings.ToTimestamp(Convert.ToDateTime(value));
 
         base.Value = ToBaseValue(Settings, this.value);
       }
@@ -38,13 +41,13 @@ namespace LsMsgPack
 
     public override T GetTypedValue<T>()
     {
-      return (T)(object)value.ToLocalTime();
+      return (T)(object)Settings.FromTimestamp(value);
     }
 
     public override MsgPackItem Read(MsgPackTypeId typeId, Stream data)
     {
       base.Read(typeId, data);
-      value = ConvertExt(Settings, this);
+      value = ConvertExt(Settings, this).ToUniversalTime();
       return this;
     }
 
@@ -129,7 +132,7 @@ namespace LsMsgPack
 
     public static MpDateTime FromDateTime(MsgPackSettings settings, DateTime dt, bool preserveFractionalSeconds = true)
     {
-      dt = dt.ToUniversalTime();
+      dt = settings is null ? dt.ToUniversalTime() : settings.ToTimestamp(dt);
 
       if (dt < Zero || dt > MaxFExt8)
         return ToExt8(settings, dt); // lartgest 15 bytes

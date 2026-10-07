@@ -85,9 +85,9 @@ namespace LsMsgPackInteropTests
     {
       Invoice invoice = AllInvoices[1];
 
-      // Guid: bin in LsMsgPack, a string in MessagePack-CSharp
+      // Guid: bin in LsMsgPack, a string in MessagePack-CSharp (LsMsgPack reads the string)
       Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<Invoice>(Serializer.Serialize(invoice, Named), Contractless));
-      Assert.Throws<Exception>(() => Serializer.Deserialize<Invoice>(MessagePackSerializer.Serialize(invoice, Contractless), Named));
+      Same.AssertEqual(invoice, Serializer.Deserialize<Invoice>(MessagePackSerializer.Serialize(invoice, Contractless), Named));
 
       // decimal: an extension in LsMsgPack, MessagePack-CSharp only reads strings
       Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<Invoice>(Serializer.Serialize(invoice, Named), ContractlessBinaryGuid));
@@ -194,7 +194,7 @@ namespace LsMsgPackInteropTests
       CollectionAssert.AreEqual(ls, MessagePackSerializer.Serialize(id, ContractlessBinaryGuid));
 
       Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<Guid>(ls, Standard));
-      Assert.Throws<Exception>(() => Serializer.Deserialize<Guid>(MessagePackSerializer.Serialize(id, Standard), Named));
+      Assert.AreEqual(id, Serializer.Deserialize<Guid>(MessagePackSerializer.Serialize(id, Standard), Named)); // LsMsgPack parses the string
     }
 
     [TestMethod]

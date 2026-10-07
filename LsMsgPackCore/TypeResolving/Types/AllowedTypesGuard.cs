@@ -18,6 +18,8 @@ namespace LsMsgPack.TypeResolving.Types
   /// settings.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(IPet)).Allow(typeof(PluginPet));
   /// </code>
   /// <para>Configure it before using it, the decisions are cached per type (the cache is cleared when more types are allowed). Safe to share between settings and threads.</para>
+  /// <para>What it allows also becomes known by name (<see cref="MsgPackTypes.CacheAssemblyTypes(Assembly)"/> for the assemblies, the types by themselves), so the data can name it without registering it again.
+  /// The type name caches are global: other settings can then resolve these names as well (their declared types and guards still apply).</para>
   /// </summary>
   public class AllowedTypesGuard : IMsgPackTypeGuard
   {
@@ -48,7 +50,10 @@ namespace LsMsgPack.TypeResolving.Types
         foreach (Type type in types)
         {
           if (type != null)
+          {
             copy.Add(type);
+            TypeResolver.CacheType(type.IsGenericType && !type.IsGenericTypeDefinition ? type.GetGenericTypeDefinition() : type); // generic types are named by their definition
+          }
         }
         _types = copy;
         _decided = new ConcurrentDictionary<Type, bool>();
@@ -70,7 +75,10 @@ namespace LsMsgPack.TypeResolving.Types
         foreach (Assembly assembly in assemblies)
         {
           if (assembly != null)
+          {
             copy.Add(assembly);
+            TypeResolver.CacheAssembly(assembly, null);
+          }
         }
         _assemblies = copy;
         _decided = new ConcurrentDictionary<Type, bool>();

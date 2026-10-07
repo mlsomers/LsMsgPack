@@ -98,6 +98,54 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(when, ret.When); // the same moment (the offset is not stored)
     }
 
+    public class PrimitivesWithDates
+    {
+      public DateTime When { get; set; }
+      public object Boxed { get; set; }
+      public DateTimeOffset Offset { get; set; }
+    }
+
+    /// <summary>
+    /// Unspecified written as UTC and read as Unspecified: the clock time comes back unchanged in any time zone (as JSON writes it, without an offset).
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void UnspecifiedClockTimeRoundTrip(bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, UnspecifiedDateTimeKind = DateTimeKind.Utc, ReadDateTimeKind = DateTimeKind.Unspecified };
+      DateTime noon = new DateTime(2026, 10, 7, 12, 0, 0, 250, DateTimeKind.Unspecified);
+      PrimitivesWithDates back = Serializer.Deserialize<PrimitivesWithDates>(Serializer.Serialize(new PrimitivesWithDates() { When = noon, Boxed = noon }, settings), settings);
+      Assert.AreEqual(noon, back.When);
+      Assert.AreEqual(DateTimeKind.Unspecified, back.When.Kind);
+      Assert.AreEqual(noon, (DateTime)back.Boxed);
+      Assert.AreEqual(DateTimeKind.Unspecified, ((DateTime)back.Boxed).Kind);
+
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false, UnspecifiedDateTimeKind = DateTimeKind.Utc };
+      CollectionAssert.AreEqual(Serializer.Serialize(DateTime.SpecifyKind(noon, DateTimeKind.Utc), withoutSchema), Serializer.Serialize(noon, withoutSchema), "written as the same clock time in UTC");
+    }
+
+    [TestMethod]
+    [DataRow(DateTimeKind.Local)]
+    [DataRow(DateTimeKind.Utc)]
+    [DataRow(DateTimeKind.Unspecified)]
+    public void ReadDateTimeKind(DateTimeKind kind)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { ReadDateTimeKind = kind };
+      DateTime utc = new DateTime(2026, 10, 7, 12, 0, 0, DateTimeKind.Utc);
+      DateTimeOffset offset = new DateTimeOffset(2026, 10, 7, 14, 0, 0, TimeSpan.FromHours(2));
+      PrimitivesWithDates back = Serializer.Deserialize<PrimitivesWithDates>(Serializer.Serialize(new PrimitivesWithDates() { When = utc, Boxed = utc, Offset = offset }, settings), settings);
+
+      DateTime expected = kind == DateTimeKind.Local ? utc.ToLocalTime() : DateTime.SpecifyKind(utc, kind);
+      Assert.AreEqual(expected, back.When);
+      Assert.AreEqual(kind, back.When.Kind);
+      Assert.AreEqual(expected, (DateTime)back.Boxed);
+      Assert.AreEqual(kind, ((DateTime)back.Boxed).Kind);
+
+      Assert.AreEqual(offset.UtcDateTime, back.Offset.UtcDateTime, "the same moment");
+      Assert.AreEqual(kind == DateTimeKind.Local ? TimeZoneInfo.Local.GetUtcOffset(utc) : TimeSpan.Zero, back.Offset.Offset);
+    }
+
     [TestMethod]
     public void DecimalExtension()
     {

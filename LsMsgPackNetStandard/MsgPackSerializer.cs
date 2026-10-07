@@ -13,14 +13,20 @@ namespace LsMsgPack
   /// </summary>
   public static partial class MsgPackSerializer
   {
+    /// <summary>
+    /// Makes the types of the assembly known by their names, for type ids the reader cannot find by itself (the same as <see cref="MsgPackTypes.CacheAssemblyTypes(Assembly)"/>, shared with LtMsgPack).
+    /// </summary>
     public static void CacheAssemblyTypes(Assembly assembly)
     {
-      TypeResolver.CacheAssembly(assembly, null);
+      MsgPackTypes.CacheAssemblyTypes(assembly);
     }
 
+    /// <summary>
+    /// Makes the types of the assembly of <paramref name="type"/> known by their names (the same as <see cref="MsgPackTypes.CacheAssemblyTypes(Type)"/>).
+    /// </summary>
     public static void CacheAssemblyTypes(Type type)
     {
-      TypeResolver.CacheAssembly(type.Assembly, type.Name);
+      MsgPackTypes.CacheAssemblyTypes(type);
     }
 
     public static byte[] Serialize<T>(T item, bool dynamicallyCompact = true)

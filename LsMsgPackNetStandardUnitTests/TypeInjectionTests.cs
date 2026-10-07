@@ -5,6 +5,8 @@ using LsMsgPack.TypeResolving.Types;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using System.Reflection.Emit;
 using System.Text;
 
 namespace LsMsgPackUnitTests
@@ -256,6 +258,79 @@ namespace LsMsgPackUnitTests
       byte[] polymorphic = Serializer.Serialize(new InjectionHolderTyped() { Shape = new InjectionSquare() { Label = "x", Side = 3 } }, Settings(schema));
       Serializer.Deserialize<InjectionHolderTyped>(polymorphic, Settings(schema, guard));
       Assert.AreEqual(1, guard.Calls);
+    }
+
+    /// <summary>
+    /// A class in an assembly of its own (with a Label property), which the readers do not find by themselves: nothing they read reaches it.
+    /// </summary>
+    private static Type EmitPluginClass(string name)
+    {
+      AssemblyBuilder assembly = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName(name + "Assembly"), AssemblyBuilderAccess.Run);
+      TypeBuilder type = assembly.DefineDynamicModule(name + "Module").DefineType("Plugins." + name, TypeAttributes.Public | TypeAttributes.Class);
+      FieldBuilder field = type.DefineField("_label", typeof(string), FieldAttributes.Private);
+      MethodAttributes accessor = MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.HideBySig;
+      MethodBuilder get = type.DefineMethod("get_Label", accessor, typeof(string), Type.EmptyTypes);
+      ILGenerator il = get.GetILGenerator();
+      il.Emit(OpCodes.Ldarg_0);
+      il.Emit(OpCodes.Ldfld, field);
+      il.Emit(OpCodes.Ret);
+      MethodBuilder set = type.DefineMethod("set_Label", accessor, null, new[] { typeof(string) });
+      il = set.GetILGenerator();
+      il.Emit(OpCodes.Ldarg_0);
+      il.Emit(OpCodes.Ldarg_1);
+      il.Emit(OpCodes.Stfld, field);
+      il.Emit(OpCodes.Ret);
+      PropertyBuilder label = type.DefineProperty("Label", PropertyAttributes.None, typeof(string), null);
+      label.SetGetMethod(get);
+      label.SetSetMethod(set);
+      return type.CreateTypeInfo().AsType();
+    }
+
+    private static bool ReadsAs(Type expected, Func<InjectionHolderLoose> read)
+    {
+      try
+      {
+        object shape = read().Shape;
+        return shape != null && shape.GetType() == expected;
+      }
+      catch (MsgPackException)
+      {
+        return false;
+      }
+    }
+
+    /// <summary>
+    /// What an <see cref="AllowedTypesGuard"/> allows becomes known by name: its assemblies, and the types it allows by themselves. Without it, the type of a value declared as object is not found.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false, false)]
+    [DataRow(true, false)]
+    [DataRow(false, true)]
+    [DataRow(true, true)]
+    public void AllowedTypesBecomeResolvable(bool schema, bool wholeAssembly)
+    {
+      Type plugin = EmitPluginClass($"PluginShape{Serializer.Name}{schema}{wholeAssembly}");
+      object shape = Activator.CreateInstance(plugin);
+      plugin.GetProperty("Label").SetValue(shape, "x");
+      byte[] bytes = Serializer.Serialize(new InjectionHolderLoose() { Shape = shape }, Settings(schema));
+
+      Assert.IsFalse(ReadsAs(plugin, () => Serializer.Deserialize<InjectionHolderLoose>(bytes, Settings(schema))), "not registered yet");
+
+      AllowedTypesGuard guard = wholeAssembly ? new AllowedTypesGuard().AllowAssembly(plugin.Assembly) : new AllowedTypesGuard(plugin);
+      InjectionHolderLoose read = Serializer.Deserialize<InjectionHolderLoose>(bytes, Settings(schema, guard));
+      Assert.AreEqual(plugin, read.Shape.GetType());
+      Assert.AreEqual("x", plugin.GetProperty("Label").GetValue(read.Shape));
+    }
+
+    [TestMethod]
+    public void MsgPackTypesRegistersAnAssembly()
+    {
+      Type plugin = EmitPluginClass($"PluginRegistered{Serializer.Name}");
+      byte[] bytes = Serializer.Serialize(new InjectionHolderLoose() { Shape = Activator.CreateInstance(plugin) }, Settings(true));
+      Assert.IsFalse(ReadsAs(plugin, () => Serializer.Deserialize<InjectionHolderLoose>(bytes, Settings(true))), "not registered yet");
+
+      MsgPackTypes.CacheAssemblyTypes(plugin);
+      Assert.IsTrue(ReadsAs(plugin, () => Serializer.Deserialize<InjectionHolderLoose>(bytes, Settings(true))));
     }
   }
 

@@ -139,6 +139,10 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static object ConvertArray(object[] items, Type assignType, MsgPackOptions settings)
     {
+      if (IsDictionary(assignType) && !Array.TrueForAll(items, i => i is object[] pair && pair.Length == 2)) // only [key, value] pairs can be entries
+        throw new MsgPackException($"An array cannot be read into {assignType}: the data is a list, or an object written as an array of its values (ObjectLayout.Array, the default), which has no property names. "
+          + "Read it into a class with the properties, or write it with ObjectLayout.Map.");
+
       if (!IsCollection(assignType))
       {
         if (!assignType.IsInstanceOfType(items))
@@ -243,7 +247,7 @@ namespace LsMsgPack.Meta
         Array typedArr = Array.CreateInstance(info.ElementType, pairs.Length);
         for (int t = pairs.Length - 1; t >= 0; t--)
         {
-          object key = ConvertDeserializeValue(pairs[t].Key, info.KeyType, settings, null);
+          object key = ConvertKey(pairs[t].Key, info.KeyType, settings);
           object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
           typedArr.SetValue(Activator.CreateInstance(info.ElementType, key, value), t);
         }
@@ -255,7 +259,7 @@ namespace LsMsgPack.Meta
         Array elements = Array.CreateInstance(info.ElementType, pairs.Length);
         for (int t = 0; t < pairs.Length; t++)
         {
-          object key = ConvertDeserializeValue(pairs[t].Key, info.KeyType, settings, null);
+          object key = ConvertKey(pairs[t].Key, info.KeyType, settings);
           object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
           elements.SetValue(Activator.CreateInstance(info.ElementType, key, value), t);
         }
@@ -267,7 +271,7 @@ namespace LsMsgPack.Meta
       object[] args = dictionary is null ? new object[2] : null;
       for (int t = 0; t < pairs.Length; t++) // keep the original order
       {
-        object key = ConvertDeserializeValue(pairs[t].Key, info.KeyType, settings, null);
+        object key = ConvertKey(pairs[t].Key, info.KeyType, settings);
         object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
         if (dictionary != null)
           dictionary.Add(key, value);
@@ -279,6 +283,18 @@ namespace LsMsgPack.Meta
         }
       }
       return result;
+    }
+
+    /// <summary>
+    /// A key of a dictionary entry. Number keys are read into string keys (as JSON writes them), except with the indexed schema: the keys of an object are then the indexes of its property names,
+    /// and which class they belong to is only known for typed reads (the map could also be a dictionary with number keys, there is no telling them apart).
+    /// </summary>
+    private static object ConvertKey(object key, Type keyType, MsgPackOptions settings)
+    {
+      if (keyType == typeof(string) && !(key is null) && key.GetType().IsPrimitive && SerializationRules.GetIndexedSchema(settings) != null)
+        throw new MsgPackException($"The map has a number key ({key}) and is read into a dictionary with string keys. With the indexed schema the keys of an object are the indexes of its property names, "
+          + "which are only known when the object is read into its class. Read it into a class with the properties, or write it without the indexed schema (UseInexedSchema = false) and with ObjectLayout.Map.");
+      return ConvertDeserializeValue(key, keyType, settings, null);
     }
 
     private static object ConvertScalar(object val, Type assignType)
@@ -306,7 +322,22 @@ namespace LsMsgPack.Meta
         return val;
 
       if (targetType == typeof(DateTimeOffset) && val is DateTime dateTime)
-        return new DateTimeOffset(dateTime); // the timestamp does not contain the offset, the value is local time
+        return MsgPackOptions.OffsetOfTimestamp(dateTime); // the timestamp does not contain the offset: the local one, or zero for a UTC or Unspecified DateTime (ReadDateTimeKind)
+
+      if (targetType == typeof(string))
+      {
+        string text = ToText(val);
+        if (text != null)
+          return text;
+      }
+
+      if (val is string str)
+      {
+        if (targetType == typeof(Guid) && Guid.TryParse(str, out Guid guid)) // as other libraries write Guids (e.g. MessagePack-CSharp)
+          return guid;
+        if (targetType.IsEnum)
+          return Enum.Parse(targetType, str, true); // the name, as the JSON serializers write enums with a string converter
+      }
 
       if (targetType.IsEnum)
         return Enum.ToObject(targetType, val);
@@ -318,6 +349,24 @@ namespace LsMsgPack.Meta
         return converted;
 
       return val;
+    }
+
+    /// <summary>
+    /// A value read into a string, as the JSON serializers read it from the JSON text: numbers in the invariant culture, true/false, a timestamp in ISO 8601,
+    /// a bin of 16 bytes as the Guid it most likely is (LsMsgPack writes Guids that way), other bins in base64. Null for anything else.
+    /// </summary>
+    private static string ToText(object val)
+    {
+      switch (val)
+      {
+        case bool b: return b ? "true" : "false";
+        case byte[] bytes: return bytes.Length == 16 ? new Guid(bytes).ToString() : Convert.ToBase64String(bytes);
+        case DateTime dateTime: return dateTime.ToString("O", CultureInfo.InvariantCulture);
+        case float f: return f.ToString("R", CultureInfo.InvariantCulture);
+        case double d: return d.ToString("R", CultureInfo.InvariantCulture);
+        case IFormattable formattable when val.GetType().IsPrimitive || val is decimal: return formattable.ToString(null, CultureInfo.InvariantCulture);
+      }
+      return null;
     }
 
     internal static bool IsCollection(Type type)
