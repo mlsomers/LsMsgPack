@@ -90,6 +90,8 @@ See [docs/schema.md](docs/schema.md) for examples of each wire format, their pro
 
 Reading data you don't trust (request bodies, messages from clients)? Type ids let the data pick the classes that are created: see [docs/security.md](docs/security.md) for what the serializers check and how to limit the allowed types with a type guard.
 
+Data that doesn't match your classes exactly (older or newer versions, a misspelled name) is read anyway, like the JSON serializers do. Pass an `out ReadDifferences` to `Deserialize` to find out what was skipped, counted per class and property, with the paths of the objects: see [docs/ReadDifferences.md](docs/ReadDifferences.md).
+
 Fiddler Integration
 -------------------
 

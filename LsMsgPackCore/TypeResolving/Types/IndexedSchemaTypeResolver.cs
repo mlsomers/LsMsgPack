@@ -253,20 +253,38 @@ namespace LsMsgPack.TypeResolving.Types
 
     /// <summary>
     /// Reading an object (with values) of a class that has no entry: its values are indexes into an entry of the writer's class, but which one is not known.
-    /// Until the differences can be reported, this throws rather than matching the values by position.
+    /// This throws rather than matching the values by position. When the differences are collected (<see cref="MsgPackOptions._differences"/>), the object is reported and skipped instead.
     /// </summary>
-    internal void ThrowIfNoEntry(Type type, MsgPackOptions settings)
+    /// <param name="assignedTo">The property the object is assigned to (null for the root and elements)</param>
+    /// <returns>True when the object is to be skipped (left null)</returns>
+    internal bool SkipIfNoEntry(Type type, MsgPackOptions settings, FullPropertyInfo assignedTo)
+    {
+      if (!HasNoEntry(type, settings))
+        return false;
+      if (settings._differences is null)
+        throw NoEntry(type);
+      settings._differences.UnmatchedClass(type, assignedTo);
+      return true;
+    }
+
+    private bool HasNoEntry(Type type, MsgPackOptions settings)
     {
       if (TryGetDef(type, out ComplexTypeDef _))
-        return;
+        return false;
       if (FullPropertyInfo.GetStaticallyIncludedProps(type, settings).Length == 0)
-        return; // not an object with properties (e.g. a DateTimeOffset written as an array)
+        return false; // not an object with properties (e.g. a DateTimeOffset written as an array)
       for (int t = 0; t < settings._propertyNameResolvers.Length; t++)
         if (!(settings._propertyNameResolvers[t] is IndexedSchemaTypeResolver))
-          return; // custom property ids are not indexes into the schema
-      throw new MsgPackException($"The data has no schema entry for {type.FullName}, so its values cannot be matched to its properties. "
+          return false; // custom property ids are not indexes into the schema
+      return true;
+    }
+
+    private Exception NoEntry(Type type)
+    {
+      return new MsgPackException($"The data has no schema entry for {type.FullName}, so its values cannot be matched to its properties. "
         + $"The data was written with another class ({string.Join(", ", ByTypeId.Select(d => d.TypeName))}), and none of them could be paired with {type.Name} "
-        + "(the root is the first class of the schema, the other classes follow from the properties both classes have, and the reader needs the writer's classes).");
+        + "(the root is the first class of the schema, the other classes follow from the properties both classes have, and the reader needs the writer's classes). "
+        + "Deserialize with an out ReadDifferences to skip such objects and get them reported.");
     }
 
     private static Exception UnresolvedType(ComplexTypeDef def, MsgPackOptions settings)

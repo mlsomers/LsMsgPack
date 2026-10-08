@@ -162,19 +162,88 @@ namespace LtMsgPack
 
     public object Deserialize(Type type, Stream source)
     {
+      return Deserialize(type, source, null);
+    }
+
+    /// <summary>
+    /// Reads the data like <see cref="Deserialize{T}(byte[])"/>, and reports what did not match between the data and the classes: unknown properties, extra values,
+    /// objects of classes without a schema entry (skipped instead of throwing), counted per class and name.
+    /// </summary>
+    /// <param name="differences">Null when the data matched the classes. See <see cref="ReadDifferences.GenerateReport"/>.</param>
+    public T Deserialize<T>(byte[] data, out ReadDifferences differences)
+    {
+      object result = Deserialize(typeof(T), data, out differences);
+      return result is null ? default(T) : (T)result;
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], out ReadDifferences)"/>
+    public T Deserialize<T>(Stream source, out ReadDifferences differences)
+    {
+      object result = Deserialize(typeof(T), source, out differences);
+      return result is null ? default(T) : (T)result;
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], out ReadDifferences)"/>
+    public object Deserialize(Type type, byte[] data, out ReadDifferences differences)
+    {
+      if (data is null)
+        throw new ArgumentNullException(nameof(data));
+      return Deserialize(type, data, 0, data.Length, out differences);
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], out ReadDifferences)"/>
+    /// <param name="offset">Where the data starts</param>
+    /// <param name="count">The number of bytes of the data</param>
+    public object Deserialize(Type type, byte[] data, int offset, int count, out ReadDifferences differences)
+    {
+      if (data is null)
+        throw new ArgumentNullException(nameof(data));
+      if (offset < 0 || count < 0 || data.Length - offset < count)
+        throw new ArgumentOutOfRangeException(nameof(count));
+      ReadDifferences found = new ReadDifferences(_serializer.Options);
+      object result = Collecting(found, () => _serializer.Deserialize(type, data, offset, offset + count, out int consumed, found));
+      differences = found.IsEmpty ? null : found;
+      return result;
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], out ReadDifferences)"/>
+    public object Deserialize(Type type, Stream source, out ReadDifferences differences)
+    {
+      ReadDifferences found = new ReadDifferences(_serializer.Options);
+      object result = Collecting(found, () => Deserialize(type, source, found));
+      differences = found.IsEmpty ? null : found;
+      return result;
+    }
+
+    private static object Collecting(ReadDifferences found, Func<object> read)
+    {
+      try
+      {
+        object result = read();
+        found.Root = result;
+        return result;
+      }
+      catch (Exception ex) when (found.AttachTo(ex))
+      {
+        throw; // not reached, the filter attaches the differences and passes it on as it is
+      }
+    }
+
+    private object Deserialize(Type type, Stream source, ReadDifferences differences)
+    {
       if (source is null)
         throw new ArgumentNullException(nameof(source));
 
       if (source is MemoryStream memory && memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
       {
         int offset = segment.Offset + (int)memory.Position;
-        object result = _serializer.Deserialize(type, segment.Array, offset, segment.Offset + (int)memory.Length, out int consumed);
+        object result = _serializer.Deserialize(type, segment.Array, offset, segment.Offset + (int)memory.Length, out int consumed, differences);
         memory.Position += consumed - offset;
         return result;
       }
 
       byte[] payload = StreamPayload.Read(source, _serializer.Options);
-      return _serializer.Deserialize(type, payload, 0, payload.Length, out int end);
+      return _serializer.Deserialize(type, payload, 0, payload.Length, out int end, differences);
     }
 
     #endregion

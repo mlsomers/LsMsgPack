@@ -35,4 +35,5 @@ MsgPackItem item = MsgPackItem.Unpack(data);
 - [Wire formats, the indexed schema and polymorphism](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md)
 - [Compatibility with other MsgPack libraries](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Compatibility.md)
 - [Security](https://github.com/mlsomers/LsMsgPack/blob/master/docs/security.md): reading data you don't trust
+- [Reporting differences](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ReadDifferences.md): what didn't match between the data and your classes (`Deserialize(data, settings, out ReadDifferences differences)`)
 - Source, issues and MsgPack Explorer (a tool built on this package to look inside MsgPack data): [github.com/mlsomers/LsMsgPack](https://github.com/mlsomers/LsMsgPack)

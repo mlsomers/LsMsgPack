@@ -29,6 +29,16 @@ namespace LtMsgPack.Reading
     internal MsgPackOptions SlowSettings;
     internal int Depth;
 
+    /// <summary>
+    /// Collects the differences between the data and the classes (null when not asked for). <see cref="SlowSettings"/> then has them too, for LsMsgPack.Core's conversions.
+    /// </summary>
+    internal ReadDifferences Differences;
+
+    /// <summary>
+    /// The objects are read as LsMsgPack does (<see cref="Serializer.SlowObjects"/>), or the <see cref="Differences"/> are collected: one check per object for both.
+    /// </summary>
+    internal bool Unusual;
+
     internal ReadContext(Serializer serializer)
     {
       Serializer = serializer;

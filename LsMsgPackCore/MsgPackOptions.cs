@@ -212,6 +212,12 @@ namespace LsMsgPack
     internal Dictionary<Type, Meta.FullPropertyInfo[]> _staticPropsCache;
 
     /// <summary>
+    /// Collects the differences between the data and the classes (the Deserialize overloads with an out <see cref="ReadDifferences"/>), null otherwise.
+    /// <para>Only set on a copy of the settings for one call (<see cref="WithDifferences"/>), settings are shared by threads. Copied by <see cref="Clone"/>, so the copies of that call (the schema session) collect too.</para>
+    /// </summary>
+    internal ReadDifferences _differences;
+
+    /// <summary>
     /// Uses a micro schema (dictionary with type-name as key and an array of the types property names as value. The index of the name will be referenced from the serialized body (instead of the full name)
     /// </summary>
     [Category("Control")]
@@ -503,6 +509,16 @@ namespace LsMsgPack
       copy._serializedPropsCache = null;
       copy._staticPropsCache = null;
       copy._schemaFrozen = false;
+      return copy;
+    }
+
+    /// <summary>
+    /// A copy of these options for one call that collects the differences (everything else is shared, the caches of a schema session too).
+    /// </summary>
+    internal MsgPackOptions WithDifferences(ReadDifferences differences)
+    {
+      MsgPackOptions copy = (MsgPackOptions)MemberwiseClone();
+      copy._differences = differences;
       return copy;
     }
 
