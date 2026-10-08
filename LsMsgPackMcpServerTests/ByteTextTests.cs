@@ -39,6 +39,19 @@ namespace LsMsgPackMcpServerTests
       Assert.ThrowsExactly<FormatException>(() => ByteText.Parse("0x92, 0x100"));
     }
 
+    /// <summary>
+    /// Hex in groups of different lengths, e.g. the header separated from the content: was refused.
+    /// </summary>
+    [TestMethod]
+    public void HexInGroups()
+    {
+      CollectionAssert.AreEqual(new byte[] { 0x91, 0xC4, 0x02, 0x00, 0x01 }, ByteText.Parse("91 c4 02 0001"));
+      CollectionAssert.AreEqual(new byte[] { 0x91, 0xC4, 0x02, 0x00, 0x01 }, ByteText.Parse("91c4 0200 01"));
+      CollectionAssert.AreEqual(new byte[] { 0x12, 0x34, 0x56 }, ByteText.Parse("1234 56")); // 1234 is no decimal byte
+      CollectionAssert.AreEqual(new byte[] { 100, 20 }, ByteText.Parse("100, 20")); // still decimal
+      Assert.ThrowsExactly<FormatException>(() => ByteText.Parse("91 c4 020"));
+    }
+
     [TestMethod]
     public void MultiLineBase64()
     {

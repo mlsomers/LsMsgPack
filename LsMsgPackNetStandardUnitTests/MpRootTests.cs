@@ -45,6 +45,29 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(1, MsgPackItem.UnpackMultiple(new byte[] { 0xC0 }).Count);
       Assert.AreEqual(0, MsgPackItem.UnpackMultiple(new byte[0]).Count);
     }
+
+    /// <summary>
+    /// Errors are items under KEEPTRACK (the explorers): without ContinueProcessingOnBreakingError the reading went on after them, as if it was set.
+    /// The test project is built without KEEPTRACK: it sees the library's settings by reflection.
+    /// </summary>
+    [TestMethod]
+    public void StopsAtTheFirstErrorUnlessContinuing()
+    {
+      System.Reflection.PropertyInfo continueOnError = typeof(MsgPackSettings).GetProperty("ContinueProcessingOnBreakingError");
+      if (continueOnError is null)
+        Assert.Inconclusive("Only under KEEPTRACK: without it the error is an exception.");
+
+      byte[] bytes = new byte[] { 0x01, 0xC1, 0x02, 0x03 };
+      MsgPackSettings stop = new MsgPackSettings();
+      continueOnError.SetValue(stop, false);
+      MpRoot stopped = MsgPackItem.UnpackMultiple(bytes, stop);
+      Assert.AreEqual(2, stopped.Count);
+      Assert.AreEqual("MpError", stopped[1].GetType().Name);
+
+      MsgPackSettings goOn = new MsgPackSettings();
+      continueOnError.SetValue(goOn, true);
+      Assert.AreEqual(4, MsgPackItem.UnpackMultiple(bytes, goOn).Count);
+    }
   }
 
 }

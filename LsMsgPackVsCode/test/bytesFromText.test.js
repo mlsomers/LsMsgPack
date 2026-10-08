@@ -16,6 +16,12 @@ test('delimited hex (also as BitConverter.ToString writes it)', () => {
   assert.deepStrictEqual(bytesFromText('0x81, 0xA3,0x66'), bytes(0x81, 0xa3, 0x66));
 });
 
+test('hex in groups of different lengths (the header separated from the content)', () => {
+  assert.deepStrictEqual(bytesFromText('91 c4 02 0001'), bytes(0x91, 0xc4, 0x02, 0x00, 0x01));
+  assert.deepStrictEqual(bytesFromText('1234 56'), bytes(0x12, 0x34, 0x56)); // 1234 is no decimal byte
+  assert.deepStrictEqual(bytesFromText('100, 20'), bytes(100, 20)); // still decimal
+});
+
 test('values with 0x are hex also when they are not all written with two digits', () => {
   // "0x92, 1, 2" was read as the decimal values 92, 1 and 2
   assert.deepStrictEqual(bytesFromText('[0x92, 1, 2]'), bytes(0x92, 0x01, 0x02));
