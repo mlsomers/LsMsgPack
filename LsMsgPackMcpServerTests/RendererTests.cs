@@ -209,6 +209,48 @@ namespace LsMsgPackMcpServerTests
       AssertContains(text, "fixstr \"Pears\" // Lines[1].Product");
     }
 
+    /// <summary>
+    /// 301 bytes nested 300 levels deep were 220 KB of text: the message of every level around the error, and the indentation.
+    /// </summary>
+    [TestMethod]
+    public void DeepNesting_StaysSmall()
+    {
+      byte[] bytes = new byte[301];
+      for (int t = 0; t < 300; t++)
+        bytes[t] = 0x91; // fixarray of 1
+      bytes[300] = 0x01;
+      string text = Render(bytes);
+      Assert.IsLessThan(20000, text.Length, text.Substring(0, 2000));
+      AssertContains(text, "nested deeper than 32 levels: ask for the path \"[0][0]");
+      AssertContains(text, "ERROR: A nested item contains an error.");
+
+      string items = Render(bytes, new RenderOptions() { View = DecodeView.Items });
+      Assert.IsLessThan(100000, items.Length);
+      AssertContains(items, "(level 33) ");
+    }
+
+    /// <summary>
+    /// A header claiming more than the data holds: an error at the header (no slots allocated for the claimed count), the values that are there are shown.
+    /// </summary>
+    [TestMethod]
+    public void ClaimedCount_ShownUpToTheEnd()
+    {
+      string text = Render(new byte[] { 0xDD, 0x08, 0x00, 0x00, 0x00, 0x01 }); // array32 of 134217728 items, 1 there
+      AssertContains(text, "1 error");
+      AssertContains(text, "[ // 2 items\n  1,\n");
+    }
+
+    /// <summary>
+    /// The validation of an extension whose data ended before its content failed with a NullReferenceException.
+    /// </summary>
+    [TestMethod]
+    public void TruncatedExtension_ValidatesWithoutFailing()
+    {
+      string text = Render(new byte[] { 0xC9, 0x7F, 0x00, 0x00, 0x00, 0x01 }, new RenderOptions() { Issues = IssueLevel.All });
+      AssertContains(text, "Unexpected end of data.");
+      Assert.IsFalse(text.Contains("Validation failed", StringComparison.Ordinal), text);
+    }
+
     [TestMethod]
     public void EmptyAndUnreadableData()
     {

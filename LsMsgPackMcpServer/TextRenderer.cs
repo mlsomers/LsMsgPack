@@ -78,6 +78,11 @@ namespace LsMsgPackMcp
     /// </summary>
     private const int InlineWidth = 100;
 
+    /// <summary>
+    /// The levels of nesting written (objects) or indented (items) below the start.
+    /// </summary>
+    private const int MaxLevels = 32;
+
     public static string Render(PayloadDocument doc, RenderOptions options)
     {
       StringBuilder sb = new StringBuilder();
@@ -349,6 +354,13 @@ namespace LsMsgPackMcp
       if (obj.Members.Count == 0)
         return isArray ? "[]" : "{}";
 
+      // Deeper levels are asked for by their path: their indentation alone grows with the square of the depth (130 KB for 300 levels)
+      if (indent >= MaxLevels)
+      {
+        notes.Add(string.Concat("nested deeper than ", MaxLevels.ToString(CultureInfo.InvariantCulture), " levels: ask for the path \"", obj.Path, "\""));
+        return isArray ? "[...]" : "{...}";
+      }
+
       // Members as (key, value, comment)
       List<string[]> lines = new List<string[]>(obj.Members.Count);
       int shown = 0;
@@ -521,7 +533,9 @@ namespace LsMsgPackMcp
         }
         budget--;
         sb.Append("0x").Append(start < 0 ? new string('?', width) : start.ToString("X" + width.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture)).Append(' ');
-        sb.Append(' ', node.Depth * 2);
+        sb.Append(' ', Math.Min(node.Depth, MaxLevels) * 2);
+        if (node.Depth > MaxLevels)
+          sb.Append("(level ").Append(node.Depth.ToString(CultureInfo.InvariantCulture)).Append(") ");
         if (node.Role != null && node.Depth > 0)
           sb.Append(node.Role).Append(' ');
         sb.Append(DescribeItem(node.Item, options));
@@ -536,7 +550,7 @@ namespace LsMsgPackMcp
           if (obj != null && !string.IsNullOrEmpty(obj.Path))
             notes.Add(obj.Path);
         }
-        else if (node.Role != "key")
+        else if (node.Role != "key" && node.Depth <= MaxLevels) // deeper paths are long, msgpack_explain_offset tells them
         {
           PrimitiveObject obj = doc.GetObject(node);
           if (obj != null && (obj.LastItemRef == node.Item) && !string.IsNullOrEmpty(obj.Path))

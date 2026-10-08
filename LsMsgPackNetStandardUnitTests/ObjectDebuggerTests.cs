@@ -78,6 +78,24 @@ namespace LsMsgPackUnitTests
       public List<OdLine> Empty { get; set; }
     }
 
+    public class OdDiscountLine : OdLine
+    {
+      public string Code { get; set; }
+    }
+
+    /// <summary>
+    /// A list holding an object of a derived type (wrapped for its type id) and a dictionary with integer keys (like property indexes).
+    /// </summary>
+    public class OdOrder
+    {
+      public int Id { get; set; }
+      public string Customer { get; set; }
+      public DateTime Date { get; set; }
+      public OdAddress Billing { get; set; }
+      public List<OdLine> Lines { get; set; }
+      public Dictionary<int, string> Notes { get; set; }
+    }
+
     private static OdInvoice CreateInvoice()
     {
       return new OdInvoice()
@@ -312,6 +330,46 @@ namespace LsMsgPackUnitTests
           AssertValue(true, dog, "Barks");
           AssertValue(9, cat, "Lives");
         }
+    }
+
+    /// <summary>
+    /// The default settings (indexed schema, arrays): the list was taken for an object of the next type of the schema (its elements, an array
+    /// and a wrapped object, differ in kind), and the dictionary for an object whose values have other kinds (Date "two").
+    /// </summary>
+    [TestMethod]
+    public void PolymorphicListAndIntegerKeys()
+    {
+      OdOrder order = new OdOrder()
+      {
+        Id = 1234,
+        Customer = "Alice",
+        Date = new DateTime(2026, 10, 8, 12, 0, 0, DateTimeKind.Utc),
+        Billing = new OdAddress() { Street = "Main street", Number = 12, City = "Amsterdam" },
+        Lines = new List<OdLine>() { new OdLine() { Product = "Pen", Quantity = 2, Price = 1.5m }, new OdDiscountLine() { Product = "Promo", Quantity = 1, Price = -1, Code = "X1" } },
+        Notes = new Dictionary<int, string>() { { 1, "one" }, { 2, "two" } }
+      };
+
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+      {
+        RootObject root = Reconstruct(MsgPackSerializer.Serialize(order, Settings(layout, true)));
+        string context = layout.ToString();
+        Assert.IsNull(root.Error, context);
+        Assert.AreEqual(nameof(OdOrder), root.Type, context);
+
+        ComplexObject lines = Complex(root, "Lines");
+        Assert.AreEqual(ObjectKind.Collection, lines.Kind, context);
+        ComplexObject line = Complex(lines, "[0]");
+        Assert.AreEqual(nameof(OdLine), line.Type, context);
+        AssertValue("Pen", line, "Product");
+        ComplexObject discount = Complex(lines, "[1]");
+        Assert.AreEqual(nameof(OdDiscountLine), discount.Type, context);
+        Assert.IsFalse(discount.TypeIsGuess, context);
+        AssertValue("X1", discount, "Code");
+
+        ComplexObject notes = Complex(root, "Notes");
+        Assert.AreEqual(ObjectKind.Dictionary, notes.Kind, context);
+        AssertValue("two", notes, "2");
+      }
     }
 
     [TestMethod]

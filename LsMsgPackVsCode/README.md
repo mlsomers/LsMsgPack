@@ -4,7 +4,7 @@ Inspect MsgPack data while debugging, and in `.msgpack` files. At the top low le
 
 **Requires the .Net 8 (or higher) runtime**.
 
-![Screenshot of the debugging user interface](Screenshot.png "MsgPack explorer")
+![Screenshot of the debugging user interface](https://github.com/mlsomers/LsMsgPack/raw/HEAD/LsMsgPackVsCode/Screenshot.png "MsgPack explorer")
 
 ## While debugging
 

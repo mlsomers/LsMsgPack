@@ -27,12 +27,16 @@ namespace LsMsgPackMcp
       bool allHex = true;
       bool allNumeric = true;
       bool all2chars = true;
+      bool hexPrefix = false;
       List<string> parts = new List<string>();
       foreach (string raw in trimmed.Split(Separators, StringSplitOptions.RemoveEmptyEntries))
       {
         string part = raw;
         if (part.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
           part = part.Substring(2);
+          hexPrefix = true;
+        }
         if (part.Length == 0)
           continue;
         foreach (char ch in part)
@@ -55,6 +59,18 @@ namespace LsMsgPackMcp
 
       if (all2chars && allHex)
         return FromHex(string.Concat(parts));
+
+      if (hexPrefix && allHex) // delimited hex values not all written with two digits (0x92, 0x1): hex, not decimal
+      {
+        byte[] bytes = new byte[parts.Count];
+        for (int t = 0; t < parts.Count; t++)
+        {
+          if (parts[t].Length > 2)
+            throw new FormatException(string.Concat("Failure parsing delimited hex values: 0x", parts[t], " is not a byte (0x00..0xff)."));
+          bytes[t] = Convert.ToByte(parts[t], 16);
+        }
+        return bytes;
+      }
 
       if (allNumeric) // csv, or an array copied from a debugger
       {

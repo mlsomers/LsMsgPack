@@ -182,7 +182,7 @@ namespace LsMsgPack
       return (byte)value;
     }
 
-    private static MsgPackException UnexpectedEnd(Stream data)
+    private protected static MsgPackException UnexpectedEnd(Stream data)
     {
       return new MsgPackException("Unexpected end of data.", data.Position, MsgPackTypeId.NeverUsed);
     }

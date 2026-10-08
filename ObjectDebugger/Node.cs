@@ -31,6 +31,11 @@ namespace ObjectDebugger
   /// </summary>
   internal sealed class Node
   {
+    /// <summary>
+    /// The <see cref="Error"/> of a value holding a value with an error.
+    /// </summary>
+    public const string NestedError = "A nested item contains an error.";
+
     public ValueKind Kind;
 
     /// <summary>
@@ -79,7 +84,10 @@ namespace ObjectDebugger
       {
         // The partial item is what could be read up to the error
         Node partial = error.PartialItem is null ? new Node() { Kind = ValueKind.Error, Item = item } : FromItem(error.PartialItem);
-        partial.Error = partial.Error is null ? error.ToString() : string.Concat(error.ToString(), Environment.NewLine, partial.Error);
+        // Around a partial item the error only says that it holds one (shown where it is): its own message (how to find the error with the
+        // item classes) was repeated on every level above an error, 220 KB of text for data nested 300 levels deep
+        string message = error.IsInNestedItem ? NestedError : error.ToString();
+        partial.Error = partial.Error is null ? message : string.Concat(message, Environment.NewLine, partial.Error);
         return partial;
       }
 #endif

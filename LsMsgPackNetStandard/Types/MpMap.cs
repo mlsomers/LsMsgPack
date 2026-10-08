@@ -189,10 +189,11 @@ namespace LsMsgPack
         }
       }
 
-      value = new KeyValuePair<object, object>[len];
+      long slots = SlotsFor(data, len, 2);
+      value = new KeyValuePair<object, object>[slots];
 
 #if KEEPTRACK
-      packedItems = new KeyValuePair<MsgPackItem, MsgPackItem>[len];
+      packedItems = new KeyValuePair<MsgPackItem, MsgPackItem>[slots];
       bool errorOccurred = false;
 #endif
       for (int t = 0; t < len; t++)
@@ -224,10 +225,11 @@ namespace LsMsgPack
         {
           return new MpError(_settings, this);
         }
-        if (val is MpError)
+        if (key is MpError || val is MpError)
         {
           _settings.FileContainsErrors = true;
           errorOccurred = true;
+          // Nothing left for the other entries: each would be an error (a key error at the end used to go on for all of them)
           if (data.Position >= data.Length) return new MpError(_settings, this);
         }
       }

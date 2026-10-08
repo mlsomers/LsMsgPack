@@ -89,7 +89,34 @@ namespace LsMsgPack {
         $"Only 1, 2, 4 or 8 byte lenths are allowed. {bytes.ToString(CultureInfo.InvariantCulture)} is not implemented.", data.Position, TypeId);
     }
 
+    /// <summary>
+    /// The slots to allocate for a count of items read from a header. A header of a few bytes can claim billions of items: a count the rest
+    /// of the data cannot hold throws before anything is allocated (as LtMsgPack does). Under KEEPTRACK (the explorers show truncated data
+    /// up to where it ends) it gets the slots the rest of the data can fill instead, plus one for the error at its end: every item takes at
+    /// least one byte, an error included, except the one at the end of the data, which ends the loop.
+    /// Only streams that know their length are checked, the others end with "Unexpected end of data." when the items do not arrive.
+    /// </summary>
+    /// <param name="bytesPerItem">The least each item takes: 1 for array items, 2 for map entries (key and value)</param>
+    protected static long SlotsFor(Stream data, long count, int bytesPerItem) {
+      if(!data.CanSeek)
+        return count;
+      long remaining = data.Length - data.Position;
+      long fit = remaining / bytesPerItem;
+      if(count <= fit)
+        return count;
+#if KEEPTRACK
+      return fit + 1;
+#else
+      throw new MsgPackException($"The data claims {count} items, more than the remaining {remaining} bytes can hold.");
+#endif
+    }
+
     protected byte[] ReadBytes(Stream data, long len) {
+      if(data.CanSeek && len > data.Length - data.Position) {
+        // What reading would do (consume the rest, then fail), without allocating the claimed length first
+        data.Seek(0, SeekOrigin.End);
+        throw UnexpectedEnd(data);
+      }
       byte[] buffer = new byte[len];
       if(len < int.MaxValue) { // TODO: implement reading larger portions.
         ReadExactly(data, buffer, (int)len);

@@ -27,6 +27,23 @@
     <Optimize>True</Optimize>
   </PropertyGroup>
 
+  <!-- An MCP server package: nuget.org shows the configuration from .mcp/server.json, and the MCP registry (VS Code's @mcp gallery)
+       refers to the package. server.json is what mcp-publisher sends to the registry (Publish-LsMsgPack.cmd sets its version), the
+       package gets a copy with the version of the package. -->
+  <Target Name="PackMcpServerJson" BeforeTargets="_GetPackageFiles">
+    <PropertyGroup>
+      <!-- Here, not in the project: PackAsTool sets DotnetTool after the project is read (SDK 8 and 9) -->
+      <PackageType>DotnetTool;McpServer</PackageType>
+      <_McpServerJson>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/server.json'))</_McpServerJson>
+      <_McpServerJson>$([System.Text.RegularExpressions.Regex]::Replace($(_McpServerJson), '(&quot;version&quot;\s*:\s*&quot;)[^&quot;]*', '${1}$(Version)'))</_McpServerJson>
+      <_McpServerJsonPath>$(IntermediateOutputPath)mcp/server.json</_McpServerJsonPath>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_McpServerJsonPath)" Lines="$(_McpServerJson.TrimEnd())" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <None Include="$(_McpServerJsonPath)" Pack="true" PackagePath=".mcp/" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
     <InternalsVisibleTo Include="LsMsgPackMcpServerTests" />
   </ItemGroup>

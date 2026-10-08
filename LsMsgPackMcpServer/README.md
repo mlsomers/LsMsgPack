@@ -1,5 +1,7 @@
 # LsMsgPack MCP server
 
+<!-- mcp-name: io.github.mlsomers/lsmsgpack -->
+
 MsgPack for AI agents. An [MCP](https://modelcontextprotocol.io) server and a command line tool that decode MsgPack data into text an AI (or a person in a terminal) can read, and that read the bytes of a variable of a program paused in the debugger of **VS Code** or **Visual Studio**.
 
 Language models read text, not bytes. Hex or base64 costs several tokens per byte, and decoding it by hand is slow and error-prone. Some data can't be decoded from the bytes at all: LsMsgPack's indexed schema writes property names as indexes, and a schema reference holds only the 16-byte id of the schema. This tool decodes the data with the LsMsgPack library itself (the code of MsgPack Explorer) and writes it as JSON with comments:

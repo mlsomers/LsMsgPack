@@ -12,6 +12,7 @@ namespace MsgPackExplorer
       bool allHex = true;
       bool allNumeric = true;
       bool all2chars = true;
+      bool hexPrefix = false;
 
       List<string> parts = new List<string>(str.Split('\r', '\n', ';', '\t', ' ', ',', '.', '-', '|', '[', ']'));
       for (int t = parts.Count - 1; t >= 0; t--)
@@ -22,8 +23,11 @@ namespace MsgPackExplorer
           parts.RemoveAt(t);
           continue;
         }
-        if (part.StartsWith("0x"))
+        if (part.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
           part = part.Substring(2);
+          hexPrefix = true;
+        }
         if (allHex)
         {
           for (int i = 0; i < part.Length; i++)
@@ -34,7 +38,7 @@ namespace MsgPackExplorer
             allNumeric = false;
             if (ch > 64 && ch < 71) // A..F
               continue;
-            if (ch > 97 && ch < 103) // a..f
+            if (ch > 96 && ch < 103) // a..f
               continue;
             allHex = false;
           }
@@ -78,6 +82,17 @@ namespace MsgPackExplorer
         {
           throw new Exception("Faliure parsing delimited hex string:\r\n" + ex.Message, ex);
         }
+      if (hexPrefix && allHex) // delimited hex values not all written with two digits (0x92, 0x1): hex, not decimal
+      {
+        byte[] ret = new byte[parts.Count];
+        for (int t = 0; t < ret.Length; t++)
+        {
+          if (parts[t].Length > 2)
+            throw new Exception("Faliure parsing delimited hex values:\r\n0x" + parts[t] + " is not a byte (0x00..0xff).");
+          ret[t] = Convert.ToByte(parts[t], 16);
+        }
+        return ret;
+      }
       if (allNumeric) // csv, or copied an array from a debugger...
       {
         try
