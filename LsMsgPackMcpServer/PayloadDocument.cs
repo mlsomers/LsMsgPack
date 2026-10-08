@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using ObjectDebugger;
 using System;
 using System.Collections.Generic;
@@ -41,14 +41,43 @@ namespace LsMsgPackMcp
 
     public List<ItemNode> Children { get; } = new List<ItemNode>();
 
+    /// <summary>
+    /// An item that could not be read and its error cover the item from its start to where the reading stopped: the error's own offset is
+    /// the last byte read (the offset in its exception is where the reader went on after it), the item has no length.
+    /// </summary>
     public long Offset
     {
-      get { return Item is null ? -1 : Item.StoredOffset; }
+      get
+      {
+        MpError error = CutOffBy;
+        return error != null ? error.PartialItem.StoredOffset : Item is null ? -1 : Item.StoredOffset;
+      }
     }
 
     public long Length
     {
-      get { return Item is null ? 0 : Item.StoredLength; }
+      get
+      {
+        MpError error = CutOffBy;
+        if (error != null)
+          return Math.Max(error.StoredOffset + error.StoredLength, error.PartialItem.StoredOffset + error.PartialItem.StoredLength) - error.PartialItem.StoredOffset;
+        return Item is null ? 0 : Item.StoredLength;
+      }
+    }
+
+    /// <summary>
+    /// The error of an item that could not be read, when this is that error or that item (not for a container holding an error).
+    /// </summary>
+    private MpError CutOffBy
+    {
+      get
+      {
+        if (Item is MpError error && !error.IsInNestedItem && !(error.PartialItem is null) && error.PartialItem.StoredOffset >= 0)
+          return error;
+        if (Parent?.Item is MpError around && !around.IsInNestedItem && ReferenceEquals(around.PartialItem, Item) && Item.StoredOffset >= 0)
+          return around;
+        return null;
+      }
     }
   }
 
@@ -73,6 +102,7 @@ namespace LsMsgPackMcp
   {
     private readonly Dictionary<MsgPackItem, ItemNode> _nodes = new Dictionary<MsgPackItem, ItemNode>(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<MsgPackItem, PrimitiveObject> _objects = new Dictionary<MsgPackItem, PrimitiveObject>(ReferenceEqualityComparer.Instance);
+    private MsgPackSettings _settings;
 
     public PayloadDocument(byte[] data, string source, DecodeOptions options)
     {
@@ -174,6 +204,94 @@ namespace LsMsgPackMcp
     }
 
     /// <summary>
+    /// The encoding as the type byte in the data says. <see cref="MsgPackItem.TypeId"/> is computed from the value, so it names the smallest
+    /// encoding (a str 16 holding 3 bytes became a fixstr) and the encoding of what could be read of an item that ends early.
+    /// </summary>
+    public MsgPackTypeId Encoding(MsgPackItem item)
+    {
+      long offset = item.StoredOffset;
+      if (item is MpRoot || item is MpError || offset < 0 || offset >= Data.Length)
+        return item.TypeId;
+      byte b = Data[offset];
+      if (b <= 0x7f) return MsgPackTypeId.MpBytePart;
+      if (b >= 0xe0) return MsgPackTypeId.MpSBytePart;
+      if (b >= 0xa0 && b <= 0xbf) return MsgPackTypeId.MpStr5;
+      if (b >= 0x90 && b <= 0x9f) return MsgPackTypeId.MpArray4;
+      if (b >= 0x80 && b <= 0x8f) return MsgPackTypeId.MpMap4;
+      return (MsgPackTypeId)b;
+    }
+
+    /// <summary>
+    /// The count of an array or map, or the length of a str, bin or ext, as its header says (the data may end before), -1 for other items or when the header itself is cut off.
+    /// </summary>
+    public long ClaimedLength(MsgPackItem item)
+    {
+      long offset = item.StoredOffset;
+      if (item is MpRoot || item is MpError || offset < 0 || offset >= Data.Length)
+        return -1;
+      byte b = Data[offset];
+      if (b >= 0x80 && b <= 0x8f || b >= 0x90 && b <= 0x9f)
+        return b & 0x0f;
+      if (b >= 0xa0 && b <= 0xbf)
+        return b & 0x1f;
+      int size;
+      switch (b)
+      {
+        case 0xc4: case 0xc7: case 0xd9: size = 1; break;
+        case 0xc5: case 0xc8: case 0xda: case 0xdc: case 0xde: size = 2; break;
+        case 0xc6: case 0xc9: case 0xdb: case 0xdd: case 0xdf: size = 4; break;
+        case 0xd4: return 1;
+        case 0xd5: return 2;
+        case 0xd6: return 4;
+        case 0xd7: return 8;
+        case 0xd8: return 16;
+        default: return -1;
+      }
+      if (offset + 1 + size > Data.Length)
+        return -1;
+      byte[] bytes = new byte[size];
+      Array.Copy(Data, offset + 1, bytes, 0, size);
+      // As MsgPackVarLen.ReadLen reads it (one byte is never swapped)
+      if (size > 1 && MsgPackItem.SwapEndianChoice(_settings, size))
+        Array.Reverse(bytes);
+      return size == 1 ? bytes[0] : size == 2 ? BitConverter.ToUInt16(bytes, 0) : (long)BitConverter.ToUInt32(bytes, 0);
+    }
+
+    /// <summary>
+    /// The error an item was cut off by: the item is its <see cref="MpError.PartialItem"/>. Null for items that were read completely.
+    /// </summary>
+    public MpError ErrorAround(MsgPackItem item)
+    {
+      ItemNode node = GetNode(item);
+      return node?.Parent?.Item is MpError error && ReferenceEquals(error.PartialItem, item) ? error : null;
+    }
+
+    /// <summary>
+    /// A value that could not be read (e.g. a string whose data ends early): its value is not what the data holds.
+    /// Containers holding an error are not: what they hold up to the error was read.
+    /// </summary>
+    public bool IsUnread(MsgPackItem item)
+    {
+      if (item is null || item is MpArray || item is MpMap || item is MpRoot)
+        return false;
+      MpError error = ErrorAround(item);
+      return error != null && !error.IsInNestedItem;
+    }
+
+    /// <summary>
+    /// The array or map of an object or collection that an error cut off (the slots after the error were not read), null when it was read completely.
+    /// The item of an object can be the error around its container (the root's).
+    /// </summary>
+    public MsgPackItem CutOffContainer(MsgPackItem item)
+    {
+      if (item is MpError error)
+        item = error.PartialItem;
+      if (!(item is MpArray || item is MpMap))
+        return null;
+      return ErrorAround(item) != null ? item : null;
+    }
+
+    /// <summary>
     /// The objects, collections and values below the root, depth first.
     /// </summary>
     public static IEnumerable<PrimitiveObject> Walk(PrimitiveObject root)
@@ -228,6 +346,7 @@ namespace LsMsgPackMcp
         ContinueProcessingOnBreakingError = Options.ContinueOnError,
         EndianAction = Options.Endian
       };
+      _settings = settings;
 
       MsgPackItem item;
       try
@@ -329,7 +448,8 @@ namespace LsMsgPackMcp
 
     private void Validate(ItemNode node)
     {
-      if (node.Item is null)
+      // The error says what is wrong with an item that could not be read, its value is not what the data holds (a uint 16 cut off is 0, "smaller encodings would save 2 bytes")
+      if (node.Item is null || IsUnread(node.Item))
         return;
       MsgPackValidation.ValidationItem[] issues;
       try

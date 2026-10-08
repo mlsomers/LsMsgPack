@@ -87,9 +87,12 @@ namespace LsMsgPackMcpServerTests
       string text = Render(truncated);
       // The data ends in the Guid (bin 8, 16 bytes) of Reference, which used to be read with zeros, the error came at Tags
       AssertContains(text, "1 error");
-      AssertContains(text, "\"Reference\": \"\", // bin, 0 bytes, ERROR: Error while reading data.");
+      // What could not be read is null (the item holds 0 bytes), the error at the start of the item as in the list of errors
+      AssertContains(text, "\"Reference\": null // ERROR: Error while reading data. (Unexpected end of data.) (bin 8 at 0xD8)");
+      AssertContains(text, "McpInvoice~, 1 not read: the reading stopped at the error"); // Tags
       AssertContains(text, "Errors:");
-      AssertContains(text, "(Reference): Error while reading data. (Unexpected end of data.)");
+      AssertContains(text, "Error at 0xD8 (Reference): Error while reading data. (Unexpected end of data.)");
+      Assert.IsFalse(text.Contains("were read on at the next byte", StringComparison.Ordinal), "Nothing was read after the error");
       Assert.IsFalse(text.Contains('\r'), "Lines end with \\n on every OS (the error messages of the library use Environment.NewLine)");
     }
 
@@ -140,8 +143,12 @@ namespace LsMsgPackMcpServerTests
       bytes[bytes.Length / 2] = 0xC1;
       PayloadDocument doc = new PayloadDocument(bytes, "test", new DecodeOptions() { ContinueOnError = false });
       string text = TextRenderer.Render(doc, new RenderOptions());
-      AssertContains(text, "\"Customer\": null,");
-      AssertContains(text, "Error at 0x7B ([0].Id): "); // the rest is read as items that follow the invoice
+      // The reading stops at the error: the rest was read as items that follow the invoice, the values after Id as null
+      AssertContains(text, "Bytes 0x7C to 0xF6 were not read: the reading stopped at the first error (continueOnError is false).");
+      AssertContains(text, "{ // McpInvoice~, 6 not read: the reading stopped at the error\n  \"Id\": null // ERROR: ");
+      AssertContains(text, "Error at 0x7B (Id): ");
+      Assert.IsFalse(text.Contains("\"Customer\"", StringComparison.Ordinal), text);
+      Assert.IsFalse(text.Contains("were read on at the next byte", StringComparison.Ordinal), text);
     }
 
     [TestMethod]
@@ -237,7 +244,56 @@ namespace LsMsgPackMcpServerTests
     {
       string text = Render(new byte[] { 0xDD, 0x08, 0x00, 0x00, 0x00, 0x01 }); // array32 of 134217728 items, 1 there
       AssertContains(text, "1 error");
-      AssertContains(text, "[ // 2 items\n  1,\n");
+      AssertContains(text, "Structure: a single array 32 holding an error");
+      AssertContains(text, "[ // 2 of 134217728 items (claimed by the header)\n  1,\n");
+    }
+
+    /// <summary>
+    /// The encoding of an item is the one in the data: it was computed from the value (a str 16 that ends early was a fixstr, an array 16 of 3 items a fixarray).
+    /// </summary>
+    [TestMethod]
+    public void Encodings_AsInTheData()
+    {
+      string text = Render(new byte[] { 0xDC, 0x00, 0x03, 0x01, 0xDA, 0x00, 0x01, 0x41, 0xDE, 0x00, 0x00 }, new RenderOptions() { View = DecodeView.Items, Issues = IssueLevel.None });
+      AssertContains(text, "0x0000 array 16, 3 items\n");
+      AssertContains(text, "[1] str 16 \"A\"");
+      AssertContains(text, "[2] map 16, 0 entries");
+
+      string cut = Render(new byte[] { 0xDA, 0x00, 0x05, 0x41, 0x42 }, new RenderOptions() { View = DecodeView.Both });
+      AssertContains(cut, "Structure: a single str 16 that could not be read");
+      AssertContains(cut, "\nnull // ERROR: Error while reading data. (Unexpected end of data.) (str 16 at 0x0)\n");
+      AssertContains(cut, "0x0000   partial str 16 of 5 bytes, 2 bytes left in the data: not read");
+
+      string array = Render(new byte[] { 0xDC, 0x00, 0x05, 0x01, 0x02 }, new RenderOptions() { View = DecodeView.Items });
+      AssertContains(array, "partial array 16, 3 of 5 items (claimed by the header)");
+    }
+
+    /// <summary>
+    /// A value that ends early: the error was at the last byte read in the items view and at the end of the data in the list, its value (0) was shown
+    /// without the error and validated ("smaller encodings would save 2 bytes"), and the values "after the error" announced with none after it.
+    /// </summary>
+    [TestMethod]
+    public void CutOffValue_OneErrorOffset()
+    {
+      string text = Render(new byte[] { 0xCD, 0x01 }, new RenderOptions() { View = DecodeView.Both, Issues = IssueLevel.All });
+      AssertContains(text, "1 error, 0 warnings or comments.");
+      AssertContains(text, "\nnull // ERROR: Error while reading data. (Unexpected end of data.) (uint 16 at 0x0)\n");
+      AssertContains(text, "0x0000 ERROR: Error while reading data. (Unexpected end of data.)\n0x0000   partial uint 16: not read");
+      AssertContains(text, "Error at 0x0: Error while reading data.");
+      Assert.IsFalse(text.Contains("were read on at the next byte", StringComparison.Ordinal), text);
+      Assert.IsFalse(text.Contains("smaller", StringComparison.Ordinal), text);
+
+      PayloadDocument doc = new PayloadDocument(new byte[] { 0xCD, 0x01 }, "test", new DecodeOptions());
+      AssertContains(TextRenderer.ExplainOffset(doc, 1, new RenderOptions()), "  0x0 (2 bytes) partial uint 16: not read\n");
+      AssertContains(TextRenderer.ExplainOffset(doc, -1, new RenderOptions()), "Offset -1 is negative");
+    }
+
+    [TestMethod]
+    public void BoolKeysAndCounts()
+    {
+      string text = Render(new byte[] { 0x82, 0x01, 0xA1, 0x61, 0xC3, 0x92, 0x01, 0x02 });
+      AssertContains(text, "  true: [1, 2] // 2 items\n");
+      AssertContains(Render(new byte[] { 0x91, 0x01 }), "[1] // 1 item\n");
     }
 
     /// <summary>
