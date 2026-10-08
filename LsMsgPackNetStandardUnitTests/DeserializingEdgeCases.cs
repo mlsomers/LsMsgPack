@@ -422,6 +422,100 @@ namespace LsMsgPackUnitTests
         return null;
       }
     }
+
+    public class ConvWritten
+    {
+      public int Number { get; set; }
+      public Guid Id { get; set; }
+      public double Ratio { get; set; }
+      public bool Flag { get; set; }
+      public byte[] Data { get; set; }
+      public decimal Price { get; set; }
+      public string Code { get; set; }
+      public string Colour { get; set; }
+    }
+
+    public class ConvAsText
+    {
+      public string Number { get; set; }
+      public string Id { get; set; }
+      public string Ratio { get; set; }
+      public string Flag { get; set; }
+      public string Data { get; set; }
+      public string Price { get; set; }
+      public Guid Code { get; set; }
+      public Colour Colour { get; set; }
+    }
+
+    /// <summary>
+    /// Values read into other types than they were written with, as the JSON serializers read them from the text: into strings (numbers in the invariant culture, a bin of 16 bytes as a Guid, other bins in base64),
+    /// and strings into Guids and enums (by name).
+    /// </summary>
+    [TestMethod]
+    [DataRow(true, ObjectLayout.Array)]
+    [DataRow(true, ObjectLayout.Map)]
+    [DataRow(false, ObjectLayout.Map)]
+    public void ValuesReadAsText(bool useSchema, ObjectLayout layout)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      Guid id = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
+      ConvWritten written = new ConvWritten() { Number = 5, Id = id, Ratio = 0.25, Flag = true, Data = new byte[] { 1, 2, 3 }, Price = 1.5m, Code = id.ToString().ToUpperInvariant(), Colour = "green" };
+      ConvAsText read = Serializer.Deserialize<ConvAsText>(Serializer.Serialize(written, settings), settings);
+
+      Assert.AreEqual("5", read.Number);
+      Assert.AreEqual(id.ToString(), read.Id);
+      Assert.AreEqual("0.25", read.Ratio);
+      Assert.AreEqual("true", read.Flag);
+      Assert.AreEqual("AQID", read.Data);
+      Assert.AreEqual("1.5", read.Price);
+      Assert.AreEqual(id, read.Code);
+      Assert.AreEqual(Colour.Green, read.Colour);
+
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      Assert.AreEqual("-7", Serializer.Deserialize<string>(Serializer.Serialize(-7, withoutSchema), withoutSchema));
+      Assert.AreEqual("-7", Serializer.Deserialize(typeof(string), Serializer.Serialize(-7, withoutSchema), withoutSchema), "the root of the non-generic overload");
+    }
+
+    public class ConvProductWritten
+    {
+      public string Name { get; set; }
+      public int Code { get; set; }
+    }
+
+    /// <summary>
+    /// An object read into a dictionary: by name when the names were written (ObjectLayout.Map without the indexed schema). An object written as an array has no names,
+    /// and with the indexed schema its keys are indexes: a MsgPackException tells, instead of an InvalidCastException or keys "0", "1".
+    /// </summary>
+    [TestMethod]
+    [DataRow(false, ObjectLayout.Map, true)]
+    [DataRow(true, ObjectLayout.Map, false)]
+    [DataRow(true, ObjectLayout.Array, false)]
+    [DataRow(false, ObjectLayout.Array, false)]
+    public void ObjectReadAsDictionary(bool useSchema, ObjectLayout layout, bool hasNames)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      byte[] bytes = Serializer.Serialize(new ConvProductWritten() { Name = "Nut", Code = 3 }, settings);
+      if (hasNames)
+      {
+        Dictionary<string, object> read = Serializer.Deserialize<Dictionary<string, object>>(bytes, settings);
+        Assert.AreEqual("Nut", read["Name"]);
+        Assert.AreEqual(3, Convert.ToInt32(read["Code"]));
+      }
+      else
+      {
+        MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<Dictionary<string, object>>(bytes, settings));
+        StringAssert.Contains(ex.Message, "property names");
+      }
+    }
+
+    [TestMethod]
+    public void NumberKeysReadAsStrings()
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      Dictionary<string, string> read = Serializer.Deserialize<Dictionary<string, string>>(Serializer.Serialize(new Dictionary<int, string>() { { 1, "one" }, { 20, "twenty" } }, settings), settings);
+      Assert.AreEqual("one", read["1"]);
+      Assert.AreEqual("twenty", read["20"]);
+    }
   }
 
   [TestClass]

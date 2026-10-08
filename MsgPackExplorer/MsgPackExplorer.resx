@@ -303,4 +303,18 @@
         AcABAwH8AT8BwgFDAfABAwHgAQcB/gF/AeABBwHwAQcB8AEPAf4BfwHwAQ8B8AEPCP8L
 </value>
   </data>
+  <metadata name="toolStrip1.TrayLocation" type="System.Drawing.Point, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+    <value>351, 17</value>
+  </metadata>
+  <data name="ddEndianess.ToolTipText" xml:space="preserve">
+    <value>MsgPack specification explicitly states that it is a Big-Endian format.
+When getting unexpected results you may use this setting to check if an 
+implementation has taken the systems endianness into account.</value>
+  </data>
+  <metadata name="openFileDialog1.TrayLocation" type="System.Drawing.Point, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+    <value>456, 17</value>
+  </metadata>
+  <metadata name="saveTestSuiteDialog.TrayLocation" type="System.Drawing.Point, System.Drawing, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a">
+    <value>587, 17</value>
+  </metadata>
 </root>

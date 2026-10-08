@@ -158,9 +158,10 @@ Register an assembly yourself when that isn't the case, once, before deserializi
 // The property is declared as object, so the reader has no assembly to look in:
 public IEnumerable<object> Pets { get; set; } = new HashSet<IPet> { new Cat(), new Dog() };
 
-MsgPackSerializer.CacheAssemblyTypes(typeof(IPet));    // LsMsgPack
-LtMsgPackSerializer.CacheAssemblyTypes(typeof(IPet));  // LtMsgPack (the same cache, either call will do)
+MsgPackTypes.CacheAssemblyTypes(typeof(IPet));  // LsMsgPack.Core, for both serializers
 ```
+
+`MsgPackSerializer.CacheAssemblyTypes` (LsMsgPack) and `LtMsgPackSerializer.CacheAssemblyTypes` (LtMsgPack) do the same: there is one cache. A [type guard](security.md) registers what it allows: `new AllowedTypesGuard().AllowAssemblyOf(typeof(IPet))` makes the types of that assembly known by name as well, `Allow(typeof(Cat))` only `Cat`.
 
 The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins), and nothing you deserialize reaches them: register each of them. `Deserialize<List<Cat>>()` finds `Cat` (it's reachable from the root type).
 

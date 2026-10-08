@@ -17,7 +17,7 @@ When data picks the type, whoever writes the data picks the code that runs while
 
 Two things decide how exposed you are:
 
-1. **Which types the data can name.** A type id is resolved by name (see [Polymorphic class-hierarchy support](schema.md#polymorphic-class-hierarchy-support)): the framework's core library, the framework's collection assemblies, and every assembly that has been cached so far (your root types' assemblies and the assemblies of the types they reach through generic arguments, base classes and public properties, the assemblies of declared types, and what you registered with `CacheAssemblyTypes`). `WildGooseChaseResolver` extends this to every assembly loaded in the process.
+1. **Which types the data can name.** A type id is resolved by name (see [Polymorphic class-hierarchy support](schema.md#polymorphic-class-hierarchy-support)): the framework's core library, the framework's collection assemblies, and every assembly that has been cached so far (your root types' assemblies and the assemblies of the types they reach through generic arguments, base classes and public properties, the assemblies of declared types, what you registered with `CacheAssemblyTypes`, and what an `AllowedTypesGuard` allows). `WildGooseChaseResolver` extends this to every assembly loaded in the process.
 2. **Where the data can use them.** A type id is only consulted where a value is read, and the declared type of that place (a property, a collection element or the root you deserialize) limits what fits there.
 
 What the schema hashes do and don't protect
@@ -72,6 +72,8 @@ The included allow-list allows:
 - the framework's collections (`List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `Queue<T>`, the concurrent collections, `ObservableCollection<T>`, ..., and `ArrayList` and `Hashtable`).
 
 **Generic types and arrays are only allowed when their arguments are.** A type id `List<Process>` on a property declared as `object` is refused unless `Process` is allowed. The elements of that list are created as its declared element type, without type ids of their own, so the list's type is the only chance to stop them. `Allow(typeof(Envelope<>))` allows `Envelope<T>` for every allowed `T`. `Allow(typeof(Envelope<Foo>))` allows exactly that type.
+
+**What it allows becomes known by name.** The data can name the types of the allowed assemblies and the allowed types without `CacheAssemblyTypes`. The name caches are global, so other settings (with other guards, or none) can resolve those names too; their declared types and guards still decide.
 
 Decisions are cached per type, so a polymorphic value costs one dictionary lookup. Configure the guard before you use it. Adding types later is safe (it clears the cache), and one guard can be shared by several settings and threads. To add rules of your own, override `Decide`.
 

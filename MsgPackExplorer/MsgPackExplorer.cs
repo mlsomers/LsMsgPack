@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
@@ -15,6 +16,40 @@ namespace MsgPackExplorer
         public LsMsgPackExplorer()
         {
             InitializeComponent();
+            _search = new ExplorerSearch(this, searchTextBox, searchMatchCase, searchPrev, searchNext, searchPosCount);
+
+            ddEndianess.Items.AddRange(new[]{
+                new EndianChoice(EndianAction.SwapIfCurrentSystemIsLittleEndian, "Reorder if system is little endian (default)."),
+                new EndianChoice(EndianAction.NeverSwap, "Never reorder"),
+                new EndianChoice(EndianAction.AlwaysSwap, "Always reorder")
+            });
+            SelectToolbarDisplayLimit();
+            SelectToolbarEndianChoice();
+        }
+
+        private readonly ExplorerSearch _search;
+
+        /// <summary>
+        /// Set while a property selects its value in the toolbar, so the toolbar does not set the property (and reload the data) again.
+        /// </summary>
+        private bool _syncingToolbar;
+
+        /// <summary>
+        /// The installer copies the files from the folder of the explorer application, so it only works there (not in the plugins).
+        /// </summary>
+        [Category("MsgPack")]
+        [DisplayName("Installers visible")]
+        [Description("Show the menu items that install and uninstall the Fiddler inspector and the Visual Studio plugin (only for the explorer application).")]
+        [DefaultValue(true)]
+        public bool InstallersVisible
+        {
+            get { return installAsFiddlerInspectorToolStripMenuItem.Available; }
+            set
+            {
+                toolStripSeparator2.Available = value;
+                installAsFiddlerInspectorToolStripMenuItem.Available = value;
+                installAsVsPluginToolStripMenuItem.Available = value;
+            }
         }
 
         private MsgPackItem item;
@@ -33,6 +68,12 @@ namespace MsgPackExplorer
                 _settingItem = true;
                 try
                 {
+                    // Data that was likely written from objects: show them (the menu item can still hide them)
+                    objectsMenuItem.Checked = ObjectsLikely;
+                    string reason = ObjectsReason;
+                    objectsMenuItem.ToolTipText = reason.Length == 0 ? ObjectsToolTip : string.Concat(ObjectsToolTip, "\r\n", reason);
+                    toolViewMenu.ToolTipText = objectsMenuItem.ToolTipText;
+
                     ItemChanged?.Invoke(this, EventArgs.Empty);
                 }
                 finally
@@ -44,6 +85,8 @@ namespace MsgPackExplorer
         }
 
         private bool _settingItem;
+
+        private const string ObjectsToolTip = "Show the objects the data was written from (switched on when the data looks like objects)";
 
         /// <summary>
         /// Raised after new data was loaded (<see cref="Item"/> or <see cref="Data"/>).
@@ -104,6 +147,7 @@ namespace MsgPackExplorer
         [Category("MsgPack")]
         [DisplayName("Continue On Error")]
         [Description("Set this to true in order to keep processing the stream after a breaking error occurred.")]
+        [DefaultValue(false)]
         public bool ContinueOnError
         {
             get { return _continueOnError; }
@@ -113,6 +157,7 @@ namespace MsgPackExplorer
                 {
                     _continueOnError = value;
                     if (!ReferenceEquals(data, null) && data.Length > 0) Data = data;
+                    btnProcessAfterError.Checked = value; // its handler sets the same value
                 }
             }
         }
@@ -145,24 +190,34 @@ namespace MsgPackExplorer
             }
         }
 
-        private long _displayLimit = 1000;
+        private long _displayLimit = 500; // the first choice of the toolbar
         [Category("MsgPack")]
         [DisplayName("Limit items")]
-        [Description("Limit the number of items that are displayed when many items are processed.")]
+        [Description("Limit the number of items that are displayed when many items are processed (call RefreshTree to apply it to the shown data).")]
+        [DefaultValue(500L)]
         public long DisplayLimit
         {
             get { return _displayLimit; }
-            set { _displayLimit = value; }
+            set
+            {
+                _displayLimit = value;
+                SelectToolbarDisplayLimit();
+            }
         }
 
         private EndianAction _endianHandling = EndianAction.SwapIfCurrentSystemIsLittleEndian;
         [Category("MsgPack")]
         [DisplayName("Endian handling")]
-        [Description("Override Endianess conversion (default will reorder bytes on little-endian systems).")]
+        [Description("Override Endianess conversion (default will reorder bytes on little-endian systems), applies to the next Data.")]
+        [DefaultValue(EndianAction.SwapIfCurrentSystemIsLittleEndian)]
         public EndianAction EndianHandling
         {
             get { return _endianHandling; }
-            set { _endianHandling = value; }
+            set
+            {
+                _endianHandling = value;
+                SelectToolbarEndianChoice();
+            }
         }
 
     public bool ObjectsVisible {
@@ -173,6 +228,7 @@ namespace MsgPackExplorer
         if (value == _objectsVisible)
           return;
         _objectsVisible = value;
+        objectsMenuItem.Checked = value; // its handler sets the same value
         splitterObj.Visible = value;
         objectsPane.Visible = value;
         lblObj.Visible = value;
@@ -648,6 +704,40 @@ namespace MsgPackExplorer
             listView1.Items.Add(lvi);
         }
 
+        private void SelectToolbarDisplayLimit()
+        {
+            int index = _displayLimit == long.MaxValue ? ddLimitItems.Items.Count - 1 : ddLimitItems.Items.IndexOf(_displayLimit.ToString());
+            if (index < 0 || index == ddLimitItems.SelectedIndex)
+                return;
+            _syncingToolbar = true;
+            try
+            {
+                ddLimitItems.SelectedIndex = index;
+            }
+            finally
+            {
+                _syncingToolbar = false;
+            }
+        }
+
+        private void SelectToolbarEndianChoice()
+        {
+            for (int t = 0; t < ddEndianess.Items.Count; t++)
+            {
+                if (((EndianChoice)ddEndianess.Items[t]).Value != _endianHandling || t == ddEndianess.SelectedIndex)
+                    continue;
+                _syncingToolbar = true;
+                try
+                {
+                    ddEndianess.SelectedIndex = t;
+                }
+                finally
+                {
+                    _syncingToolbar = false;
+                }
+                return;
+            }
+        }
     private void splitterObj_SplitterMoved(object sender, SplitterEventArgs e)
     {
       lblObj.Top = splitterObj.Top+2;
@@ -665,6 +755,173 @@ namespace MsgPackExplorer
       lblProps.Top = splitterObj.Top + 2;
     }
 
+        private void btnOpen_Click(object sender, EventArgs e)
+        {
+            if (openFileDialog1.ShowDialog(this) == DialogResult.OK)
+            {
+                Data = System.IO.File.ReadAllBytes(openFileDialog1.FileName);
+            }
+        }
+
+        private void fromClipboardToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            string str = Clipboard.GetText();
+            if (!string.IsNullOrWhiteSpace(str))
+            {
+                try
+                {
+                    Data = ClipboardSupport.GetBytes(str);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Clipboard content could not be converted to a byte array:\r\n" + ex.Message, "Parsing failure", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+            }
+            DataObject retrievedData = Clipboard.GetDataObject() as DataObject;
+            if (retrievedData == null)
+            {
+                MessageBox.Show("Clipboard does not seem to contain anything.", "Unrecognised format", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            if (retrievedData.GetDataPresent(typeof(byte[])))
+                Data = retrievedData.GetData(typeof(byte[])) as byte[];
+            else if (retrievedData.GetDataPresent(typeof(MemoryStream)))
+                Data = (retrievedData.GetData(typeof(MemoryStream)) as MemoryStream).ToArray();
+            else
+                MessageBox.Show("Clipboard did not contain anything recognised as a byte array, memory stream or an encoded string.", "Unrecognised format", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+
+        private void btnGenerateTestFiles_Click(object sender, EventArgs e)
+        {
+            if (saveTestSuiteDialog.ShowDialog(this) == DialogResult.OK)
+            {
+                new TestFileSuiteCreator().CreateSuite(System.IO.Path.GetDirectoryName(saveTestSuiteDialog.FileName));
+            }
+        }
+
+        private void btnProcessAfterError_CheckedChanged(object sender, EventArgs e)
+        {
+            ContinueOnError = btnProcessAfterError.Checked;
+        }
+
+        private void objectsMenuItem_CheckedChanged(object sender, EventArgs e)
+        {
+            ObjectsVisible = objectsMenuItem.Checked;
+        }
+
+        private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            new AboutBox().ShowDialog(this);
+        }
+
+        private void ddLimitItems_TextChanged(object sender, EventArgs e)
+        {
+            if (_syncingToolbar)
+                return;
+            long limit;
+            if (long.TryParse(ddLimitItems.Text, out limit))
+                _displayLimit = limit;
+            else
+                _displayLimit = long.MaxValue;
+            RefreshTree();
+            _search.Reset(); // other items are shown
+        }
+
+        private void ddEndianess_DropDownClosed(object sender, EventArgs e)
+        {
+            if (_syncingToolbar)
+                return;
+            EndianChoice choice = ddEndianess.SelectedItem as EndianChoice;
+            if (choice is null || choice.Value == _endianHandling)
+                return; // both events are raised for one choice
+            _endianHandling = choice.Value;
+            Data = data;
+        }
+
+        private void installAsFiddlerInspectorToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string success = Installer.TryInstall(false).Trim();
+                if (string.IsNullOrEmpty(success))
+                {
+                    MessageBox.Show("Unable to find the Fiddler application files", "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                if (Installer.FiddlerIsRunning)
+                     ActionReport.ShowDiag($"Installed successfully.\r\nFiddler is currently running.\r\nYou will need to restart Fiddler in order to use the MsgPack inspector.\r\n\r\nFiles installed:\r\n{success}", "Installed");
+                else
+                    ActionReport.ShowDiag($"Installed successfully.\r\n\r\nFiles installed:\r\n{success}", "Installed");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(string.Concat("Inastallation failed with the following message:\r\n", ex.Message, "\r\n\r\nYou may have more luck (depending on the error) running with administration privileges."), "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void installVisualStudioPluginToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string success = Installer.TryInstall(true).Trim();
+                if (string.IsNullOrEmpty(success))
+                {
+                    MessageBox.Show("Unable to find the Visual studio installation directory", "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                if (Installer.VsIsRunning)
+                    ActionReport.ShowDiag($"Installed successfully.\r\nVisual Studio is currently running.\r\nYou will need to restart Visual Studio in order to use the MsgPack inspector.\r\n\r\nFiles installed:\r\n{success}", "Installed");
+                else
+                    ActionReport.ShowDiag($"Installed successfully.\r\n\r\nFiles installed:\r\n{success}", "Installed");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(string.Concat("Inastallation failed with the following message:\r\n", ex.Message, "\r\n\r\nYou may have more luck (depending on the error) running with administration privileges."), "Not installed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void menUnistallFiddler_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string success = Installer.UnInstall(false).Trim();
+                if (string.IsNullOrEmpty(success))
+                {
+                    MessageBox.Show("Unable to find the Fiddler application files", "Not removed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                ActionReport.ShowDiag($"Uninstalled successfully.\r\n\r\nFiles removed:\r\n{success}", "Uninstalled");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(string.Concat("Removal failed with the following message:\r\n", ex.Message, "\r\n\r\nYou may have more luck (depending on the error) running with administration privileges."), "Not removed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void menUninstallVisualStudio_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                string success = Installer.UnInstall(true).Trim();
+                if (string.IsNullOrEmpty(success))
+                {
+                    MessageBox.Show("Unable to find the Visual studio installation directory", "Not removed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return;
+                }
+
+                ActionReport.ShowDiag($"Uninstalled successfully.\r\n\r\nFiles removed:\r\n{success}", "Uninstalled");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(string.Concat("Removal failed with the following message:\r\n", ex.Message, "\r\n\r\nYou may have more luck (depending on the error) running with administration privileges."), "Not removed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    
     private void splittObjProps_VisibleChanged(object sender, EventArgs e)
     {
       lblProps.Left = splittObjProps.Left + 9;
@@ -676,4 +933,21 @@ namespace MsgPackExplorer
       lblProps.Top = splitterObj.Top + 2;
     }
   }
+
+  public class EndianChoice
+{
+  public EndianChoice(EndianAction value, string description)
+  {
+    Value = value;
+    Description = description;
+  }
+
+  private string Description { get; }
+  public EndianAction Value { get; }
+
+  public override string ToString()
+  {
+    return Description;
+  }
+}
 }

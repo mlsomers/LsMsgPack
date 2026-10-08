@@ -6,7 +6,7 @@ MsgPack standardizes the value types (integers, strings, binary data, arrays, ma
 
 | Library | LsMsgPack writes, the library reads | The library writes, LsMsgPack reads |
 |---|---|---|
-| [MessagePack-CSharp](#messagepack-csharp) | contractless resolver, `NativeGuidResolver` and a formatter for LsMsgPack's decimal | maps (contractless) and `NativeGuidResolver` |
+| [MessagePack-CSharp](#messagepack-csharp) | contractless resolver, `NativeGuidResolver` and a formatter for LsMsgPack's decimal | maps (contractless) |
 | [Nerdbank.MessagePack](#nerdbankmessagepack) | decimal extension type code 1 | two extensions registered in LsMsgPack (Guid and decimal) |
 | [Python, JavaScript](#python-and-javascript) | decode Guids and decimals (snippets below) | Guids as bytes in .NET order, decimals as strings |
 | [Other libraries](#other-libraries-not-tested) | maps keyed by property names | maps keyed by property names |
@@ -33,12 +33,12 @@ LtMsgPackSerializer serializer = new LtMsgPackSerializer(LtMsgPackPresets.Messag
 byte[] bytes = serializer.Serialize(invoice); // read by MessagePackSerializer.Deserialize<Invoice>(bytes, ContractlessStandardResolver.Options)
 ```
 
-The presets use these LtMsgPack options (LsMsgPack has no equivalent, the defaults write what LsMsgPack writes):
+The presets use these LtMsgPack options (the defaults write what LsMsgPack writes; `UnspecifiedDateTimeKind` is shared with LsMsgPack):
 
 - `GuidFormat`: `Binary` (bin 16, default) or `String` (36 characters, "D" format; reading then accepts both).
 - `DecimalFormat`: `Extension` (the decimal extension, default) or `String` (invariant culture, also when a decimal extension is registered; strings are always read).
 - `DateTimeOffsetFormat`: `Timestamp` (the moment, default) or `ClockTimeAndOffset` (MessagePack-CSharp's array; reading then accepts both).
-- `UnspecifiedDateTimeKind`: `Local` (default, as LsMsgPack) or `Utc` (as MessagePack-CSharp).
+- `UnspecifiedDateTimeKind`: `Local` (default) or `Utc` (as MessagePack-CSharp). For reading see `DateTime` in [LsMsgPack settings](#lsmsgpack-settings).
 - `LtMsgPack.Extensions.NerdbankGuidExtension`: reads Nerdbank's Guid (extension type 2, big-endian).
 
 The web formatters use the presets for the plain media types: `AddLsMsgPackSerializerFormatters(o => o.Plain = LtMsgPackPresets.MessagePackCSharp())`, see [WebFormatters.md](WebFormatters.md).
@@ -68,7 +68,7 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 - **Schema references** (`WriteSchemaReference` with a `SchemaStore`). Instead of the schema, the data then starts with a reference to it: an extension (fixext16, type 2) holding the first 16 bytes of the SHA-256 hash of the schema. Only LsMsgPack readers that hold the schema in their `SchemaStore` can read it, other libraries read the extension and stop. Not tested with other libraries, it needs the indexed schema anyway.
 - **Default values** (`DynamicFilters`). By default LsMsgPack leaves out values that equal the default of their type (`FilterDefaultValues`): null, 0, `false`, `Guid.Empty` and so on. An empty string is written, like the JSON serializers do (the default of a string is null; `new FilterDefaultValues(omitEmptyStrings: true)` leaves it out too). A reader keeps what the constructor set for a missing value, so a class with other initial values does not round trip: `public int Retries { get; set; } = 3;` written as 0 is read as 3 (by LsMsgPack too). The other libraries write every value. Without the filter LsMsgPack writes them all, and then writes the same bytes as MessagePack-CSharp for a class of strings, numbers and booleans (tested). Leaving them out is safe when the classes of all readers start with the default values of the types.
 - **Type ids** (`AddTypeIdOptions`). LsMsgPack adds a type id when a value's type differs from the declared type: an extra key `""` in an object's map, or a map `{ "": "DateTime", "@": value }` around other values (e.g. a `DateTime` in a property of type `object`). Other libraries skip the `""` key of an object, but read a wrapped value as a map. `AddTypeIdOption.Never` writes only the value (tested), then LsMsgPack can no longer restore the types of polymorphic members.
-- **`DateTime`**: use `DateTimeKind.Utc` (or `Local`) values. A timestamp is a moment in UTC. For `Unspecified` LsMsgPack assumes local time (like `ToUniversalTime()`), MessagePack-CSharp assumes UTC (a different moment, unless the machine's time zone is UTC) and Nerdbank.MessagePack refuses it. LsMsgPack reads timestamps as local time, the other libraries as UTC: the same moment.
+- **`DateTime`**: use `DateTimeKind.Utc` (or `Local`) values. A timestamp is a moment in UTC. For `Unspecified` LsMsgPack assumes local time (like `ToUniversalTime()`) unless `UnspecifiedDateTimeKind = DateTimeKind.Utc`, MessagePack-CSharp assumes UTC (a different moment, unless the machine's time zone is UTC) and Nerdbank.MessagePack refuses it. LsMsgPack reads timestamps as local time by default, the other libraries as UTC: the same moment. `ReadDateTimeKind = DateTimeKind.Utc` reads them as UTC too, `Unspecified` reads the UTC clock time as `Unspecified`: with `UnspecifiedDateTimeKind = Utc` on the writer, an `Unspecified` value comes back as it was in any time zone (as JSON writes it, without an offset).
 - **Names** must match exactly (they are case-sensitive).
 
 ## How values are written
@@ -82,7 +82,7 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 | other collections of `KeyValuePair<,>` (`List<KeyValuePair<,>>`...) | map, like a dictionary (duplicate keys are kept) | array of `[key, value]` arrays (Nerdbank.MessagePack: array of maps `{ Key, Value }`) | incompatible (measured, not in the interop tests) |
 | `DateTime` | timestamp (extension type -1) | the same bytes (except `Unspecified`, see above) | tested |
 | `char`, `TimeSpan`, `DateOnly`, `TimeOnly`, `Uri` | number, ticks, day number, ticks, string | the same bytes | tested |
-| `Guid` | bin 16 in the byte order of `Guid.ToByteArray()` | a string of 36 characters | configure MessagePack-CSharp (`NativeGuidResolver` writes the same bytes as LsMsgPack) |
+| `Guid` | bin 16 in the byte order of `Guid.ToByteArray()` | a string of 36 characters | LsMsgPack reads the string, configure MessagePack-CSharp to read bin 16 (`NativeGuidResolver` writes the same bytes as LsMsgPack) |
 | `decimal` | extension type 1: the 16 bytes of `System.Decimal` | a string (`"1234.50"`) | LsMsgPack reads the string, MessagePack-CSharp needs a formatter for the extension |
 | `DateTimeOffset` | timestamp of the moment (the offset is lost) | array of the local time and the offset in minutes | incompatible |
 | class | map keyed by property names (or the indexed schema), or with `ObjectLayout.Array` an array of the values | array (`[Key(0)]`), or map keyed by names (`[Key("Name")]`, contractless) | maps: tested. Arrays: the same bytes with `ObjectLayout.Array` in the order of the keys (see below), tested |
@@ -140,15 +140,11 @@ With these options MessagePack-CSharp also writes what LsMsgPack reads.
 **MessagePack-CSharp writes, LsMsgPack reads.**
 
 - Write objects as maps keyed by property names (contractless, `keyAsPropertyName: true`, or string keys equal to the property names), or use integer keys (arrays) with the settings below.
-- Write Guids with `NativeGuidResolver`, LsMsgPack does not read the default string.
-- Decimals: LsMsgPack reads the default string.
+- Guids and decimals: LsMsgPack reads the default strings.
 - Do not use LZ4 compression (`WithCompression`, extension types 98 and 99) or the typeless serializer (extension type 100).
 
 ```csharp
-MessagePackSerializerOptions options = MessagePackSerializerOptions.Standard.WithResolver(
-  CompositeResolver.Create(NativeGuidResolver.Instance, ContractlessStandardResolver.Instance));
-
-byte[] bytes = MessagePackSerializer.Serialize(invoice, options);
+byte[] bytes = MessagePackSerializer.Serialize(invoice, ContractlessStandardResolver.Options);
 Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, new MsgPackSettings() { UseInexedSchema = false });
 ```
 
