@@ -456,8 +456,12 @@ namespace LsMsgPack
 #if KEEPTRACK
         try
         {
-          items.Add(Unpack(stream, settings));
+          MsgPackItem item = Unpack(stream, settings);
+          items.Add(item);
           lastpos = stream.Position;
+          // Unpack returns errors as items here instead of throwing: stop at the first one like the catch below does
+          if (item is MpError && !settings._continueProcessingOnBreakingError)
+            break;
         }
         catch (Exception ex)
         {

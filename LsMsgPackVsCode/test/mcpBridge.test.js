@@ -7,10 +7,22 @@ const fs = require('fs');
 const net = require('net');
 const os = require('os');
 const path = require('path');
-const { BridgeServer, isSimplePath, schemaExpression } = require('../out/mcpBridge');
+const { BridgeServer, findMcpTool, isSimplePath, schemaExpression } = require('../out/mcpBridge');
 
 const root = path.join(__dirname, '..');
 const sample = fs.readFileSync(path.join(root, '..', 'LsMsgPackVisualStudioPlugin', 'PluginTester', 'AllSmallTypes.MsgPack'));
+
+test('the .NET tool: on the PATH, in the folder of global tools, or not installed', () => {
+  const files = new Set();
+  const exists = (file) => files.has(file);
+  assert.strictEqual(findMcpTool({ PATH: '/usr/bin:/opt/tools', HOME: '/home/me' }, 'linux', exists), undefined);
+  files.add('/home/me/.dotnet/tools/lsmsgpack-mcp');
+  assert.strictEqual(findMcpTool({ PATH: '/usr/bin', HOME: '/home/me' }, 'linux', exists), '/home/me/.dotnet/tools/lsmsgpack-mcp');
+  files.add('/opt/tools/lsmsgpack-mcp');
+  assert.strictEqual(findMcpTool({ PATH: '/usr/bin:/opt/tools', HOME: '/home/me' }, 'linux', exists), 'lsmsgpack-mcp');
+  files.add('C:\\Users\\me\\.dotnet\\tools\\lsmsgpack-mcp.exe');
+  assert.strictEqual(findMcpTool({ Path: 'C:\\Windows', USERPROFILE: 'C:\\Users\\me' }, 'win32', exists), 'C:\\Users\\me\\.dotnet\\tools\\lsmsgpack-mcp.exe');
+});
 
 function fakeHandler(reads) {
   return {

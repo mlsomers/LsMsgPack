@@ -60,6 +60,10 @@ namespace LsMsgPackMcp
       if (all2chars && allHex)
         return FromHex(string.Concat(parts));
 
+      // Hex in groups of any even length (91 c4 30 000102...): a decimal byte has at most 3 digits
+      if (allHex && !hexPrefix && parts.TrueForAll(p => p.Length % 2 == 0) && (!allNumeric || parts.Exists(p => p.Length > 3)))
+        return FromHex(string.Concat(parts));
+
       if (hexPrefix && allHex) // delimited hex values not all written with two digits (0x92, 0x1): hex, not decimal
       {
         byte[] bytes = new byte[parts.Count];

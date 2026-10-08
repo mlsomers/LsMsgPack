@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using ObjectDebugger;
 using System;
 using System.Collections.Generic;
@@ -111,7 +111,7 @@ namespace LsMsgPackMcp
       sb.Append("MsgPack ");
       if (!string.IsNullOrEmpty(doc.Id))
         sb.Append('"').Append(doc.Id).Append("\" ");
-      sb.Append(doc.Data.Length.ToString(CultureInfo.InvariantCulture)).Append(" bytes");
+      sb.Append(Count(doc.Data.Length, "byte", "bytes"));
       if (!string.IsNullOrEmpty(doc.Source))
         sb.Append(" from ").Append(doc.Source);
       sb.Append(".").Append('\n');
@@ -137,7 +137,13 @@ namespace LsMsgPackMcp
       sb.Append("Structure: ").Append(DescribeStructure(doc)).Append('\n');
       long end = doc.Root.Offset + doc.Root.Length;
       if (end < doc.Data.Length)
-        sb.Append("Bytes ").Append(Hex(end)).Append(" to ").Append(Hex(doc.Data.Length - 1)).Append(" are not part of any item.").Append('\n');
+      {
+        sb.Append("Bytes ").Append(Hex(end)).Append(" to ").Append(Hex(doc.Data.Length - 1));
+        if (!doc.Options.ContinueOnError && doc.FirstErrorOffset >= 0)
+          sb.Append(" were not read: the reading stopped at the first error (continueOnError is false).").Append('\n');
+        else
+          sb.Append(" are not part of any item.").Append('\n');
+      }
 
       int errors = 0;
       int warnings = 0;
@@ -188,7 +194,7 @@ namespace LsMsgPackMcp
       }
       else if (doc.Root.Item is MpRoot root)
       {
-        parts.Add(string.Concat(root.Count.ToString(CultureInfo.InvariantCulture), " items that follow each other"));
+        parts.Add(string.Concat(Count(root.Count, "item", "items"), " that follow each other"));
       }
       else if (doc.Root.Item is MpError error)
       {
@@ -196,11 +202,11 @@ namespace LsMsgPackMcp
         if (error.PartialItem is null)
           parts.Add("an error");
         else
-          parts.Add(string.Concat("a single ", TypeName(error.PartialItem), error.IsInNestedItem ? " holding an error" : " that could not be read"));
+          parts.Add(string.Concat("a single ", TypeName(doc, error.PartialItem), error.IsInNestedItem ? " holding an error" : " that could not be read"));
       }
       else
       {
-        parts.Add(string.Concat("a single ", TypeName(doc.Root.Item)));
+        parts.Add(string.Concat("a single ", TypeName(doc, doc.Root.Item)));
       }
       if (objects != null && objects.Kind != ObjectKind.Sequence && objects.Schema is null && LooksLikeArrayLayout(objects))
         parts.Add("objects may be written as arrays of their values (ObjectLayout.Array): without a schema the property names are not in the data");
@@ -249,6 +255,8 @@ namespace LsMsgPackMcp
       /// Values that start after it were read after an error (-1: none).
       /// </summary>
       public long FirstError = -1;
+
+      public PayloadDocument Doc;
     }
 
     private static void WriteObjects(StringBuilder sb, PayloadDocument doc, RenderOptions options)
@@ -271,8 +279,8 @@ namespace LsMsgPackMcp
         sb.Append(" at ").Append(start.Path);
       sb.Append(" (JSON with // comments: a type name comes from a type id, a name with ~ is inferred from the schema; dictionary keys that are not strings are not quoted):").Append('\n');
 
-      Budget budget = new Budget() { Left = Math.Max(1, options.MaxNodes), FirstError = doc.FirstErrorOffset };
-      if (budget.FirstError >= 0)
+      Budget budget = new Budget() { Left = Math.Max(1, options.MaxNodes), FirstError = doc.FirstErrorOffset, Doc = doc };
+      if (budget.FirstError >= 0 && AnyReadAfter(start, budget.FirstError))
         sb.Append("The values after the first error (at ").Append(Hex(budget.FirstError)).Append(") were read on at the next byte: they may be wrong (marked \"after the error\").").Append('\n');
       string comment;
       string text = Value(start, options, 0, budget, false, out comment);
@@ -282,14 +290,36 @@ namespace LsMsgPackMcp
     }
 
     /// <summary>
+    /// The error of a value that could not be read with the offset of the value, as the issues and the items view show it.
+    /// </summary>
+    private static string UnreadError(PayloadDocument doc, MsgPackItem item)
+    {
+      return string.Concat(ErrorMessage(doc.ErrorAround(item)), " (", MsgPackItem.GetOfficialTypeName(doc.Encoding(item)), " at ", Hex(item.StoredOffset), ")");
+    }
+
+    private static bool ReadAfter(PrimitiveObject obj, long firstError)
+    {
+      return firstError >= 0 && !(obj.LastItemRef is null) && !(obj.LastItemRef is MpError) && obj.LastItemRef.StoredOffset > firstError;
+    }
+
+    private static bool AnyReadAfter(PrimitiveObject start, long firstError)
+    {
+      foreach (PrimitiveObject obj in PayloadDocument.Walk(start))
+        if (ReadAfter(obj, firstError))
+          return true;
+      return false;
+    }
+
+    /// <summary>
     /// The value as JSON-like text (several lines for objects and collections), and the comment for its first line.
     /// </summary>
     private static string Value(PrimitiveObject obj, RenderOptions options, int indent, Budget budget, bool parentGuessed, out string comment)
     {
       budget.Left--;
-      bool guessed = parentGuessed || budget.FirstError >= 0 && !(obj.LastItemRef is null) && !(obj.LastItemRef is MpError) && obj.LastItemRef.StoredOffset > budget.FirstError;
+      bool guessed = parentGuessed || ReadAfter(obj, budget.FirstError);
       List<string> notes = new List<string>();
       string text;
+      string error = obj.Error;
       ComplexObject complex = obj as ComplexObject;
       if (complex != null && complex.Kind != ObjectKind.Value)
       {
@@ -297,10 +327,26 @@ namespace LsMsgPackMcp
       }
       else if (complex != null)
       {
-        // A root holding a single value
-        text = Primitive(complex.ValueKind, complex.Value, options, notes);
+        // A root holding a single value: the value's item and error are on its member
+        PrimitiveObject value = complex.Members.Count == 1 ? complex.Members[0] : null;
+        if (value != null && budget.Doc.IsUnread(value.LastItemRef))
+        {
+          text = "null";
+          error = UnreadError(budget.Doc, value.LastItemRef);
+        }
+        else
+        {
+          text = Primitive(complex.ValueKind, complex.Value, options, notes);
+        }
         if (complex.Type != null)
           notes.Insert(0, complex.Type);
+        if (error is null && value != null)
+          error = value.Error;
+      }
+      else if (budget.Doc.IsUnread(obj.LastItemRef))
+      {
+        text = "null"; // what the item holds is not what the data holds (e.g. "" for a string cut off)
+        error = UnreadError(budget.Doc, obj.LastItemRef);
       }
       else
       {
@@ -309,8 +355,8 @@ namespace LsMsgPackMcp
           notes.Insert(0, obj.TypeIsGuess ? obj.Type + "~" : obj.Type);
       }
 
-      if (obj.Error != null)
-        notes.Add(string.Concat("ERROR: ", CleanError(obj.Error)));
+      if (error != null)
+        notes.Add(string.Concat("ERROR: ", CleanError(error)));
       else if (guessed && !parentGuessed)
         notes.Add("after the error");
       if (options.Offsets && !(obj.LastItemRef is null))
@@ -330,17 +376,28 @@ namespace LsMsgPackMcp
     private static string Complex(ComplexObject obj, RenderOptions options, int indent, Budget budget, bool guessed, List<string> notes)
     {
       bool isArray = obj.Kind == ObjectKind.Collection || obj.Kind == ObjectKind.Sequence;
-      string count = obj.Members.Count.ToString(CultureInfo.InvariantCulture);
+      // A container cut off by an error: the slots after the error were not read (they are null), the header may claim more than there are
+      int unread = 0;
+      long claimed = -1;
+      MsgPackItem cutOff = budget.Doc.CutOffContainer(obj.LastItemRef);
+      if (cutOff != null)
+      {
+        while (unread < obj.Members.Count && obj.Members[obj.Members.Count - 1 - unread].LastItemRef is null && obj.Members[obj.Members.Count - 1 - unread].FirstItemRef is null)
+          unread++;
+        if (obj.Kind == ObjectKind.Collection || obj.Kind == ObjectKind.Dictionary)
+          claimed = budget.Doc.ClaimedLength(cutOff);
+      }
+      int read = obj.Members.Count - unread;
       switch (obj.Kind)
       {
         case ObjectKind.Collection:
-          notes.Add(obj.Type != null ? string.Concat(obj.Type, ", ", count, " items") : string.Concat(count, " items"));
+          notes.Add(obj.Type != null ? string.Concat(obj.Type, ", ", Claimed(read, claimed, "item", "items")) : Claimed(read, claimed, "item", "items"));
           break;
         case ObjectKind.Dictionary:
-          notes.Add(string.Concat(obj.Type ?? "dictionary", ", ", count, obj.Members.Count == 1 ? " entry" : " entries"));
+          notes.Add(string.Concat(obj.Type ?? "dictionary", ", ", Claimed(read, claimed, "entry", "entries")));
           break;
         case ObjectKind.Sequence:
-          notes.Add(string.Concat(count, " payloads"));
+          notes.Add(Count(obj.Members.Count, "payload", "payloads"));
           break;
         case ObjectKind.Entry:
           notes.Add("entry with a key that is not a primitive value");
@@ -351,7 +408,10 @@ namespace LsMsgPackMcp
           break;
       }
 
-      if (obj.Members.Count == 0)
+      if (unread > 0)
+        notes.Add(string.Concat(unread.ToString(CultureInfo.InvariantCulture), " not read: the reading stopped at the error"));
+
+      if (read == 0)
         return isArray ? "[]" : "{}";
 
       // Deeper levels are asked for by their path: their indentation alone grows with the square of the depth (130 KB for 300 levels)
@@ -365,8 +425,9 @@ namespace LsMsgPackMcp
       List<string[]> lines = new List<string[]>(obj.Members.Count);
       int shown = 0;
       bool simple = true;
-      foreach (PrimitiveObject member in obj.Members)
+      for (int m = 0; m < read; m++)
       {
+        PrimitiveObject member = obj.Members[m];
         if (budget.Left <= 0)
           break;
         shown++;
@@ -379,7 +440,7 @@ namespace LsMsgPackMcp
 
       string open = isArray ? "[" : "{";
       string close = isArray ? "]" : "}";
-      int hidden = obj.Members.Count - shown;
+      int hidden = read - shown;
       if (simple && hidden == 0)
       {
         StringBuilder inline = new StringBuilder(open);
@@ -453,6 +514,9 @@ namespace LsMsgPackMcp
     private static string Key(ComplexObject parent, PrimitiveObject member)
     {
       string name = member.Name ?? string.Empty;
+      // The name is the key's ToString(): True for a bool
+      if (parent.Kind == ObjectKind.Dictionary && member.FirstItemRef is MpBool key && member.FirstItemRef != member.LastItemRef)
+        return true.Equals(key.Value) ? "true" : "false";
       // Keys of dictionaries keep their kind: only string keys are quoted
       if (parent.Kind == ObjectKind.Dictionary && !(member.FirstItemRef is null) && member.FirstItemRef != member.LastItemRef && !(member.FirstItemRef is MpString))
         return name;
@@ -483,7 +547,7 @@ namespace LsMsgPackMcp
         case ValueKind.Bin:
           {
             byte[] bytes = (byte[])value;
-            string note = string.Concat("bin, ", bytes.Length.ToString(CultureInfo.InvariantCulture), " bytes");
+            string note = string.Concat("bin, ", Count(bytes.Length, "byte", "bytes"));
             if (bytes.Length == 16)
               note = string.Concat(note, ", as Guid ", new Guid(bytes).ToString());
             notes.Add(note);
@@ -493,7 +557,7 @@ namespace LsMsgPackMcp
           {
             MpExt ext = value as MpExt;
             byte[] bytes = ext?.Value as byte[] ?? new byte[0];
-            notes.Add(string.Concat("ext type ", ext?.TypeSpecifier.ToString(CultureInfo.InvariantCulture), " without a registered type, ", bytes.Length.ToString(CultureInfo.InvariantCulture), " bytes"));
+            notes.Add(string.Concat("ext type ", ext?.TypeSpecifier.ToString(CultureInfo.InvariantCulture), " without a registered type, ", Count(bytes.Length, "byte", "bytes")));
             return Quote(HexString(bytes, options.MaxBytes));
           }
         case ValueKind.Other:
@@ -538,11 +602,11 @@ namespace LsMsgPackMcp
           sb.Append("(level ").Append(node.Depth.ToString(CultureInfo.InvariantCulture)).Append(") ");
         if (node.Role != null && node.Depth > 0)
           sb.Append(node.Role).Append(' ');
-        sb.Append(DescribeItem(node.Item, options));
+        sb.Append(DescribeItem(doc, node.Item, options));
         List<string> notes = new List<string>();
         if (node.IsSchema && (node.Parent is null || !node.Parent.IsSchema))
           notes.Add("indexed schema");
-        if (!(node.Item is null) && node.Item.IsBestGuess)
+        if (!(node.Item is null) && !(node.Item is MpError) && node.Item.IsBestGuess)
           notes.Add("read after an error, a best guess");
         if (node.Depth == 0 || node.Parent != null && node.Parent.Depth == 0 && node.Parent.Item is MpRoot)
         {
@@ -566,20 +630,33 @@ namespace LsMsgPackMcp
     /// <summary>
     /// The encoding and the value, e.g. <c>fixstr "abc"</c>, <c>uint 16 1000</c>, <c>fixarray, 3 items</c>.
     /// </summary>
-    internal static string DescribeItem(MsgPackItem item, RenderOptions options)
+    internal static string DescribeItem(PayloadDocument doc, MsgPackItem item, RenderOptions options)
     {
       if (item is null)
         return "(missing)";
       if (item is MpError error)
         return ErrorText(error);
       if (item is MpRoot root)
-        return string.Concat("root, ", root.Count.ToString(CultureInfo.InvariantCulture), " items that follow each other");
+        return string.Concat("root, ", Count(root.Count, "item", "items"), " that follow each other");
 
-      string type = TypeName(item);
+      string type = TypeName(doc, item);
+      long claimed = doc.ClaimedLength(item);
+      // The slots of a container cut off by an error that were not read are null
+      bool cutOff = doc.ErrorAround(item) != null;
       if (item is MpArray array)
-        return string.Concat(type, ", ", array.PackedValues.Length.ToString(CultureInfo.InvariantCulture), " items");
+        return string.Concat(type, ", ", Claimed(cutOff ? Array.FindAll(array.PackedValues, v => !(v is null)).Length : array.PackedValues.Length, claimed, "item", "items"));
       if (item is MpMap map)
-        return string.Concat(type, ", ", map.PackedValues.Length.ToString(CultureInfo.InvariantCulture), " entries");
+        return string.Concat(type, ", ", Claimed(cutOff ? Array.FindAll(map.PackedValues, e => !(e.Key is null)).Length : map.PackedValues.Length, claimed, "entry", "entries"));
+      if (doc.IsUnread(item))
+      {
+        // The value of an item cut off is not what the data holds (a uint 16 without its bytes is 0)
+        if (claimed >= 0 && (item is MpString || item is MpBin || item is MpExt))
+        {
+          long there = Math.Max(0, doc.Data.Length - item.StoredOffset - HeaderLength(item, doc.Data, item.StoredOffset));
+          return string.Concat(type, " of ", Count(claimed, "byte", "bytes"), ", ", Count(there, "byte", "bytes"), " left in the data: not read");
+        }
+        return string.Concat(type, ": not read");
+      }
       if (item is MpNull)
         return "nil";
       if (item is MpString str)
@@ -587,7 +664,7 @@ namespace LsMsgPackMcp
       if (item is MpBin bin)
       {
         byte[] bytes = bin.Value as byte[] ?? new byte[0];
-        return string.Concat(type, ", ", bytes.Length.ToString(CultureInfo.InvariantCulture), " bytes: ", HexString(bytes, options.MaxBytes, " "));
+        return string.Concat(type, ", ", Count(bytes.Length, "byte", "bytes"), ": ", HexString(bytes, options.MaxBytes, " "));
       }
       if (item is MpExt ext)
       {
@@ -597,7 +674,7 @@ namespace LsMsgPackMcp
           byte[] bytes = ext.Value as byte[] ?? new byte[0];
           if (ext.TypeSpecifier == SchemaStore.ReferenceExtensionType && bytes.Length == SchemaId.Length)
             return string.Concat(head, " (schema reference): ", new SchemaId(bytes).ToString());
-          return string.Concat(head, ", ", bytes.Length.ToString(CultureInfo.InvariantCulture), " bytes: ", HexString(bytes, options.MaxBytes, " "));
+          return string.Concat(head, ", ", Count(bytes.Length, "byte", "bytes"), ": ", HexString(bytes, options.MaxBytes, " "));
         }
         object value = item.Value;
         if (value is DateTime time)
@@ -611,14 +688,28 @@ namespace LsMsgPackMcp
       return string.Concat(type, " ", PrimitiveObject.FormatValue(item.Value));
     }
 
-    private static string TypeName(MsgPackItem item)
+    private static string TypeName(PayloadDocument doc, MsgPackItem item)
     {
       if (item is null)
         return "nil";
       if (item is MpRoot)
         return "root";
-      string name = MsgPackItem.GetOfficialTypeName(item.TypeId);
-      return name;
+      return MsgPackItem.GetOfficialTypeName(doc.Encoding(item));
+    }
+
+    /// <summary>
+    /// "3 items", or "3 of 5 items" when the header claims more than there are (the data ends early, or an error stopped the reading).
+    /// </summary>
+    private static string Claimed(long count, long claimed, string singular, string plural)
+    {
+      if (claimed < 0 || claimed == count)
+        return Count(count, singular, plural);
+      return string.Concat(count.ToString(CultureInfo.InvariantCulture), " of ", Count(claimed, singular, plural), " (claimed by the header)");
+    }
+
+    internal static string Count(long count, string singular, string plural)
+    {
+      return string.Concat(count.ToString(CultureInfo.InvariantCulture), " ", count == 1 ? singular : plural);
     }
 
     #endregion
@@ -651,7 +742,7 @@ namespace LsMsgPackMcp
         sb.Append('\n');
         sb.Append(others.ToString(CultureInfo.InvariantCulture)).Append(others == 1 ? " warning or comment" : " warnings or comments").Append(" not listed (issues: all lists them)");
         if (wasted > 0)
-          sb.Append(", smaller encodings would save ").Append(wasted.ToString(CultureInfo.InvariantCulture)).Append(" bytes");
+          sb.Append(", smaller encodings would save ").Append(Count(wasted, "byte", "bytes"));
         sb.Append(".").Append('\n');
       }
     }
@@ -660,9 +751,7 @@ namespace LsMsgPackMcp
     {
       StringBuilder sb = new StringBuilder();
       sb.Append(issue.Severity == MsgPackValidation.ValidationSeverity.ReadAbortError ? "Error" : issue.Severity.ToString());
-      MsgPackItem item = issue.Node.Item;
-      long offset = item is MpError error && error.Value is MsgPackException ex && ex.Offset > 0 ? ex.Offset : issue.Node.Offset;
-      sb.Append(" at ").Append(Hex(offset));
+      sb.Append(" at ").Append(Hex(issue.Node.Offset));
       PrimitiveObject obj = doc.GetObject(issue.Node);
       if (obj != null && !string.IsNullOrEmpty(obj.Path))
         sb.Append(" (").Append(obj.Path).Append(')');
@@ -680,15 +769,20 @@ namespace LsMsgPackMcp
     public static string ExplainOffset(PayloadDocument doc, long offset, RenderOptions options)
     {
       StringBuilder sb = new StringBuilder();
-      if (offset < 0 || offset >= doc.Data.Length)
+      if (offset < 0)
       {
-        sb.Append("Offset ").Append(Hex(offset)).Append(" is outside the data (").Append(doc.Data.Length.ToString(CultureInfo.InvariantCulture)).Append(" bytes).").Append('\n');
+        sb.Append("Offset ").Append(offset.ToString(CultureInfo.InvariantCulture)).Append(" is negative: offsets count from the first byte (0).").Append('\n');
+        return sb.ToString();
+      }
+      if (offset >= doc.Data.Length)
+      {
+        sb.Append("Offset ").Append(Hex(offset)).Append(" is outside the data (").Append(Count(doc.Data.Length, "byte", "bytes")).Append(").").Append('\n');
         return sb.ToString();
       }
 
       byte b = doc.Data[offset];
-      sb.Append("Offset ").Append(Hex(offset)).Append(" (").Append(offset.ToString(CultureInfo.InvariantCulture)).Append(") of ").Append(doc.Data.Length.ToString(CultureInfo.InvariantCulture))
-        .Append(" bytes: 0x").Append(b.ToString("X2", CultureInfo.InvariantCulture)).Append(", as a type byte: ").Append(DescribeTypeByte(b)).Append(".").Append('\n');
+      sb.Append("Offset ").Append(Hex(offset)).Append(" (").Append(offset.ToString(CultureInfo.InvariantCulture)).Append(") of ").Append(Count(doc.Data.Length, "byte", "bytes"))
+        .Append(": 0x").Append(b.ToString("X2", CultureInfo.InvariantCulture)).Append(", as a type byte: ").Append(DescribeTypeByte(b)).Append(".").Append('\n');
 
       ItemNode node = doc.FindItemAt(offset);
       if (node is null)
@@ -703,17 +797,17 @@ namespace LsMsgPackMcp
         sb.Append("Items holding it (outermost first):").Append('\n');
         foreach (ItemNode n in chain)
         {
-          sb.Append("  ").Append(Hex(n.Offset)).Append(" (").Append(n.Length.ToString(CultureInfo.InvariantCulture)).Append(" bytes) ");
+          sb.Append("  ").Append(Hex(n.Offset)).Append(" (").Append(Count(n.Length, "byte", "bytes")).Append(") ");
           if (n.Role != null && n.Depth > 0)
             sb.Append(n.Role).Append(' ');
-          sb.Append(DescribeItem(n.Item, options)).Append('\n');
+          sb.Append(DescribeItem(doc, n.Item, options)).Append('\n');
         }
 
         PrimitiveObject obj = doc.GetObject(node);
         if (obj != null && obj != doc.Objects)
         {
           string comment;
-          string value = Value(obj, new RenderOptions() { MaxNodes = 20, MaxString = options.MaxString, MaxBytes = options.MaxBytes }, 0, new Budget() { Left = 20, FirstError = doc.FirstErrorOffset }, false, out comment);
+          string value = Value(obj, new RenderOptions() { MaxNodes = 20, MaxString = options.MaxString, MaxBytes = options.MaxBytes }, 0, new Budget() { Left = 20, FirstError = doc.FirstErrorOffset, Doc = doc }, false, out comment);
           sb.Append("Object: ").Append(string.IsNullOrEmpty(obj.Path) ? "(root)" : obj.Path).Append(" = ").Append(FirstLine(value));
           AppendComment(sb, comment);
           sb.Append('\n');
@@ -787,9 +881,9 @@ namespace LsMsgPackMcp
     internal static string DescribeTypeByte(byte b)
     {
       if (b <= 0x7f) return string.Concat("positive fixint ", b.ToString(CultureInfo.InvariantCulture));
-      if (b <= 0x8f) return string.Concat("fixmap of ", (b & 0x0f).ToString(CultureInfo.InvariantCulture), " entries");
-      if (b <= 0x9f) return string.Concat("fixarray of ", (b & 0x0f).ToString(CultureInfo.InvariantCulture), " items");
-      if (b <= 0xbf) return string.Concat("fixstr of ", (b & 0x1f).ToString(CultureInfo.InvariantCulture), " bytes");
+      if (b <= 0x8f) return string.Concat("fixmap of ", Count(b & 0x0f, "entry", "entries"));
+      if (b <= 0x9f) return string.Concat("fixarray of ", Count(b & 0x0f, "item", "items"));
+      if (b <= 0xbf) return string.Concat("fixstr of ", Count(b & 0x1f, "byte", "bytes"));
       if (b >= 0xe0) return string.Concat("negative fixint ", ((sbyte)b).ToString(CultureInfo.InvariantCulture));
       switch (b)
       {
@@ -852,7 +946,7 @@ namespace LsMsgPackMcp
         sb.Append("  ").Append(Hex(matches[t].StoredOffset)).Append(' ');
         if (node != null && node.Role == "key")
           sb.Append("key ");
-        sb.Append(DescribeItem(matches[t], options));
+        sb.Append(DescribeItem(doc, matches[t], options));
         PrimitiveObject obj = node is null ? null : doc.GetObject(node);
         if (obj != null && !string.IsNullOrEmpty(obj.Path))
           AppendComment(sb, obj.Path);

@@ -64,6 +64,10 @@ export function bytesFromText(text: string): Uint8Array {
   if (all2chars && allHex) { // delimited hex
     return fromHex(parts.join(''));
   }
+  // Hex in groups of any even length (91 c4 30 000102...): a decimal byte has at most 3 digits
+  if (allHex && !hexPrefix && parts.every((p) => p.length % 2 === 0) && (!allNumeric || parts.some((p) => p.length > 3))) {
+    return fromHex(parts.join(''));
+  }
   if (hexPrefix && allHex) { // delimited hex values not all written with two digits (0x92, 0x1): hex, not decimal
     const bytes = new Uint8Array(parts.length);
     for (let t = 0; t < parts.length; t++) {
