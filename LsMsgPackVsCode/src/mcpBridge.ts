@@ -76,6 +76,25 @@ export function lockDirectory(): string {
   return process.env.LSMSGPACK_IDE_DIR || path.join(os.homedir(), '.lsmsgpack', 'ide');
 }
 
+/**
+ * The command of the .NET tool (dotnet tool install -g LsMsgPack.Mcp) when it is installed: a configuration using it stays valid when the
+ * extension is updated, the path of the server that comes with the extension has the extension's version in it.
+ * "lsmsgpack-mcp" when it is on the PATH, otherwise its path in the folder of global tools (~/.dotnet/tools, not always on the PATH of VS Code).
+ */
+export function findMcpTool(env: NodeJS.ProcessEnv = process.env, platform: string = process.platform, exists: (file: string) => boolean = fs.existsSync): string | undefined {
+  const file = platform === 'win32' ? 'lsmsgpack-mcp.exe' : 'lsmsgpack-mcp';
+  const pathVariable = env.PATH ?? env.Path ?? '';
+  const pathPath = platform === 'win32' ? path.win32 : path.posix;
+  for (const folder of pathVariable.split(platform === 'win32' ? ';' : ':')) {
+    if (folder && exists(pathPath.join(folder, file))) {
+      return 'lsmsgpack-mcp';
+    }
+  }
+  const home = env.DOTNET_CLI_HOME || (platform === 'win32' ? env.USERPROFILE : env.HOME) || os.homedir();
+  const tool = pathPath.join(home, '.dotnet', 'tools', file);
+  return exists(tool) ? tool : undefined;
+}
+
 export interface LockInfo {
   ide: string;
   name: string;

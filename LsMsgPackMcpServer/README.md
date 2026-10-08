@@ -51,7 +51,7 @@ From source: `dotnet publish LsMsgPackMcpServer -c Release -o <folder>`, then ru
 | Visual Studio 2022 (17.14+) | `%USERPROFILE%\.mcp.json` (or `.mcp.json` next to the solution): `{ "servers": { "lsmsgpack": { "type": "stdio", "command": "lsmsgpack-mcp" } } }` |
 | Claude Desktop, Cursor, Windsurf... | `{ "mcpServers": { "lsmsgpack": { "command": "lsmsgpack-mcp" } } }` |
 
-In VS Code, **MsgPack: Copy MCP Server Configuration...** copies these for the server that comes with the extension.
+In VS Code, **MsgPack: Copy MCP Server Configuration...** copies these: for the tool when it is installed, otherwise for the server that comes with the extension (its path has the extension's version in it, so copy it again after an update).
 
 ## Tools
 

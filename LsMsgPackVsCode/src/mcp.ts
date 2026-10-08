@@ -6,7 +6,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { createDebugAccess } from './debugAccess';
 import { CancelledError, languageOf, readBytes } from './debugBytes';
-import { BridgeHandler, BridgeServer, FrameInfo, isSimplePath, LocalsResult, ReadRequest, ReadResponse, schemaExpression, SessionInfo, StatusResult, VariableInfo } from './mcpBridge';
+import { BridgeHandler, BridgeServer, findMcpTool, FrameInfo, isSimplePath, LocalsResult, ReadRequest, ReadResponse, schemaExpression, SessionInfo, StatusResult, VariableInfo } from './mcpBridge';
 
 const serverLabel = 'MsgPack (LsMsgPack)';
 
@@ -228,27 +228,35 @@ async function selectedFrame(): Promise<SelectedFrame | undefined> {
 
 /**
  * The configuration for other MCP clients: they start the server themselves, it finds this window through the lock file.
+ * With the .NET tool installed (lsmsgpack-mcp) the configuration uses it: the path of the server that comes with the extension has the
+ * extension's version in it, VS Code removes that folder after an update.
  */
 async function copyConfiguration(extensionPath: string): Promise<void> {
+  const tool = findMcpTool();
   const dll = findMcpServer(extensionPath);
-  const dotnet = dotnetPath();
-  const json = JSON.stringify({ mcpServers: { lsmsgpack: { command: dotnet, args: [dll] } } }, null, 2);
-  const visualStudio = JSON.stringify({ servers: { lsmsgpack: { type: 'stdio', command: dotnet, args: [dll] } } }, null, 2);
+  const command = tool ?? dotnetPath();
+  const args = tool ? [] : [dll];
+  const server = args.length > 0 ? { command, args } : { command };
+  const json = JSON.stringify({ mcpServers: { lsmsgpack: server } }, null, 2);
+  const visualStudio = JSON.stringify({ servers: { lsmsgpack: { type: 'stdio', ...server } } }, null, 2);
   const quote = (text: string): string => (/[\s"']/.test(text) ? `"${text.replace(/"/g, '\\"')}"` : text);
+  const commandLine = [command, ...args].map(quote).join(' ');
   const choices: (vscode.QuickPickItem & { text: string })[] = [
-    { label: 'Claude Code', description: 'claude mcp add (run it in a terminal)', text: `claude mcp add lsmsgpack -- ${quote(dotnet)} ${quote(dll)}` },
+    { label: 'Claude Code', description: 'claude mcp add (run it in a terminal)', text: `claude mcp add lsmsgpack -- ${commandLine}` },
     { label: 'JSON (mcpServers)', description: 'Claude Desktop, Cursor, Windsurf and others', text: json },
     { label: 'Visual Studio (.mcp.json)', description: 'servers, as Visual Studio and VS Code mcp.json files write it', text: visualStudio },
-    { label: 'Command line', description: 'decode a file in a terminal', text: `${quote(dotnet)} ${quote(dll)} decode <file.msgpack>` }
+    { label: 'Command line', description: 'decode a file in a terminal', text: `${commandLine} decode <file.msgpack>` }
   ];
-  const picked = await vscode.window.showQuickPick(choices, { title: 'Copy the MCP server configuration for', placeHolder: 'VS Code itself needs none: the chat agent mode lists the server already' });
+  const picked = await vscode.window.showQuickPick(choices, { title: tool ? 'Copy the MCP server configuration (the lsmsgpack-mcp .NET tool) for' : 'Copy the MCP server configuration for', placeHolder: 'VS Code itself needs none: the chat agent mode lists the server already' });
   if (!picked) {
     return;
   }
   await vscode.env.clipboard.writeText(picked.text);
-  if (!fs.existsSync(dll)) {
+  if (tool) {
+    vscode.window.showInformationMessage('Copied. It uses the lsmsgpack-mcp .NET tool, so it stays valid when the extension is updated (update the tool with dotnet tool update -g LsMsgPack.Mcp).');
+  } else if (!fs.existsSync(dll)) {
     vscode.window.showWarningMessage(`Copied, but ${dll} is not built yet (npm run build:mcp).`);
   } else {
-    vscode.window.showInformationMessage('Copied. The path changes when the extension is updated: copy it again after an update.');
+    vscode.window.showInformationMessage('Copied. The path changes when the extension is updated: copy it again after an update, or install the .NET tool (dotnet tool install -g LsMsgPack.Mcp) and copy the configuration once more, it then stays valid.');
   }
 }
