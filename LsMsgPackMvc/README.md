@@ -41,6 +41,8 @@ public class OrdersController : Controller
 }
 ```
 
+With `Register(new LtMsgPackHttpOptions { ReportDifferences = true })`, `HttpContext.GetReadDifferences()` says what didn't match between the request body and your classes, for example properties of another version of the models.
+
 ## Documentation
 
 - [Web formatters](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md): settings per media type, `LsMsgPackResult`, schema negotiation

@@ -35,6 +35,7 @@ namespace LtMsgPack.Http
     private readonly SchemaStore _store;
     private readonly bool _negotiate;
     private readonly int _maxAdvertised;
+    private readonly bool _reportDifferences;
     private readonly ConcurrentDictionary<SchemaId, string> _hexIds = new ConcurrentDictionary<SchemaId, string>();
     private readonly ConcurrentDictionary<string, LinkedList<SchemaId>> _received = new ConcurrentDictionary<string, LinkedList<SchemaId>>(StringComparer.OrdinalIgnoreCase);
 
@@ -60,6 +61,15 @@ namespace LtMsgPack.Http
       _store = ls.SchemaStore;
       _lsMsgPack = new LtMsgPackSerializer(ls);
       _maxAdvertised = Math.Max(0, options.MaxAdvertisedSchemas);
+      _reportDifferences = options.ReportDifferences;
+    }
+
+    /// <summary>
+    /// The formatters collect the differences between the bodies and the classes (<see cref="LtMsgPackHttpOptions.ReportDifferences"/>).
+    /// </summary>
+    public bool ReportsDifferences
+    {
+      get { return _reportDifferences; }
     }
 
     /// <summary>
@@ -147,6 +157,42 @@ namespace LtMsgPack.Http
     public object Deserialize(Type type, byte[] data, int offset, int count, string mediaType)
     {
       return For(mediaType).Deserialize(type, data, offset, count);
+    }
+
+    /// <summary>
+    /// Deserializes a request or response body, and reports what did not match between the data and the classes (see <see cref="LtMsgPackSerializer.Deserialize(Type, byte[], int, int, out ReadDifferences)"/>).
+    /// </summary>
+    /// <param name="mediaType">The Content-Type of the body</param>
+    /// <param name="differences">Null when the data matched the classes</param>
+    /// <exception cref="MissingSchemaException">The body refers to a schema this side does not hold</exception>
+    public object Deserialize(Type type, byte[] data, int offset, int count, string mediaType, out ReadDifferences differences)
+    {
+      return For(mediaType).Deserialize(type, data, offset, count, out differences);
+    }
+
+    /// <summary>
+    /// Deserializes a body as the formatters do: with the differences when <see cref="ReportsDifferences"/>, otherwise without (<paramref name="differences"/> is then null).
+    /// When reading throws, the differences found until then are in the exception's <see cref="Exception.Data"/> (<see cref="ReadDifferences.ExceptionDataKey"/>).
+    /// </summary>
+    public object DeserializeBody(Type type, byte[] data, int offset, int count, string mediaType, out ReadDifferences differences)
+    {
+      if (_reportDifferences)
+        return Deserialize(type, data, offset, count, mediaType, out differences);
+      differences = null;
+      return Deserialize(type, data, offset, count, mediaType);
+    }
+
+    /// <summary>
+    /// The differences an exception of <see cref="DeserializeBody"/> carries (null when there are none).
+    /// </summary>
+    public static ReadDifferences DifferencesOf(Exception ex)
+    {
+      for (Exception e = ex; e != null; e = e.InnerException)
+      {
+        if (e.Data.Contains(ReadDifferences.ExceptionDataKey))
+          return e.Data[ReadDifferences.ExceptionDataKey] as ReadDifferences;
+      }
+      return null;
     }
 
     #region Client

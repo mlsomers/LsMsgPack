@@ -220,6 +220,27 @@ return new LsMsgPackResult(pets)
 };
 ```
 
+Reporting differences
+---------------------
+
+A client or server on another version of the models sends properties your classes don't have, or leaves out ones they do. Reading goes on (an unknown property is skipped), so the request succeeds while a value you expected stays empty. Set `ReportDifferences` to find out what didn't match ([ReadDifferences.md](ReadDifferences.md) explains the report):
+
+```csharp
+builder.Services.AddControllers()
+  .AddLsMsgPackSerializerFormatters(o => o.ReportDifferences = true);
+```
+
+| Package | Where the differences are | Logged |
+|---|---|---|
+| ASP.NET Core | `HttpContext.GetReadDifferences()` (in `HttpContext.Features`) | As a warning through `ILogger` (category `LsMsgPackFormatters.LsMsgPackInputFormatter`), with the report |
+| Web API 2 | `Request.GetReadDifferences()` in the controller | No |
+| HttpClient | `response.GetReadDifferences()` (or `content.GetReadDifferences()`) after `ReadAsAsync` | No |
+| MVC 5 | `HttpContext.GetReadDifferences()` in the controller | No |
+
+It's `null` when the body matched the classes (or wasn't read by the MsgPack formatter). When reading fails, it has what was found until the error, which is often the cause (a misspelled property that was skipped). `LtMsgPackHttpSerializer.Deserialize` also has an overload with `out ReadDifferences`.
+
+It's off by default: reading with it is a bit slower (about 0.15 µs per request body, and 10% on large bodies), and the warning walks the objects that were read to find the paths. Turn it on while you look for a problem, or in a test environment.
+
 Schema references (application/x-lsmsgpack)
 --------------------------------------------
 

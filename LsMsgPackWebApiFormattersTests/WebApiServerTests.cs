@@ -19,6 +19,9 @@ namespace LsMsgPackWebApiFormattersTests
     [HttpPost, Route("echo")]
     public Order Echo([FromBody] Order order) => order;
 
+    [HttpPost, Route("differences")]
+    public string Differences([FromBody] Order order) => Request.GetReadDifferences()?.GenerateReport() ?? "none";
+
     [HttpGet, Route("animal")]
     public Animal GetAnimal() => new Dog { Name = "Rex", Barks = 3 };
 
@@ -96,6 +99,31 @@ namespace LsMsgPackWebApiFormattersTests
       Assert.That(order.Id, Is.EqualTo(SampleOrder.Id));
       Assert.That(order.Customer, Is.EqualTo(SampleOrder.Customer));
       Assert.That(order.Amounts, Is.EqualTo(SampleOrder.Amounts));
+    }
+
+    [TestCase(MsgPackMediaTypes.MsgPack)]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack)]
+    public async Task DifferencesAreReportedWhenAskedFor(string mediaType)
+    {
+      HttpConfiguration config = new HttpConfiguration();
+      config.MapHttpAttributeRoutes();
+      config.Formatters.Add(new LsMsgPackMediaTypeFormatter(new LtMsgPack.Http.LtMsgPackHttpOptions() { ReportDifferences = true }));
+      using (HttpServer reporting = new HttpServer(config))
+      using (HttpClient reportingClient = new HttpClient(reporting) { BaseAddress = new Uri("http://localhost/") })
+      {
+        OrderWithExtra order = new OrderWithExtra() { Id = 42, Customer = "Infotopie", Extra = "not in Order" };
+        HttpRequestMessage request = Post(new ObjectContent<OrderWithExtra>(order, Formatter, mediaType), "application/json");
+        request.RequestUri = new Uri("webapi/differences", UriKind.Relative);
+        HttpResponseMessage response = await reportingClient.SendAsync(request);
+
+        string report = await response.Content.ReadAsAsync<string>();
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), report);
+        Assert.That(report, Does.Contain("Order.Extra: not a property of the class, skipped, 1 time"));
+      }
+
+      HttpRequestMessage notReported = Post(new ObjectContent<OrderWithExtra>(new OrderWithExtra() { Extra = "x" }, Formatter, mediaType), "application/json");
+      notReported.RequestUri = new Uri("webapi/differences", UriKind.Relative);
+      Assert.That(await (await client.SendAsync(notReported)).Content.ReadAsAsync<string>(), Is.EqualTo("none"));
     }
 
     [TestCase(MsgPackMediaTypes.MsgPack, false)]

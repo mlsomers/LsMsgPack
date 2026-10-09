@@ -12,7 +12,7 @@ if (differences != null)
   logger.LogWarning(differences.GenerateReport());
 ```
 
-LtMsgPack has the same overloads on the serializer: `serializer.Deserialize<Order>(data, out ReadDifferences differences)`.
+LtMsgPack has the same overloads on the serializer: `serializer.Deserialize<Order>(data, out ReadDifferences differences)`. The web formatters collect them with `LtMsgPackHttpOptions.ReportDifferences` (see [WebFormatters.md](WebFormatters.md#reporting-differences)).
 
 `differences` is `null` when the data matched the classes. Otherwise it counts each difference per class and name, over the whole payload:
 

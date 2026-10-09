@@ -13,7 +13,12 @@ namespace LsMsgPackMvcTests
 
     private static (object model, ModelStateDictionary modelState) Bind<T>(byte[] body, string contentType)
     {
-      ControllerContext context = Fake.Context(new FakeRequest(body, contentType));
+      return Bind<T>(body, contentType, new LsMsgPackModelBinder(), out ControllerContext unused);
+    }
+
+    private static (object model, ModelStateDictionary modelState) Bind<T>(byte[] body, string contentType, LsMsgPackModelBinder binder, out ControllerContext context)
+    {
+      context = Fake.Context(new FakeRequest(body, contentType));
       ModelBindingContext bindingContext = new ModelBindingContext
       {
         ModelName = "order",
@@ -21,7 +26,7 @@ namespace LsMsgPackMvcTests
         ModelState = new ModelStateDictionary(),
         ValueProvider = new NameValueCollectionValueProvider(new System.Collections.Specialized.NameValueCollection(), null)
       };
-      object model = new LsMsgPackModelBinder().BindModel(context, bindingContext);
+      object model = binder.BindModel(context, bindingContext);
       return (model, bindingContext.ModelState);
     }
 
@@ -37,6 +42,21 @@ namespace LsMsgPackMvcTests
       Assert.That(order.Id, Is.EqualTo(SampleOrder.Id));
       Assert.That(order.Customer, Is.EqualTo(SampleOrder.Customer));
       Assert.That(order.Amounts, Is.EqualTo(SampleOrder.Amounts));
+    }
+
+    [Test]
+    public void DifferencesAreReportedWhenAskedFor()
+    {
+      byte[] body = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Id", 42 }, { "Extra", "x" } }, Plain);
+      LsMsgPackModelBinder reporting = new LsMsgPackModelBinder(new LtMsgPack.Http.LtMsgPackHttpOptions() { ReportDifferences = true });
+      (object model, ModelStateDictionary modelState) = Bind<Order>(body, MsgPackMediaTypes.MsgPack, reporting, out ControllerContext context);
+
+      Assert.That(modelState.IsValid, Is.True);
+      Assert.That(((Order)model).Id, Is.EqualTo(42));
+      Assert.That(context.HttpContext.GetReadDifferences().GenerateReport(), Does.Contain("Order.Extra: not a property of the class"));
+
+      Bind<Order>(body, MsgPackMediaTypes.MsgPack, new LsMsgPackModelBinder(), out context);
+      Assert.That(context.HttpContext.GetReadDifferences(), Is.Null);
     }
 
     [Test]

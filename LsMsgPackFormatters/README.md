@@ -34,6 +34,8 @@ builder.Services.AddControllers()
   });
 ```
 
+To find out what didn't match between request bodies and your classes (properties of another version of the models), set `o.ReportDifferences = true`: the differences are logged as a warning and available as `HttpContext.GetReadDifferences()`.
+
 On the client side, use [LsMsgPack.AspNet.WebApi](https://www.nuget.org/packages/LsMsgPack.AspNet.WebApi) with `HttpClient`, or any MsgPack library for the plain media types.
 
 ## Documentation

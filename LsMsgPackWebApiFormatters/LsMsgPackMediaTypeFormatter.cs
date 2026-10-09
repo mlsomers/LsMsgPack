@@ -107,10 +107,16 @@ namespace LsMsgPackWebApiFormatters
 
       try
       {
-        object model = Serializer.Deserialize(type, body.GetBuffer(), 0, (int)body.Length, content?.Headers.ContentType?.MediaType);
+        object model = Serializer.DeserializeBody(type, body.GetBuffer(), 0, (int)body.Length, content?.Headers.ContentType?.MediaType, out ReadDifferences differences);
+        if (differences != null)
+          ReadDifferencesExtensions.Set(content, differences);
         if (!(model is null) && !type.IsInstanceOfType(model)) // The deserializer passes through values it cannot convert (eg. a string where a map was expected)
           throw new MsgPackException("The data could not be deserialized as " + type.Name + ", it contains a " + model.GetType().Name + ".");
         return model;
+      }
+      catch (Exception ex) when (Serializer.ReportsDifferences && ReportFailure(content, ex)) // never true: keeps the differences found until the exception
+      {
+        throw;
       }
       catch (Exception ex) when (!(formatterLogger is null) && !(ex is OperationCanceledException))
       {
@@ -118,6 +124,15 @@ namespace LsMsgPackWebApiFormatters
         formatterLogger.LogError(string.Empty, ex);
         return GetDefaultValueForType(type);
       }
+    }
+
+    /// <returns>False (an exception filter)</returns>
+    private static bool ReportFailure(HttpContent content, Exception ex)
+    {
+      ReadDifferences differences = LtMsgPackHttpSerializer.DifferencesOf(ex);
+      if (differences != null)
+        ReadDifferencesExtensions.Set(content, differences);
+      return false;
     }
 
     public override Task WriteToStreamAsync(Type type, object value, Stream writeStream, HttpContent content, TransportContext transportContext)

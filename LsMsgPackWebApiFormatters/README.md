@@ -42,7 +42,7 @@ response.EnsureSuccessStatusCode();
 Order saved = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
 ```
 
-Settings are passed as `new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpOptions { ... })`.
+Settings are passed as `new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpOptions { ... })`. With `ReportDifferences = true`, `response.GetReadDifferences()` (on the server `Request.GetReadDifferences()`) says what didn't match between the body and your classes, for example properties of another version of the models.
 
 ## Documentation
 
