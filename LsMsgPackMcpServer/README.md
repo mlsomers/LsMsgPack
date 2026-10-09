@@ -61,6 +61,7 @@ In VS Code, **MsgPack: Copy MCP Server Configuration...** copies these: for the 
 | `msgpack_debug_locals` | The variables of the paused stack frame with their types. The ones that can hold bytes are marked. |
 | `msgpack_debug_read` | Reads the bytes of an expression in the paused program and decodes them. Reads `byte[]`, streams (seekable ones go back to their position), `Memory<byte>`, `List<byte>`, `HttpContent` and base64 or hex strings. In VS Code also JavaScript `Uint8Array`/`Buffer` and Python `bytes`. `schemaStore` reads the schema from the program's `SchemaStore` when the payload refers to one. `saveTo` also writes the bytes to a file. |
 | `msgpack_decode` | Decodes `data` (hex, base64 or byte values), a `file`, or a `doc` decoded before. `schemas` takes a `SchemaStore.Export` (or one schema) for schema references. |
+| `msgpack_read_as_class` | Reads the data into a class of a compiled .NET assembly (`assembly`: the `.dll` of the build output, `type`: the class) and reports what doesn't match: properties the class doesn't have (with "did you mean"), values that don't convert, classes without a schema entry, type ids that aren't found, with the paths of the objects ([reporting differences](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ReadDifferences.md)). Also shows the object that was read. The assembly is loaded in a separate process: it runs the class's constructors and setters. |
 | `msgpack_explain_offset` | What the byte at an offset is: the items holding it, the object member, the header and content bytes, and the bytes around it. |
 | `msgpack_search` | The items holding a text or a value, with offsets and object paths. |
 
@@ -87,6 +88,7 @@ lsmsgpack-mcp decode payload.msgpack --view items   # the items with offsets and
 lsmsgpack-mcp decode --data "82 a4 4e 61 6d 65 ..." # bytes as text
 lsmsgpack-mcp explain payload.msgpack 0x7b          # what the byte at 0x7b is
 lsmsgpack-mcp search payload.msgpack Amsterdam
+lsmsgpack-mcp read-as payload.msgpack --assembly bin/Debug/net8.0/MyApp.dll --type Order   # what doesn't match the class
 lsmsgpack-mcp debug status | debug locals | debug read <expression>
 ```
 

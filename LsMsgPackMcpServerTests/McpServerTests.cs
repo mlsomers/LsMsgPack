@@ -89,7 +89,7 @@ namespace LsMsgPackMcpServerTests
 
       JsonObject tools = await session.Request("tools/list");
       string[] names = ((JsonArray)tools["result"]["tools"]).Select(t => (string)t["name"]).ToArray();
-      CollectionAssert.AreEquivalent(new[] { "msgpack_debug_status", "msgpack_debug_locals", "msgpack_debug_read", "msgpack_decode", "msgpack_explain_offset", "msgpack_search" }, names);
+      CollectionAssert.AreEquivalent(new[] { "msgpack_debug_status", "msgpack_debug_locals", "msgpack_debug_read", "msgpack_decode", "msgpack_read_as_class", "msgpack_explain_offset", "msgpack_search" }, names);
       foreach (JsonNode tool in (JsonArray)tools["result"]["tools"])
       {
         Assert.AreEqual("object", (string)tool["inputSchema"]["type"]);
@@ -101,6 +101,68 @@ namespace LsMsgPackMcpServerTests
 
       JsonObject ping = await session.Request("ping");
       Assert.IsNotNull(ping["result"]);
+    }
+
+    private static ReadAsWriter.McpOrderDto Order()
+    {
+      return new ReadAsWriter.McpOrderDto()
+      {
+        Id = 42,
+        Customer = "Ann",
+        Discount = "5%",
+        Address = new ReadAsWriter.McpAddressDto() { Street = "Main street" },
+        Lines = new List<ReadAsWriter.McpLineDto>() { new ReadAsWriter.McpLineDto() { Product = "Apples", Quantity = 3 } }
+      };
+    }
+
+    /// <summary>
+    /// msgpack_read_as_class loads the assembly in a child process, reads the data into the class and reports what did not match.
+    /// </summary>
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public async Task ReadAsClass_ReportsWhatDoesNotMatch(bool indexed)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = indexed, ObjectLayout = indexed ? ObjectLayout.Array : ObjectLayout.Map };
+      byte[] bytes = MsgPackSerializer.Serialize(Order(), settings);
+      Session session = new Session();
+      string text = await session.Call("msgpack_read_as_class", new JsonObject()
+      {
+        ["data"] = Convert.ToBase64String(bytes),
+        ["assembly"] = typeof(ReadAsReader.McpOrderEntity).Assembly.Location,
+        ["type"] = "McpOrderEntity"
+      });
+      TestContext.WriteLine(text);
+
+      AssertContains(text, "Document doc1");
+      AssertContains(text, "into LsMsgPackMcpServerTests.ReadAsReader.McpOrderEntity (LsMsgPackMcpServerTests.dll) with LsMsgPack: " + (indexed ? "the indexed schema of the data" : "property names"));
+      AssertContains(text, "(1 value could not be read)");
+      AssertContains(text, "McpOrderEntity.Address: not a property of the class, skipped, 1 time");
+      AssertContains(text, "did you mean Adress? (left at its default)");
+      AssertContains(text, "McpOrderEntity.Discount: could not be read (");
+      AssertContains(text, "\"Customer\": \"Ann\"");
+      AssertContains(text, "\"Quantity\": 3");
+
+      // The document id works too, and a class that is not there says so
+      AssertContains(await session.Call("msgpack_read_as_class", new JsonObject() { ["doc"] = "doc1", ["assembly"] = typeof(ReadAsReader.McpOrderEntity).Assembly.Location, ["type"] = "LsMsgPackMcpServerTests.ReadAsReader.McpOrderEntity" }),
+        "McpOrderEntity.Address: not a property of the class");
+      AssertContains(await session.Call("msgpack_read_as_class", new JsonObject() { ["doc"] = "doc1", ["assembly"] = typeof(ReadAsReader.McpOrderEntity).Assembly.Location, ["type"] = "McpOrder" }, true),
+        "No class McpOrder in LsMsgPackMcpServerTests");
+      AssertContains(await session.Call("msgpack_read_as_class", new JsonObject() { ["doc"] = "doc1", ["assembly"] = "nope.dll", ["type"] = "McpOrderEntity" }, true),
+        "Assembly not found");
+    }
+
+    [TestMethod]
+    public async Task ReadAsClass_TheSameClassMatches()
+    {
+      byte[] bytes = MsgPackSerializer.Serialize(Order());
+      string text = await new Session().Call("msgpack_read_as_class", new JsonObject()
+      {
+        ["data"] = Convert.ToBase64String(bytes),
+        ["assembly"] = typeof(ReadAsWriter.McpOrderDto).Assembly.Location,
+        ["type"] = "ReadAsWriter.McpOrderDto"
+      });
+      AssertContains(text, "The data matched the classes");
     }
 
     [TestMethod]
