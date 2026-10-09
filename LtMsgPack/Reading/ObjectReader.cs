@@ -204,35 +204,55 @@ namespace LtMsgPack.Reading
 
       int depth = c.Depth;
       c.Enter();
+      int inner = c.Depth;
       object result = plan.Create();
       c.Differences.Push(result);
+      int parents = c.Differences.Depth;
       int next = 0; // names are usually written in the order of the properties
-      for (int t = 0; t < count; t++)
+      int t = 0;
+      PropReader prop = null;
+      int valueStart = 0;
+      while (true) // one exception handler per object (one per property measured 2-3% slower): a value that is skipped continues the loop
       {
-        PropReader prop;
-        if (c.Schema)
+        try
         {
-          if (!c.R.TryReadInt64(out long index))
-            return RestartReporting(c, start, depth, assignedTo);
-          prop = index >= 0 && index < bound.Length ? bound[index] : null;
-          if (prop is null)
-            c.Differences.UnknownProperty(result, c.Bound.NameOf(plan, index));
-        }
-        else
-        {
-          int length = c.R.TryReadStringHeader();
-          if (length <= 0 || (length == 1 && c.R.Buf[c.R.Pos] == (byte)'@')) // another kind of key, or a reserved one ("" or "@")
-            return RestartReporting(c, start, depth, assignedTo);
-          prop = plan.FindByName(c.R.Buf, c.R.Pos, length, ref next);
-          if (prop is null)
-            c.Differences.UnknownProperty(result, c.R.Buf, c.R.Pos, length);
-          c.R.Pos += length;
-        }
+          for (; t < count; t++)
+          {
+            prop = null;
+            if (c.Schema)
+            {
+              if (!c.R.TryReadInt64(out long index))
+                return RestartReporting(c, start, depth, assignedTo);
+              prop = index >= 0 && index < bound.Length ? bound[index] : null;
+              if (prop is null)
+                c.Differences.UnknownProperty(result, c.Bound.NameOf(plan, index));
+            }
+            else
+            {
+              int length = c.R.TryReadStringHeader();
+              if (length <= 0 || (length == 1 && c.R.Buf[c.R.Pos] == (byte)'@')) // another kind of key, or a reserved one ("" or "@")
+                return RestartReporting(c, start, depth, assignedTo);
+              prop = plan.FindByName(c.R.Buf, c.R.Pos, length, ref next);
+              if (prop is null)
+                c.Differences.UnknownProperty(result, c.R.Buf, c.R.Pos, length);
+              c.R.Pos += length;
+            }
 
-        if (prop is null)
-          c.R.Skip(c.Depth); // not a property of this type (removed, or ignored here)
-        else
-          prop.Read(c, result);
+            if (prop is null)
+              c.R.Skip(c.Depth); // not a property of this type (removed, or ignored here)
+            else
+            {
+              valueStart = c.R.Pos;
+              prop.Read(c, result);
+            }
+          }
+          break;
+        }
+        catch (Exception ex) when (prop != null && c.Differences.SkipInvalidValue(result, prop.Info, ex))
+        {
+          SkipValue(c, valueStart, inner, parents);
+          t++;
+        }
       }
       c.Differences.Pop();
       c.Depth = depth;
@@ -254,27 +274,60 @@ namespace LtMsgPack.Reading
 
       int depth = c.Depth;
       c.Enter();
+      int inner = c.Depth;
       object result = plan.Create();
       c.Differences.Push(result);
-      for (int t = 0; t < items; t++)
+      int parents = c.Differences.Depth;
+      int t = 0;
+      int valueStart = 0;
+      while (true) // one exception handler per object, see ReadReporting
       {
-        if (t >= props.Length || props[t] is null)
+        try
         {
-          if (c.R.Peek() != 0xC0) // a nil is a value left out (as a key that is not in a map)
+          for (; t < items; t++)
           {
-            if (t >= props.Length)
-              c.Differences.ExtraValue(result, t);
-            else
-              c.Differences.UnknownProperty(result, c.Bound.NameOf(plan, t));
+            valueStart = -1;
+            if (t >= props.Length || props[t] is null)
+            {
+              if (c.R.Peek() != 0xC0) // a nil is a value left out (as a key that is not in a map)
+              {
+                if (t >= props.Length)
+                  c.Differences.ExtraValue(result, t);
+                else
+                  c.Differences.UnknownProperty(result, c.Bound.NameOf(plan, t));
+              }
+              c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
+            }
+            else if (!c.R.TryReadNil())
+            {
+              valueStart = c.R.Pos;
+              props[t].Read(c, result);
+            }
           }
-          c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
+          break;
         }
-        else if (!c.R.TryReadNil())
-          props[t].Read(c, result);
+        catch (Exception ex) when (valueStart >= 0 && c.Differences.SkipInvalidValue(result, props[t].Info, ex))
+        {
+          SkipValue(c, valueStart, inner, parents);
+          t++;
+        }
       }
       c.Differences.Pop();
       c.Depth = depth;
       return (T)result;
+    }
+
+    /// <summary>
+    /// A value that could not be converted (read completely, see ReadDifferences.NotConvertedKey) and is skipped (MsgPackOptions.ReadErrors): read again from its start without converting it.
+    /// </summary>
+    /// <param name="depth">The depth of the object's values</param>
+    /// <param name="parents">The objects on the stack of the differences while reading the object's values</param>
+    private static void SkipValue(ReadContext c, int valueStart, int depth, int parents)
+    {
+      c.Differences.RestoreDepth(parents);
+      c.Depth = depth;
+      c.R.Pos = valueStart;
+      c.R.Skip(c.Depth);
     }
 
     private T RestartReporting(ReadContext c, int start, int depth, FullPropertyInfo assignedTo)

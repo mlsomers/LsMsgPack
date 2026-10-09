@@ -237,6 +237,8 @@ builder.Services.AddControllers()
 | HttpClient | `response.GetReadDifferences()` (or `content.GetReadDifferences()`) after `ReadAsAsync` | No |
 | MVC 5 | `HttpContext.GetReadDifferences()` in the controller | No |
 
+Values that can't be read (a string where an `int` is declared...) fail the request by default. Set `ReadErrors` on the options of the media type to skip them instead (`o.XLsMsgPack.ReadErrors = ReadErrorHandling.ReportAndContinue`, they're then reported with the other differences), or to fail with all of them at once (`FailDeferred`, the message in the `ModelState` has the complete report), see [ReadDifferences.md](ReadDifferences.md#values-that-cant-be-read-readerrors).
+
 It's `null` when the body matched the classes (or wasn't read by the MsgPack formatter). When reading fails, it has what was found until the error, which is often the cause (a misspelled property that was skipped). `LtMsgPackHttpSerializer.Deserialize` also has an overload with `out ReadDifferences`.
 
 It's off by default: reading with it is a bit slower (about 0.15 µs per request body, and 10% on large bodies), and the warning walks the objects that were read to find the paths. Turn it on while you look for a problem, or in a test environment.

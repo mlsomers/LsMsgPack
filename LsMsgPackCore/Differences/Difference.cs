@@ -28,10 +28,17 @@ namespace LsMsgPack
 
     /// <summary>
     /// A type id in the data (a type name, or with the indexed schema the writer's class) that did not resolve to a type. With the indexed schema, or when the declared type cannot be created
-    /// (abstract, an interface), the object was skipped (left null). Without the schema it was read as the declared type, as it is without collecting the differences (<see cref="Difference.Skipped"/>).
+    /// (abstract, an interface), the object was skipped (left null; an error, see <see cref="MsgPackOptions.ReadErrors"/>). Without the schema it was read as the declared type, as it is without collecting the differences
+    /// (not an error, <see cref="Difference.IsError"/> is false).
     /// <para>A type that is found but does not fit (not assignable, refused by the <see cref="MsgPackOptions.TypeGuard"/>) still throws (see docs/security.md).</para>
     /// </summary>
-    UnresolvedType
+    UnresolvedType,
+
+    /// <summary>
+    /// A value that was read but could not be converted into its property (a string where an int is declared, a number too large for it, a name that is not a value of the enum...).
+    /// The property keeps what the constructor gave it (<see cref="Difference.Error"/> is the first exception). Values of collections fail the property that holds the collection.
+    /// </summary>
+    InvalidValue
   }
 
   /// <summary>
@@ -50,7 +57,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// The class that is read: the class of the object with the unknown property or extra value, the class without a schema entry (<see cref="DifferenceKind.UnmatchedClass"/>),
-    /// or the declared type of a value whose type id was not found (<see cref="DifferenceKind.UnresolvedType"/>).
+    /// the declared type of a value whose type id was not found (<see cref="DifferenceKind.UnresolvedType"/>), or the class with the property that could not be read (<see cref="DifferenceKind.InvalidValue"/>).
     /// </summary>
     public Type Class { get; }
 
@@ -58,7 +65,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// The name of the property in the data (<see cref="DifferenceKind.UnknownProperty"/>), the property the object was assigned to (<see cref="DifferenceKind.UnmatchedClass"/>, null for the root and the elements of collections),
-    /// or the type name in the data (<see cref="DifferenceKind.UnresolvedType"/>). Null for <see cref="DifferenceKind.ExtraValue"/>.
+    /// the type name in the data (<see cref="DifferenceKind.UnresolvedType"/>), or the property that could not be read (<see cref="DifferenceKind.InvalidValue"/>). Null for <see cref="DifferenceKind.ExtraValue"/>.
     /// </summary>
     public string Name { get; }
 
@@ -76,10 +83,16 @@ namespace LsMsgPack
     internal bool _skipped;
 
     /// <summary>
-    /// <see cref="DifferenceKind.UnresolvedType"/>: the object was skipped (left null), otherwise it was read as the declared type (<see cref="Class"/>). True for <see cref="DifferenceKind.UnmatchedClass"/>, false otherwise
-    /// (unknown properties and extra values skip a value, not the object).
+    /// A value that could not be read (subject to <see cref="MsgPackOptions.ReadErrors"/>): skipped, or thrown with <see cref="ReadErrorHandling.FailFast"/>.
+    /// True for <see cref="DifferenceKind.InvalidValue"/>, <see cref="DifferenceKind.UnmatchedClass"/> and an <see cref="DifferenceKind.UnresolvedType"/> whose object was skipped
+    /// (not when it was read as the declared type). Unknown properties and extra values are differences, not errors.
     /// </summary>
-    public bool Skipped { get { return Kind == DifferenceKind.UnmatchedClass || (Kind == DifferenceKind.UnresolvedType && _skipped); } }
+    public bool IsError { get { return Kind == DifferenceKind.InvalidValue || Kind == DifferenceKind.UnmatchedClass || (Kind == DifferenceKind.UnresolvedType && _skipped); } }
+
+    /// <summary>
+    /// The exception of the first occurrence of an error (<see cref="IsError"/>), null otherwise.
+    /// </summary>
+    public Exception Error { get; internal set; }
 
     /// <summary>
     /// The number of times it was found in the data.
@@ -134,6 +147,8 @@ namespace LsMsgPack
           return "no schema entry, the object was skipped";
         case DifferenceKind.UnresolvedType:
           return _skipped ? "type not found, the object was skipped" : string.Concat("type not found, read as ", Class is null ? "?" : Class.Name);
+        case DifferenceKind.InvalidValue:
+          return string.Concat("could not be read (", Error is null ? "?" : Error.Message, "), skipped");
         default:
           return "not a property of the class, skipped";
       }

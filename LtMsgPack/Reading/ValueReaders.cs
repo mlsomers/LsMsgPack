@@ -83,7 +83,7 @@ namespace LtMsgPack.Reading
         return typed;
       if (c.Depth == 0 && assignedTo is null) // the root: LsMsgPack returns what it could convert, only its generic Deserialize casts
         throw new RootValue(value);
-      throw new ArgumentException($"Object of type '{value.GetType()}' cannot be converted to type '{typeof(T)}'."); // as reflection reports it when LsMsgPack sets the property
+      throw ReadDifferences.NotConverted(c.SlowSettings, new ArgumentException($"Object of type '{value.GetType()}' cannot be converted to type '{typeof(T)}'.")); // as reflection reports it when LsMsgPack sets the property
     }
   }
 
@@ -146,18 +146,27 @@ namespace LtMsgPack.Reading
       {
         switch (Code)
         {
-          case TypeCode.SByte: { sbyte v = checked((sbyte)value); return Unsafe.As<sbyte, T>(ref v); }
-          case TypeCode.Int16: { short v = checked((short)value); return Unsafe.As<short, T>(ref v); }
-          case TypeCode.Int32: { int v = checked((int)value); return Unsafe.As<int, T>(ref v); }
+          case TypeCode.SByte: { if (value < sbyte.MinValue || value > sbyte.MaxValue) throw Overflow(c); sbyte v = (sbyte)value; return Unsafe.As<sbyte, T>(ref v); }
+          case TypeCode.Int16: { if (value < short.MinValue || value > short.MaxValue) throw Overflow(c); short v = (short)value; return Unsafe.As<short, T>(ref v); }
+          case TypeCode.Int32: { if (value < int.MinValue || value > int.MaxValue) throw Overflow(c); int v = (int)value; return Unsafe.As<int, T>(ref v); }
           case TypeCode.Int64: { return Unsafe.As<long, T>(ref value); }
-          case TypeCode.Byte: { byte v = checked((byte)value); return Unsafe.As<byte, T>(ref v); }
-          case TypeCode.UInt16: { ushort v = checked((ushort)value); return Unsafe.As<ushort, T>(ref v); }
-          case TypeCode.UInt32: { uint v = checked((uint)value); return Unsafe.As<uint, T>(ref v); }
-          case TypeCode.Char: { char v = checked((char)value); return Unsafe.As<char, T>(ref v); }
+          case TypeCode.Byte: { if (value < byte.MinValue || value > byte.MaxValue) throw Overflow(c); byte v = (byte)value; return Unsafe.As<byte, T>(ref v); }
+          case TypeCode.UInt16: { if (value < ushort.MinValue || value > ushort.MaxValue) throw Overflow(c); ushort v = (ushort)value; return Unsafe.As<ushort, T>(ref v); }
+          case TypeCode.UInt32: { if (value < uint.MinValue || value > uint.MaxValue) throw Overflow(c); uint v = (uint)value; return Unsafe.As<uint, T>(ref v); }
+          case TypeCode.Char: { if (value < char.MinValue || value > char.MaxValue) throw Overflow(c); char v = (char)value; return Unsafe.As<char, T>(ref v); }
         }
       }
       if (c.R.TryReadNil()) return default(T);
       return Slow(c, start, assignedTo);
+    }
+
+    /// <summary>
+    /// As a checked cast throws it (and Convert.ChangeType in LsMsgPack), marked as a value that was read but not converted.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Exception Overflow(ReadContext c)
+    {
+      return ReadDifferences.NotConverted(c.SlowSettings, new OverflowException());
     }
   }
 
@@ -237,13 +246,13 @@ namespace LtMsgPack.Reading
       if (c.R.TryReadShortString(chars, out int count))
       {
         if (Guid.TryParse(chars.Slice(0, count), out value)) return value;
-        throw new MsgPackException($"\"{chars.Slice(0, count).ToString()}\" is not a Guid.");
+        throw ReadDifferences.NotConverted(c.SlowSettings, new MsgPackException($"\"{chars.Slice(0, count).ToString()}\" is not a Guid."));
       }
 #endif
       if (c.R.TryReadString(out string text))
       {
         if (Guid.TryParse(text, out value)) return value;
-        throw new MsgPackException($"\"{text}\" is not a Guid.");
+        throw ReadDifferences.NotConverted(c.SlowSettings, new MsgPackException($"\"{text}\" is not a Guid."));
       }
       if (c.R.TryReadNil()) return Guid.Empty;
       return Slow(c, start, assignedTo);

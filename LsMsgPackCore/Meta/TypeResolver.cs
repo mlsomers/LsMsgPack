@@ -97,7 +97,7 @@ namespace LsMsgPack.Meta
         return found ?? assignedTo;
       if (assignedTo.IsAbstract || assignedTo.IsInterface)
         throw new UnresolvedTypeException(typeName, $"Unable to resolve the type \"{typeName}\" (declared as {assignedTo.FullName}).");
-      settings._differences.UnresolvedType(typeName, assignedTo, false);
+      settings._differences.UnresolvedType(typeName, assignedTo, null);
       return assignedTo;
     }
 

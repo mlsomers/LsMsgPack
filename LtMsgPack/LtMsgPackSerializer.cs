@@ -167,7 +167,7 @@ namespace LtMsgPack
 
     /// <summary>
     /// Reads the data like <see cref="Deserialize{T}(byte[])"/>, and reports what did not match between the data and the classes: unknown properties, extra values,
-    /// objects of classes without a schema entry (skipped instead of throwing), counted per class and name.
+    /// type ids that are not found and values that could not be read (errors, see <see cref="MsgPackOptions.ReadErrors"/>), counted per class and name.
     /// </summary>
     /// <param name="differences">Null when the data matched the classes. See <see cref="ReadDifferences.GenerateReport"/>.</param>
     public T Deserialize<T>(byte[] data, out ReadDifferences differences)
@@ -201,7 +201,7 @@ namespace LtMsgPack
       if (offset < 0 || count < 0 || data.Length - offset < count)
         throw new ArgumentOutOfRangeException(nameof(count));
       ReadDifferences found = new ReadDifferences(_serializer.Options);
-      object result = Collecting(found, () => _serializer.Deserialize(type, data, offset, offset + count, out int consumed, found));
+      object result = ReadDifferences.Collect(found, () => _serializer.Deserialize(type, data, offset, offset + count, out int consumed, found));
       differences = found.IsEmpty ? null : found;
       return result;
     }
@@ -210,23 +210,9 @@ namespace LtMsgPack
     public object Deserialize(Type type, Stream source, out ReadDifferences differences)
     {
       ReadDifferences found = new ReadDifferences(_serializer.Options);
-      object result = Collecting(found, () => Deserialize(type, source, found));
+      object result = ReadDifferences.Collect(found, () => Deserialize(type, source, found));
       differences = found.IsEmpty ? null : found;
       return result;
-    }
-
-    private static object Collecting(ReadDifferences found, Func<object> read)
-    {
-      try
-      {
-        object result = read();
-        found.Root = result;
-        return result;
-      }
-      catch (Exception ex) when (found.AttachTo(ex))
-      {
-        throw; // not reached, the filter attaches the differences and passes it on as it is
-      }
     }
 
     private object Deserialize(Type type, Stream source, ReadDifferences differences)

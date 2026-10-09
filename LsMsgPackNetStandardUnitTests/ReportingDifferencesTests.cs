@@ -75,6 +75,25 @@ namespace LsMsgPackUnitTests
     {
       public int Side { get; set; }
     }
+
+    /// <summary>
+    /// Values the reader's DiffErrorsEntity cannot convert (all but Name).
+    /// </summary>
+    public class DiffErrorsDto
+    {
+      public string Id { get; set; }
+      public int Count { get; set; }
+      public string Colour { get; set; }
+      public string Name { get; set; }
+      public List<string> Lines { get; set; }
+      public DiffInnerDto Inner { get; set; }
+    }
+
+    public class DiffInnerDto
+    {
+      public string Amount { get; set; }
+      public string Note { get; set; }
+    }
   }
 
   namespace DifferencesReader
@@ -106,6 +125,24 @@ namespace LsMsgPackUnitTests
     {
       public int X { get; set; }
       public int Y { get; set; }
+    }
+
+    public enum DiffColour { Red, Green }
+
+    public class DiffErrorsEntity
+    {
+      public int Id { get; set; } = 7;
+      public byte Count { get; set; }
+      public DiffColour Colour { get; set; } = DiffColour.Green;
+      public string Name { get; set; }
+      public List<int> Lines { get; set; }
+      public DiffInnerEntity Inner { get; set; }
+    }
+
+    public class DiffInnerEntity
+    {
+      public int Amount { get; set; } = 5;
+      public string Note { get; set; }
     }
 
     public class DiffThrowEntity
@@ -304,7 +341,8 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// A class that could not be paired with one of the writer's classes (one reader class for two writer classes) throws without the differences, and is skipped and reported with them, naming the writer's classes.
+    /// A class that could not be paired with one of the writer's classes (one reader class for two writer classes) is an error: it throws (FailFast, with the differences on the exception),
+    /// or is skipped and reported with ReportAndContinue, naming the writer's classes.
     /// </summary>
     [TestMethod]
     [DataRow(ObjectLayout.Map, "inline")]
@@ -322,11 +360,15 @@ namespace LsMsgPackUnitTests
       byte[] bytes = Serializer.Serialize(written, settings);
       MsgPackException thrown = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<OtherClassesReader.TwoKindsEntity>(bytes, settings));
       StringAssert.Contains(thrown.Message, "where the writer had different classes (AddressDto, LineDto)");
+      thrown = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<OtherClassesReader.TwoKindsEntity>(bytes, settings, out ReadDifferences unused));
+      Assert.AreEqual(1, ((ReadDifferences)thrown.Data[ReadDifferences.ExceptionDataKey]).ErrorCount);
 
+      settings.ReadErrors = ReadErrorHandling.ReportAndContinue;
       for (int call = 0; call < 2; call++)
       {
         OtherClassesReader.TwoKindsEntity read = Serializer.Deserialize<OtherClassesReader.TwoKindsEntity>(bytes, settings, out ReadDifferences differences);
         Assert.IsNotNull(read);
+        Assert.AreEqual(2, differences.ErrorCount);
         Assert.IsNull(read.Home);
         Assert.IsNull(read.Work);
         Assert.AreEqual(2, differences.Differences.Count, differences.ToString());
@@ -334,6 +376,7 @@ namespace LsMsgPackUnitTests
         {
           Difference unmatched = Find(differences, typeof(OtherClassesReader.AddressEntity), DifferenceKind.UnmatchedClass, property);
           Assert.AreEqual(1, unmatched.Count);
+          Assert.IsTrue(unmatched.IsError);
           CollectionAssert.AreEqual(new[] { typeof(OtherClassesWriter.AddressDto), typeof(OtherClassesWriter.LineDto) }, unmatched.WriterClasses.ToArray());
           CollectionAssert.AreEqual(new[] { "$" }, Paths(differences, unmatched));
         }
@@ -342,8 +385,8 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// A type id that is not found throws without the differences (without the schema only when the declared type cannot be created, otherwise it is read as the declared type).
-    /// With them, it is reported: skipped with the schema (the values are indexes into the writer's class) and for an abstract declared type, otherwise read as the declared type.
+    /// A type id that is not found throws (without the schema only when the declared type cannot be created, otherwise it is read as the declared type and reported).
+    /// With ReportAndContinue it is reported: skipped with the schema (the values are indexes into the writer's class) and for an abstract declared type, otherwise read as the declared type.
     /// </summary>
     [TestMethod]
     [DataRow(ObjectLayout.Map, "names")]
@@ -356,7 +399,9 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = Settings(layout, schema);
       byte[] bytes = PenWithUnknownTypes(Serializer, settings);
       Assert.Throws<Exception>(() => Serializer.Deserialize<DifferencesWriter.DiffPenDto>(bytes, settings));
+      Assert.Throws<Exception>(() => Serializer.Deserialize<DifferencesWriter.DiffPenDto>(bytes, settings, out ReadDifferences unused));
 
+      settings.ReadErrors = ReadErrorHandling.ReportAndContinue;
       for (int call = 0; call < 2; call++)
       {
         DifferencesWriter.DiffPenDto read = Serializer.Deserialize<DifferencesWriter.DiffPenDto>(bytes, settings, out ReadDifferences differences);
@@ -364,7 +409,7 @@ namespace LsMsgPackUnitTests
         Assert.IsNull(read.Shape);
 
         Difference shape = Find(differences, typeof(DifferencesWriter.DiffShape), DifferenceKind.UnresolvedType, "DiffSquarX");
-        Assert.IsTrue(shape.Skipped);
+        Assert.IsTrue(shape.IsError);
         Assert.AreEqual(1, shape.Count);
         CollectionAssert.AreEqual(new[] { "$" }, Paths(differences, shape));
 
@@ -372,7 +417,7 @@ namespace LsMsgPackUnitTests
         CollectionAssert.AreEqual(new[] { "$" }, Paths(differences, pet));
         if (schema == "names")
         {
-          Assert.IsFalse(pet.Skipped);
+          Assert.IsFalse(pet.IsError);
           Assert.AreEqual(typeof(DifferencesWriter.DiffAnimal), read.Pet.GetType());
           if (layout == ObjectLayout.Map) // an array is read by position, the subclass's values do not fit
             Assert.AreEqual("Sparkle", read.Pet.Name);
@@ -380,7 +425,7 @@ namespace LsMsgPackUnitTests
         }
         else
         {
-          Assert.IsTrue(pet.Skipped);
+          Assert.IsTrue(pet.IsError);
           Assert.IsNull(read.Pet);
           Assert.AreEqual(2, differences.Differences.Count, differences.ToString());
         }
@@ -401,6 +446,131 @@ namespace LsMsgPackUnitTests
       Rename(bytes, "DiffUnicorn", "DiffLineDto"); // found, not a DiffAnimal
       MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<DifferencesWriter.DiffPenDto>(bytes, settings, out ReadDifferences unused));
       StringAssert.Contains(ex.Message, "cannot be assigned to");
+    }
+
+    internal static byte[] Errors(ISerializerUnderTest serializer, MsgPackSettings settings)
+    {
+      DifferencesWriter.DiffErrorsDto written = new DifferencesWriter.DiffErrorsDto()
+      {
+        Id = "abc", // not an int
+        Count = 300, // too large for a byte
+        Colour = "Purple", // not a DiffColour
+        Name = "ok",
+        Lines = new List<string>() { "1", "x" }, // "x" is not an int: the list is skipped
+        Inner = new DifferencesWriter.DiffInnerDto() { Amount = "12a", Note = "fine" }
+      };
+      return serializer.Serialize(written, settings);
+    }
+
+    private static readonly string[] ErrorProperties = { "Id", "Count", "Colour", "Lines" };
+
+    /// <summary>
+    /// The default (FailFast) throws at the first value that does not convert, with the differences found until then (including that error) when they are collected.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map, "names")]
+    [DataRow(ObjectLayout.Array, "inline")]
+    public void FailFastThrowsAtTheFirstError(ObjectLayout layout, string schema)
+    {
+      MsgPackSettings settings = Settings(layout, schema);
+      byte[] bytes = Errors(Serializer, settings);
+      Exception plain = Assert.Throws<Exception>(() => Serializer.Deserialize<DifferencesReader.DiffErrorsEntity>(bytes, settings));
+      Assert.IsFalse(plain.Data.Contains(ReadDifferences.ExceptionDataKey));
+      Assert.IsFalse(plain.Data.Contains(ReadDifferences.NotConvertedKey), "not marked without the differences");
+
+      Exception ex = Assert.Throws<Exception>(() => Serializer.Deserialize<DifferencesReader.DiffErrorsEntity>(bytes, settings, out ReadDifferences unused));
+      ReadDifferences differences = (ReadDifferences)ex.Data[ReadDifferences.ExceptionDataKey];
+      Assert.AreEqual(1, differences.ErrorCount, differences.ToString());
+      Difference error = differences.Differences.Single(d => d.IsError);
+      Assert.AreEqual(DifferenceKind.InvalidValue, error.Kind);
+      Assert.AreSame(ex, error.Error);
+      Assert.AreEqual(plain.GetType(), ex.GetType(), "the same exception as without the differences");
+    }
+
+    /// <summary>
+    /// ReportAndContinue skips the values that do not convert (the properties keep the constructor's values) and reports them; FailDeferred does the same and then throws with all of them.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map, "names")]
+    [DataRow(ObjectLayout.Array, "names")]
+    [DataRow(ObjectLayout.Map, "inline")]
+    [DataRow(ObjectLayout.Array, "inline")]
+    [DataRow(ObjectLayout.Map, "store")]
+    [DataRow(ObjectLayout.Array, "reference")]
+    public void ErrorsAreSkippedAndReported(ObjectLayout layout, string schema)
+    {
+      MsgPackSettings settings = Settings(layout, schema);
+      settings.ReadErrors = ReadErrorHandling.ReportAndContinue;
+      byte[] bytes = Errors(Serializer, settings);
+
+      for (int call = 0; call < 2; call++)
+      {
+        DifferencesReader.DiffErrorsEntity read = Serializer.Deserialize<DifferencesReader.DiffErrorsEntity>(bytes, settings, out ReadDifferences differences);
+        Assert.AreEqual(7, read.Id);
+        Assert.AreEqual(0, read.Count);
+        Assert.AreEqual(DifferencesReader.DiffColour.Green, read.Colour);
+        Assert.AreEqual("ok", read.Name);
+        Assert.IsNull(read.Lines);
+        Assert.AreEqual(5, read.Inner.Amount);
+        Assert.AreEqual("fine", read.Inner.Note);
+
+        Assert.AreEqual(5, differences.ErrorCount, differences.ToString());
+        Assert.AreEqual(5, differences.Differences.Count, differences.ToString());
+        foreach (string property in ErrorProperties)
+        {
+          Difference error = Find(differences, typeof(DifferencesReader.DiffErrorsEntity), DifferenceKind.InvalidValue, property);
+          Assert.IsTrue(error.IsError);
+          Assert.IsNotNull(error.Error);
+          CollectionAssert.AreEqual(new[] { "$" }, Paths(differences, error));
+        }
+        Difference amount = Find(differences, typeof(DifferencesReader.DiffInnerEntity), DifferenceKind.InvalidValue, "Amount");
+        Assert.IsInstanceOfType(amount.Error, typeof(FormatException));
+        CollectionAssert.AreEqual(new[] { "$.Inner" }, Paths(differences, amount));
+        Assert.IsInstanceOfType(Find(differences, typeof(DifferencesReader.DiffErrorsEntity), DifferenceKind.InvalidValue, "Count").Error, typeof(OverflowException));
+        string report = differences.GenerateReport();
+        StringAssert.Contains(report, "5 differences (5 values could not be read) between the data and the classes:");
+        StringAssert.Contains(report, "DiffInnerEntity.Amount: could not be read (");
+        StringAssert.Contains(report, "), skipped, 1 time\r\n    at $.Inner");
+      }
+
+      DifferencesReader.DiffErrorsEntity withoutOut = Serializer.Deserialize<DifferencesReader.DiffErrorsEntity>(bytes, settings); // the same object
+      Assert.AreEqual(7, withoutOut.Id);
+      Assert.AreEqual("ok", withoutOut.Name);
+
+      settings.ReadErrors = ReadErrorHandling.FailDeferred;
+      foreach (bool withOut in new[] { true, false })
+      {
+        ReadErrorsException deferred = withOut
+          ? Assert.Throws<ReadErrorsException>(() => Serializer.Deserialize<DifferencesReader.DiffErrorsEntity>(bytes, settings, out ReadDifferences unused))
+          : Assert.Throws<ReadErrorsException>(() => Serializer.Deserialize<DifferencesReader.DiffErrorsEntity>(bytes, settings));
+        Assert.AreEqual(5, deferred.Differences.ErrorCount);
+        Assert.AreSame(deferred.Differences, deferred.Data[ReadDifferences.ExceptionDataKey]);
+        Assert.IsNotNull(deferred.Differences.Root, "read to the end, so the paths are known");
+        Assert.IsNotNull(deferred.InnerException);
+        StringAssert.StartsWith(deferred.Message, "5 values could not be read (ReadErrors = FailDeferred). 5 differences");
+        StringAssert.Contains(deferred.Message, "at $.Inner");
+      }
+    }
+
+    /// <summary>
+    /// What is not a value that does not convert still throws in every mode: exceptions of setters, types that do not fit (docs/security.md), data that ends early.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ReadErrorHandling.FailDeferred)]
+    [DataRow(ReadErrorHandling.ReportAndContinue)]
+    public void OtherErrorsStillThrow(ReadErrorHandling mode)
+    {
+      MsgPackSettings settings = Settings(ObjectLayout.Map, "names");
+      settings.ReadErrors = mode;
+      byte[] boom = Serializer.Serialize(new DifferencesWriter.DiffThrowDto() { Boom = "boom" }, settings);
+      Assert.Throws<InvalidOperationException>(() => Serializer.Deserialize<DifferencesReader.DiffThrowEntity>(boom, settings, out ReadDifferences unused));
+
+      byte[] notFitting = Serializer.Serialize(new DifferencesWriter.DiffPenDto() { Pet = new DifferencesWriter.DiffUnicorn() { Name = "Sparkle" } }, settings);
+      Rename(notFitting, "DiffUnicorn", "DiffLineDto");
+      StringAssert.Contains(Assert.Throws<MsgPackException>(() => Serializer.Deserialize<DifferencesWriter.DiffPenDto>(notFitting, settings, out ReadDifferences unused)).Message, "cannot be assigned to");
+
+      byte[] errors = Errors(Serializer, settings);
+      Assert.Throws<Exception>(() => Serializer.Deserialize<DifferencesReader.DiffErrorsEntity>(errors.Take(errors.Length - 3).ToArray(), settings, out ReadDifferences unused)); // KEEPTRACK: the error becomes the value, which does not cast
     }
 
     /// <summary>
@@ -510,6 +680,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = ReportingDifferencesTests.Settings(layout, schema);
       settings.DynamicallyCompact = compact;
+      settings.ReadErrors = ReadErrorHandling.ReportAndContinue;
 
       if (schema != "names" || layout == ObjectLayout.Map) // without the schema an array is read by position, other classes do not fit
         Compare<List<DifferencesReader.DiffOrderEntity>>(MsgPackSerializer.Serialize(ReportingDifferencesTests.Orders(4), settings), settings);
@@ -529,6 +700,8 @@ namespace LsMsgPackUnitTests
 
       if (schema != "reference" && (schema != "names" || layout == ObjectLayout.Map)) // the names are in the bytes
         Compare<DifferencesWriter.DiffPenDto>(ReportingDifferencesTests.PenWithUnknownTypes(Serializers.Ls, settings), settings);
+
+      Compare<DifferencesReader.DiffErrorsEntity>(ReportingDifferencesTests.Errors(Serializers.Ls, settings), settings);
     }
   }
 }

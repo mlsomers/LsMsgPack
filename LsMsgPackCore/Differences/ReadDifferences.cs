@@ -52,12 +52,28 @@ namespace LsMsgPack
     private readonly Dictionary<Key, Difference> _byKey = new Dictionary<Key, Difference>();
     [NonSerialized]
     private readonly List<object> _parents = new List<object>();
+    private readonly ReadErrorHandling _mode;
+    [NonSerialized]
+    private Exception _firstError;
+    [NonSerialized]
+    private Exception _thrown;
 
-    /// <param name="settings">The settings of the call (the static filters decide which properties the report walks)</param>
+    /// <summary>
+    /// The key in <see cref="Exception.Data"/> that marks an exception of a value that was read completely but could not be converted (so it can be skipped). Only set while collecting.
+    /// </summary>
+    internal const string NotConvertedKey = "LsMsgPack.ValueNotConverted";
+
+    /// <param name="settings">The settings of the call (the static filters decide which properties the report walks, <see cref="MsgPackOptions.ReadErrors"/> what happens to errors)</param>
     internal ReadDifferences(MsgPackOptions settings)
     {
       _settings = settings;
+      _mode = settings?._readErrors ?? ReadErrorHandling.FailFast;
     }
+
+    /// <summary>
+    /// The number of values that could not be read (the occurrences of the differences with <see cref="Difference.IsError"/>, also of the ones not kept).
+    /// </summary>
+    public int ErrorCount { get; private set; }
 
     /// <summary>
     /// The value that was read (null when the deserialization did not finish).
@@ -93,6 +109,17 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// The number of objects on the stack (<see cref="Push"/>), to restore it when a value is skipped after an error deeper down (<see cref="RestoreDepth"/>).
+    /// </summary>
+    internal int Depth { get { return _parents.Count; } }
+
+    internal void RestoreDepth(int depth)
+    {
+      if (_parents.Count > depth)
+        _parents.RemoveRange(depth, _parents.Count - depth);
+    }
+
+    /// <summary>
     /// Forgets what was found: the work is repeated (a shared schema session grew, see SchemaGrowthException).
     /// </summary>
     internal void Reset()
@@ -101,6 +128,9 @@ namespace LsMsgPack
       _byKey.Clear();
       _parents.Clear();
       Omitted = 0;
+      ErrorCount = 0;
+      _firstError = null;
+      _thrown = null;
     }
 
     internal void UnknownProperty(object parent, object key)
@@ -125,23 +155,122 @@ namespace LsMsgPack
     /// <param name="type">The class without a schema entry</param>
     /// <param name="assignedTo">The property the object is assigned to, null for the root and the elements of collections</param>
     /// <param name="writerClasses">The writer's classes the class was paired with (more than one, so none was used), null when it was not paired</param>
-    internal void UnmatchedClass(Type type, FullPropertyInfo assignedTo, Type[] writerClasses)
+    /// <param name="error">What is thrown with <see cref="ReadErrorHandling.FailFast"/></param>
+    /// <returns>True when the object is skipped, false when the error is to be thrown</returns>
+    internal bool UnmatchedClass(Type type, FullPropertyInfo assignedTo, Type[] writerClasses, Exception error)
     {
       object parent = _parents.Count > 0 ? _parents[_parents.Count - 1] : null;
       Difference difference = Add(type, DifferenceKind.UnmatchedClass, assignedTo?.PropertyInfo.Name, -1, parent);
       if (difference != null && writerClasses != null)
         difference.WriterClasses = writerClasses;
+      return Continue(difference, error);
+    }
+
+    /// <summary>
+    /// An exception filter where the value of a property is read: a value that could not be converted (marked by <see cref="NotConverted"/>) is recorded as <see cref="DifferenceKind.InvalidValue"/>.
+    /// </summary>
+    /// <param name="parent">The object the property belongs to</param>
+    /// <param name="prop">The property (null when not known)</param>
+    /// <returns>True when the value is skipped, false when the exception is passed on (not a conversion error, <see cref="ReadErrorHandling.FailFast"/>, or already recorded deeper down)</returns>
+    internal bool SkipInvalidValue(object parent, FullPropertyInfo prop, Exception ex)
+    {
+      if (ReferenceEquals(ex, _thrown) || !IsNotConverted(ex))
+        return false;
+      Difference difference = Add(parent.GetType(), DifferenceKind.InvalidValue, prop?.PropertyInfo.Name, -1, parent);
+      return Continue(difference, ex);
+    }
+
+    /// <summary>
+    /// Counts an error and decides by <see cref="MsgPackOptions.ReadErrors"/>.
+    /// </summary>
+    /// <returns>True when the value is skipped, false when the error is to be thrown</returns>
+    private bool Continue(Difference difference, Exception error)
+    {
+      ErrorCount++;
+      if (difference != null && difference.Error is null)
+        difference.Error = error;
+      if (_firstError is null)
+        _firstError = error;
+      if (_mode != ReadErrorHandling.FailFast)
+        return true;
+      _thrown = error; // the levels above pass it on
+      return false;
+    }
+
+    /// <summary>
+    /// Marks the exception of a value that was read completely but could not be converted, so the property can be skipped (<see cref="SkipInvalidValue"/>). Only while collecting.
+    /// </summary>
+    /// <returns>False (an exception filter)</returns>
+    internal static bool MarkNotConverted(MsgPackOptions settings, Exception ex)
+    {
+      if (settings?._differences is null)
+        return false;
+      try
+      {
+        if (!ex.Data.IsReadOnly)
+          ex.Data[NotConvertedKey] = true;
+      }
+      catch (Exception) // a Data that does not take it: not skipped
+      {
+      }
+      return false;
+    }
+
+    /// <summary>
+    /// <see cref="MarkNotConverted"/> for an exception that is about to be thrown.
+    /// </summary>
+    internal static Exception NotConverted(MsgPackOptions settings, Exception ex)
+    {
+      MarkNotConverted(settings, ex);
+      return ex;
+    }
+
+    private static bool IsNotConverted(Exception ex)
+    {
+      try
+      {
+        return ex.Data.Contains(NotConvertedKey);
+      }
+      catch (Exception)
+      {
+        return false;
+      }
+    }
+
+    /// <summary>
+    /// Reads with this collector: sets the <see cref="Root"/>, throws a <see cref="ReadErrorsException"/> when errors were skipped with <see cref="ReadErrorHandling.FailDeferred"/>,
+    /// and gives an exception the differences found until then.
+    /// </summary>
+    internal static object Collect(ReadDifferences found, Func<object> read)
+    {
+      try
+      {
+        object result = read();
+        found.Root = result;
+        if (found.ErrorCount > 0 && found._mode == ReadErrorHandling.FailDeferred)
+          throw new ReadErrorsException(found, found._firstError);
+        return result;
+      }
+      catch (Exception ex) when (found.AttachTo(ex))
+      {
+        throw; // not reached, the filter attaches the differences and passes it on as it is
+      }
     }
 
     /// <param name="typeName">The type id in the data (with the indexed schema the writer's class name)</param>
     /// <param name="declared">The type the value is assigned to</param>
     /// <param name="skipped">The value was skipped (left null), otherwise read as the declared type</param>
-    internal void UnresolvedType(string typeName, Type declared, bool skipped)
+    /// <param name="error">The exception of a value that is skipped (thrown with <see cref="ReadErrorHandling.FailFast"/>), null when it is read as the declared type</param>
+    /// <returns>True when the value is skipped or read as the declared type, false when the error is to be thrown</returns>
+    internal bool UnresolvedType(string typeName, Type declared, Exception error)
     {
       object parent = _parents.Count > 0 ? _parents[_parents.Count - 1] : null;
       Difference difference = Add(declared, DifferenceKind.UnresolvedType, Cut(typeName), -1, parent);
+      if (error is null)
+        return true;
       if (difference != null)
-        difference._skipped = skipped;
+        difference._skipped = true;
+      return Continue(difference, error);
     }
 
     /// <summary>
@@ -241,8 +370,10 @@ namespace LsMsgPack
       if (IsEmpty)
         return "The data matched the classes.";
 
-      report.Append(_differences.Count == 1 ? "1 difference" : string.Concat(_differences.Count.ToString(CultureInfo.InvariantCulture), " differences"))
-        .Append(" between the data and the classes:");
+      report.Append(_differences.Count == 1 ? "1 difference" : string.Concat(_differences.Count.ToString(CultureInfo.InvariantCulture), " differences"));
+      if (ErrorCount > 0)
+        report.Append(" (").Append(ErrorCount == 1 ? "1 value" : string.Concat(ErrorCount.ToString(CultureInfo.InvariantCulture), " values")).Append(" could not be read)");
+      report.Append(" between the data and the classes:");
 
       Walker walker = new Walker(_settings);
       Dictionary<object, Found> found = walker.FindPaths(Root, Samples());
@@ -310,7 +441,7 @@ namespace LsMsgPack
       if (samples.Count == 0)
         return;
 
-      bool holders = difference.Kind == DifferenceKind.UnmatchedClass || difference.Kind == DifferenceKind.UnresolvedType; // the samples hold the value
+      bool holders = difference.Kind == DifferenceKind.UnmatchedClass || difference.Kind == DifferenceKind.UnresolvedType; // the samples hold the value (InvalidValue: they have the property)
       report.Append(holders ? "\r\n    in " : "\r\n    at ");
       for (int t = 0; t < samples.Count; t++)
       {

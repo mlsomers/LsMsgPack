@@ -280,7 +280,7 @@ namespace LsMsgPack.TypeResolving.Types
 
     /// <summary>
     /// Reading an object (with values) of a class that has no entry: its values are indexes into an entry of the writer's class, but which one is not known.
-    /// This throws rather than matching the values by position. When the differences are collected (<see cref="MsgPackOptions._differences"/>), the object is reported and skipped instead.
+    /// This throws rather than matching the values by position. When the differences are collected (<see cref="MsgPackOptions._differences"/>), the object is reported, and skipped unless <see cref="MsgPackOptions.ReadErrors"/> is FailFast.
     /// </summary>
     /// <param name="assignedTo">The property the object is assigned to (null for the root and elements)</param>
     /// <returns>True when the object is to be skipped (left null)</returns>
@@ -293,8 +293,10 @@ namespace LsMsgPack.TypeResolving.Types
         _ambiguous.TryGetValue(type, out writers);
       if (settings._differences is null)
         throw NoEntry(type, writers);
-      settings._differences.UnmatchedClass(type, assignedTo, writers);
-      return true;
+      Exception error = NoEntry(type, writers);
+      if (settings._differences.UnmatchedClass(type, assignedTo, writers, error))
+        return true;
+      throw error;
     }
 
     private bool HasNoEntry(Type type, MsgPackOptions settings)

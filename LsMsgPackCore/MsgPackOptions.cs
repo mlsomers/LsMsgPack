@@ -141,6 +141,12 @@ namespace LsMsgPack
     public static ObjectCreation Default_ObjectCreation { get; set; } = ObjectCreation.ConstructorOrUninitialized;
 
     /// <summary>
+    /// The <see cref="ReadErrors"/> of new settings (<see cref="ReadErrorHandling.FailFast"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static ReadErrorHandling Default_ReadErrors { get; set; } = ReadErrorHandling.FailFast;
+
+    /// <summary>
     /// The <see cref="UnspecifiedDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Local"/> by default).
     /// </summary>
     [IgnoreDataMember]
@@ -180,6 +186,7 @@ namespace LsMsgPack
     internal bool _trimTrailingNulls = Default_TrimTrailingNulls;
     internal int _maxDepth = Default_MaxDepth;
     internal ObjectCreation _objectCreation = Default_ObjectCreation;
+    internal ReadErrorHandling _readErrors = Default_ReadErrors;
     internal bool _unspecifiedIsUtc = Default_UnspecifiedDateTimeKind == DateTimeKind.Utc;
     internal DateTimeKind _readDateTimeKind = Default_ReadDateTimeKind;
 
@@ -436,6 +443,24 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// What happens to a value that cannot be read into its property: a value that does not convert (a string where an int is declared, a name that is not a value of the enum...),
+    /// an object of a class without a schema entry, or a type id that is not found (see docs/ReadDifferences.md). <see cref="ReadErrorHandling.FailFast"/> (the default) throws where it is found.
+    /// <para>The other modes skip the value (the property keeps what the constructor gave it) and collect the error with the differences: <see cref="ReadErrorHandling.FailDeferred"/> throws a
+    /// <see cref="ReadErrorsException"/> with all of them once the data is read, <see cref="ReadErrorHandling.ReportAndContinue"/> returns what could be read (the errors are in the <c>out ReadDifferences</c>).
+    /// They collect the differences also without an <c>out ReadDifferences</c>, which makes reading a bit slower.</para>
+    /// <para>Data that cannot be parsed (truncated, nested too deep...), types refused by the security checks (docs/security.md) and exceptions of the classes' constructors and setters always throw.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Read Errors")]
+    [Description("What happens to a value that cannot be read into its property: throw at once (default), skip it and throw once everything is read (with all errors), or skip it and report it.")]
+    [DefaultValue(ReadErrorHandling.FailFast)]
+    public ReadErrorHandling ReadErrors
+    {
+      get { return _readErrors; }
+      set { _readErrors = value; }
+    }
+
+    /// <summary>
     /// What a DateTime of <see cref="System.DateTimeKind.Unspecified"/> is taken to be when it is written as a timestamp (a moment in UTC): <see cref="System.DateTimeKind.Local"/> (the default)
     /// or <see cref="System.DateTimeKind.Utc"/> (as MessagePack-CSharp; with <see cref="ReadDateTimeKind"/> = Unspecified the clock time comes back unchanged in any time zone).
     /// </summary>
@@ -630,6 +655,30 @@ namespace LsMsgPack
     /// </summary>
     [Description("An array of the values in the property order, without keys (nil for values left out by the filters). Without the indexed schema the reader needs the same order and properties.")]
     Array = 1
+  }
+
+  /// <summary>
+  /// What happens to a value that cannot be read into its property (see <see cref="MsgPackOptions.ReadErrors"/>).
+  /// </summary>
+  public enum ReadErrorHandling
+  {
+    /// <summary>
+    /// Throw where the error is found (the default). With an <c>out ReadDifferences</c> the exception has the differences found until then (<see cref="ReadDifferences.ExceptionDataKey"/>).
+    /// </summary>
+    [Description("Throw where the error is found.")]
+    FailFast = 0,
+
+    /// <summary>
+    /// Skip the value, read the rest, then throw a <see cref="ReadErrorsException"/> with all errors and differences (with their paths).
+    /// </summary>
+    [Description("Skip the value and read the rest, then throw with all errors.")]
+    FailDeferred = 1,
+
+    /// <summary>
+    /// Skip the value (the property keeps what the constructor gave it) and report it as a difference (<see cref="Difference.IsError"/>).
+    /// </summary>
+    [Description("Skip the value and report it with the differences.")]
+    ReportAndContinue = 2
   }
 
   /// <summary>

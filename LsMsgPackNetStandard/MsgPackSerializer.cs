@@ -224,6 +224,8 @@ namespace LsMsgPack
     {
       if (settings is null)
         settings = new MsgPackSettings();
+      if (settings._differences is null && settings._readErrors != ReadErrorHandling.FailFast)
+        return Deserialize(tType, stream, settings, out ReadDifferences unused); // the errors are skipped and collected (with the differences)
 
       // The names in the data (type ids, the schema) are resolved in the cached assemblies: the ones of the types the root type reaches (the T of List<T>...)
       CacheAssemblyTypes(tType);
@@ -238,7 +240,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// Reads the data like <see cref="Deserialize{T}(byte[], MsgPackSettings)"/>, and reports what did not match between the data and the classes: unknown properties, extra values,
-    /// objects of classes without a schema entry (skipped instead of throwing), counted per class and name.
+    /// type ids that are not found and values that could not be read (errors, see <see cref="MsgPackOptions.ReadErrors"/>), counted per class and name.
     /// </summary>
     /// <param name="differences">Null when the data matched the classes. See <see cref="ReadDifferences.GenerateReport"/>.</param>
     public static T Deserialize<T>(byte[] source, MsgPackSettings settings, out ReadDifferences differences)
@@ -277,14 +279,9 @@ namespace LsMsgPack
       MsgPackSettings callSettings = (MsgPackSettings)settings.WithDifferences(found); // settings are shared by threads, the differences belong to this call
       try
       {
-        object result = Deserialize(tType, stream, callSettings);
-        found.Root = result;
+        object result = ReadDifferences.Collect(found, () => Deserialize(tType, stream, callSettings));
         differences = found.IsEmpty ? null : found;
         return result;
-      }
-      catch (Exception ex) when (found.AttachTo(ex))
-      {
-        throw; // not reached, the filter attaches and passes it on as it is
       }
       finally
       {

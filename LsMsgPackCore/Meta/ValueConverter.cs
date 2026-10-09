@@ -32,10 +32,128 @@ namespace LsMsgPack.Meta
       if (val is object[] items)
         return ConvertArray(items, assignType, settings, prop);
 
+      if (settings._differences != null)
+        return ConvertLeafMarked(val, assignType, settings);
+
       if (val is IMsgPackExtension extension) // only extensions without a registered type (LsMsgPack: MpExt, see MsgPackItem.UnpackedValue)
         return ConvertExtension(extension, assignType);
 
       return ConvertScalar(val, assignType);
+    }
+
+    /// <summary>
+    /// <see cref="ConvertDeserializeValue"/> of a scalar or extension while collecting the differences: an exception is marked, so the value can be skipped (<see cref="MsgPackOptions.ReadErrors"/>).
+    /// Separate, so the usual way has no exception handling (measured ~5% when reading LsMsgPack names).
+    /// </summary>
+    private static object ConvertLeafMarked(object val, Type assignType, MsgPackOptions settings)
+    {
+      try
+      {
+        if (val is IMsgPackExtension extension)
+          return ConvertExtension(extension, assignType);
+
+        return ConvertScalar(val, assignType);
+      }
+      catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex)) // never true
+      {
+        throw;
+      }
+    }
+
+    /// <summary>
+    /// Sets a converted value. While collecting the differences, a value of another type than the property (one that did not convert) is marked as not converted, so it can be skipped
+    /// (not an exception of the setter, which is passed on as it is).
+    /// </summary>
+    private static void SetValue(FullPropertyInfo prop, object instance, object value, MsgPackOptions settings)
+    {
+      if (settings._differences is null || value is null || Fits(prop.PropertyInfo.PropertyType, value))
+      {
+        prop.SetValue(instance, value);
+        return;
+      }
+      try
+      {
+        prop.SetValue(instance, value); // may still widen (e.g. an int into a long)
+      }
+      catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex))
+      {
+        throw;
+      }
+    }
+
+    private static bool Fits(Type propertyType, object value)
+    {
+      return (Nullable.GetUnderlyingType(propertyType) ?? propertyType).IsInstanceOfType(value);
+    }
+
+    /// <summary>
+    /// An element of a collection, marked as not converted when it has another type (see <see cref="SetValue"/>).
+    /// </summary>
+    private static void SetElement(Array elements, object value, int index, MsgPackOptions settings)
+    {
+      if (settings._differences is null)
+        elements.SetValue(value, index);
+      else
+        SetElementMarked(elements, value, index, settings);
+    }
+
+    private static void SetElementMarked(Array elements, object value, int index, MsgPackOptions settings)
+    {
+      try
+      {
+        elements.SetValue(value, index);
+      }
+      catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex))
+      {
+        throw;
+      }
+    }
+
+    private static object Pair(Type pairType, object key, object value, MsgPackOptions settings)
+    {
+      if (settings._differences is null)
+        return Activator.CreateInstance(pairType, key, value);
+      try
+      {
+        return Activator.CreateInstance(pairType, key, value);
+      }
+      catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex)) // a key or value of another type
+      {
+        throw;
+      }
+    }
+
+    private static void AddEntry(IDictionary dictionary, object key, object value, MsgPackOptions settings)
+    {
+      if (settings._differences is null)
+      {
+        dictionary.Add(key, value);
+        return;
+      }
+      try
+      {
+        dictionary.Add(key, value);
+      }
+      catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex)) // a value of another type, a key twice
+      {
+        throw;
+      }
+    }
+
+    /// <summary>
+    /// Reads the value of a property and sets it. While collecting the differences, a value that could not be converted is reported and skipped (depending on <see cref="MsgPackOptions.ReadErrors"/>).
+    /// </summary>
+    private static void ReadProperty(FullPropertyInfo prop, object instance, object val, MsgPackOptions settings, ReadDifferences differences)
+    {
+      int depth = differences.Depth;
+      try
+      {
+        SetValue(prop, instance, ConvertDeserializeValue(val, prop.PropertyInfo.PropertyType, settings, prop), settings);
+      }
+      catch (Exception ex) when (differences.SkipInvalidValue(instance, prop, ex))
+      {
+        differences.RestoreDepth(depth);
+      }
     }
 
     /// <summary>
@@ -79,9 +197,8 @@ namespace LsMsgPack.Meta
       {
         tType = TypeResolver.Resolve(typeId, assignType, prop, settings, propVals);
       }
-      catch (UnresolvedTypeException ex) when (settings._differences != null) // skipped and reported (the checks of a type that was found still throw, see docs/security.md)
+      catch (UnresolvedTypeException ex) when (settings._differences != null && settings._differences.UnresolvedType(ex.TypeName, assignType, ex)) // skipped and reported (the checks of a type that was found still throw, see docs/security.md)
       {
-        settings._differences.UnresolvedType(ex.TypeName, assignType, true);
         return null;
       }
 
@@ -106,8 +223,8 @@ namespace LsMsgPack.Meta
         return map;
 
       if (tType.IsAbstract || tType.IsInterface)
-        throw new Exception(
-          $"Cannot create an instance of an interface or abstract type:\r\n  {tType.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers.");
+        throw ReadDifferences.NotConverted(settings, new Exception(
+          $"Cannot create an instance of an interface or abstract type:\r\n  {tType.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers."));
 
       if (propVals.Count > (hasTypeId ? 1 : 0) && SerializationRules.GetIndexedSchema(settings)?.SkipIfNoEntry(tType, settings, prop) == true)
         return null;
@@ -144,7 +261,10 @@ namespace LsMsgPack.Meta
         FullPropertyInfo prop = props[t];
         if (propVals.TryGetValue(prop.PropertyId, out object propval))
         {
-          prop.SetValue(instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
+          if (differences is null)
+            prop.SetValue(instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
+          else
+            ReadProperty(prop, instance, propval, settings, differences);
         }
       }
       differences?.Pop();
@@ -190,8 +310,8 @@ namespace LsMsgPack.Meta
     private static object ConvertArray(object[] items, Type assignType, MsgPackOptions settings, FullPropertyInfo prop)
     {
       if (IsDictionary(assignType) && !Array.TrueForAll(items, i => i is object[] pair && pair.Length == 2)) // only [key, value] pairs can be entries
-        throw new MsgPackException($"An array cannot be read into {assignType}: the data is a list, or an object written as an array of its values (ObjectLayout.Array, the default), which has no property names. "
-          + "Read it into a class with the properties, or write it with ObjectLayout.Map.");
+        throw ReadDifferences.NotConverted(settings, new MsgPackException($"An array cannot be read into {assignType}: the data is a list, or an object written as an array of its values (ObjectLayout.Array, the default), which has no property names. "
+          + "Read it into a class with the properties, or write it with ObjectLayout.Map."));
 
       if (!IsCollection(assignType))
       {
@@ -219,7 +339,7 @@ namespace LsMsgPack.Meta
       CollectionInfo info = CollectionInfo.Get(assignType);
       Array elements = Array.CreateInstance(info.ElementType, items.Length);
       for (int t = items.Length - 1; t >= 0; t--)
-        elements.SetValue(ConvertDeserializeValue(items[t], info.ElementType, settings, null), t);
+        SetElement(elements, ConvertDeserializeValue(items[t], info.ElementType, settings, null), t, settings);
 
       return info.Create(elements, settings);
     }
@@ -252,7 +372,10 @@ namespace LsMsgPack.Meta
             differences.UnknownProperty(result, NameOf(t, def));
           continue;
         }
-        prop.SetValue(result, ConvertDeserializeValue(items[t], prop.PropertyInfo.PropertyType, settings, prop));
+        if (differences is null)
+          prop.SetValue(result, ConvertDeserializeValue(items[t], prop.PropertyInfo.PropertyType, settings, prop));
+        else
+          ReadProperty(prop, result, items[t], settings, differences);
       }
       if (differences != null)
       {
@@ -316,7 +439,7 @@ namespace LsMsgPack.Meta
         {
           object key = ConvertKey(pairs[t].Key, info.KeyType, settings);
           object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
-          typedArr.SetValue(Activator.CreateInstance(info.ElementType, key, value), t);
+          SetElement(typedArr, Pair(info.ElementType, key, value, settings), t, settings);
         }
         return typedArr;
       }
@@ -328,7 +451,7 @@ namespace LsMsgPack.Meta
         {
           object key = ConvertKey(pairs[t].Key, info.KeyType, settings);
           object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
-          elements.SetValue(Activator.CreateInstance(info.ElementType, key, value), t);
+          SetElement(elements, Pair(info.ElementType, key, value, settings), t, settings);
         }
         return info.Create(elements, settings);
       }
@@ -341,7 +464,7 @@ namespace LsMsgPack.Meta
         object key = ConvertKey(pairs[t].Key, info.KeyType, settings);
         object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
         if (dictionary != null)
-          dictionary.Add(key, value);
+          AddEntry(dictionary, key, value, settings);
         else
         {
           args[0] = key;
@@ -359,8 +482,8 @@ namespace LsMsgPack.Meta
     private static object ConvertKey(object key, Type keyType, MsgPackOptions settings)
     {
       if (keyType == typeof(string) && !(key is null) && key.GetType().IsPrimitive && SerializationRules.GetIndexedSchema(settings) != null)
-        throw new MsgPackException($"The map has a number key ({key}) and is read into a dictionary with string keys. With the indexed schema the keys of an object are the indexes of its property names, "
-          + "which are only known when the object is read into its class. Read it into a class with the properties, or write it without the indexed schema (UseInexedSchema = false) and with ObjectLayout.Map.");
+        throw ReadDifferences.NotConverted(settings, new MsgPackException($"The map has a number key ({key}) and is read into a dictionary with string keys. With the indexed schema the keys of an object are the indexes of its property names, "
+          + "which are only known when the object is read into its class. Read it into a class with the properties, or write it without the indexed schema (UseInexedSchema = false) and with ObjectLayout.Map."));
       return ConvertDeserializeValue(key, keyType, settings, null);
     }
 

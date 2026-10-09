@@ -218,6 +218,15 @@ namespace LtMsgPack
     /// <param name="differences">Collects the differences between the data and the classes, null when not asked for</param>
     internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null)
     {
+      if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
+      {
+        ReadDifferences found = new ReadDifferences(Options);
+        int used = 0;
+        object read = ReadDifferences.Collect(found, () => Deserialize(type, buffer, offset, end, out used, found));
+        consumed = used;
+        return read;
+      }
+
       if (type != _cachedRoot)
       {
         // The names in the data (type ids, the schema) are resolved in the cached assemblies: the ones of the types the root type reaches (the T of List<T>...)
