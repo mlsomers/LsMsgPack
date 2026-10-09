@@ -78,8 +78,26 @@ namespace LsMsgPack.Meta
       string typeName = typeId as string;
 
       if (!string.IsNullOrWhiteSpace(typeName))
-        return ResolveInternal(typeName, assignedTo, settings?.TypeResolvers);
+      {
+        if (settings?._differences is null)
+          return ResolveInternal(typeName, assignedTo, settings?.TypeResolvers);
+        return ResolveOrReport(typeName, assignedTo, settings);
+      }
 
+      return assignedTo;
+    }
+
+    /// <summary>
+    /// A name that is not found is read as the declared type (as without the differences), and reported. When the declared type cannot be created the value is skipped (see <see cref="UnresolvedTypeException"/>).
+    /// </summary>
+    private static Type ResolveOrReport(string typeName, Type assignedTo, MsgPackOptions settings)
+    {
+      Type found = ResolveInternal(typeName, assignedTo, settings.TypeResolvers, false);
+      if (found != null || assignedTo is null)
+        return found ?? assignedTo;
+      if (assignedTo.IsAbstract || assignedTo.IsInterface)
+        throw new UnresolvedTypeException(typeName, $"Unable to resolve the type \"{typeName}\" (declared as {assignedTo.FullName}).");
+      settings._differences.UnresolvedType(typeName, assignedTo, false);
       return assignedTo;
     }
 

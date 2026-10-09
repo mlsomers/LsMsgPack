@@ -124,10 +124,24 @@ namespace LsMsgPack
 
     /// <param name="type">The class without a schema entry</param>
     /// <param name="assignedTo">The property the object is assigned to, null for the root and the elements of collections</param>
-    internal void UnmatchedClass(Type type, FullPropertyInfo assignedTo)
+    /// <param name="writerClasses">The writer's classes the class was paired with (more than one, so none was used), null when it was not paired</param>
+    internal void UnmatchedClass(Type type, FullPropertyInfo assignedTo, Type[] writerClasses)
     {
       object parent = _parents.Count > 0 ? _parents[_parents.Count - 1] : null;
-      Add(type, DifferenceKind.UnmatchedClass, assignedTo?.PropertyInfo.Name, -1, parent);
+      Difference difference = Add(type, DifferenceKind.UnmatchedClass, assignedTo?.PropertyInfo.Name, -1, parent);
+      if (difference != null && writerClasses != null)
+        difference.WriterClasses = writerClasses;
+    }
+
+    /// <param name="typeName">The type id in the data (with the indexed schema the writer's class name)</param>
+    /// <param name="declared">The type the value is assigned to</param>
+    /// <param name="skipped">The value was skipped (left null), otherwise read as the declared type</param>
+    internal void UnresolvedType(string typeName, Type declared, bool skipped)
+    {
+      object parent = _parents.Count > 0 ? _parents[_parents.Count - 1] : null;
+      Difference difference = Add(declared, DifferenceKind.UnresolvedType, Cut(typeName), -1, parent);
+      if (difference != null)
+        difference._skipped = skipped;
     }
 
     /// <summary>
@@ -147,7 +161,8 @@ namespace LsMsgPack
       return false;
     }
 
-    private void Add(Type type, DifferenceKind kind, string name, int position, object sample)
+    /// <returns>Null when it was not kept (<see cref="Omitted"/>)</returns>
+    private Difference Add(Type type, DifferenceKind kind, string name, int position, object sample)
     {
       Key key = new Key(type, kind, name, position);
       if (!_byKey.TryGetValue(key, out Difference difference))
@@ -155,7 +170,7 @@ namespace LsMsgPack
         if (_differences.Count >= MaxDifferences)
         {
           Omitted++;
-          return;
+          return null;
         }
         difference = new Difference(type, kind, name, position);
         _byKey.Add(key, difference);
@@ -165,6 +180,7 @@ namespace LsMsgPack
       difference.Count++;
       if (sample != null && difference._samples.Count < MaxSamples && (difference._samples.Count == 0 || !ReferenceEquals(difference._samples[difference._samples.Count - 1], sample)))
         difference._samples.Add(sample);
+      return difference;
     }
 
     private static string Cut(string name)
@@ -238,6 +254,8 @@ namespace LsMsgPack
         AppendPaths(report, difference, samples, found);
         if (difference.Kind == DifferenceKind.UnknownProperty)
           AppendHints(report, difference, samples.Count > 0 ? samples[0] : null, walker, defaultsListed.Add(difference.Class));
+        else if (difference.Kind == DifferenceKind.UnresolvedType)
+          report.Append("\r\n    if the class exists here, register its assembly: MsgPackTypes.CacheAssemblyTypes(typeof(").Append(ShortName(difference.Name)).Append("))");
       }
 
       if (Omitted > 0)
@@ -292,15 +310,27 @@ namespace LsMsgPack
       if (samples.Count == 0)
         return;
 
-      report.Append(difference.Kind == DifferenceKind.UnmatchedClass ? "\r\n    in " : "\r\n    at ");
+      bool holders = difference.Kind == DifferenceKind.UnmatchedClass || difference.Kind == DifferenceKind.UnresolvedType; // the samples hold the value
+      report.Append(holders ? "\r\n    in " : "\r\n    at ");
       for (int t = 0; t < samples.Count; t++)
       {
         if (t > 0)
           report.Append(", ");
         report.Append(found.TryGetValue(samples[t], out Found at) ? at.Path : string.Concat("(not found: ", samples[t].GetType().Name, ")"));
       }
-      if (difference.Count > samples.Count && difference.Kind != DifferenceKind.UnmatchedClass)
+      if (difference.Count > samples.Count && !holders)
         report.Append(", …");
+    }
+
+    /// <summary>
+    /// The class name of a type name in the data (without the namespace and generic arguments).
+    /// </summary>
+    private static string ShortName(string typeName)
+    {
+      int generic = typeName.IndexOf('<');
+      string name = generic > 0 ? typeName.Substring(0, generic) : typeName;
+      int dot = name.LastIndexOf('.');
+      return dot >= 0 ? name.Substring(dot + 1) : name;
     }
 
     /// <summary>

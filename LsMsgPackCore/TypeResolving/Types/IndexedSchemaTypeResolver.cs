@@ -141,11 +141,16 @@ namespace LsMsgPack.TypeResolving.Types
     private ConcurrentDictionary<Type, bool> _boundRoots;
 
     /// <summary>
+    /// The reader classes BindReaderTypes found for two or more of the writer's classes (so for none), with those writer classes: reported with the objects that are skipped (<see cref="SkipIfNoEntry"/>).
+    /// </summary>
+    private Dictionary<Type, Type[]> _ambiguous;
+
+    /// <summary>
     /// Reading into other classes than the writer used (e.g. a DTO into an entity): the values of an object only say which property of the writer's class they are (an index into its entry),
     /// not which class that was. The root of the payload is the first entry of the schema, and the other classes follow from the properties both sides have:
     /// the writer's class of a property is the declared type of the writer's property with the same name (also of collection elements, dictionary values and nullables).
     /// Adds an entry for each class that is read this way (the entry of the writer's class), so the values are matched by name. Does nothing when the root class is in the schema.
-    /// <para>Once per root type and schema. Needs the writer's classes (resolved from their names). A class that would get two different entries gets none.</para>
+    /// <para>Once per root type and schema. Needs the writer's classes (resolved from their names). A class that would get two different entries gets none (it is remembered for the report, see <see cref="SkipIfNoEntry"/>).</para>
     /// </summary>
     /// <exception cref="SchemaGrowthException">When a frozen schema would get an entry (a copy remembers it)</exception>
     internal void BindReaderTypes(Type root)
@@ -158,13 +163,22 @@ namespace LsMsgPack.TypeResolving.Types
         return;
       }
 
-      Dictionary<Type, ComplexTypeDef> aliases = ReaderAliases(root);
-      if (aliases.Count > 0)
+      Dictionary<Type, ComplexTypeDef> aliases = ReaderAliases(root, out Dictionary<Type, Type[]> ambiguous);
+      bool newAmbiguous = false;
+      foreach (Type read in ambiguous.Keys)
+        newAmbiguous |= _ambiguous is null || !_ambiguous.ContainsKey(read);
+      if (aliases.Count > 0 || newAmbiguous)
       {
         if (IsFrozen)
           throw SchemaGrowthException.Instance;
         foreach (KeyValuePair<Type, ComplexTypeDef> alias in aliases)
           ByType[alias.Key] = alias.Value;
+        foreach (KeyValuePair<Type, Type[]> conflict in ambiguous)
+        {
+          if (_ambiguous is null)
+            _ambiguous = new Dictionary<Type, Type[]>();
+          _ambiguous[conflict.Key] = conflict.Value;
+        }
       }
 
       if (_boundRoots is null)
@@ -173,9 +187,11 @@ namespace LsMsgPack.TypeResolving.Types
       _lastBoundRoot = root;
     }
 
-    private Dictionary<Type, ComplexTypeDef> ReaderAliases(Type root)
+    /// <param name="ambiguous">The reader classes found for more than one writer class, with those writer classes</param>
+    private Dictionary<Type, ComplexTypeDef> ReaderAliases(Type root, out Dictionary<Type, Type[]> ambiguous)
     {
       Dictionary<Type, ComplexTypeDef> aliases = new Dictionary<Type, ComplexTypeDef>();
+      ambiguous = new Dictionary<Type, Type[]>();
       Type reader = ObjectTypeOf(root, 0);
       if (reader is null || ByTypeId.Count == 0 || HasOwnEntry(reader))
         return aliases;
@@ -183,7 +199,7 @@ namespace LsMsgPack.TypeResolving.Types
       if (first.Type is null || first.IsCollection)
         return aliases;
 
-      HashSet<Type> conflicts = new HashSet<Type>();
+      Dictionary<Type, List<Type>> conflicts = new Dictionary<Type, List<Type>>();
       HashSet<KeyValuePair<Type, Type>> visited = new HashSet<KeyValuePair<Type, Type>>();
       Queue<KeyValuePair<Type, Type>> pairs = new Queue<KeyValuePair<Type, Type>>();
       pairs.Enqueue(new KeyValuePair<Type, Type>(reader, first.Type));
@@ -198,7 +214,15 @@ namespace LsMsgPack.TypeResolving.Types
           continue; // nothing was written with the writer's class, or the reader's class has its own entry (and its own properties below it)
 
         if (aliases.TryGetValue(read, out ComplexTypeDef earlier) && !ReferenceEquals(earlier, def))
-          conflicts.Add(read);
+        {
+          if (!conflicts.TryGetValue(read, out List<Type> writers))
+          {
+            writers = new List<Type>() { earlier.Type };
+            conflicts.Add(read, writers);
+          }
+          if (!writers.Contains(def.Type))
+            writers.Add(def.Type);
+        }
         aliases[read] = def;
 
         foreach (PropertyInfo readProp in read.GetProperties(BindingFlags.Instance | BindingFlags.Public))
@@ -215,8 +239,11 @@ namespace LsMsgPack.TypeResolving.Types
         }
       }
 
-      foreach (Type conflict in conflicts)
-        aliases.Remove(conflict);
+      foreach (KeyValuePair<Type, List<Type>> conflict in conflicts)
+      {
+        aliases.Remove(conflict.Key);
+        ambiguous.Add(conflict.Key, conflict.Value.ToArray());
+      }
       return aliases;
     }
 
@@ -261,9 +288,12 @@ namespace LsMsgPack.TypeResolving.Types
     {
       if (!HasNoEntry(type, settings))
         return false;
+      Type[] writers = null;
+      if (_ambiguous != null)
+        _ambiguous.TryGetValue(type, out writers);
       if (settings._differences is null)
-        throw NoEntry(type);
-      settings._differences.UnmatchedClass(type, assignedTo);
+        throw NoEntry(type, writers);
+      settings._differences.UnmatchedClass(type, assignedTo, writers);
       return true;
     }
 
@@ -279,17 +309,20 @@ namespace LsMsgPack.TypeResolving.Types
       return true;
     }
 
-    private Exception NoEntry(Type type)
+    /// <param name="writers">The writer's classes the class was paired with (more than one, so none was used), null when it was not paired</param>
+    private Exception NoEntry(Type type, Type[] writers)
     {
+      string pairing = writers is null
+        ? $"The data was written with another class ({string.Join(", ", ByTypeId.Select(d => d.TypeName))}), and none of them could be paired with {type.Name} "
+          + "(the root is the first class of the schema, the other classes follow from the properties both classes have, and the reader needs the writer's classes). "
+        : $"{type.Name} is read where the writer had different classes ({string.Join(", ", writers.Select(w => w.Name))}), so it could not be paired with one of them. ";
       return new MsgPackException($"The data has no schema entry for {type.FullName}, so its values cannot be matched to its properties. "
-        + $"The data was written with another class ({string.Join(", ", ByTypeId.Select(d => d.TypeName))}), and none of them could be paired with {type.Name} "
-        + "(the root is the first class of the schema, the other classes follow from the properties both classes have, and the reader needs the writer's classes). "
-        + "Deserialize with an out ReadDifferences to skip such objects and get them reported.");
+        + pairing + "Deserialize with an out ReadDifferences to skip such objects and get them reported.");
     }
 
     private static Exception UnresolvedType(ComplexTypeDef def, MsgPackOptions settings)
     {
-      return new MsgPackException($"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}\r\nIt may help to pre-register your type like this:\r\n  MsgPackTypes.CacheAssemblyTypes(typeof({def.TypeName}));"
+      return new UnresolvedTypeException(def.TypeName, $"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}\r\nIt may help to pre-register your type like this:\r\n  MsgPackTypes.CacheAssemblyTypes(typeof({def.TypeName}));"
         + (def.ResolveError is null ? "" : string.Concat("\r\n", def.ResolveError)));
     }
 
@@ -446,7 +479,8 @@ namespace LsMsgPack.TypeResolving.Types
       {
         ByTypeId = new List<ComplexTypeDef>(ByTypeId.Count),
         ByType = new Dictionary<Type, ComplexTypeDef>(ByType.Count),
-        _unresolved = _unresolved
+        _unresolved = _unresolved,
+        _ambiguous = _ambiguous is null ? null : new Dictionary<Type, Type[]>(_ambiguous)
       };
 
       Dictionary<ComplexTypeDef, ComplexTypeDef> copies = new Dictionary<ComplexTypeDef, ComplexTypeDef>(ByTypeId.Count);

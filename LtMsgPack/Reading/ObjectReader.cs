@@ -168,9 +168,9 @@ namespace LtMsgPack.Reading
       if (count > 0 && c.R.Peek() == 0xA0) // the type id (key "") is written first
       {
         c.R.Pos++;
-        Type type = ReadTypeId(c, assignedTo);
+        Type type = ReadTypeId(c, assignedTo, true);
         if (type is null)
-          return Slow(c, start, assignedTo);
+          return Slow(c, start, assignedTo); // also a name that is not found: LsMsgPack.Core reports it
         plan = type == typeof(T) ? Plan : _serializer.GetReadPlan(type);
         if (plan is null || !typeof(T).IsAssignableFrom(type)) // LsMsgPack's way refuses a type that is not assignable
           return Slow(c, start, assignedTo);
@@ -292,7 +292,8 @@ namespace LtMsgPack.Reading
     }
 
     /// <returns>null when the type id is not a plain index or name, or custom type resolvers decide</returns>
-    private Type ReadTypeId(ReadContext c, FullPropertyInfo assignedTo)
+    /// <param name="orNull">Null for a name that is not found (otherwise the declared type, as LsMsgPack reads it)</param>
+    private Type ReadTypeId(ReadContext c, FullPropertyInfo assignedTo, bool orNull = false)
     {
       if (c.Schema)
       {
@@ -303,7 +304,7 @@ namespace LtMsgPack.Reading
 
       if (_serializer.CustomTypeResolvers || !c.R.TryReadString(out string name) || string.IsNullOrWhiteSpace(name))
         return null;
-      return _serializer.ResolveTypeName(name, typeof(T));
+      return _serializer.ResolveTypeName(name, typeof(T), !orNull);
     }
   }
 

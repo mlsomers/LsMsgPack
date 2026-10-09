@@ -182,9 +182,10 @@ namespace LtMsgPack
       return _readPlans.GetOrAdd(type, t => new ReadPlan(this, t, FullPropertyInfo.GetSerializedProps(t, Options)));
     }
 
-    internal Type ResolveTypeName(string name, Type assignedTo)
+    /// <param name="orAssignedTo">Return <paramref name="assignedTo"/> when the name is not found, otherwise null</param>
+    internal Type ResolveTypeName(string name, Type assignedTo, bool orAssignedTo = true)
     {
-      return TypeResolver.ResolveInternal(name, assignedTo, Options._typeResolvers);
+      return TypeResolver.ResolveInternal(name, assignedTo, Options._typeResolvers, orAssignedTo);
     }
 
     private BoundSchema BoundFor(SchemaSession session, bool shared)

@@ -45,6 +45,36 @@ namespace LsMsgPackUnitTests
       public string Extra { get; set; }
       public string Boom { get; set; }
     }
+
+    /// <summary>
+    /// Polymorphic values, written with type ids (the tests rename the type names in the bytes so they are not found).
+    /// </summary>
+    public class DiffPenDto
+    {
+      public string Name { get; set; }
+      public DiffAnimal Pet { get; set; }
+      public DiffShape Shape { get; set; }
+    }
+
+    public class DiffAnimal
+    {
+      public string Name { get; set; }
+    }
+
+    public class DiffUnicorn : DiffAnimal
+    {
+      public int Horn { get; set; }
+    }
+
+    public abstract class DiffShape
+    {
+      public int Size { get; set; }
+    }
+
+    public class DiffSquare : DiffShape
+    {
+      public int Side { get; set; }
+    }
   }
 
   namespace DifferencesReader
@@ -138,6 +168,39 @@ namespace LsMsgPackUnitTests
     private static string[] Paths(ReadDifferences differences, Difference difference)
     {
       return difference.Samples.Select(differences.PathOf).ToArray();
+    }
+
+    /// <summary>
+    /// A pen with a DiffUnicorn and a DiffSquare whose type names are renamed in the bytes (the same length), as if the reader did not have those classes.
+    /// </summary>
+    internal static byte[] PenWithUnknownTypes(ISerializerUnderTest serializer, MsgPackSettings settings)
+    {
+      DifferencesWriter.DiffPenDto pen = new DifferencesWriter.DiffPenDto()
+      {
+        Name = "pen",
+        Pet = new DifferencesWriter.DiffUnicorn() { Name = "Sparkle", Horn = 3 },
+        Shape = new DifferencesWriter.DiffSquare() { Size = 2, Side = 4 }
+      };
+      byte[] bytes = serializer.Serialize(pen, settings);
+      Rename(bytes, "DiffUnicorn", "DiffUnicorX");
+      Rename(bytes, "DiffSquare", "DiffSquarX");
+      return bytes;
+    }
+
+    private static void Rename(byte[] bytes, string name, string other)
+    {
+      byte[] find = System.Text.Encoding.UTF8.GetBytes(name);
+      byte[] replace = System.Text.Encoding.UTF8.GetBytes(other);
+      int found = 0;
+      for (int t = 0; t + find.Length <= bytes.Length; t++)
+      {
+        if (bytes.Skip(t).Take(find.Length).SequenceEqual(find))
+        {
+          Array.Copy(replace, 0, bytes, t, replace.Length);
+          found++;
+        }
+      }
+      Assert.AreEqual(1, found, name);
     }
 
     [TestMethod]
@@ -241,7 +304,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// A class that could not be paired with one of the writer's classes (one reader class for two writer classes) throws without the differences, and is skipped and reported with them.
+    /// A class that could not be paired with one of the writer's classes (one reader class for two writer classes) throws without the differences, and is skipped and reported with them, naming the writer's classes.
     /// </summary>
     [TestMethod]
     [DataRow(ObjectLayout.Map, "inline")]
@@ -257,7 +320,8 @@ namespace LsMsgPackUnitTests
         Work = new OtherClassesWriter.LineDto() { Product = "Apples", Quantity = 3 }
       };
       byte[] bytes = Serializer.Serialize(written, settings);
-      Assert.Throws<MsgPackException>(() => Serializer.Deserialize<OtherClassesReader.TwoKindsEntity>(bytes, settings));
+      MsgPackException thrown = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<OtherClassesReader.TwoKindsEntity>(bytes, settings));
+      StringAssert.Contains(thrown.Message, "where the writer had different classes (AddressDto, LineDto)");
 
       for (int call = 0; call < 2; call++)
       {
@@ -270,10 +334,73 @@ namespace LsMsgPackUnitTests
         {
           Difference unmatched = Find(differences, typeof(OtherClassesReader.AddressEntity), DifferenceKind.UnmatchedClass, property);
           Assert.AreEqual(1, unmatched.Count);
+          CollectionAssert.AreEqual(new[] { typeof(OtherClassesWriter.AddressDto), typeof(OtherClassesWriter.LineDto) }, unmatched.WriterClasses.ToArray());
           CollectionAssert.AreEqual(new[] { "$" }, Paths(differences, unmatched));
         }
-        StringAssert.Contains(differences.GenerateReport(), "AddressEntity (Home): no schema entry, the object was skipped, 1 time\r\n    in $");
+        StringAssert.Contains(differences.GenerateReport(), "AddressEntity (Home): no schema entry (read where the writer had AddressDto and LineDto, so neither was used), the object was skipped, 1 time\r\n    in $");
       }
+    }
+
+    /// <summary>
+    /// A type id that is not found throws without the differences (without the schema only when the declared type cannot be created, otherwise it is read as the declared type).
+    /// With them, it is reported: skipped with the schema (the values are indexes into the writer's class) and for an abstract declared type, otherwise read as the declared type.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map, "names")]
+    [DataRow(ObjectLayout.Array, "names")]
+    [DataRow(ObjectLayout.Map, "inline")]
+    [DataRow(ObjectLayout.Array, "inline")]
+    [DataRow(ObjectLayout.Map, "store")]
+    public void UnresolvedTypeIdsAreReported(ObjectLayout layout, string schema)
+    {
+      MsgPackSettings settings = Settings(layout, schema);
+      byte[] bytes = PenWithUnknownTypes(Serializer, settings);
+      Assert.Throws<Exception>(() => Serializer.Deserialize<DifferencesWriter.DiffPenDto>(bytes, settings));
+
+      for (int call = 0; call < 2; call++)
+      {
+        DifferencesWriter.DiffPenDto read = Serializer.Deserialize<DifferencesWriter.DiffPenDto>(bytes, settings, out ReadDifferences differences);
+        Assert.AreEqual("pen", read.Name);
+        Assert.IsNull(read.Shape);
+
+        Difference shape = Find(differences, typeof(DifferencesWriter.DiffShape), DifferenceKind.UnresolvedType, "DiffSquarX");
+        Assert.IsTrue(shape.Skipped);
+        Assert.AreEqual(1, shape.Count);
+        CollectionAssert.AreEqual(new[] { "$" }, Paths(differences, shape));
+
+        Difference pet = Find(differences, typeof(DifferencesWriter.DiffAnimal), DifferenceKind.UnresolvedType, "DiffUnicorX");
+        CollectionAssert.AreEqual(new[] { "$" }, Paths(differences, pet));
+        if (schema == "names")
+        {
+          Assert.IsFalse(pet.Skipped);
+          Assert.AreEqual(typeof(DifferencesWriter.DiffAnimal), read.Pet.GetType());
+          if (layout == ObjectLayout.Map) // an array is read by position, the subclass's values do not fit
+            Assert.AreEqual("Sparkle", read.Pet.Name);
+          StringAssert.Contains(differences.GenerateReport(), "DiffAnimal (\"DiffUnicorX\"): type not found, read as DiffAnimal, 1 time\r\n    in $");
+        }
+        else
+        {
+          Assert.IsTrue(pet.Skipped);
+          Assert.IsNull(read.Pet);
+          Assert.AreEqual(2, differences.Differences.Count, differences.ToString());
+        }
+        StringAssert.Contains(differences.GenerateReport(), "DiffShape (\"DiffSquarX\"): type not found, the object was skipped, 1 time\r\n    in $\r\n    if the class exists here, register its assembly: MsgPackTypes.CacheAssemblyTypes(typeof(DiffSquarX))");
+      }
+    }
+
+    /// <summary>
+    /// A type that is found but does not fit where it goes still throws (see docs/security.md), with or without the differences.
+    /// </summary>
+    [TestMethod]
+    [DataRow("names")]
+    [DataRow("inline")]
+    public void TypeThatDoesNotFitStillThrows(string schema)
+    {
+      MsgPackSettings settings = Settings(ObjectLayout.Map, schema);
+      byte[] bytes = Serializer.Serialize(new DifferencesWriter.DiffPenDto() { Pet = new DifferencesWriter.DiffUnicorn() { Name = "Sparkle" } }, settings);
+      Rename(bytes, "DiffUnicorn", "DiffLineDto"); // found, not a DiffAnimal
+      MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<DifferencesWriter.DiffPenDto>(bytes, settings, out ReadDifferences unused));
+      StringAssert.Contains(ex.Message, "cannot be assigned to");
     }
 
     /// <summary>
@@ -399,6 +526,9 @@ namespace LsMsgPackUnitTests
         };
         Compare<OtherClassesReader.TwoKindsEntity>(MsgPackSerializer.Serialize(twoKinds, settings), settings);
       }
+
+      if (schema != "reference" && (schema != "names" || layout == ObjectLayout.Map)) // the names are in the bytes
+        Compare<DifferencesWriter.DiffPenDto>(ReportingDifferencesTests.PenWithUnknownTypes(Serializers.Ls, settings), settings);
     }
   }
 }

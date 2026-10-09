@@ -74,7 +74,16 @@ namespace LsMsgPack.Meta
       }
 
       bool hasTypeId = propVals.TryGetValue(MsgPackOptions.TypeIdKey, out object typeId);
-      Type tType = TypeResolver.Resolve(typeId, assignType, prop, settings, propVals);
+      Type tType;
+      try
+      {
+        tType = TypeResolver.Resolve(typeId, assignType, prop, settings, propVals);
+      }
+      catch (UnresolvedTypeException ex) when (settings._differences != null) // skipped and reported (the checks of a type that was found still throw, see docs/security.md)
+      {
+        settings._differences.UnresolvedType(ex.TypeName, assignType, true);
+        return null;
+      }
 
       object result;
       if (propVals.TryGetValue(MsgPackOptions.ContentKey, out object content))
