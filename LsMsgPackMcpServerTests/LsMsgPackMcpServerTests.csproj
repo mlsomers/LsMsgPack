@@ -14,12 +14,19 @@
     <PackageReference Include="MSTest.TestFramework" Version="4.4.1" />
   </ItemGroup>
 
+  <!-- The KeepTrack build of the library: the one of this build when it is one (the solution builds it in the same run; Visual Studio does not build references,
+       so another configuration would be whatever is in its bin folder), otherwise ReleaseKeepTrack -->
+  <PropertyGroup>
+    <KeepTrackConfiguration>ReleaseKeepTrack</KeepTrackConfiguration>
+    <KeepTrackConfiguration Condition="$(Configuration.EndsWith('KeepTrack'))">$(Configuration)</KeepTrackConfiguration>
+  </PropertyGroup>
+
   <!-- The library in its KeepTrack build, as the server uses it (one LsMsgPack.dll in the output) -->
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPackMcpServer\LsMsgPackMcpServer.csproj" />
-    <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj" AdditionalProperties="Configuration=ReleaseKeepTrack" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
-    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=ReleaseKeepTrack" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
-    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" AdditionalProperties="Configuration=ReleaseKeepTrack" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
   </ItemGroup>
 
 </Project>

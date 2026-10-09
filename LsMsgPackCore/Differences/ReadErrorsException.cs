@@ -9,7 +9,7 @@ namespace LsMsgPack
   public class ReadErrorsException : MsgPackException
   {
     internal ReadErrorsException(ReadDifferences differences, Exception first)
-      : base(Message(differences), first)
+      : base(Describe(differences), first)
     {
       Differences = differences;
       Data[ReadDifferences.ExceptionDataKey] = differences;
@@ -17,7 +17,7 @@ namespace LsMsgPack
 
     public ReadDifferences Differences { get; }
 
-    private static string Message(ReadDifferences differences)
+    private static string Describe(ReadDifferences differences)
     {
       int errors = differences.ErrorCount;
       return string.Concat(errors == 1 ? "1 value" : string.Concat(errors.ToString(System.Globalization.CultureInfo.InvariantCulture), " values"),
