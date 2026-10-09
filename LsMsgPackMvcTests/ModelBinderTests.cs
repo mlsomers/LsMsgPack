@@ -47,7 +47,7 @@ namespace LsMsgPackMvcTests
     [Test]
     public void DifferencesAreReportedWhenAskedFor()
     {
-      byte[] body = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Id", 42 }, { "Extra", "x" } }, Plain);
+      byte[] body = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Id", 42 }, { "Customer", "Infotopie" }, { "Extra", "x" } }, Plain); // Customer is [Required]
       LsMsgPackModelBinder reporting = new LsMsgPackModelBinder(new LtMsgPack.Http.LtMsgPackHttpOptions() { ReportDifferences = true });
       (object model, ModelStateDictionary modelState) = Bind<Order>(body, MsgPackMediaTypes.MsgPack, reporting, out ControllerContext context);
 
