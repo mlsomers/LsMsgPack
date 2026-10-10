@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Text;
 
@@ -221,7 +222,7 @@ namespace LsMsgPack.Meta
       if (type == RuneType && RuneType != null) return PlainForm.Rune;
       if (type == typeof(IntPtr)) return PlainForm.NInt;
       if (type == typeof(UIntPtr)) return PlainForm.NUInt;
-      if (type == typeof(Memory<byte>) || type == typeof(ReadOnlyMemory<byte>) || type == typeof(ArraySegment<byte>)) return PlainForm.Binary;
+      if (type == typeof(ArraySegment<byte>) || (type.IsGenericType && IsMemoryName(type.Name) && IsMemoryOfBytes(type))) return PlainForm.Binary;
       if (type == typeof(Complex)) return PlainForm.Complex;
       if (IsBigInteger(type)) return PlainForm.BigInteger;
       return PlainForm.None;
@@ -325,10 +326,13 @@ namespace LsMsgPack.Meta
         case PlainForm.NInt: return ((IntPtr)value).ToInt64();
         case PlainForm.NUInt: return ((UIntPtr)value).ToUInt64();
         case PlainForm.Binary:
-          if (value is Memory<byte> memory) return memory.ToArray();
-          if (value is ReadOnlyMemory<byte> readOnly) return readOnly.ToArray();
+          if (!(value is ArraySegment<byte>))
+            return MemoryToArray(value);
           ArraySegment<byte> segment = (ArraySegment<byte>)value;
-          return segment.Array is null ? new byte[0] : new ReadOnlySpan<byte>(segment.Array, segment.Offset, segment.Count).ToArray();
+          byte[] copy = new byte[segment.Count];
+          if (segment.Count > 0)
+            Buffer.BlockCopy(segment.Array, segment.Offset, copy, 0, segment.Count);
+          return copy;
         case PlainForm.Complex:
           Complex complex = (Complex)value;
           return new double[] { complex.Real, complex.Imaginary };
@@ -336,6 +340,38 @@ namespace LsMsgPack.Meta
       }
       throw new InvalidOperationException($"{value.GetType()} has no plain form.");
     }
+
+    #region Memory<byte> (System.Memory)
+
+    // The methods that name Memory<byte> or ReadOnlyMemory<byte> are only compiled (and System.Memory only loaded) for these types: LsMsgPack did not need System.Memory to write and read anything else
+    // (a .NET Framework application with a binding redirect to an older System.Memory, or a host like Fiddler without the redirects, failed to load it when packing any object).
+
+    private static bool IsMemoryName(string name)
+    {
+      return name == "Memory`1" || name == "ReadOnlyMemory`1";
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static bool IsMemoryOfBytes(Type type)
+    {
+      return type == typeof(Memory<byte>) || type == typeof(ReadOnlyMemory<byte>);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static byte[] MemoryToArray(object value)
+    {
+      return value is Memory<byte> memory ? memory.ToArray() : ((ReadOnlyMemory<byte>)value).ToArray();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static object MemoryOf(byte[] bytes, Type targetType)
+    {
+      if (targetType == typeof(Memory<byte>))
+        return new Memory<byte>(bytes);
+      return new ReadOnlyMemory<byte>(bytes);
+    }
+
+    #endregion
 
     /// <summary>
     /// A MsgPack array read into a framework type that is written as an array: Complex ([real, imaginary]), DateTimeOffset ([timestamp, offset in minutes], see <see cref="MsgPackOptions.DateTimeOffsetFormat"/>).
@@ -390,12 +426,10 @@ namespace LsMsgPack.Meta
       {
         if (IsBigInteger(targetType))
           result = BigIntegerOfBinary(bytes, targetType); // MessagePack-CSharp
-        else if (targetType == typeof(Memory<byte>))
-          result = new Memory<byte>(bytes);
-        else if (targetType == typeof(ReadOnlyMemory<byte>))
-          result = new ReadOnlyMemory<byte>(bytes);
         else if (targetType == typeof(ArraySegment<byte>))
           result = new ArraySegment<byte>(bytes);
+        else if (targetType.IsGenericType && IsMemoryName(targetType.Name) && IsMemoryOfBytes(targetType))
+          result = MemoryOf(bytes, targetType);
         else
           return false;
         return true;
