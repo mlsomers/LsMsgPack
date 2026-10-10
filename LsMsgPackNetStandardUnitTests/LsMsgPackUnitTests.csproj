@@ -6,6 +6,11 @@
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
   </PropertyGroup>
 
+  <!-- Tests of what only exists in the KeepTrack builds of the library (validation) -->
+  <PropertyGroup Condition="$(Configuration.EndsWith('KeepTrack'))">
+    <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="MSTest.TestAdapter" Version="4.4.1" />

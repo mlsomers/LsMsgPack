@@ -27,6 +27,11 @@ namespace ObjectDebugger
     public bool TypeIsGuess { get; set; }
 
     /// <summary>
+    /// The item holding the type id (the value of the key ""), null when the value has none (or the item tree was not kept).
+    /// </summary>
+    public MsgPackItem TypeIdItemRef { get; set; }
+
+    /// <summary>
     /// What the data holds here (for a leaf).
     /// </summary>
     public ValueKind ValueKind { get; set; }

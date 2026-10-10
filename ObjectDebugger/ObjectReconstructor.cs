@@ -133,6 +133,7 @@ namespace ObjectDebugger
     {
       SchemaType type;
       target.Type = ResolveTypeId(node.Entries[0].Value, out type);
+      target.TypeIdItemRef = node.Entries[0].Value.Item;
       if (type != null)
         MarkSeen(type);
       Node content = node.Entries[1].Value;
@@ -161,7 +162,10 @@ namespace ObjectDebugger
 
       SchemaType type = null;
       if (typeId != null)
+      {
         target.Type = ResolveTypeId(typeId, out type);
+        target.TypeIdItemRef = typeId.Item;
+      }
 
       if (content != null)
       {

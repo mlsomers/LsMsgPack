@@ -29,6 +29,11 @@ namespace ObjectDebugger
 
     public List<SchemaType> Types { get; } = new List<SchemaType>();
 
+    /// <summary>
+    /// The item holding the schema (a map) or the reference to it (an extension). Null when the item tree was not kept.
+    /// </summary>
+    public LsMsgPack.MsgPackItem ItemRef { get; set; }
+
     public override string ToString()
     {
       if (Source == SchemaSource.Inline)
@@ -50,6 +55,16 @@ namespace ObjectDebugger
     /// The property names, the property id in the body is the index.
     /// </summary>
     public List<string> Properties { get; } = new List<string>();
+
+    /// <summary>
+    /// The item holding the type name (a key of the schema). Null when the item tree was not kept, or for a schema read from a store.
+    /// </summary>
+    public LsMsgPack.MsgPackItem NameItemRef { get; set; }
+
+    /// <summary>
+    /// The items holding the property names, in the order of <see cref="Properties"/> (null items when the item tree was not kept).
+    /// </summary>
+    public List<LsMsgPack.MsgPackItem> PropertyItemRefs { get; } = new List<LsMsgPack.MsgPackItem>();
 
     /// <summary>
     /// The body has a value of this type (read from a type id or inferred).

@@ -158,6 +158,7 @@
     <None Include="Resources\Gears.png" />
     <None Include="Resources\Help.png" />
     <None Include="Resources\Info.png" />
+    <None Include="Resources\Security.png" />
     <None Include="Resources\Open.png" />
   </ItemGroup>
   <ItemGroup>

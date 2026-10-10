@@ -15,6 +15,22 @@ namespace MsgPackExplorer {
     private bool _objectsVisible;
 
     /// <summary>
+    /// The objects of the data, reconstructed for the validation (<see cref="RefreshTree"/>) and shown by <see cref="RefreshObjects"/>. Null without data.
+    /// </summary>
+    private RootObject _objects;
+
+    private RootObject ReconstructObjects() {
+      RootObject root = new RootObject();
+      try {
+        root.Reconstruct(item);
+      } catch (Exception ex) {
+        // Errors are normally kept with the value they occurred in, this keeps what was reconstructed anyway
+        root.AddError(ex.Message);
+      }
+      return root;
+    }
+
+    /// <summary>
     /// The node of the objects tree each item belongs to: the items of an object and of its primitive members (keys and values).
     /// </summary>
     private readonly Dictionary<MsgPackItem, TreeNode> _objectNodes = new Dictionary<MsgPackItem, TreeNode>();
@@ -37,13 +53,7 @@ namespace MsgPackExplorer {
           return;
 
         Cursor = Cursors.WaitCursor;
-        RootObject root = new RootObject();
-        try {
-          root.Reconstruct(item);
-        } catch (Exception ex) {
-          // Errors are normally kept with the value they occurred in, this keeps what was reconstructed anyway
-          root.AddError(ex.Message);
-        }
+        RootObject root = _objects ?? ReconstructObjects();
 
         TreeNode rootNode = CreateObjectNode(root);
         int count = 0;

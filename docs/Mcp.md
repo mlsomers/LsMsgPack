@@ -28,7 +28,7 @@ flowchart LR
 |---|---|
 | `McpServer.cs` | JSON-RPC 2.0 over stdio, one message per line: `initialize`, `ping`, `tools/list`, `tools/call`, `notifications/cancelled`. Hand-written to avoid depending on a preview SDK. Tool calls run on the thread pool, so a cancellation can reach them. |
 | `McpTools.cs` | The tools, their input schemas, and the documents decoded so far (`doc1`, `doc2`...; the last 20 are kept). Errors the agent can act on come back as tool results with `isError`, not as protocol errors. |
-| `PayloadDocument.cs` | Unpacks with `PreservePackages` and `ContinueProcessingOnBreakingError` (on by default). Builds the item index (parent, depth, role, schema items) and runs `MsgPackValidation`. Reconstructs the objects (`RootObject`) and maps items to object members. |
+| `PayloadDocument.cs` | Unpacks with `PreservePackages` and `ContinueProcessingOnBreakingError` (on by default). Builds the item index (parent, depth, role, schema items) and runs `MsgPackValidation`. Reconstructs the objects (`RootObject`), runs `PayloadValidation` (schema, type ids, security vulnerabilities, listed with the errors by default) and maps items to object members. |
 | `TextRenderer.cs` | The text: summary, schema, objects view, items view, issues, explaining an offset, search. |
 | `IdeBridge.cs` | Finds the IDEs (environment or lock files) and sends them requests. |
 | `ByteText.cs` | Bytes written as text, the same formats as the VS Code extension's `bytesFromText.ts`. |

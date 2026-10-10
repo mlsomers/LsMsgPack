@@ -147,6 +147,7 @@ namespace ObjectDebugger
           {
             payload.Schema = schema;
             payload.SchemaItem = items[t];
+            schema.ItemRef = items[t];
             payload.Body = items[t + 1];
             t++;
           }
@@ -185,13 +186,14 @@ namespace ObjectDebugger
         if (name.Kind != ValueKind.String || props.Kind != ValueKind.Array)
           return null;
 
-        SchemaType type = new SchemaType() { Index = t, Name = (string)name.Value };
+        SchemaType type = new SchemaType() { Index = t, Name = (string)name.Value, NameItemRef = name.Item };
         for (int p = 0; p < props.Elements.Length; p++)
         {
           Node prop = props.Elements[p];
           if (prop.Kind != ValueKind.String && prop.Kind != ValueKind.Nil)
             return null;
           type.Properties.Add((string)prop.Value);
+          type.PropertyItemRefs.Add(prop.Item);
         }
         types.Add(type);
       }

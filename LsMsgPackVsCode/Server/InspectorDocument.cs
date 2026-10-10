@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using ObjectDebugger;
 using System;
 using System.Collections;
@@ -109,10 +109,12 @@ namespace LsMsgPackInspector
       result.Truncated = _nodeCount > _displayLimit;
 
       Validate(result, rootId);
+      RootObject objects = Reconstruct();
+      ValidatePayload(result, objects, rootId);
 
       bool showObjects = settings.Objects == ObjectsMode.Show || settings.Objects == ObjectsMode.Auto && assessment.Confidence >= settings.ShowObjectsAt;
       if (showObjects)
-        result.Objects = BuildObjects();
+        result.Objects = BuildObjects(objects);
       return result;
     }
 
@@ -373,13 +375,39 @@ namespace LsMsgPackInspector
       }
     }
 
+    /// <summary>
+    /// The issues of the schema, the type ids and the places declared as object (<see cref="PayloadValidation"/>), after those of the items.
+    /// An issue about an item that is not displayed is shown with the root.
+    /// </summary>
+    private void ValidatePayload(LoadResult result, RootObject objects, int rootId)
+    {
+      List<MsgPackValidation.ValidationItem> issues;
+      try
+      {
+        issues = PayloadValidation.Validate(objects);
+      }
+      catch (Exception ex)
+      {
+        issues = new List<MsgPackValidation.ValidationItem>() { new MsgPackValidation.ValidationItem(_item, MsgPackValidation.ValidationSeverity.Error, 0, "Validation failed: ", ex.Message) };
+      }
+      for (int t = 0; t < issues.Count && t < _displayLimit; t++)
+      {
+        result.Issues.Add(new IssueModel()
+        {
+          Item = GetDisplayedId(issues[t].Item) ?? rootId,
+          Bytes = issues[t].WaistedBytes,
+          Severity = issues[t].Severity.ToString(),
+          Message = issues[t].Message
+        });
+      }
+    }
+
     #endregion
 
     #region Objects
 
-    private ObjectsModel BuildObjects()
+    private RootObject Reconstruct()
     {
-      ObjectsModel model = new ObjectsModel();
       RootObject root = new RootObject();
       try
       {
@@ -390,7 +418,12 @@ namespace LsMsgPackInspector
         // Errors are normally kept with the value they occurred in, this keeps what was reconstructed anyway
         root.AddError(ex.Message);
       }
+      return root;
+    }
 
+    private ObjectsModel BuildObjects(RootObject root)
+    {
+      ObjectsModel model = new ObjectsModel();
       Dictionary<ComplexObject, int> objectIds = new Dictionary<ComplexObject, int>(ReferenceEqualityComparer.Instance);
       int rootId = AddObject(model, root, -1, objectIds);
       int count = 0;

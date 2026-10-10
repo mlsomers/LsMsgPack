@@ -34,7 +34,7 @@ Options:
   --offsets                   Objects view: the offset of every value.
   --max-nodes <n>             The most values or items written (default 1000).
   --max-string <n>            Longer strings are cut (default 200).
-  --issues errors|all|none    Validation issues listed (default errors).
+  --issues errors|all|none    Validation issues listed (default errors and security vulnerabilities).
   --endian <action>           SwapIfCurrentSystemIsLittleEndian (default), NeverSwap or AlwaysSwap.
   --stop-on-error             Stop at the first breaking error (default: read on, a best guess).
   --schemas <file>            A SchemaStore export (or a schema) for payloads that refer to a cached schema.

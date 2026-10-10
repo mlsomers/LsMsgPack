@@ -146,15 +146,20 @@ namespace LsMsgPackMcp
       }
 
       int errors = 0;
+      int security = 0;
       int warnings = 0;
       foreach (Issue issue in doc.Issues)
       {
         if (issue.IsError)
           errors++;
+        else if (issue.IsSecurity)
+          security++;
         else
           warnings++;
       }
       sb.Append(errors == 0 ? "No errors" : string.Concat(errors.ToString(CultureInfo.InvariantCulture), errors == 1 ? " error" : " errors"));
+      if (security > 0)
+        sb.Append(", ").Append(Count(security, "security vulnerability", "security vulnerabilities"));
       sb.Append(", ").Append(warnings.ToString(CultureInfo.InvariantCulture)).Append(warnings == 1 ? " warning or comment." : " warnings or comments.").Append('\n');
 
       RootObject objects = doc.Objects;
@@ -721,12 +726,12 @@ namespace LsMsgPackMcp
       if (level == IssueLevel.None || doc.Issues.Count == 0)
         return;
 
-      List<Issue> shown = doc.Issues.FindAll(i => level == IssueLevel.All || i.IsError);
+      List<Issue> shown = doc.Issues.FindAll(i => level == IssueLevel.All || i.IsError || i.IsSecurity);
       int others = doc.Issues.Count - shown.Count;
       if (shown.Count > 0)
       {
         sb.Append('\n');
-        sb.Append(level == IssueLevel.All ? "Issues:" : "Errors:").Append('\n');
+        sb.Append(level == IssueLevel.All ? "Issues:" : shown.Exists(i => i.IsSecurity) ? "Errors and security vulnerabilities:" : "Errors:").Append('\n');
         const int max = 50;
         for (int t = 0; t < shown.Count && t < max; t++)
           sb.Append("  ").Append(DescribeIssue(doc, shown[t])).Append('\n');
@@ -737,7 +742,7 @@ namespace LsMsgPackMcp
       {
         int wasted = 0;
         foreach (Issue issue in doc.Issues)
-          if (!issue.IsError)
+          if (!issue.IsError && !issue.IsSecurity)
             wasted += issue.WastedBytes;
         sb.Append('\n');
         sb.Append(others.ToString(CultureInfo.InvariantCulture)).Append(others == 1 ? " warning or comment" : " warnings or comments").Append(" not listed (issues: all lists them)");
@@ -750,7 +755,7 @@ namespace LsMsgPackMcp
     private static string DescribeIssue(PayloadDocument doc, Issue issue)
     {
       StringBuilder sb = new StringBuilder();
-      sb.Append(issue.Severity == MsgPackValidation.ValidationSeverity.ReadAbortError ? "Error" : issue.Severity.ToString());
+      sb.Append(issue.Severity == MsgPackValidation.ValidationSeverity.ReadAbortError ? "Error" : issue.IsSecurity ? "Security vulnerability" : issue.Severity.ToString());
       sb.Append(" at ").Append(Hex(issue.Node.Offset));
       PrimitiveObject obj = doc.GetObject(issue.Node);
       if (obj != null && !string.IsNullOrEmpty(obj.Path))

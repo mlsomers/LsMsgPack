@@ -128,6 +128,15 @@ The declared types of your model are your first line of defense, and they cost n
 - Prefer your own interfaces and base classes over framework interfaces. Many unrelated framework types implement `IEnumerable` or `IDisposable`.
 - If you do need `object` (e.g. a property bag), add a [type guard](#the-type-guard).
 
+To find such places in your data, open it in the MsgPack Explorer (the application, the Visual Studio visualizer, the Fiddler inspector or the VS Code extension) or decode it with the MCP server. Their validation lists a **security vulnerability** where the data shows that a value is declared as `object` (or a framework interface):
+
+- a value that is not an object or a collection with a type id (`{ "": "DateTime", "@": ... }`): `DateTime`, `Guid`, enums and other such types have no derived types, so they only get a type id where the declared type is `object` or an interface;
+- a framework type with a type id (`List<Object>`, `Dictionary<String, Int32>`...): no class of yours derives from it;
+- one property of a type (with a type id, so the type is known) or one dictionary holding values of different kinds, such as an integer and a string;
+- type names a reader refuses (an assembly name or bracketed generic arguments) and names of framework types known as gadgets (`Process`, `ObjectDataProvider`...), in the schema or in a type id: data that was possibly made to attack a reader.
+
+Integers and strings never get a type id, so an `object` property that only ever holds them doesn't show up. Data written with `AddTypeIdOption.Always` gets type ids on values of their declared type as well, so the first two points don't apply to it.
+
 How objects are created
 -----------------------
 
