@@ -124,7 +124,11 @@ namespace LsMsgPackFormatters
       ILogger logger = context.HttpContext.RequestServices?.GetService<ILoggerFactory>()?.CreateLogger<LsMsgPackInputFormatter>();
       LogLevel level = Serializer.LogsDifferencesAsWarning ? LogLevel.Warning : LogLevel.Debug;
       if (logger != null && logger.IsEnabled(level)) // the report walks the objects that were read
-        logger.Log(level, "The request body of {Method} {Path} did not match {Type}: {Differences}", context.HttpContext.Request.Method, context.HttpContext.Request.Path, context.ModelType.Name, differences.GenerateReport());
+      {
+        string sanitizedMethod = (context.HttpContext.Request.Method ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty);
+        string sanitizedPath = context.HttpContext.Request.Path.ToString().Replace("\r", string.Empty).Replace("\n", string.Empty);
+        logger.Log(level, "The request body of {Method} {Path} did not match {Type}: {Differences}", sanitizedMethod, sanitizedPath, context.ModelType.Name, differences.GenerateReport());
+      }
     }
 
     /// <returns>False (an exception filter)</returns>
