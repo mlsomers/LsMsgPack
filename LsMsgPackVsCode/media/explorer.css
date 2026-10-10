@@ -494,7 +494,8 @@ button:focus-visible,
 }
 
 .sev-Error,
-.sev-ReadAbortError {
+.sev-ReadAbortError,
+.sev-SecurityVulnerability {
   color: var(--error-foreground);
 }
 

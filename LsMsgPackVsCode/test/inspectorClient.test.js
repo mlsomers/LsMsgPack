@@ -50,6 +50,14 @@ test('load, search, settings and errors', { skip }, async () => {
     assert.ok(auto.objects.nodes.length > 0);
     assert.strictEqual((await client.load('r', undefined, Object.assign({}, settings, { showObjectsAt: 'certain' }))).objects, undefined);
 
+    // A schema naming a gadget ({ "Process": ["FileName"] }, then { "": 0, 0: "calc" }): validated with the schema, the issue is shown with the type name
+    const gadget = Buffer.from('81a750726f6365737391a846696c654e616d6582a00000a463616c63', 'hex').toString('base64');
+    const attack = await client.load('g', gadget, settings);
+    const security = attack.issues.find((issue) => issue.severity === 'SecurityVulnerability');
+    assert.ok(security, JSON.stringify(attack.issues));
+    assert.match(security.message, /gadget/);
+    assert.strictEqual(attack.items[security.item].text, 'String (fixstr) with the value "Process"');
+
     const broken = await client.load('b', sample.subarray(0, 50).toString('base64'), settings);
     assert.ok(broken.error || broken.issues.some((issue) => issue.severity === 'ReadAbortError'));
 

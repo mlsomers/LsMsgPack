@@ -16,6 +16,8 @@ namespace MsgPackExplorer
         public LsMsgPackExplorer()
         {
             InitializeComponent();
+            // The state image of ValidationSeverity.SecurityVulnerability (4), after those of the designer's image list (Error, Warning, Info, Broken)
+            imageListValidation.Images.Add("Security.png", Properties.Resources.Security);
             _search = new ExplorerSearch(this, searchTextBox, searchMatchCase, searchPrev, searchNext, searchPosCount);
 
             ddEndianess.Items.AddRange(new[]{
@@ -285,6 +287,7 @@ namespace MsgPackExplorer
                 richTextBox1.Clear();
                 lineairList.Clear();
                 listView1.Items.Clear();
+                _objects = null;
                 _schemaItems = ReferenceEquals(item, null) ? new List<MsgPackItem>() : ObjectDebugger.RootObject.FindSchemaItems(item);
                 _objectAssessment = ReferenceEquals(item, null) ? null : ObjectDebugger.ObjectAssessment.Assess(item);
                 if (ReferenceEquals(item, null)) return;
@@ -307,6 +310,8 @@ namespace MsgPackExplorer
 
                 EditorMetaData meta = null;
                 byteOffset = AddParts(hex, root, byteOffset, sb, ref meta);
+                _objects = ReconstructObjects();
+                ValidatePayload(_objects, (EditorMetaData)item.Tag);
 
                 if (!ReferenceEquals(meta, null) && !ReferenceEquals(meta.Item, null))
                 {
@@ -689,6 +694,31 @@ namespace MsgPackExplorer
                 if (issues.Length - t > DisplayLimit)
                     return;
 
+                AddValidationItem(issues[t].WaistedBytes, meta, issues[t].Severity, issues[t].Message);
+            }
+        }
+
+        /// <summary>
+        /// The issues of the schema, the type ids and the places declared as object (<see cref="ObjectDebugger.PayloadValidation"/>), after those of the items.
+        /// An issue about an item that is not displayed is shown with the root.
+        /// </summary>
+        private void ValidatePayload(ObjectDebugger.RootObject objects, EditorMetaData rootMeta)
+        {
+            List<MsgPackValidation.ValidationItem> issues;
+            try
+            {
+                issues = ObjectDebugger.PayloadValidation.Validate(objects);
+            }
+            catch (Exception ex)
+            {
+                issues = new List<MsgPackValidation.ValidationItem>() { new MsgPackValidation.ValidationItem(item, MsgPackValidation.ValidationSeverity.Error, 0, "Validation failed: ", ex.Message) };
+            }
+
+            for (int t = 0; t < issues.Count && t < DisplayLimit; t++)
+            {
+                EditorMetaData meta = ReferenceEquals(issues[t].Item, null) ? null : issues[t].Item.Tag as EditorMetaData;
+                if (meta is null || meta.Node is null || meta.Node.TreeView is null) // not displayed (the tag of an earlier tree)
+                    meta = rootMeta;
                 AddValidationItem(issues[t].WaistedBytes, meta, issues[t].Severity, issues[t].Message);
             }
         }

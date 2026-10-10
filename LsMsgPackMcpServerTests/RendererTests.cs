@@ -37,6 +37,19 @@ namespace LsMsgPackMcpServerTests
       AssertContains(text, "No errors");
     }
 
+    /// <summary>
+    /// { "Process": ["FileName"] } followed by { "": 0, 0: "calc" }: a schema made to attack a reader, listed with the errors by default.
+    /// </summary>
+    [TestMethod]
+    public void SchemaNamingAGadget_SecurityVulnerability()
+    {
+      string text = Render(Convert.FromHexString("81a750726f6365737391a846696c654e616d6582a00000a463616c63"));
+      AssertContains(text, "No errors, 1 security vulnerability");
+      AssertContains(text, "Errors and security vulnerabilities:");
+      AssertContains(text, "Security vulnerability at 0x1: The schema names the type \"Process\"");
+      AssertContains(text, "deserialization gadget");
+    }
+
     [TestMethod]
     public void MapsWithoutSchema_PropertyNames()
     {

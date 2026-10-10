@@ -39,11 +39,31 @@ namespace ObjectDebugger
     /// </summary>
     private readonly Dictionary<int, ValueKind[]> _signatures = new Dictionary<int, ValueKind[]>();
 
-    public ObjectReconstructor(List<SchemaType> types)
+    /// <summary>
+    /// Places where an array shaped like a DateTimeOffset is a value, not an object (see <see cref="Suspects"/>).
+    /// </summary>
+    private readonly HashSet<string> _forcedValues;
+
+    /// <param name="forcedValues">Places (<see cref="ComplexObject.Slot"/>) where an array shaped like a DateTimeOffset is read as that value instead of an object, null for none</param>
+    public ObjectReconstructor(List<SchemaType> types, HashSet<string> forcedValues = null)
     {
       _types = types;
       _seen = new bool[types?.Count ?? 0];
+      _forcedValues = forcedValues;
     }
+
+    /// <summary>
+    /// Places where an array shaped like a DateTimeOffset (<c>[timestamp, offset in minutes]</c>) was taken for an object of a type that was not seen before.
+    /// A type with two properties fits it, and the type then seems seen with the wrong kinds of values: when <see cref="Unexplained"/> values follow,
+    /// <see cref="RootObject"/> tries these places as values.
+    /// </summary>
+    public HashSet<string> Suspects { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Values that have the shape of a type of the schema, but not the kinds of values seen before in that type, and fit no other type
+    /// (they become a collection or a dictionary). Fewer is a better reconstruction.
+    /// </summary>
+    public int Unexplained { get; private set; }
 
     public void FillRoot(RootObject root, Node body)
     {
@@ -133,6 +153,7 @@ namespace ObjectDebugger
     {
       SchemaType type;
       target.Type = ResolveTypeId(node.Entries[0].Value, out type);
+      target.TypeIdItemRef = node.Entries[0].Value.Item;
       if (type != null)
         MarkSeen(type);
       Node content = node.Entries[1].Value;
@@ -161,7 +182,10 @@ namespace ObjectDebugger
 
       SchemaType type = null;
       if (typeId != null)
+      {
         target.Type = ResolveTypeId(typeId, out type);
+        target.TypeIdItemRef = typeId.Item;
+      }
 
       if (content != null)
       {
@@ -231,6 +255,11 @@ namespace ObjectDebugger
       if (type is null)
       {
         target.Kind = ObjectKind.Collection;
+        if (IsForcedValue(target.Slot, node))
+        {
+          target.Type = "DateTimeOffset";
+          target.TypeIsGuess = true;
+        }
         FillElements(target, node);
         return;
       }
@@ -349,6 +378,12 @@ namespace ObjectDebugger
     /// </summary>
     private SchemaType Infer(Node node, string slot)
     {
+      if (IsForcedValue(slot, node))
+      {
+        _slots[slot] = CollectionSlot;
+        return null;
+      }
+
       int remembered;
       if (_slots.TryGetValue(slot, out remembered))
       {
@@ -363,6 +398,7 @@ namespace ObjectDebugger
 
       SchemaType best = null;
       int bestScore = int.MinValue;
+      bool contradicted = false;
       foreach (SchemaType candidate in Candidates())
       {
         Fit fit = GetFit(candidate, node);
@@ -370,13 +406,18 @@ namespace ObjectDebugger
           continue;
         int score = Score(candidate, node, fit);
         if (score == int.MinValue)
+        {
+          contradicted = true;
           continue;
+        }
         if (score > bestScore) // the next type that was not seen yet comes first, so it wins a tie
         {
           best = candidate;
           bestScore = score;
         }
       }
+      if (best is null && contradicted)
+        Unexplained++;
 
       if (node.Kind == ValueKind.Array)
       {
@@ -391,6 +432,8 @@ namespace ObjectDebugger
       if (best is null)
         return null;
 
+      if (!_seen[best.Index] && IsDateTimeOffsetShape(node))
+        Suspects.Add(slot);
       _slots[slot] = best.Index;
       MarkSeen(best);
       return best;
@@ -417,6 +460,15 @@ namespace ObjectDebugger
       for (int t = nodes.Count - 1; t > 0; t--)
         if (nodes[t].Kind != nodes[0].Kind)
           return;
+
+      bool dateTimeOffsets = true;
+      for (int t = nodes.Count - 1; t >= 0 && dateTimeOffsets; t--)
+        dateTimeOffsets = IsDateTimeOffsetShape(nodes[t]);
+      if (dateTimeOffsets && _forcedValues != null && _forcedValues.Contains(slot))
+      {
+        _slots[slot] = CollectionSlot;
+        return;
+      }
 
       SchemaType best = null;
       long bestScore = long.MinValue;
@@ -463,7 +515,27 @@ namespace ObjectDebugger
       }
 
       if (best != null)
+      {
+        if (dateTimeOffsets && !_seen[best.Index])
+          Suspects.Add(slot);
         _slots[slot] = best.Index;
+      }
+    }
+
+    /// <summary>
+    /// <c>[timestamp, offset in minutes]</c>: how a DateTimeOffset is written (<c>DateTimeOffsetFormat</c> TimestampAndOffset, the default, and ClockTimeAndOffset).
+    /// </summary>
+    private static bool IsDateTimeOffsetShape(Node node)
+    {
+      if (node.Kind != ValueKind.Array || node.Elements.Length != 2 || node.Elements[0].Kind != ValueKind.Timestamp)
+        return false;
+      long minutes;
+      return node.Elements[1].TryGetIndex(out minutes) && minutes >= -14 * 60 && minutes <= 14 * 60;
+    }
+
+    private bool IsForcedValue(string slot, Node node)
+    {
+      return _forcedValues != null && slot != null && _forcedValues.Contains(slot) && IsDateTimeOffsetShape(node);
     }
 
     /// <summary>

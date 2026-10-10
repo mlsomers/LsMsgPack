@@ -127,7 +127,7 @@ namespace LsMsgPackInspector
     public int Bytes { get; set; }
 
     /// <summary>
-    /// Error, Warning, Comment or ReadAbortError.
+    /// Error, Warning, Comment, ReadAbortError or SecurityVulnerability.
     /// </summary>
     public string Severity { get; set; }
     public string Message { get; set; }

@@ -92,6 +92,14 @@ namespace LsMsgPackMcp
     {
       get { return Severity == MsgPackValidation.ValidationSeverity.Error || Severity == MsgPackValidation.ValidationSeverity.ReadAbortError; }
     }
+
+    /// <summary>
+    /// The data can make a reader create types it picks (see <see cref="PayloadValidation"/>), listed with the errors.
+    /// </summary>
+    public bool IsSecurity
+    {
+      get { return Severity == MsgPackValidation.ValidationSeverity.SecurityVulnerability; }
+    }
   }
 
   /// <summary>
@@ -384,6 +392,7 @@ namespace LsMsgPackMcp
         objects.AddError(ex.Message);
       }
       Objects = objects;
+      ValidatePayload(objects);
       // Outer objects first, so an item that is the key of an entry and of the object in it maps to the innermost
       foreach (PrimitiveObject obj in Walk(objects))
       {
@@ -463,6 +472,24 @@ namespace LsMsgPackMcp
       }
       foreach (MsgPackValidation.ValidationItem issue in issues)
         Issues.Add(new Issue() { Node = node, Severity = issue.Severity, WastedBytes = issue.WaistedBytes, Message = issue.Message });
+    }
+
+    /// <summary>
+    /// The schema, the type ids and the places declared as object, after the issues of the items.
+    /// </summary>
+    private void ValidatePayload(RootObject objects)
+    {
+      List<MsgPackValidation.ValidationItem> issues;
+      try
+      {
+        issues = PayloadValidation.Validate(objects);
+      }
+      catch (Exception ex)
+      {
+        issues = new List<MsgPackValidation.ValidationItem>() { new MsgPackValidation.ValidationItem(Root?.Item, MsgPackValidation.ValidationSeverity.Error, 0, "Validation failed: ", ex.Message) };
+      }
+      foreach (MsgPackValidation.ValidationItem issue in issues)
+        Issues.Add(new Issue() { Node = GetNode(issue.Item) ?? Root, Severity = issue.Severity, WastedBytes = issue.WaistedBytes, Message = issue.Message });
     }
   }
 }

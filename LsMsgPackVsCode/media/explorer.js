@@ -21,7 +21,8 @@
     Error: ['✖', 'Error'],
     Warning: ['⚠', 'Warning'],
     Comment: ['ℹ', 'Comment'],
-    ReadAbortError: ['⛔', 'Reading stopped here']
+    ReadAbortError: ['⛔', 'Reading stopped here'],
+    SecurityVulnerability: ['🛡', 'Security vulnerability']
   };
 
   /** Kept between the webview being hidden and shown again, and when VS Code restarts. */

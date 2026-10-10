@@ -575,7 +575,7 @@ namespace LsMsgPackMcp
         Prop("offsets", "boolean", "Objects view: add the offset of every value."),
         Prop("maxNodes", "integer", "The most values or items written (default 1000), the rest is summarized."),
         Prop("maxString", "integer", "Longer strings are cut (default 200 chars)."),
-        Enum("issues", "Which validation issues to list: errors (default), all (also warnings such as larger encodings than needed), none.", "errors", "all", "none"),
+        Enum("issues", "Which validation issues to list: errors (default, with security vulnerabilities such as properties declared as object), all (also warnings such as larger encodings than needed), none.", "errors", "all", "none"),
         Enum("endian", "Byte order (default: the specification's).", "SwapIfCurrentSystemIsLittleEndian", "NeverSwap", "AlwaysSwap"),
         Prop("continueOnError", "boolean", "Keep reading after an error, the rest is a best guess (default true).")
       };
