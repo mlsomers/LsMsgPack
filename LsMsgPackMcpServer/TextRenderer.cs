@@ -118,7 +118,7 @@ namespace LsMsgPackMcp
       foreach (string note in doc.Notes)
         sb.Append("Note: ").Append(note).Append('\n');
       if (doc.Options.Endian != EndianAction.SwapIfCurrentSystemIsLittleEndian)
-        sb.Append("Read with endian ").Append(doc.Options.Endian.ToString()).Append(" (not the byte order of the specification).").Append('\n');
+        sb.Append("Read with endian ").Append(doc.Options.Endian.ToString()).Append(EndianNote(doc.Options.Endian, BitConverter.IsLittleEndian)).Append('\n');
 
       if (doc.Data.Length == 0)
       {
@@ -360,7 +360,9 @@ namespace LsMsgPackMcp
           notes.Insert(0, obj.TypeIsGuess ? obj.Type + "~" : obj.Type);
       }
 
-      if (error != null)
+      if (error == NestedError)
+        notes.Add("error inside"); // the error itself is marked where it is: "ERROR:" on every level above it read as many errors
+      else if (error != null)
         notes.Add(string.Concat("ERROR: ", CleanError(error)));
       else if (guessed && !parentGuessed)
         notes.Add("after the error");
@@ -397,6 +399,9 @@ namespace LsMsgPackMcp
       {
         case ObjectKind.Collection:
           notes.Add(obj.Type != null ? string.Concat(obj.Type, ", ", Claimed(read, claimed, "item", "items")) : Claimed(read, claimed, "item", "items"));
+          string moment = AsDateTimeOffset(obj);
+          if (moment != null)
+            notes.Add(moment);
           break;
         case ObjectKind.Dictionary:
           notes.Add(string.Concat(obj.Type ?? "dictionary", ", ", Claimed(read, claimed, "entry", "entries")));
@@ -703,6 +708,28 @@ namespace LsMsgPackMcp
     }
 
     /// <summary>
+    /// [timestamp, offset in minutes] is how LsMsgPack (and Nerdbank.MessagePack) write a DateTimeOffset: the moment it stands for, at its offset.
+    /// </summary>
+    private static string AsDateTimeOffset(ComplexObject obj)
+    {
+      if (obj.Members.Count != 2 || obj.Members[0].ValueKind != ValueKind.Timestamp || !(obj.Members[0].Value is DateTime time) || obj.Members[1].ValueKind != ValueKind.Int)
+        return null;
+      long minutes;
+      try
+      {
+        minutes = Convert.ToInt64(obj.Members[1].Value, CultureInfo.InvariantCulture);
+      }
+      catch (OverflowException) // a ulong above long.MaxValue
+      {
+        return null;
+      }
+      if (minutes < -14 * 60 || minutes > 14 * 60)
+        return null;
+      DateTimeOffset moment = new DateTimeOffset(time.ToUniversalTime()).ToOffset(TimeSpan.FromMinutes(minutes));
+      return string.Concat("as DateTimeOffset ", moment.ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz", CultureInfo.InvariantCulture), " (DateTimeOffsetFormat.TimestampAndOffset)");
+    }
+
+    /// <summary>
     /// "3 items", or "3 of 5 items" when the header claims more than there are (the data ends early, or an error stopped the reading).
     /// </summary>
     private static string Claimed(long count, long claimed, string singular, string plural)
@@ -752,14 +779,31 @@ namespace LsMsgPackMcp
       }
     }
 
-    private static string DescribeIssue(PayloadDocument doc, Issue issue)
+    /// <summary>
+    /// The error of a container holding an item with an error (ObjectDebugger's Node.NestedError).
+    /// </summary>
+    private const string NestedError = "A nested item contains an error.";
+
+    /// <summary>
+    /// The swap is relative to the machine: AlwaysSwap reads big-endian (the specification's order) on a little-endian machine, NeverSwap on a big-endian one.
+    /// </summary>
+    internal static string EndianNote(EndianAction endian, bool littleEndianMachine)
+    {
+      bool bigEndian = endian == EndianAction.SwapIfCurrentSystemIsLittleEndian || (endian == EndianAction.AlwaysSwap) == littleEndianMachine;
+      string machine = littleEndianMachine ? "little-endian" : "big-endian";
+      return bigEndian
+        ? string.Concat(": big-endian on this ", machine, " machine, the byte order of the specification (the default).")
+        : string.Concat(": little-endian on this ", machine, " machine, not the byte order of the specification (big-endian).");
+    }
+
+    internal static string DescribeIssue(PayloadDocument doc, Issue issue)
     {
       StringBuilder sb = new StringBuilder();
       sb.Append(issue.Severity == MsgPackValidation.ValidationSeverity.ReadAbortError ? "Error" : issue.IsSecurity ? "Security vulnerability" : issue.Severity.ToString());
       sb.Append(" at ").Append(Hex(issue.Node.Offset));
       PrimitiveObject obj = doc.GetObject(issue.Node);
       if (obj != null && !string.IsNullOrEmpty(obj.Path))
-        sb.Append(" (").Append(obj.Path).Append(')');
+        sb.Append(" (").Append(ShortPath(obj.Path)).Append(')');
       sb.Append(": ").Append(issue.Node.Item is MpError err ? ErrorMessage(err) : CleanError(issue.Message));
       return sb.ToString();
     }
@@ -1036,6 +1080,15 @@ namespace LsMsgPackMcp
     /// <summary>
     /// An error as <see cref="MpError.ToString"/> writes it, on one line with the offset in hex.
     /// </summary>
+    /// <summary>
+    /// A path with the same index four times or more in a row, written once with the count: [0]×256 instead of 768 characters.
+    /// </summary>
+    internal static string ShortPath(string path)
+    {
+      return System.Text.RegularExpressions.Regex.Replace(path, @"(\[\d+\])\1{3,}",
+        m => string.Concat(m.Groups[1].Value, "×", (m.Length / m.Groups[1].Length).ToString(CultureInfo.InvariantCulture)));
+    }
+
     internal static string CleanError(string text)
     {
       string clean = System.Text.RegularExpressions.Regex.Replace(text ?? string.Empty, @"\s*Offset = (\d+)", m => string.Concat(" (offset ", Hex(long.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)), ")"));

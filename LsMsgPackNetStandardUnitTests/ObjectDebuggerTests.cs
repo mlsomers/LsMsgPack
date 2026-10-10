@@ -326,6 +326,33 @@ namespace LsMsgPackUnitTests
       AssertInvoice(root, true);
     }
 
+#if KEEPTRACK
+    /// <summary>
+    /// A map cut off by the end of the data keeps slots for the entries it claims: they were taken for keys that are not property indexes,
+    /// the root became a dictionary and every inferred type moved one entry of the schema up (Billing an OdInvoice, the lines OdAddresses).
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map)]
+    [DataRow(ObjectLayout.Array)]
+    public void Truncated_TypesInferredFromWhatWasRead(ObjectLayout layout)
+    {
+      byte[] bytes = MsgPackSerializer.Serialize(CreateInvoice(), Settings(layout, true));
+      byte[] truncated = new byte[bytes.Length - 16]; // in Date: Tags is not read
+      Array.Copy(bytes, truncated, truncated.Length);
+      MsgPackSettings settings = new MsgPackSettings() { PreservePackages = true, ContinueProcessingOnBreakingError = true };
+      RootObject root = new RootObject();
+      root.Reconstruct(MsgPackItem.UnpackMultiple(truncated, settings), null);
+
+      Assert.AreEqual(ObjectKind.Object, root.Kind);
+      Assert.AreEqual(nameof(OdInvoice), root.Type);
+      ComplexObject billing = Complex(root, "Billing");
+      Assert.AreEqual(nameof(OdAddress), billing.Type);
+      AssertValue("Springfield", billing, "City");
+      Assert.AreEqual(nameof(OdLine), Complex(Complex(root, "Lines"), "[1]").Type);
+      Assert.AreEqual(0, root.Warnings.Count, string.Join(Environment.NewLine, root.Warnings)); // "No value was matched with these types of the schema: OdLine"
+    }
+#endif
+
     [TestMethod]
     public void MapsWithoutSchema()
     {

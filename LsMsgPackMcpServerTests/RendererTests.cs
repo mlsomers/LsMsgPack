@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPackMcp;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
@@ -107,6 +107,52 @@ namespace LsMsgPackMcpServerTests
       AssertContains(text, "Error at 0xD8 (Reference): Error while reading data. (Unexpected end of data.)");
       Assert.IsFalse(text.Contains("were read on at the next byte", StringComparison.Ordinal), "Nothing was read after the error");
       Assert.IsFalse(text.Contains('\r'), "Lines end with \\n on every OS (the error messages of the library use Environment.NewLine)");
+    }
+
+    /// <summary>
+    /// A map cut off by the end of the data: its unread slots made it a dictionary, and the inferred types moved one entry of the schema up.
+    /// </summary>
+    [TestMethod]
+    public void TruncatedMap_TypesInferredFromWhatWasRead()
+    {
+      byte[] invoice = Payloads.Serialize(Payloads.Invoice(), ObjectLayout.Map, true);
+      byte[] truncated = new byte[invoice.Length - 20]; // in Reference: Tags is not read
+      Array.Copy(invoice, truncated, truncated.Length);
+      string text = Render(truncated);
+      AssertContains(text, "{ // McpInvoice~, 1 not read: the reading stopped at the error");
+      AssertContains(text, "\"Billing\": { \"Street\": \"Main street\", \"Number\": 12, \"City\": \"Amsterdam\" }, // McpAddress~");
+      AssertContains(text, "// McpLine~, Price: decimal");
+      Assert.IsFalse(text.Contains("no value matched", StringComparison.Ordinal), text);
+    }
+
+    /// <summary>
+    /// AlwaysSwap is the specification's byte order on a little-endian machine: the note said it was not.
+    /// </summary>
+    [TestMethod]
+    public void EndianNote_RelativeToTheMachine()
+    {
+      StringAssert.Contains(TextRenderer.EndianNote(EndianAction.AlwaysSwap, true), "big-endian on this little-endian machine, the byte order of the specification");
+      StringAssert.Contains(TextRenderer.EndianNote(EndianAction.NeverSwap, true), "little-endian on this little-endian machine, not the byte order of the specification");
+      StringAssert.Contains(TextRenderer.EndianNote(EndianAction.NeverSwap, false), "big-endian on this big-endian machine, the byte order of the specification");
+      StringAssert.Contains(TextRenderer.EndianNote(EndianAction.AlwaysSwap, false), "little-endian on this big-endian machine, not the byte order");
+
+      PayloadDocument doc = new PayloadDocument(new byte[] { 0x91, 0xCD, 0x01, 0x00 }, "test", new DecodeOptions() { Endian = EndianAction.NeverSwap }) { Id = "doc1" };
+      string text = TextRenderer.Render(doc, new RenderOptions());
+      AssertContains(text, "Read with endian NeverSwap: ");
+      AssertContains(text, BitConverter.IsLittleEndian ? "[1]" : "[256]");
+    }
+
+    /// <summary>
+    /// [timestamp, offset in minutes] read as the DateTimeOffset it may be.
+    /// </summary>
+    [TestMethod]
+    public void DateTimeOffsetShape_ShowsTheMomentAtItsOffset()
+    {
+      DateTimeOffset sent = new DateTimeOffset(2026, 10, 6, 9, 0, 0, TimeSpan.FromHours(2));
+      string text = Render(MsgPackSerializer.Serialize(new System.Collections.Generic.List<DateTimeOffset>() { sent }));
+      AssertContains(text, "[\"2026-10-06T07:00:00Z\", 120] // 2 items, as DateTimeOffset 2026-10-06T09:00:00+02:00 (DateTimeOffsetFormat.TimestampAndOffset)");
+      // Not for other arrays of a timestamp and a number
+      Assert.IsFalse(Render(new byte[] { 0x92, 0xD6, 0xFF, 0x00, 0x00, 0x00, 0x00, 0xCD, 0x10, 0x00 }).Contains("as DateTimeOffset", StringComparison.Ordinal)); // 4096 minutes
     }
 
     /// <summary>
@@ -242,7 +288,11 @@ namespace LsMsgPackMcpServerTests
       string text = Render(bytes);
       Assert.IsLessThan(20000, text.Length, text.Substring(0, 2000));
       AssertContains(text, "nested deeper than 32 levels: ask for the path \"[0][0]");
-      AssertContains(text, "ERROR: A nested item contains an error.");
+      AssertContains(text, "[ // 1 item, error inside");
+      Assert.IsFalse(text.Contains("ERROR: A nested item contains an error.", StringComparison.Ordinal), "The levels above the error only say that they hold it");
+      AssertContains(text, "Error at 0x100 ([0]×257): ");
+      Assert.AreEqual("Lines[2]×4.Name[0]", TextRenderer.ShortPath("Lines[2][2][2][2].Name[0]"));
+      Assert.AreEqual("[0][0][0]", TextRenderer.ShortPath("[0][0][0]"));
 
       string items = Render(bytes, new RenderOptions() { View = DecodeView.Items });
       Assert.IsLessThan(100000, items.Length);

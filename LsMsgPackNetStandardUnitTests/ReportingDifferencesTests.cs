@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.TypeResolving.Names;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -89,6 +89,13 @@ namespace LsMsgPackUnitTests
       public DiffInnerDto Inner { get; set; }
     }
 
+    public class DiffEventDto
+    {
+      public DateTime Date { get; set; }
+      public int State { get; set; }
+      public List<string> Tags { get; set; }
+    }
+
     public class DiffInnerDto
     {
       public string Amount { get; set; }
@@ -137,6 +144,15 @@ namespace LsMsgPackUnitTests
       public string Name { get; set; }
       public List<int> Lines { get; set; }
       public DiffInnerEntity Inner { get; set; }
+    }
+
+    /// <summary>
+    /// Without State (two characters from Date, which the data sets), Tags misspelled with a value from the constructor.
+    /// </summary>
+    public class DiffEventEntity
+    {
+      public DateTime Date { get; set; }
+      public List<string> Tgs { get; set; } = new List<string>();
     }
 
     public class DiffInnerEntity
@@ -318,6 +334,21 @@ namespace LsMsgPackUnitTests
       StringAssert.Contains(report, "DiffLineEntity.Colour");
       StringAssert.Contains(report, "$[1].Lines[1]");
       Assert.AreEqual(report, differences.ToString());
+    }
+
+    /// <summary>
+    /// "did you mean Date?" for State: a property that has a value is only suggested for a name one character away.
+    /// </summary>
+    [TestMethod]
+    public void NoSuggestionOfAPropertyWithAValueTwoCharactersAway()
+    {
+      MsgPackSettings settings = Settings(ObjectLayout.Map, "inline");
+      DifferencesWriter.DiffEventDto written = new DifferencesWriter.DiffEventDto() { Date = new DateTime(2026, 10, 10, 0, 0, 0, DateTimeKind.Utc), State = 2, Tags = new List<string>() { "a" } };
+      Serializer.Deserialize<DifferencesReader.DiffEventEntity>(Serializer.Serialize(written, settings), settings, out ReadDifferences differences);
+      string report = differences.GenerateReport();
+      StringAssert.Contains(report, "DiffEventEntity.State: not a property of the class");
+      Assert.IsFalse(report.Contains("did you mean Date", StringComparison.Ordinal), report);
+      StringAssert.Contains(report, "did you mean Tgs?");
     }
 
     /// <summary>
