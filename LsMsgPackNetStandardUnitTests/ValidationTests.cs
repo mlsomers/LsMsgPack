@@ -197,6 +197,38 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
+    public void TypeIdKey_InAMapWithIndexes_NotInconsistent()
+    {
+      // { "": 0, 0: "a", 1: 2 }: an object with its type id, the property ids are indexes of the schema
+      MpMap body = new MpMap(new KeyValuePair<object, object>[]
+      {
+        new KeyValuePair<object, object>("", 0),
+        new KeyValuePair<object, object>(0, "a"),
+        new KeyValuePair<object, object>(1, 2)
+      }, new MsgPackSettings());
+      List<ValidationItem> issues = Validate(body.ToBytes());
+      Assert.IsFalse(issues.Any(i => i.Message.Contains("not appear to be consistent")), Describe(issues));
+
+      // Other string keys still are
+      MpMap mixed = new MpMap(new KeyValuePair<object, object>[]
+      {
+        new KeyValuePair<object, object>("", 0),
+        new KeyValuePair<object, object>(0, "a"),
+        new KeyValuePair<object, object>("b", 2)
+      }, new MsgPackSettings());
+      issues = Validate(mixed.ToBytes());
+      Assert.IsTrue(issues.Any(i => i.Message.Contains("Item 1 has a key of type positive fixint while item 2 has a key of type fixstr")), Describe(issues));
+    }
+
+    [TestMethod]
+    public void ObjectWithTypeIds_MapLayoutWithSchema_NoWarnings()
+    {
+      List<VtBase> values = new List<VtBase>() { new VtDerived() { Name = "a", Extra = new VtAddress() { Street = "Main", Number = 1 } } };
+      List<ValidationItem> issues = Validate(MsgPackSerializer.Serialize(values, Settings(true, ObjectLayout.Map)));
+      Assert.AreEqual(0, Of(issues, ValidationSeverity.Warning).Count, Describe(issues));
+    }
+
+    [TestMethod]
     public void ReservedExtensionType_IsAWarning()
     {
       List<ValidationItem> issues = Validate(new byte[] { 0xD4, 0xFB, 0x01 }); // fixext 1, type -5

@@ -212,7 +212,22 @@ namespace LsMsgPack
                 issues.Add(new ValidationItem(item, ValidationSeverity.Comment, 0, "Map is empty."));
                 return;
             }
-            MsgPackTypeId firstKeyType = map.PackedValues[0].Key.TypeId;
+            // LsMsgPack's type id ("" first) and the content of a wrapped value ("@") are string keys in maps that otherwise have the property ids
+            // (indexes with the indexed schema): the other keys decide the family of the map
+            bool typeIdMap = IsReservedKey(map.PackedValues[0].Key, string.Empty);
+            int reference = 0;
+            if (typeIdMap)
+            {
+                for (int t = 1; t < map.PackedValues.Length; t++)
+                {
+                    if (!IsReservedKey(map.PackedValues[t].Key, "@"))
+                    {
+                        reference = t;
+                        break;
+                    }
+                }
+            }
+            MsgPackTypeId firstKeyType = map.PackedValues[reference].Key.TypeId;
             if (!MsgPackMeta.StrTypeFamily.Contains(firstKeyType) && !MsgPackMeta.IntTypeFamily.Contains(firstKeyType) && firstKeyType != MsgPackTypeId.MpNull)
             {
                 issues.Add(new ValidationItem(item, ValidationSeverity.Comment, 0, "A key of type ", MsgPackItem.GetOfficialTypeName(firstKeyType),
@@ -225,10 +240,11 @@ namespace LsMsgPack
                     return;
 
                 if (ReferenceEquals(map.PackedValues[t].Key, null)) continue;
-                if (map.PackedValues[t].Key.TypeId != firstKeyType && !MsgPackMeta.AreInSameFamily(map.PackedValues[t].Key.TypeId, firstKeyType))
+                bool reserved = typeIdMap && (t == 0 || IsReservedKey(map.PackedValues[t].Key, "@"));
+                if (!reserved && map.PackedValues[t].Key.TypeId != firstKeyType && !MsgPackMeta.AreInSameFamily(map.PackedValues[t].Key.TypeId, firstKeyType))
                 {
                     issues.Add(new ValidationItem(item, ValidationSeverity.Warning, 0,
-                        "The types of keys in this map do not appear to be consistent. Item 0 has a key of type ", MsgPackItem.GetOfficialTypeName(firstKeyType),
+                        "The types of keys in this map do not appear to be consistent. Item ", reference, " has a key of type ", MsgPackItem.GetOfficialTypeName(firstKeyType),
                         " while item ", t, " has a key of type ", MsgPackItem.GetOfficialTypeName(map.PackedValues[t].Key.TypeId),
                         ". Allthough the specs do not demand that keys are of the same type, it is likely that many implementations will assume that keys in a map are all of the same family."));
                 }
@@ -245,6 +261,14 @@ namespace LsMsgPack
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// The key of LsMsgPack's type id ("") or of the content of a wrapped value ("@"): <c>{ "": typeId, "@": value }</c>, <c>{ "": typeId, 0: value, ... }</c>.
+        /// </summary>
+        private static bool IsReservedKey(MsgPackItem key, string name)
+        {
+            return key is MpString && string.Equals(key.Value as string, name, System.StringComparison.Ordinal);
         }
 
         private static void ValidateInt(MsgPackItem item, List<ValidationItem> issues)
