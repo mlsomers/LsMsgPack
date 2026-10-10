@@ -153,9 +153,111 @@ namespace MsgPackExplorer {
         (short)-31,
         (short)-32,
         (short)-128,
+
+        "Timestamps in a larger format than needed",
+        Ext(-1, 0x00, 0x00, 0x01, 0xF4, 0x00, 0x00, 0x00, 0x00, 0x6A, 0xCA, 0x13, 0xA8), // timestamp 96: fits in a timestamp 64
+        Ext(-1, 0x00, 0x00, 0x00, 0x00, 0x6A, 0xCA, 0x13, 0xA8), // timestamp 64 without nanoseconds: fits in a timestamp 32
+        "Invalid timestamp",
+        Ext(-1, 0xEE, 0x6B, 0x28, 0x00, 0x6A, 0xCA, 0x13, 0xA8), // timestamp 64 with 1000000000 nanoseconds (more than a second)
+
+        "Big integers (extension type -2)",
+        Ext(-2, 0x03, 0xE8), // 1000: fits in 64 bits, an integer is shorter
+        Ext(-2, 0xFF, 0xFF, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00), // -2^71 with 2 bytes that only repeat the sign
+
+        "Invalid decimal",
+        Ext(1, 0x00, 0x00, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00), // 15 with a scale of 29 (the maximum is 28)
+
+        "Reserved extension type",
+        Ext(-5, 0x01), // negative types are reserved by the specification, -5 is not defined
       };
-      
-      File.WriteAllBytes(Path.Combine(directory, "SomeBadChoices.MsgPack"), MsgPackItem.Pack(items, false).ToBytes());
+
+      using (FileStream file = File.Create(Path.Combine(directory, "SomeBadChoices.MsgPack"))) {
+        byte[] bytes = MsgPackItem.Pack(items, false).ToBytes();
+        file.Write(bytes, 0, bytes.Length);
+
+        // Two more payloads follow (the explorer reads them as a sequence): objects with properties declared as object, and a schema made to attack a reader
+        bytes = MsgPackSerializer.Serialize(ObjectPropertiesExample(), new MsgPackSettings());
+        file.Write(bytes, 0, bytes.Length);
+        bytes = HostileSchemaExample();
+        file.Write(bytes, 0, bytes.Length);
+      }
+    }
+
+    private static MpExt Ext(sbyte type, params byte[] content) {
+      return new MpExt() { TypeSpecifier = type, Value = content };
+    }
+
+    public class BadChoicesBase {
+      public string Name { get; set; }
+    }
+
+    public class BadChoicesDerived : BadChoicesBase {
+      public object Extra { get; set; }
+    }
+
+    /// <summary>
+    /// Properties declared as object (or holding objects): the data picks the types a reader creates there (security vulnerabilities, see docs/security.md).
+    /// </summary>
+    public class BadChoicesModel {
+      public string Name { get; set; }
+      public object Anything { get; set; }
+      public List<object> Items { get; set; }
+      public Dictionary<string, object> Values { get; set; }
+      public object Collection { get; set; }
+      public List<BadChoicesBase> Derived { get; set; }
+    }
+
+    private static BadChoicesModel ObjectPropertiesExample() {
+      return new BadChoicesModel() {
+        Name = "Properties declared as object",
+        Anything = new DateTime(2026, 10, 10, 12, 0, 0, DateTimeKind.Utc), // a DateTime with a type id: declared as object
+        Items = new List<object>() { new Guid("6f9619ff-8b86-d011-b42d-00c04fc964ff"), 5, "text" }, // a Guid with a type id
+        Values = new Dictionary<string, object>() { { "one", 1 }, { "two", "2" }, { "three", 3.0 } }, // values of different kinds
+        Collection = new List<object>() { 1, 2 }, // a framework collection with a type id (List<Object>)
+        Derived = new List<BadChoicesBase>() { // objects with a type id whose property holds values of different kinds
+          new BadChoicesDerived() { Name = "a", Extra = 1 },
+          new BadChoicesDerived() { Name = "b", Extra = "one" }
+        }
+      };
+    }
+
+    /// <summary>
+    /// An indexed schema with names a reader refuses or must not trust, followed by a body (a dictionary) with type ids the schema does not support.
+    /// </summary>
+    private static byte[] HostileSchemaExample() {
+      MsgPackSettings settings = new MsgPackSettings();
+      MpMap schema = new MpMap(new KeyValuePair<object, object>[] {
+        new KeyValuePair<object, object>("Process", new object[] { "FileName", "Arguments" }), // #0 a known gadget
+        new KeyValuePair<object, object>("MyApp.Plugin, MyApp", new object[] { "Name" }), // #1 an assembly-qualified name (would load the assembly)
+        new KeyValuePair<object, object>("Order", new object[] { "Id", "Lines", "Id", null, "@" }), // #2 a duplicate, a nil and a reserved property name
+        new KeyValuePair<object, object>("Order", new object[0]), // #3 the same type name again
+        new KeyValuePair<object, object>("Int32[,]", new object[0]), // #4
+        new KeyValuePair<object, object>("DateTimeOffset", new object[0]) // #5
+      }, settings);
+
+      MpMap body = new MpMap(new KeyValuePair<object, object>[] {
+        new KeyValuePair<object, object>("gadget", Typed(0, new KeyValuePair<object, object>(0, "cmd.exe"), new KeyValuePair<object, object>(1, "/c calc"))),
+        new KeyValuePair<object, object>("not in the schema", Typed(9, new KeyValuePair<object, object>(0, "x"))),
+        new KeyValuePair<object, object>("grid", Typed(4, new KeyValuePair<object, object>("@", new object[] { 2, 3, new object[] { 1, 2, 3, 4 } }))), // 2 x 3 needs 6 items
+        new KeyValuePair<object, object>("offset", Typed(5, new KeyValuePair<object, object>("@", new object[] { new DateTime(2026, 10, 10, 12, 0, 0, DateTimeKind.Utc), 900 }))) // 15 hours
+      }, settings);
+
+      byte[] schemaBytes = schema.ToBytes();
+      byte[] bodyBytes = body.ToBytes();
+      byte[] bytes = new byte[schemaBytes.Length + bodyBytes.Length];
+      schemaBytes.CopyTo(bytes, 0);
+      bodyBytes.CopyTo(bytes, schemaBytes.Length);
+      return bytes;
+    }
+
+    /// <summary>
+    /// <c>{ "": typeId, entries... }</c>
+    /// </summary>
+    private static MpMap Typed(int typeId, params KeyValuePair<object, object>[] entries) {
+      KeyValuePair<object, object>[] all = new KeyValuePair<object, object>[entries.Length + 1];
+      all[0] = new KeyValuePair<object, object>("", typeId);
+      entries.CopyTo(all, 1);
+      return new MpMap(all, new MsgPackSettings());
     }
 
     public void SlidingTackle(string directory) {

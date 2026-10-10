@@ -462,13 +462,13 @@ namespace ObjectDebugger
 
         if (!(obj is ComplexObject))
         {
-          AddEvidence(obj, typeId, string.Concat(Capitalized(Where(obj)), " holds a ", PrimitiveObject.KindName(obj.ValueKind), " with the type id \"", name,
+          AddEvidence(obj, typeId, string.Concat(Capitalized(Where(obj)), " holds ", WithArticle(PrimitiveObject.KindName(obj.ValueKind)), " with the type id \"", name,
             "\". A value that is not an object or a collection only gets a type id where its type differs from the declared type, and such types have no derived types: this place is declared as object (or as an interface, e.g. IComparable), unless the data was written with AddTypeIdOption.Always."));
         }
         else if (IsFrameworkType(name))
         {
           string elements = HoldsObjects(name) ? " Its elements are declared as object as well: each of them can have a type id of its own." : string.Empty;
-          AddEvidence(obj, typeId, string.Concat(Capitalized(Where(obj)), " holds a ", name, " with a type id. A framework type only gets a type id where it is assigned to object, or to a framework interface or base class (e.g. IEnumerable), or the data was written with AddTypeIdOption.Always: this place accepts types the data picks.", elements));
+          AddEvidence(obj, typeId, string.Concat(Capitalized(Where(obj)), " holds ", WithArticle(name), " with a type id. A framework type only gets a type id where it is assigned to object, or to a framework interface or base class (e.g. IEnumerable), or the data was written with AddTypeIdOption.Always: this place accepts types the data picks.", elements));
         }
         CheckKind(obj);
       }
@@ -504,7 +504,7 @@ namespace ObjectDebugger
           return;
 
         place.At = obj.LastItemRef ?? obj.FirstItemRef;
-        place.Reason = string.Concat(Capitalized(Where(obj)), " holds a ", Describe(obj, kind), ", ", Where(place.First), " a ", Describe(place.First, place.Kind),
+        place.Reason = string.Concat(Capitalized(Where(obj)), " holds ", WithArticle(Describe(obj, kind)), ", ", Where(place.First), " ", WithArticle(Describe(place.First, place.Kind)),
           ": only a place declared as object (or as an interface both implement) holds both.");
       }
 
@@ -663,6 +663,11 @@ namespace ObjectDebugger
         if (string.IsNullOrEmpty(path) || obj.Parent is RootObject && obj.Parent.Kind == ObjectKind.Value)
           return "the root";
         return path;
+      }
+
+      private static string WithArticle(string noun)
+      {
+        return string.Concat("AEIOUaeiou".IndexOf(noun[0]) >= 0 ? "an " : "a ", noun);
       }
 
       private static string Capitalized(string text)
