@@ -92,6 +92,12 @@ Reading data you don't trust (request bodies, messages from clients)? Type ids l
 
 Data that doesn't match your classes exactly (older or newer versions, a misspelled name) is read anyway, like the JSON serializers do. Pass an `out ReadDifferences` to `Deserialize` to find out what was skipped, counted per class and property, with the paths of the objects: see [docs/ReadDifferences.md](docs/ReadDifferences.md).
 
+Standalone Executable (for Windows)
+-----------------------------------
+Download the zip file from the [latest release](https://github.com/mlsomers/LsMsgPack/releases).
+
+![Screenshot of the debugging user interface](https://github.com/mlsomers/LsMsgPack/raw/HEAD/docs.WinformsExplorer.png "MsgPack explorer")
+
 Fiddler Integration
 -------------------
 
@@ -101,6 +107,10 @@ In order to use this tool as a Fiddler plugin, copy the following files to the F
 - LsMsgPackFiddlerInspector.dll
 - LsMsgPack.dll
 - LsMsgPack.Core.dll
+- System.Memory.dll
+- System.Buffers.dll
+- System.Numerics.Vectors.dll
+- System.Runtime.CompilerServices.Unsafe.dll
 
 Restart fiddler and you should see a MsgPack option in the Inspectors list.
 
@@ -113,6 +123,8 @@ VS Code Integration
 -------------------
 
 [LsMsgPackVsCode](LsMsgPackVsCode/README.md) is the same explorer as a VS Code extension (any OS, needs the .NET 8 runtime): right-click a `byte[]`, `Stream`, `List<byte>`, `Memory<byte>`, HTTP content or base64 string in the Variables view while debugging and choose **View as MsgPack**, or open a `.msgpack` file. It also reads typed arrays in JavaScript and bytes in Python.
+
+![Screenshot of the debugging user interface](https://github.com/mlsomers/LsMsgPack/raw/HEAD/LsMsgPackVsCode/Screenshot.png "MsgPack explorer")
 
 AI agents (MCP)
 ---------------
