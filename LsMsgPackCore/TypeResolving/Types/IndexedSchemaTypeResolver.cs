@@ -60,6 +60,55 @@ namespace LsMsgPack.TypeResolving.Types
       return newEntry;
     }
 
+    /// <summary>
+    /// Sets the ids of the properties of a type (as <see cref="IMsgPackPropertyIdResolver.GetId"/> would) when its entry has the same names in the same order, so the id of each is its position:
+    /// the entry was made from these properties (writing), or the writer had the same ones (reading).
+    /// <para>For a session without other property id resolvers, see FullPropertyInfo.GetSerializedProps. False (nothing set) otherwise, or when two properties have the same name.</para>
+    /// </summary>
+    internal bool TryAssignIds(Type type, FullPropertyInfo[] props, MsgPackOptions settings)
+    {
+      if (props.Length == 0)
+        return false;
+      for (int t = 0; t < props.Length; t++)
+        if (!props[t]._uniqueName)
+          return false;
+
+      if (!TryGetDef(type, out ComplexTypeDef def))
+        def = GetComplex(type, settings); // as GetId does for the first property
+      if (!ReferenceEquals(def.ParsedFrom, props))
+      {
+        // The same names (unique, as the properties' are), so the lookup GetId uses would give each its position
+        List<string> names = def.Props;
+        if (def.IsCollection || names.Count != props.Length)
+          return false;
+        for (int t = 0; t < props.Length; t++)
+          if (!string.Equals(names[t], props[t].PropertyInfo.Name, StringComparison.Ordinal))
+            return false;
+      }
+
+      for (int t = 0; t < props.Length; t++)
+        props[t].PropertyId = BoxedId(t);
+      return true;
+    }
+
+    private static readonly object[] BoxedIds = CreateBoxedIds(256);
+
+    private static object[] CreateBoxedIds(int count)
+    {
+      object[] boxed = new object[count];
+      for (int t = 0; t < count; t++)
+        boxed[t] = t;
+      return boxed;
+    }
+
+    /// <summary>
+    /// The index as an object, the small ones boxed once.
+    /// </summary>
+    internal static object BoxedId(int id)
+    {
+      return (uint)id < (uint)BoxedIds.Length ? BoxedIds[id] : id;
+    }
+
     public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackOptions settings)
     {
       return GetComplex(type, settings).TypeId;
@@ -363,7 +412,7 @@ namespace LsMsgPack.TypeResolving.Types
       }
 
       if (def.IdByName.TryGetValue(assignedTo.PropertyInfo.Name, out int id))
-        return id;
+        return BoxedId(id);
 
       if (def.IsCollection)
       {
@@ -547,6 +596,32 @@ namespace LsMsgPack.TypeResolving.Types
     {
       for (int t = 0; t < props.Length; t++)
         Props.Add(props[t].PropertyInfo.Name);
+      ParsedFrom = props;
+    }
+
+    /// <summary>
+    /// The properties (of the session) <see cref="Props"/> was made of, null for an entry read from the data or copied: see <see cref="IndexedSchemaTypeResolver.TryAssignIds"/>.
+    /// </summary>
+    internal FullPropertyInfo[] ParsedFrom;
+
+    /// <summary>
+    /// The properties of the reader at the positions of <see cref="Props"/>, kept for the properties they were found for (see ValueConverter.PropertiesByPosition).
+    /// <para>One reference, replaced as a whole: a frozen schema is read by several threads.</para>
+    /// </summary>
+    internal volatile PositionBinding ByPosition;
+
+    internal sealed class PositionBinding
+    {
+      internal readonly FullPropertyInfo[] Props;
+      internal readonly int Count;
+      internal readonly FullPropertyInfo[] Properties;
+
+      internal PositionBinding(FullPropertyInfo[] props, int count, FullPropertyInfo[] properties)
+      {
+        Props = props;
+        Count = count;
+        Properties = properties;
+      }
     }
 
     internal int AddProp(string name)

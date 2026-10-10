@@ -1,4 +1,5 @@
 ﻿using LsMsgPack.TypeResolving.Interfaces;
+using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -62,6 +63,21 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
+    /// A new instance for a session (see <see cref="GetStaticallyIncludedProps"/>), with the name as its id: the session sets its own ids on it.
+    /// </summary>
+    private FullPropertyInfo(FullPropertyInfo kept)
+    {
+      PropertyInfo = kept.PropertyInfo;
+      Attributes = kept.Attributes;
+      CustomAttributes = kept.CustomAttributes;
+      _assignedToType = kept._assignedToType;
+      _accessor = kept._accessor;
+      _uniqueName = kept._uniqueName;
+      PropertyId = kept.PropertyInfo.Name;
+      StaticallyIgnored = false;
+    }
+
+    /// <summary>
     /// The attributes of the property, also the ones it may inherit (shared by all FullPropertyInfo of the property). Null without a property.
     /// </summary>
     internal readonly PropertyAttributeSet Attributes;
@@ -91,6 +107,11 @@ namespace LsMsgPack.Meta
     public PropertyInfo PropertyInfo { get; set; }
 
     private PropertyAccessor _accessor;
+
+    /// <summary>
+    /// Set by <see cref="GetStaticallyIncludedProps"/> when no other kept property of the type has the same name (a property hidden by one of another type may have).
+    /// </summary>
+    internal bool _uniqueName;
 
     /// <summary>
     /// The value of the property, read by a compiled delegate once the property is used often (see <see cref="PropertyAccessor"/>).
@@ -336,6 +357,14 @@ namespace LsMsgPack.Meta
       // Within a session each property is resolved once: first the static filters, then the ids of the properties that are kept.
       // The indexed schema asks for the kept properties of the type (see GetStaticallyIncludedProps) when resolving the first id.
       FullPropertyInfo[] props = GetStaticallyIncludedProps(type, settings);
+      IMsgPackPropertyIdResolver[] resolvers = settings._propertyNameResolvers;
+      if (resolvers.Length == 1 && resolvers[0] is IndexedSchemaTypeResolver schema && schema.TryAssignIds(type, props, settings))
+      {
+        // The ids are 0 to n-1 (unique, see TryAssignIds)
+        sessionCache[type] = props;
+        return props;
+      }
+
       for (int t = 0; t < props.Length; t++)
         ResolvePropertyId(props[t], settings);
       ThrowIfIdsNotUnique(type, props);
@@ -354,6 +383,11 @@ namespace LsMsgPack.Meta
       internal readonly IMsgPackPropertyIncludeStatically[] Filters;
       internal readonly ConcurrentDictionary<Type, FullPropertyInfo[]>[] PerOrder = CachePerOrder<FullPropertyInfo[]>();
 
+      /// <summary>
+      /// What the filters keep with the name as id (see <see cref="GetStaticallyIncludedProps"/>), the sessions get copies.
+      /// </summary>
+      internal readonly ConcurrentDictionary<Type, FullPropertyInfo[]>[] StaticPerOrder = CachePerOrder<FullPropertyInfo[]>();
+
       internal SharedPropsCache(IMsgPackPropertyIncludeStatically[] filters) { Filters = filters; }
     }
 
@@ -361,14 +395,19 @@ namespace LsMsgPack.Meta
     private static readonly ConditionalWeakTable<IMsgPackPropertyIncludeStatically[], SharedPropsCache> SharedPropsCaches = new ConditionalWeakTable<IMsgPackPropertyIncludeStatically[], SharedPropsCache>();
     private static readonly IMsgPackPropertyIncludeStatically[] NoStaticFilters = new IMsgPackPropertyIncludeStatically[0];
 
-    private static ConcurrentDictionary<Type, FullPropertyInfo[]> GetSharedPropsCache(MsgPackOptions settings)
+    private static SharedPropsCache GetSharedPropsCaches(MsgPackOptions settings)
     {
       // The settings remember the cache of their filters, so the table is only consulted when the filters change (or for new settings)
       IMsgPackPropertyIncludeStatically[] filters = settings._staticFilters ?? NoStaticFilters;
       SharedPropsCache cache = settings._sharedPropsCache;
       if (cache is null || !ReferenceEquals(cache.Filters, filters))
         settings._sharedPropsCache = cache = SharedPropsCaches.GetValue(filters, f => new SharedPropsCache(f));
-      return cache.PerOrder[(int)settings._propertyOrder];
+      return cache;
+    }
+
+    private static ConcurrentDictionary<Type, FullPropertyInfo[]> GetSharedPropsCache(MsgPackOptions settings)
+    {
+      return GetSharedPropsCaches(settings).PerOrder[(int)settings._propertyOrder];
     }
 
     private static FullPropertyInfo[] GetSerializedPropsWithoutSession(Type type, MsgPackOptions settings)
@@ -435,21 +474,42 @@ namespace LsMsgPack.Meta
       if (settings._schemaFrozen) // a shared session, see SchemaSession
         throw SchemaGrowthException.Instance;
 
+      // The filters decide per property (they are immutable, see SharedPropsCache), so they run once per type and filter array; each session gets its own instances (it sets its ids on them)
+      ConcurrentDictionary<Type, FullPropertyInfo[]> shared = GetSharedPropsCaches(settings).StaticPerOrder[(int)settings._propertyOrder];
+      if (!shared.TryGetValue(type, out FullPropertyInfo[] kept))
+        kept = shared.GetOrAdd(type, FilterStatically(type, settings));
+
+      FullPropertyInfo[] result = new FullPropertyInfo[kept.Length];
+      for (int t = 0; t < kept.Length; t++)
+        result[t] = new FullPropertyInfo(kept[t]);
+
+      if (sessionCache != null)
+        sessionCache[type] = result;
+      return result;
+    }
+
+    private static FullPropertyInfo[] FilterStatically(Type type, MsgPackOptions settings)
+    {
       PropertyInfo[] props = GetProperties(type, settings);
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
       for (int t = 0; t < props.Length; t++)
       {
         FullPropertyInfo full = new FullPropertyInfo(props[t]) { PropertyId = props[t].Name };
-        bool keep = IsStaticallyIncluded(full, settings);
-        full.StaticallyIgnored = !keep;
-        if (keep)
+        if (IsStaticallyIncluded(full, settings))
+        {
+          full._accessor = PropertyAccessor.Get(props[t]); // shared by the copies (the accessors are global anyway)
           keptProps.Add(full);
+        }
       }
 
-      FullPropertyInfo[] result = keptProps.ToArray();
-      if (sessionCache != null)
-        sessionCache[type] = result;
-      return result;
+      for (int t = 0; t < keptProps.Count; t++)
+      {
+        bool unique = true;
+        for (int i = 0; i < keptProps.Count && unique; i++)
+          unique = i == t || !string.Equals(keptProps[i].PropertyInfo.Name, keptProps[t].PropertyInfo.Name, StringComparison.Ordinal);
+        keptProps[t]._uniqueName = unique;
+      }
+      return keptProps.ToArray();
     }
 
     // Not cached on the property: the shared instances are used with different filters, the callers cache the kept properties

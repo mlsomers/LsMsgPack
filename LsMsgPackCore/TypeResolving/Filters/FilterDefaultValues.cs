@@ -39,7 +39,8 @@ namespace LsMsgPack.TypeResolving.Filters
         {
             // return value != default; // not going to work on boxed values...
 
-            if (propertyInfo.CustomAttributes.TryGetValue(nameof(DefaultValueAttribute), out object attribute))
+            System.Collections.Generic.Dictionary<string, object> attributes = propertyInfo.CustomAttributes;
+            if (attributes.Count != 0 && attributes.TryGetValue(nameof(DefaultValueAttribute), out object attribute)) // most properties have no attributes, the lookup hashes the name
             {
                 DefaultValueAttribute def = attribute as DefaultValueAttribute;
                 if (def?.Value != null)
@@ -50,15 +51,15 @@ namespace LsMsgPack.TypeResolving.Filters
                 return false;
 
             Type type = value.GetType();
-            Type propertyType = propertyInfo.PropertyInfo.PropertyType;
-            if (propertyType.IsGenericType && !propertyType.IsGenericTypeDefinition && propertyType.GetGenericTypeDefinition() == typeof(Nullable<>)) // Nullable.GetUnderlyingType(propertyType) != null, without allocating the generic arguments
-                return true; // type is nullable, value is not null but default...
-
-            if (!type.IsValueType)
+            if (!type.IsValueType) // before the Nullable<> check: the value of a nullable property is never a reference type
             {
                 if (OmitEmptyStrings && type == typeof(string)) return ((string)value).Length != 0;
                 return true;
             }
+
+            Type propertyType = propertyInfo.PropertyInfo.PropertyType;
+            if (propertyType.IsGenericType && !propertyType.IsGenericTypeDefinition && propertyType.GetGenericTypeDefinition() == typeof(Nullable<>)) // Nullable.GetUnderlyingType(propertyType) != null, without allocating the generic arguments
+                return true; // type is nullable, value is not null but default...
 
             if (type == typeof(int)) return (int)value != 0;
             if (type == typeof(bool)) return (bool)value;
@@ -72,6 +73,8 @@ namespace LsMsgPack.TypeResolving.Filters
             if (type == typeof(uint)) return (uint)value != 0;
             if (type == typeof(ulong)) return (ulong)value != 0;
             if (type == typeof(sbyte)) return (sbyte)value != 0;
+            if (type == typeof(decimal)) return (decimal)value != 0m; // as decimal.Equals: 0.00m is a default value too
+            if (type == typeof(DateTime)) return ((DateTime)value).Ticks != 0; // as DateTime.Equals: the Kind is not compared
 
             return !DefaultInstances.GetOrAdd(type, t => Activator.CreateInstance(t)).Equals(value);
         }
