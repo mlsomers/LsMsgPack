@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Text;
 
 namespace LtMsgPack.Reading
 {
@@ -266,7 +267,15 @@ namespace LtMsgPack.Reading
   {
     internal override decimal Read(ReadContext c, FullPropertyInfo assignedTo)
     {
-      int start = c.R.Pos;
+      MsgPackReader r = c.R;
+      int start = r.Pos;
+      int length = r.TryReadStringHeader();
+      if (length >= 0 && MsgPackOptions.StringEncoding is UTF8Encoding && DecimalText.TryParse(r.Buf, r.Pos, length, out decimal simple)) // ASCII, the same bytes in UTF-8
+      {
+        r.Pos += length;
+        return simple;
+      }
+      r.Pos = start;
 #if NETSTANDARD2_1_OR_GREATER
       Span<char> chars = stackalloc char[64];
       if (c.R.TryReadShortString(chars, out int count))

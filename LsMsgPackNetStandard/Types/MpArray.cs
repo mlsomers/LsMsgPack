@@ -102,12 +102,22 @@ namespace LsMsgPack
         WriteLength(bytes, value.Length, SupportedLengths.FromShortUpward);
 #endif
       }
-      Type elementType=value.GetType().GetElementType();
-      FullPropertyInfo asgnType=new FullPropertyInfo(elementType);
+      MsgPackItem[] packed = value as MsgPackItem[]; // what the serializer builds: no Array.GetValue and casts per item
+      Type elementType = null;
+      FullPropertyInfo asgnType = null;
       for (int t = 0; t < value.Length; t++)
       {
-        object instance=value.GetValue(t);
-        MsgPackItem item = instance as MsgPackItem ?? MsgPackItem.Pack(instance, _settings, elementType) ?? MsgPackSerializer.SerializeObject(instance, _settings, asgnType); // already packed by the serializer
+        object instance = packed is null ? value.GetValue(t) : packed[t];
+        MsgPackItem item = instance as MsgPackItem; // already packed by the serializer
+        if (item is null)
+        {
+          if (elementType is null)
+          {
+            elementType = value.GetType().GetElementType();
+            asgnType = new FullPropertyInfo(elementType);
+          }
+          item = MsgPackItem.Pack(instance, _settings, elementType) ?? MsgPackSerializer.SerializeObject(instance, _settings, asgnType);
+        }
         item.WriteTo(bytes);
       }
     }

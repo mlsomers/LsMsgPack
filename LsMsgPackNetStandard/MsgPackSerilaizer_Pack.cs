@@ -30,7 +30,7 @@ namespace LsMsgPack
       MsgPackItem packed = MsgPackItem.Pack(item, settings, tType);
 
       // Strings, byte[] and Guid (MpBin) are enumerable but not treated as a collection
-      if (item is IEnumerable && (packed is MpArray || packed is MpMap))
+      if (packed != null && (packed is MpArray || packed is MpMap) && item is IEnumerable) // objects have no packed item: no interface check for them
       {
         if (tType.IsArray && tType.GetArrayRank() > 1)
           return SerializeMultidimensional((Array)item, tType, settings, assignedTo, depth);

@@ -469,6 +469,11 @@ namespace LsMsgPack.Meta
         return props;
       }
 
+      // The same for every object of the type in the session (props are the session's): kept on the entry
+      ComplexTypeDef.PositionBinding bound = def.ByPosition;
+      if (bound != null && ReferenceEquals(bound.Props, props) && bound.Count == def.Props.Count)
+        return bound.Properties;
+
       FullPropertyInfo[] byPosition = new FullPropertyInfo[def.Props.Count];
       int next = 0; // usually in the same order
       for (int t = 0; t < byPosition.Length; t++)
@@ -493,6 +498,7 @@ namespace LsMsgPack.Meta
           }
         }
       }
+      def.ByPosition = new ComplexTypeDef.PositionBinding(props, byPosition.Length, byPosition);
       return byPosition;
     }
 

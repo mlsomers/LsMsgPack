@@ -349,6 +349,17 @@ namespace LtMsgPack.IO
     /// </summary>
     internal void DecimalString(decimal value)
     {
+      if (IsUtf8(MsgPackOptions.StringEncoding)) // ASCII, the same bytes in UTF-8
+      {
+        Ensure(DecimalText.MaxLength + 1);
+        int written = DecimalText.TryFormat(value, Buf, Pos + 1); // always shorter than 32: a fixstr
+        if (written >= 0)
+        {
+          Buf[Pos] = (byte)(0xA0 | written);
+          Pos += written + 1;
+          return;
+        }
+      }
 #if NETSTANDARD2_1_OR_GREATER
       Span<char> chars = stackalloc char[32]; // at most 31: sign, 29 digits and the point
       if (IsUtf8(MsgPackOptions.StringEncoding) && value.TryFormat(chars, out int length, default, System.Globalization.CultureInfo.InvariantCulture)) // ASCII, the same bytes in UTF-8
