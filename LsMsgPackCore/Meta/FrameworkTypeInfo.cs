@@ -16,6 +16,11 @@ namespace LsMsgPack.Meta
     internal static readonly Type DateOnlyType = typeof(DateTime).Assembly.GetType("System.DateOnly");
     internal static readonly Type TimeOnlyType = typeof(DateTime).Assembly.GetType("System.TimeOnly");
 
+    /// <summary>
+    /// System.Collections.Immutable.ImmutableArray (the static class), null when the application does not have the assembly (.NET Standard does not reference it, .NET has it).
+    /// </summary>
+    internal static readonly Type ImmutableArrayType = Type.GetType("System.Collections.Immutable.ImmutableArray, System.Collections.Immutable", false);
+
     private static readonly ConcurrentDictionary<Type, PairInfo> Pairs = new ConcurrentDictionary<Type, PairInfo>();
 
     /// <summary>

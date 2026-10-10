@@ -141,6 +141,23 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(0, InjectionCanary.Created);
     }
 
+    /// <summary>
+    /// The framework's internal types are not found by name (the short name "Complex" used to resolve to an internal struct of System.Private.CoreLib): the value stays the map it is.
+    /// </summary>
+    [TestMethod]
+    public void InternalFrameworkTypes_NotResolved()
+    {
+      Type internalType = typeof(object).GetType(); // System.RuntimeType
+      Assert.IsFalse(internalType.IsVisible);
+      string[] names = { internalType.Name, internalType.FullName };
+      foreach (string name in names)
+      {
+        InjectionHolderLoose read = Serializer.Deserialize<InjectionHolderLoose>(HolderWithTypeId(name), Settings(false));
+        Assert.IsNotNull(read.Shape, name);
+        Assert.IsFalse(read.Shape is Type, name);
+      }
+    }
+
     [TestMethod]
     public void AssemblyQualifiedNames_NotResolvedFromTheSchema()
     {

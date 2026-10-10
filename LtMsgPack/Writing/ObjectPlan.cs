@@ -57,6 +57,7 @@ namespace LtMsgPack.Writing
     internal ObjectPlan(Serializer serializer, Type type, bool names)
     {
       Type = type;
+      SerializationRules.ThrowIfUnsupportedFrameworkType(type);
       LtMsgPackOptions options = serializer.Options;
       Infos = names ? FullPropertyInfo.GetSerializedProps(type, options) : FullPropertyInfo.GetStaticallyIncludedProps(type, options);
 

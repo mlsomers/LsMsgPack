@@ -17,7 +17,7 @@ When data picks the type, whoever writes the data picks the code that runs while
 
 Two things decide how exposed you are:
 
-1. **Which types the data can name.** A type id is resolved by name (see [Polymorphic class-hierarchy support](schema.md#polymorphic-class-hierarchy-support)): the framework's core library, the framework's collection assemblies, and every assembly that has been cached so far (your root types' assemblies and the assemblies of the types they reach through generic arguments, base classes and public properties, the assemblies of declared types, what you registered with `CacheAssemblyTypes`, and what an `AllowedTypesGuard` allows). `WildGooseChaseResolver` extends this to every assembly loaded in the process.
+1. **Which types the data can name.** A type id is resolved by name (see [Polymorphic class-hierarchy support](schema.md#polymorphic-class-hierarchy-support)): the framework's core library, the framework's collection and numerics assemblies (and `System.Collections.Immutable` when the application has it), and every assembly that has been cached so far (your root types' assemblies and the assemblies of the types they reach through generic arguments, base classes and public properties, the assemblies of declared types, what you registered with `CacheAssemblyTypes`, and what an `AllowedTypesGuard` allows). `WildGooseChaseResolver` extends this to every assembly loaded in the process.
 2. **Where the data can use them.** A type id is only consulted where a value is read, and the declared type of that place (a property, a collection element or the root you deserialize) limits what fits there.
 
 What the schema hashes do and don't protect
@@ -49,6 +49,12 @@ This makes your declared types the boundary: a property declared as `IShape` onl
 Type names that contain an assembly name or generic arguments in brackets (`System.Diagnostics.Process, System.Diagnostics.Process` or ``List`1[[MyApp.Foo, MyApp]]``) are refused with a `MsgPackException`. `Type.GetType` and `Assembly.GetType` would load the assembly they name, and loading an assembly runs its module initializer. The serializers never write such names: they write `Name`, `Namespace.Name` (`AddTypeIdOption.FullName`), `List<Foo>` and `Foo[]`. This applies to names in a schema as well, which are resolved when the schema is read.
 
 If your own type resolver writes and reads names like these, it still can: custom resolvers are asked before the built-in name lookup.
+
+### Only the framework's public types
+
+A name in the data never resolves to an internal or private type of the framework (the core library, `System.*` and `Microsoft.*` assemblies). Those types share short names with public ones: the short name `Complex` used to resolve to an internal struct of `System.Private.CoreLib` instead of `System.Numerics.Complex`. The types of your own assemblies are found whether they're public or not.
+
+`System.Type` (and other reflection types) are never written or read: a `Type` in the data would be a type picked by the data. Serializing one throws a `MsgPackException`; write its name and resolve it in your application against the types you expect.
 
 The type guard
 --------------

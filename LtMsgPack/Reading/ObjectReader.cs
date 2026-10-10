@@ -378,6 +378,7 @@ namespace LtMsgPack.Reading
     internal ReadPlan(Serializer serializer, Type type, FullPropertyInfo[] infos)
     {
       Type = type;
+      SerializationRules.ThrowIfUnsupportedFrameworkType(type);
       Props = new PropReader[infos.Length];
       for (int t = 0; t < infos.Length; t++)
         Props[t] = PropReader.Create(serializer, infos[t]);

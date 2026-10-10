@@ -148,6 +148,54 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(boxed.Duration, ret.Duration);
       CollectionAssert.AreEqual(boxed.Values, ret.Values);
     }
+
+    public class FrameworkLazyHolder
+    {
+      public Lazy<int> Later { get; set; }
+    }
+
+    public class FrameworkLazyWriter
+    {
+      public Dictionary<string, int> Later { get; set; }
+    }
+
+    public class FrameworkTypeHolder
+    {
+      public Type Kind { get; set; }
+    }
+
+    /// <summary>
+    /// Framework types the serializers do not know and that have no settable properties are refused, instead of being written as an empty map and read back as their default value.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void UnsupportedFrameworkTypesAreRefused(bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+
+      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new FrameworkLazyHolder() { Later = new Lazy<int>(() => 7) }, settings));
+      StringAssert.Contains(ex.Message, "no settable properties");
+      StringAssert.Contains(ex.Message, "Lazy");
+      Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new Lazy<int>(() => 7), settings));
+      Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new List<object>() { Index.FromEnd(1) }, settings));
+
+      MsgPackSettings map = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      byte[] bytes = Serializer.Serialize(new FrameworkLazyWriter() { Later = new Dictionary<string, int>() }, map);
+      ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<FrameworkLazyHolder>(bytes, map));
+      StringAssert.Contains(ex.Message, "no settable properties");
+    }
+
+    /// <summary>
+    /// A Type would let the data pick types (see docs/security.md): refused with a reason of its own.
+    /// </summary>
+    [TestMethod]
+    public void TypesAreRefused()
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new FrameworkTypeHolder() { Kind = typeof(string) }, settings));
+      StringAssert.Contains(ex.Message, "the data would pick the type");
+    }
   }
 
   [TestClass]

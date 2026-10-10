@@ -56,6 +56,7 @@ namespace LsMsgPack
 
       // Any complex object with properties
       ThrowIfTooDeep(depth, settings);
+      SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
       FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
       if (settings._objectLayout == ObjectLayout.Array)
         return SerializeAsArray(item, tType, props, settings, assignedTo, depth);

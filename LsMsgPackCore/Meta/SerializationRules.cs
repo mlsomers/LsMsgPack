@@ -1,6 +1,9 @@
 ﻿using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Types;
 using System;
+using System.Collections;
+using System.Collections.Concurrent;
+using System.Reflection;
 
 namespace LsMsgPack.Meta
 {
@@ -58,6 +61,50 @@ namespace LsMsgPack.Meta
         return;
 
       throw new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id as an array ({nameof(ObjectLayout)}.{nameof(ObjectLayout.Array)}): the values have no property ids, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} or {nameof(ObjectLayout)}.{nameof(ObjectLayout.Map)}.");
+    }
+
+    private static readonly ConcurrentDictionary<Type, string> Unsupported = new ConcurrentDictionary<Type, string>();
+
+    /// <summary>
+    /// A type of the framework that would be written as an object with properties but has no settable ones (e.g. Lazy&lt;T&gt;, Index): its values would be written as an empty map
+    /// and read back as the default, without an error. The serializers write the framework types they know by themselves (see FrameworkTypeInfo), anything else of the framework that has no settable state is refused.
+    /// <para>Checked once per type, when the serializers plan to write or read an object of it. A custom extension for the type (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions) is asked first, so it can still be written that way.</para>
+    /// </summary>
+    internal static void ThrowIfUnsupportedFrameworkType(Type type)
+    {
+      string reason;
+      if (!Unsupported.TryGetValue(type, out reason))
+        reason = Unsupported.GetOrAdd(type, UnsupportedReason);
+      if (reason != null)
+        throw new MsgPackException(reason);
+    }
+
+    /// <returns>Why the type is refused, null when it is not</returns>
+    private static string UnsupportedReason(Type type)
+    {
+      if (typeof(Type).IsAssignableFrom(type) || typeof(MemberInfo).IsAssignableFrom(type))
+        return $"{type.FullName} is not serialized: the data would pick the type (see docs/security.md). Write its name and resolve it in the application, against the types it expects.";
+
+      if (type == typeof(object) || type.IsPrimitive || type.IsEnum || type == typeof(string) || typeof(IEnumerable).IsAssignableFrom(type) || !TypeResolver.IsFrameworkAssembly(type.Assembly))
+        return null;
+
+      bool hasState = type.GetFields(BindingFlags.Instance | BindingFlags.Public).Length > 0;
+      PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        PropertyInfo prop = props[t];
+        if (prop.GetIndexParameters().Length > 0)
+          continue;
+        if (prop.GetSetMethod() != null)
+          return null; // written as an object with properties (as before)
+        if (prop.GetGetMethod() != null)
+          hasState = true;
+      }
+      if (!hasState)
+        return null; // nothing to lose (e.g. an EventArgs)
+
+      return $"{type.FullName} is not supported: it has no settable properties, so it would be written as an empty map and read back as its default value. "
+        + "Serialize the values it holds (in a class of your own), or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions).";
     }
 
     internal static IndexedSchemaTypeResolver GetIndexedSchema(MsgPackOptions settings)

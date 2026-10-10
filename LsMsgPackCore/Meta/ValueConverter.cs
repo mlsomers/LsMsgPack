@@ -228,6 +228,7 @@ namespace LsMsgPack.Meta
 
       if (propVals.Count > (hasTypeId ? 1 : 0) && SerializationRules.GetIndexedSchema(settings)?.SkipIfNoEntry(tType, settings, prop) == true)
         return null;
+      SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
       result = Instances.CreateObject(tType, settings);
       SetProperties(result, tType, propVals, settings);
       return result;
@@ -325,6 +326,7 @@ namespace LsMsgPack.Meta
           }
           if (IsObjectType(objectType))
           {
+            SerializationRules.ThrowIfUnsupportedFrameworkType(objectType);
             if (Array.Exists(items, i => i != null) && SerializationRules.GetIndexedSchema(settings)?.SkipIfNoEntry(objectType, settings, prop) == true) // before the ids are resolved, which would add an entry for the class
               return null;
             FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(objectType, settings);

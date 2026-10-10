@@ -260,13 +260,35 @@ namespace LsMsgPack.Meta
       return result;
     }
 
-    private static Assembly[] NativeAssemblies = new Assembly[]
+    private static readonly Assembly[] NativeAssemblies = GetNativeAssemblies();
+
+    private static Assembly[] GetNativeAssemblies()
     {
-      typeof(List<>).Assembly, // System.Collections.Generic
-      typeof(SortedDictionary<,>).Assembly, // System.Collections (SortedDictionary, SortedSet, LinkedList, Stack, Queue...)
-      typeof(ConcurrentBag<>).Assembly, // System.Collections.Concurrent
-      typeof(ObservableCollection<>).Assembly // System.Collections.ObjectModel
-    };
+      List<Assembly> assemblies = new List<Assembly>()
+      {
+        typeof(List<>).Assembly, // System.Collections.Generic (System.Private.CoreLib on .NET: also Version, Half, Int128, tuples...)
+        typeof(SortedDictionary<,>).Assembly, // System.Collections (SortedDictionary, SortedSet, LinkedList, Stack, Queue, BitArray...)
+        typeof(ConcurrentBag<>).Assembly, // System.Collections.Concurrent
+        typeof(ObservableCollection<>).Assembly, // System.Collections.ObjectModel
+        typeof(System.Numerics.BigInteger).Assembly // System.Runtime.Numerics (BigInteger, Complex)
+      };
+      Type immutable = FrameworkTypeInfo.ImmutableArrayType; // System.Collections.Immutable, when the application has it (not referenced by .NET Standard)
+      if (immutable != null)
+        assemblies.Add(immutable.Assembly);
+      for (int t = assemblies.Count - 1; t > 0; t--)
+        if (assemblies.IndexOf(assemblies[t]) != t) // the same assembly on .NET Framework (mscorlib, System)
+          assemblies.RemoveAt(t);
+      return assemblies.ToArray();
+    }
+
+    /// <summary>
+    /// The framework's own types a name in the data can resolve to: only the public ones. Its internal types share short names with public ones (System.Private.CoreLib has a nested Complex),
+    /// and the data must not pick types the application cannot even name (see docs/security.md).
+    /// </summary>
+    private static Type Visible(Type type)
+    {
+      return type is null || type.IsVisible || !IsFrameworkAssembly(type.Assembly) ? type : null;
+    }
 
     /// <summary>
     /// Characters of assembly-qualified names, bracketed generic arguments ("List`1[[System.Diagnostics.Process, System]]"), pointers and references: the serializers never write them in a type name
@@ -287,7 +309,7 @@ namespace LsMsgPack.Meta
         throw new MsgPackException($"The type name \"{typeName}\" is not resolved: assembly-qualified names and bracketed generic arguments could load assemblies. Use a custom IMsgPackTypeResolver to resolve such names.");
 
       // First try offloading this work to the framework...
-      result = Type.GetType(typeName, false, true);
+      result = Visible(Type.GetType(typeName, false, true));
       if (result == null)
       {
         // search all types from System.Collections.Generic
@@ -329,7 +351,7 @@ namespace LsMsgPack.Meta
       HashSet<Type> choices;
       if (assembly != null)
       {
-        result = assembly.GetType(typeName, false, true);
+        result = Visible(assembly.GetType(typeName, false, true));
         if (result is null)
         {
           if (!CachedAssembies.Contains(assembly))
@@ -430,7 +452,7 @@ namespace LsMsgPack.Meta
       ReachableCached.TryAdd(root, true);
     }
 
-    private static bool IsFrameworkAssembly(Assembly assembly)
+    internal static bool IsFrameworkAssembly(Assembly assembly)
     {
       if (assembly == typeof(object).Assembly)
         return true;
@@ -446,7 +468,7 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal static void CacheType(Type type)
     {
-      if (type.FullName is null || CachedAssembliesLockFree.ContainsKey(type.Assembly))
+      if (type.FullName is null || CachedAssembliesLockFree.ContainsKey(type.Assembly) || Visible(type) is null)
         return;
 
       lock (SyncRoot)
@@ -479,8 +501,11 @@ namespace LsMsgPack.Meta
         found = typeof(object); // skip the find part, just cache assembly
 
       Type[] types = assembly.GetTypes();
+      bool framework = IsFrameworkAssembly(assembly);
       for (int t = types.Length - 1; t >= 0; t--)
       {
+        if (framework && !types[t].IsVisible) // see Visible
+          continue;
         string fullName = types[t].FullName;
         string name = types[t].Name;
         Type type = types[t];
