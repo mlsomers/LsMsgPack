@@ -141,6 +141,23 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(0, InjectionCanary.Created);
     }
 
+    /// <summary>
+    /// The framework's internal types are not found by name (the short name "Complex" used to resolve to an internal struct of System.Private.CoreLib): the value stays the map it is.
+    /// </summary>
+    [TestMethod]
+    public void InternalFrameworkTypes_NotResolved()
+    {
+      Type internalType = typeof(object).GetType(); // System.RuntimeType
+      Assert.IsFalse(internalType.IsVisible);
+      string[] names = { internalType.Name, internalType.FullName };
+      foreach (string name in names)
+      {
+        InjectionHolderLoose read = Serializer.Deserialize<InjectionHolderLoose>(HolderWithTypeId(name), Settings(false));
+        Assert.IsNotNull(read.Shape, name);
+        Assert.IsFalse(read.Shape is Type, name);
+      }
+    }
+
     [TestMethod]
     public void AssemblyQualifiedNames_NotResolvedFromTheSchema()
     {
@@ -356,15 +373,17 @@ namespace LsMsgPackUnitTests
       Type[] allowed =
       {
         typeof(int), typeof(int?), typeof(string), typeof(decimal), typeof(DateTime), typeof(Guid), typeof(Uri), typeof(object), typeof(DayOfWeek),
-        typeof(byte[]), typeof(List<string>), typeof(Dictionary<string, int[]>), typeof(KeyValuePair<int, string>[]), typeof(List<List<int>>)
+        typeof(byte[]), typeof(List<string>), typeof(Dictionary<string, int[]>), typeof(KeyValuePair<int, string>[]), typeof(List<List<int>>),
+        typeof(Half), typeof(Version), typeof(StringBuilder), typeof(System.Globalization.CultureInfo), typeof(System.Numerics.Complex), typeof(Memory<byte>), typeof(ArraySegment<byte>),
+        typeof((int, string)), typeof(Tuple<int, List<string>>), typeof(int[,])
       };
       foreach (Type type in allowed)
         Assert.IsTrue(guard.IsAllowed(type), type.FullName);
 
       Type[] refused =
       {
-        typeof(StringBuilder), typeof(InjectionCanary), typeof(List<InjectionCanary>), typeof(InjectionCanary[]), typeof(Dictionary<string, InjectionCanary>),
-        typeof(int[,]), typeof(List<>), typeof(Lazy<int>)
+        typeof(System.IO.MemoryStream), typeof(InjectionCanary), typeof(List<InjectionCanary>), typeof(InjectionCanary[]), typeof(Dictionary<string, InjectionCanary>),
+        typeof(InjectionCanary[,]), typeof(List<>), typeof(Lazy<int>), typeof((int, InjectionCanary)), typeof(Memory<int>)
       };
       foreach (Type type in refused)
         Assert.IsFalse(guard.IsAllowed(type), type.FullName);
@@ -384,10 +403,10 @@ namespace LsMsgPackUnitTests
 
       guard.Allow(typeof(Lazy<>));
       Assert.IsTrue(guard.IsAllowed(typeof(Lazy<InjectionCanary>)));
-      Assert.IsFalse(guard.IsAllowed(typeof(Lazy<StringBuilder>)));
+      Assert.IsFalse(guard.IsAllowed(typeof(Lazy<System.IO.MemoryStream>)));
 
-      guard.Allow(typeof(Lazy<StringBuilder>)); // a constructed type is allowed as it is
-      Assert.IsTrue(guard.IsAllowed(typeof(Lazy<StringBuilder>)));
+      guard.Allow(typeof(Lazy<System.IO.MemoryStream>)); // a constructed type is allowed as it is
+      Assert.IsTrue(guard.IsAllowed(typeof(Lazy<System.IO.MemoryStream>)));
     }
   }
 }

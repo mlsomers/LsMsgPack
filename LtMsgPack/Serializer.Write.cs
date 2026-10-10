@@ -108,6 +108,7 @@ namespace LtMsgPack
         case TypeKind.DateTime: return new DateTimeHandler(Options._unspecifiedIsUtc);
         case TypeKind.DateTimeOffset: return new DateTimeOffsetHandler();
         case TypeKind.DateTimeOffsetArray: return new DateTimeOffsetArrayHandler();
+        case TypeKind.DateTimeOffsetMoment: return new DateTimeOffsetMomentHandler();
         case TypeKind.Char: return new CharHandler();
         case TypeKind.TimeSpan: return new TimeSpanHandler();
         case TypeKind.Bin:
@@ -249,6 +250,14 @@ namespace LtMsgPack
         case TypeKind.Pair:
           WritePair(c, value, type, assignedTo);
           return;
+
+        case TypeKind.Tuple:
+          WriteTuple(c, value, type, assignedTo);
+          return;
+
+        case TypeKind.MultiArray:
+          WriteMultidimensional(c, (Array)value, type, assignedTo);
+          return;
       }
 
       if (assignedTo is null || info.NeverWrapped || !SerializationRules.NeedsTypeId(type, assignedTo, Options))
@@ -299,6 +308,8 @@ namespace LtMsgPack
         case TypeKind.DateTime: w.DateTime(DateTimeHandler.Utc((DateTime)value, Options._unspecifiedIsUtc)); return;
         case TypeKind.DateTimeOffset: w.DateTime(((DateTimeOffset)value).UtcDateTime); return;
         case TypeKind.DateTimeOffsetArray: DateTimeOffsetArrayHandler.WriteArray(w, (DateTimeOffset)value); return;
+        case TypeKind.DateTimeOffsetMoment: DateTimeOffsetMomentHandler.WriteArray(w, (DateTimeOffset)value); return;
+        case TypeKind.BigIntegerBinary: w.Bin(FrameworkTypeInfo.BigIntegerBinary(value)); return;
         case TypeKind.Extension: ExtensionHandler<object>.WriteExtensionBoxed(c, info.Extension, value); return;
         case TypeKind.Enum: WriteEnum(w, value, info.Type); return;
         case TypeKind.Char: w.UInt16((char)value); return;
@@ -306,12 +317,36 @@ namespace LtMsgPack
         case TypeKind.Uri: w.String(((Uri)value).OriginalString); return;
         case TypeKind.DateOnly: w.Int32((int)FrameworkTypeInfo.DayNumber.GetValue(value)); return;
         case TypeKind.TimeOnly: w.Int64((long)FrameworkTypeInfo.TimeOnlyTicks.GetValue(value)); return;
+        case TypeKind.Plain: WritePlain(w, FrameworkTypeInfo.ToPlain(value, info.PlainForm)); return;
         case TypeKind.RawExtension:
           MsgPackExtension extension = (MsgPackExtension)value;
           w.Extension(extension.TypeCode, extension.Data);
           return;
       }
       throw new InvalidOperationException($"{info.Kind} is not a leaf value.");
+    }
+
+    /// <summary>
+    /// LsMsgPack: FrameworkTypes.PackPlain.
+    /// </summary>
+    private static void WritePlain(MsgPackWriter w, object plain)
+    {
+      switch (plain)
+      {
+        case float single: w.Single(single); return;
+        case string text: w.String(text); return;
+        case byte[] bytes: w.Bin(bytes); return;
+        case PlainExtension extension: w.Extension(extension.TypeCode, extension.Data); return;
+        case int number: w.Int32(number); return;
+        case long number: w.Int64(number); return;
+        case ulong number: w.UInt64(number); return;
+        case double[] doubles:
+          w.ArrayHeader(doubles.Length);
+          for (int t = 0; t < doubles.Length; t++)
+            w.Double(doubles[t]);
+          return;
+      }
+      throw new InvalidOperationException($"{plain.GetType()} is not a plain value.");
     }
 
     private static void WriteEnum(MsgPackWriter w, object value, Type type)
@@ -349,6 +384,75 @@ namespace LtMsgPack
         content.ArrayHeader(2);
         WriteBoxed(c, pair.Key.GetValue(value), pair.KeyInfo);
         WriteBoxed(c, pair.Value.GetValue(value), pair.ValueInfo);
+      }
+      finally
+      {
+        c.LeaveContainer();
+        c.W = main;
+      }
+      if (!addTypeId)
+        return;
+
+      main.MapHeader(2);
+      main.String(MsgPackOptions.TypeIdKey);
+      c.WriteTypeId(type, assignedTo);
+      main.String(MsgPackOptions.ContentKey);
+      main.Raw(content.Buf, 0, content.Pos);
+      c.ReturnWriter(content);
+    }
+
+    /// <summary>
+    /// LsMsgPack: SerializeTuple. The items as an array, wrapped like a pair when it needs a type id.
+    /// </summary>
+    private void WriteTuple(WriteContext c, object value, Type type, FullPropertyInfo assignedTo)
+    {
+      FrameworkTypeInfo.TupleInfo tuple = FrameworkTypeInfo.GetTuple(type);
+      bool addTypeId = SerializationRules.NeedsTypeId(type, assignedTo, Options);
+      MsgPackWriter main = c.W;
+      MsgPackWriter content = addTypeId ? c.RentWriter() : main;
+      c.W = content;
+      c.EnterContainer();
+      try
+      {
+        content.ArrayHeader(tuple.Items.Length);
+        for (int t = 0; t < tuple.Items.Length; t++)
+          WriteBoxed(c, tuple.GetItem(value, t), tuple.Items[t]);
+      }
+      finally
+      {
+        c.LeaveContainer();
+        c.W = main;
+      }
+      if (!addTypeId)
+        return;
+
+      main.MapHeader(2);
+      main.String(MsgPackOptions.TypeIdKey);
+      c.WriteTypeId(type, assignedTo);
+      main.String(MsgPackOptions.ContentKey);
+      main.Raw(content.Buf, 0, content.Pos);
+      c.ReturnWriter(content);
+    }
+
+    /// <summary>
+    /// LsMsgPack: SerializeMultidimensional. [length0, length1, ..., [items]], wrapped like a collection when it needs a type id (the items first, they may add types to the schema).
+    /// </summary>
+    private void WriteMultidimensional(WriteContext c, Array array, Type type, FullPropertyInfo assignedTo)
+    {
+      bool addTypeId = SerializationRules.NeedsTypeId(type, assignedTo, Options);
+      FullPropertyInfo elementInfo = GetTypeInfo(type).ElementInfo;
+      MsgPackWriter main = c.W;
+      MsgPackWriter content = addTypeId ? c.RentWriter() : main;
+      c.W = content;
+      c.EnterContainer();
+      try
+      {
+        content.ArrayHeader(array.Rank + 1);
+        for (int t = 0; t < array.Rank; t++)
+          content.Int32(array.GetLength(t));
+        content.ArrayHeader(array.Length);
+        foreach (object element in array) // the last dimension changes first
+          WriteBoxed(c, element, elementInfo);
       }
       finally
       {
@@ -531,18 +635,27 @@ namespace LtMsgPack
     internal readonly FullPropertyInfo ValueInfo;
     internal readonly PropertyInfo PairKey;
     internal readonly PropertyInfo PairValue;
+    internal readonly PlainForm PlainForm;
 
     internal WriteTypeInfo(Type type, LtMsgPackOptions options)
     {
       Type = type;
       Kind = TypeKinds.Classify(type, options._extensions, out Extension);
+      if (Kind == TypeKind.Plain)
+        PlainForm = FrameworkTypeInfo.GetPlainForm(type);
       if (Kind == TypeKind.Guid && options._guidFormat == GuidFormat.String)
         Kind = TypeKind.GuidString;
       else if (Kind == TypeKind.DateTimeOffset && options._dateTimeOffsetFormat == DateTimeOffsetFormat.ClockTimeAndOffset)
         Kind = TypeKind.DateTimeOffsetArray;
+      else if (Kind == TypeKind.DateTimeOffset && options._dateTimeOffsetFormat == DateTimeOffsetFormat.TimestampAndOffset)
+        Kind = TypeKind.DateTimeOffsetMoment;
+      else if (Kind == TypeKind.Plain && FrameworkTypeInfo.IsBigInteger(type) && options._bigIntegerFormat == BigIntegerFormat.Binary)
+        Kind = TypeKind.BigIntegerBinary;
       else if (type == typeof(decimal) && options._decimalFormat == DecimalFormat.String)
         Kind = TypeKind.DecimalString; // the extension (if any) still reads
       NeverWrapped = TypeKinds.NeverWrapped(type);
+      if (Kind == TypeKind.MultiArray)
+        ElementInfo = new FullPropertyInfo(type.GetElementType());
       if (Kind == TypeKind.Map || Kind == TypeKind.Array)
       {
         CollectionInfo collection = CollectionInfo.Get(type);

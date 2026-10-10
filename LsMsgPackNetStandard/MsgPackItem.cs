@@ -268,6 +268,18 @@ namespace LsMsgPack
       return Pack(value, sett) ?? MsgPackSerializer.SerializeObject(value, sett);
     }
 
+    /// <summary>
+    /// [length0, length1, ..., [items]] (see MsgPackSerializer.SerializeMultidimensional).
+    /// </summary>
+    private static object[] Multidimensional(Array array)
+    {
+      object[] items = new object[array.Rank + 1];
+      for (int t = 0; t < array.Rank; t++)
+        items[t] = array.GetLength(t);
+      items[array.Rank] = array.Cast<object>().ToArray();
+      return items;
+    }
+
     public static MsgPackItem Pack(object value, MsgPackSettings settings, Type valuesType = null)
     {
       if (ReferenceEquals(value, null)) return new MpNull(settings);
@@ -286,8 +298,8 @@ namespace LsMsgPack
       if (value is byte[]
         || value is Guid) return new MpBin(settings) { Value = value };
       if (value is object[]) return new MpArray(settings) { Value = value };
-      if (value is DateTime
-        || value is DateTimeOffset) return new MpDateTime(settings) { Value = value };
+      if (value is DateTime) return new MpDateTime(settings) { Value = value };
+      if (value is DateTimeOffset) return Meta.FrameworkTypes.PackDateTimeOffset((DateTimeOffset)value, settings);
 
       if (valuesType is null)
         valuesType = value.GetType();
@@ -305,6 +317,10 @@ namespace LsMsgPack
         }
       }
 
+      Meta.PlainForm plain = Meta.FrameworkTypeInfo.GetPlainForm(valuesType); // before the collections: ArraySegment<byte> is bin
+      if (plain != Meta.PlainForm.None)
+        return Meta.FrameworkTypes.PackPlain(Meta.FrameworkTypeInfo.ToPlain(value, plain), settings);
+
       if (valuesType.IsEnum) return new MpInt(settings).SetEnumVal(value);
       if (IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap(settings) { Value = value };
       if (value is IDictionary) return new MpMap(settings) { Value = value };
@@ -315,6 +331,7 @@ namespace LsMsgPack
         if (info.PairKey != null)
           return new MpMap(settings) { Value = info.ToPairs(enumerable) };
       }
+      if (valuesType.IsArray && valuesType.GetArrayRank() > 1) return new MpArray(settings) { Value = Multidimensional((Array)value) };
       if (valuesType.IsArray) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
       if (typeof(IEnumerable).IsAssignableFrom(valuesType)) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
 

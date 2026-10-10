@@ -21,7 +21,8 @@ namespace LtMsgPack
     }
 
     /// <summary>
-    /// MessagePack-CSharp with its default formatters: Guids and decimals as strings, DateTimeOffset as [clock time, offset in minutes], DateTimeKind.Unspecified taken as UTC, every value written, no type ids.
+    /// MessagePack-CSharp with its default formatters: Guids and decimals as strings, DateTimeOffset as [clock time, offset in minutes], DateTimeKind.Unspecified taken as UTC,
+    /// BigInteger, Int128 and UInt128 as bin (little-endian), every value written, no type ids.
     /// </summary>
     public static LtMsgPackOptions MessagePackCSharp()
     {
@@ -30,11 +31,13 @@ namespace LtMsgPack
       options.DecimalFormat = DecimalFormat.String;
       options.DateTimeOffsetFormat = DateTimeOffsetFormat.ClockTimeAndOffset;
       options.UnspecifiedDateTimeKind = DateTimeKind.Utc;
+      options.BigIntegerFormat = BigIntegerFormat.Binary;
       return options;
     }
 
     /// <summary>
     /// Nerdbank.MessagePack with its default settings: decimals as its extension type 4, its Guids (extension type 2) are read (Guids are written as bin 16, which it reads), every value written, no type ids.
+    /// DateTimeOffset is [the moment, offset in minutes] as LsMsgPack's default. Big integers beyond 64 bits differ (Nerdbank: extension types 3, 5 and 6).
     /// </summary>
     public static LtMsgPackOptions Nerdbank()
     {
@@ -44,13 +47,14 @@ namespace LtMsgPack
     }
 
     /// <summary>
-    /// Libraries without .NET types (Python, JavaScript, Go, Rust and others): Guids and decimals as strings, dates as timestamps, every value written, no type ids.
+    /// Libraries without .NET types (Python, JavaScript, Go, Rust and others): Guids and decimals as strings, dates (also DateTimeOffset) as timestamps, every value written, no type ids.
     /// </summary>
     public static LtMsgPackOptions Generic()
     {
       LtMsgPackOptions options = Maps();
       options.GuidFormat = GuidFormat.String;
       options.DecimalFormat = DecimalFormat.String;
+      options.DateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp;
       return options;
     }
 

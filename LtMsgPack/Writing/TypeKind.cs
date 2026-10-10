@@ -16,10 +16,14 @@ namespace LtMsgPack.Writing
     Guid, DateTime, DateTimeOffset, Extension, Enum,
     Map, // dictionaries and arrays of KeyValuePair<,>
     Pair, // a KeyValuePair<,>: [key, value]
+    Tuple, // Tuple<...>, ValueTuple<...>: [items]
+    Plain, // a framework value written as its plain value (FrameworkTypeInfo.PlainForm: Half, Version, Memory<byte>, Complex...)
     Array, // other collections
+    MultiArray, // a multidimensional array: [length0, length1, ..., [items]]
     Char, TimeSpan, Uri, DateOnly, TimeOnly,
     RawExtension, // a MsgPackExtension that was read (LsMsgPack writes the MpExt it read as itself)
-    GuidString, DecimalString, DateTimeOffsetArray, // the formats of other libraries (LtMsgPackOptions.GuidFormat, DecimalFormat, DateTimeOffsetFormat)
+    DateTimeOffsetMoment, // [the moment as a timestamp, the offset in minutes] (DateTimeOffsetFormat.TimestampAndOffset, the default; DateTimeOffset is a timestamp)
+    GuidString, DecimalString, DateTimeOffsetArray, BigIntegerBinary, // the formats of other libraries (LtMsgPackOptions.GuidFormat, DecimalFormat, MsgPackOptions.DateTimeOffsetFormat, BigIntegerFormat)
     Complex // an object with properties
   }
 
@@ -29,6 +33,7 @@ namespace LtMsgPack.Writing
     internal static TypeKind Classify(Type type, LtExtension[] extensions, out LtExtension extension)
     {
       extension = null;
+      if (type.IsArray && type.GetArrayRank() > 1) return TypeKind.MultiArray; // LsMsgPack: SerializeObject, before anything else
       if (type == typeof(bool)) return TypeKind.Bool;
       if (type == typeof(sbyte)) return TypeKind.SByte;
       if (type == typeof(short)) return TypeKind.Int16;
@@ -56,8 +61,11 @@ namespace LtMsgPack.Writing
         }
       }
 
+      if (FrameworkTypeInfo.GetPlainForm(type) != PlainForm.None) return TypeKind.Plain; // before the collections: ArraySegment<byte> is bin
+
       if (type.IsEnum) return TypeKind.Enum;
       if (FrameworkTypeInfo.IsKeyValuePair(type)) return TypeKind.Pair;
+      if (FrameworkTypeInfo.IsTuple(type)) return TypeKind.Tuple;
       if (IsArrayOfKeyValuePairs(type)) return TypeKind.Map;
       if (typeof(IDictionary).IsAssignableFrom(type)) return TypeKind.Map;
       if (type.IsArray) return TypeKind.Array;

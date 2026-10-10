@@ -32,7 +32,7 @@ namespace LtMsgPack
 
     internal GuidFormat _guidFormat = GuidFormat.Binary;
     internal DecimalFormat _decimalFormat = DecimalFormat.Extension;
-    internal DateTimeOffsetFormat _dateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp;
+    internal BigIntegerFormat _bigIntegerFormat = BigIntegerFormat.Extension;
 
     /// <summary>
     /// How Guids are written, bin 16 by default (as LsMsgPack). <see cref="LtMsgPack.GuidFormat.String"/> for other libraries (see <see cref="LtMsgPackPresets"/>).
@@ -55,13 +55,14 @@ namespace LtMsgPack
     }
 
     /// <summary>
-    /// How DateTimeOffsets are written, a timestamp of the moment by default (as LsMsgPack, the offset is lost). <see cref="LtMsgPack.DateTimeOffsetFormat.ClockTimeAndOffset"/> for MessagePack-CSharp.
+    /// How BigInteger, Int128 and UInt128 are written: an integer, or extension type -2 beyond 64 bits (as LsMsgPack). <see cref="LtMsgPack.BigIntegerFormat.Binary"/> for MessagePack-CSharp.
+    /// <para>DateTimeOffset values: <see cref="MsgPackOptions.DateTimeOffsetFormat"/>, shared with LsMsgPack.</para>
     /// </summary>
     [IgnoreDataMember]
-    public DateTimeOffsetFormat DateTimeOffsetFormat
+    public BigIntegerFormat BigIntegerFormat
     {
-      get { return _dateTimeOffsetFormat; }
-      set { _dateTimeOffsetFormat = value; }
+      get { return _bigIntegerFormat; }
+      set { _bigIntegerFormat = value; }
     }
 
     /// <summary>

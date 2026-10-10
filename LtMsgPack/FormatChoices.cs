@@ -33,18 +33,19 @@ namespace LtMsgPack
   }
 
   /// <summary>
-  /// How <see cref="System.DateTimeOffset"/> values are written (<see cref="LtMsgPackOptions.DateTimeOffsetFormat"/>).
+  /// How BigInteger, Int128 and UInt128 values are written (<see cref="LtMsgPackOptions.BigIntegerFormat"/>).
   /// </summary>
-  public enum DateTimeOffsetFormat
+  public enum BigIntegerFormat
   {
     /// <summary>
-    /// A timestamp of the moment, the offset is lost (as LsMsgPack writes it, the default).
+    /// An integer when the value fits in 64 bits, otherwise extension type -2 with the value in big-endian two's complement, as short as possible (the proposals for MsgPack's bigint, msgpack/msgpack#206),
+    /// as LsMsgPack writes it (the default).
     /// </summary>
-    Timestamp,
+    Extension,
 
     /// <summary>
-    /// An array of the clock time (as a timestamp, as if it were UTC) and the offset in minutes, as MessagePack-CSharp writes it. The offset is kept.
+    /// bin with the value in little-endian two's complement, as MessagePack-CSharp writes it (BigInteger.ToByteArray(); Int128 and UInt128 always 16 bytes). Reading accepts every format.
     /// </summary>
-    ClockTimeAndOffset
+    Binary
   }
 }

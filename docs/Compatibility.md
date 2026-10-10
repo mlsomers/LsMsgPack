@@ -21,9 +21,9 @@ LtMsgPack has ready-made options that match the **default settings** of other li
 
 | Preset | Writes | Tested |
 |---|---|---|
-| `LtMsgPackPresets.MessagePackCSharp()` | names, every value, no type ids, Guid and decimal as strings, `DateTimeOffset` as `[clock time, offset in minutes]` (the offset is kept), `DateTimeKind.Unspecified` taken as UTC | the same bytes as `ContractlessStandardResolver.Options` for the 100 invoices and a class with `DateTimeOffset`, `Guid`, `decimal`; both directions |
-| `LtMsgPackPresets.Nerdbank()` | names, every value, no type ids, decimal as extension type 4, reads Nerdbank's Guid (extension type 2); Guids are written as bin 16, which Nerdbank reads | the invoices with a default `MessagePackSerializer`, both directions |
-| `LtMsgPackPresets.Generic()` | Python, JavaScript, Go, Rust...: names, every value, no type ids, Guid and decimal as strings, dates as timestamps | the values as MessagePack-CSharp reads them untyped |
+| `LtMsgPackPresets.MessagePackCSharp()` | names, every value, no type ids, Guid and decimal as strings, `DateTimeOffset` as `[clock time, offset in minutes]` (the offset is kept), `DateTimeKind.Unspecified` taken as UTC, `BigInteger`, `Int128` and `UInt128` as bin (little-endian) | the same bytes as `ContractlessStandardResolver.Options` for the 100 invoices, a class with `DateTimeOffset`, `Guid`, `decimal`, and one with big integers; both directions |
+| `LtMsgPackPresets.Nerdbank()` | names, every value, no type ids, decimal as extension type 4, reads Nerdbank's Guid (extension type 2); Guids are written as bin 16, which Nerdbank reads. `DateTimeOffset` is LsMsgPack's default, the same as Nerdbank's | the invoices with a default `MessagePackSerializer`, both directions |
+| `LtMsgPackPresets.Generic()` | Python, JavaScript, Go, Rust...: names, every value, no type ids, Guid and decimal as strings, dates as timestamps (also `DateTimeOffset`, the offset is lost) | the values as MessagePack-CSharp reads them untyped |
 | `LtMsgPackPresets.LsMsgPack()` | LsMsgPack's defaults (the indexed schema) | `CrossLibraryTests` |
 
 ```csharp
@@ -37,7 +37,8 @@ The presets use these LtMsgPack options (the defaults write what LsMsgPack write
 
 - `GuidFormat`: `Binary` (bin 16, default) or `String` (36 characters, "D" format; reading then accepts both).
 - `DecimalFormat`: `Extension` (the decimal extension, default) or `String` (invariant culture, also when a decimal extension is registered; strings are always read).
-- `DateTimeOffsetFormat`: `Timestamp` (the moment, default) or `ClockTimeAndOffset` (MessagePack-CSharp's array; reading then accepts both).
+- `DateTimeOffsetFormat` (Core, shared with LsMsgPack): `TimestampAndOffset` (`[the moment as a timestamp, the offset in minutes]`, default, Nerdbank's bytes), `Timestamp` (the moment, the offset is lost) or `ClockTimeAndOffset` (MessagePack-CSharp's array). Reading takes a timestamp in any format; the two arrays look the same, so the array is read as the option says.
+- `BigIntegerFormat`: `Extension` (an integer when the value fits in 64 bits, otherwise extension type -2, default) or `Binary` (MessagePack-CSharp's bin; reading accepts every format).
 - `UnspecifiedDateTimeKind`: `Local` (default) or `Utc` (as MessagePack-CSharp). For reading see `DateTime` in [LsMsgPack settings](#lsmsgpack-settings).
 - `LtMsgPack.Extensions.NerdbankGuidExtension`: reads Nerdbank's Guid (extension type 2, big-endian).
 
@@ -68,6 +69,7 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 - **Schema references** (`WriteSchemaReference` with a `SchemaStore`). Instead of the schema, the data then starts with a reference to it: an extension (fixext16, type 2) holding the first 16 bytes of the SHA-256 hash of the schema. Only LsMsgPack readers that hold the schema in their `SchemaStore` can read it, other libraries read the extension and stop. Not tested with other libraries, it needs the indexed schema anyway.
 - **Default values** (`DynamicFilters`). By default LsMsgPack leaves out values that equal the default of their type (`FilterDefaultValues`): null, 0, `false`, `Guid.Empty` and so on. An empty string is written, like the JSON serializers do (the default of a string is null; `new FilterDefaultValues(omitEmptyStrings: true)` leaves it out too). A reader keeps what the constructor set for a missing value, so a class with other initial values does not round trip: `public int Retries { get; set; } = 3;` written as 0 is read as 3 (by LsMsgPack too). The other libraries write every value. Without the filter LsMsgPack writes them all, and then writes the same bytes as MessagePack-CSharp for a class of strings, numbers and booleans (tested). Leaving them out is safe when the classes of all readers start with the default values of the types.
 - **Type ids** (`AddTypeIdOptions`). LsMsgPack adds a type id when a value's type differs from the declared type: an extra key `""` in an object's map, or a map `{ "": "DateTime", "@": value }` around other values (e.g. a `DateTime` in a property of type `object`). Other libraries skip the `""` key of an object, but read a wrapped value as a map. `AddTypeIdOption.Never` writes only the value (tested), then LsMsgPack can no longer restore the types of polymorphic members.
+- **`DateTimeOffset`** (`DateTimeOffsetFormat`): by default `[the moment as a timestamp, the offset in minutes]`, the offset is kept (as JSON keeps it). Nerdbank.MessagePack writes and reads the same bytes. MessagePack-CSharp writes an array of the same shape with the clock time in the timestamp, so each reads the other's array as another moment (off by the offset): use `ClockTimeAndOffset` with it. `Timestamp` writes the moment only (the offset is lost), which every library reads as a date.
 - **`DateTime`**: use `DateTimeKind.Utc` (or `Local`) values. A timestamp is a moment in UTC. For `Unspecified` LsMsgPack assumes local time (like `ToUniversalTime()`) unless `UnspecifiedDateTimeKind = DateTimeKind.Utc`, MessagePack-CSharp assumes UTC (a different moment, unless the machine's time zone is UTC) and Nerdbank.MessagePack refuses it. LsMsgPack reads timestamps as local time by default, the other libraries as UTC: the same moment. `ReadDateTimeKind = DateTimeKind.Utc` reads them as UTC too, `Unspecified` reads the UTC clock time as `Unspecified`: with `UnspecifiedDateTimeKind = Utc` on the writer, an `Unspecified` value comes back as it was in any time zone (as JSON writes it, without an offset).
 - **Names** must match exactly (they are case-sensitive).
 
@@ -82,9 +84,17 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 | other collections of `KeyValuePair<,>` (`List<KeyValuePair<,>>`...) | map, like a dictionary (duplicate keys are kept) | array of `[key, value]` arrays (Nerdbank.MessagePack: array of maps `{ Key, Value }`) | incompatible (measured, not in the interop tests) |
 | `DateTime` | timestamp (extension type -1) | the same bytes (except `Unspecified`, see above) | tested |
 | `char`, `TimeSpan`, `DateOnly`, `TimeOnly`, `Uri` | number, ticks, day number, ticks, string | the same bytes | tested |
+| `Half`, `Version`, `StringBuilder`, `Rune`, `Complex` | float32, string, string, code point, `[real, imaginary]` | the same bytes | tested (Nerdbank: the same for `Half`, `Version`, `Rune`; `Complex` and `StringBuilder` are maps there) |
+| `CultureInfo` | its name | not supported | Nerdbank: the same bytes (tested) |
+| `nint`, `nuint` | integer | not supported | |
+| `Memory<byte>`, `ReadOnlyMemory<byte>`, `ArraySegment<byte>` | bin | the same bytes | tested (`ArraySegment<byte>` used to be an array of numbers, which still reads) |
+| tuples (`Tuple<...>`, `ValueTuple<...>`) | array of the items, the 8th item (the rest) is an array of its own | the same bytes | tested, also Nerdbank |
+| multidimensional arrays | `[length0, length1, ..., [items]]` | the same bytes | tested (Nerdbank: nested arrays) |
+| `BitArray`, immutable and frozen collections | array (of booleans), array or map | the same bytes | tested (`BitArray`, `ImmutableArray`, `ImmutableList`, `ImmutableDictionary`) |
+| `BigInteger`, `Int128`, `UInt128` | integer when it fits in 64 bits, otherwise extension type -2 (big-endian two's complement, as short as possible) | bin, little-endian (always 16 bytes for `Int128`) | LsMsgPack reads the bin, `BigIntegerFormat.Binary` (LtMsgPack) writes it. Nerdbank: integers too, beyond 64 bits its own extension types 3, 5 and 6 |
 | `Guid` | bin 16 in the byte order of `Guid.ToByteArray()` | a string of 36 characters | LsMsgPack reads the string, configure MessagePack-CSharp to read bin 16 (`NativeGuidResolver` writes the same bytes as LsMsgPack) |
 | `decimal` | extension type 1: the 16 bytes of `System.Decimal` | a string (`"1234.50"`) | LsMsgPack reads the string, MessagePack-CSharp needs a formatter for the extension |
-| `DateTimeOffset` | timestamp of the moment (the offset is lost) | array of the local time and the offset in minutes | incompatible |
+| `DateTimeOffset` | `[the moment as a timestamp, the offset in minutes]` (Nerdbank's bytes) | `[the clock time as a timestamp, the offset in minutes]` | the same shape, another moment: `DateTimeOffsetFormat.ClockTimeAndOffset` writes MessagePack-CSharp's bytes (tested) |
 | class | map keyed by property names (or the indexed schema), or with `ObjectLayout.Array` an array of the values | array (`[Key(0)]`), or map keyed by names (`[Key("Name")]`, contractless) | maps: tested. Arrays: the same bytes with `ObjectLayout.Array` in the order of the keys (see below), tested |
 | polymorphic value | type id in the object's map (key `""`) | `[Union]`: array of the union key and the object | incompatible |
 | default values | left out | written | see above |
@@ -163,7 +173,7 @@ MsgPackSettings positional = new MsgPackSettings()
 
 LsMsgPack leaves a property as the constructor made it when its value is nil, MessagePack-CSharp sets it to null.
 
-**Incompatible**: `[Union]`, `DateTimeOffset` and `DateTimeKind.Unspecified` (see the settings above).
+**Incompatible**: `[Union]` and `DateTimeKind.Unspecified` (see the settings above). `DateTimeOffset` needs `DateTimeOffsetFormat.ClockTimeAndOffset`.
 
 ## Nerdbank.MessagePack
 
@@ -236,7 +246,9 @@ public class NerdbankGuidExtension : BaseCustomExt<NerdbankGuidExtension, Guid>
 
 Without the Guid extension LsMsgPack throws a `MsgPackException` that names extension type 2.
 
-**Incompatible**: unions (a two element array, or a map with the type as key), `[Key]` members (an array or a map with integer keys), a `PropertyNamingPolicy` that changes the names (e.g. camelCase), and `DateTimeKind.Unspecified`, which Nerdbank refuses by default.
+**Incompatible**: unions (a two element array, or a map with the type as key), `[Key]` members (an array or a map with integer keys), a `PropertyNamingPolicy` that changes the names (e.g. camelCase), `DateTimeKind.Unspecified`, which Nerdbank refuses by default, and big integers beyond 64 bits (Nerdbank's extension types 3, 5 and 6, LsMsgPack's -2).
+
+`DateTimeOffset` (LsMsgPack's default) and big integers that fit in 64 bits are the same bytes (tested).
 
 ## Python and JavaScript
 
@@ -320,5 +332,5 @@ The same rules apply: read and write objects as maps keyed by the property names
 - The indexed schema: only LsMsgPack reads it.
 - Objects written as arrays in an order that no `PropertyOrder` gives (e.g. integer keys with gaps, or in another order than the declaration): LsMsgPack reads arrays by position in its own order.
 - Polymorphism: each library has its own convention (LsMsgPack a `""` key in the object, MessagePack-CSharp and Nerdbank.MessagePack an array of a key and the object).
-- `DateTimeOffset` with MessagePack-CSharp: write a UTC `DateTime` (and the offset separately when it matters).
+- `DateTimeOffset` arrays: MessagePack-CSharp's and Nerdbank's look the same, a reader needs to be told which one it gets (`DateTimeOffsetFormat`).
 - Guids as strings (MessagePack-CSharp's default): configure the writer to write them as binary.

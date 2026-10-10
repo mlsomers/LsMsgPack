@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Interfaces;
@@ -83,6 +83,27 @@ namespace LsMsgPackUnitTests
     {
       public int X { get; set; }
       public string Y { get; set; }
+    }
+
+    public class XlFramework
+    {
+      public Half H { get; set; }
+      public Version V { get; set; }
+      public StringBuilder Sb { get; set; }
+      public CultureInfo Culture { get; set; }
+      public Rune R { get; set; }
+      public nint P { get; set; }
+      public nuint UP { get; set; }
+      public Memory<byte> Mem { get; set; }
+      public ArraySegment<byte> Seg { get; set; }
+      public System.Numerics.Complex Cx { get; set; }
+      public (int, string) Vt { get; set; }
+      public Tuple<int, object> T { get; set; }
+      public List<object> Objs { get; set; }
+      public System.Numerics.BigInteger Big { get; set; }
+      public Int128 I128 { get; set; }
+      public UInt128 U128 { get; set; }
+      public DateTimeOffset Off { get; set; }
     }
 
     public class XlTaggedList : List<string> { public string Tag { get; set; } }
@@ -201,9 +222,20 @@ namespace LsMsgPackUnitTests
         Circles = new List<XlShapeBase> { new XlCircle { Name = "c" }, new XlSquare { Name = "s" } },
         PairList = new List<KeyValuePair<string, int>> { new KeyValuePair<string, int>("k", 1) }
       });
+      values.Add(new XlFramework
+      {
+        H = (Half)(-0.5), V = new Version(2, 1), Sb = new StringBuilder("sb"), Culture = CultureInfo.GetCultureInfo("de-DE"), R = new Rune(0x10FFFF), P = -1, UP = nuint.MaxValue,
+        Mem = new byte[] { 1, 2 }, Seg = new ArraySegment<byte>(new byte[] { 3, 4, 5 }, 1, 1), Cx = new System.Numerics.Complex(-1, 0.25), Vt = (7, "seven"), T = Tuple.Create(8, (object)new XlCircle { Name = "t" }),
+        Objs = new List<object> { (Half)1, new Version(1, 0), new System.Numerics.Complex(1, 1), (1, "a"), new Memory<byte>(new byte[] { 6 }), CultureInfo.InvariantCulture, new Rune('r'),
+          System.Numerics.BigInteger.Pow(7, 50), (Int128)(-5), UInt128.MaxValue, new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.FromMinutes(-90)) },
+        Big = -System.Numerics.BigInteger.Pow(2, 64), I128 = Int128.MinValue, U128 = 7, Off = new DateTimeOffset(2026, 10, 10, 1, 2, 3, 4, TimeSpan.FromHours(9))
+      });
+      values.Add(new XlFramework());
+      values.Add((1, "a", 2.5, (object)XlE8.B, 5, 6, 7, 8, 9));
       values.Add(new XlTaggedList { "only" });
       values.Add(new XlStruct { X = 1, Y = "struct" });
-      values.Add(new int[,] { { 1, 2 }, { 3, 4 } }); // written flat, cannot be read back (by either)
+      values.Add(new int[,] { { 1, 2 }, { 3, 4 } }); // [2, 2, [1, 2, 3, 4]]
+      values.Add(new object[] { new string[2, 1, 1], System.Collections.Immutable.ImmutableArray.Create(1), System.Collections.Immutable.ImmutableDictionary.CreateRange(new[] { new KeyValuePair<string, object>("k", 'c') }), new BitArray(3) });
       values.Add(new XlCircle { Name = "root", Radius = 1 });
       return values;
     }
@@ -258,6 +290,21 @@ namespace LsMsgPackUnitTests
       LtMsgPackOptions ltOptions = new LtMsgPackOptions();
       Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout, order);
       CompareCorpus(ls, new LtMsgPackSerializer(ltOptions));
+    }
+
+    [TestMethod]
+    [DataRow(DateTimeOffsetFormat.Timestamp)]
+    [DataRow(DateTimeOffsetFormat.ClockTimeAndOffset)]
+    public void SameBytesAndValuesPerDateTimeOffsetFormat(DateTimeOffsetFormat format)
+    {
+      foreach (SchemaMode mode in new[] { SchemaMode.Names, SchemaMode.Inline })
+      {
+        MsgPackSettings ls = new MsgPackSettings() { DateTimeOffsetFormat = format };
+        Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode);
+        LtMsgPackOptions ltOptions = new LtMsgPackOptions() { DateTimeOffsetFormat = format };
+        Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode);
+        CompareCorpus(ls, new LtMsgPackSerializer(ltOptions));
+      }
     }
 
     [TestMethod]
@@ -449,7 +496,7 @@ namespace LsMsgPackUnitTests
       if (o is string str) return "\"" + (str.Length > 40 ? str.Substring(0, 40) + "..(" + str.Length + ")" : str) + "\"";
       if (o is byte[] b) return "bin(" + b.Length + ":" + BitConverter.ToString(b, 0, Math.Min(b.Length, 20)) + ")";
       if (o is DateTime dt) return "DateTime(" + dt.ToUniversalTime().Ticks + "," + dt.Kind + ")";
-      if (o is DateTimeOffset dto) return "DateTimeOffset(" + dto.UtcTicks + ")";
+      if (o is DateTimeOffset dto) return "DateTimeOffset(" + dto.UtcTicks + "," + dto.Offset + ")";
       if (t.IsPrimitive || o is decimal || t.IsEnum || o is Guid || o is TimeSpan || o is Uri) return t.Name + ":" + Convert.ToString(o, CultureInfo.InvariantCulture);
       if (t.FullName.StartsWith("System.DateOnly", StringComparison.Ordinal) || t.FullName.StartsWith("System.TimeOnly", StringComparison.Ordinal)) return t.Name + ":" + o;
       if (o is MpExt ext) return "ext(" + ext.TypeSpecifier + ":" + BitConverter.ToString((byte[])ext.Value) + ")";
@@ -469,6 +516,9 @@ namespace LsMsgPackUnitTests
         return t.Name + "[" + string.Join(",", parts) + "]" + extra;
       }
       if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(KeyValuePair<,>)) return "(" + Dump(t.GetProperty("Key").GetValue(o), depth + 1) + "=" + Dump(t.GetProperty("Value").GetValue(o), depth + 1) + ")";
+      if (o is Memory<byte> memory) return "Memory:" + Dump(memory.ToArray());
+      if (o is ReadOnlyMemory<byte> readOnly) return "ReadOnlyMemory:" + Dump(readOnly.ToArray());
+      if (t.Namespace?.StartsWith("System", StringComparison.Ordinal) == true) return t.Name + ":" + Convert.ToString(o, CultureInfo.InvariantCulture); // Half, Version, tuples...
       return t.Name + DumpProps(o, t, depth);
     }
 

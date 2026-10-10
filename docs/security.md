@@ -17,7 +17,7 @@ When data picks the type, whoever writes the data picks the code that runs while
 
 Two things decide how exposed you are:
 
-1. **Which types the data can name.** A type id is resolved by name (see [Polymorphic class-hierarchy support](schema.md#polymorphic-class-hierarchy-support)): the framework's core library, the framework's collection assemblies, and every assembly that has been cached so far (your root types' assemblies and the assemblies of the types they reach through generic arguments, base classes and public properties, the assemblies of declared types, what you registered with `CacheAssemblyTypes`, and what an `AllowedTypesGuard` allows). `WildGooseChaseResolver` extends this to every assembly loaded in the process.
+1. **Which types the data can name.** A type id is resolved by name (see [Polymorphic class-hierarchy support](schema.md#polymorphic-class-hierarchy-support)): the framework's core library, the framework's collection and numerics assemblies (and `System.Collections.Immutable` when the application has it), and every assembly that has been cached so far (your root types' assemblies and the assemblies of the types they reach through generic arguments, base classes and public properties, the assemblies of declared types, what you registered with `CacheAssemblyTypes`, and what an `AllowedTypesGuard` allows). `WildGooseChaseResolver` extends this to every assembly loaded in the process.
 2. **Where the data can use them.** A type id is only consulted where a value is read, and the declared type of that place (a property, a collection element or the root you deserialize) limits what fits there.
 
 What the schema hashes do and don't protect
@@ -50,6 +50,12 @@ Type names that contain an assembly name or generic arguments in brackets (`Syst
 
 If your own type resolver writes and reads names like these, it still can: custom resolvers are asked before the built-in name lookup.
 
+### Only the framework's public types
+
+A name in the data never resolves to an internal or private type of the framework (the core library, `System.*` and `Microsoft.*` assemblies). Those types share short names with public ones: the short name `Complex` used to resolve to an internal struct of `System.Private.CoreLib` instead of `System.Numerics.Complex`. The types of your own assemblies are found whether they're public or not.
+
+`System.Type` (and other reflection types) are never written or read: a `Type` in the data would be a type picked by the data. Serializing one throws a `MsgPackException`; write its name and resolve it in your application against the types you expect.
+
 The type guard
 --------------
 
@@ -68,8 +74,8 @@ The guard is only asked when the data picks a different type than the declared o
 The included allow-list allows:
 
 - the types you pass to `Allow`, and all types of the assemblies you pass to `AllowAssembly` / `AllowAssemblyOf`;
-- the values the serializers write themselves: primitives, enums, `string`, `decimal`, `DateTime`, `DateTimeOffset`, `TimeSpan`, `Guid`, `Uri`, `DateOnly`, `TimeOnly`, and `object`;
-- the framework's collections (`List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `Queue<T>`, the concurrent collections, `ObservableCollection<T>`, ..., and `ArrayList` and `Hashtable`).
+- the values the serializers write themselves: primitives, enums, `string`, `decimal`, `DateTime`, `DateTimeOffset`, `TimeSpan`, `Guid`, `Uri`, `DateOnly`, `TimeOnly`, `Half`, `Version`, `StringBuilder`, `CultureInfo`, `Rune`, `Complex`, `BigInteger`, `Int128`, `UInt128`, `Memory<byte>`, `ReadOnlyMemory<byte>`, `ArraySegment<byte>`, and `object`;
+- the framework's collections (`List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `Queue<T>`, the concurrent collections, `ObservableCollection<T>`, ..., and `ArrayList` and `Hashtable`), tuples (`Tuple<...>`, `ValueTuple<...>`) and arrays of any rank.
 
 **Generic types and arrays are only allowed when their arguments are.** A type id `List<Process>` on a property declared as `object` is refused unless `Process` is allowed. The elements of that list are created as its declared element type, without type ids of their own, so the list's type is the only chance to stop them. `Allow(typeof(Envelope<>))` allows `Envelope<T>` for every allowed `T`. `Allow(typeof(Envelope<Foo>))` allows exactly that type.
 

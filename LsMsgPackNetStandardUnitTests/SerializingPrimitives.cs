@@ -131,7 +131,7 @@ namespace LsMsgPackUnitTests
     [DataRow(DateTimeKind.Unspecified)]
     public void ReadDateTimeKind(DateTimeKind kind)
     {
-      MsgPackSettings settings = new MsgPackSettings() { ReadDateTimeKind = kind };
+      MsgPackSettings settings = new MsgPackSettings() { ReadDateTimeKind = kind, DateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp }; // the offset is not written
       DateTime utc = new DateTime(2026, 10, 7, 12, 0, 0, DateTimeKind.Utc);
       DateTimeOffset offset = new DateTimeOffset(2026, 10, 7, 14, 0, 0, TimeSpan.FromHours(2));
       PrimitivesWithDates back = Serializer.Deserialize<PrimitivesWithDates>(Serializer.Serialize(new PrimitivesWithDates() { When = utc, Boxed = utc, Offset = offset }, settings), settings);
@@ -144,6 +144,11 @@ namespace LsMsgPackUnitTests
 
       Assert.AreEqual(offset.UtcDateTime, back.Offset.UtcDateTime, "the same moment");
       Assert.AreEqual(kind == DateTimeKind.Local ? TimeZoneInfo.Local.GetUtcOffset(utc) : TimeSpan.Zero, back.Offset.Offset);
+
+      settings.DateTimeOffsetFormat = DateTimeOffsetFormat.TimestampAndOffset; // the default: the offset is written
+      back = Serializer.Deserialize<PrimitivesWithDates>(Serializer.Serialize(new PrimitivesWithDates() { Offset = offset }, settings), settings);
+      Assert.AreEqual(offset, back.Offset);
+      Assert.AreEqual(offset.Offset, back.Offset.Offset);
     }
 
     [TestMethod]

@@ -3,13 +3,33 @@ using LsMsgPackUnitTests;
 using LsMsgPack.Types.Extensions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PolyType;
+using System;
 using NB = Nerdbank.MessagePack;
 
 namespace LsMsgPackInteropTests
 {
   [GenerateShapeFor<Invoice>]
+  [GenerateShapeFor<NerdbankFrameworkProbe>]
   public partial class NerdbankShapes
   {
+  }
+
+  /// <summary>
+  /// Framework types both libraries write the same way.
+  /// </summary>
+  public class NerdbankFrameworkProbe
+  {
+    public Half Small { get; set; }
+    public Version Release { get; set; }
+    public System.Text.Rune Letter { get; set; }
+    public System.Globalization.CultureInfo Culture { get; set; }
+    public Memory<byte> Memory { get; set; }
+    public ReadOnlyMemory<byte> ReadOnly { get; set; }
+    public (int, string) Pair { get; set; }
+    public Tuple<int, string> Tuple { get; set; }
+    public DateTimeOffset When { get; set; }
+    public System.Numerics.BigInteger Big { get; set; }
+    public Int128 Wide { get; set; }
   }
 
   /// <summary>
@@ -72,6 +92,47 @@ namespace LsMsgPackInteropTests
 
       MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<Invoice>(bytes, Named));
       StringAssert.Contains(ex.Message, "extension type 2");
+    }
+
+    [TestMethod]
+    public void SameBytes_FrameworkTypes()
+    {
+      NerdbankFrameworkProbe probe = new NerdbankFrameworkProbe()
+      {
+        Small = (Half)(-2.5),
+        Release = new Version(4, 5, 6),
+        Letter = new System.Text.Rune(0x1F600),
+        Culture = System.Globalization.CultureInfo.GetCultureInfo("nl-NL"),
+        Memory = new byte[] { 1, 2 },
+        ReadOnly = new byte[] { 3 },
+        Pair = (1, "one"),
+        Tuple = System.Tuple.Create(2, "two"),
+        When = new DateTimeOffset(2026, 6, 1, 10, 0, 0, 250, TimeSpan.FromMinutes(-330)), // [the moment, the offset in minutes], as LsMsgPack's default
+        Big = -1234567, // integers when they fit in 64 bits (beyond: Nerdbank's extension type 3, LsMsgPack's -2)
+        Wide = long.MaxValue
+      };
+      byte[] ls = Serializer.Serialize(probe, Named);
+      byte[] nb = Nerdbank.Serialize<NerdbankFrameworkProbe, NerdbankShapes>(probe);
+      CollectionAssert.AreEqual(nb, ls, $"LsMsgPack {Convert.ToHexString(ls)}, Nerdbank {Convert.ToHexString(nb)}");
+
+      AssertProbe(probe, Serializer.Deserialize<NerdbankFrameworkProbe>(nb, Named));
+      AssertProbe(probe, Nerdbank.Deserialize<NerdbankFrameworkProbe, NerdbankShapes>(ls));
+    }
+
+    private static void AssertProbe(NerdbankFrameworkProbe expected, NerdbankFrameworkProbe actual)
+    {
+      Assert.AreEqual(expected.Small, actual.Small);
+      Assert.AreEqual(expected.Release, actual.Release);
+      Assert.AreEqual(expected.Letter, actual.Letter);
+      Assert.AreEqual(expected.Culture, actual.Culture);
+      CollectionAssert.AreEqual(expected.Memory.ToArray(), actual.Memory.ToArray());
+      CollectionAssert.AreEqual(expected.ReadOnly.ToArray(), actual.ReadOnly.ToArray());
+      Assert.AreEqual(expected.Pair, actual.Pair);
+      Assert.AreEqual(expected.Tuple, actual.Tuple);
+      Assert.AreEqual(expected.When, actual.When);
+      Assert.AreEqual(expected.When.Offset, actual.When.Offset);
+      Assert.AreEqual(expected.Big, actual.Big);
+      Assert.AreEqual(expected.Wide, actual.Wide);
     }
 
     [TestMethod]

@@ -1,6 +1,9 @@
 ﻿using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Types;
 using System;
+using System.Collections;
+using System.Collections.Concurrent;
+using System.Reflection;
 
 namespace LsMsgPack.Meta
 {
@@ -23,11 +26,39 @@ namespace LsMsgPack.Meta
     internal static bool NeedsTypeId(Type tType, FullPropertyInfo assignedTo, MsgPackOptions settings)
     {
       if ((settings._addTypeIdOptions & AddTypeIdOption.Always) != 0)
-        return true;
+        return !IsHiddenFrameworkType(tType);
 
       if ((settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0)
-        return assignedTo?.AssignedToType != tType;
+        return assignedTo?.AssignedToType != tType && !IsHiddenFrameworkType(tType);
 
+      return false;
+    }
+
+    private static readonly ConcurrentDictionary<Type, bool> Hidden = new ConcurrentDictionary<Type, bool>();
+
+    /// <summary>
+    /// A type of the framework that is not public (or has such a type as a generic argument or element), e.g. the FrozenSet&lt;T&gt; that ToFrozenSet() returns, or a LINQ iterator:
+    /// names in the data never resolve to it (see TypeResolver.Visible), so it gets no type id. The reader creates the declared type its own way, as it did for such an id.
+    /// </summary>
+    internal static bool IsHiddenFrameworkType(Type type)
+    {
+      bool hidden;
+      if (!Hidden.TryGetValue(type, out hidden))
+        hidden = Hidden.GetOrAdd(type, HasHiddenFrameworkType);
+      return hidden;
+    }
+
+    private static bool HasHiddenFrameworkType(Type type)
+    {
+      while (type.HasElementType)
+        type = type.GetElementType();
+      Type definition = type.IsGenericType ? type.GetGenericTypeDefinition() : type;
+      if (!definition.IsVisible && TypeResolver.IsFrameworkAssembly(definition.Assembly))
+        return true;
+      Type[] arguments = type.GenericTypeArguments;
+      for (int t = arguments.Length - 1; t >= 0; t--)
+        if (HasHiddenFrameworkType(arguments[t]))
+          return true;
       return false;
     }
 
@@ -58,6 +89,50 @@ namespace LsMsgPack.Meta
         return;
 
       throw new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id as an array ({nameof(ObjectLayout)}.{nameof(ObjectLayout.Array)}): the values have no property ids, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} or {nameof(ObjectLayout)}.{nameof(ObjectLayout.Map)}.");
+    }
+
+    private static readonly ConcurrentDictionary<Type, string> Unsupported = new ConcurrentDictionary<Type, string>();
+
+    /// <summary>
+    /// A type of the framework that would be written as an object with properties but has no settable ones (e.g. Lazy&lt;T&gt;, Index): its values would be written as an empty map
+    /// and read back as the default, without an error. The serializers write the framework types they know by themselves (see FrameworkTypeInfo), anything else of the framework that has no settable state is refused.
+    /// <para>Checked once per type, when the serializers plan to write or read an object of it. A custom extension for the type (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions) is asked first, so it can still be written that way.</para>
+    /// </summary>
+    internal static void ThrowIfUnsupportedFrameworkType(Type type)
+    {
+      string reason;
+      if (!Unsupported.TryGetValue(type, out reason))
+        reason = Unsupported.GetOrAdd(type, UnsupportedReason);
+      if (reason != null)
+        throw new MsgPackException(reason);
+    }
+
+    /// <returns>Why the type is refused, null when it is not</returns>
+    private static string UnsupportedReason(Type type)
+    {
+      if (typeof(Type).IsAssignableFrom(type) || typeof(MemberInfo).IsAssignableFrom(type))
+        return $"{type.FullName} is not serialized: the data would pick the type (see docs/security.md). Write its name and resolve it in the application, against the types it expects.";
+
+      if (type == typeof(object) || type.IsPrimitive || type.IsEnum || type == typeof(string) || typeof(IEnumerable).IsAssignableFrom(type) || !TypeResolver.IsFrameworkAssembly(type.Assembly))
+        return null;
+
+      bool hasState = type.GetFields(BindingFlags.Instance | BindingFlags.Public).Length > 0;
+      PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        PropertyInfo prop = props[t];
+        if (prop.GetIndexParameters().Length > 0)
+          continue;
+        if (prop.GetSetMethod() != null)
+          return null; // written as an object with properties (as before)
+        if (prop.GetGetMethod() != null)
+          hasState = true;
+      }
+      if (!hasState)
+        return null; // nothing to lose (e.g. an EventArgs)
+
+      return $"{type.FullName} is not supported: it has no settable properties, so it would be written as an empty map and read back as its default value. "
+        + "Serialize the values it holds (in a class of your own), or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions).";
     }
 
     internal static IndexedSchemaTypeResolver GetIndexedSchema(MsgPackOptions settings)

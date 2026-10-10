@@ -168,6 +168,9 @@ namespace LsMsgPack.Meta
       if (assignType == typeof(byte[]))
         return extension.Data;
 
+      if (FrameworkTypeInfo.TryConvertExtension(extension, Nullable.GetUnderlyingType(assignType) ?? assignType, out object converted)) // a big integer (type -2)
+        return converted;
+
       throw new MsgPackException($"Unable to convert extension type {extension.TypeSpecifier} ({extension.Count} bytes) to {assignType.FullName}. To read it, add a custom extension for type {extension.TypeSpecifier} to MsgPackSettings.CustomExtentionTypes.", 0, extension.TypeId);
     }
 
@@ -228,8 +231,11 @@ namespace LsMsgPack.Meta
 
       if (propVals.Count > (hasTypeId ? 1 : 0) && SerializationRules.GetIndexedSchema(settings)?.SkipIfNoEntry(tType, settings, prop) == true)
         return null;
+      FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
+      if (props.Length == 0) // a refused type has no settable properties, before it is created
+        SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
       result = Instances.CreateObject(tType, settings);
-      SetProperties(result, tType, propVals, settings);
+      SetProperties(result, tType, props, propVals, settings);
       return result;
     }
 
@@ -249,7 +255,11 @@ namespace LsMsgPack.Meta
 
     private static void SetProperties(object instance, Type tType, Dictionary<object, object> propVals, MsgPackOptions settings)
     {
-      FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
+      SetProperties(instance, tType, FullPropertyInfo.GetSerializedProps(tType, settings), propVals, settings);
+    }
+
+    private static void SetProperties(object instance, Type tType, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings)
+    {
       ReadDifferences differences = settings._differences;
       if (differences != null)
       {
@@ -309,6 +319,9 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static object ConvertArray(object[] items, Type assignType, MsgPackOptions settings, FullPropertyInfo prop)
     {
+      if (assignType.IsArray && assignType.GetArrayRank() > 1)
+        return ConvertMultidimensional(items, assignType, settings);
+
       if (IsDictionary(assignType) && !Array.TrueForAll(items, i => i is object[] pair && pair.Length == 2)) // only [key, value] pairs can be entries
         throw ReadDifferences.NotConverted(settings, new MsgPackException($"An array cannot be read into {assignType}: the data is a list, or an object written as an array of its values (ObjectLayout.Array, the default), which has no property names. "
           + "Read it into a class with the properties, or write it with ObjectLayout.Map."));
@@ -323,11 +336,17 @@ namespace LsMsgPack.Meta
             FrameworkTypeInfo.PairInfo pair = FrameworkTypeInfo.GetPair(objectType);
             return pair.Create(ConvertDeserializeValue(items[0], pair.KeyInfo.AssignedToType, settings, null), ConvertDeserializeValue(items[1], pair.ValueInfo.AssignedToType, settings, null));
           }
+          if (FrameworkTypeInfo.IsTuple(objectType))
+            return ConvertTuple(items, objectType, settings);
+          if (FrameworkTypeInfo.TryConvertItems(items, objectType, settings, out object framework)) // Complex, DateTimeOffset
+            return framework;
           if (IsObjectType(objectType))
           {
             if (Array.Exists(items, i => i != null) && SerializationRules.GetIndexedSchema(settings)?.SkipIfNoEntry(objectType, settings, prop) == true) // before the ids are resolved, which would add an entry for the class
               return null;
             FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(objectType, settings);
+            if (props.Length == 0)
+              SerializationRules.ThrowIfUnsupportedFrameworkType(objectType);
             if (props.Length > 0 || items.Length == 0)
               return ConvertPositional(items, objectType, props, settings);
           }
@@ -342,6 +361,58 @@ namespace LsMsgPack.Meta
         SetElement(elements, ConvertDeserializeValue(items[t], info.ElementType, settings, null), t, settings);
 
       return info.Create(elements, settings);
+    }
+
+    /// <summary>
+    /// A multidimensional array, written as MessagePack-CSharp does: [length0, length1, ..., [the items in the order they are enumerated]].
+    /// </summary>
+    private static object ConvertMultidimensional(object[] items, Type arrayType, MsgPackOptions settings)
+    {
+      int rank = arrayType.GetArrayRank();
+      int[] lengths = new int[rank];
+      long count = 1;
+      bool valid = items.Length == rank + 1 && items[rank] is object[];
+      for (int t = 0; valid && t < rank; t++)
+      {
+        valid = items[t] != null && items[t].GetType().IsPrimitive && !(items[t] is bool) && !(items[t] is float) && !(items[t] is double);
+        if (valid)
+        {
+          long length = Convert.ToInt64(items[t], CultureInfo.InvariantCulture);
+          valid = length >= 0 && length <= int.MaxValue;
+          lengths[t] = (int)length;
+          count *= length;
+        }
+      }
+      object[] flat = valid ? (object[])items[rank] : null;
+      if (!valid || flat.Length != count)
+        throw ReadDifferences.NotConverted(settings, new MsgPackException($"An array of {items.Length} values cannot be read into {arrayType.Name}: a multidimensional array is written as [length0, length1, ..., [items]] (with {rank} lengths whose product is the number of items)."));
+
+      Type elementType = arrayType.GetElementType();
+      Array result = Array.CreateInstance(elementType, lengths);
+      int[] index = new int[rank];
+      for (int t = 0; t < flat.Length; t++)
+      {
+        result.SetValue(ConvertDeserializeValue(flat[t], elementType, settings, null), index);
+        for (int d = rank - 1; d >= 0; d--) // the next index, the last dimension changes first (as the array is enumerated)
+        {
+          if (++index[d] < lengths[d])
+            break;
+          index[d] = 0;
+        }
+      }
+      return result;
+    }
+
+    /// <summary>
+    /// A tuple written as an array of its items (see <see cref="FrameworkTypeInfo.IsTuple"/>): a missing item is the default of its type, extra items are skipped.
+    /// </summary>
+    private static object ConvertTuple(object[] items, Type tupleType, MsgPackOptions settings)
+    {
+      FrameworkTypeInfo.TupleInfo tuple = FrameworkTypeInfo.GetTuple(tupleType);
+      object[] converted = new object[Math.Min(items.Length, tuple.Items.Length)];
+      for (int t = converted.Length - 1; t >= 0; t--)
+        converted[t] = ConvertDeserializeValue(items[t], tuple.Items[t].AssignedToType, settings, null);
+      return tuple.Create(converted);
     }
 
     /// <summary>
@@ -532,10 +603,10 @@ namespace LsMsgPack.Meta
       if (targetType.IsEnum)
         return Enum.ToObject(targetType, val);
 
-      if ((targetType.IsPrimitive || targetType == typeof(decimal)) && val is IConvertible)
+      if ((targetType.IsPrimitive || targetType == typeof(decimal)) && val is IConvertible && targetType != typeof(IntPtr) && targetType != typeof(UIntPtr)) // nint and nuint are not IConvertible (FrameworkTypeInfo)
         return Convert.ChangeType(val, targetType, CultureInfo.InvariantCulture);
 
-      if (FrameworkTypeInfo.TryConvert(val, targetType, out object converted)) // TimeSpan, DateOnly, TimeOnly and Uri
+      if (FrameworkTypeInfo.TryConvert(val, targetType, out object converted)) // TimeSpan, DateOnly, TimeOnly, Uri, Half, Version...
         return converted;
 
       return val;

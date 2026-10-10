@@ -183,7 +183,8 @@ namespace LsMsgPackUnitTests
       DateTimeOffset back = lt.Deserialize<DateTimeOffset>(bytes);
       Assert.AreEqual(when, back);
       Assert.AreEqual(when.Offset, back.Offset);
-      Assert.AreEqual(when, lt.Deserialize<DateTimeOffset>(Names.Serialize(when)), "a timestamp is read as well");
+      LtMsgPackSerializer timestamp = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, DateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp });
+      Assert.AreEqual(when, lt.Deserialize<DateTimeOffset>(timestamp.Serialize(when)), "a timestamp is read as well");
 
       LtFormats formats = lt.Deserialize<LtFormats>(lt.Serialize(new LtFormats { When = when }));
       Assert.AreEqual(when.Offset, formats.When.Offset);
