@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -11,6 +11,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -24,6 +25,8 @@ namespace LsMsgPackMcp
   internal static class ClassReader
   {
     internal const string WorkerCommand = "read-as-worker";
+
+    private const string NestedError = "A nested item contains an error.";
 
     /// <summary>
     /// The JSON of the object that was read is cut after this many characters.
@@ -101,7 +104,7 @@ namespace LsMsgPackMcp
           string error = await errors.ConfigureAwait(false);
           if (process.ExitCode != 0)
             throw new ToolArgumentException(string.IsNullOrWhiteSpace(error) ? string.Concat("The reader stopped with exit code ", process.ExitCode.ToString(CultureInfo.InvariantCulture), ".\n", text) : error.Trim());
-          return text;
+          return AddDataErrors(text, doc);
         }
       }
       finally
@@ -196,7 +199,8 @@ namespace LsMsgPackMcp
         result = MsgPackSerializer.Deserialize(type, payload, settings, out differences);
         if (result is Exception error) // KEEPTRACK: a breaking error is the value
         {
-          failure = string.Concat(error.GetType().Name, ": ", error.Message);
+          // Around an error the message refers to the item classes (PartialItem): the errors of the data are listed with their offsets by the parent (AddDataErrors)
+          failure = error.Message.StartsWith(NestedError, StringComparison.Ordinal) ? "the data has an error, the reading stopped there." : string.Concat(error.GetType().Name, ": ", error.Message);
           result = null;
         }
       }
@@ -218,28 +222,94 @@ namespace LsMsgPackMcp
       sb.Append('\n');
 
       if (result != null)
-        sb.Append('\n').Append("The object that was read (System.Text.Json):").Append('\n').Append(Json(result)).Append('\n');
+        sb.Append('\n').Append("The object that was read (System.Text.Json; \"$type\" is the class of a value whose declared class has subclasses):").Append('\n').Append(Json(result)).Append('\n');
 
       sb.Append('\n').Append("Not applied: the program's own settings (static filters, property id resolvers, type resolvers, custom extensions, PropertyOrder for arrays without the schema). ")
         .Append("Properties the data does not have keep the value the constructor gives them; they are only reported as \"left at their default\" next to an unknown property.").Append('\n');
       return sb.ToString();
     }
 
-    private static string Json(object value)
+    internal static string Json(object value)
     {
+      string json;
       try
       {
-        JsonSerializerOptions options = new JsonSerializerOptions() { WriteIndented = true, ReferenceHandler = ReferenceHandler.IgnoreCycles, MaxDepth = 64 };
-        options.Converters.Add(new JsonStringEnumConverter());
-        string json = JsonSerializer.Serialize(value, value.GetType(), options);
-        if (json.Length > MaxJson)
-          json = string.Concat(json.Substring(0, MaxJson), "\n... (cut, ", json.Length.ToString(CultureInfo.InvariantCulture), " characters)");
-        return json;
+        json = JsonSerializer.Serialize(value, value.GetType(), JsonOptions(true));
       }
-      catch (Exception ex)
+      catch (Exception) // a hierarchy System.Text.Json does not take (e.g. a class implementing two interfaces that both have subclasses)
       {
-        return string.Concat("(could not be written as JSON: ", ex.Message, ")");
+        try
+        {
+          json = JsonSerializer.Serialize(value, value.GetType(), JsonOptions(false));
+        }
+        catch (Exception ex)
+        {
+          return string.Concat("(could not be written as JSON: ", ex.Message, ")");
+        }
       }
+      if (json.Length > MaxJson)
+        json = string.Concat(json.Substring(0, MaxJson), "\n... (cut, ", json.Length.ToString(CultureInfo.InvariantCulture), " characters)");
+      return json;
+    }
+
+    /// <param name="derivedTypes">Write a value of a subclass with its own properties and its class: System.Text.Json writes the properties of the declared type
+    /// (a List&lt;Animal&gt; of dogs and cats showed only their names, as if the reading had lost the rest)</param>
+    private static JsonSerializerOptions JsonOptions(bool derivedTypes)
+    {
+      JsonSerializerOptions options = new JsonSerializerOptions() { WriteIndented = true, ReferenceHandler = ReferenceHandler.IgnoreCycles, MaxDepth = 64 };
+      options.Converters.Add(new JsonStringEnumConverter());
+      if (derivedTypes)
+      {
+        Lazy<List<Type>> classes = new Lazy<List<Type>>(LoadedClasses);
+        DefaultJsonTypeInfoResolver resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(info => AddDerivedTypes(info, classes));
+        options.TypeInfoResolver = resolver;
+      }
+      return options;
+    }
+
+    private static void AddDerivedTypes(JsonTypeInfo info, Lazy<List<Type>> classes)
+    {
+      Type type = info.Type;
+      if (info.Kind != JsonTypeInfoKind.Object || type.IsSealed || type.IsValueType || type == typeof(object) || !IsUsers(type.Assembly))
+        return;
+      List<Type> derived = classes.Value.Where(t => t != type && type.IsAssignableFrom(t)).ToList();
+      if (derived.Count == 0)
+        return;
+
+      JsonPolymorphismOptions polymorphism = new JsonPolymorphismOptions()
+      {
+        TypeDiscriminatorPropertyName = "$type",
+        UnknownDerivedTypeHandling = JsonUnknownDerivedTypeHandling.FallBackToNearestAncestor // e.g. a closed generic subclass
+      };
+      for (int t = 0; t < derived.Count; t++)
+      {
+        Type subclass = derived[t];
+        bool unique = derived.Count(d => d.Name == subclass.Name) == 1;
+        polymorphism.DerivedTypes.Add(new JsonDerivedType(subclass, unique ? subclass.Name : TypeName(subclass)));
+      }
+      info.PolymorphismOptions = polymorphism;
+    }
+
+    /// <summary>
+    /// The classes a value can have: those of the loaded assemblies that are not the framework's (the user's assembly and its references).
+    /// </summary>
+    private static List<Type> LoadedClasses()
+    {
+      return AppDomain.CurrentDomain.GetAssemblies().Where(IsUsers).SelectMany(Types)
+        .Where(t => t.IsClass && !t.IsAbstract && !t.ContainsGenericParameters).ToList();
+    }
+
+    /// <summary>
+    /// Not the framework's and not this program's (by identity: <see cref="IsFramework"/> takes any name starting with LsMsgPack, also the user's).
+    /// </summary>
+    private static bool IsUsers(Assembly assembly)
+    {
+      if (assembly.IsDynamic || assembly == typeof(ClassReader).Assembly || assembly == typeof(MsgPackSerializer).Assembly || assembly == typeof(MsgPackOptions).Assembly
+        || assembly == typeof(ObjectDebugger.RootObject).Assembly)
+        return false;
+      string name = assembly.GetName().Name ?? string.Empty;
+      return !(name.StartsWith("System", StringComparison.Ordinal) || name.StartsWith("Microsoft", StringComparison.Ordinal) || name == "netstandard" || name == "mscorlib");
     }
 
     private static string TypeName(Type type)
@@ -273,6 +343,26 @@ namespace LsMsgPackMcp
         return path is null ? null : context.LoadFromAssemblyPath(path);
       };
       return AssemblyLoadContext.Default.LoadFromAssemblyPath(full);
+    }
+
+    /// <summary>
+    /// The errors of the data (as msgpack_decode lists them, with offsets and paths) after the report: the worker only knows where LsMsgPack stopped.
+    /// </summary>
+    private static string AddDataErrors(string report, PayloadDocument doc)
+    {
+      List<Issue> errors = doc.Issues.FindAll(i => i.IsError);
+      if (errors.Count == 0)
+        return report;
+      StringBuilder sb = new StringBuilder();
+      sb.Append('\n').Append(errors.Count == 1 ? "The data has an error" : "The data has errors").Append(" (msgpack_decode with doc ").Append(doc.Id).Append(" shows the values around it):").Append('\n');
+      const int max = 10;
+      for (int t = 0; t < errors.Count && t < max; t++)
+        sb.Append("  ").Append(TextRenderer.DescribeIssue(doc, errors[t])).Append('\n');
+      if (errors.Count > max)
+        sb.Append("  ... ").Append((errors.Count - max).ToString(CultureInfo.InvariantCulture)).Append(" more.").Append('\n');
+
+      int notApplied = report.IndexOf("\nNot applied:", StringComparison.Ordinal);
+      return notApplied < 0 ? string.Concat(report, sb.ToString()) : report.Insert(notApplied, sb.ToString());
     }
 
     /// <summary>

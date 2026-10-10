@@ -1,4 +1,4 @@
-using LsMsgPack.Meta;
+﻿using LsMsgPack.Meta;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -496,7 +496,8 @@ namespace LsMsgPack
       {
         string name = props[t].PropertyInfo.Name;
         int distance = Distance(difference.Name.ToLowerInvariant(), name.ToLowerInvariant());
-        if (distance > allowed)
+        // A property with a value was probably set by its own key (State is not meant for Date): only a name one character away (a constructor's value, e.g. an empty list)
+        if (distance > allowed || (distance > 1 && first != null && !defaults.Contains(name)))
           continue;
         if (distance < bestDistance || (distance == bestDistance && defaults.Contains(name) && !defaults.Contains(best)))
         {

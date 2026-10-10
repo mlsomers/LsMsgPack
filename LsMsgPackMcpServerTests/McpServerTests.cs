@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPackMcp;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
@@ -163,6 +163,50 @@ namespace LsMsgPackMcpServerTests
         ["type"] = "ReadAsWriter.McpOrderDto"
       });
       AssertContains(text, "The data matched the classes");
+    }
+
+    /// <summary>
+    /// System.Text.Json writes the properties of the declared type: the dogs and cats of a List&lt;McpAnimal&gt; showed only their names.
+    /// </summary>
+    [TestMethod]
+    public async Task ReadAsClass_SubclassesShowTheirPropertiesAndClass()
+    {
+      byte[] bytes = MsgPackSerializer.Serialize(Payloads.Zoo());
+      string text = await new Session().Call("msgpack_read_as_class", new JsonObject()
+      {
+        ["data"] = Convert.ToBase64String(bytes),
+        ["assembly"] = typeof(McpZoo).Assembly.Location,
+        ["type"] = "McpZoo"
+      });
+      TestContext.WriteLine(text);
+      AssertContains(text, "The data matched the classes");
+      AssertContains(text, "\"$type\": \"McpDog\",");
+      AssertContains(text, "\"Barks\": true");
+      AssertContains(text, "\"$type\": \"McpCat\",");
+      AssertContains(text, "\"Lives\": 9");
+    }
+
+    /// <summary>
+    /// Data that ends early: the message of LsMsgPack referred to the item classes ("Inspect the PartialItem"), the error itself was not named.
+    /// </summary>
+    [TestMethod]
+    public async Task ReadAsClass_TruncatedData_NamesTheErrorAndItsOffset()
+    {
+      byte[] invoice = Payloads.Serialize(Payloads.Invoice(), ObjectLayout.Map, true);
+      byte[] truncated = new byte[invoice.Length - 20];
+      Array.Copy(invoice, truncated, truncated.Length);
+      string text = await new Session().Call("msgpack_read_as_class", new JsonObject()
+      {
+        ["data"] = Convert.ToBase64String(truncated),
+        ["assembly"] = typeof(McpInvoice).Assembly.Location,
+        ["type"] = "McpInvoice"
+      });
+      TestContext.WriteLine(text);
+      AssertContains(text, "Reading failed: the data has an error, the reading stopped there.");
+      AssertContains(text, "The data has an error (msgpack_decode with doc doc1 shows the values around it):\n  Error at 0x");
+      AssertContains(text, "(Reference): Error while reading data. (Unexpected end of data.)");
+      Assert.IsFalse(text.Contains("PartialItem", StringComparison.Ordinal), text);
+      Assert.IsLessThan(text.IndexOf("Not applied:", StringComparison.Ordinal), text.IndexOf("Error at 0x", StringComparison.Ordinal));
     }
 
     [TestMethod]

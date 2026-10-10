@@ -57,9 +57,32 @@ namespace ObjectDebugger
     /// </summary>
     public string Error { get; set; }
 
+    /// <summary>
+    /// A slot of an array or map that an error cut off: the header claims it, the data was not read (KEEPTRACK keeps the slots the data could fill).
+    /// </summary>
+    public bool Unread;
+
     public bool IsContainer
     {
       get { return Kind == ValueKind.Array || Kind == ValueKind.Map; }
+    }
+
+    /// <summary>
+    /// The elements or entries that were read: without the <see cref="Unread"/> slots at the end.
+    /// </summary>
+    public int ReadCount
+    {
+      get
+      {
+        int count = Count;
+        if (Kind == ValueKind.Array)
+          while (count > 0 && Elements[count - 1].Unread)
+            count--;
+        else if (Kind == ValueKind.Map)
+          while (count > 0 && Entries[count - 1].Key.Unread)
+            count--;
+        return count;
+      }
     }
 
     public int Count
@@ -100,11 +123,15 @@ namespace ObjectDebugger
 #else
         MsgPackItem[] packed = null;
 #endif
+        // Without PreservePackages the slots stay empty; with it the first slot holds an item (the error where the reading stopped, at the latest)
+        bool preserved = packed != null && packed.Length > 0 && !(packed[0] is null);
         Node node = new Node() { Kind = ValueKind.Array, Item = item, Elements = new Node[values.Length] };
         for (int t = 0; t < values.Length; t++)
         {
           MsgPackItem packedItem = packed != null && t < packed.Length ? packed[t] : null;
           node.Elements[t] = packedItem is null ? FromValue(values.GetValue(t)) : FromItem(packedItem);
+          if (packedItem is null && preserved && t < packed.Length)
+            node.Elements[t].Unread = true;
         }
         return node;
       }
@@ -117,6 +144,7 @@ namespace ObjectDebugger
 #else
         KeyValuePair<MsgPackItem, MsgPackItem>[] packed = null;
 #endif
+        bool preserved = packed != null && packed.Length > 0 && !(packed[0].Key is null);
         Node node = new Node() { Kind = ValueKind.Map, Item = item, Entries = new KeyValuePair<Node, Node>[values.Length] };
         for (int t = 0; t < values.Length; t++)
         {
@@ -125,6 +153,11 @@ namespace ObjectDebugger
           node.Entries[t] = new KeyValuePair<Node, Node>(
             packedKey is null ? FromValue(values[t].Key) : FromItem(packedKey),
             packedValue is null ? FromValue(values[t].Value) : FromItem(packedValue));
+          if (packedKey is null && preserved && t < packed.Length)
+          {
+            node.Entries[t].Key.Unread = true;
+            node.Entries[t].Value.Unread = true;
+          }
         }
         return node;
       }

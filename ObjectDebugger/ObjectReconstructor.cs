@@ -556,13 +556,15 @@ namespace ObjectDebugger
       if (count == 0) // a type without properties is only in the schema for its type id
         return Fit.None;
 
+      // The slots an error cut off were not read (Unread): the header's count still tells the length, the keys and the last value are those that were read
+      int read = node.ReadCount;
       if (node.Kind == ValueKind.Array)
       {
         int length = node.Elements.Length;
         if (length == count)
           return Fit.Exact;
         // TrimTrailingNulls leaves out the nils at the end, so a shorter array never ends with nil
-        if (length > 0 && length < count && node.Elements[length - 1].Kind != ValueKind.Nil)
+        if (read > 0 && length < count && node.Elements[read - 1].Kind != ValueKind.Nil)
           return Fit.Partial;
         return Fit.None;
       }
@@ -570,7 +572,7 @@ namespace ObjectDebugger
       if (node.Kind != ValueKind.Map)
         return Fit.None;
 
-      for (int t = node.Entries.Length - 1; t >= 0; t--)
+      for (int t = read - 1; t >= 0; t--)
       {
         long index;
         if (!node.Entries[t].Key.TryGetIndex(out index) || index < 0 || index >= count)
@@ -779,7 +781,7 @@ namespace ObjectDebugger
     private static bool AllKeysAreIndexes(List<KeyValuePair<Node, Node>> entries)
     {
       for (int t = entries.Count - 1; t >= 0; t--)
-        if (entries[t].Key.Kind != ValueKind.Int)
+        if (entries[t].Key.Kind != ValueKind.Int && !entries[t].Key.Unread)
           return false;
       return true;
     }
@@ -787,7 +789,7 @@ namespace ObjectDebugger
     private static bool AllKeysAreIndexes(KeyValuePair<Node, Node>[] entries)
     {
       for (int t = entries.Length - 1; t >= 0; t--)
-        if (entries[t].Key.Kind != ValueKind.Int)
+        if (entries[t].Key.Kind != ValueKind.Int && !entries[t].Key.Unread)
           return false;
       return true;
     }
@@ -795,7 +797,7 @@ namespace ObjectDebugger
     private static bool AllKeysAreStrings(List<KeyValuePair<Node, Node>> entries)
     {
       for (int t = entries.Count - 1; t >= 0; t--)
-        if (entries[t].Key.Kind != ValueKind.String)
+        if (entries[t].Key.Kind != ValueKind.String && !entries[t].Key.Unread)
           return false;
       return true;
     }
