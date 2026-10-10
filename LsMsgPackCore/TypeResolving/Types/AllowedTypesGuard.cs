@@ -130,12 +130,12 @@ namespace LsMsgPack.TypeResolving.Types
     protected virtual bool Decide(Type type)
     {
       if (type.IsArray)
-        return type.GetArrayRank() == 1 && IsAllowed(type.GetElementType());
+        return IsAllowed(type.GetElementType());
 
       if (type.ContainsGenericParameters || type.IsPointer || type.IsByRef)
         return false;
 
-      if (_types.Contains(type)) // exactly this (constructed) type
+      if (_types.Contains(type) || IsSafeFrameworkType(type)) // exactly this (constructed) type, or a value the serializers write themselves (e.g. Memory<byte>)
         return true;
 
       if (type.IsGenericType)
@@ -177,7 +177,9 @@ namespace LsMsgPack.TypeResolving.Types
       typeof(ConcurrentQueue<>),
       typeof(ConcurrentStack<>),
       typeof(Collection<>),
-      typeof(ObservableCollection<>)
+      typeof(ObservableCollection<>),
+      typeof(Tuple<>), typeof(Tuple<,>), typeof(Tuple<,,>), typeof(Tuple<,,,>), typeof(Tuple<,,,,>), typeof(Tuple<,,,,,>), typeof(Tuple<,,,,,,>), typeof(Tuple<,,,,,,,>),
+      typeof(ValueTuple<>), typeof(ValueTuple<,>), typeof(ValueTuple<,,>), typeof(ValueTuple<,,,>), typeof(ValueTuple<,,,,>), typeof(ValueTuple<,,,,,>), typeof(ValueTuple<,,,,,,>), typeof(ValueTuple<,,,,,,,>)
     };
 
     private static readonly HashSet<Type> SafeTypes = new HashSet<Type>()
@@ -195,8 +197,9 @@ namespace LsMsgPack.TypeResolving.Types
     };
 
     /// <summary>
-    /// The values the serializers write themselves (primitives, enums, string, decimal, date and time types, Guid, Uri) and the framework's non-generic collections <see cref="ArrayList"/> and <see cref="Hashtable"/>.
-    /// The generic collections of the framework (<c>List&lt;T&gt;</c>, <c>Dictionary&lt;TKey, TValue&gt;</c>, ...) are allowed by <see cref="Decide"/> when their arguments are.
+    /// The values the serializers write themselves (primitives, enums, string, decimal, date and time types, Guid, Uri, Half, Version, StringBuilder, CultureInfo, Rune, Complex, Memory&lt;byte&gt;...)
+    /// and the framework's non-generic collections <see cref="ArrayList"/> and <see cref="Hashtable"/>.
+    /// The generic collections and tuples of the framework (<c>List&lt;T&gt;</c>, <c>Dictionary&lt;TKey, TValue&gt;</c>, <c>ValueTuple&lt;T1, T2&gt;</c>, ...) are allowed by <see cref="Decide"/> when their arguments are.
     /// </summary>
     public static bool IsSafeFrameworkType(Type type)
     {
@@ -204,7 +207,9 @@ namespace LsMsgPack.TypeResolving.Types
         return true;
 
       // DateOnly and TimeOnly: .NET Standard does not have them (found by name, only the framework's own)
-      return type.Assembly == typeof(object).Assembly && (type.FullName == "System.DateOnly" || type.FullName == "System.TimeOnly");
+      if (type == FrameworkTypeInfo.DateOnlyType || type == FrameworkTypeInfo.TimeOnlyType)
+        return true;
+      return FrameworkTypeInfo.GetPlainForm(type) != PlainForm.None;
     }
   }
 }

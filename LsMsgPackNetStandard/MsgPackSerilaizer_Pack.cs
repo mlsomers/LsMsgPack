@@ -32,6 +32,8 @@ namespace LsMsgPack
       // Strings, byte[] and Guid (MpBin) are enumerable but not treated as a collection
       if (item is IEnumerable && (packed is MpArray || packed is MpMap))
       {
+        if (tType.IsArray && tType.GetArrayRank() > 1)
+          return SerializeMultidimensional((Array)item, tType, settings, assignedTo, depth);
         ThrowIfTooDeep(depth, settings);
         return SerializeCollection(item, packed, tType, settings, assignedTo, depth);
       }
@@ -54,10 +56,14 @@ namespace LsMsgPack
       if (FrameworkTypeInfo.IsKeyValuePair(tType))
         return SerializePair(item, tType, settings, assignedTo, depth);
 
+      if (FrameworkTypeInfo.IsTuple(tType))
+        return SerializeTuple(item, tType, settings, assignedTo, depth);
+
       // Any complex object with properties
       ThrowIfTooDeep(depth, settings);
-      SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
       FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
+      if (props.Length == 0) // a refused type has no settable properties (the check is cached per type, the properties are)
+        SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
       if (settings._objectLayout == ObjectLayout.Array)
         return SerializeAsArray(item, tType, props, settings, assignedTo, depth);
 
@@ -96,6 +102,54 @@ namespace LsMsgPack
       {
         new KeyValuePair<object, object>(TypeIdKey, SerializationRules.GetTypeIdentifier(tType, settings, assignedTo)),
         new KeyValuePair<object, object>(ContentKey, array)
+      }, settings);
+    }
+
+    /// <summary>
+    /// A tuple is an array of its items (as MessagePack-CSharp and Nerdbank.MessagePack write it), wrapped like a pair when it needs a type id.
+    /// </summary>
+    private static MsgPackItem SerializeTuple(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth)
+    {
+      ThrowIfTooDeep(depth, settings);
+      FrameworkTypeInfo.TupleInfo tuple = FrameworkTypeInfo.GetTuple(tType);
+      MsgPackItem[] items = new MsgPackItem[tuple.Items.Length];
+      for (int t = 0; t < items.Length; t++)
+        items[t] = SerializeObject(tuple.GetItem(item, t), settings, tuple.Items[t], depth + 1);
+      MpArray array = new MpArray(settings) { Value = items };
+      if (!SerializationRules.NeedsTypeId(tType, assignedTo, settings))
+        return array;
+
+      return new MpMap(new KeyValuePair<object, object>[]
+      {
+        new KeyValuePair<object, object>(TypeIdKey, SerializationRules.GetTypeIdentifier(tType, settings, assignedTo)),
+        new KeyValuePair<object, object>(ContentKey, array)
+      }, settings);
+    }
+
+    /// <summary>
+    /// A multidimensional array is [length0, length1, ..., [items]] (as MessagePack-CSharp writes it), wrapped like a collection when it needs a type id.
+    /// </summary>
+    private static MsgPackItem SerializeMultidimensional(Array array, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth)
+    {
+      ThrowIfTooDeep(depth, settings);
+      int rank = array.Rank;
+      MsgPackItem[] items = new MsgPackItem[rank + 1];
+      for (int t = 0; t < rank; t++)
+        items[t] = new MpInt(settings) { Value = array.GetLength(t) };
+      FullPropertyInfo elementInfo = new FullPropertyInfo(tType.GetElementType());
+      MsgPackItem[] elements = new MsgPackItem[array.Length];
+      int at = 0;
+      foreach (object element in array) // the last dimension changes first
+        elements[at++] = SerializeObject(element, settings, elementInfo, depth + 1);
+      items[rank] = new MpArray(settings) { Value = elements };
+      MpArray result = new MpArray(settings) { Value = items };
+      if (!SerializationRules.NeedsTypeId(tType, assignedTo, settings))
+        return result;
+
+      return new MpMap(new KeyValuePair<object, object>[]
+      {
+        new KeyValuePair<object, object>(TypeIdKey, SerializationRules.GetTypeIdentifier(tType, settings, assignedTo)),
+        new KeyValuePair<object, object>(ContentKey, result)
       }, settings);
     }
 

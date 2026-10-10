@@ -139,7 +139,8 @@ namespace LtMsgPack
         case TypeKind.GuidString: return new GuidStringReader();
         case TypeKind.DecimalString: return new DecimalStringReader();
         case TypeKind.DateTime: return new DateTimeReader();
-        case TypeKind.DateTimeOffset: return new DateTimeOffsetReader();
+        case TypeKind.DateTimeOffset:
+        case TypeKind.DateTimeOffsetMoment: return new DateTimeOffsetReader();
         case TypeKind.DateTimeOffsetArray: return new DateTimeOffsetArrayReader();
         case TypeKind.TimeSpan: return new TimeSpanReader();
         case TypeKind.Bin:

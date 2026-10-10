@@ -64,6 +64,12 @@ namespace LsMsgPack.Meta
     /// </summary>
     private readonly bool _reverseItems;
 
+    /// <summary>
+    /// The static factory of an immutable or frozen collection of the framework (e.g. ImmutableArray.CreateRange&lt;T&gt;(IEnumerable&lt;T&gt;), FrozenSet.ToFrozenSet&lt;T&gt;), which have no constructor or Add that fills them.
+    /// </summary>
+    private readonly MethodInfo _factory;
+    private readonly object[] _factoryDefaults;
+
     private CollectionInfo(Type type)
     {
       ElementType = GetElementType(type);
@@ -87,6 +93,14 @@ namespace LsMsgPack.Meta
       ConcreteType = GetConcreteType(type);
       if (ConcreteType.IsArray)
         return;
+
+      _factory = FindFactory(ConcreteType, ElementType, out _factoryDefaults);
+      if (_factory != null)
+      {
+        FillsPairs = IsDictionary; // the factory takes the pairs
+        _reverseItems = ConcreteType.IsGenericType && ConcreteType.GetGenericTypeDefinition().FullName == "System.Collections.Immutable.ImmutableStack`1";
+        return;
+      }
 
       if (IsDictionary)
       {
@@ -138,6 +152,15 @@ namespace LsMsgPack.Meta
       if (ConcreteType.IsArray)
         return elements;
 
+      if (_factory != null)
+      {
+        if (_reverseItems)
+          Array.Reverse(elements);
+        object[] factoryArgs = (object[])_factoryDefaults.Clone();
+        factoryArgs[0] = elements;
+        return _factory.Invoke(null, factoryArgs);
+      }
+
       if (_itemsConstructor != null)
       {
         if (_reverseItems)
@@ -165,10 +188,71 @@ namespace LsMsgPack.Meta
       return result;
     }
 
+    /// <summary>
+    /// A static method of the framework's non-generic class with the same name (System.Collections.Immutable, System.Collections.Frozen) that takes IEnumerable&lt;T&gt; (and optional parameters) and returns the collection:
+    /// CreateRange when there is one, otherwise e.g. ToFrozenSet.
+    /// </summary>
+    /// <param name="defaults">The arguments of the factory: the default values of the optional parameters (the first one is replaced by the elements)</param>
+    private static MethodInfo FindFactory(Type concrete, Type elementType, out object[] defaults)
+    {
+      defaults = null;
+      if (!concrete.IsGenericType || (concrete.Namespace != "System.Collections.Immutable" && concrete.Namespace != "System.Collections.Frozen") || !TypeResolver.IsFrameworkAssembly(concrete.Assembly))
+        return null;
+
+      Type definition = concrete.GetGenericTypeDefinition();
+      Type factoryClass = definition.Assembly.GetType(definition.FullName.Substring(0, definition.FullName.IndexOf('`')));
+      if (factoryClass is null)
+        return null;
+
+      Type[] arguments = concrete.GenericTypeArguments;
+      Type enumerable = typeof(IEnumerable<>).MakeGenericType(elementType);
+      MethodInfo found = null;
+      MethodInfo[] methods = factoryClass.GetMethods(BindingFlags.Public | BindingFlags.Static);
+      for (int t = 0; t < methods.Length; t++)
+      {
+        MethodInfo method = methods[t];
+        if (!method.IsGenericMethodDefinition || method.GetGenericArguments().Length != arguments.Length)
+          continue;
+        MethodInfo constructed;
+        try
+        {
+          constructed = method.MakeGenericMethod(arguments);
+        }
+        catch (ArgumentException) // constraints
+        {
+          continue;
+        }
+        ParameterInfo[] parameters = constructed.GetParameters();
+        if (parameters.Length == 0 || parameters[0].ParameterType != enumerable || !concrete.IsAssignableFrom(constructed.ReturnType) || !OptionalAfterFirst(parameters))
+          continue;
+        if (found is null || method.Name == "CreateRange")
+          found = constructed;
+      }
+      if (found is null)
+        return null;
+
+      ParameterInfo[] foundParameters = found.GetParameters();
+      defaults = new object[foundParameters.Length];
+      for (int t = 1; t < defaults.Length; t++)
+        defaults[t] = foundParameters[t].HasDefaultValue ? foundParameters[t].DefaultValue : null;
+      return found;
+    }
+
+    private static bool OptionalAfterFirst(ParameterInfo[] parameters)
+    {
+      for (int t = parameters.Length - 1; t > 0; t--)
+        if (!parameters[t].IsOptional)
+          return false;
+      return true;
+    }
+
     private static Type GetElementType(Type type)
     {
       if (type.IsArray)
         return type.GetElementType();
+
+      if (type == typeof(BitArray)) // only the non-generic IEnumerable, filled by its constructor taking bool[]
+        return typeof(bool);
 
       if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IEnumerable<>))
         return type.GenericTypeArguments[0];
@@ -188,6 +272,10 @@ namespace LsMsgPack.Meta
       if (!(type.IsInterface || type.IsAbstract) || type.IsArray)
         return type;
 
+      Type immutable = ImmutableImplementation(type);
+      if (immutable != null)
+        return immutable;
+
       Type[] candidates = IsDictionary
         ? new[] { typeof(Dictionary<,>).MakeGenericType(KeyType, ValueType) }
         : new[] {
@@ -204,6 +292,21 @@ namespace LsMsgPack.Meta
       }
 
       return type; // Unknown abstraction, will fail on creating an instance
+    }
+
+    /// <summary>
+    /// The framework's implementation of an interface of System.Collections.Immutable: IImmutableList&lt;T&gt; is an ImmutableList&lt;T&gt;, IImmutableSet&lt;T&gt; an ImmutableHashSet&lt;T&gt;...
+    /// </summary>
+    private static Type ImmutableImplementation(Type type)
+    {
+      if (!type.IsInterface || !type.IsGenericType || type.Namespace != "System.Collections.Immutable" || !type.Name.StartsWith("IImmutable", StringComparison.Ordinal))
+        return null;
+      string name = type.Name == "IImmutableSet`1" ? "ImmutableHashSet`1" : type.Name.Substring(1);
+      Type definition = type.Assembly.GetType("System.Collections.Immutable." + name);
+      if (definition is null || definition.GetGenericArguments().Length != type.GenericTypeArguments.Length)
+        return null;
+      Type concrete = definition.MakeGenericType(type.GenericTypeArguments);
+      return type.IsAssignableFrom(concrete) ? concrete : null;
     }
   }
 }

@@ -20,6 +20,15 @@ namespace LsMsgPackInteropTests
     public int Attendees { get; set; }
   }
 
+  public class BigNumbers
+  {
+    public System.Numerics.BigInteger Big { get; set; }
+    public System.Numerics.BigInteger Small { get; set; }
+    public Int128 Signed { get; set; }
+    public Int128 Negative { get; set; }
+    public UInt128 Unsigned { get; set; }
+  }
+
   /// <summary>
   /// LtMsgPack's presets (<see cref="LtMsgPackPresets"/>) against the other libraries with their default settings: nothing configured on their side except reading objects as maps (contractless).
   /// </summary>
@@ -77,6 +86,33 @@ namespace LsMsgPackInteropTests
         Assert.AreEqual(meeting.Created, read.Created.ToUniversalTime());
         Assert.AreEqual(meeting.Room, read.Room);
         Assert.AreEqual(meeting.Cost, read.Cost);
+      }
+    }
+
+    /// <summary>
+    /// BigInteger, Int128 and UInt128 as MessagePack-CSharp's bin (little-endian two's complement).
+    /// </summary>
+    [TestMethod]
+    public void MessagePackCSharp_BigIntegers()
+    {
+      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+      BigNumbers numbers = new BigNumbers()
+      {
+        Big = System.Numerics.BigInteger.Parse("-123456789012345678901234567890", CultureInfo.InvariantCulture),
+        Small = 5,
+        Signed = Int128.MaxValue,
+        Negative = -2,
+        Unsigned = UInt128.MaxValue
+      };
+      CollectionAssert.AreEqual(MessagePackSerializer.Serialize(numbers, Contractless), lt.Serialize(numbers));
+
+      foreach (BigNumbers read in new[] { MessagePackSerializer.Deserialize<BigNumbers>(lt.Serialize(numbers), Contractless), lt.Deserialize<BigNumbers>(MessagePackSerializer.Serialize(numbers, Contractless)) })
+      {
+        Assert.AreEqual(numbers.Big, read.Big);
+        Assert.AreEqual(numbers.Small, read.Small);
+        Assert.AreEqual(numbers.Signed, read.Signed);
+        Assert.AreEqual(numbers.Negative, read.Negative);
+        Assert.AreEqual(numbers.Unsigned, read.Unsigned);
       }
     }
 

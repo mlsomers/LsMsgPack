@@ -74,8 +74,8 @@ The guard is only asked when the data picks a different type than the declared o
 The included allow-list allows:
 
 - the types you pass to `Allow`, and all types of the assemblies you pass to `AllowAssembly` / `AllowAssemblyOf`;
-- the values the serializers write themselves: primitives, enums, `string`, `decimal`, `DateTime`, `DateTimeOffset`, `TimeSpan`, `Guid`, `Uri`, `DateOnly`, `TimeOnly`, and `object`;
-- the framework's collections (`List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `Queue<T>`, the concurrent collections, `ObservableCollection<T>`, ..., and `ArrayList` and `Hashtable`).
+- the values the serializers write themselves: primitives, enums, `string`, `decimal`, `DateTime`, `DateTimeOffset`, `TimeSpan`, `Guid`, `Uri`, `DateOnly`, `TimeOnly`, `Half`, `Version`, `StringBuilder`, `CultureInfo`, `Rune`, `Complex`, `BigInteger`, `Int128`, `UInt128`, `Memory<byte>`, `ReadOnlyMemory<byte>`, `ArraySegment<byte>`, and `object`;
+- the framework's collections (`List<T>`, `Dictionary<TKey, TValue>`, `HashSet<T>`, `Queue<T>`, the concurrent collections, `ObservableCollection<T>`, ..., and `ArrayList` and `Hashtable`), tuples (`Tuple<...>`, `ValueTuple<...>`) and arrays of any rank.
 
 **Generic types and arrays are only allowed when their arguments are.** A type id `List<Process>` on a property declared as `object` is refused unless `Process` is allowed. The elements of that list are created as its declared element type, without type ids of their own, so the list's type is the only chance to stop them. `Allow(typeof(Envelope<>))` allows `Envelope<T>` for every allowed `T`. `Allow(typeof(Envelope<Foo>))` allows exactly that type.
 

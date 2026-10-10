@@ -173,6 +173,44 @@ namespace LsMsgPackInteropTests
       AssertSameBytes(new Uri("relative/path", UriKind.Relative));
     }
 
+    /// <summary>
+    /// The framework types without settable properties that LsMsgPack writes as MessagePack-CSharp does (they used to be written as an empty map).
+    /// </summary>
+    [TestMethod]
+    public void SameBytes_MoreFrameworkTypes()
+    {
+      AssertSameBytes((Half)1.5, v => v);
+      AssertSameBytes(Half.MaxValue, v => v);
+      AssertSameBytes(new Version(1, 2, 3, 4), v => v);
+      AssertSameBytes(new Version(1, 2), v => v);
+      AssertSameBytes(new System.Text.StringBuilder("text"), v => v.ToString());
+      AssertSameBytes(new System.Text.Rune('A'), v => v);
+      AssertSameBytes(new System.Text.Rune(0x1F600), v => v);
+      AssertSameBytes(new Memory<byte>(new byte[] { 1, 2, 3 }), v => Convert.ToHexString(v.Span));
+      AssertSameBytes(new ReadOnlyMemory<byte>(new byte[] { 1, 2, 3 }), v => Convert.ToHexString(v.Span));
+      AssertSameBytes(new ArraySegment<byte>(new byte[] { 1, 2, 3, 4 }, 1, 2), v => Convert.ToHexString(v));
+      AssertSameBytes(new System.Numerics.Complex(1.5, -2), v => v);
+      AssertSameBytes((1, "a"), v => v);
+      AssertSameBytes(Tuple.Create(1, "a", 2.5), v => v);
+      AssertSameBytes((1, 2, 3, 4, 5, 6, 7, 8, 9), v => v); // the 8th item is the rest: a tuple of its own
+      AssertSameBytes(new int[,] { { 1, 2, 3 }, { 4, 5, 6 } }, v => $"{v.GetLength(0)}x{v.GetLength(1)}:{string.Join(",", System.Linq.Enumerable.Cast<int>(v))}"); // [lengths..., [items]]
+      AssertSameBytes(new string[,,] { { { "a" }, { "b" } } }, v => $"{v.GetLength(0)}x{v.GetLength(1)}x{v.GetLength(2)}:{string.Join(",", System.Linq.Enumerable.Cast<string>(v))}");
+      AssertSameBytes(new System.Collections.BitArray(new[] { true, false, true }), v => string.Join(",", System.Linq.Enumerable.Cast<bool>(v)));
+      AssertSameBytes(System.Collections.Immutable.ImmutableArray.Create(1, 2), v => string.Join(",", v));
+      AssertSameBytes(System.Collections.Immutable.ImmutableList.Create("a"), v => string.Join(",", v));
+      AssertSameBytes(System.Collections.Immutable.ImmutableDictionary.CreateRange(new[] { new KeyValuePair<string, int>("k", 1) }), v => string.Join(",", v));
+    }
+
+    private void AssertSameBytes<T>(T value, Func<T, object> comparable)
+    {
+      byte[] ls = Serializer.Serialize(value, Named);
+      byte[] mp = MessagePackSerializer.Serialize(value, Standard);
+      CollectionAssert.AreEqual(mp, ls, $"{typeof(T).Name} {value}: LsMsgPack {Convert.ToHexString(ls)}, MessagePack-CSharp {Convert.ToHexString(mp)}");
+
+      Assert.AreEqual(comparable(value), comparable(Serializer.Deserialize<T>(mp, Named)), $"{typeof(T).Name} {value} read by LsMsgPack");
+      Assert.AreEqual(comparable(value), comparable(MessagePackSerializer.Deserialize<T>(ls, Standard)), $"{typeof(T).Name} {value} read by MessagePack-CSharp");
+    }
+
     private void AssertSameBytes<T>(T value)
     {
       byte[] ls = Serializer.Serialize(value, Named);
@@ -225,15 +263,27 @@ namespace LsMsgPackInteropTests
     }
 
     /// <summary>
-    /// LsMsgPack writes the moment as a timestamp (the offset is lost), MessagePack-CSharp an array of the local time (as if it were UTC) and the offset in minutes.
+    /// LsMsgPack writes [the moment as a timestamp, the offset in minutes] by default, MessagePack-CSharp an array of the same shape with the clock time (as if it were UTC):
+    /// each reads the other's array as another moment (off by the offset). With DateTimeOffsetFormat.ClockTimeAndOffset LsMsgPack writes and reads MessagePack-CSharp's array.
     /// </summary>
     [TestMethod]
-    public void DateTimeOffset_Incompatible()
+    public void DateTimeOffset_ClockTimeAndOffsetForMessagePackCSharp()
     {
       DateTimeOffset when = new DateTimeOffset(2026, 6, 1, 10, 0, 0, TimeSpan.FromHours(2));
 
-      Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<DateTimeOffset>(Serializer.Serialize(when, Named), Standard));
-      Assert.Throws<Exception>(() => Serializer.Deserialize<DateTimeOffset>(MessagePackSerializer.Serialize(when, Standard), Named));
+      DateTimeOffset misread = MessagePackSerializer.Deserialize<DateTimeOffset>(Serializer.Serialize(when, Named), Standard);
+      Assert.AreEqual(when.Offset, misread.Offset);
+      Assert.AreEqual(when.UtcDateTime - when.Offset, misread.UtcDateTime, "the moment read as the clock time");
+      Assert.AreEqual(when.UtcDateTime + when.Offset, Serializer.Deserialize<DateTimeOffset>(MessagePackSerializer.Serialize(when, Standard), Named).UtcDateTime, "the clock time read as the moment");
+
+      MsgPackSettings clock = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DateTimeOffsetFormat = DateTimeOffsetFormat.ClockTimeAndOffset };
+      byte[] ls = Serializer.Serialize(when, clock);
+      CollectionAssert.AreEqual(MessagePackSerializer.Serialize(when, Standard), ls);
+      foreach (DateTimeOffset read in new[] { MessagePackSerializer.Deserialize<DateTimeOffset>(ls, Standard), Serializer.Deserialize<DateTimeOffset>(ls, clock) })
+      {
+        Assert.AreEqual(when, read);
+        Assert.AreEqual(when.Offset, read.Offset);
+      }
     }
 
     [TestMethod]

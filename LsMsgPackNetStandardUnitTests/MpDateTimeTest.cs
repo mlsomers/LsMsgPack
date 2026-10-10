@@ -119,13 +119,17 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// A DateTimeOffset is packed as its UTC time (the round trip through the serializer: SerializingPrimitives).
+    /// A DateTimeOffset is packed as [its UTC time, the offset in minutes], or with DateTimeOffsetFormat.Timestamp as its UTC time (the round trip through the serializer: SerializingPrimitives).
     /// </summary>
     [TestMethod]
-    public void DateTimeOffsetIsPackedAsUtc()
+    public void DateTimeOffsetIsPackedAsUtcAndOffset()
     {
       DateTimeOffset when = new DateTimeOffset(2021, 1, 1, 12, 30, 15, 250, TimeSpan.FromHours(3));
-      MsgPackItem item = MsgPackItem.Pack(when);
+      MsgPackItem[] items = (MsgPackItem[])MsgPackItem.Pack(when).Value;
+      Assert.AreEqual(when.UtcDateTime, ((DateTime)items[0].Value).ToUniversalTime());
+      Assert.AreEqual(180, Convert.ToInt32(items[1].Value));
+
+      MsgPackItem item = MsgPackItem.Pack(when, new MsgPackSettings() { DateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp });
       Assert.AreEqual(when.UtcDateTime, ((DateTime)item.Value).ToUniversalTime());
     }
 

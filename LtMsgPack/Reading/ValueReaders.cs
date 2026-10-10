@@ -293,11 +293,17 @@ namespace LtMsgPack.Reading
     }
   }
 
+  /// <summary>
+  /// <see cref="DateTimeOffsetFormat.TimestampAndOffset"/> (the default) and <see cref="DateTimeOffsetFormat.Timestamp"/>: [the moment as a timestamp, the offset in minutes], or a timestamp.
+  /// </summary>
   internal sealed class DateTimeOffsetReader : ValueReader<DateTimeOffset>
   {
     internal override DateTimeOffset Read(ReadContext c, FullPropertyInfo assignedTo)
     {
       int start = c.R.Pos;
+      if (c.R.TryReadArrayHeader() == 2 && c.R.TryReadTimestamp(out DateTime moment) && c.R.TryReadInt64(out long minutes))
+        return new DateTimeOffset(moment.Ticks, TimeSpan.Zero).ToOffset(TimeSpan.FromMinutes(minutes));
+      c.R.Pos = start;
       if (c.R.TryReadDateTime(out DateTime value)) return MsgPackOptions.OffsetOfTimestamp(value); // the offset was not written: the local one or zero (ReadDateTimeKind)
       if (c.R.TryReadNil()) return default(DateTimeOffset);
       return Slow(c, start, assignedTo);
@@ -305,7 +311,7 @@ namespace LtMsgPack.Reading
   }
 
   /// <summary>
-  /// <see cref="DateTimeOffsetFormat.ClockTimeAndOffset"/>: MessagePack-CSharp's [clock time as a UTC timestamp, offset in minutes], or a timestamp as LsMsgPack writes it.
+  /// <see cref="DateTimeOffsetFormat.ClockTimeAndOffset"/>: MessagePack-CSharp's [clock time as a UTC timestamp, offset in minutes], or a timestamp.
   /// </summary>
   internal sealed class DateTimeOffsetArrayReader : ValueReader<DateTimeOffset>
   {

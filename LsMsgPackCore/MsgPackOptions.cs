@@ -158,6 +158,12 @@ namespace LsMsgPack
     [IgnoreDataMember]
     public static DateTimeKind Default_ReadDateTimeKind { get; set; } = DateTimeKind.Local;
 
+    /// <summary>
+    /// The <see cref="DateTimeOffsetFormat"/> of new settings (<see cref="LsMsgPack.DateTimeOffsetFormat.TimestampAndOffset"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static DateTimeOffsetFormat Default_DateTimeOffsetFormat { get; set; } = DateTimeOffsetFormat.TimestampAndOffset;
+
     #endregion
 
     /// <summary>
@@ -189,6 +195,7 @@ namespace LsMsgPack
     internal ReadErrorHandling _readErrors = Default_ReadErrors;
     internal bool _unspecifiedIsUtc = Default_UnspecifiedDateTimeKind == DateTimeKind.Utc;
     internal DateTimeKind _readDateTimeKind = Default_ReadDateTimeKind;
+    internal DateTimeOffsetFormat _dateTimeOffsetFormat = Default_DateTimeOffsetFormat;
 
     /// <summary>
     /// The cache of the serialized properties for <see cref="_staticFilters"/> (see FullPropertyInfo.GetSerializedProps without a session), looked up again when the filters are replaced.
@@ -490,6 +497,33 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// How DateTimeOffset values are written: [the moment as a timestamp, the offset in minutes] by default (the offset is kept, as JSON keeps it),
+    /// a timestamp of the moment (<see cref="LsMsgPack.DateTimeOffsetFormat.Timestamp"/>, the offset is lost, read as <see cref="ReadDateTimeKind"/> says), or MessagePack-CSharp's array.
+    /// <para>Reading takes a timestamp in any format, and the array as this format says: the clock time with <see cref="LsMsgPack.DateTimeOffsetFormat.ClockTimeAndOffset"/>, the moment otherwise (the arrays look the same).</para>
+    /// </summary>
+    [Category("Dates")]
+    [DisplayName("DateTimeOffset Format")]
+    [Description("How DateTimeOffset values are written: [timestamp of the moment, offset in minutes] (default, keeps the offset), a timestamp of the moment (the offset is lost), or MessagePack-CSharp's [clock time, offset in minutes].")]
+    [DefaultValue(DateTimeOffsetFormat.TimestampAndOffset)]
+    public DateTimeOffsetFormat DateTimeOffsetFormat
+    {
+      get { return _dateTimeOffsetFormat; }
+      set { _dateTimeOffsetFormat = value; }
+    }
+
+    /// <summary>
+    /// A DateTimeOffset read from an array [timestamp, offset in minutes] (see <see cref="DateTimeOffsetFormat"/>).
+    /// </summary>
+    /// <param name="utcTicks">The ticks of the timestamp (UTC)</param>
+    internal DateTimeOffset OffsetOfArray(long utcTicks, long minutes)
+    {
+      TimeSpan offset = TimeSpan.FromMinutes(minutes);
+      if (_dateTimeOffsetFormat == DateTimeOffsetFormat.ClockTimeAndOffset)
+        return new DateTimeOffset(utcTicks, offset); // MessagePack-CSharp: the clock time
+      return new DateTimeOffset(utcTicks, TimeSpan.Zero).ToOffset(offset); // the moment
+    }
+
+    /// <summary>
     /// The moment a DateTime written as a timestamp stands for, in UTC (see <see cref="UnspecifiedDateTimeKind"/>).
     /// </summary>
     internal DateTime ToTimestamp(DateTime value)
@@ -634,6 +668,31 @@ namespace LsMsgPack
     /// </summary>
     [Description("Grouped by the type of the property (by its name, without the assembly), then in declaration order.")]
     TypeThenDeclaration = 4
+  }
+
+  /// <summary>
+  /// How <see cref="System.DateTimeOffset"/> values are written (see <see cref="MsgPackOptions.DateTimeOffsetFormat"/>).
+  /// </summary>
+  public enum DateTimeOffsetFormat
+  {
+    /// <summary>
+    /// An array of the moment (a timestamp) and the offset in minutes (default): the offset is kept. Nerdbank.MessagePack writes the same.
+    /// A reader that only takes the first value still has the right moment.
+    /// </summary>
+    [Description("An array of the moment (a timestamp) and the offset in minutes (default): the offset is kept. Nerdbank.MessagePack writes the same.")]
+    TimestampAndOffset = 0,
+
+    /// <summary>
+    /// A timestamp of the moment (UTC): the offset is lost. Any MsgPack library reads it as a date.
+    /// </summary>
+    [Description("A timestamp of the moment (UTC): the offset is lost. Any MsgPack library reads it as a date.")]
+    Timestamp = 1,
+
+    /// <summary>
+    /// An array of the clock time (as a timestamp, as if it were UTC) and the offset in minutes, as MessagePack-CSharp writes it. The offset is kept.
+    /// </summary>
+    [Description("An array of the clock time (as a timestamp, as if it were UTC) and the offset in minutes, as MessagePack-CSharp writes it.")]
+    ClockTimeAndOffset = 2
   }
 
   /// <summary>

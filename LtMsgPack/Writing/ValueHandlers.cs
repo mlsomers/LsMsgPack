@@ -189,10 +189,29 @@ namespace LtMsgPack.Writing
     }
   }
 
+  /// <summary>
+  /// <see cref="DateTimeOffsetFormat.Timestamp"/>: the moment, the offset is lost.
+  /// </summary>
   internal sealed class DateTimeOffsetHandler : ValueHandler<DateTimeOffset>
   {
-    internal override void Write(WriteContext c, DateTimeOffset value, FullPropertyInfo assignedTo) { c.W.DateTime(value.UtcDateTime); } // the offset is lost, as in LsMsgPack
+    internal override void Write(WriteContext c, DateTimeOffset value, FullPropertyInfo assignedTo) { c.W.DateTime(value.UtcDateTime); }
     internal override bool IncludeByDefault(DateTimeOffset value, FullPropertyInfo info) { return !value.Equals(default(DateTimeOffset)); }
+  }
+
+  /// <summary>
+  /// <see cref="DateTimeOffsetFormat.TimestampAndOffset"/> (the default): [the moment as a timestamp, the offset in minutes].
+  /// </summary>
+  internal sealed class DateTimeOffsetMomentHandler : ValueHandler<DateTimeOffset>
+  {
+    internal override void Write(WriteContext c, DateTimeOffset value, FullPropertyInfo assignedTo) { WriteArray(c.W, value); }
+    internal override bool IncludeByDefault(DateTimeOffset value, FullPropertyInfo info) { return !value.Equals(default(DateTimeOffset)); }
+
+    internal static void WriteArray(MsgPackWriter w, DateTimeOffset value)
+    {
+      w.ArrayHeader(2);
+      w.DateTime(value.UtcDateTime);
+      w.Int16((short)value.Offset.TotalMinutes);
+    }
   }
 
   /// <summary>

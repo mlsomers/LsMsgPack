@@ -26,11 +26,39 @@ namespace LsMsgPack.Meta
     internal static bool NeedsTypeId(Type tType, FullPropertyInfo assignedTo, MsgPackOptions settings)
     {
       if ((settings._addTypeIdOptions & AddTypeIdOption.Always) != 0)
-        return true;
+        return !IsHiddenFrameworkType(tType);
 
       if ((settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0)
-        return assignedTo?.AssignedToType != tType;
+        return assignedTo?.AssignedToType != tType && !IsHiddenFrameworkType(tType);
 
+      return false;
+    }
+
+    private static readonly ConcurrentDictionary<Type, bool> Hidden = new ConcurrentDictionary<Type, bool>();
+
+    /// <summary>
+    /// A type of the framework that is not public (or has such a type as a generic argument or element), e.g. the FrozenSet&lt;T&gt; that ToFrozenSet() returns, or a LINQ iterator:
+    /// names in the data never resolve to it (see TypeResolver.Visible), so it gets no type id. The reader creates the declared type its own way, as it did for such an id.
+    /// </summary>
+    internal static bool IsHiddenFrameworkType(Type type)
+    {
+      bool hidden;
+      if (!Hidden.TryGetValue(type, out hidden))
+        hidden = Hidden.GetOrAdd(type, HasHiddenFrameworkType);
+      return hidden;
+    }
+
+    private static bool HasHiddenFrameworkType(Type type)
+    {
+      while (type.HasElementType)
+        type = type.GetElementType();
+      Type definition = type.IsGenericType ? type.GetGenericTypeDefinition() : type;
+      if (!definition.IsVisible && TypeResolver.IsFrameworkAssembly(definition.Assembly))
+        return true;
+      Type[] arguments = type.GenericTypeArguments;
+      for (int t = arguments.Length - 1; t >= 0; t--)
+        if (HasHiddenFrameworkType(arguments[t]))
+          return true;
       return false;
     }
 

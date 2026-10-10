@@ -28,8 +28,8 @@ namespace LsMsgPack.Meta
 
     internal static string GetTypeName(Type type, bool fullname)
     {
-      if (type.IsArray) // "KeyValuePair<Int32, String>[]" instead of "KeyValuePair`2[]"
-        return $"{GetTypeName(type.GetElementType(), fullname)}[]";
+      if (type.IsArray) // "KeyValuePair<Int32, String>[]" instead of "KeyValuePair`2[]", "Int32[,]" for two dimensions
+        return $"{GetTypeName(type.GetElementType(), fullname)}[{new string(',', type.GetArrayRank() - 1)}]";
 
       Type[] args = type.GenericTypeArguments;
 
@@ -143,12 +143,11 @@ namespace LsMsgPack.Meta
     {
       Type result;
 
-      if (typeName.EndsWith("[]", StringComparison.Ordinal))
+      if (IsArrayName(typeName, out string elementName, out int rank))
       {
-        string nm = typeName.Substring(0, typeName.Length - 2);
-        Type arr = ResolveInternalLocked(nm, assignedTo?.IsArray == true ? assignedTo.GetElementType() : null, resolvers, false);
-        if (arr != null)
-          return arr.MakeArrayType();
+        Type element = ResolveInternalLocked(elementName, assignedTo?.IsArray == true ? assignedTo.GetElementType() : null, resolvers, false);
+        if (element != null)
+          return MakeArrayType(element, rank);
       }
 
       // 1st tier
@@ -205,7 +204,7 @@ namespace LsMsgPack.Meta
           genArgs.AddRange(gen.Value); // restore parent args
           genArgs.Add(spcificGenericType); // and add the nested generic type
         }
-        else if (c == ',')
+        else if (c == ',' && !InRankBrackets(sb)) // not the commas of "Int32[,]"
         {
           string typename = sb.ToString();
           sb.Clear();
@@ -228,12 +227,52 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
+    /// "Name[]" or "Name[,]"...: the name of the element type and the number of dimensions.
+    /// </summary>
+    private static bool IsArrayName(string typeName, out string elementName, out int rank)
+    {
+      elementName = null;
+      rank = 0;
+      if (!typeName.EndsWith("]", StringComparison.Ordinal))
+        return false;
+      int open = typeName.LastIndexOf('[');
+      if (open <= 0)
+        return false;
+      for (int t = typeName.Length - 2; t > open; t--)
+        if (typeName[t] != ',')
+          return false;
+      elementName = typeName.Substring(0, open);
+      rank = typeName.Length - open - 1;
+      return true;
+    }
+
+    private static Type MakeArrayType(Type element, int rank)
+    {
+      return rank == 1 ? element.MakeArrayType() : element.MakeArrayType(rank);
+    }
+
+    /// <summary>
+    /// Whether the name so far ends inside the brackets of an array type ("Int32[" or "Int32[,").
+    /// </summary>
+    private static bool InRankBrackets(StringBuilder name)
+    {
+      for (int t = name.Length - 1; t >= 0; t--)
+      {
+        if (name[t] == '[')
+          return true;
+        if (name[t] != ',')
+          return false;
+      }
+      return false;
+    }
+
+    /// <summary>
     /// Type is part of a generic argument
     /// </summary>
     private static Type ResolveIndirect(string typeName, IMsgPackTypeResolver[] resolvers)
     {
-      if (typeName.EndsWith("[]", StringComparison.Ordinal))
-        return ResolveIndirect(typeName.Substring(0, typeName.Length - 2), resolvers).MakeArrayType();
+      if (IsArrayName(typeName, out string elementName, out int rank))
+        return MakeArrayType(ResolveIndirect(elementName, resolvers), rank);
 
       Type result;
       // 1st tier
