@@ -96,6 +96,29 @@ namespace LsMsgPackUnitTests
       public Dictionary<int, string> Notes { get; set; }
     }
 
+    public class OdStamped
+    {
+      public DateTimeOffset Offset { get; set; }
+      public List<DateTimeOffset> History { get; set; }
+      public List<OdAddress> Addresses { get; set; }
+    }
+
+    /// <summary>
+    /// Written like a DateTimeOffset: [timestamp, small integer].
+    /// </summary>
+    public class OdTimed
+    {
+      public DateTime At { get; set; }
+      public short Minutes { get; set; }
+    }
+
+    public class OdTimedHolder
+    {
+      public OdTimed First { get; set; }
+      public List<OdTimed> More { get; set; }
+      public OdName Contact { get; set; }
+    }
+
     private static OdInvoice CreateInvoice()
     {
       return new OdInvoice()
@@ -218,6 +241,71 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(nameof(OdAddress), shipping.Type);
       Assert.AreEqual(nameof(OdLine), line.Type);
       Assert.IsTrue(line.TypeIsGuess);
+    }
+
+    /// <summary>
+    /// A DateTimeOffset ([timestamp, offset]) has the shape of an object of a type with two (or more) properties that was not seen yet:
+    /// taken for one, the real objects of that type no longer fit it.
+    /// </summary>
+    [TestMethod]
+    public void DateTimeOffset_NotTakenForTheNextType()
+    {
+      OdStamped stamped = new OdStamped()
+      {
+        Offset = new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.FromHours(2)),
+        // Not 2 or 3: a list of arrays of that length also fits OdStamped (its first two values are arrays too)
+        History = new List<DateTimeOffset>()
+        {
+          new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.FromMinutes(-150)),
+          new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.FromHours(1)), new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.FromHours(2))
+        },
+        Addresses = new List<OdAddress>() { new OdAddress() { Street = "Main street", Number = 1, City = "Springfield" }, new OdAddress() { Street = "Side street", Number = 2, City = "Shelbyville" } }
+      };
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+      {
+        RootObject root = Reconstruct(MsgPackSerializer.Serialize(stamped, Settings(layout, true)));
+        AssertNoIssues(root);
+        Assert.AreEqual(nameof(OdStamped), root.Type, layout.ToString());
+
+        ComplexObject offset = Complex(root, nameof(OdStamped.Offset));
+        Assert.AreEqual(ObjectKind.Collection, offset.Kind, layout.ToString());
+        Assert.AreEqual("DateTimeOffset", offset.Type, layout.ToString());
+        Assert.IsTrue(offset.TypeIsGuess);
+        AssertValue(120, offset, "[1]");
+
+        ComplexObject history = Complex(root, nameof(OdStamped.History));
+        Assert.AreEqual("DateTimeOffset", Complex(history, "[1]").Type, layout.ToString());
+        AssertValue(-150, Complex(history, "[1]"), "[1]");
+
+        ComplexObject address = Complex(Complex(root, nameof(OdStamped.Addresses)), "[1]");
+        Assert.AreEqual(nameof(OdAddress), address.Type, layout.ToString());
+        AssertValue("Shelbyville", address, nameof(OdAddress.City));
+      }
+    }
+
+    /// <summary>
+    /// A class written like a DateTimeOffset stays an object when nothing contradicts it.
+    /// </summary>
+    [TestMethod]
+    public void ClassShapedLikeDateTimeOffset_StaysAnObject()
+    {
+      DateTime at = new DateTime(2026, 10, 10, 12, 0, 0, DateTimeKind.Utc);
+      OdTimedHolder holder = new OdTimedHolder()
+      {
+        First = new OdTimed() { At = at, Minutes = 60 },
+        More = new List<OdTimed>() { new OdTimed() { At = at, Minutes = 5 }, new OdTimed() { At = at, Minutes = 6 } },
+        Contact = new OdName() { First = "Ann", Last = "Smith" }
+      };
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+      {
+        RootObject root = Reconstruct(MsgPackSerializer.Serialize(holder, Settings(layout, true)));
+        AssertNoIssues(root);
+        ComplexObject first = Complex(root, nameof(OdTimedHolder.First));
+        Assert.AreEqual(nameof(OdTimed), first.Type, layout.ToString());
+        AssertValue(60, first, nameof(OdTimed.Minutes));
+        Assert.AreEqual(nameof(OdTimed), Complex(Complex(root, nameof(OdTimedHolder.More)), "[1]").Type, layout.ToString());
+        Assert.AreEqual(nameof(OdName), Complex(root, nameof(OdTimedHolder.Contact)).Type, layout.ToString());
+      }
     }
 
     [TestMethod]

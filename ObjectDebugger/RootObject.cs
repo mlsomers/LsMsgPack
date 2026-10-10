@@ -80,8 +80,12 @@ namespace ObjectDebugger
 
       try
       {
-        ObjectReconstructor reconstructor = new ObjectReconstructor(Schema != null && Schema.IsAvailable ? Schema.Types : null);
-        reconstructor.FillRoot(this, Node.FromItem(payload.Body));
+        List<SchemaType> types = Schema != null && Schema.IsAvailable ? Schema.Types : null;
+        Node body = Node.FromItem(payload.Body);
+        ObjectReconstructor reconstructor = new ObjectReconstructor(types);
+        reconstructor.FillRoot(this, body);
+        if (reconstructor.Suspects.Count > 0 && reconstructor.Unexplained > 0)
+          RetryWithValues(body, types, reconstructor);
 
         if (Schema != null && Schema.Source == SchemaSource.Inline)
         {
@@ -98,6 +102,60 @@ namespace ObjectDebugger
       {
         AddError(ex.Message);
       }
+    }
+
+    /// <summary>
+    /// A DateTimeOffset (<c>[timestamp, offset]</c>) has the shape of an object of a type with two properties. Taken for one, the type seems to hold
+    /// a timestamp and an integer, so its real objects later do not fit it (<see cref="ObjectReconstructor.Unexplained"/>). The places where that
+    /// happened are tried as values, again with the places the next attempt suspects (the next DateTimeOffset is then taken for that type):
+    /// the result with the fewest unexplained values is kept.
+    /// </summary>
+    private void RetryWithValues(Node body, List<SchemaType> types, ObjectReconstructor first)
+    {
+      const int maxAttempts = 8;
+      bool[] used = new bool[types.Count];
+      for (int t = 0; t < types.Count; t++)
+        used[t] = types[t].IsUsed;
+
+      int fewest = first.Unexplained;
+      HashSet<string> best = null;
+      HashSet<string> forced = new HashSet<string>(first.Suspects, StringComparer.Ordinal);
+      for (int attempt = 0; attempt < maxAttempts; attempt++)
+      {
+        for (int t = 0; t < types.Count; t++)
+          types[t].IsUsed = false;
+        ObjectReconstructor retry = new ObjectReconstructor(types, forced);
+        retry.FillRoot(new RootObject(), body);
+        if (retry.Unexplained < fewest)
+        {
+          fewest = retry.Unexplained;
+          best = new HashSet<string>(forced, StringComparer.Ordinal);
+        }
+        int count = forced.Count;
+        forced.UnionWith(retry.Suspects);
+        if (fewest == 0 || forced.Count == count)
+          break;
+      }
+
+      if (best is null)
+      {
+        for (int t = 0; t < types.Count; t++)
+          types[t].IsUsed = used[t];
+        return;
+      }
+
+      // Again into this object (the values refer to their parents)
+      for (int t = 0; t < types.Count; t++)
+        types[t].IsUsed = false;
+      Members.Clear();
+      Kind = ObjectKind.Object;
+      Type = null;
+      TypeIsGuess = false;
+      TypeIdItemRef = null;
+      SchemaType = null;
+      ValueKind = ValueKind.Nil;
+      Value = null;
+      new ObjectReconstructor(types, best).FillRoot(this, body);
     }
 
     /// <summary>
