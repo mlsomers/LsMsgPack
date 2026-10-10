@@ -92,9 +92,9 @@ Reading data you don't trust (request bodies, messages from clients)? Type ids l
 
 Data that doesn't match your classes exactly (older or newer versions, a misspelled name) is read anyway, like the JSON serializers do. Pass an `out ReadDifferences` to `Deserialize` to find out what was skipped, counted per class and property, with the paths of the objects: see [docs/ReadDifferences.md](docs/ReadDifferences.md).
 
-Standalone Executable (for Windows)
------------------------------------
-Download the zip file from the [latest release](https://github.com/mlsomers/LsMsgPack/releases).
+Standalone Debugger (for Windows)
+---------------------------------
+Download the zip file from the [latest release](https://github.com/mlsomers/LsMsgPack/releases). It can open MsgPack files or read data from the clipboard. This UI is used in the Visual Studio and Fiddler integrations.
 
 ![Screenshot of the debugging user interface](https://github.com/mlsomers/LsMsgPack/raw/HEAD/docs/WinformsExplorer.png "MsgPack explorer")
 
@@ -117,7 +117,7 @@ Restart fiddler and you should see a MsgPack option in the Inspectors list.
 Visual Studio Integration
 -------------------------
 
-The tool can also be used as a debugging Visualizer in Visual Studio. It can be installed via the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=mlsomers.V2025102900).
+The tool can also be used as a debugging Visualizer in Visual Studio. Directly inspect `byte[]` or `Stream` instances in the debugger. It can be installed via the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=mlsomers.V2025102900).
 
 VS Code Integration
 -------------------
