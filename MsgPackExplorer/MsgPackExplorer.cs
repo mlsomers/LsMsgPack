@@ -472,6 +472,8 @@ namespace MsgPackExplorer
                 MsgPackItem[] children = arr.PackedValues;
                 for (int t = 0; t < children.Length; t++)
                 {
+                    if (ReferenceEquals(children[t], null))
+                        break; // the slots after an error were not read (the header claims them): they showed as NULL items, as if the data had them
                     TreeNode child = GetTreeNodeFor(children[t]);
                     node.Nodes.Add(child);
                     Traverse(child, children[t]);
@@ -485,6 +487,8 @@ namespace MsgPackExplorer
                 KeyValuePair<MsgPackItem, MsgPackItem>[] children = map.PackedValues;
                 for (int t = 0; t < children.Length; t++)
                 {
+                    if (ReferenceEquals(children[t].Key, null))
+                        break; // not read, as for arrays
                     TreeNode child = GetTreeNodeFor(children[t].Key);
                     child.StateImageIndex = 8; // Key
                     node.Nodes.Add(child);

@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { bytesFromText } from './bytesFromText';
 import { createDebugAccess } from './debugAccess';
-import { CancelledError, DebugVariable, readBytes, ReadResult } from './debugBytes';
+import { CancelledError, DebugVariable, expressionAt, readBytes, ReadResult, targetOfDebugContext } from './debugBytes';
 import { ByteSource, ExplorerView } from './explorerView';
 import { InspectorClient } from './inspectorClient';
 import { activateMcp } from './mcp';
@@ -35,12 +35,29 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('lsmsgpack.viewVariable', async (context?: VariablesContext) => {
-      const variable = context?.variable;
-      if (!variable) {
+    // The Variables and the Watch view: a variable, or the text of a watch expression
+    vscode.commands.registerCommand('lsmsgpack.viewVariable', async (context?: unknown) => {
+      const target = targetOfDebugContext(context);
+      if (!target) {
         return vscode.commands.executeCommand('lsmsgpack.inspectExpression');
       }
-      await showFromDebugger(open, variable.evaluateName, variable);
+      await showFromDebugger(open, target.expression, target.variable);
+    }),
+
+    // The editor while debugging: the selection, or the expression under the cursor (right-clicking moves the cursor there)
+    vscode.commands.registerCommand('lsmsgpack.viewAtCursor', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        return;
+      }
+      const selection = editor.selection;
+      const expression = selection.isEmpty
+        ? expressionAt(editor.document.lineAt(selection.active.line).text, selection.active.character)
+        : editor.document.getText(selection).trim();
+      if (!expression) {
+        return vscode.commands.executeCommand('lsmsgpack.inspectExpression');
+      }
+      await showFromDebugger(open, expression, undefined);
     }),
 
     vscode.commands.registerCommand('lsmsgpack.inspectExpression', async () => {
@@ -104,14 +121,6 @@ function findInspector(extensionPath: string): string {
     path.join(extensionPath, 'Server', 'bin', 'Debug', 'net8.0', 'LsMsgPackInspector.dll')
   ];
   return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
-}
-
-/**
- * What VS Code passes to a command of the context menu of the Variables view.
- */
-interface VariablesContext {
-  sessionId?: string;
-  variable?: DebugVariable;
 }
 
 function showFromText(open: (source: ByteSource) => void, text: string, title: string): void {

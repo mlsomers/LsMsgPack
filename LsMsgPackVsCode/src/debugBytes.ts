@@ -193,38 +193,46 @@ class DotNetReader {
       throw new Error('The value is null.');
     }
     if (await this.is('byte[]')) {
-      return this.readArray(e, 'byte[]');
+      return this.readArray(this.as('byte[]'), 'byte[]');
     }
     if (await this.is('System.IO.MemoryStream')) {
       // The whole stream, whatever its position, without moving it
-      return this.readArray(`((System.IO.MemoryStream)${e}).ToArray()`, 'MemoryStream');
+      return this.readArray(`${this.as('System.IO.MemoryStream')}.ToArray()`, 'MemoryStream');
     }
     if (await this.is('System.IO.Stream')) {
-      return this.readStream(`((System.IO.Stream)${e})`);
+      return this.readStream(this.as('System.IO.Stream'));
     }
     if (await this.is('string')) {
-      return this.readText(`((string)${e})`);
+      return this.readText(this.as('string'));
     }
     if (await this.is('System.Net.Http.HttpResponseMessage')) {
-      return this.readArray(`((System.Net.Http.HttpResponseMessage)${e}).Content.ReadAsByteArrayAsync().Result`, 'HttpResponseMessage content');
+      return this.readArray(`${this.as('System.Net.Http.HttpResponseMessage')}.Content.ReadAsByteArrayAsync().Result`, 'HttpResponseMessage content');
     }
     if (await this.is('System.Net.Http.HttpContent')) {
-      return this.readArray(`((System.Net.Http.HttpContent)${e}).ReadAsByteArrayAsync().Result`, 'HttpContent');
+      return this.readArray(`${this.as('System.Net.Http.HttpContent')}.ReadAsByteArrayAsync().Result`, 'HttpContent');
     }
     if (await this.is('System.ReadOnlyMemory<byte>')) {
-      return this.readArray(`((System.ReadOnlyMemory<byte>)${e}).ToArray()`, 'ReadOnlyMemory<byte>');
+      return this.readArray(`${this.as('System.ReadOnlyMemory<byte>')}.ToArray()`, 'ReadOnlyMemory<byte>');
     }
     if (await this.is('System.Memory<byte>')) {
-      return this.readArray(`((System.Memory<byte>)${e}).ToArray()`, 'Memory<byte>');
+      return this.readArray(`${this.as('System.Memory<byte>')}.ToArray()`, 'Memory<byte>');
     }
     if (await this.is('System.Collections.Generic.IEnumerable<byte>')) {
       // List<byte>, ArraySegment<byte>, ImmutableArray<byte>...
-      return this.readArray(`System.Linq.Enumerable.ToArray((System.Collections.Generic.IEnumerable<byte>)${e})`, 'IEnumerable<byte>');
+      return this.readArray(`System.Linq.Enumerable.ToArray(${this.as('System.Collections.Generic.IEnumerable<byte>')})`, 'IEnumerable<byte>');
     }
     if (await this.is('System.Buffers.ReadOnlySequence<byte>')) {
-      return this.readArray(`System.Buffers.BuffersExtensions.ToArray((System.Buffers.ReadOnlySequence<byte>)${e})`, 'ReadOnlySequence<byte>');
+      return this.readArray(`System.Buffers.BuffersExtensions.ToArray(${this.as('System.Buffers.ReadOnlySequence<byte>')})`, 'ReadOnlySequence<byte>');
     }
     throw new Error('Not a byte array, stream, list of bytes, (base64) string or HTTP content.');
+  }
+
+  /**
+   * The value as the type it was found to be (by is): through object, because the debugger compiles the expression against the declared type.
+   * A value declared as a type parameter (T value holding a byte[]) failed with CS1503 as an argument, and a direct cast from T is CS0030.
+   */
+  private as(type: string): string {
+    return `((${type})(object)${this.e})`;
   }
 
   private async is(type: string): Promise<boolean> {
@@ -441,4 +449,45 @@ export function parseByte(value: string, name: string): number {
     throw new Error(`Element ${name} is not a byte: ${value}`);
   }
   return number;
+}
+
+/**
+ * The expression at a position of a line of code, as the debugger's hover takes it: the member path up to the part under the cursor
+ * (`this._buffer` for `_buffer` in `this._buffer.Length`), with indexers (`items[2].Data`) and calls without arguments (`item.ToBytes()`).
+ */
+export function expressionAt(line: string, character: number): string | undefined {
+  const part = String.raw`[A-Za-z_@$][\w$]*(?:\(\))?(?:\[[^\[\]]*\])*`;
+  const chain = new RegExp(String.raw`${part}(?:\s*\??\.\s*${part})*`, 'g');
+  for (const match of line.matchAll(chain)) {
+    const start = match.index ?? 0;
+    if (character < start || character > start + match[0].length) {
+      continue;
+    }
+    // Up to the end of the part under the cursor
+    const parts = new RegExp(part, 'g');
+    for (const found of match[0].matchAll(parts)) {
+      const end = start + (found.index ?? 0) + found[0].length;
+      if (character <= end) {
+        return match[0].substring(0, end - start).replace(/\s+/g, '');
+      }
+    }
+    return match[0].replace(/\s+/g, '');
+  }
+  return undefined;
+}
+
+/**
+ * What VS Code passes to a command of the context menu of the Variables or Watch view: a variable (Variables, the members of a watch),
+ * or a watch expression (its text). Undefined for anything else (e.g. the command palette).
+ */
+export function targetOfDebugContext(context: unknown): { expression: string | undefined; variable: DebugVariable | undefined } | undefined {
+  if (!context || typeof context !== 'object') {
+    return undefined;
+  }
+  const value = context as { variable?: DebugVariable; watchExpression?: { name?: string }; expression?: { name?: string }; name?: unknown; evaluateName?: unknown };
+  if (value.variable && typeof value.variable.name === 'string') {
+    return { expression: value.variable.evaluateName || undefined, variable: value.variable };
+  }
+  const watched = value.watchExpression?.name ?? value.expression?.name ?? (typeof value.evaluateName === 'string' ? value.evaluateName : undefined) ?? (typeof value.name === 'string' ? value.name : undefined);
+  return watched ? { expression: watched, variable: undefined } : undefined;
 }

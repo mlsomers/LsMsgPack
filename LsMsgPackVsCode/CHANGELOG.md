@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **View as MsgPack** also in the context menu of the Watch view, and of the editor while the program is paused (the selection, or the expression under the cursor).
+- .NET: a variable declared as another type than the one it holds (a `T value` holding a `byte[]`) could not be read ("CS1503: cannot convert"): the expressions sent to the debugger compiled against the declared type.
+- Data that ends in the content of an extension (e.g. random bytes) is shown up to the error with "Ignore errors" off. It failed with "Object reference not set to an instance of an object".
+- The entries an error cut off (claimed by the header, not read) are no longer shown as NULL items.
 - Validation of the indexed schema (type ids and property names a reader can not use), the type ids in the body, timestamps, big integers (extension type -2), decimals and reserved extension types. New severity **Security vulnerability** (🛡): values in properties declared as `object` (a type id on a value that has no derived types or on a framework type, values of different kinds in one place), type names that could load assemblies and known gadget types.
 - AI agents (MCP): the extension registers the LsMsgPack MCP server with VS Code (chat agent mode) and lets it read MsgPack from the debugger: where the program is paused, the variables that hold bytes, and their bytes decoded into JSON with comments. Other agents (Claude Code...) find the window through a lock file in `~/.lsmsgpack/ide`. **MsgPack: Copy MCP Server Configuration...** copies their configuration. Settings `lsmsgpack.mcp.enabled` and `lsmsgpack.mcp.allowAnyExpression` (only variable and member paths by default).
 - The objects pane also opens by itself for data without a schema that looks like objects: type ids, or maps with the same names as keys (a list of records, as Python or JavaScript write them). Setting `lsmsgpack.showObjectsAt` (`certain`, `high` by default, `medium`, `low`), the tooltip of the Objects button tells why.
