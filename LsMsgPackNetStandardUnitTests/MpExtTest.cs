@@ -7,6 +7,26 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class MpExtTest
   {
+#if KEEPTRACK
+    /// <summary>
+    /// The data ends in the content of an extension: the explorers show the item that was read, its text threw a NullReferenceException.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void CutOffInTheContent_TextSaysSo(bool continueOnError)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { PreservePackages = true, ContinueProcessingOnBreakingError = continueOnError };
+      MsgPackItem item = MsgPackItem.Unpack(new System.IO.MemoryStream(new byte[] { 0xC7, 0x05, 0x01, 0xAA }), settings); // ext 8 of 5 bytes, 1 there
+      MpError error = item as MpError;
+      Assert.IsNotNull(error, item?.GetType().Name);
+      MpExt partial = error.PartialItem as MpExt;
+      Assert.IsNotNull(partial, error.PartialItem?.GetType().Name);
+      StringAssert.Contains(partial.ToString(), "the data ended before its content");
+      Assert.AreEqual(0, partial.Count);
+    }
+#endif
+
     [TestMethod]
     [DataRow(0, 3, MsgPackTypeId.MpExt8)]
     [DataRow(1, 3, MsgPackTypeId.MpFExt1)]
