@@ -96,7 +96,7 @@ Standalone Executable (for Windows)
 -----------------------------------
 Download the zip file from the [latest release](https://github.com/mlsomers/LsMsgPack/releases).
 
-![Screenshot of the debugging user interface](https://github.com/mlsomers/LsMsgPack/raw/HEAD/docs.WinformsExplorer.png "MsgPack explorer")
+![Screenshot of the debugging user interface](https://github.com/mlsomers/LsMsgPack/raw/HEAD/docs/WinformsExplorer.png "MsgPack explorer")
 
 Fiddler Integration
 -------------------
