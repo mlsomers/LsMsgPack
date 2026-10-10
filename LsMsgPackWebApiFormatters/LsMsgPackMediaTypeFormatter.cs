@@ -34,8 +34,8 @@ namespace LsMsgPackWebApiFormatters
     public LsMsgPackMediaTypeFormatter(LtMsgPackHttpSerializer serializer)
     {
       Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
-      foreach (string mediaType in MsgPackMediaTypes.All)
-        SupportedMediaTypes.Add(new MediaTypeHeaderValue(mediaType));
+      for (int t = 0; t < MsgPackMediaTypes.All.Count; t++) // the first one is the default
+        SupportedMediaTypes.Add(new MediaTypeHeaderValue(MsgPackMediaTypes.All[t]));
     }
 
     private LsMsgPackMediaTypeFormatter(LsMsgPackMediaTypeFormatter formatter, RequestSchemas request) : base(formatter)

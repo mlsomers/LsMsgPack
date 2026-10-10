@@ -148,8 +148,9 @@ namespace ObjectDebugger
       Node typeId = null;
       Node content = null;
       List<KeyValuePair<Node, Node>> others = new List<KeyValuePair<Node, Node>>(node.Entries.Length);
-      foreach (KeyValuePair<Node, Node> entry in node.Entries)
+      for (int t = 0; t < node.Entries.Length; t++)
       {
+        KeyValuePair<Node, Node> entry = node.Entries[t];
         if (typeId is null && entry.Key.IsString(TypeIdKey))
           typeId = entry.Value;
         else if (content is null && entry.Key.IsString(ContentKey))
@@ -294,8 +295,9 @@ namespace ObjectDebugger
       if (type != null)
         RecordSignature(type, entries);
 
-      foreach (KeyValuePair<Node, Node> entry in entries)
+      for (int t = 0; t < entries.Count; t++)
       {
+        KeyValuePair<Node, Node> entry = entries[t];
         long index;
         string name;
         if (type != null && entry.Key.TryGetIndex(out index) && index >= 0 && index < type.Properties.Count)
@@ -404,15 +406,16 @@ namespace ObjectDebugger
         return;
 
       List<Node> nodes = new List<Node>(values.Length);
-      foreach (Node value in values)
+      for (int t = 0; t < values.Length; t++)
       {
+        Node value = values[t];
         if (value.Kind == ValueKind.Array || value.Kind == ValueKind.Map && value.Entries.Length > 0 && AllKeysAreIndexes(value.Entries))
           nodes.Add(value);
       }
       if (nodes.Count < 2)
         return;
-      foreach (Node node in nodes)
-        if (node.Kind != nodes[0].Kind)
+      for (int t = nodes.Count - 1; t > 0; t--)
+        if (nodes[t].Kind != nodes[0].Kind)
           return;
 
       SchemaType best = null;
@@ -420,8 +423,9 @@ namespace ObjectDebugger
       foreach (SchemaType candidate in Candidates())
       {
         long score = 0;
-        foreach (Node node in nodes)
+        for (int t = nodes.Count - 1; t >= 0; t--)
         {
+          Node node = nodes[t];
           Fit fit = GetFit(candidate, node);
           int nodeScore = fit == Fit.None ? int.MinValue : Score(candidate, node, fit);
           if (nodeScore == int.MinValue)
@@ -441,9 +445,9 @@ namespace ObjectDebugger
       if (nodes[0].Kind == ValueKind.Array)
       {
         long collectionScore = 0;
-        foreach (Node node in nodes)
+        for (int t = nodes.Count - 1; t >= 0; t--)
         {
-          int score = CollectionScore(node);
+          int score = CollectionScore(nodes[t]);
           if (score == int.MinValue)
           {
             collectionScore = long.MinValue;
@@ -494,10 +498,10 @@ namespace ObjectDebugger
       if (node.Kind != ValueKind.Map)
         return Fit.None;
 
-      foreach (KeyValuePair<Node, Node> entry in node.Entries)
+      for (int t = node.Entries.Length - 1; t >= 0; t--)
       {
         long index;
-        if (!entry.Key.TryGetIndex(out index) || index < 0 || index >= count)
+        if (!node.Entries[t].Key.TryGetIndex(out index) || index < 0 || index >= count)
           return Fit.None;
       }
       return node.Entries.Length == count ? Fit.Exact : Fit.Partial;
@@ -555,8 +559,9 @@ namespace ObjectDebugger
       // An element of a derived type is wrapped for its type id: { "": typeId, "@": [values] } is in the place of an array
       Node first = null;
       ValueKind firstKind = ValueKind.Nil;
-      foreach (Node element in node.Elements)
+      for (int t = 0; t < node.Elements.Length; t++)
       {
+        Node element = node.Elements[t];
         ValueKind kind = ComparableKind(element);
         if (kind == ValueKind.Nil)
           continue;
@@ -580,8 +585,8 @@ namespace ObjectDebugger
     {
       if (node.Kind == ValueKind.Map)
       {
-        foreach (KeyValuePair<Node, Node> entry in node.Entries)
-          if (entry.Key.IsString(TypeIdKey) || entry.Key.Kind == ValueKind.String)
+        for (int t = node.Entries.Length - 1; t >= 0; t--)
+          if (node.Entries[t].Key.IsString(TypeIdKey) || node.Entries[t].Key.Kind == ValueKind.String)
             return true;
       }
 
@@ -604,8 +609,9 @@ namespace ObjectDebugger
     private void RecordSignature(SchemaType type, List<KeyValuePair<Node, Node>> entries)
     {
       ValueKind[] signature = GetSignature(type);
-      foreach (KeyValuePair<Node, Node> entry in entries)
+      for (int t = 0; t < entries.Count; t++)
       {
+        KeyValuePair<Node, Node> entry = entries[t];
         long index;
         if (entry.Key.TryGetIndex(out index) && index >= 0 && index < signature.Length && signature[index] == ValueKind.Nil)
           signature[index] = ComparableKind(entry.Value);
@@ -623,9 +629,9 @@ namespace ObjectDebugger
         return ValueKind.Nil;
       if (node.Kind != ValueKind.Map || node.Entries.Length == 0 || !node.Entries[0].Key.IsString(TypeIdKey))
         return node.Kind;
-      foreach (KeyValuePair<Node, Node> entry in node.Entries)
-        if (entry.Key.IsString(ContentKey))
-          return entry.Value.IsContainer ? entry.Value.Kind : ValueKind.Map;
+      for (int t = 0; t < node.Entries.Length; t++)
+        if (node.Entries[t].Key.IsString(ContentKey))
+          return node.Entries[t].Value.IsContainer ? node.Entries[t].Value.Kind : ValueKind.Map;
       return ValueKind.Map; // an object with its type id written as a map
     }
 
@@ -700,24 +706,24 @@ namespace ObjectDebugger
 
     private static bool AllKeysAreIndexes(List<KeyValuePair<Node, Node>> entries)
     {
-      foreach (KeyValuePair<Node, Node> entry in entries)
-        if (entry.Key.Kind != ValueKind.Int)
+      for (int t = entries.Count - 1; t >= 0; t--)
+        if (entries[t].Key.Kind != ValueKind.Int)
           return false;
       return true;
     }
 
     private static bool AllKeysAreIndexes(KeyValuePair<Node, Node>[] entries)
     {
-      foreach (KeyValuePair<Node, Node> entry in entries)
-        if (entry.Key.Kind != ValueKind.Int)
+      for (int t = entries.Length - 1; t >= 0; t--)
+        if (entries[t].Key.Kind != ValueKind.Int)
           return false;
       return true;
     }
 
     private static bool AllKeysAreStrings(List<KeyValuePair<Node, Node>> entries)
     {
-      foreach (KeyValuePair<Node, Node> entry in entries)
-        if (entry.Key.Kind != ValueKind.String)
+      for (int t = entries.Count - 1; t >= 0; t--)
+        if (entries[t].Key.Kind != ValueKind.String)
           return false;
       return true;
     }

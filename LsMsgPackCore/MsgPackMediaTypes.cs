@@ -34,8 +34,8 @@ namespace LsMsgPack
     public static bool IsSupported(string contentType)
     {
       string mediaType = WithoutParameters(contentType);
-      foreach (string supported in All)
-        if (string.Equals(mediaType, supported, StringComparison.OrdinalIgnoreCase))
+      for (int t = All.Count - 1; t >= 0; t--)
+        if (string.Equals(mediaType, All[t], StringComparison.OrdinalIgnoreCase))
           return true;
       return false;
     }

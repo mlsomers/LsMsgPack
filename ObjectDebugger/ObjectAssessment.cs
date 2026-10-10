@@ -74,8 +74,8 @@ namespace ObjectDebugger
 
       if (node.Kind == ValueKind.Array)
       {
-        foreach (Node element in node.Elements)
-          Visit(element);
+        for (int t = 0; t < node.Elements.Length; t++)
+          Visit(node.Elements[t]);
         return;
       }
 
@@ -83,10 +83,10 @@ namespace ObjectDebugger
         return;
 
       AssessMap(node);
-      foreach (KeyValuePair<Node, Node> entry in node.Entries)
+      for (int t = 0; t < node.Entries.Length; t++)
       {
-        Visit(entry.Key);
-        Visit(entry.Value);
+        Visit(node.Entries[t].Key);
+        Visit(node.Entries[t].Value);
       }
     }
 
@@ -159,9 +159,9 @@ namespace ObjectDebugger
       if (entries.Length < 2)
         return false;
       ValueKind? seen = null;
-      foreach (KeyValuePair<Node, Node> entry in entries)
+      for (int t = entries.Length - 1; t >= 0; t--)
       {
-        ValueKind kind = entry.Value.Kind;
+        ValueKind kind = entries[t].Value.Kind;
         if (kind == ValueKind.Nil || kind == ValueKind.Error)
           continue;
         // A dictionary of numbers may hold integers and floats

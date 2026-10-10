@@ -116,8 +116,9 @@ namespace LsMsgPack.TypeResolving.Filters
             if (info.PropertyInfo != null && info.CustomAttributes.ContainsKey(JsonIgnoreName))
             {
                 // Both JsonIgnore attributes may be there, only one of them is in CustomAttributes
-                foreach (object att in info.PropertyInfo.GetCustomAttributes(true))
-                    if (Ignores(att))
+                object[] atts = info.PropertyInfo.GetCustomAttributes(true);
+                for (int t = atts.Length - 1; t >= 0; t--)
+                    if (Ignores(atts[t]))
                         return false;
                 return true;
             }

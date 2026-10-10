@@ -488,6 +488,12 @@ namespace LtMsgPack
           for (int t = 0; t < items.Length; t++)
             WriteBoxed(c, items[t], elementInfo);
         }
+        else if (value is IList indexed && !(value is Array multi && multi.Rank > 1)) // the indexer of a multidimensional array throws
+        {
+          c.W.ArrayHeader(indexed.Count);
+          for (int t = 0; t < indexed.Count; t++)
+            WriteBoxed(c, indexed[t], elementInfo);
+        }
         else if (value is ICollection collection)
         {
           c.W.ArrayHeader(collection.Count);

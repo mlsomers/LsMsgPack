@@ -26,8 +26,9 @@ namespace LsMsgPackMvc
       _serializer = new LtMsgPackHttpSerializer(options ?? new LtMsgPackHttpOptions());
 
       ModelBinderProviderCollection providers = ModelBinderProviders.BinderProviders;
-      foreach (LsMsgPackModelBinderProvider existing in providers.OfType<LsMsgPackModelBinderProvider>().ToList())
-        providers.Remove(existing);
+      for (int t = providers.Count - 1; t >= 0; t--)
+        if (providers[t] is LsMsgPackModelBinderProvider)
+          providers.RemoveAt(t);
       providers.Insert(0, new LsMsgPackModelBinderProvider(_serializer));
     }
 

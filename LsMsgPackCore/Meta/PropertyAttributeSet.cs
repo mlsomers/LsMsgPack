@@ -98,9 +98,10 @@ namespace LsMsgPack.Meta
         return null;
       List<object> attributes = null;
       Type[] index = Array.ConvertAll(_property.GetIndexParameters(), p => p.ParameterType);
-      foreach (Type face in _property.DeclaringType.GetInterfaces())
+      Type[] faces = _property.DeclaringType.GetInterfaces();
+      for (int t = 0; t < faces.Length; t++)
       {
-        PropertyInfo implemented = face.GetProperty(_property.Name, BindingFlags.Instance | BindingFlags.Public, null, _property.PropertyType, index, null);
+        PropertyInfo implemented = faces[t].GetProperty(_property.Name, BindingFlags.Instance | BindingFlags.Public, null, _property.PropertyType, index, null);
         if (implemented is null)
           continue;
         if (attributes is null)
@@ -125,8 +126,10 @@ namespace LsMsgPack.Meta
       for (Type type = property.DeclaringType.BaseType; type != null; type = type.BaseType)
       {
         // Not GetProperty(name): indexers share the name "Item"
-        foreach (PropertyInfo candidate in type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+        PropertyInfo[] candidates = type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
+        for (int t = 0; t < candidates.Length; t++)
         {
+          PropertyInfo candidate = candidates[t];
           if (!string.Equals(candidate.Name, property.Name, StringComparison.Ordinal))
             continue;
           MethodInfo candidateAccessor = candidate.GetGetMethod(true) ?? candidate.GetSetMethod(true);

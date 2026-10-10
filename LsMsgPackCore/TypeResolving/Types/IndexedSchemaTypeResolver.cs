@@ -225,8 +225,10 @@ namespace LsMsgPack.TypeResolving.Types
         }
         aliases[read] = def;
 
-        foreach (PropertyInfo readProp in read.GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        PropertyInfo[] readProps = read.GetProperties(BindingFlags.Instance | BindingFlags.Public);
+        for (int t = 0; t < readProps.Length; t++)
         {
+          PropertyInfo readProp = readProps[t];
           if (readProp.GetIndexParameters().Length > 0)
             continue;
           PropertyInfo writtenProp = NonIndexedProperty(written, readProp.Name);
@@ -254,9 +256,10 @@ namespace LsMsgPack.TypeResolving.Types
 
     private static PropertyInfo NonIndexedProperty(Type type, string name)
     {
-      foreach (PropertyInfo prop in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
-        if (string.Equals(prop.Name, name, StringComparison.Ordinal) && prop.GetIndexParameters().Length == 0)
-          return prop;
+      PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
+      for (int t = 0; t < props.Length; t++)
+        if (string.Equals(props[t].Name, name, StringComparison.Ordinal) && props[t].GetIndexParameters().Length == 0)
+          return props[t];
       return null;
     }
 
@@ -375,8 +378,9 @@ namespace LsMsgPack.TypeResolving.Types
     private void ResolveDeserializedTypes(MsgPackOptions settings)
     {
 
-      foreach (ComplexTypeDef def in ByTypeId)
+      for (int t = 0; t < ByTypeId.Count; t++)
       {
+        ComplexTypeDef def = ByTypeId[t];
         if (def.Type is null)
         {
           // Without the declared type (not known yet) a name may not resolve: another assembly, or a short name of several types. That is decided where the entry is used (Resolve, TryGetDef)

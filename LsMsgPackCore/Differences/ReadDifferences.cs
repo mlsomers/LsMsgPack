@@ -378,8 +378,9 @@ namespace LsMsgPack
       Walker walker = new Walker(_settings);
       Dictionary<object, Found> found = walker.FindPaths(Root, Samples());
       HashSet<Type> defaultsListed = new HashSet<Type>();
-      foreach (Difference difference in _differences)
+      for (int t = 0; t < _differences.Count; t++)
       {
+        Difference difference = _differences[t];
         List<object> samples = InGraphOrder(difference, found);
         report.Append("\r\n- ").Append(difference);
         AppendPaths(report, difference, samples, found);
@@ -416,9 +417,12 @@ namespace LsMsgPack
     private HashSet<object> Samples()
     {
       HashSet<object> samples = new HashSet<object>(ReferenceComparer.Instance);
-      foreach (Difference difference in _differences)
-        foreach (object sample in difference._samples)
-          samples.Add(sample);
+      for (int t = _differences.Count - 1; t >= 0; t--)
+      {
+        List<object> differenceSamples = _differences[t]._samples;
+        for (int s = differenceSamples.Count - 1; s >= 0; s--)
+          samples.Add(differenceSamples[s]);
+      }
       return samples;
     }
 
@@ -428,8 +432,11 @@ namespace LsMsgPack
     private static List<object> InGraphOrder(Difference difference, Dictionary<object, Found> found)
     {
       List<KeyValuePair<int, object>> ordered = new List<KeyValuePair<int, object>>();
-      foreach (object sample in difference._samples)
+      for (int t = 0; t < difference._samples.Count; t++)
+      {
+        object sample = difference._samples[t];
         ordered.Add(new KeyValuePair<int, object>(found.TryGetValue(sample, out Found at) ? at.Order : int.MaxValue, sample));
+      }
       List<object> samples = new List<object>(ordered.Count);
       foreach (KeyValuePair<int, object> sample in ordered.OrderBy(o => o.Key)) // stable: the samples that were not found keep their order
         samples.Add(sample.Value);
@@ -477,17 +484,17 @@ namespace LsMsgPack
       List<string> defaults = new List<string>();
       if (first != null)
       {
-        foreach (FullPropertyInfo prop in props)
-          if (Walker.TryGetValue(prop, first, out object value) && IsDefault(value))
-            defaults.Add(prop.PropertyInfo.Name);
+        for (int t = 0; t < props.Length; t++)
+          if (Walker.TryGetValue(props[t], first, out object value) && IsDefault(value))
+            defaults.Add(props[t].PropertyInfo.Name);
       }
 
       string best = null;
       int bestDistance = int.MaxValue;
       int allowed = difference.Name.Length <= 4 ? 1 : 2;
-      foreach (FullPropertyInfo prop in props)
+      for (int t = 0; t < props.Length; t++)
       {
-        string name = prop.PropertyInfo.Name;
+        string name = props[t].PropertyInfo.Name;
         int distance = Distance(difference.Name.ToLowerInvariant(), name.ToLowerInvariant());
         if (distance > allowed)
           continue;
@@ -620,9 +627,10 @@ namespace LsMsgPack
           return;
         }
 
-        foreach (FullPropertyInfo prop in Properties(value.GetType()))
-          if (TryGetValue(prop, value, out object child))
-            Add(nodes, n, child, string.Concat(".", prop.PropertyInfo.Name));
+        FullPropertyInfo[] props = Properties(value.GetType());
+        for (int t = 0; t < props.Length; t++)
+          if (TryGetValue(props[t], value, out object child))
+            Add(nodes, n, child, string.Concat(".", props[t].PropertyInfo.Name));
       }
 
       private static void Add(List<Node> nodes, int parent, object value, string segment)
@@ -651,9 +659,13 @@ namespace LsMsgPack
         List<FullPropertyInfo> readable = new List<FullPropertyInfo>();
         if (_settings != null)
         {
-          foreach (FullPropertyInfo prop in FullPropertyInfo.GetStaticallyIncludedProps(type, _settings))
+          FullPropertyInfo[] included = FullPropertyInfo.GetStaticallyIncludedProps(type, _settings);
+          for (int t = 0; t < included.Length; t++)
+          {
+            FullPropertyInfo prop = included[t];
             if (prop.PropertyInfo.CanRead && prop.PropertyInfo.GetIndexParameters().Length == 0 && !prop.PropertyInfo.GetGetMethod(true).IsStatic)
               readable.Add(prop);
+          }
         }
         props = readable.ToArray();
         _props[type] = props;

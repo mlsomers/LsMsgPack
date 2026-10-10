@@ -31,8 +31,8 @@ namespace LsMsgPackFormatters
     public LsMsgPackInputFormatter(LtMsgPackHttpSerializer serializer)
     {
       Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
-      foreach (string mediaType in MsgPackMediaTypes.All)
-        SupportedMediaTypes.Add(mediaType);
+      for (int t = 0; t < MsgPackMediaTypes.All.Count; t++) // the first one is the default
+        SupportedMediaTypes.Add(MsgPackMediaTypes.All[t]);
     }
 
     public override async Task<InputFormatterResult> ReadRequestBodyAsync(InputFormatterContext context)

@@ -414,16 +414,18 @@ namespace LsMsgPack.Meta
           todo.Push(type.GetElementType());
           continue;
         }
-        foreach (Type arg in type.GenericTypeArguments)
-          todo.Push(arg);
+        Type[] args = type.GenericTypeArguments;
+        for (int t = args.Length - 1; t >= 0; t--)
+          todo.Push(args[t]);
 
         if (IsFrameworkAssembly(type.Assembly))
           continue; // the framework's types are found otherwise, and do not reach the model
 
         CacheAssembly(type.Assembly, null);
         todo.Push(type.BaseType);
-        foreach (PropertyInfo prop in type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
-          todo.Push(prop.PropertyType);
+        PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
+        for (int t = props.Length - 1; t >= 0; t--)
+          todo.Push(props[t].PropertyType);
       }
       ReachableCached.TryAdd(root, true);
     }

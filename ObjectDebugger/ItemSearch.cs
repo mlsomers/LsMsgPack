@@ -50,8 +50,10 @@ namespace ObjectDebugger
       _null = string.Equals(trimmed, "null", StringComparison.OrdinalIgnoreCase) || string.Equals(trimmed, "nil", StringComparison.OrdinalIgnoreCase);
 
       // Both the invariant notation (1.5) and the one of the user (e.g. 1,5)
-      foreach (CultureInfo culture in new[] { CultureInfo.InvariantCulture, CultureInfo.CurrentCulture })
+      CultureInfo[] numberCultures = { CultureInfo.InvariantCulture, CultureInfo.CurrentCulture };
+      for (int t = 0; t < numberCultures.Length; t++)
       {
+        CultureInfo culture = numberCultures[t];
         decimal number;
         if (decimal.TryParse(trimmed, NumberStyles.Float, culture, out number) && !_numbers.Contains(number))
           _numbers.Add(number);
@@ -69,8 +71,10 @@ namespace ObjectDebugger
       {
         DateTimeStyles styles = DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeLocal;
         DateTime date;
-        foreach (CultureInfo culture in new[] { CultureInfo.CurrentCulture, CultureInfo.InvariantCulture })
+        CultureInfo[] dateCultures = { CultureInfo.CurrentCulture, CultureInfo.InvariantCulture };
+        for (int t = 0; t < dateCultures.Length; t++)
         {
+          CultureInfo culture = dateCultures[t];
           if (DateTime.TryParseExact(trimmed, DateFormats, culture, styles, out date))
             AddDate(date);
           if (_numbers.Count == 0 && DateTime.TryParse(trimmed, culture, styles, out date))
@@ -124,8 +128,9 @@ namespace ObjectDebugger
       MpArray array = current as MpArray;
       if (array != null)
       {
-        foreach (MsgPackItem element in array.PackedValues)
-          if (!SearchItem(element, matches, stop, ref visited))
+        MsgPackItem[] elements = array.PackedValues;
+        for (int t = 0; t < elements.Length; t++)
+          if (!SearchItem(elements[t], matches, stop, ref visited))
             return false;
         return true;
       }
@@ -133,11 +138,12 @@ namespace ObjectDebugger
       MpMap map = current as MpMap;
       if (map != null)
       {
-        foreach (KeyValuePair<MsgPackItem, MsgPackItem> entry in map.PackedValues)
+        KeyValuePair<MsgPackItem, MsgPackItem>[] entries = map.PackedValues;
+        for (int t = 0; t < entries.Length; t++)
         {
-          if (!SearchItem(entry.Key, matches, stop, ref visited))
+          if (!SearchItem(entries[t].Key, matches, stop, ref visited))
             return false;
-          if (!SearchItem(entry.Value, matches, stop, ref visited))
+          if (!SearchItem(entries[t].Value, matches, stop, ref visited))
             return false;
         }
         return true;
@@ -206,23 +212,29 @@ namespace ObjectDebugger
       if (value is float)
       {
         float f = (float)value;
-        foreach (double d in _doubles)
+        for (int t = _doubles.Count - 1; t >= 0; t--)
+        {
+          double d = _doubles[t];
           if ((float)d == f || float.IsNaN(f) && double.IsNaN(d))
             return true;
+        }
         return false;
       }
 
       double v = Convert.ToDouble(value, CultureInfo.InvariantCulture);
-      foreach (double d in _doubles)
+      for (int t = _doubles.Count - 1; t >= 0; t--)
+      {
+        double d = _doubles[t];
         if (d == v || double.IsNaN(v) && double.IsNaN(d))
           return true;
+      }
       return false;
     }
 
     private bool IsDateMatch(DateTime value)
     {
-      foreach (DateTime date in _dates)
-        if (value.Ticks / _datePrecision == date.Ticks / _datePrecision)
+      for (int t = _dates.Count - 1; t >= 0; t--)
+        if (value.Ticks / _datePrecision == _dates[t].Ticks / _datePrecision)
           return true;
       return false;
     }

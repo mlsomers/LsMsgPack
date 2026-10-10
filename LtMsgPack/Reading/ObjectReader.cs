@@ -395,7 +395,7 @@ namespace LtMsgPack.Reading
       if (next < props.Length && props[next].NameIs(buffer, offset, length))
         return props[next++];
 
-      for (int t = 0; t < props.Length; t++)
+      for (int t = props.Length - 1; t >= 0; t--) // the names are unique
       {
         if (props[t].NameIs(buffer, offset, length))
         {
@@ -408,9 +408,9 @@ namespace LtMsgPack.Reading
 
     internal PropReader FindByName(string name)
     {
-      foreach (PropReader prop in Props)
-        if (prop.Name == name)
-          return prop;
+      for (int t = 0; t < Props.Length; t++)
+        if (Props[t].Name == name)
+          return Props[t];
       return null;
     }
 

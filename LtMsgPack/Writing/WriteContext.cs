@@ -210,9 +210,12 @@ namespace LtMsgPack.Writing
 
       List<string> props = _collectionProps[id];
       if (props.Count == 0 || id == count) // AddProp only adds names that are not there yet
-        foreach (string name in info.PropertyNames)
-          if (!props.Contains(name))
-            props.Add(name);
+      {
+        string[] names = info.PropertyNames;
+        for (int t = 0; t < names.Length; t++)
+          if (!props.Contains(names[t]))
+            props.Add(names[t]);
+      }
     }
 
     /// <summary>

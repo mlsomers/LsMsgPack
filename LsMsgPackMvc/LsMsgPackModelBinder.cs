@@ -89,8 +89,10 @@ namespace LsMsgPackMvc
     /// </summary>
     private static IModelBinder FallbackBinder(Type modelType)
     {
-      foreach (IModelBinderProvider provider in ModelBinderProviders.BinderProviders)
+      ModelBinderProviderCollection providers = ModelBinderProviders.BinderProviders;
+      for (int t = 0; t < providers.Count; t++)
       {
+        IModelBinderProvider provider = providers[t];
         if (provider is LsMsgPackModelBinderProvider)
           continue;
         IModelBinder binder = provider.GetBinder(modelType);

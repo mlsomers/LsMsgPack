@@ -87,9 +87,9 @@ namespace ObjectDebugger
         {
           // An inline schema has exactly the types of this payload, so every type should have been found
           List<string> unused = new List<string>();
-          foreach (SchemaType type in Schema.Types)
-            if (!type.IsUsed)
-              unused.Add(type.Name);
+          for (int t = 0; t < Schema.Types.Count; t++)
+            if (!Schema.Types[t].IsUsed)
+              unused.Add(Schema.Types[t].Name);
           if (unused.Count > 0)
             Warnings.Add($"No value was matched with these types of the schema: {string.Join(", ", unused)}. Inferred types may be wrong.");
         }
@@ -110,9 +110,10 @@ namespace ObjectDebugger
       if (!(item is MpRoot root))
         return found;
 
-      foreach (Payload payload in SplitPayloads(new List<MsgPackItem>(root), null))
-        if (payload.SchemaItem != null)
-          found.Add(payload.SchemaItem);
+      List<Payload> payloads = SplitPayloads(new List<MsgPackItem>(root), null);
+      for (int t = 0; t < payloads.Count; t++)
+        if (payloads[t].SchemaItem != null)
+          found.Add(payloads[t].SchemaItem);
       return found;
     }
 

@@ -47,8 +47,9 @@ namespace LsMsgPack.TypeResolving.Types
       lock (_sync)
       {
         HashSet<Type> copy = new HashSet<Type>(_types);
-        foreach (Type type in types)
+        for (int t = types.Length - 1; t >= 0; t--)
         {
+          Type type = types[t];
           if (type != null)
           {
             copy.Add(type);
@@ -72,8 +73,9 @@ namespace LsMsgPack.TypeResolving.Types
       lock (_sync)
       {
         HashSet<Assembly> copy = new HashSet<Assembly>(_assemblies);
-        foreach (Assembly assembly in assemblies)
+        for (int t = assemblies.Length - 1; t >= 0; t--)
         {
+          Assembly assembly = assemblies[t];
           if (assembly != null)
           {
             copy.Add(assembly);
@@ -142,9 +144,10 @@ namespace LsMsgPack.TypeResolving.Types
         if (!_types.Contains(definition) && !_assemblies.Contains(definition.Assembly) && !SafeGenericDefinitions.Contains(definition))
           return false;
 
-        foreach (Type argument in type.GenericTypeArguments)
+        Type[] arguments = type.GenericTypeArguments;
+        for (int t = arguments.Length - 1; t >= 0; t--)
         {
-          if (!IsAllowed(argument))
+          if (!IsAllowed(arguments[t]))
             return false;
         }
         return true;
