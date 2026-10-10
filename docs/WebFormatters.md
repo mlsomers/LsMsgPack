@@ -232,7 +232,7 @@ builder.Services.AddControllers()
 
 | Package | Where the differences are | Logged |
 |---|---|---|
-| ASP.NET Core | `HttpContext.GetReadDifferences()` (in `HttpContext.Features`) | As a warning through `ILogger` (category `LsMsgPackFormatters.LsMsgPackInputFormatter`), with the report |
+| ASP.NET Core | `HttpContext.GetReadDifferences()` (in `HttpContext.Features`) | Through `ILogger` (category `LsMsgPackFormatters.LsMsgPackInputFormatter`), with the report: at the `Debug` level, or as a warning with `LogDifferencesAsWarning` |
 | Web API 2 | `Request.GetReadDifferences()` in the controller | No |
 | HttpClient | `response.GetReadDifferences()` (or `content.GetReadDifferences()`) after `ReadAsAsync` | No |
 | MVC 5 | `HttpContext.GetReadDifferences()` in the controller | No |
@@ -241,7 +241,62 @@ Values that can't be read (a string where an `int` is declared...) fail the requ
 
 It's `null` when the body matched the classes (or wasn't read by the MsgPack formatter). When reading fails, it has what was found until the error, which is often the cause (a misspelled property that was skipped). `LtMsgPackHttpSerializer.Deserialize` also has an overload with `out ReadDifferences`.
 
-It's off by default: reading with it is a bit slower (about 0.15 µs per request body, and 10% on large bodies), and the warning walks the objects that were read to find the paths. Turn it on while you look for a problem, or in a test environment.
+It's off by default: reading with it is a bit slower (about 0.15 µs per request body, and 10% on large bodies), and logging the report walks the objects that were read to find the paths (only when the log level is enabled). Turn it on while you look for a problem, or in a test environment.
+
+In ASP.NET Core the differences are logged at the `Debug` level by default, because clients on a newer version of the models would otherwise add a warning to the log with every request. Set `LogDifferencesAsWarning` to log them as warnings (it has no effect without `ReportDifferences`):
+
+```csharp
+builder.Services.AddControllers()
+  .AddLsMsgPackSerializerFormatters(o =>
+  {
+    o.ReportDifferences = true;
+    o.LogDifferencesAsWarning = true;
+  });
+```
+
+When your schema is already public (exposed by swagger for example) you can also give the report to the client when its body is missing something you need. For example, an `Order` needs an `Address`, and a client on an older version of the models still calls it `ShippingAddress`:
+
+```csharp
+using LsMsgPackFormatters; // GetReadDifferences()
+
+public class Order
+{
+  public int Id { get; set; }
+  public Address Address { get; set; } // Address? with nullable reference types, see below
+}
+
+[ApiController]
+[Route("api/[controller]")]
+public class OrdersController : ControllerBase
+{
+  [HttpPost]
+  public IActionResult Post(Order order)
+  {
+    if (order.Address == null)
+      return BadRequest("Validation failed: address is required\r\n" + HttpContext.GetReadDifferences());
+
+    // ... store the order
+    return Ok(order);
+  }
+}
+```
+
+The client gets `400 Bad Request` with this body, instead of only "address is required":
+
+```
+Validation failed: address is required
+1 difference between the data and the classes:
+- Order.ShippingAddress: not a property of the class, skipped, 1 time
+    at $
+    left at their default (first object): Address
+```
+
+Notes:
+
+- `ReadDifferences.ToString()` is the report. When the body matched the classes, `GetReadDifferences()` is `null` and adds nothing to the message.
+- The string is written as `text/plain` when the client accepts it, otherwise by the formatter its `Accept` header asks for (a MsgPack string for the MsgPack media types).
+- With nullable reference types enabled, declare the property as `Address?`. A non-nullable `Address` is required by `[ApiController]`, which then answers `400 Bad Request` with its own validation problem before the action runs, without the report.
+- The report names your classes and properties. That's fine between your own applications, think twice before sending it to clients of a public facing API. Endpoints could be probed to get the expected schema information this way.
 
 Schema references (application/x-lsmsgpack)
 --------------------------------------------

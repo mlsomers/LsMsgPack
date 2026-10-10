@@ -115,18 +115,20 @@ namespace LsMsgPackFormatters
     }
 
     /// <summary>
-    /// The differences between the body and the classes (<see cref="LtMsgPackHttpOptions.ReportDifferences"/>): in the features of the request (<see cref="ReadDifferencesExtensions.GetReadDifferences"/>) and logged as a warning.
+    /// The differences between the body and the classes (<see cref="LtMsgPackHttpOptions.ReportDifferences"/>): in the features of the request (<see cref="ReadDifferencesExtensions.GetReadDifferences"/>)
+    /// and logged, as a warning with <see cref="LtMsgPackHttpOptions.LogDifferencesAsWarning"/>, otherwise at the Debug level (clients sending extra properties would fill the logs).
     /// </summary>
-    private static void Report(InputFormatterContext context, ReadDifferences differences)
+    private void Report(InputFormatterContext context, ReadDifferences differences)
     {
       context.HttpContext.Features.Set(differences);
       ILogger logger = context.HttpContext.RequestServices?.GetService<ILoggerFactory>()?.CreateLogger<LsMsgPackInputFormatter>();
-      if (logger != null && logger.IsEnabled(LogLevel.Warning)) // the report walks the objects that were read
-        logger.LogWarning("The request body of {Method} {Path} did not match {Type}: {Differences}", context.HttpContext.Request.Method, context.HttpContext.Request.Path, context.ModelType.Name, differences.GenerateReport());
+      LogLevel level = Serializer.LogsDifferencesAsWarning ? LogLevel.Warning : LogLevel.Debug;
+      if (logger != null && logger.IsEnabled(level)) // the report walks the objects that were read
+        logger.Log(level, "The request body of {Method} {Path} did not match {Type}: {Differences}", context.HttpContext.Request.Method, context.HttpContext.Request.Path, context.ModelType.Name, differences.GenerateReport());
     }
 
     /// <returns>False (an exception filter)</returns>
-    private static bool ReportFailure(InputFormatterContext context, Exception ex)
+    private bool ReportFailure(InputFormatterContext context, Exception ex)
     {
       ReadDifferences differences = LtMsgPackHttpSerializer.DifferencesOf(ex);
       if (differences != null)

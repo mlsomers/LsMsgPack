@@ -36,6 +36,7 @@ namespace LtMsgPack.Http
     private readonly bool _negotiate;
     private readonly int _maxAdvertised;
     private readonly bool _reportDifferences;
+    private readonly bool _logDifferencesAsWarning;
     private readonly ConcurrentDictionary<SchemaId, string> _hexIds = new ConcurrentDictionary<SchemaId, string>();
     private readonly ConcurrentDictionary<string, LinkedList<SchemaId>> _received = new ConcurrentDictionary<string, LinkedList<SchemaId>>(StringComparer.OrdinalIgnoreCase);
 
@@ -62,6 +63,7 @@ namespace LtMsgPack.Http
       _lsMsgPack = new LtMsgPackSerializer(ls);
       _maxAdvertised = Math.Max(0, options.MaxAdvertisedSchemas);
       _reportDifferences = options.ReportDifferences;
+      _logDifferencesAsWarning = options.ReportDifferences && options.LogDifferencesAsWarning;
     }
 
     /// <summary>
@@ -70,6 +72,14 @@ namespace LtMsgPack.Http
     public bool ReportsDifferences
     {
       get { return _reportDifferences; }
+    }
+
+    /// <summary>
+    /// ASP.NET Core logs the differences as a warning instead of at the Debug level (<see cref="LtMsgPackHttpOptions.LogDifferencesAsWarning"/>, only with <see cref="ReportsDifferences"/>).
+    /// </summary>
+    public bool LogsDifferencesAsWarning
+    {
+      get { return _logDifferencesAsWarning; }
     }
 
     /// <summary>

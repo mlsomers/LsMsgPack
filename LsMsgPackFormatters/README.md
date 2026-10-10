@@ -34,7 +34,14 @@ builder.Services.AddControllers()
   });
 ```
 
-To find out what didn't match between request bodies and your classes (properties of another version of the models), set `o.ReportDifferences = true`: the differences are logged as a warning and available as `HttpContext.GetReadDifferences()`.
+To find out what didn't match between request bodies and your classes (properties of another version of the models), set `o.ReportDifferences = true`: the differences are available as `HttpContext.GetReadDifferences()` and logged at the `Debug` level (as a warning with `o.LogDifferencesAsWarning = true`). For example, to tell the client why a value is missing:
+
+```csharp
+if (order.Address == null)
+  return BadRequest("Validation failed: address is required\r\n" + 
+    // Don't do this if your schema should not be public knowledge!
+    HttpContext.GetReadDifferences());
+```
 
 On the client side, use [LsMsgPack.AspNet.WebApi](https://www.nuget.org/packages/LsMsgPack.AspNet.WebApi) with `HttpClient`, or any MsgPack library for the plain media types.
 
