@@ -152,7 +152,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// Until the differences can be reported, an object whose entry is not known throws (it used to be matched by position, silently wrong when the types fit).
+    /// An object whose entry is not known throws (it used to be matched by position, silently wrong when the types fit). Reading with an out ReadDifferences skips and reports it (ReportingDifferencesTests).
     /// </summary>
     [TestMethod]
     [DataRow(ObjectLayout.Map)]

@@ -30,12 +30,130 @@ namespace LsMsgPack.Meta
         return ConvertMap(map, assignType, settings, prop);
 
       if (val is object[] items)
-        return ConvertArray(items, assignType, settings);
+        return ConvertArray(items, assignType, settings, prop);
+
+      if (settings._differences != null)
+        return ConvertLeafMarked(val, assignType, settings);
 
       if (val is IMsgPackExtension extension) // only extensions without a registered type (LsMsgPack: MpExt, see MsgPackItem.UnpackedValue)
         return ConvertExtension(extension, assignType);
 
       return ConvertScalar(val, assignType);
+    }
+
+    /// <summary>
+    /// <see cref="ConvertDeserializeValue"/> of a scalar or extension while collecting the differences: an exception is marked, so the value can be skipped (<see cref="MsgPackOptions.ReadErrors"/>).
+    /// Separate, so the usual way has no exception handling (measured ~5% when reading LsMsgPack names).
+    /// </summary>
+    private static object ConvertLeafMarked(object val, Type assignType, MsgPackOptions settings)
+    {
+      try
+      {
+        if (val is IMsgPackExtension extension)
+          return ConvertExtension(extension, assignType);
+
+        return ConvertScalar(val, assignType);
+      }
+      catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex)) // never true
+      {
+        throw;
+      }
+    }
+
+    /// <summary>
+    /// Sets a converted value. While collecting the differences, a value of another type than the property (one that did not convert) is marked as not converted, so it can be skipped
+    /// (not an exception of the setter, which is passed on as it is).
+    /// </summary>
+    private static void SetValue(FullPropertyInfo prop, object instance, object value, MsgPackOptions settings)
+    {
+      if (settings._differences is null || value is null || Fits(prop.PropertyInfo.PropertyType, value))
+      {
+        prop.SetValue(instance, value);
+        return;
+      }
+      try
+      {
+        prop.SetValue(instance, value); // may still widen (e.g. an int into a long)
+      }
+      catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex))
+      {
+        throw;
+      }
+    }
+
+    private static bool Fits(Type propertyType, object value)
+    {
+      return (Nullable.GetUnderlyingType(propertyType) ?? propertyType).IsInstanceOfType(value);
+    }
+
+    /// <summary>
+    /// An element of a collection, marked as not converted when it has another type (see <see cref="SetValue"/>).
+    /// </summary>
+    private static void SetElement(Array elements, object value, int index, MsgPackOptions settings)
+    {
+      if (settings._differences is null)
+        elements.SetValue(value, index);
+      else
+        SetElementMarked(elements, value, index, settings);
+    }
+
+    private static void SetElementMarked(Array elements, object value, int index, MsgPackOptions settings)
+    {
+      try
+      {
+        elements.SetValue(value, index);
+      }
+      catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex))
+      {
+        throw;
+      }
+    }
+
+    private static object Pair(Type pairType, object key, object value, MsgPackOptions settings)
+    {
+      if (settings._differences is null)
+        return Activator.CreateInstance(pairType, key, value);
+      try
+      {
+        return Activator.CreateInstance(pairType, key, value);
+      }
+      catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex)) // a key or value of another type
+      {
+        throw;
+      }
+    }
+
+    private static void AddEntry(IDictionary dictionary, object key, object value, MsgPackOptions settings)
+    {
+      if (settings._differences is null)
+      {
+        dictionary.Add(key, value);
+        return;
+      }
+      try
+      {
+        dictionary.Add(key, value);
+      }
+      catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex)) // a value of another type, a key twice
+      {
+        throw;
+      }
+    }
+
+    /// <summary>
+    /// Reads the value of a property and sets it. While collecting the differences, a value that could not be converted is reported and skipped (depending on <see cref="MsgPackOptions.ReadErrors"/>).
+    /// </summary>
+    private static void ReadProperty(FullPropertyInfo prop, object instance, object val, MsgPackOptions settings, ReadDifferences differences)
+    {
+      int depth = differences.Depth;
+      try
+      {
+        SetValue(prop, instance, ConvertDeserializeValue(val, prop.PropertyInfo.PropertyType, settings, prop), settings);
+      }
+      catch (Exception ex) when (differences.SkipInvalidValue(instance, prop, ex))
+      {
+        differences.RestoreDepth(depth);
+      }
     }
 
     /// <summary>
@@ -74,7 +192,15 @@ namespace LsMsgPack.Meta
       }
 
       bool hasTypeId = propVals.TryGetValue(MsgPackOptions.TypeIdKey, out object typeId);
-      Type tType = TypeResolver.Resolve(typeId, assignType, prop, settings, propVals);
+      Type tType;
+      try
+      {
+        tType = TypeResolver.Resolve(typeId, assignType, prop, settings, propVals);
+      }
+      catch (UnresolvedTypeException ex) when (settings._differences != null && settings._differences.UnresolvedType(ex.TypeName, assignType, ex)) // skipped and reported (the checks of a type that was found still throw, see docs/security.md)
+      {
+        return null;
+      }
 
       object result;
       if (propVals.TryGetValue(MsgPackOptions.ContentKey, out object content))
@@ -97,11 +223,11 @@ namespace LsMsgPack.Meta
         return map;
 
       if (tType.IsAbstract || tType.IsInterface)
-        throw new Exception(
-          $"Cannot create an instance of an interface or abstract type:\r\n  {tType.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers.");
+        throw ReadDifferences.NotConverted(settings, new Exception(
+          $"Cannot create an instance of an interface or abstract type:\r\n  {tType.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers."));
 
-      if (propVals.Count > (hasTypeId ? 1 : 0))
-        SerializationRules.GetIndexedSchema(settings)?.ThrowIfNoEntry(tType, settings);
+      if (propVals.Count > (hasTypeId ? 1 : 0) && SerializationRules.GetIndexedSchema(settings)?.SkipIfNoEntry(tType, settings, prop) == true)
+        return null;
       result = Instances.CreateObject(tType, settings);
       SetProperties(result, tType, propVals, settings);
       return result;
@@ -124,24 +250,68 @@ namespace LsMsgPack.Meta
     private static void SetProperties(object instance, Type tType, Dictionary<object, object> propVals, MsgPackOptions settings)
     {
       FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
+      ReadDifferences differences = settings._differences;
+      if (differences != null)
+      {
+        ReportUnknownKeys(instance, tType, props, propVals, settings); // before the values (the objects in them), as LtMsgPack finds them
+        differences.Push(instance);
+      }
       for (int t = props.Length - 1; t >= 0; t--)
       {
         FullPropertyInfo prop = props[t];
         if (propVals.TryGetValue(prop.PropertyId, out object propval))
         {
-          prop.SetValue(instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
+          if (differences is null)
+            prop.SetValue(instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
+          else
+            ReadProperty(prop, instance, propval, settings, differences);
         }
       }
+      differences?.Pop();
+    }
+
+    /// <summary>
+    /// The keys of the map that are not properties of the class (only when the differences are collected).
+    /// </summary>
+    private static void ReportUnknownKeys(object instance, Type tType, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings)
+    {
+      HashSet<object> known = new HashSet<object>(MapConversionEqualityComparer.Instance);
+      for (int t = 0; t < props.Length; t++)
+        known.Add(props[t].PropertyId);
+
+      List<object> unknown = null;
+      foreach (object key in propVals.Keys)
+      {
+        if (MsgPackOptions.TypeIdKey.Equals(key) || MsgPackOptions.ContentKey.Equals(key) || known.Contains(key))
+          continue;
+        (unknown ?? (unknown = new List<object>())).Add(key);
+      }
+      if (unknown is null)
+        return;
+
+      ComplexTypeDef def = null;
+      SerializationRules.GetIndexedSchema(settings)?.ByType.TryGetValue(tType, out def); // the keys are indexes into the writer's names
+      for (int t = unknown.Count - 1; t >= 0; t--) // propVals was filled from the last entry of the map to the first
+        settings._differences.UnknownProperty(instance, NameOf(unknown[t], def));
+    }
+
+    /// <returns>The name of the property with this index in the schema entry, otherwise the key</returns>
+    private static object NameOf(object key, ComplexTypeDef def)
+    {
+      if (def is null || key is null || !key.GetType().IsPrimitive || key is bool || key is char || key is float || key is double)
+        return key;
+      long index = Convert.ToInt64(key, CultureInfo.InvariantCulture);
+      return index >= 0 && index < def.Props.Count && def.Props[(int)index] != null ? def.Props[(int)index] : key;
     }
 
     /// <summary>
     /// Converts the items of a MsgPack array into an array or collection of the given type, or into an object written as an array (<see cref="ObjectLayout.Array"/>).
     /// </summary>
-    private static object ConvertArray(object[] items, Type assignType, MsgPackOptions settings)
+    private static object ConvertArray(object[] items, Type assignType, MsgPackOptions settings, FullPropertyInfo prop)
     {
       if (IsDictionary(assignType) && !Array.TrueForAll(items, i => i is object[] pair && pair.Length == 2)) // only [key, value] pairs can be entries
-        throw new MsgPackException($"An array cannot be read into {assignType}: the data is a list, or an object written as an array of its values (ObjectLayout.Array, the default), which has no property names. "
-          + "Read it into a class with the properties, or write it with ObjectLayout.Map.");
+        throw ReadDifferences.NotConverted(settings, new MsgPackException($"An array cannot be read into {assignType}: the data is a list, or an object written as an array of its values (ObjectLayout.Array, the default), which has no property names. "
+          + "Read it into a class with the properties, or write it with ObjectLayout.Map."));
 
       if (!IsCollection(assignType))
       {
@@ -155,8 +325,8 @@ namespace LsMsgPack.Meta
           }
           if (IsObjectType(objectType))
           {
-            if (Array.Exists(items, i => i != null)) // before the ids are resolved, which would add an entry for the class
-              SerializationRules.GetIndexedSchema(settings)?.ThrowIfNoEntry(objectType, settings);
+            if (Array.Exists(items, i => i != null) && SerializationRules.GetIndexedSchema(settings)?.SkipIfNoEntry(objectType, settings, prop) == true) // before the ids are resolved, which would add an entry for the class
+              return null;
             FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(objectType, settings);
             if (props.Length > 0 || items.Length == 0)
               return ConvertPositional(items, objectType, props, settings);
@@ -169,7 +339,7 @@ namespace LsMsgPack.Meta
       CollectionInfo info = CollectionInfo.Get(assignType);
       Array elements = Array.CreateInstance(info.ElementType, items.Length);
       for (int t = items.Length - 1; t >= 0; t--)
-        elements.SetValue(ConvertDeserializeValue(items[t], info.ElementType, settings, null), t);
+        SetElement(elements, ConvertDeserializeValue(items[t], info.ElementType, settings, null), t, settings);
 
       return info.Create(elements, settings);
     }
@@ -188,25 +358,45 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static object ConvertPositional(object[] items, Type type, FullPropertyInfo[] props, MsgPackOptions settings)
     {
-      FullPropertyInfo[] byPosition = PropertiesByPosition(type, props, settings);
+      FullPropertyInfo[] byPosition = PropertiesByPosition(type, props, settings, out ComplexTypeDef def);
       object result = Instances.CreateObject(type, settings);
+      ReadDifferences differences = settings._differences;
+      differences?.Push(result);
       int count = Math.Min(items.Length, byPosition.Length);
       for (int t = 0; t < count; t++)
       {
         FullPropertyInfo prop = byPosition[t];
         if (prop is null || items[t] is null)
+        {
+          if (differences != null && items[t] != null) // a nil is a value left out (as a key that is not in a map)
+            differences.UnknownProperty(result, NameOf(t, def));
           continue;
-        prop.SetValue(result, ConvertDeserializeValue(items[t], prop.PropertyInfo.PropertyType, settings, prop));
+        }
+        if (differences is null)
+          prop.SetValue(result, ConvertDeserializeValue(items[t], prop.PropertyInfo.PropertyType, settings, prop));
+        else
+          ReadProperty(prop, result, items[t], settings, differences);
+      }
+      if (differences != null)
+      {
+        differences.Pop();
+        for (int t = count; t < items.Length; t++)
+          if (items[t] != null)
+            differences.ExtraValue(result, t);
       }
       return result;
     }
 
     /// <returns>The property of each position: the properties themselves, or with the indexed schema the ones named by the schema of the data (null when not a property here)</returns>
-    private static FullPropertyInfo[] PropertiesByPosition(Type type, FullPropertyInfo[] props, MsgPackOptions settings)
+    /// <param name="def">The schema entry the positions are of (null without)</param>
+    private static FullPropertyInfo[] PropertiesByPosition(Type type, FullPropertyInfo[] props, MsgPackOptions settings, out ComplexTypeDef def)
     {
       IndexedSchemaTypeResolver schema = SerializationRules.GetIndexedSchema(settings);
-      if (schema is null || !schema.TryGetDef(type, out ComplexTypeDef def) || def.IsCollection)
+      if (schema is null || !schema.TryGetDef(type, out def) || def.IsCollection)
+      {
+        def = null;
         return props;
+      }
 
       FullPropertyInfo[] byPosition = new FullPropertyInfo[def.Props.Count];
       int next = 0; // usually in the same order
@@ -249,7 +439,7 @@ namespace LsMsgPack.Meta
         {
           object key = ConvertKey(pairs[t].Key, info.KeyType, settings);
           object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
-          typedArr.SetValue(Activator.CreateInstance(info.ElementType, key, value), t);
+          SetElement(typedArr, Pair(info.ElementType, key, value, settings), t, settings);
         }
         return typedArr;
       }
@@ -261,7 +451,7 @@ namespace LsMsgPack.Meta
         {
           object key = ConvertKey(pairs[t].Key, info.KeyType, settings);
           object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
-          elements.SetValue(Activator.CreateInstance(info.ElementType, key, value), t);
+          SetElement(elements, Pair(info.ElementType, key, value, settings), t, settings);
         }
         return info.Create(elements, settings);
       }
@@ -274,7 +464,7 @@ namespace LsMsgPack.Meta
         object key = ConvertKey(pairs[t].Key, info.KeyType, settings);
         object value = ConvertDeserializeValue(pairs[t].Value, info.ValueType, settings, null);
         if (dictionary != null)
-          dictionary.Add(key, value);
+          AddEntry(dictionary, key, value, settings);
         else
         {
           args[0] = key;
@@ -292,8 +482,8 @@ namespace LsMsgPack.Meta
     private static object ConvertKey(object key, Type keyType, MsgPackOptions settings)
     {
       if (keyType == typeof(string) && !(key is null) && key.GetType().IsPrimitive && SerializationRules.GetIndexedSchema(settings) != null)
-        throw new MsgPackException($"The map has a number key ({key}) and is read into a dictionary with string keys. With the indexed schema the keys of an object are the indexes of its property names, "
-          + "which are only known when the object is read into its class. Read it into a class with the properties, or write it without the indexed schema (UseInexedSchema = false) and with ObjectLayout.Map.");
+        throw ReadDifferences.NotConverted(settings, new MsgPackException($"The map has a number key ({key}) and is read into a dictionary with string keys. With the indexed schema the keys of an object are the indexes of its property names, "
+          + "which are only known when the object is read into its class. Read it into a class with the properties, or write it without the indexed schema (UseInexedSchema = false) and with ObjectLayout.Map."));
       return ConvertDeserializeValue(key, keyType, settings, null);
     }
 

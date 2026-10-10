@@ -145,6 +145,26 @@ namespace LsMsgPackMcp
         },
         new Tool()
         {
+          Name = "msgpack_read_as_class",
+          Title = "MsgPack: read into a .NET class and report what does not match",
+          Description = "Deserializes MsgPack data into a class of a compiled .NET assembly (the program's or library's .dll, e.g. bin/Debug/net8.0/MyApp.dll) with LsMsgPack, and reports what does not match the classes: " +
+            "properties the data has and the class does not (with \"did you mean\" for misspelled names and the properties left at their default), values that do not convert (a string where an int is declared, an overflow, an unknown enum name), " +
+            "classes without an entry in the indexed schema, type ids that are not found; each with the paths of the objects. Also shows the object that was read as JSON. " +
+            "Use it when an object deserialized from MsgPack has missing, null or wrong values, or to check data against the classes (any writer: LsMsgPack, LtMsgPack, MessagePack-CSharp...). " +
+            "Give data, a file or a document id as msgpack_decode. Runs the class's constructors and setters, in a separate process.",
+          ReadOnly = false, // runs code of the assembly (static constructors, constructors, setters)
+          InputSchema = Schema(new JsonObject[] {
+            Prop("assembly", "string", "The compiled assembly with the class: a .dll of the build output (relative to the working directory of the server). Build the project first."),
+            Prop("type", "string", "The class to read into: its full name (MyApp.Models.Order) or its name when only one class has it, also in the assemblies of the build output it references. Order[] for an array of them."),
+            Prop("data", "string", "The bytes as text: hex, base64, decimal byte values or a Python bytes literal."),
+            Prop("file", "string", "A file holding the bytes (relative to the working directory of the server)."),
+            Prop("doc", "string", "The id of a document decoded before (e.g. \"doc1\")."),
+            Prop("schemas", "string", "Schemas the data may refer to (LsMsgPack WriteSchemaReference): a file, or bytes as text, holding a SchemaStore export (SchemaStore.Export) or one schema.")
+          }, "assembly", "type"),
+          Handler = ReadAsClassAsync
+        },
+        new Tool()
+        {
           Name = "msgpack_explain_offset",
           Title = "MsgPack: explain an offset",
           Description = "What the byte at an offset of a decoded document is: the items holding it (outermost first), the object member it belongs to, the header and content bytes of its item, and the bytes around it. Use it at the offset of an error.",
@@ -420,6 +440,16 @@ namespace LsMsgPackMcp
 
     private Task<ToolResult> DecodeAsync(JsonObject args, CancellationToken cancellation)
     {
+      RenderOptions render = GetRenderOptions(args);
+      PayloadDocument doc = OpenDocument(args);
+      return Task.FromResult(ToolResult.Ok(TextRenderer.Render(doc, render)));
+    }
+
+    /// <summary>
+    /// The document of data, file or doc (decoded again when the decode options change), registered for follow-up calls.
+    /// </summary>
+    private PayloadDocument OpenDocument(JsonObject args)
+    {
       string data = GetString(args, "data");
       string file = GetString(args, "file");
       string id = GetString(args, "doc");
@@ -427,7 +457,6 @@ namespace LsMsgPackMcp
       if (given != 1)
         throw new ToolArgumentException("Pass one of data (the bytes as hex or base64), file or doc (the id of a document decoded before).");
 
-      RenderOptions render = GetRenderOptions(args);
       DecodeOptions decode = GetDecodeOptions(args);
       string schemas = GetString(args, "schemas");
       if (!string.IsNullOrWhiteSpace(schemas))
@@ -472,7 +501,7 @@ namespace LsMsgPackMcp
         if (decode.Schemas is null && MissingSchema(doc) != null)
           doc.Notes.Add("The payload refers to a cached schema: pass schemas (a SchemaStore export or the schema) to resolve the property names.");
       }
-      return Task.FromResult(ToolResult.Ok(TextRenderer.Render(doc, render)));
+      return doc;
     }
 
     /// <summary>
@@ -506,6 +535,15 @@ namespace LsMsgPackMcp
         throw new ToolArgumentException(string.Concat("schemas holds neither a SchemaStore export nor a schema: ", ex.Message));
       }
       return store;
+    }
+
+    private async Task<ToolResult> ReadAsClassAsync(JsonObject args, CancellationToken cancellation)
+    {
+      string assembly = ResolvePath(Required(args, "assembly"));
+      string type = Required(args, "type");
+      PayloadDocument doc = OpenDocument(args);
+      string report = await ClassReader.RunAsync(doc, assembly, type, cancellation).ConfigureAwait(false);
+      return ToolResult.Ok(string.Concat("Document ", doc.Id, " (", doc.Source, ").\n", report));
     }
 
     private Task<ToolResult> ExplainAsync(JsonObject args, CancellationToken cancellation)

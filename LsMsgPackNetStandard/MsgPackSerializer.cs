@@ -224,6 +224,8 @@ namespace LsMsgPack
     {
       if (settings is null)
         settings = new MsgPackSettings();
+      if (settings._differences is null && settings._readErrors != ReadErrorHandling.FailFast)
+        return Deserialize(tType, stream, settings, out ReadDifferences unused); // the errors are skipped and collected (with the differences)
 
       // The names in the data (type ids, the schema) are resolved in the cached assemblies: the ones of the types the root type reaches (the T of List<T>...)
       CacheAssemblyTypes(tType);
@@ -234,6 +236,57 @@ namespace LsMsgPack
 
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
       return ConvertDeserializeValue(unpacked.UnpackedValue, tType, settings, null);
+    }
+
+    /// <summary>
+    /// Reads the data like <see cref="Deserialize{T}(byte[], MsgPackSettings)"/>, and reports what did not match between the data and the classes: unknown properties, extra values,
+    /// type ids that are not found and values that could not be read (errors, see <see cref="MsgPackOptions.ReadErrors"/>), counted per class and name.
+    /// </summary>
+    /// <param name="differences">Null when the data matched the classes. See <see cref="ReadDifferences.GenerateReport"/>.</param>
+    public static T Deserialize<T>(byte[] source, MsgPackSettings settings, out ReadDifferences differences)
+    {
+      using (MemoryStream ms = new MemoryStream(source))
+      {
+        return Deserialize<T>(ms, settings, out differences);
+      }
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], MsgPackSettings, out ReadDifferences)"/>
+    public static T Deserialize<T>(Stream stream, MsgPackSettings settings, out ReadDifferences differences)
+    {
+      object result = Deserialize(typeof(T), stream, settings, out differences);
+      if (result is null)
+        return default;
+      return (T)result;
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], MsgPackSettings, out ReadDifferences)"/>
+    public static object Deserialize(Type tType, byte[] source, MsgPackSettings settings, out ReadDifferences differences)
+    {
+      using (MemoryStream ms = new MemoryStream(source))
+      {
+        return Deserialize(tType, ms, settings, out differences);
+      }
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], MsgPackSettings, out ReadDifferences)"/>
+    public static object Deserialize(Type tType, Stream stream, MsgPackSettings settings, out ReadDifferences differences)
+    {
+      if (settings is null)
+        settings = new MsgPackSettings();
+
+      ReadDifferences found = new ReadDifferences(settings);
+      MsgPackSettings callSettings = (MsgPackSettings)settings.WithDifferences(found); // settings are shared by threads, the differences belong to this call
+      try
+      {
+        object result = ReadDifferences.Collect(found, () => Deserialize(tType, stream, callSettings));
+        differences = found.IsEmpty ? null : found;
+        return result;
+      }
+      finally
+      {
+        settings.FileContainsErrors |= callSettings.FileContainsErrors;
+      }
     }
 
     private static object DeserializeWithSchema(Type tType, Stream stream, MsgPackSettings settings)
@@ -309,6 +362,7 @@ namespace LsMsgPack
 
       return schema.RunReader(settings, lengthSettings, (s, schemaSettings) =>
       {
+        schemaSettings._differences?.Reset(); // the work is repeated when the shared session has to grow
         SerializationRules.BindReaderTypes(tType, schemaSettings);
         return ConvertDeserializeValue(value, tType, schemaSettings, null);
       });

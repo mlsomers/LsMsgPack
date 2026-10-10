@@ -21,6 +21,8 @@ namespace LsMsgPackMcp
   lsmsgpack-mcp decode --data <text>        Decodes bytes written as hex, base64 or byte values.
   lsmsgpack-mcp explain <file> <offset>     What the byte at the offset is (items, object, bytes around it).
   lsmsgpack-mcp search <file> <text>        The items holding the text or the value.
+  lsmsgpack-mcp read-as <file> --assembly <dll> --type <class>
+                                            Reads the data into a class of a compiled assembly and reports what does not match.
   lsmsgpack-mcp debug status                The IDEs with the MsgPack Explorer extension and their debug sessions.
   lsmsgpack-mcp debug locals                The variables of the paused stack frame.
   lsmsgpack-mcp debug read <expression>     Reads and decodes the bytes of a variable of the paused program.
@@ -59,6 +61,8 @@ Options:
 
     private static async Task<int> MainAsync(string[] args)
     {
+      if (args.Length > 0 && args[0] == ClassReader.WorkerCommand) // the child process of msgpack_read_as_class
+        return ClassReader.Worker(args);
       if (args.Length == 0 || args[0] == "mcp")
       {
         await ServeAsync().ConfigureAwait(false);
@@ -119,6 +123,15 @@ Options:
             options[command == "explain" ? "offset" : "text"] = positional[1];
             return await RunAsync(list, command == "explain" ? "msgpack_explain_offset" : "msgpack_search", options).ConfigureAwait(false);
           }
+
+        case "read-as":
+          if (!options.ContainsKey("data"))
+          {
+            if (positional.Count != 1)
+              throw new UsageException("read-as <file> --assembly <dll> --type <class>, or read-as --data <text> ...");
+            AddInput(options, positional[0]);
+          }
+          return await RunAsync(list, "msgpack_read_as_class", options).ConfigureAwait(false);
 
         case "debug status":
           return await RunAsync(list, "msgpack_debug_status", options).ConfigureAwait(false);

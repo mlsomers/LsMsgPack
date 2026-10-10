@@ -33,8 +33,8 @@ namespace LtMsgPack.Reading
       if (c.R.TryReadNil())
         return null;
 
-      if (_serializer.SlowObjects)
-        return Slow(c, start, assignedTo);
+      if (c.Unusual) // objects read as LsMsgPack does, or the differences are collected
+        return _serializer.SlowObjects ? Slow(c, start, assignedTo) : ReadReporting(c, start, assignedTo);
 
       int count = c.R.TryReadMapHeader();
       if (count < 0)
@@ -148,13 +148,205 @@ namespace LtMsgPack.Reading
       return Slow(c, start, assignedTo);
     }
 
+    #region Collecting the differences
+
+    /// <summary>
+    /// <see cref="Read"/> collecting the differences (<see cref="ReadContext.Differences"/>): a copy, so the usual way has no checks for them. Keep the two the same.
+    /// </summary>
+    private T ReadReporting(ReadContext c, int start, FullPropertyInfo assignedTo)
+    {
+      int count = c.R.TryReadMapHeader();
+      if (count < 0)
+      {
+        int items = c.R.TryReadArrayHeader(); // ObjectLayout.Array
+        if (items < 0 || Plan is null)
+          return Slow(c, start, assignedTo);
+        return ReadPositionalReporting(c, Plan, items, start, assignedTo);
+      }
+
+      ReadPlan plan = null;
+      if (count > 0 && c.R.Peek() == 0xA0) // the type id (key "") is written first
+      {
+        c.R.Pos++;
+        Type type = ReadTypeId(c, assignedTo, true);
+        if (type is null)
+          return Slow(c, start, assignedTo); // also a name that is not found: LsMsgPack.Core reports it
+        plan = type == typeof(T) ? Plan : _serializer.GetReadPlan(type);
+        if (plan is null || !typeof(T).IsAssignableFrom(type)) // LsMsgPack's way refuses a type that is not assignable
+          return Slow(c, start, assignedTo);
+        if (type != typeof(T) && _serializer.Options._typeGuard != null) // the type guard, before the instance is created (see docs/security.md)
+          TypeResolver.ThrowIfNotAllowed(type, typeof(T), assignedTo, _serializer.Options, type);
+        count--;
+
+        if (count == 1 && c.R.Pos + 1 < c.R.End &&c.R.Buf[c.R.Pos] == 0xA1 && c.R.Buf[c.R.Pos + 1] == (byte)'@') // ObjectLayout.Array with a type id: { "": typeId, "@": [values] }
+        {
+          c.R.Pos += 2;
+          int items = c.R.TryReadArrayHeader();
+          if (items < 0)
+            return Slow(c, start, assignedTo);
+          return ReadPositionalReporting(c, plan, items, start, assignedTo);
+        }
+      }
+      else
+      {
+        plan = Plan;
+        if (plan is null) // abstract or not an object with properties
+          return Slow(c, start, assignedTo);
+      }
+
+      PropReader[] bound = null;
+      if (c.Schema)
+      {
+        bound = c.Bound.Binding(plan);
+        if (bound is null)
+          return Slow(c, start, assignedTo);
+      }
+
+      int depth = c.Depth;
+      c.Enter();
+      int inner = c.Depth;
+      object result = plan.Create();
+      c.Differences.Push(result);
+      int parents = c.Differences.Depth;
+      int next = 0; // names are usually written in the order of the properties
+      int t = 0;
+      PropReader prop = null;
+      int valueStart = 0;
+      while (true) // one exception handler per object (one per property measured 2-3% slower): a value that is skipped continues the loop
+      {
+        try
+        {
+          for (; t < count; t++)
+          {
+            prop = null;
+            if (c.Schema)
+            {
+              if (!c.R.TryReadInt64(out long index))
+                return RestartReporting(c, start, depth, assignedTo);
+              prop = index >= 0 && index < bound.Length ? bound[index] : null;
+              if (prop is null)
+                c.Differences.UnknownProperty(result, c.Bound.NameOf(plan, index));
+            }
+            else
+            {
+              int length = c.R.TryReadStringHeader();
+              if (length <= 0 || (length == 1 && c.R.Buf[c.R.Pos] == (byte)'@')) // another kind of key, or a reserved one ("" or "@")
+                return RestartReporting(c, start, depth, assignedTo);
+              prop = plan.FindByName(c.R.Buf, c.R.Pos, length, ref next);
+              if (prop is null)
+                c.Differences.UnknownProperty(result, c.R.Buf, c.R.Pos, length);
+              c.R.Pos += length;
+            }
+
+            if (prop is null)
+              c.R.Skip(c.Depth); // not a property of this type (removed, or ignored here)
+            else
+            {
+              valueStart = c.R.Pos;
+              prop.Read(c, result);
+            }
+          }
+          break;
+        }
+        catch (Exception ex) when (prop != null && c.Differences.SkipInvalidValue(result, prop.Info, ex))
+        {
+          SkipValue(c, valueStart, inner, parents);
+          t++;
+        }
+      }
+      c.Differences.Pop();
+      c.Depth = depth;
+      return (T)result;
+    }
+
+    /// <summary>
+    /// <see cref="ReadPositional"/> collecting the differences.
+    /// </summary>
+    private T ReadPositionalReporting(ReadContext c, ReadPlan plan, int items, int start, FullPropertyInfo assignedTo)
+    {
+      PropReader[] props = plan.Props;
+      if (c.Schema && items > 0)
+      {
+        props = c.Bound.Binding(plan);
+        if (props is null) // not in the schema (LsMsgPack takes the properties in its own order)
+          return Slow(c, start, assignedTo);
+      }
+
+      int depth = c.Depth;
+      c.Enter();
+      int inner = c.Depth;
+      object result = plan.Create();
+      c.Differences.Push(result);
+      int parents = c.Differences.Depth;
+      int t = 0;
+      int valueStart = 0;
+      while (true) // one exception handler per object, see ReadReporting
+      {
+        try
+        {
+          for (; t < items; t++)
+          {
+            valueStart = -1;
+            if (t >= props.Length || props[t] is null)
+            {
+              if (c.R.Peek() != 0xC0) // a nil is a value left out (as a key that is not in a map)
+              {
+                if (t >= props.Length)
+                  c.Differences.ExtraValue(result, t);
+                else
+                  c.Differences.UnknownProperty(result, c.Bound.NameOf(plan, t));
+              }
+              c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
+            }
+            else if (!c.R.TryReadNil())
+            {
+              valueStart = c.R.Pos;
+              props[t].Read(c, result);
+            }
+          }
+          break;
+        }
+        catch (Exception ex) when (valueStart >= 0 && c.Differences.SkipInvalidValue(result, props[t].Info, ex))
+        {
+          SkipValue(c, valueStart, inner, parents);
+          t++;
+        }
+      }
+      c.Differences.Pop();
+      c.Depth = depth;
+      return (T)result;
+    }
+
+    /// <summary>
+    /// A value that could not be converted (read completely, see ReadDifferences.NotConvertedKey) and is skipped (MsgPackOptions.ReadErrors): read again from its start without converting it.
+    /// </summary>
+    /// <param name="depth">The depth of the object's values</param>
+    /// <param name="parents">The objects on the stack of the differences while reading the object's values</param>
+    private static void SkipValue(ReadContext c, int valueStart, int depth, int parents)
+    {
+      c.Differences.RestoreDepth(parents);
+      c.Depth = depth;
+      c.R.Pos = valueStart;
+      c.R.Skip(c.Depth);
+    }
+
+    private T RestartReporting(ReadContext c, int start, int depth, FullPropertyInfo assignedTo)
+    {
+      c.Depth = depth;
+      c.Differences.Pop(); // the object is read again
+      return Slow(c, start, assignedTo);
+    }
+
+    #endregion
+
     private ReadPlan Plan
     {
       get { return _plan ?? (_plan = _serializer.GetReadPlan(typeof(T))); }
     }
 
     /// <returns>null when the type id is not a plain index or name, or custom type resolvers decide</returns>
-    private Type ReadTypeId(ReadContext c, FullPropertyInfo assignedTo)
+    /// <param name="orNull">Null for a name that is not found (otherwise the declared type, as LsMsgPack reads it)</param>
+    private Type ReadTypeId(ReadContext c, FullPropertyInfo assignedTo, bool orNull = false)
     {
       if (c.Schema)
       {
@@ -165,7 +357,7 @@ namespace LtMsgPack.Reading
 
       if (_serializer.CustomTypeResolvers || !c.R.TryReadString(out string name) || string.IsNullOrWhiteSpace(name))
         return null;
-      return _serializer.ResolveTypeName(name, typeof(T));
+      return _serializer.ResolveTypeName(name, typeof(T), !orNull);
     }
   }
 
@@ -399,6 +591,14 @@ namespace LtMsgPack.Reading
     {
       _schema = schema;
       _shared = shared;
+    }
+
+    /// <returns>The name of the property with this index in the schema entry of the type, otherwise the index</returns>
+    internal object NameOf(ReadPlan plan, long index)
+    {
+      if (_schema.ByType.TryGetValue(plan.Type, out ComplexTypeDef def) && index >= 0 && index < def.Props.Count && def.Props[(int)index] != null)
+        return def.Props[(int)index];
+      return index;
     }
 
     /// <returns>null when the id is not in the schema or its type is unknown</returns>

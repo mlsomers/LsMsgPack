@@ -1,6 +1,9 @@
 using LsMsgPack;
 using LtMsgPack.Http;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Formatters;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -89,10 +92,16 @@ namespace LsMsgPackFormatters
     {
       try
       {
-        object model = Serializer.Deserialize(context.ModelType, data, offset, count, context.HttpContext.Request.ContentType);
+        object model = Serializer.DeserializeBody(context.ModelType, data, offset, count, context.HttpContext.Request.ContentType, out ReadDifferences differences);
+        if (differences != null)
+          Report(context, differences);
         if (!(model is null) && !context.ModelType.IsInstanceOfType(model)) // The deserializer passes through values it cannot convert (eg. a string where a map was expected)
           return Fail(context, new InputFormatterException("The request body could not be deserialized as " + context.ModelType.Name + "."));
         return InputFormatterResult.Success(model);
+      }
+      catch (Exception ex) when (Serializer.ReportsDifferences && ReportFailure(context, ex)) // never true: reports the differences found until the exception
+      {
+        throw;
       }
       catch (MsgPackException ex)
       {
@@ -103,6 +112,32 @@ namespace LsMsgPackFormatters
         // The body is fully buffered, so anything thrown here is caused by the content (truncated data, unexpected types etc.)
         return Fail(context, new InputFormatterException("The request body could not be deserialized as " + context.ModelType.Name + ".", ex));
       }
+    }
+
+    /// <summary>
+    /// The differences between the body and the classes (<see cref="LtMsgPackHttpOptions.ReportDifferences"/>): in the features of the request (<see cref="ReadDifferencesExtensions.GetReadDifferences"/>)
+    /// and logged, as a warning with <see cref="LtMsgPackHttpOptions.LogDifferencesAsWarning"/>, otherwise at the Debug level (clients sending extra properties would fill the logs).
+    /// </summary>
+    private void Report(InputFormatterContext context, ReadDifferences differences)
+    {
+      context.HttpContext.Features.Set(differences);
+      ILogger logger = context.HttpContext.RequestServices?.GetService<ILoggerFactory>()?.CreateLogger<LsMsgPackInputFormatter>();
+      LogLevel level = Serializer.LogsDifferencesAsWarning ? LogLevel.Warning : LogLevel.Debug;
+      if (logger != null && logger.IsEnabled(level)) // the report walks the objects that were read
+      {
+        string sanitizedMethod = (context.HttpContext.Request.Method ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty);
+        string sanitizedPath = context.HttpContext.Request.Path.ToString().Replace("\r", string.Empty).Replace("\n", string.Empty);
+        logger.Log(level, "The request body of {Method} {Path} did not match {Type}: {Differences}", sanitizedMethod, sanitizedPath, context.ModelType.Name, differences.GenerateReport());
+      }
+    }
+
+    /// <returns>False (an exception filter)</returns>
+    private bool ReportFailure(InputFormatterContext context, Exception ex)
+    {
+      ReadDifferences differences = LtMsgPackHttpSerializer.DifferencesOf(ex);
+      if (differences != null)
+        Report(context, differences);
+      return false;
     }
 
     private static InputFormatterResult Fail(InputFormatterContext context, InputFormatterException exception)

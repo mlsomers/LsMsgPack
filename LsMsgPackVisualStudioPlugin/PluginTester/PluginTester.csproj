@@ -4,7 +4,7 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net472</TargetFramework>
     <BaseOutputPath>..\..\MsgPackExplorer\bin</BaseOutputPath>
-    <Configurations>Debug;Release;ReleaseKeepTrack</Configurations>
+    <Configurations>Debug;Release;ReleaseKeepTrack;DebugKeepTrack</Configurations>
   </PropertyGroup>
 
   <ItemGroup>

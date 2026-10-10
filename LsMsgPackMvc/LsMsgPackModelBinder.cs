@@ -54,9 +54,15 @@ namespace LsMsgPackMvc
       object model;
       try
       {
-        model = Serializer.Deserialize(bindingContext.ModelType, body.GetBuffer(), 0, (int)body.Length, request.ContentType);
+        model = Serializer.DeserializeBody(bindingContext.ModelType, body.GetBuffer(), 0, (int)body.Length, request.ContentType, out ReadDifferences differences);
+        if (differences != null)
+          ReadDifferencesExtensions.Set(controllerContext.HttpContext, differences);
         if (!(model is null) && !bindingContext.ModelType.IsInstanceOfType(model)) // The deserializer passes through values it cannot convert (eg. a string where a map was expected)
           throw new MsgPackException("The request body could not be deserialized as " + bindingContext.ModelType.Name + ", it contains a " + model.GetType().Name + ".");
+      }
+      catch (Exception ex) when (Serializer.ReportsDifferences && ReportFailure(controllerContext.HttpContext, ex)) // never true: keeps the differences found until the exception
+      {
+        throw;
       }
       catch (Exception ex) when (!(ex is HttpException))
       {
@@ -67,6 +73,15 @@ namespace LsMsgPackMvc
 
       Validate(model, controllerContext, bindingContext);
       return model;
+    }
+
+    /// <returns>False (an exception filter)</returns>
+    private static bool ReportFailure(HttpContextBase context, Exception ex)
+    {
+      ReadDifferences differences = LtMsgPackHttpSerializer.DifferencesOf(ex);
+      if (differences != null)
+        ReadDifferencesExtensions.Set(context, differences);
+      return false;
     }
 
     /// <summary>

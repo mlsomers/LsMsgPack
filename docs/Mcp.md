@@ -32,7 +32,8 @@ flowchart LR
 | `TextRenderer.cs` | The text: summary, schema, objects view, items view, issues, explaining an offset, search. |
 | `IdeBridge.cs` | Finds the IDEs (environment or lock files) and sends them requests. |
 | `ByteText.cs` | Bytes written as text, the same formats as the VS Code extension's `bytesFromText.ts`. |
-| `Program.cs` | No arguments (or `mcp`): the server. Otherwise the command line: `decode`, `explain`, `search`, `debug status/locals/read`. |
+| `ClassReader.cs` | `msgpack_read_as_class`: writes the payload (and the schemas) to a temporary folder and runs this program again (`read-as-worker`, with `DOTNET_ROLL_FORWARD=LatestMajor`). The worker loads the user's assembly with its `deps.json` and the shared frameworks of its `runtimeconfig.json`, reads with LsMsgPack (`ReadErrors = ReportAndContinue`, the indexed schema when the payload has one) and writes the `ReadDifferences` report and the object as JSON. A separate process because it runs the user's code, because the assembly may need a newer runtime, and because LsMsgPack's type name caches are global (a rebuilt assembly would meet the types of the previous build). |
+| `Program.cs` | No arguments (or `mcp`): the server. Otherwise the command line: `decode`, `explain`, `search`, `read-as`, `debug status/locals/read` (and the worker of `ClassReader`). |
 
 ### The output
 

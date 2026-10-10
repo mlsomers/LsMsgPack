@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
@@ -41,6 +42,37 @@ namespace LsMsgPackFormattersTests
     public double[] Amounts { get; set; }
   }
 
+  /// <summary>
+  /// An Order of another version: with a property Order does not have.
+  /// </summary>
+  public class OrderWithExtra
+  {
+    public int Id { get; set; }
+    public string Customer { get; set; }
+    public string Extra { get; set; }
+  }
+
+  public class ShippingAddress
+  {
+    public string Street { get; set; }
+    public string City { get; set; }
+  }
+
+  public class Shipment
+  {
+    public int Id { get; set; }
+    public ShippingAddress Address { get; set; }
+  }
+
+  /// <summary>
+  /// A Shipment of another version: Address is called Destination.
+  /// </summary>
+  public class ShipmentWithDestination
+  {
+    public int Id { get; set; }
+    public ShippingAddress Destination { get; set; }
+  }
+
   public class Receipt
   {
     public Guid Id { get; set; }
@@ -66,6 +98,17 @@ namespace LsMsgPackFormattersTests
     [HttpGet("cat")]
     public Animal GetCat() => new Cat { Name = "Tom", Purrs = true };
 
+    [HttpPost("differences")]
+    public string Differences(Order order) => HttpContext.GetReadDifferences()?.GenerateReport() ?? "none";
+
+    [HttpPost("shipment")] // the example of docs/WebFormatters.md#reporting-differences
+    public IActionResult PostShipment(Shipment shipment)
+    {
+      if (shipment.Address == null)
+        return BadRequest("Validation failed: address is required\r\n" + HttpContext.GetReadDifferences());
+      return Ok(shipment);
+    }
+
     [HttpGet("receipt")]
     public Receipt GetReceipt() => new Receipt { Id = FormatterIntegrationTests.ReceiptId, Total = 12.50m };
   }
@@ -90,6 +133,37 @@ namespace LsMsgPackFormattersTests
     }
 
     private static Task<(IHost host, HttpClient client)> StartAsync() => StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters());
+
+    /// <summary>
+    /// Keeps the warnings that are logged.
+    /// </summary>
+    private sealed class WarningsLogger : ILoggerProvider, ILogger
+    {
+      internal readonly List<string> Warnings = new List<string>();
+      internal readonly List<string> DebugMessages = new List<string>();
+      private readonly LogLevel _minimum;
+      public WarningsLogger(LogLevel minimum = LogLevel.Warning) { _minimum = minimum; }
+      public ILogger CreateLogger(string categoryName) => categoryName == typeof(LsMsgPackInputFormatter).FullName ? this : Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+      public void Dispose() { }
+      public IDisposable BeginScope<TState>(TState state) => null;
+      public bool IsEnabled(LogLevel logLevel) => logLevel >= _minimum;
+      public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
+      {
+        List<string> messages = logLevel >= LogLevel.Warning ? Warnings : logLevel == LogLevel.Debug ? DebugMessages : null;
+        if (messages != null)
+          lock (messages)
+            messages.Add(formatter(state, exception));
+      }
+    }
+
+    /// <summary>
+    /// An order with a property the class does not have.
+    /// </summary>
+    private static byte[] OrderWithExtra(string mediaType)
+    {
+      OrderWithExtra order = new OrderWithExtra() { Id = 42, Customer = "Infotopie", Extra = "not in Order" };
+      return MsgPackSerializer.Serialize(order, MsgPackMediaTypes.IsLsMsgPack(mediaType) ? new MsgPackSettings() : Plain);
+    }
 
     private static HttpRequestMessage Post(byte[] body, string contentType, string accept)
     {
@@ -214,6 +288,109 @@ namespace LsMsgPackFormattersTests
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
         Assert.That(MsgPackSerializer.Deserialize<long>(await response.Content.ReadAsByteArrayAsync(), Plain), Is.EqualTo(42));
+      }
+    }
+
+    [TestCase(MsgPackMediaTypes.MsgPack)]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack)]
+    public async Task DifferencesAreReportedWhenAskedFor(string mediaType)
+    {
+      WarningsLogger logger = new WarningsLogger();
+      (IHost host, HttpClient client) = await StartAsync(mvc =>
+      {
+        mvc.Services.AddLogging(logging => logging.AddProvider(logger));
+        mvc.AddLsMsgPackSerializerFormatters(settings =>
+        {
+          settings.ReportDifferences = true;
+          settings.LogDifferencesAsWarning = true;
+        });
+      });
+      using (host)
+      {
+        HttpRequestMessage request = Post(OrderWithExtra(mediaType), mediaType, "text/plain");
+        request.RequestUri = new Uri("/test/differences", UriKind.Relative);
+        HttpResponseMessage response = await client.SendAsync(request);
+
+        string report = await response.Content.ReadAsStringAsync();
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), report);
+        Assert.That(report, Does.Contain("Order.Extra: not a property of the class, skipped, 1 time"));
+        Assert.That(logger.Warnings.Single(), Does.Contain("The request body of POST /test/differences did not match Order:").And.Contain("Order.Extra"));
+      }
+    }
+
+    [Test]
+    public async Task DifferencesAreLoggedAtDebugLevelByDefault()
+    {
+      WarningsLogger logger = new WarningsLogger(LogLevel.Debug);
+      (IHost host, HttpClient client) = await StartAsync(mvc =>
+      {
+        mvc.Services.AddLogging(logging => logging.AddProvider(logger).SetMinimumLevel(LogLevel.Debug));
+        mvc.AddLsMsgPackSerializerFormatters(settings => settings.ReportDifferences = true);
+      });
+      using (host)
+      {
+        HttpRequestMessage request = Post(OrderWithExtra(MsgPackMediaTypes.MsgPack), MsgPackMediaTypes.MsgPack, "text/plain");
+        request.RequestUri = new Uri("/test/differences", UriKind.Relative);
+        HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.That(await response.Content.ReadAsStringAsync(), Does.Contain("Order.Extra"));
+        Assert.That(logger.Warnings, Is.Empty);
+        Assert.That(logger.DebugMessages.Single(), Does.Contain("The request body of POST /test/differences did not match Order:").And.Contain("Order.Extra"));
+      }
+    }
+
+    [Test]
+    public async Task LogDifferencesAsWarningNeedsReportDifferences()
+    {
+      WarningsLogger logger = new WarningsLogger(LogLevel.Debug);
+      (IHost host, HttpClient client) = await StartAsync(mvc =>
+      {
+        mvc.Services.AddLogging(logging => logging.AddProvider(logger).SetMinimumLevel(LogLevel.Debug));
+        mvc.AddLsMsgPackSerializerFormatters(settings => settings.LogDifferencesAsWarning = true);
+      });
+      using (host)
+      {
+        HttpRequestMessage request = Post(OrderWithExtra(MsgPackMediaTypes.MsgPack), MsgPackMediaTypes.MsgPack, "text/plain");
+        request.RequestUri = new Uri("/test/differences", UriKind.Relative);
+        HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.That(await response.Content.ReadAsStringAsync(), Is.EqualTo("none"));
+        Assert.That(logger.Warnings, Is.Empty);
+        Assert.That(logger.DebugMessages, Is.Empty);
+      }
+    }
+
+    [TestCase(MsgPackMediaTypes.MsgPack)]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack)]
+    public async Task MissingValueAnsweredWithTheDifferences(string mediaType)
+    {
+      (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(settings => settings.ReportDifferences = true));
+      using (host)
+      {
+        ShipmentWithDestination shipment = new ShipmentWithDestination() { Id = 7, Destination = new ShippingAddress() { Street = "Main street 1", City = "Utrecht" } };
+        byte[] body = MsgPackSerializer.Serialize(shipment, MsgPackMediaTypes.IsLsMsgPack(mediaType) ? new MsgPackSettings() : Plain);
+        HttpRequestMessage request = Post(body, mediaType, "text/plain");
+        request.RequestUri = new Uri("/test/shipment", UriKind.Relative);
+        HttpResponseMessage response = await client.SendAsync(request);
+
+        string message = await response.Content.ReadAsStringAsync();
+        TestContext.WriteLine(message);
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest), message);
+        Assert.That(message, Does.StartWith("Validation failed: address is required\r\n").And.Contain("Shipment.Destination: not a property of the class"));
+      }
+    }
+
+    [Test]
+    public async Task DifferencesAreNotCollectedByDefault()
+    {
+      (IHost host, HttpClient client) = await StartAsync();
+      using (host)
+      {
+        HttpRequestMessage request = Post(OrderWithExtra(MsgPackMediaTypes.MsgPack), MsgPackMediaTypes.MsgPack, "text/plain");
+        request.RequestUri = new Uri("/test/differences", UriKind.Relative);
+        HttpResponseMessage response = await client.SendAsync(request);
+
+        Assert.That(await response.Content.ReadAsStringAsync(), Is.EqualTo("none"));
       }
     }
 

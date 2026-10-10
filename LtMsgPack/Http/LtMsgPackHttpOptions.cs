@@ -28,6 +28,19 @@ namespace LtMsgPack.Http
     public bool NegotiateSchemas { get; set; } = true;
 
     /// <summary>
+    /// Collect what did not match between a body and the classes it is read into (<see cref="ReadDifferences"/>: unknown properties, classes without a schema entry, type ids that are not found...). Default false.
+    /// <para>ASP.NET Core: in <c>HttpContext.Features</c> (<c>HttpContext.GetReadDifferences()</c>) and logged (see <see cref="LogDifferencesAsWarning"/>). Web API and HttpClient: <c>HttpContent.GetReadDifferences()</c> (also <c>request.GetReadDifferences()</c>).
+    /// MVC 5: <c>HttpContextBase.GetReadDifferences()</c>. Reading with it is a bit slower (see docs/ReadDifferences.md), the report itself is only made when it is asked for.</para>
+    /// </summary>
+    public bool ReportDifferences { get; set; }
+
+    /// <summary>
+    /// ASP.NET Core, with <see cref="ReportDifferences"/>: log the differences of a request body as a warning. Default false: they are logged at the Debug level,
+    /// so clients that send properties the classes do not have (other versions of the models) do not fill the logs. Ignored without <see cref="ReportDifferences"/>.
+    /// </summary>
+    public bool LogDifferencesAsWarning { get; set; }
+
+    /// <summary>
     /// Client side: the most schema ids sent per server (the most recently received ones), 32 by default.
     /// </summary>
     public int MaxAdvertisedSchemas { get; set; } = 32;

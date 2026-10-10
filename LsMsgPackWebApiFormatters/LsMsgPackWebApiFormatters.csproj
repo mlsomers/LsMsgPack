@@ -15,8 +15,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- LtMsgPack has no KEEPTRACK, map DebugKeepTrack -> Debug and ReleaseKeepTrack -> Release (as before with LsMsgPack, whose debugging overhead does not belong in a web server) -->
-    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
+    <!-- In the configuration the solution gives LtMsgPack: LtMsgPack and LsMsgPack.Core have no KEEPTRACK code, so their KeepTrack builds are the same.
+         (A mapping to Debug/Release here made Visual Studio compile against an old LtMsgPack: the IDE does not build references, so nothing built that configuration.) -->
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
   </ItemGroup>
 
 </Project>

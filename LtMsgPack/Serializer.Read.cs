@@ -182,9 +182,10 @@ namespace LtMsgPack
       return _readPlans.GetOrAdd(type, t => new ReadPlan(this, t, FullPropertyInfo.GetSerializedProps(t, Options)));
     }
 
-    internal Type ResolveTypeName(string name, Type assignedTo)
+    /// <param name="orAssignedTo">Return <paramref name="assignedTo"/> when the name is not found, otherwise null</param>
+    internal Type ResolveTypeName(string name, Type assignedTo, bool orAssignedTo = true)
     {
-      return TypeResolver.ResolveInternal(name, assignedTo, Options._typeResolvers);
+      return TypeResolver.ResolveInternal(name, assignedTo, Options._typeResolvers, orAssignedTo);
     }
 
     private BoundSchema BoundFor(SchemaSession session, bool shared)
@@ -214,8 +215,18 @@ namespace LtMsgPack
     /// </summary>
     /// <param name="end">The end of the data in the buffer</param>
     /// <param name="consumed">The position after the payload</param>
-    internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed)
+    /// <param name="differences">Collects the differences between the data and the classes, null when not asked for</param>
+    internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null)
     {
+      if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
+      {
+        ReadDifferences found = new ReadDifferences(Options);
+        int used = 0;
+        object read = ReadDifferences.Collect(found, () => Deserialize(type, buffer, offset, end, out used, found));
+        consumed = used;
+        return read;
+      }
+
       if (type != _cachedRoot)
       {
         // The names in the data (type ids, the schema) are resolved in the cached assemblies: the ones of the types the root type reaches (the T of List<T>...)
@@ -224,11 +235,11 @@ namespace LtMsgPack
         _cachedRoot = type;
       }
 
-      ReadContext c = new ReadContext(this) { R = new MsgPackReader(buffer, offset, end, Options) };
+      ReadContext c = new ReadContext(this) { R = new MsgPackReader(buffer, offset, end, Options), Differences = differences, Unusual = SlowObjects || differences != null };
       object result;
       if (!Options._useInexedSchema)
       {
-        c.SlowSettings = Options;
+        c.SlowSettings = differences is null ? Options : Options.WithDifferences(differences);
         result = ReadRoot(c, type);
       }
       else
@@ -340,6 +351,11 @@ namespace LtMsgPack
       c.Schema = true;
       c.SlowSettings = sessionSettings;
       c.Bound = bound;
+      if (c.Differences != null)
+      {
+        c.Differences.Reset(); // the body is read again when the shared session has to grow
+        c.SlowSettings = sessionSettings.WithDifferences(c.Differences); // the session's settings are shared by calls
+      }
       return ReadRoot(c, type);
     }
 

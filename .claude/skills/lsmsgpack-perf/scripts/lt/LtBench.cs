@@ -197,6 +197,30 @@ public static class Bench
     return new Candidate { Name = name, Ser = i => s.Serialize(i), De = b => s.Deserialize<Invoice>(b), SerSmall = a => s.Serialize(a), DeSmall = b => s.Deserialize<Address>(b) };
   }
 
+  /// <summary>
+  /// Reading with an out ReadDifferences (the data matches, so this is the cost of the reporting path). Null when the library does not have the overload (the base before it was added).
+  /// </summary>
+  static Candidate LtReport(string name, LtMsgPackOptions o)
+  {
+    LtMsgPackSerializer s = new LtMsgPackSerializer(o);
+    Type differences = typeof(LtMsgPackSerializer).Assembly.GetReferencedAssemblies().Select(System.Reflection.Assembly.Load)
+      .Select(a => a.GetType("LsMsgPack.ReadDifferences")).FirstOrDefault(t => t != null);
+    if (differences is null)
+      return null;
+    System.Reflection.MethodInfo generic = typeof(LtMsgPackSerializer).GetMethods().FirstOrDefault(m => m.Name == "Deserialize" && m.IsGenericMethodDefinition
+      && m.GetParameters().Select(p => p.ParameterType).SequenceEqual(new[] { typeof(byte[]), differences.MakeByRefType() }));
+    if (generic is null)
+      return null;
+    Func<byte[], T> Reader<T>()
+    {
+      var bytes = System.Linq.Expressions.Expression.Parameter(typeof(byte[]));
+      var found = System.Linq.Expressions.Expression.Variable(differences);
+      var call = System.Linq.Expressions.Expression.Call(System.Linq.Expressions.Expression.Constant(s), generic.MakeGenericMethod(typeof(T)), bytes, found);
+      return System.Linq.Expressions.Expression.Lambda<Func<byte[], T>>(System.Linq.Expressions.Expression.Block(new[] { found }, call), bytes).Compile();
+    }
+    return new Candidate { Name = name, Ser = i => s.Serialize(i), De = Reader<Invoice>(), SerSmall = a => s.Serialize(a), DeSmall = Reader<Address>() };
+  }
+
   static Candidate Http(string name, string mediaType, bool clientHolds)
   {
     LtMsgPackHttpSerializer h = new LtMsgPackHttpSerializer();
@@ -231,7 +255,12 @@ public static class Bench
       Http("http-lsmsgpack", "application/x-lsmsgpack", false),
       Http("http-lsmsgpack-ref", "application/x-lsmsgpack", true),
       Http("http-plain", "application/msgpack", false),
+      LtReport("lt-report-default", new LtMsgPackOptions()),
+      LtReport("lt-report-map-indexed", new LtMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map }),
+      LtReport("lt-report-map-reference", new LtMsgPackOptions { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map }),
+      LtReport("lt-report-map-named", new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }),
     };
+    list.RemoveAll(c => c is null);
     return list;
   }
 

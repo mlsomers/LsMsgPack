@@ -36,6 +36,10 @@ namespace LsMsgPackUnitTests
 
     object Deserialize(Type type, Stream source, MsgPackSettings settings);
 
+    T Deserialize<T>(byte[] source, MsgPackSettings settings, out ReadDifferences differences);
+
+    object Deserialize(Type type, byte[] source, MsgPackSettings settings, out ReadDifferences differences);
+
     /// <summary>
     /// Whether the value is an extension the serializer has no custom extension for (LsMsgPack: MpExt, LtMsgPack: MsgPackExtension).
     /// </summary>
@@ -96,6 +100,8 @@ namespace LsMsgPackUnitTests
     public T Deserialize<T>(Stream source, MsgPackSettings settings) { return MsgPackSerializer.Deserialize<T>(source, settings); }
     public object Deserialize(Type type, byte[] source, MsgPackSettings settings) { return MsgPackSerializer.Deserialize(type, source, settings); }
     public object Deserialize(Type type, Stream source, MsgPackSettings settings) { return MsgPackSerializer.Deserialize(type, source, settings); }
+    public T Deserialize<T>(byte[] source, MsgPackSettings settings, out ReadDifferences differences) { return MsgPackSerializer.Deserialize<T>(source, settings, out differences); }
+    public object Deserialize(Type type, byte[] source, MsgPackSettings settings, out ReadDifferences differences) { return MsgPackSerializer.Deserialize(type, source, settings, out differences); }
 
     public bool IsUnknownExtension(object value, out sbyte typeCode, out byte[] data)
     {
@@ -131,7 +137,7 @@ namespace LsMsgPackUnitTests
       LtExtension[] extensions = Extensions(settings.CustomExtentionTypes);
       object key = (settings.UseInexedSchema, settings.DynamicallyCompact, settings.EndianAction, settings.AddTypeIdOptions,
         settings.TypeResolvers, settings.StaticFilters, settings.DynamicFilters, settings.PropertyNameResolvers,
-        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind));
+        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors));
       return _serializers.GetOrAdd(key, k => new LtMsgPackSerializer(new LtMsgPackOptions()
       {
         UseInexedSchema = settings.UseInexedSchema,
@@ -152,6 +158,7 @@ namespace LsMsgPackUnitTests
         ObjectCreation = settings.ObjectCreation,
         UnspecifiedDateTimeKind = settings.UnspecifiedDateTimeKind,
         ReadDateTimeKind = settings.ReadDateTimeKind,
+        ReadErrors = settings.ReadErrors,
         Extensions = extensions
       }));
     }
@@ -189,6 +196,8 @@ namespace LsMsgPackUnitTests
     public T Deserialize<T>(Stream source, MsgPackSettings settings) { return For(settings).Deserialize<T>(source); }
     public object Deserialize(Type type, byte[] source, MsgPackSettings settings) { return For(settings).Deserialize(type, source); }
     public object Deserialize(Type type, Stream source, MsgPackSettings settings) { return For(settings).Deserialize(type, source); }
+    public T Deserialize<T>(byte[] source, MsgPackSettings settings, out ReadDifferences differences) { return For(settings).Deserialize<T>(source, out differences); }
+    public object Deserialize(Type type, byte[] source, MsgPackSettings settings, out ReadDifferences differences) { return For(settings).Deserialize(type, source, out differences); }
 
     public bool IsUnknownExtension(object value, out sbyte typeCode, out byte[] data)
     {

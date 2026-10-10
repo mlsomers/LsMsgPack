@@ -10,6 +10,14 @@
     <Description>Input and output formatters (LtMsgPack) for ASP.NET Core MVC / Web API controllers (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|netstandard2.0|AnyCPU'">
+    <Optimize>False</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net8.0|AnyCPU'">
+    <Optimize>False</Optimize>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Core" Version="2.3.13" />
   </ItemGroup>
@@ -19,8 +27,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- LtMsgPack has no KEEPTRACK, map DebugKeepTrack -> Debug and ReleaseKeepTrack -> Release (as before with LsMsgPack, whose debugging overhead does not belong in a web server) -->
-    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
+    <!-- In the configuration the solution gives LtMsgPack: LtMsgPack and LsMsgPack.Core have no KEEPTRACK code, so their KeepTrack builds are the same.
+         (A mapping to Debug/Release here made Visual Studio compile against an old LtMsgPack: the IDE does not build references, so nothing built that configuration.) -->
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
   </ItemGroup>
 
 </Project>

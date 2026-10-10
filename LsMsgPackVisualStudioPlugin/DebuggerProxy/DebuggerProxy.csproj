@@ -5,7 +5,7 @@
     <BaseOutputPath>..\..\MsgPackExplorer\bin</BaseOutputPath>
     <ApplicationIcon>Explore.ico</ApplicationIcon>
 	<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-	<Configurations>Debug;Release;ReleaseKeepTrack</Configurations>
+	<Configurations>Debug;Release;ReleaseKeepTrack;DebugKeepTrack</Configurations>
   </PropertyGroup>
 
   <ItemGroup>
