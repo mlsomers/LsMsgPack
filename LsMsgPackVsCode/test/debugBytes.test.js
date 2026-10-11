@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { readBytes, languageOf, parseByte, parseInteger, CancelledError } = require('../out/debugBytes');
+const { readBytes, languageOf, parseByte, parseInteger, CancelledError, expressionAt, targetOfDebugContext } = require('../out/debugBytes');
 
 const sample = Uint8Array.from({ length: 1000 }, (_, t) => (t * 7) & 0xff);
 const options = (extra) => Object.assign({ chunkSize: 300, maxBytes: 1 << 20 }, extra);
@@ -19,6 +19,8 @@ function dotnetDebugger(maxString = Infinity) {
     ns: Object.assign(stream(sample, false), { types: ['System.IO.Stream'] }),
     text: { kind: 'string', types: ['string'], text: Buffer.from(sample).toString('base64') },
     mem: { kind: 'bytes', types: ['System.Memory<byte>'], bytes: sample },
+    // T value holding a byte[]: the debugger compiles against the declared type
+    generic: { kind: 'bytes', types: ['byte[]', 'System.Collections.Generic.IEnumerable<byte>'], bytes: sample, declaredAsTypeParameter: true },
     nothing: { kind: 'null', types: [] },
     number: { kind: 'other', types: ['int'] }
   };
@@ -31,8 +33,12 @@ function dotnetDebugger(maxString = Infinity) {
   // The variable an expression is about, through the casts and conversions of the reader
   const target = (expression) => {
     for (const match of expression.matchAll(/\((\w+)\)/g)) {
-      if (program[match[1]]) {
-        return program[match[1]];
+      const variable = program[match[1]];
+      if (variable) {
+        if (variable.declaredAsTypeParameter && !expression.includes(`(object)(${match[1]})`)) {
+          throw new Error(`error CS1503: Argument 1: cannot convert from 'T': ${expression}`);
+        }
+        return variable;
       }
     }
     throw new Error(`error CS0103: The name does not exist: ${expression}`);
@@ -102,7 +108,7 @@ test('numbers and bytes as debuggers show them', () => {
   assert.throws(() => parseByte('300', '[0]'));
 });
 
-for (const [name, description] of [['buf', 'byte[]'], ['list', 'IEnumerable<byte>'], ['ms', 'MemoryStream'], ['mem', 'Memory<byte>'], ['text', 'string']]) {
+for (const [name, description] of [['generic', 'byte[]'], ['buf', 'byte[]'], ['list', 'IEnumerable<byte>'], ['ms', 'MemoryStream'], ['mem', 'Memory<byte>'], ['text', 'string']]) {
   test(`.NET: ${description}`, async () => {
     const debug = dotnetDebugger();
     const result = await readBytes(debug.access, name, options());
@@ -202,4 +208,28 @@ test('JavaScript and Python: the bytes in base64 chunks', async () => {
     const result = await readBytes(access, 'data', options());
     assert.deepStrictEqual(result.bytes, sample, sessionType);
   }
+});
+
+test('editor: the expression under the cursor, up to the part clicked', () => {
+  const line = '      byte[] buffer = item.ToBytes(); this._payload.Data[2].Length';
+  const at = (text) => line.indexOf(text) + 1; // inside the word
+  assert.strictEqual(expressionAt(line, at('buffer')), 'buffer');
+  assert.strictEqual(expressionAt(line, at('item')), 'item');
+  assert.strictEqual(expressionAt(line, at('ToBytes')), 'item.ToBytes()');
+  assert.strictEqual(expressionAt(line, at('_payload')), 'this._payload');
+  assert.strictEqual(expressionAt(line, at('Data')), 'this._payload.Data[2]');
+  assert.strictEqual(expressionAt(line, line.indexOf('buffer') + 'buffer'.length), 'buffer'); // right after the word
+  assert.strictEqual(expressionAt(line, 2), undefined); // indentation
+  assert.strictEqual(expressionAt('x = response ?. Content;', 'x = response ?. Con'.length), 'response?.Content');
+});
+
+test('Variables and Watch views: a variable, or the text of a watch expression', () => {
+  const variable = { name: 'value', value: '{byte[3]}', evaluateName: 'value', variablesReference: 7 };
+  assert.deepStrictEqual(targetOfDebugContext({ sessionId: 's', variable }), { expression: 'value', variable });
+  const member = { name: '[0]', value: '1', variablesReference: 0 };
+  assert.deepStrictEqual(targetOfDebugContext({ variable: member }), { expression: undefined, variable: member });
+  assert.deepStrictEqual(targetOfDebugContext({ watchExpression: { name: 'buffer' } }), { expression: 'buffer', variable: undefined });
+  assert.deepStrictEqual(targetOfDebugContext({ name: 'this._payload', value: '{byte[3]}' }), { expression: 'this._payload', variable: undefined });
+  assert.strictEqual(targetOfDebugContext(undefined), undefined);
+  assert.strictEqual(targetOfDebugContext({}), undefined);
 });

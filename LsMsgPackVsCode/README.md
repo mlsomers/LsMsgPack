@@ -10,7 +10,8 @@ Inspect MsgPack data while debugging, and in `.msgpack` files. At the top low le
 
 Pause the program, then:
 
-- right-click a variable in the **Variables** view and choose **View as MsgPack**, or
+- right-click a variable in the **Variables** or **Watch** view and choose **View as MsgPack**,
+- right-click a variable in the code (or select an expression) and choose **View as MsgPack**: it takes the member path up to the part you clicked (`this._buffer` in `this._buffer.Length`), or
 - run **MsgPack: Inspect Expression...** from the Command Palette and type an expression (evaluated in the stack frame selected in the Call Stack view).
 
 For .Net:

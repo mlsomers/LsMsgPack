@@ -61,6 +61,16 @@ test('load, search, settings and errors', { skip }, async () => {
     const broken = await client.load('b', sample.subarray(0, 50).toString('base64'), settings);
     assert.ok(broken.error || broken.issues.some((issue) => issue.severity === 'ReadAbortError'));
 
+    // An extension cut off in its content (ext 8 of 5 bytes, 1 there): its text threw a NullReferenceException, the whole load failed
+    const cutExtension = await client.load('e', Buffer.from([0xc7, 0x05, 0x01, 0xaa]).toString('base64'), settings);
+    assert.ok(cutExtension.items.some((item) => /the data ended before its content/.test(item.text)), JSON.stringify(cutExtension.items));
+
+    // An array of 5 with an error at its second value: the 3 slots after it were not read, they showed as NULL items
+    const stopped = await client.load('s', Buffer.from([0x95, 0x01, 0xc1, 0x02, 0x03, 0x04]).toString('base64'), settings);
+    assert.ok(!stopped.items.some((item) => item.text === 'NULL'), JSON.stringify(stopped.items.map((item) => item.text)));
+    const map = await client.load('m', Buffer.from([0x84, 0x01, 0x02, 0xc1, 0x03, 0x04, 0x05, 0x06, 0x07]).toString('base64'), settings);
+    assert.ok(!map.items.some((item) => item.text === 'NULL'), JSON.stringify(map.items.map((item) => item.text)));
+
     await assert.rejects(client.search('unknown', 'x', false), /Unknown document/);
     await client.close('a');
     await assert.rejects(client.load('a', undefined, settings), /Unknown document/);

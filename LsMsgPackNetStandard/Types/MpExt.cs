@@ -160,6 +160,8 @@ namespace LsMsgPack {
     }
 
     public override string ToString() {
+      if (value is null) // the data ended before the content (KEEPTRACK keeps the item): the explorers show it, a NullReferenceException hid the data
+        return $"Extension value ({GetOfficialTypeName(typeId)}) with a type specifier of {TypeSpecifier}, the data ended before its content.";
       return
         $"Extension value ({GetOfficialTypeName(typeId)}) with a type specifier of {TypeSpecifier} containing {value.Length} bytes.";
     }

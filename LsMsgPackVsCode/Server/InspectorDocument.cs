@@ -210,6 +210,8 @@ namespace LsMsgPackInspector
         MsgPackItem[] elements = array.PackedValues;
         for (int t = 0; t < elements.Length; t++)
         {
+          if (ReferenceEquals(elements[t], null))
+            break; // the slots after an error were not read (the header claims them): they showed as NULL items, as if the data had them
           int child = AddItem(result, elements[t], id, null, schema || isTreeRoot && IsSchemaItem(elements[t]));
           Traverse(result, child, elements[t]);
           if (_nodeCount > _displayLimit)
@@ -221,6 +223,8 @@ namespace LsMsgPackInspector
         KeyValuePair<MsgPackItem, MsgPackItem>[] entries = map.PackedValues;
         for (int t = 0; t < entries.Length; t++)
         {
+          if (ReferenceEquals(entries[t].Key, null))
+            break; // not read, as for arrays
           int key = AddItem(result, entries[t].Key, id, "key", schema);
           Traverse(result, key, entries[t].Key);
           if (_nodeCount > _displayLimit)

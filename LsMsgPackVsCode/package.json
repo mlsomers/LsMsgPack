@@ -2,7 +2,7 @@
   "name": "lsmsgpack-explorer",
   "displayName": "MsgPack Explorer (LsMsgPack)",
   "description": "Inspect MsgPack data while debugging (byte[], Stream, List<byte>, Memory<byte>, HttpContent...) and in .msgpack files: item tree, hex view, properties, validation, objects with the indexed schema of LsMsgPack. Lets AI agents (MCP) read and decode MsgPack while debugging.",
-  "version": "2026.10.11",
+  "version": "2026.10.12",
   "publisher": "mlsomers",
   "license": "Apache-2.0",
   "icon": "media/icon.png",
@@ -44,6 +44,11 @@
         "category": "MsgPack"
       },
       {
+        "command": "lsmsgpack.viewAtCursor",
+        "title": "View as MsgPack",
+        "category": "MsgPack"
+      },
+      {
         "command": "lsmsgpack.inspectExpression",
         "title": "Inspect Expression...",
         "category": "MsgPack"
@@ -76,7 +81,18 @@
           "group": "navigation@100"
         }
       ],
+      "debug/watch/context": [
+        {
+          "command": "lsmsgpack.viewVariable",
+          "group": "navigation@100"
+        }
+      ],
       "editor/context": [
+        {
+          "command": "lsmsgpack.viewAtCursor",
+          "when": "inDebugMode && debugState == 'stopped'",
+          "group": "debug@100"
+        },
         {
           "command": "lsmsgpack.fromSelection",
           "when": "editorHasSelection",
@@ -86,6 +102,10 @@
       "commandPalette": [
         {
           "command": "lsmsgpack.viewVariable",
+          "when": "false"
+        },
+        {
+          "command": "lsmsgpack.viewAtCursor",
           "when": "false"
         },
         {
