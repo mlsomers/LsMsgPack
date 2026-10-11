@@ -197,3 +197,5 @@ FakesAssemblies/
 /.contextkeeper/.git-branches
 /LsMsgPackMcpServer/LICENSE
 /LsMsgPackMcpServer/mcp-publisher.exe
+.vscode/launch.json
+.vscode/tasks.json
