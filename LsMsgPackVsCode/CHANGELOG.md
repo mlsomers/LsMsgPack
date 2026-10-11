@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2026.10.12
 
 - **View as MsgPack** also in the context menu of the Watch view, and of the editor while the program is paused (the selection, or the expression under the cursor).
 - .NET: a variable declared as another type than the one it holds (a `T value` holding a `byte[]`) could not be read ("CS1503: cannot convert"): the expressions sent to the debugger compiled against the declared type.
