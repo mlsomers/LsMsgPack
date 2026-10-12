@@ -26,3 +26,16 @@ jobs:
       run: dotnet build LsMsgPack.slnf --no-restore -c DEBUG
     - name: Test
       run: dotnet test LsMsgPack.slnf --no-build --verbosity normal -c DEBUG
+
+  aot-smoke:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 8.0.x
+    - name: NativeAOT smoke test of the source generator
+      run: bash LtMsgPackAotSmokeTest/run.sh

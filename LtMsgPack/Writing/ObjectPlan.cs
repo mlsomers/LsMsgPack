@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
@@ -233,6 +233,10 @@ namespace LtMsgPack.Writing
     internal static PropWriter Create(Serializer serializer, FullPropertyInfo info)
     {
       PropertyInfo property = info.PropertyInfo;
+      PropWriter generated = serializer.GeneratedProperty(property)?.CreateWriter(serializer, info); // the getter of the source generator
+      if (generated != null)
+        return generated;
+
       MethodInfo get = property.GetGetMethod(true);
       if (get != null && !get.IsStatic && !property.DeclaringType.IsValueType && !property.DeclaringType.ContainsGenericParameters && serializer.CanBindDelegates)
       {

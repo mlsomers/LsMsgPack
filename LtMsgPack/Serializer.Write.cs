@@ -46,6 +46,7 @@ namespace LtMsgPack
       _customTypeResolvers = options._typeResolvers.Length > 0;
       CustomPropertyIds = options._propertyNameResolvers.Length > 0;
       _keyWriter = new MsgPackWriter(16);
+      InitGenerated();
       InitReading();
     }
 
@@ -81,10 +82,10 @@ namespace LtMsgPack
       Type underlying = Nullable.GetUnderlyingType(type);
       if (underlying != null)
       {
-        object inner = GetType().GetMethod(nameof(Handler), BindingFlags.Instance | BindingFlags.NonPublic).MakeGenericMethod(underlying).Invoke(this, new object[] { null });
+        object inner = _handlers.TryGetValue(underlying, out object found) ? found : _handlers.GetOrAdd(underlying, t => CreateHandler(t)); // Handler<T>(null)
         if (inner.GetType().IsGenericType && inner.GetType().GetGenericTypeDefinition() == typeof(BoxedHandler<>))
           return Boxed(type);
-        return Activator.CreateInstance(typeof(NullableHandler<>).MakeGenericType(underlying), BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { inner }, null);
+        return Instantiate(type, typeof(NullableHandler<>), underlying, inner);
       }
 
       WriteTypeInfo info = GetTypeInfo(type);
@@ -116,18 +117,18 @@ namespace LtMsgPack
         case TypeKind.Extension:
           if (type == typeof(decimal) && info.Extension is LtExtension<decimal> dec)
             return new DecimalHandler(dec);
-          return Activator.CreateInstance(typeof(ExtensionHandler<>).MakeGenericType(type), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { info.Extension }, null);
+          return Instantiate(type, typeof(ExtensionHandler<>), type, info.Extension);
         case TypeKind.Enum:
-          return Activator.CreateInstance(typeof(EnumHandler<>).MakeGenericType(type), true);
+          return Instantiate(type, typeof(EnumHandler<>), type, null);
         case TypeKind.Array:
           if (type.IsArray && type.GetArrayRank() == 1 && type == type.GetElementType().MakeArrayType())
-            return Activator.CreateInstance(typeof(ArrayHandler<>).MakeGenericType(type.GetElementType()), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { this }, null);
+            return Instantiate(type, typeof(ArrayHandler<>), type.GetElementType(), this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
-            return Activator.CreateInstance(typeof(ListHandler<>).MakeGenericType(type.GenericTypeArguments[0]), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { this }, null);
+            return Instantiate(type, typeof(ListHandler<>), type.GenericTypeArguments[0], this);
           return Boxed(type);
         case TypeKind.Complex:
           if (!type.IsValueType && type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
-            return Activator.CreateInstance(typeof(ObjectHandler<>).MakeGenericType(type), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { this }, null);
+            return Instantiate(type, typeof(ObjectHandler<>), type, this);
           return Boxed(type);
         default:
           return Boxed(type);
@@ -136,7 +137,7 @@ namespace LtMsgPack
 
     private object Boxed(Type type)
     {
-      return Activator.CreateInstance(typeof(BoxedHandler<>).MakeGenericType(type), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { this }, null);
+      return Instantiate(type, typeof(BoxedHandler<>), type, this);
     }
 
     internal WriteTypeInfo GetTypeInfo(Type type)

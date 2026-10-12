@@ -226,12 +226,16 @@ namespace LtMsgPack.Generator
       return false;
     }
 
-    private static bool IsFramework(INamedTypeSymbol type)
+    /// <summary>
+    /// A type of the framework (as the runtime's TypeResolver.IsFrameworkAssembly decides it): written as a leaf or collection, or refused, never by its properties.
+    /// </summary>
+    private bool IsFramework(INamedTypeSymbol type)
     {
-      INamespaceSymbol root = type.ContainingNamespace;
-      while (root != null && root.ContainingNamespace != null && !root.ContainingNamespace.IsGlobalNamespace)
-        root = root.ContainingNamespace;
-      return root != null && (root.Name == "System" || root.Name == "Microsoft");
+      IAssemblySymbol assembly = type.ContainingAssembly;
+      if (assembly is null || SymbolEqualityComparer.Default.Equals(assembly, _compilation.Assembly))
+        return false;
+      string name = assembly.Name;
+      return name == "mscorlib" || name == "netstandard" || name == "System" || name.StartsWith("System.", System.StringComparison.Ordinal) || name.StartsWith("Microsoft.", System.StringComparison.Ordinal);
     }
 
     private static bool IsCollection(INamedTypeSymbol type)

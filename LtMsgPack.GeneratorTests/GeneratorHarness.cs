@@ -97,6 +97,17 @@ namespace LtMsgPack.GeneratorTests
       Assert.AreEqual(File.ReadAllText(path).Replace("\r\n", "\n"), actual, "The generated code differs from " + path + " (set UPDATE_SNAPSHOTS=1 to accept it)");
     }
 
+    /// <summary>
+    /// Compiles the sources as they are (without the generator, e.g. generated code of an older version) against .NET 8 and loads them.
+    /// </summary>
+    public static Assembly CompileAndLoad(string assemblyName, params string[] sources)
+    {
+      CSharpParseOptions parse = new CSharpParseOptions(LanguageVersion.Latest);
+      CSharpCompilation compilation = CSharpCompilation.Create(assemblyName, sources.Select(s => CSharpSyntaxTree.ParseText(s, parse)), Net8References(),
+        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+      return Load(new Result() { Output = compilation });
+    }
+
     public static Assembly Load(Result result)
     {
       using (MemoryStream stream = new MemoryStream())

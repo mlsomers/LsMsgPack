@@ -1,4 +1,5 @@
-﻿using System;
+﻿using LsMsgPack.Generated;
+using System;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
@@ -55,6 +56,10 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static object Construct(Type type)
     {
+      Func<object> generated = GeneratedTypes.Find(type)?.Creator; // the constructor call of the source generator, registered for the process
+      if (generated != null)
+        return generated(); // an exception of the constructor is passed on as it is
+
       try
       {
         return Activator.CreateInstance(type, true);

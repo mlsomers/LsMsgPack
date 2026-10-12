@@ -199,22 +199,32 @@ namespace LtMsgPack.Generated
   }
 
   /// <summary>
+  /// The generated accessors of a property, for the serializer.
+  /// </summary>
+  internal interface ILtGeneratedProperty
+  {
+    /// <returns>null without a generated getter</returns>
+    PropWriter CreateWriter(Serializer serializer, FullPropertyInfo info);
+
+    /// <returns>null without a generated setter</returns>
+    PropReader CreateReader(Serializer serializer, FullPropertyInfo info);
+  }
+
+  /// <summary>
   /// The generated accessors of a property, creating the serializer's typed property writer and reader.
   /// </summary>
-  internal sealed class LtGeneratedProperty<TTarget, TValue> : GeneratedProperty<TTarget, TValue> where TTarget : class
+  internal sealed class LtGeneratedProperty<TTarget, TValue> : GeneratedProperty<TTarget, TValue>, ILtGeneratedProperty where TTarget : class
   {
     internal LtGeneratedProperty(string name, Func<TTarget, TValue> get, Action<TTarget, TValue> set) : base(name, get, set)
     {
     }
 
-    /// <returns>null without a generated getter</returns>
-    internal PropWriter CreateWriter(Serializer serializer, FullPropertyInfo info)
+    public PropWriter CreateWriter(Serializer serializer, FullPropertyInfo info)
     {
       return Get is null ? null : new PropWriter<TTarget, TValue>(serializer, info, Get);
     }
 
-    /// <returns>null without a generated setter</returns>
-    internal PropReader CreateReader(Serializer serializer, FullPropertyInfo info)
+    public PropReader CreateReader(Serializer serializer, FullPropertyInfo info)
     {
       return Set is null ? null : new PropReader<TTarget, TValue>(serializer, info, Set);
     }

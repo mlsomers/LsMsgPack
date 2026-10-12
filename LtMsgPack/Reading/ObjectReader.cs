@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Types;
 using System;
@@ -375,14 +375,15 @@ namespace LtMsgPack.Reading
     /// </summary>
     internal volatile BoundSchema.Cached LastBinding;
 
-    internal ReadPlan(Serializer serializer, Type type, FullPropertyInfo[] infos)
+    /// <param name="generated">The constructor call of the source generator, null when there is none</param>
+    internal ReadPlan(Serializer serializer, Type type, FullPropertyInfo[] infos, Func<object> generated)
     {
       Type = type;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
       Props = new PropReader[infos.Length];
       for (int t = 0; t < infos.Length; t++)
         Props[t] = PropReader.Create(serializer, infos[t]);
-      _create = Creator(type, serializer.Options._objectCreation);
+      _create = Creator(type, serializer.Options._objectCreation, generated);
     }
 
     internal object Create()
@@ -418,10 +419,13 @@ namespace LtMsgPack.Reading
     /// <summary>
     /// Creates the instances as <see cref="MsgPackOptions.ObjectCreation"/> says (decided once per type, the options of a serializer do not change).
     /// </summary>
-    private static Func<object> Creator(Type type, ObjectCreation creation)
+    private static Func<object> Creator(Type type, ObjectCreation creation, Func<object> generated)
     {
       if (creation == ObjectCreation.Uninitialized)
         return () => Instances.Uninitialized(type);
+
+      if (generated != null) // the parameterless constructor (an exception of the constructor is passed on as it is)
+        return generated;
 
       if (type.GetConstructor(Type.EmptyTypes) != null)
       {
@@ -519,6 +523,10 @@ namespace LtMsgPack.Reading
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
       PropertyInfo property = info.PropertyInfo;
+      PropReader generated = serializer.GeneratedProperty(property)?.CreateReader(serializer, info); // the setter of the source generator
+      if (generated != null)
+        return generated;
+
       MethodInfo set = property.GetSetMethod(true);
       if (set != null && !set.IsStatic && !property.DeclaringType.IsValueType && !property.DeclaringType.ContainsGenericParameters && serializer.CanBindDelegates)
       {

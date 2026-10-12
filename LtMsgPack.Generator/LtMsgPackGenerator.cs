@@ -239,6 +239,7 @@ namespace LtMsgPack.Generator
       INamedTypeSymbol contextBase = compilation.GetTypeByMetadataName(ContextBase);
       INamedTypeSymbol exception = compilation.GetTypeByMetadataName("System.Exception");
       INamedTypeSymbol attributeType = compilation.GetTypeByMetadataName("System.Attribute");
+      INamedTypeSymbol jsonContext = compilation.GetTypeByMetadataName("System.Text.Json.Serialization.JsonSerializerContext");
       TypeWalker walker = new TypeWalker(compilation, compilation.Assembly, fullName, diagnostics);
       foreach (INamedTypeSymbol type in AllTypes(compilation.Assembly.GlobalNamespace))
       {
@@ -251,7 +252,8 @@ namespace LtMsgPack.Generator
         }
 
         if (type.TypeKind != TypeKind.Class || type.IsStatic || type.IsGenericType || !type.CanBeReferencedByName || type.IsImplicitlyDeclared
-          || DerivesFrom(type, contextBase) || (exception != null && DerivesFrom(type, exception)) || (attributeType != null && DerivesFrom(type, attributeType)))
+          || DerivesFrom(type, contextBase) || (exception != null && DerivesFrom(type, exception)) || (attributeType != null && DerivesFrom(type, attributeType))
+          || (jsonContext != null && DerivesFrom(type, jsonContext)))
           continue;
 
         bool root = false;
