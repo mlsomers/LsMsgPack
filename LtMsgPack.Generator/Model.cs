@@ -181,5 +181,6 @@ namespace LtMsgPack.Generator
     string RootNamespace,
     bool ModuleInitializers, // C# 9 or later
     bool HasModuleInitializerAttribute,
-    bool HasDynamicDependency);
+    bool HasDynamicDependency,
+    bool Trimmed); // PublishTrimmed, PublishAot, IsAotCompatible or IsTrimmable: LTMP010 is reported
 }

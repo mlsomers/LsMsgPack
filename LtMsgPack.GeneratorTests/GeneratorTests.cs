@@ -306,6 +306,72 @@ namespace M
 
     #endregion
 
+    #region Types only known at runtime (LTMP010)
+
+    private const string Polymorphic = @"
+using System.Collections.Generic;
+using LtMsgPack;
+namespace M
+{
+  public interface IShape { string Label { get; set; } }
+  public abstract class Animal { public string Name { get; set; } }
+  public class Circle : IShape { public string Label { get; set; } public double Radius { get; set; } }
+  public class Dog : Animal { public bool Barks { get; set; } }
+  public class Drawing
+  {
+    public IShape Main { get; set; }
+    public List<IShape> Shapes { get; set; }
+    public Dictionary<string, Animal> Pets { get; set; }
+    public object Tag { get; set; }
+    public string Title { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(Drawing))]
+  ROOTS
+  public partial class Context : LtMsgPackContext { }
+}";
+
+    private static string[] Uncovered(GeneratorHarness.Result result)
+    {
+      return result.GeneratorDiagnostics.Where(d => d.Id == "LTMP010").Select(d => d.GetMessage()).OrderBy(m => m, StringComparer.Ordinal).ToArray();
+    }
+
+    [TestMethod]
+    public void Uncovered_ReportedWhenPublishedAheadOfTime()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(Polymorphic.Replace("ROOTS", ""), msbuild: new Dictionary<string, string>() { { "PublishAot", "true" } });
+      result.AssertCompiles();
+      string[] messages = Uncovered(result);
+      Assert.HasCount(4, messages, messages.Length + ": " + string.Join(" | ", messages));
+      Assert.IsTrue(messages.Any(m => m.Contains("'M.Drawing.Main' holds values of 'M.IShape'")));
+      Assert.IsTrue(messages.Any(m => m.Contains("'M.Drawing.Shapes' holds values of 'M.IShape'")), "the elements of a list");
+      Assert.IsTrue(messages.Any(m => m.Contains("'M.Drawing.Pets' holds values of 'M.Animal'")), "the values of a dictionary");
+      Assert.IsTrue(messages.Any(m => m.Contains("'M.Drawing.Tag' holds values of 'object'")));
+      Assert.AreEqual("Model.cs", result.GeneratorDiagnostics.First(d => d.Id == "LTMP010").Location.GetLineSpan().Path, "at the property");
+    }
+
+    [TestMethod]
+    public void Uncovered_NotReportedWithoutTrimmingOrAot()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(Polymorphic.Replace("ROOTS", ""));
+      Assert.IsEmpty(Uncovered(result));
+      foreach (string property in new[] { "PublishTrimmed", "IsAotCompatible", "IsTrimmable" })
+        Assert.HasCount(4, Uncovered(GeneratorHarness.Run(Polymorphic.Replace("ROOTS", ""), msbuild: new Dictionary<string, string>() { { property, "true" } })), property);
+    }
+
+    [TestMethod]
+    public void Uncovered_NotReportedForListedClasses()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(Polymorphic.Replace("ROOTS", "[LtMsgPackSerializable(typeof(Circle))] [LtMsgPackSerializable(typeof(Dog))]"),
+        msbuild: new Dictionary<string, string>() { { "PublishAot", "true" } });
+      result.AssertCompiles();
+      string[] messages = Uncovered(result);
+      Assert.HasCount(1, messages, "Circle implements IShape, Dog derives from Animal");
+      Assert.Contains("'M.Drawing.Tag' holds values of 'object'", messages[0], "what an object holds cannot be told from the context");
+    }
+
+    #endregion
+
     #region The context of the assembly (compile-time options)
 
     private const string Markers = @"

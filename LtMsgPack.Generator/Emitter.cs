@@ -36,7 +36,8 @@ namespace LtMsgPack.Generator
       foreach (ContextModel context in contexts)
       {
         foreach (DiagnosticInfo diagnostic in context.Diagnostics)
-          output.ReportDiagnostic(diagnostic.ToDiagnostic());
+          if (options.Trimmed || diagnostic.Id != Diagnostics.Uncovered.Id) // LTMP010 only matters when trimmed or compiled ahead of time
+            output.ReportDiagnostic(diagnostic.ToDiagnostic());
         if (context.FullName is null || HasErrors(context))
           continue;
 

@@ -77,9 +77,15 @@ namespace LtMsgPack.Generator
       INamedTypeSymbol initializer = compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.ModuleInitializerAttribute");
       INamedTypeSymbol dependency = compilation.GetTypeByMetadataName("System.Diagnostics.CodeAnalysis.DynamicDependencyAttribute");
       bool csharp9 = parse is CSharpParseOptions csharp && csharp.LanguageVersion >= LanguageVersion.CSharp9;
+      bool trimmed = IsTrue(global, "PublishTrimmed") || IsTrue(global, "PublishAot") || IsTrue(global, "IsAotCompatible") || IsTrue(global, "IsTrimmable");
       return new GenerateOptions(include, contextName, autoRegister, rootNamespace, csharp9,
         initializer != null && compilation.IsSymbolAccessibleWithin(initializer, compilation.Assembly),
-        dependency != null && compilation.IsSymbolAccessibleWithin(dependency, compilation.Assembly));
+        dependency != null && compilation.IsSymbolAccessibleWithin(dependency, compilation.Assembly), trimmed);
+    }
+
+    private static bool IsTrue(AnalyzerConfigOptions global, string property)
+    {
+      return global.TryGetValue("build_property." + property, out string value) && string.Equals(value?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

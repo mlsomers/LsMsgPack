@@ -7,5 +7,10 @@
     <CompilerVisibleProperty Include="LtMsgPackContextName" />
     <CompilerVisibleProperty Include="LtMsgPackAutoRegister" />
     <CompilerVisibleProperty Include="RootNamespace" />
+    <!-- LTMP010 (types only known at runtime) is reported for projects that are trimmed or compiled ahead of time -->
+    <CompilerVisibleProperty Include="PublishTrimmed" />
+    <CompilerVisibleProperty Include="PublishAot" />
+    <CompilerVisibleProperty Include="IsAotCompatible" />
+    <CompilerVisibleProperty Include="IsTrimmable" />
   </ItemGroup>
 </Project>

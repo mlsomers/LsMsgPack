@@ -104,12 +104,13 @@ Generated code says which version of the generated code's contract it was writte
 | LTMP007 | Error | The context class declares a parameterless constructor (the generator writes it) |
 | LTMP008 | Warning | An open generic type: list its constructed types (`typeof(Wrapper<int>)`) |
 | LTMP009 | Info | A context is not registered for the process (C# 7.3, or not accessible): pass it in `Contexts` |
+| LTMP010 | Warning | Only in projects that are trimmed or compiled ahead of time (`PublishTrimmed`, `PublishAot`, `IsAotCompatible`, `IsTrimmable`): a property holds values of an interface, an abstract class or `object` (also as the elements of a collection or the values of a dictionary), and no class of the context fits it. List the classes it holds with `[LtMsgPackSerializable]`. An `object` property is always reported: where it only holds primitives and strings, set `<NoWarn>$(NoWarn);LTMP010</NoWarn>` or `dotnet_diagnostic.LTMP010.severity = none` in `.editorconfig` |
 
 To see the generated code, set `<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>` in the project: it lands in `obj/.../generated/LtMsgPack.Generator`.
 
 ## Trimming and NativeAOT
 
-On .NET 5 and later the generated code keeps the properties and constructors of your classes when the app is trimmed (`DynamicDependency`). The library itself still has trim and AOT analysis warnings for its reflection paths (types resolved by name, framework types). Those paths are used for types the generator doesn't cover. A NativeAOT smoke test (`LtMsgPackAotSmokeTest`) checks the invoice model in six option sets.
+On .NET 5 and later the generated code keeps the properties and constructors of your classes when the app is trimmed (`DynamicDependency`). Classes it doesn't know of are not kept: in a trimmed or AOT project, `LTMP010` points at the properties whose values are only known at runtime (interfaces, abstract classes, `object`), so you can list their classes. The library itself still has trim and AOT analysis warnings for its reflection paths (types resolved by name, framework types). Those paths are used for types the generator doesn't cover. A NativeAOT smoke test (`LtMsgPackAotSmokeTest`) checks the invoice model in six option sets.
 
 ## Measurements
 
