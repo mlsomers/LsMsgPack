@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Tests of LtMsgPack's source generator: its output (snapshots), that the output compiles (C# 7.3 against .NET Standard 2.0, and C# latest), diagnostics and options -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.4.1" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.4.1" />
+    <!-- newer than the generator's 4.8: a newer compiler loads the generator, as in a newer SDK -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+    <PackageReference Include="Basic.Reference.Assemblies.NetStandard20" Version="1.7.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LtMsgPack.Generator\LtMsgPack.Generator.csproj" />
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
+    <!-- The .NET Standard 2.0 build of LtMsgPack (and so of LsMsgPack.Core): the generated code is compiled against it as C# 7.3, as in a .NET Framework project -->
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" SetTargetFramework="TargetFramework=netstandard2.0" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>LtMsgPackNetStandard20</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)..\LtMsgPack\bin\$(Configuration)\netstandard2.0\</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>SnapshotDirectory</_Parameter1>
+      <_Parameter2>$(MSBuildThisFileDirectory)Snapshots\</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

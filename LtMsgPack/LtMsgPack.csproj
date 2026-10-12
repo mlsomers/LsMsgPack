@@ -26,4 +26,12 @@
     <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" />
   </ItemGroup>
 
+  <!-- The source generator ships in this package (analyzers/dotnet/cs), so the generator and the runtime always have the same version, with the MSBuild properties it reads -->
+  <ItemGroup>
+    <ProjectReference Include="..\LtMsgPack.Generator\LtMsgPack.Generator.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <None Include="..\LtMsgPack.Generator\bin\$(Configuration)\netstandard2.0\LtMsgPack.Generator.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Remove="buildTransitive\LtMsgPack.props" />
+    <None Include="buildTransitive\LtMsgPack.props" Pack="true" PackagePath="buildTransitive;build" />
+  </ItemGroup>
+
 </Project>

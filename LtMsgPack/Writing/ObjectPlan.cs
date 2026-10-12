@@ -264,6 +264,13 @@ namespace LtMsgPack.Writing
       _get = (Func<TTarget, TValue>)Delegate.CreateDelegate(typeof(Func<TTarget, TValue>), get);
     }
 
+    /// <param name="get">The getter of the source generator</param>
+    internal PropWriter(Serializer serializer, FullPropertyInfo info, Func<TTarget, TValue> get) : base(serializer, info)
+    {
+      _declared = info;
+      _get = get;
+    }
+
     internal override bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info)
     {
       TValue value;

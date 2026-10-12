@@ -65,6 +65,32 @@ namespace LtMsgPack
       set { _bigIntegerFormat = value; }
     }
 
+    internal LtMsgPackContext[] _contexts = new LtMsgPackContext[0];
+
+    /// <summary>
+    /// The code of LtMsgPack's source generator to use (see <see cref="LtMsgPackContext"/>), asked before the registered contexts (see <see cref="UseRegisteredContexts"/>).
+    /// The first context that describes a type is used for it.
+    /// </summary>
+    [IgnoreDataMember]
+    public LtMsgPackContext[] Contexts
+    {
+      get { return _contexts; }
+      set { _contexts = value ?? new LtMsgPackContext[0]; }
+    }
+
+    internal bool _useRegisteredContexts = true;
+
+    /// <summary>
+    /// Whether the generated code registered for the process (by the module initializers of the generator, see <see cref="LtMsgPackGenerateAttribute.AutoRegister"/>) is used, true by default.
+    /// <para>With neither, the serializer builds its plans at runtime (as without the generator). The data is the same either way.</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public bool UseRegisteredContexts
+    {
+      get { return _useRegisteredContexts; }
+      set { _useRegisteredContexts = value; }
+    }
+
     /// <summary>
     /// A copy of the options (the session caches of the indexed schema are not copied).
     /// </summary>

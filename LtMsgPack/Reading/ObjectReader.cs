@@ -547,6 +547,13 @@ namespace LtMsgPack.Reading
       _set = (Action<TTarget, TValue>)Delegate.CreateDelegate(typeof(Action<TTarget, TValue>), set);
     }
 
+    /// <param name="set">The setter of the source generator</param>
+    internal PropReader(Serializer serializer, FullPropertyInfo info, Action<TTarget, TValue> set) : base(info)
+    {
+      _serializer = serializer;
+      _set = set;
+    }
+
     internal override void Read(ReadContext c, object target)
     {
       ValueReader<TValue> reader = _reader ?? (_reader = _serializer.Reader<TValue>());

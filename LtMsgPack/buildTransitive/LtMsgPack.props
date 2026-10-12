@@ -1,0 +1,11 @@
+<Project>
+  <!-- The MSBuild properties LtMsgPack's source generator reads (see docs/SourceGenerator.md), e.g.
+       <LtMsgPackGenerate>Serializable;DataContract;JsonSerializable</LtMsgPackGenerate> (or AllTypes),
+       <LtMsgPackContextName>MyApp.MsgPackContext</LtMsgPackContextName>, <LtMsgPackAutoRegister>false</LtMsgPackAutoRegister> -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="LtMsgPackGenerate" />
+    <CompilerVisibleProperty Include="LtMsgPackContextName" />
+    <CompilerVisibleProperty Include="LtMsgPackAutoRegister" />
+    <CompilerVisibleProperty Include="RootNamespace" />
+  </ItemGroup>
+</Project>
