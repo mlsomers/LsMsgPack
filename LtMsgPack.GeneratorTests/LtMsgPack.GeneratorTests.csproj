@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" />
     <ProjectReference Include="..\LtMsgPack.Generator\LtMsgPack.Generator.csproj" />
     <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
     <!-- The .NET Standard 2.0 build of LtMsgPack (and so of LsMsgPack.Core): the generated code is compiled against it as C# 7.3, as in a .NET Framework project -->
