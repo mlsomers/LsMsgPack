@@ -133,13 +133,30 @@ namespace LtMsgPack.Generator
     bool CanGet,
     bool CanSet);
 
+  /// <summary>
+  /// A member of the generated writer and reader of a class: the properties the runtime may serialize, inherited ones too (LtMsgPack.Generated.GeneratedMember).
+  /// </summary>
+  internal sealed record MemberModel(
+    string DeclaringType, // fully qualified
+    string Name,
+    string Access, // the name in member access (escaped when it is a keyword)
+    string TypeName, // fully qualified
+    string Kind, // LtMsgPack.Generated.GeneratedKind, None when the runtime writes and reads it
+    bool Nullable, // Kind is the one of the underlying type of a Nullable
+    string ValueType, // the type of the value the kind writes (the underlying type of a Nullable), fully qualified
+    string EnumUnderlying, // the keyword of the underlying type of an enum (int, byte...)
+    bool CanGet, // the generated code writes it (its getter is accessible, no [DefaultValue])
+    bool CanSet,
+    bool Unrolled); // kept by the default static filters (the unrolled writer)
+
   internal sealed record TypeModel(
     TypeModelKind Kind,
     string TypeName, // fully qualified (global::...)
     string Argument, // the element or underlying type, fully qualified
     bool HasCreator,
     bool KeepMetadata, // its properties and constructors are kept by the trimmer (DynamicDependency)
-    EquatableArray<PropertyModel> Properties);
+    EquatableArray<PropertyModel> Properties,
+    EquatableArray<MemberModel> Members); // the generated writer and reader (concrete classes), empty when there is none
 
   /// <summary>
   /// A context class: one written by the user (with LtMsgPackSerializable attributes), or the one of the assembly (LtMsgPackGenerate, MSBuild properties).

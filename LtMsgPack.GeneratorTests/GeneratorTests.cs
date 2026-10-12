@@ -105,7 +105,7 @@ namespace Shop
       GeneratorHarness.Result result = GeneratorHarness.Run(InvoiceModel);
       string code = result.AllGenerated;
       foreach (string expected in new[] {
-        "Object<global::Shop.Invoice>(() => new global::Shop.Invoice()",
+        "Object<global::Shop.Invoice>(() => new global::Shop.Invoice(), new LtMsgPackCode0()",
         "Object<global::Shop.Customer>(",
         "Object<global::Shop.Address>(",
         "Object<global::Shop.InvoiceLine>(",
@@ -199,11 +199,11 @@ namespace M
 }");
       result.AssertCompiles();
       string code = result.AllGenerated;
-      Assert.Contains("Object<global::M.WithArguments>(null,", code);
-      Assert.Contains("Object<global::M.PrivateConstructor>(null,", code);
-      Assert.Contains("Object<global::M.Required>(null,", code);
-      Assert.Contains("Object<global::M.Abstract>(null,", code);
-      Assert.Contains("Object<global::M.Plain>(() => new global::M.Plain(),", code);
+      Assert.Contains("Object<global::M.WithArguments>(null, new LtMsgPackCode", code);
+      Assert.Contains("Object<global::M.PrivateConstructor>(null, new LtMsgPackCode", code);
+      Assert.Contains("Object<global::M.Required>(null, new LtMsgPackCode", code);
+      Assert.Contains("Object<global::M.Abstract>(null, null,", code, "no writer and reader for an abstract class (no instances of exactly its type)");
+      Assert.Contains("Object<global::M.Plain>(() => new global::M.Plain(), new LtMsgPackCode", code);
     }
 
     [TestMethod]
@@ -241,10 +241,10 @@ namespace M
 }");
       result.AssertCompiles();
       string code = result.AllGenerated;
-      Assert.Contains("Object<global::M.Base>(() => new global::M.Base(),", code);
+      Assert.Contains("Object<global::M.Base>(() => new global::M.Base(), new LtMsgPackCode", code);
       Assert.Contains("Property<global::M.Derived, string>(\"Name\"", code, "an override belongs to the derived class (its declaring type at runtime)");
       Assert.Contains("Property<global::M.Base, string>(\"Name\"", code);
-      Assert.Contains("Object<global::M.Wrapper<int>>(() => new global::M.Wrapper<int>(),", code);
+      Assert.Contains("Object<global::M.Wrapper<int>>(() => new global::M.Wrapper<int>(), new LtMsgPackCode", code);
       Assert.Contains("Property<global::M.Wrapper<int>, int>(\"Value\"", code);
       Assert.Contains("Collection<global::System.Collections.Generic.Dictionary<string, global::M.Outer.Inner>>(() => new global::System.Collections.Generic.Dictionary<string, global::M.Outer.Inner>())", code);
       Assert.Contains("Object<global::M.Outer.Inner>(", code);
@@ -252,7 +252,7 @@ namespace M
       Assert.Contains("Array<global::M.Point>()", code);
       Assert.Contains("Boxed<global::M.Point>()", code);
       Assert.Contains("Nullable<global::M.Point>()", code);
-      Assert.Contains("Object<global::M.IShape>(null)", code);
+      Assert.Contains("Object<global::M.IShape>(null, null)", code);
       Assert.Contains("Collection<global::System.Collections.Generic.IList<int>>(null)", code);
       Assert.Contains("Boxed<int[,]>()", code);
       Assert.Contains("Boxed<global::System.Collections.Generic.KeyValuePair<string, int>>()", code);

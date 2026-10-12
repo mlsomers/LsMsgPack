@@ -1,6 +1,7 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LtMsgPack.Extensions;
 using System;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -11,11 +12,13 @@ namespace LtMsgPack.IO
   /// Reads MsgPack values from a byte array. Typed reads (<see cref="TryReadInt64"/>, ...) only accept the formats they expect, anything else is left to <see cref="ReadPlain"/>, which returns what LsMsgPack's items unpack to.
   /// <para>Multi-byte values follow <see cref="MsgPackOptions.EndianAction"/>. Lengths and nesting are checked against the data, so hostile data cannot make it allocate more than the data holds.</para>
   /// </summary>
-  internal sealed class MsgPackReader
+  /// <para>Public for the code of the source generator (see LtMsgPack.LtMsgPackContext): may change between releases.</para>
+  [EditorBrowsable(EditorBrowsableState.Never)]
+  public sealed class MsgPackReader
   {
-    internal readonly byte[] Buf;
-    internal int Pos;
-    internal readonly int End;
+    public readonly byte[] Buf;
+    public int Pos;
+    public readonly int End;
     private readonly bool _littleEndian;
     private readonly int _maxDepth;
     private readonly LtExtension[] _extensions;
@@ -116,7 +119,7 @@ namespace LtMsgPack.IO
 
     #region Headers
 
-    internal bool TryReadNil()
+    public bool TryReadNil()
     {
       if (Peek() != 0xC0)
         return false;
@@ -164,7 +167,7 @@ namespace LtMsgPack.IO
 
     #region Typed reads (false: another format, left to ReadPlain and the conversions)
 
-    internal bool TryReadBool(out bool value)
+    public bool TryReadBool(out bool value)
     {
       byte c = Peek();
       if (c == 0xC3) { Pos++; value = true; return true; }
@@ -176,7 +179,7 @@ namespace LtMsgPack.IO
     /// <summary>
     /// Any integer that fits a long.
     /// </summary>
-    internal bool TryReadInt64(out long value)
+    public bool TryReadInt64(out long value)
     {
       byte c = Peek();
       if (c <= 0x7F) { Pos++; value = c; return true; }
@@ -207,7 +210,7 @@ namespace LtMsgPack.IO
     /// <summary>
     /// Any non-negative integer.
     /// </summary>
-    internal bool TryReadUInt64(out ulong value)
+    public bool TryReadUInt64(out ulong value)
     {
       byte c = Peek();
       if (c <= 0x7F) { Pos++; value = c; return true; }
@@ -225,7 +228,7 @@ namespace LtMsgPack.IO
       return false;
     }
 
-    internal bool TryReadDouble(out double value)
+    public bool TryReadDouble(out double value)
     {
       byte c = Peek();
       if (c == 0xCB) { Pos++; value = BitConverter.Int64BitsToDouble((long)U64()); return true; }
@@ -234,7 +237,7 @@ namespace LtMsgPack.IO
       return false;
     }
 
-    internal bool TryReadSingle(out float value)
+    public bool TryReadSingle(out float value)
     {
       if (Peek() == 0xCA) { Pos++; value = ReadSingleBits(); return true; }
       value = 0;
@@ -259,7 +262,7 @@ namespace LtMsgPack.IO
       }
     }
 
-    internal bool TryReadString(out string value)
+    public bool TryReadString(out string value)
     {
       int length = TryReadStringHeader();
       if (length < 0) { value = null; return false; }
@@ -305,7 +308,7 @@ namespace LtMsgPack.IO
       return (int)length;
     }
 
-    internal bool TryReadGuid(out Guid value)
+    public bool TryReadGuid(out Guid value)
     {
       if (Peek() == 0xC4 && Pos + 1 < End && Buf[Pos + 1] == 16)
       {
@@ -362,7 +365,7 @@ namespace LtMsgPack.IO
     /// <summary>
     /// A timestamp (extension type -1), returned with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (local time by default) like MpDateTime.Value.
     /// </summary>
-    internal bool TryReadDateTime(out DateTime value)
+    public bool TryReadDateTime(out DateTime value)
     {
       if (!TryReadTimestamp(out DateTime utc))
       {
@@ -531,7 +534,7 @@ namespace LtMsgPack.IO
     /// <summary>
     /// Skips the next value.
     /// </summary>
-    internal void Skip(int depth)
+    public void Skip(int depth)
     {
       byte c = ReadByte();
       if (c <= 0x7F || c >= 0xE0) return;

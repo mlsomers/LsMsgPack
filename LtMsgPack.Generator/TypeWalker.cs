@@ -177,12 +177,12 @@ namespace LtMsgPack.Generator
 
       bool creator = HasCreator(named);
       List<PropertyModel> properties = GetProperties(named);
-      Add(TypeModelKind.Object, name, null, creator, true, properties);
+      Add(TypeModelKind.Object, name, null, creator, true, properties, named.IsAbstract ? null : GetMembers(named));
     }
 
-    private void Add(TypeModelKind kind, string name, string argument = null, bool creator = false, bool keep = false, List<PropertyModel> properties = null)
+    private void Add(TypeModelKind kind, string name, string argument = null, bool creator = false, bool keep = false, List<PropertyModel> properties = null, List<MemberModel> members = null)
     {
-      _types.Add(new TypeModel(kind, name, argument, creator, keep, (properties ?? new List<PropertyModel>()).ToEquatable()));
+      _types.Add(new TypeModel(kind, name, argument, creator, keep, (properties ?? new List<PropertyModel>()).ToEquatable(), (members ?? new List<MemberModel>()).ToEquatable()));
     }
 
     /// <summary>
@@ -309,6 +309,124 @@ namespace LtMsgPack.Generator
         properties.Add(new PropertyModel(property.Name, Escape(property.Name), property.Type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), canGet, canSet));
       }
       return properties;
+    }
+
+    /// <summary>
+    /// The properties the runtime sees on the class (FullPropertyInfo.GetProperties: public instance properties without parameters, not hidden by a property of the same name
+    /// in a derived class), in the order Type.GetProperties() returns them as far as the generator can tell (the class's own first, then those of its base classes, each in declaration order).
+    /// </summary>
+    private List<MemberModel> GetMembers(INamedTypeSymbol type)
+    {
+      List<MemberModel> members = new List<MemberModel>();
+      HashSet<string> names = new HashSet<string>();
+      for (INamedTypeSymbol t = type; t != null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+      {
+        foreach (ISymbol member in t.GetMembers())
+        {
+          if (!(member is IPropertySymbol property) || property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public)
+            continue;
+          if (!names.Add(property.Name)) // hidden by (or overridden in) a derived class
+            continue;
+          if (property.ReturnsByRef || property.ReturnsByRefReadonly || property.Type.IsRefLikeType || property.Type.TypeKind == TypeKind.Pointer
+            || property.Type.TypeKind == TypeKind.FunctionPointer || IsObsoleteError(property) || !IsAccessible(property.Type))
+            continue;
+
+          // [DefaultValue]: the runtime's filter compares the value with the attribute's (boxed), the generated writer leaves it to the runtime
+          bool canGet = property.GetMethod != null && IsAccessible(property.GetMethod) && !IsObsoleteError(property.GetMethod) && !HasAttribute(property, "System.ComponentModel.DefaultValueAttribute");
+          bool canSet = property.SetMethod != null && !property.SetMethod.IsInitOnly && IsAccessible(property.SetMethod) && !IsObsoleteError(property.SetMethod);
+          bool unrolled = property.SetMethod != null && property.SetMethod.DeclaredAccessibility == Accessibility.Public && !HasIgnoreAttribute(property); // FilterNonSettable, FilterIgnoredAttribute
+
+          ITypeSymbol valueType = property.Type;
+          bool nullable = false;
+          if (valueType is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+          {
+            valueType = named.TypeArguments[0];
+            nullable = true;
+          }
+          string kind = KindOf(valueType, out string underlying);
+          if (kind == "None")
+            nullable = false;
+          members.Add(new MemberModel(t.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), property.Name, Escape(property.Name),
+            property.Type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), kind, nullable,
+            valueType.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), underlying, canGet, canSet, unrolled));
+        }
+      }
+      return members;
+    }
+
+    /// <returns>The LtMsgPack.Generated.GeneratedKind the generated code writes and reads itself, "None" for the others</returns>
+    private static string KindOf(ITypeSymbol type, out string enumUnderlying)
+    {
+      enumUnderlying = null;
+      if (type is INamedTypeSymbol named && named.TypeKind == TypeKind.Enum && named.EnumUnderlyingType != null)
+      {
+        enumUnderlying = Keyword(named.EnumUnderlyingType.SpecialType);
+        return enumUnderlying is null ? "None" : "Enum";
+      }
+
+      switch (type.SpecialType)
+      {
+        case SpecialType.System_String: return "String";
+        case SpecialType.System_Boolean: return "Boolean";
+        case SpecialType.System_SByte: return "SByte";
+        case SpecialType.System_Int16: return "Int16";
+        case SpecialType.System_Int32: return "Int32";
+        case SpecialType.System_Int64: return "Int64";
+        case SpecialType.System_Byte: return "Byte";
+        case SpecialType.System_UInt16: return "UInt16";
+        case SpecialType.System_UInt32: return "UInt32";
+        case SpecialType.System_UInt64: return "UInt64";
+        case SpecialType.System_Single: return "Single";
+        case SpecialType.System_Double: return "Double";
+        case SpecialType.System_Char: return "Char";
+        case SpecialType.System_Decimal: return "Decimal";
+        case SpecialType.System_DateTime: return "DateTime";
+      }
+
+      if (type is INamedTypeSymbol system && system.ContainingNamespace?.ToDisplayString() == "System" && system.ContainingType is null && !system.IsGenericType)
+      {
+        if (system.Name == "Guid")
+          return "Guid";
+        if (system.Name == "TimeSpan")
+          return "TimeSpan";
+      }
+      return "None";
+    }
+
+    private static string Keyword(SpecialType type)
+    {
+      switch (type)
+      {
+        case SpecialType.System_SByte: return "sbyte";
+        case SpecialType.System_Int16: return "short";
+        case SpecialType.System_Int32: return "int";
+        case SpecialType.System_Int64: return "long";
+        case SpecialType.System_Byte: return "byte";
+        case SpecialType.System_UInt16: return "ushort";
+        case SpecialType.System_UInt32: return "uint";
+        case SpecialType.System_UInt64: return "ulong";
+        default: return null;
+      }
+    }
+
+    /// <summary>
+    /// An attribute the default FilterIgnoredAttribute leaves the property out for (any attribute with "Ignore" in its name, on the property).
+    /// A wrong guess only costs the unrolled writer: the runtime compares the properties it keeps.
+    /// </summary>
+    private static bool HasIgnoreAttribute(IPropertySymbol property)
+    {
+      foreach (AttributeData attribute in property.GetAttributes())
+        if (attribute.AttributeClass != null && attribute.AttributeClass.Name.IndexOf("Ignore", System.StringComparison.Ordinal) >= 0)
+          return true;
+      return false;
+    }
+
+    private static bool HasAttribute(ISymbol symbol, string name)
+    {
+      foreach (AttributeData attribute in symbol.GetAttributes())
+        if (attribute.AttributeClass?.ToDisplayString() == name)
+          return true;
+      return false;
     }
 
     private static bool IsObsoleteError(ISymbol symbol)

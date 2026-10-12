@@ -20,10 +20,11 @@ namespace LtMsgPack.Generated
     /// A class, abstract class or interface with properties (or without: then only the instantiations).
     /// </summary>
     /// <param name="creator">Calls the accessible parameterless constructor, null when there is none</param>
+    /// <param name="code">The generated writer and reader of the type, null when there is none (abstract types, interfaces)</param>
     /// <param name="properties">The properties the type declares (<see cref="Property{TTarget, TValue}"/>)</param>
-    public static GeneratedType Object<T>(Func<T> creator, params GeneratedProperty[] properties) where T : class
+    public static GeneratedType Object<T>(Func<T> creator, GeneratedObjectCode<T> code, params GeneratedProperty[] properties) where T : class
     {
-      return new GeneratedObjectType<T>(creator, properties);
+      return new GeneratedObjectType<T>(creator, code, properties);
     }
 
     /// <param name="get">null when the generated code cannot call the getter</param>
@@ -97,6 +98,11 @@ namespace LtMsgPack.Generated
     {
     }
 
+    /// <param name="creator">A Func&lt;T&gt; of a class is a Func&lt;object&gt; (variance): no delegate around it</param>
+    internal LtGeneratedType(Func<object> creator, GeneratedProperty[] properties) : base(typeof(T), creator, properties)
+    {
+    }
+
     private static Func<object> Box(Func<T> creator)
     {
       if (creator is null)
@@ -118,11 +124,24 @@ namespace LtMsgPack.Generated
     }
   }
 
-  internal sealed class GeneratedObjectType<T> : LtGeneratedType<T> where T : class
+  /// <summary>
+  /// A generated type with a generated writer and reader.
+  /// </summary>
+  internal interface IGeneratedObject
   {
-    internal GeneratedObjectType(Func<T> creator, GeneratedProperty[] properties) : base(creator, properties)
+    GeneratedObjectCode Code { get; }
+  }
+
+  internal sealed class GeneratedObjectType<T> : LtGeneratedType<T>, IGeneratedObject where T : class
+  {
+    private readonly GeneratedObjectCode<T> _code;
+
+    internal GeneratedObjectType(Func<T> creator, GeneratedObjectCode<T> code, GeneratedProperty[] properties) : base((Func<object>)creator, properties)
     {
+      _code = code;
     }
+
+    public GeneratedObjectCode Code { get { return _code; } }
 
     public override object Instantiate(Type definition, object argument)
     {

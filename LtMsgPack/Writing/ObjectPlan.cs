@@ -2,6 +2,7 @@
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
+using LtMsgPack.Generated;
 using LtMsgPack.IO;
 using System;
 using System.ComponentModel;
@@ -36,6 +37,12 @@ namespace LtMsgPack.Writing
     internal readonly SchemaTypeInfo Schema;
 
     /// <summary>
+    /// The writer of the source generator (see LtMsgPackContext) and how it fits these options, null when there is none or it is not used: the <see cref="Props"/> write the values.
+    /// </summary>
+    internal readonly GeneratedObjectCode Code;
+    internal readonly GeneratedWritePlan GeneratedPlan;
+
+    /// <summary>
     /// <see cref="IdMode.Session"/>: the ids of the frozen session used last (see <see cref="WriteContext.BeginObject"/>).
     /// </summary>
     internal volatile SessionIds LastSession;
@@ -64,6 +71,9 @@ namespace LtMsgPack.Writing
       Props = new PropWriter[Infos.Length];
       for (int t = 0; t < Infos.Length; t++)
         Props[t] = PropWriter.Create(serializer, Infos[t]);
+
+      Code = serializer.GeneratedCode(type);
+      GeneratedPlan = serializer.GeneratedWritePlan(Code, Infos, Props);
 
       if (names)
       {
@@ -105,10 +115,15 @@ namespace LtMsgPack.Writing
         SerializationRules.ThrowIfUnresolvableWithSchema(Type, assignedTo, c.UsesSchema);
 
       c.EnterContainer();
-      PropWriter[] props = Props;
-      for (int t = 0; t < props.Length; t++)
-        if (props[t].Write(c, value, keys[t], infos[t]))
-          count++;
+      if (GeneratedPlan != null)
+        count += Code.WriteBoxed(c, value, keys, infos, GeneratedPlan, out int end);
+      else
+      {
+        PropWriter[] props = Props;
+        for (int t = 0; t < props.Length; t++)
+          if (props[t].Write(c, value, keys[t], infos[t]))
+            count++;
+      }
       c.LeaveContainer();
 
       c.W.PatchMapHeader(at, max, count);
@@ -136,9 +151,20 @@ namespace LtMsgPack.Writing
       else
       {
         c.W.ArrayHeader(props.Length);
-        for (int t = 0; t < props.Length; t++)
-          if (!props[t].Write(c, value, null, infos[t]))
-            c.W.Nil();
+        GeneratedWritePlan generated = GeneratedPlan;
+        if (generated != null)
+        {
+          if (generated.Unrolled)
+            Code.WriteUnrolledBoxed(c, value, infos, generated);
+          else
+            Code.WriteBoxed(c, value, null, infos, generated, out int end);
+        }
+        else
+        {
+          for (int t = 0; t < props.Length; t++)
+            if (!props[t].Write(c, value, null, infos[t]))
+              c.W.Nil();
+        }
       }
       c.LeaveContainer();
     }
@@ -151,6 +177,14 @@ namespace LtMsgPack.Writing
       MsgPackWriter w = c.W;
       PropWriter[] props = Props;
       int at = w.ReserveArrayHeader(props.Length);
+      if (GeneratedPlan != null)
+      {
+        int last = Code.WriteBoxed(c, value, null, infos, GeneratedPlan, out int after);
+        w.Pos = after;
+        w.PatchArrayHeader(at, props.Length, last);
+        return;
+      }
+
       int count = 0;
       int end = w.Pos; // after the last value that is not nil
       for (int t = 0; t < props.Length; t++)
@@ -174,6 +208,9 @@ namespace LtMsgPack.Writing
     /// <returns>The number of entries written</returns>
     internal int WriteProperties(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos)
     {
+      if (GeneratedPlan != null)
+        return Code.WriteBoxed(c, value, keys, infos, GeneratedPlan, out int end);
+
       int count = 0;
       PropWriter[] props = Props;
       for (int t = 0; t < props.Length; t++)

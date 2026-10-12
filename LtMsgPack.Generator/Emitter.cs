@@ -129,9 +129,17 @@ namespace LtMsgPack.Generator
       }
       w.Line("protected override void AddTypes(global::LsMsgPack.Generated.GeneratedTypeSet types)");
       w.Open();
-      foreach (TypeModel type in context.Types)
-        AddType(w, type);
+      for (int t = 0; t < context.Types.Length; t++)
+        AddType(w, context.Types[t], t);
       w.Close();
+
+      for (int t = 0; t < context.Types.Length; t++)
+      {
+        if (context.Types[t].Members.Length == 0)
+          continue;
+        w.Line();
+        ObjectCode(w, context.Types[t], t);
+      }
 
       w.Close();
       for (int t = 0; t < context.ContainingTypes.Length; t++)
@@ -141,7 +149,7 @@ namespace LtMsgPack.Generator
       return w.ToString();
     }
 
-    private static void AddType(CodeWriter w, TypeModel type)
+    private static void AddType(CodeWriter w, TypeModel type, int index)
     {
       switch (type.Kind)
       {
@@ -165,13 +173,14 @@ namespace LtMsgPack.Generator
           return;
       }
 
+      string code = type.Members.Length > 0 ? "new " + CodeClass(index) + "()" : "null";
       if (type.Properties.Length == 0)
       {
-        w.Line("types.Add(" + Values + ".Object<" + type.TypeName + ">(" + Creator(type) + "));");
+        w.Line("types.Add(" + Values + ".Object<" + type.TypeName + ">(" + Creator(type) + ", " + code + "));");
         return;
       }
 
-      w.Line("types.Add(" + Values + ".Object<" + type.TypeName + ">(" + Creator(type) + ",");
+      w.Line("types.Add(" + Values + ".Object<" + type.TypeName + ">(" + Creator(type) + ", " + code + ",");
       w.Indent++;
       for (int t = 0; t < type.Properties.Length; t++)
       {
@@ -181,6 +190,347 @@ namespace LtMsgPack.Generator
         w.Line(Values + ".Property<" + type.TypeName + ", " + property.TypeName + ">(\"" + property.Name + "\", " + get + ", " + set + ")" + (t < type.Properties.Length - 1 ? "," : "));"));
       }
       w.Indent--;
+    }
+
+    private static string CodeClass(int index)
+    {
+      return "LtMsgPackCode" + index;
+    }
+
+    private const string Generated = "global::LtMsgPack.Generated.";
+    private const string Writing = "global::LtMsgPack.Writing.";
+    private const string Reading = "global::LtMsgPack.Reading.";
+    private const string IO = "global::LtMsgPack.IO.";
+
+    /// <summary>
+    /// The writer and reader of a class: the per property part of the runtime's ObjectPlan and ObjectReader, for the members of the kinds it writes and reads itself
+    /// (the runtime does the others, and the ones its options write otherwise: see GeneratedWritePlan.Ids and PropReader.GeneratedId).
+    /// </summary>
+    private static void ObjectCode(CodeWriter w, TypeModel type, int index)
+    {
+      string t = type.TypeName;
+      w.Line("/// <summary>");
+      w.Line("/// The generated writer and reader of " + type.TypeName.Replace("global::", "").Replace("<", "{").Replace(">", "}") + ".");
+      w.Line("/// </summary>");
+      w.Line("private sealed class " + CodeClass(index) + " : " + Generated + "GeneratedObjectCode<" + t + ">");
+      w.Open();
+
+      List<int> unrolled = new List<int>();
+      for (int m = 0; m < type.Members.Length; m++)
+        if (type.Members[m].Unrolled)
+          unrolled.Add(m);
+
+      w.Line("public " + CodeClass(index) + "() : base(new " + Generated + "GeneratedMember[]");
+      w.Open();
+      for (int m = 0; m < type.Members.Length; m++)
+      {
+        MemberModel member = type.Members[m];
+        w.Line("new " + Generated + "GeneratedMember(typeof(" + member.DeclaringType + "), \"" + member.Name + "\", typeof(" + member.TypeName + "), " + Generated + "GeneratedKind." + member.Kind + ", "
+          + Bool(member.Nullable) + ", " + Bool(member.CanGet) + ", " + Bool(member.CanSet) + ")" + (m < type.Members.Length - 1 ? "," : ""));
+      }
+      w.Indent--;
+      w.Line("}, new int[] { " + string.Join(", ", unrolled) + " }, " + Generated + "GeneratedCapabilities.Write | " + Generated + "GeneratedCapabilities.WriteUnrolled | "
+        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadValue)");
+      w.Open();
+      w.Close();
+
+      // Write: the values in the runtime's order (p.Ids), map entries with keys, array items without
+      w.Line();
+      w.Line("public override int Write(" + Writing + "WriteContext c, " + t + " o, byte[][] keys, global::LsMsgPack.Meta.FullPropertyInfo[] infos, " + Generated + "GeneratedWritePlan p, out int end)");
+      w.Open();
+      w.Line(IO + "MsgPackWriter w = c.W;");
+      w.Line("int[] ids = p.Ids;");
+      w.Line("bool filter = p.FilterDefaults;");
+      w.Line("bool trim = p.Trim && keys == null;");
+      w.Line("int count = 0;");
+      w.Line("int last = 0;");
+      w.Line("end = w.Pos;");
+      w.Line("for (int t = 0; t < ids.Length; t++)");
+      w.Open();
+      w.Line("byte[] key = keys == null ? null : keys[t];");
+      w.Line("int start = w.Pos;");
+      w.Line("bool written;");
+      w.Line("switch (ids[t])");
+      w.Open();
+      for (int m = 0; m < type.Members.Length; m++)
+      {
+        MemberModel member = type.Members[m];
+        if (member.Kind == "None" || !member.CanGet)
+          continue;
+        w.Line("case " + m + ":");
+        w.Open();
+        w.Line(member.TypeName + " v = o." + member.Access + ";");
+        w.Line("if (filter && " + Omitted(member, "v") + ")");
+        w.Open();
+        w.Line("written = false;");
+        w.Line("break;");
+        w.Close();
+        w.Line("if (key != null)");
+        w.Line("  w.Raw(key);");
+        WriteValue(w, member, "v");
+        w.Line("written = true;");
+        w.Line("break;");
+        w.Close();
+      }
+      w.Line("default:");
+      w.Line("  written = p.Runtime(t, c, o, key, infos[t]);");
+      w.Line("  break;");
+      w.Close();
+      w.Line("if (written)");
+      w.Line("  count++;");
+      w.Line("else if (key == null)");
+      w.Line("  w.Nil(); // the array layout: nil for a value the filters leave out");
+      w.Line("if (trim && (w.Pos != start + 1 || w.Buf[start] != 0xC0)) // nil is the only value of one byte 0xC0");
+      w.Open();
+      w.Line("last = t + 1;");
+      w.Line("end = w.Pos;");
+      w.Close();
+      w.Close();
+      w.Line("return trim ? last : count;");
+      w.Close();
+
+      // WriteUnrolled: the array layout when the runtime's properties are the unrolled ones
+      w.Line();
+      w.Line("public override void WriteUnrolled(" + Writing + "WriteContext c, " + t + " o, global::LsMsgPack.Meta.FullPropertyInfo[] infos, " + Generated + "GeneratedWritePlan p)");
+      w.Open();
+      w.Line(IO + "MsgPackWriter w = c.W;");
+      w.Line("bool filter = p.FilterDefaults;");
+      for (int position = 0; position < unrolled.Count; position++)
+      {
+        MemberModel member = type.Members[unrolled[position]];
+        if (member.Kind == "None" || !member.CanGet)
+        {
+          w.Line("if (!p.Runtime(" + position + ", c, o, null, infos[" + position + "]))");
+          w.Line("  w.Nil();");
+          continue;
+        }
+        w.Open();
+        w.Line(member.TypeName + " v = o." + member.Access + ";");
+        w.Line("if (filter && " + Omitted(member, "v") + ")");
+        w.Line("  w.Nil();");
+        w.Line("else");
+        w.Open();
+        WriteValue(w, member, "v");
+        w.Close();
+        w.Close();
+      }
+      w.Close();
+
+      // ReadPositional: the array layout (ObjectReader.ReadPositional's loop)
+      w.Line();
+      w.Line("public override void ReadPositional(" + Reading + "ReadContext c, " + t + " o, " + Reading + "PropReader[] props, int items, " + Generated + "GeneratedReadPlan p)");
+      w.Open();
+      w.Line(IO + "MsgPackReader r = c.R;");
+      w.Line("for (int t = 0; t < items; t++)");
+      w.Open();
+      w.Line(Reading + "PropReader prop = t < props.Length ? props[t] : null;");
+      w.Line("if (prop == null)");
+      w.Open();
+      w.Line("r.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)");
+      w.Line("continue;");
+      w.Close();
+      w.Line("if (r.TryReadNil())");
+      w.Line("  continue; // a nil leaves the property as the constructor made it");
+      w.Line("switch (prop.GeneratedId)");
+      w.Open();
+      for (int m = 0; m < type.Members.Length; m++)
+      {
+        MemberModel member = type.Members[m];
+        if (member.Kind == "None" || !member.CanSet)
+          continue;
+        w.Line("case " + m + ":");
+        w.Open();
+        ReadValue(w, member, "continue;");
+        w.Line("break;");
+        w.Close();
+      }
+      w.Close();
+      w.Line("prop.Read(c, o); // another format: read as the runtime does");
+      w.Close();
+      w.Close();
+
+      // ReadValue: one value (the map layout, after its key)
+      w.Line();
+      w.Line("public override bool ReadValue(" + Reading + "ReadContext c, " + t + " o, int id, " + Generated + "GeneratedReadPlan p)");
+      w.Open();
+      w.Line(IO + "MsgPackReader r = c.R;");
+      w.Line("switch (id)");
+      w.Open();
+      for (int m = 0; m < type.Members.Length; m++)
+      {
+        MemberModel member = type.Members[m];
+        if (member.Kind == "None" || !member.CanSet)
+          continue;
+        w.Line("case " + m + ":");
+        w.Open();
+        if (member.Nullable)
+        {
+          w.Line("if (r.TryReadNil())");
+          w.Open();
+          w.Line("o." + member.Access + " = null;");
+          w.Line("return true;");
+          w.Close();
+          ReadValue(w, member, "return true;");
+        }
+        else
+        {
+          ReadValue(w, member, "return true;");
+          w.Line("if (r.TryReadNil())");
+          w.Open();
+          w.Line("o." + member.Access + " = default(" + member.TypeName + ");");
+          w.Line("return true;");
+          w.Close();
+        }
+        w.Line("return false;");
+        w.Close();
+      }
+      w.Close();
+      w.Line("return false;");
+      w.Close();
+
+      w.Close();
+    }
+
+    private static string Bool(bool value)
+    {
+      return value ? "true" : "false";
+    }
+
+    /// <summary>
+    /// FilterDefaultValues for the member's value (as the runtime's handlers decide it: ValueHandler.IncludeByDefault).
+    /// </summary>
+    private static string Omitted(MemberModel member, string v)
+    {
+      if (member.Nullable)
+        return "!" + v + ".HasValue";
+      switch (member.Kind)
+      {
+        case "String": return v + " == null"; // an empty string is not a default value
+        case "Boolean": return "!" + v;
+        case "Char": return v + " == '\\0'";
+        case "Decimal": return Generated + "GeneratedIO.IsZero(" + v + ")";
+        case "Guid": return v + " == global::System.Guid.Empty";
+        case "DateTime":
+        case "TimeSpan": return v + ".Ticks == 0"; // DateTime.Equals ignores the Kind
+        default: return v + " == 0"; // numbers and enums
+      }
+    }
+
+    /// <summary>
+    /// The value as the runtime's handler of its type writes it.
+    /// </summary>
+    private static void WriteValue(CodeWriter w, MemberModel member, string v)
+    {
+      if (member.Nullable)
+      {
+        w.Line("if (" + v + ".HasValue)");
+        w.Open();
+        w.Line(member.ValueType + " u = " + v + ".GetValueOrDefault();");
+        WriteValue(w, member with { Nullable = false }, "u");
+        w.Close();
+        w.Line("else");
+        w.Line("  w.Nil();");
+        return;
+      }
+
+      switch (member.Kind)
+      {
+        case "String":
+          w.Line("if (" + v + " == null)");
+          w.Line("  w.Nil();");
+          w.Line("else");
+          w.Line("  w.String(" + v + ");");
+          return;
+        case "Boolean": w.Line("w.Bool(" + v + ");"); return;
+        case "SByte": w.Line("w.SByte(" + v + ");"); return;
+        case "Int16": w.Line("w.Int16(" + v + ");"); return;
+        case "Int32": w.Line("w.Int32(" + v + ");"); return;
+        case "Int64": w.Line("w.Int64(" + v + ");"); return;
+        case "Byte": w.Line("w.UInt8(" + v + ");"); return;
+        case "UInt16": w.Line("w.UInt16(" + v + ");"); return;
+        case "UInt32": w.Line("w.UInt32(" + v + ");"); return;
+        case "UInt64": w.Line("w.UInt64(" + v + ");"); return;
+        case "Single": w.Line("w.Single(" + v + ");"); return;
+        case "Double": w.Line("w.Double(" + v + ");"); return;
+        case "Char": w.Line("w.UInt16(" + v + ");"); return; // as an unsigned 16 bit integer, like MessagePack-CSharp
+        case "Decimal": w.Line(Generated + "GeneratedIO.WriteDecimal(w, " + v + ", p.DecimalCode);"); return;
+        case "Guid": w.Line("w.Guid(" + v + ");"); return;
+        case "DateTime": w.Line("w.DateTime(" + Generated + "GeneratedIO.Utc(" + v + ", p));"); return;
+        case "TimeSpan": w.Line("w.Int64(" + v + ".Ticks);"); return;
+        case "Enum": w.Line("w." + EnumWriter(member.EnumUnderlying) + "((" + member.EnumUnderlying + ")" + v + ");"); return;
+      }
+      throw new System.InvalidOperationException("Unknown kind " + member.Kind);
+    }
+
+    private static string EnumWriter(string underlying)
+    {
+      switch (underlying)
+      {
+        case "sbyte": return "SByte";
+        case "short": return "Int16";
+        case "int": return "Int32";
+        case "long": return "Int64";
+        case "byte": return "UInt8";
+        case "ushort": return "UInt16";
+        case "uint": return "UInt32";
+        default: return "UInt64";
+      }
+    }
+
+    /// <summary>
+    /// Reads the value when it is in the format the runtime's reader of its type reads directly (then <paramref name="done"/>), otherwise leaves the position where it was.
+    /// </summary>
+    private static void ReadValue(CodeWriter w, MemberModel member, string done)
+    {
+      string set = "o." + member.Access + " = ";
+      switch (member.Kind)
+      {
+        case "String": Fast(w, "r.TryReadString(out string v)", set + "v;", done); return;
+        case "Boolean": Fast(w, "r.TryReadBool(out bool v)", set + "v;", done); return;
+        case "Single": Fast(w, "r.TryReadSingle(out float v)", set + "v;", done); return;
+        case "Double": Fast(w, "r.TryReadDouble(out double v)", set + "v;", done); return;
+        case "Int64": Fast(w, "r.TryReadInt64(out long v)", set + "v;", done); return;
+        case "UInt64": Fast(w, "r.TryReadUInt64(out ulong v)", set + "v;", done); return;
+        case "SByte": Ranged(w, "sbyte", "sbyte.MinValue", "sbyte.MaxValue", set, done); return;
+        case "Int16": Ranged(w, "short", "short.MinValue", "short.MaxValue", set, done); return;
+        case "Int32": Ranged(w, "int", "int.MinValue", "int.MaxValue", set, done); return;
+        case "Byte": Ranged(w, "byte", "byte.MinValue", "byte.MaxValue", set, done); return;
+        case "UInt16": Ranged(w, "ushort", "ushort.MinValue", "ushort.MaxValue", set, done); return;
+        case "UInt32": Ranged(w, "uint", "uint.MinValue", "uint.MaxValue", set, done); return;
+        case "Char": Ranged(w, "char", "char.MinValue", "char.MaxValue", set, done); return;
+        case "Decimal": Fast(w, Generated + "GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v)", set + "v;", done); return;
+        case "Guid": Fast(w, "r.TryReadGuid(out global::System.Guid v)", set + "v;", done); return;
+        case "DateTime": Fast(w, "r.TryReadDateTime(out global::System.DateTime v)", set + "v;", done); return;
+        case "TimeSpan": Fast(w, "r.TryReadInt64(out long v)", set + "new global::System.TimeSpan(v);", done); return;
+        case "Enum": Fast(w, "r.TryReadInt64(out long v)", set + "(" + member.ValueType + ")unchecked((" + member.EnumUnderlying + ")v);", done); return; // values out of range wrap around (EnumReader)
+      }
+      throw new System.InvalidOperationException("Unknown kind " + member.Kind);
+    }
+
+    private static void Fast(CodeWriter w, string condition, string set, string done)
+    {
+      w.Line("if (" + condition + ")");
+      w.Open();
+      w.Line(set);
+      w.Line(done);
+      w.Close();
+    }
+
+    /// <summary>
+    /// An integer read as long and checked (IntegerReader): out of range the position is restored, the runtime throws the overflow as it does.
+    /// </summary>
+    private static void Ranged(CodeWriter w, string type, string min, string max, string set, string done)
+    {
+      w.Line("int start = r.Pos;");
+      w.Line("if (r.TryReadInt64(out long v))");
+      w.Open();
+      w.Line("if (v >= " + min + " && v <= " + max + ")");
+      w.Open();
+      w.Line(set + "(" + type + ")v;");
+      w.Line(done);
+      w.Close();
+      w.Line("r.Pos = start;");
+      w.Close();
     }
 
     private static string Creator(TypeModel type)
