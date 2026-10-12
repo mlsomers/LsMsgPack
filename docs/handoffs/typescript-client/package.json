@@ -1,0 +1,12 @@
+{
+  "name": "lsmsgpack-typescript-client-assessment",
+  "private": true,
+  "description": "Measurements for docs/handoffs/TypeScriptClient.md",
+  "type": "module",
+  "scripts": {
+    "bench": "node bench.mjs 100 && node bench.mjs 1 && node fused.mjs && node always.mjs"
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "3.1.2"
+  }
+}
