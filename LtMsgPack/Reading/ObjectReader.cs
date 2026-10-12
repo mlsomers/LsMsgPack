@@ -444,7 +444,7 @@ namespace LtMsgPack.Reading
 
   /// <summary>
   /// Creates instances with the parameterless constructor. <c>new T()</c> of a reference type is Activator.CreateInstance (about 18 ns on .NET 8), once a type has been created
-  /// <see cref="PropertyAccessor.CompileAfterCalls"/> times a compiled delegate takes over (about 11 ns, the allocation), when the runtime compiles code (see <see cref="PropertyAccessor.CanCompile"/>).
+  /// <see cref="PropertyAccessor.CompileAfterCalls"/> times a compiled delegate takes over (about 11 ns, the allocation), when the runtime supports dynamic code (see <see cref="PropertyAccessor.CanCompile"/>).
   /// </summary>
   internal sealed class Creator<T> : ICreator where T : new()
   {

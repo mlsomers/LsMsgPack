@@ -32,7 +32,7 @@ cd LsMsgPackVsCode && npm install && npm test         # the VS Code extension (T
 
 ## Language and targets
 
-- The library targets `netstandard2.0;netstandard2.1`. 2.1 only exists to ask `RuntimeFeature.IsDynamicCodeCompiled` (`#if NETSTANDARD2_1_OR_GREATER`), .NET Framework picks 2.0, .NET (Core) picks 2.1.
+- The library targets `netstandard2.0;netstandard2.1`. 2.1 only exists to ask `RuntimeFeature.IsDynamicCodeSupported` (`#if NETSTANDARD2_1_OR_GREATER`, `PropertyAccessor.CanCompile`: not `IsDynamicCodeCompiled`, which is false on WebAssembly, where the typed delegates are still 3-4.7x faster than reflection), .NET Framework picks 2.0, .NET (Core) picks 2.1.
 - netstandard2.0 compiles as **C# 7.3**: no `??=`, switch expressions, `is not`, ranges, `using` declarations or nullable annotations. `Dictionary.TryAdd` comes from `Meta/MissingExtensions.cs`.
 - Style: 2-space indentation, `_camelCase` fields, explicit types rather than `var`, comments explain why. Some files use a different brace style, match the file. Most files are UTF-8 with BOM, keep it when editing with scripts (e.g. Python `encoding='utf-8-sig'`).
 
@@ -72,7 +72,7 @@ cd LsMsgPackVsCode && npm install && npm test         # the VS Code extension (T
 | `MsgPackOptions._serializedPropsCache`, `_staticPropsCache` | Type | one session (set by `WithSchema` or `SchemaSession.Apply`, not copied by `Clone()`/`CloneOptions()`). Property ids are schema indexes, never share them between sessions. With the schema as the only property id resolver, `IndexedSchemaTypeResolver.TryAssignIds` gives each property its position when the entry has the same names in the same order (made from these properties, or the writer had the same ones), without the name lookups |
 | `ComplexTypeDef.ByPosition` | the session's property array (by reference) | one schema entry: the reader's properties at the positions of the entry (`ValueConverter.PropertiesByPosition`, array layout), one immutable reference (frozen entries are read by several threads) |
 | `SchemaStore` schemas, inline schemas, writer and reader sessions | `SchemaId` / schema bytes / `SessionKey` | one store (shared by the settings that use it). Received schemas limited by `MaxSchemas`, sessions frozen once published |
-| `PropertyAccessor.Cache` | PropertyInfo | global. Reflection for the first 100 calls, then typed delegates (`Delegate.CreateDelegate` into `TypedAccessor<TTarget, TValue>`), unless the runtime does not compile code or `MsgPackOptions.CompilePropertyAccessors` is off |
+| `PropertyAccessor.Cache` | PropertyInfo | global. Reflection for the first 100 calls, then typed delegates (`Delegate.CreateDelegate` into `TypedAccessor<TTarget, TValue>`), unless the runtime does not support dynamic code (NativeAOT) or `MsgPackOptions.CompilePropertyAccessors` is off |
 | `CollectionInfo`, `HasParameterlessConstructor`, `FilterDefaultValues.DefaultInstances` | Type | global |
 | `TypeResolver` name caches | name / Type | global, guarded by one (re-entrant) lock |
 

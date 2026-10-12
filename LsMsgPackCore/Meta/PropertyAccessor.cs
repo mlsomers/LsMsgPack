@@ -8,7 +8,7 @@ namespace LsMsgPack.Meta
 {
   /// <summary>
   /// Gets and sets the value of one property, shared by all <see cref="FullPropertyInfo"/> instances of that property (they can be per session).
-  /// <para>Starts with reflection, once a property has been used <see cref="CompileAfterCalls"/> times, typed delegates bound to its get and set methods take over (when the runtime compiles code, see <see cref="CanCompile"/>).</para>
+  /// <para>Starts with reflection, once a property has been used <see cref="CompileAfterCalls"/> times, typed delegates bound to its get and set methods take over (when the runtime supports dynamic code, see <see cref="CanCompile"/>).</para>
   /// <para>Exceptions thrown by the getter or setter are rethrown as they are, not wrapped in a <see cref="TargetInvocationException"/> (as reflection does), so they do not depend on whether the delegates are bound yet.</para>
   /// </summary>
   internal sealed class PropertyAccessor
@@ -81,8 +81,10 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// Whether the runtime compiles code: the delegates need a generic class instantiated for the declaring type and property type at runtime,
-    /// which is not possible (or not faster than reflection) without a JIT, e.g. NativeAOT, iOS or WebAssembly.
+    /// Whether the runtime supports dynamic code: the delegates need a generic class instantiated for the declaring type and property type at runtime,
+    /// which is not possible without it (NativeAOT, iOS without the interpreter).
+    /// <para>Not <c>IsDynamicCodeCompiled</c>, which is false on WebAssembly: there Mono interprets the code (also the generic instantiations an AOT build did not compile),
+    /// and the delegates are still 3-4.7x faster than reflection (LtMsgPack, invoice benchmark, interpreter and AOT, .NET 10, October 2026).</para>
     /// </summary>
     internal static bool CanCompile
     {
@@ -92,7 +94,7 @@ namespace LsMsgPack.Meta
           return false;
 
 #if NETSTANDARD2_1_OR_GREATER
-        return System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeCompiled;
+        return System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
 #else
         return true; // .NET Standard 2.0 cannot ask, the runtimes that pick this build (e.g. .NET Framework) have a JIT. Otherwise switch off MsgPackOptions.CompilePropertyAccessors.
 #endif
