@@ -120,3 +120,5 @@ Trimming and AOT
 ----------------
 
 Both serializers find the properties of your classes through reflection. When the app is trimmed (iOS, Android or desktop apps published with full trimming, Native AOT), make sure the trimmer keeps the model classes and their properties, for example by marking the assembly with your models as a root: `<TrimmerRootAssembly Include="MyApp.Models" />`.
+
+With LtMsgPack, use its [source generator](SourceGenerator.md) for these apps: the generated code keeps the model classes when trimming (.NET 5 and later) and creates what LtMsgPack would otherwise create at runtime, which NativeAOT can't do (without it, LtMsgPack fails under NativeAOT). On WebAssembly AOT (Blazor) it is also several times faster.
