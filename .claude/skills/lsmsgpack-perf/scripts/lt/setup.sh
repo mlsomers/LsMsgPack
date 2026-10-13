@@ -12,7 +12,7 @@ git -C "$REPO" archive "$BASE_REF" LsMsgPackNetStandard LsMsgPackCore LtMsgPack 
 echo "$BASE_REF ($(git -C "$REPO" rev-parse --short "$BASE_REF"))" > "$WORK/baseline/REF"
 sed 's/CreateInvoices(5)/CreateInvoices(100)/' "$SRC/EquivModel.cs" > "$WORK/WebModel.cs"
 
-make_project() { # name, files, repo root, extra project content
+make_project() { # name, files, repo root, extra project content, extra properties
   rm -rf "$WORK/$1" && mkdir -p "$WORK/$1"
   for f in $2; do cp "$f" "$WORK/$1/"; done
   cat > "$WORK/$1/$1.csproj" <<PROJ
@@ -22,6 +22,7 @@ make_project() { # name, files, repo root, extra project content
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
+${5:-}
   </PropertyGroup>
   <ItemGroup>
 $4
@@ -34,7 +35,13 @@ for v in new base; do
   ROOT=$REPO; [ $v = base ] && ROOT=$WORK/baseline
   LIBS="    <ProjectReference Include=\"$ROOT/LtMsgPack/LtMsgPack.csproj\" />
     <ProjectReference Include=\"$ROOT/LsMsgPackNetStandard/LsMsgPack.csproj\" />"
-  make_project bench-$v "$SRC/LtBench.cs" "$ROOT" "$LIBS"
+  GEN_ITEMS=""; GEN_PROPS=""
+  if [ -f "$ROOT/LtMsgPack.Generator/LtMsgPack.Generator.csproj" ]; then # the source generator: the gen-* candidates
+    GEN_ITEMS="    <ProjectReference Include=\"$ROOT/LtMsgPack.Generator/LtMsgPack.Generator.csproj\" OutputItemType=\"Analyzer\" ReferenceOutputAssembly=\"false\" />"
+    GEN_PROPS="    <DefineConstants>\$(DefineConstants);GENERATED</DefineConstants>"
+  fi
+  make_project bench-$v "$SRC/LtBench.cs" "$ROOT" "$LIBS
+$GEN_ITEMS" "$GEN_PROPS"
   make_project equiv-$v "$SRC/LtEquiv.cs $SRC/EquivModel.cs" "$ROOT" "$LIBS"
   make_project web-$v "$SRC/WebBench.cs $WORK/WebModel.cs" "$ROOT" "    <FrameworkReference Include=\"Microsoft.AspNetCore.App\" />
     <PackageReference Include=\"Microsoft.AspNetCore.TestHost\" Version=\"8.0.20\" />

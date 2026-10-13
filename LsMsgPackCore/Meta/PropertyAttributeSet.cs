@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace LsMsgPack.Meta
@@ -92,6 +93,8 @@ namespace LsMsgPack.Meta
       return attributes?.ToArray();
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
+    [UnconditionalSuppressMessage("Trimming", "IL2065", Justification = TrimReasons.ModelTypes)]
     private object[] InterfaceAttributes()
     {
       if (_property.DeclaringType is null)
@@ -114,6 +117,7 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// The properties of the base types that the property overrides (the same virtual slot: a property hiding another one with <c>new</c> does not override it).
     /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
     private static IEnumerable<PropertyInfo> OverriddenProperties(PropertyInfo property)
     {
       MethodInfo accessor = property.GetGetMethod(true) ?? property.GetSetMethod(true);

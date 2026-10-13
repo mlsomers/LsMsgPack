@@ -667,4 +667,10 @@ namespace LsMsgPackUnitTests
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
+
+  [TestClass]
+  public class GenSerializingFrameworkTypes : SerializingFrameworkTypes
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
+  }
 }

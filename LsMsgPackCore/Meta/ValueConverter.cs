@@ -3,6 +3,7 @@ using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace LsMsgPack.Meta
@@ -109,6 +110,8 @@ namespace LsMsgPack.Meta
       }
     }
 
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(KeyValuePair<,>))]
+    [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.KeptMembers)]
     private static object Pair(Type pairType, object key, object value, MsgPackOptions settings)
     {
       if (settings._differences is null)
@@ -317,6 +320,7 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// Converts the items of a MsgPack array into an array or collection of the given type, or into an object written as an array (<see cref="ObjectLayout.Array"/>).
     /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Instantiations)]
     private static object ConvertArray(object[] items, Type assignType, MsgPackOptions settings, FullPropertyInfo prop)
     {
       if (assignType.IsArray && assignType.GetArrayRank() > 1)
@@ -366,6 +370,7 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// A multidimensional array, written as MessagePack-CSharp does: [length0, length1, ..., [the items in the order they are enumerated]].
     /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Instantiations)]
     private static object ConvertMultidimensional(object[] items, Type arrayType, MsgPackOptions settings)
     {
       int rank = arrayType.GetArrayRank();
@@ -505,6 +510,7 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// Converts the entries of a MsgPack map into a dictionary (or KeyValuePair&lt;,&gt;[]) of the given type.
     /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Instantiations)]
     private static object ConvertPairs(KeyValuePair<object, object>[] pairs, Type assignType, MsgPackOptions settings)
     {
       CollectionInfo info = CollectionInfo.Get(assignType);

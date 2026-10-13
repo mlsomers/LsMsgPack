@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Checks what other MsgPack libraries can read of LsMsgPack's output and the other way around (see MessagePackCSharpTests.cs and NerdbankTests.cs, the settings are described in docs/Compatibility.md) -->
 
@@ -20,11 +20,15 @@
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
     <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
+    <!-- LtMsgPack's source generator: TestMsgPackContext (GeneratedContext.cs) for the Gen* tests of the linked SerializerUnderTest.cs -->
+    <ProjectReference Include="..\LtMsgPack.Generator\LtMsgPack.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
     <!-- The tests run against LsMsgPack and LtMsgPack through the same adapters as the unit tests -->
     <Compile Include="..\LsMsgPackNetStandardUnitTests\SerializerUnderTest.cs" Link="SerializerUnderTest.cs" />
   </ItemGroup>
+
+  <Import Project="..\LtMsgPack\buildTransitive\LtMsgPack.props" />
 
 </Project>

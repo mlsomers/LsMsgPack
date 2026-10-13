@@ -303,4 +303,10 @@ namespace LsMsgPackUnitTests
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
+
+  [TestClass]
+  public class GenUntrustedDataTests : UntrustedDataTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
+  }
 }

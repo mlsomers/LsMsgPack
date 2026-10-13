@@ -42,6 +42,17 @@ To exchange data with other MsgPack libraries, start from a preset:
 LtMsgPackSerializer serializer = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp()); // or Nerdbank(), Generic()
 ```
 
+## Source generator (NativeAOT, Blazor, trimming)
+
+The package includes a source generator that writes the plans of your classes at compile time: it works where code can't be generated at runtime (NativeAOT, WebAssembly AOT, iOS), keeps your classes when trimming, and is faster (on WebAssembly AOT 7-8x writing, 3x reading). The data stays the same.
+
+```csharp
+[LtMsgPackSerializable(typeof(Order))]
+public partial class AppMsgPackContext : LtMsgPackContext { }
+```
+
+Create the serializer with it: `new LtMsgPackSerializer(AppMsgPackContext.Default, options)`. For trimmed and NativeAOT apps that's the constructor without trim or AOT warnings: the ones without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`. With C# 9 or later the context is also registered when the assembly loads, so serializers created without it use it too. To use the classes you already marked, without a context class: `<LtMsgPackGenerate>Serializable;DataContract;JsonSerializable</LtMsgPackGenerate>` in the project file. See [the source generator](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md).
+
 ## Reading data you don't trust
 
 Type ids let the data pick the classes that are created. The serializer only creates types assignable to the declared type. To restrict them further, set a type guard:
@@ -56,6 +67,7 @@ options.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(IShape));
 ## Documentation
 
 - [Client applications](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ClientApps.md): files, web services, trimming
+- [The source generator](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md): NativeAOT, WebAssembly AOT, trimming, speed
 - [Wire formats, the indexed schema and polymorphism](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md)
 - [Compatibility with other MsgPack libraries](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Compatibility.md)
 - [Security](https://github.com/mlsomers/LsMsgPack/blob/master/docs/security.md)

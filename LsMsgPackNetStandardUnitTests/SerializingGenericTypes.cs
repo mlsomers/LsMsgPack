@@ -58,4 +58,10 @@ namespace LsMsgPackUnitTests
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
+
+  [TestClass]
+  public class GenSerializingGenericTypes : SerializingGenericTypes
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
+  }
 }

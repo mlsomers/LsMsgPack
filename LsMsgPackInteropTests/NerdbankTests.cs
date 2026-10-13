@@ -154,4 +154,10 @@ namespace LsMsgPackInteropTests
   {
     protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Lt; } }
   }
+
+  [TestClass]
+  public class GenNerdbankTests : NerdbankTests
+  {
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Gen; } }
+  }
 }

@@ -204,4 +204,10 @@ namespace LsMsgPackInteropTests
   {
     protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Lt; } }
   }
+
+  [TestClass]
+  public class GenIgnoreAttributeTests : IgnoreAttributeTests
+  {
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Gen; } }
+  }
 }

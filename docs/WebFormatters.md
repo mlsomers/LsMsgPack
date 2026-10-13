@@ -82,6 +82,8 @@ Alternatively, add them to `MvcOptions` directly, with or without an `LtMsgPackH
 builder.Services.AddControllers(options => options.AddLsMsgPackSerializerFormatters(new LtMsgPackHttpOptions()));
 ```
 
+With the code of LtMsgPack's [source generator](SourceGenerator.md), pass the context first: `AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)` on the `IMvcBuilder`, or `options.AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, settings)`. The overloads without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`, as LtMsgPack's serializer is (see [Trimming and NativeAOT](SourceGenerator.md#trimming-and-nativeaot)). ASP.NET Core MVC itself is not trim compatible, so the formatters don't claim to be.
+
 Controllers don't need any changes. Body parameters are read with the input formatter when the request's `Content-Type` is one of the MsgPack media types. Results are written with the output formatter when the client's `Accept` header asks for one:
 
 ```csharp
@@ -140,7 +142,7 @@ using LsMsgPackWebApiFormatters;
 using System.Net.Http.Formatting;
 using System.Net.Http.Headers;
 
-LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter();
+LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter(); // trimmed or AOT apps: new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options))
 HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = new Uri("https://example.com/") }; // keep both for the lifetime of the app
 
 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "api/orders")

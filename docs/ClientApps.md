@@ -119,4 +119,15 @@ Order saved = serializer.Deserialize<Order>(await response.Content.ReadAsByteArr
 Trimming and AOT
 ----------------
 
-Both serializers find the properties of your classes through reflection. When the app is trimmed (iOS, Android or desktop apps published with full trimming, Native AOT), make sure the trimmer keeps the model classes and their properties, for example by marking the assembly with your models as a root: `<TrimmerRootAssembly Include="MyApp.Models" />`.
+With LtMsgPack, use its [source generator](SourceGenerator.md) for apps that are trimmed (iOS, Android or desktop apps published with full trimming) or compiled ahead of time (NativeAOT, WebAssembly AOT), and create the serializer with the context:
+
+```csharp
+[LtMsgPackSerializable(typeof(Order))]
+public partial class AppMsgPackContext : LtMsgPackContext { }
+
+LtMsgPackSerializer serializer = new LtMsgPackSerializer(AppMsgPackContext.Default, new LtMsgPackOptions());
+```
+
+The generated code keeps the model classes when trimming (.NET 5 and later) and creates what LtMsgPack would otherwise create at runtime, which NativeAOT can't do (without it, LtMsgPack fails under NativeAOT). On WebAssembly AOT (Blazor) it is also several times faster. The constructors without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`: the analyzers of a trimmed or AOT project warn where they are used (see [Trimming and NativeAOT](SourceGenerator.md#trimming-and-nativeaot)).
+
+LsMsgPack (the item tree serializer, meant for debugging) finds the properties of your classes through reflection. In a trimmed app, make sure the trimmer keeps the model classes and their properties, for example by marking the assembly with your models as a root: `<TrimmerRootAssembly Include="MyApp.Models" />`.

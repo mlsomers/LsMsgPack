@@ -1,7 +1,8 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LtMsgPack.IO;
 using System;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
@@ -31,10 +32,12 @@ namespace LtMsgPack.Writing
   /// <summary>
   /// The state of one Serialize call.
   /// </summary>
-  internal sealed class WriteContext
+  /// <para>Public for the code of the source generator (see LtMsgPack.LtMsgPackContext): may change between releases.</para>
+  [EditorBrowsable(EditorBrowsableState.Never)]
+  public sealed class WriteContext
   {
     internal readonly Serializer Serializer;
-    internal MsgPackWriter W;
+    public MsgPackWriter W;
 
     /// <summary>
     /// The value of the Serialize call.

@@ -1,7 +1,8 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
 namespace LtMsgPack.Http
@@ -11,6 +12,7 @@ namespace LtMsgPack.Http
   /// <para><b>Negotiation</b> (responses only): the client lists the schema ids it holds in the request header <see cref="SchemasHeader"/>. The server writes a reference when the client holds the schema of the response and the schema inline otherwise,
   /// names the schema in the response header <see cref="SchemaHeader"/> and adds <c>Vary: MsgPack-Schemas</c>. The client registers the schemas it receives inline, and lists them in its next requests to that server.
   /// Without the request header the response is ordinary application/x-lsmsgpack (the schema inline).</para>
+  /// <para>Trimmed and NativeAOT apps: create it with the code of LtMsgPack's source generator (<see cref="LtMsgPackHttpSerializer(LtMsgPackContext, LtMsgPackHttpOptions)"/>), as <see cref="LtMsgPackSerializer"/>.</para>
   /// </summary>
   public sealed class LtMsgPackHttpSerializer
   {
@@ -40,15 +42,35 @@ namespace LtMsgPack.Http
     private readonly ConcurrentDictionary<SchemaId, string> _hexIds = new ConcurrentDictionary<SchemaId, string>();
     private readonly ConcurrentDictionary<string, LinkedList<SchemaId>> _received = new ConcurrentDictionary<string, LinkedList<SchemaId>>(StringComparer.OrdinalIgnoreCase);
 
-    public LtMsgPackHttpSerializer() : this(new LtMsgPackHttpOptions()) { }
+    [RequiresUnreferencedCode(LtMsgPackSerializer.RequiresUnreferencedCodeMessage)]
+    [RequiresDynamicCode(LtMsgPackSerializer.RequiresDynamicCodeMessage)]
+    public LtMsgPackHttpSerializer() : this(new LtMsgPackHttpOptions(), null) { }
 
     /// <param name="options">Read once, later changes do not apply</param>
-    public LtMsgPackHttpSerializer(LtMsgPackHttpOptions options)
+    [RequiresUnreferencedCode(LtMsgPackSerializer.RequiresUnreferencedCodeMessage)]
+    [RequiresDynamicCode(LtMsgPackSerializer.RequiresDynamicCodeMessage)]
+    public LtMsgPackHttpSerializer(LtMsgPackHttpOptions options) : this(options, null) { }
+
+    /// <summary>
+    /// With the default options and the code of LtMsgPack's source generator (see <see cref="LtMsgPackHttpSerializer(LtMsgPackContext, LtMsgPackHttpOptions)"/>).
+    /// </summary>
+    /// <param name="context">E.g. <c>AppMsgPackContext.Default</c></param>
+    public LtMsgPackHttpSerializer(LtMsgPackContext context) : this(new LtMsgPackHttpOptions(), NotNull(context)) { }
+
+    /// <summary>
+    /// With the code of LtMsgPack's source generator: the serializers of both media types ask <paramref name="context"/> first (see <see cref="LtMsgPackSerializer(LtMsgPackContext, LtMsgPackOptions)"/>).
+    /// </summary>
+    /// <param name="context">E.g. <c>AppMsgPackContext.Default</c></param>
+    /// <param name="options">Read once, later changes do not apply</param>
+    public LtMsgPackHttpSerializer(LtMsgPackContext context, LtMsgPackHttpOptions options) : this(options, NotNull(context)) { }
+
+    /// <param name="context">null for none: the public constructors without a context require unreferenced and dynamic code, callers of this one (the formatters) do the same</param>
+    internal LtMsgPackHttpSerializer(LtMsgPackHttpOptions options, LtMsgPackContext context)
     {
       if (options is null)
         throw new ArgumentNullException(nameof(options));
 
-      _plain = new LtMsgPackSerializer(options.Plain ?? MsgPackMediaTypes.ToPlain(new LtMsgPackOptions()));
+      _plain = new LtMsgPackSerializer(options.Plain ?? MsgPackMediaTypes.ToPlain(new LtMsgPackOptions()), context);
 
       LtMsgPackOptions ls = (options.XLsMsgPack ?? LtMsgPackPresets.LsMsgPack()).Clone();
       _negotiate = options.NegotiateSchemas && ls.UseInexedSchema;
@@ -60,10 +82,17 @@ namespace LtMsgPack.Http
       }
       _lsOptions = ls;
       _store = ls.SchemaStore;
-      _lsMsgPack = new LtMsgPackSerializer(ls);
+      _lsMsgPack = new LtMsgPackSerializer(ls, context);
       _maxAdvertised = Math.Max(0, options.MaxAdvertisedSchemas);
       _reportDifferences = options.ReportDifferences;
       _logDifferencesAsWarning = options.ReportDifferences && options.LogDifferencesAsWarning;
+    }
+
+    private static LtMsgPackContext NotNull(LtMsgPackContext context)
+    {
+      if (context is null)
+        throw new ArgumentNullException(nameof(context));
+      return context;
     }
 
     /// <summary>

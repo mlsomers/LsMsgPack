@@ -1,0 +1,44 @@
+
+using System;
+using System.Collections.Generic;
+using LtMsgPack;
+
+namespace Shop
+{
+  public enum InvoiceStatus { Draft, Sent, Paid }
+  public enum UnitOfMeasure : byte { Piece, Hour, Kilogram }
+
+  public class Address
+  {
+    public string Street { get; set; }
+    public string City { get; set; }
+  }
+
+  public class Customer
+  {
+    public int CustomerId { get; set; }
+    public string CompanyName { get; set; }
+    public Address BillingAddress { get; set; }
+  }
+
+  public class InvoiceLine
+  {
+    public int LineNumber { get; set; }
+    public decimal Quantity { get; set; }
+    public UnitOfMeasure Unit { get; set; }
+  }
+
+  public class Invoice
+  {
+    public Guid Id { get; set; }
+    public DateTime InvoiceDate { get; set; }
+    public DateTime? PaidDate { get; set; }
+    public InvoiceStatus Status { get; set; }
+    public Customer Customer { get; set; }
+    public List<InvoiceLine> Lines { get; set; }
+    public decimal Total { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(Invoice))]
+  public partial class ShopMsgPackContext : LtMsgPackContext { }
+}

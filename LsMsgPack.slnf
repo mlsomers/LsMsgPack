@@ -5,6 +5,8 @@
       "LsMsgPackCore/LsMsgPack.Core.csproj",
       "LsMsgPackNetStandard/LsMsgPack.csproj",
       "LtMsgPack/LtMsgPack.csproj",
+      "LtMsgPack.Generator/LtMsgPack.Generator.csproj",
+      "LtMsgPack.GeneratorTests/LtMsgPack.GeneratorTests.csproj",
       "ObjectDebugger/ObjectDebugger.csproj",
       "LsMsgPackVsCode/Server/LsMsgPackInspector.csproj",
       "LsMsgPackMcpServer/LsMsgPackMcpServer.csproj",

@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Collections.Generic;
 using System.Linq;
@@ -196,5 +196,11 @@ namespace LsMsgPackUnitTests
   public class LtReadingOtherClassesTests : ReadingOtherClassesTests
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+  }
+
+  [TestClass]
+  public class GenReadingOtherClassesTests : ReadingOtherClassesTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
   }
 }

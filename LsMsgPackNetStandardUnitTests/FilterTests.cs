@@ -308,4 +308,10 @@ namespace LsMsgPackUnitTests
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
+
+  [TestClass]
+  public class GenFilterTests : FilterTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
+  }
 }

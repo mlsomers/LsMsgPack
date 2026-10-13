@@ -247,4 +247,10 @@ namespace LsMsgPackUnitTests
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
+
+  [TestClass]
+  public class GenObjectCreationTests : ObjectCreationTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
+  }
 }
