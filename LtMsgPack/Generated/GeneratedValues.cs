@@ -70,6 +70,18 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
+    /// An immutable or frozen collection (System.Collections.Immutable, System.Collections.Frozen): created from its elements by the static factory of its framework class.
+    /// </summary>
+    /// <param name="fromItems">Calls the factory the runtime uses (CreateRange when there is one, otherwise e.g. ToFrozenSet) with the elements</param>
+    public static GeneratedType Collection<T, TElement>(Func<IEnumerable<TElement>, T> fromItems)
+    {
+      LtGeneratedType<T> type = new LtGeneratedType<T>(null);
+      if (fromItems != null)
+        type.FromItems = items => fromItems((IEnumerable<TElement>)items);
+      return type;
+    }
+
+    /// <summary>
     /// Any other type the serializer writes and reads boxed (structs with properties, framework types...).
     /// </summary>
     public static GeneratedType Boxed<T>()

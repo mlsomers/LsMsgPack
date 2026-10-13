@@ -21,6 +21,12 @@ namespace LsMsgPack.Generated
     internal readonly Func<object> Creator;
 
     /// <summary>
+    /// Creates an immutable or frozen collection from its elements (an array of the element type) with the static factory the runtime would find by reflection (CreateRange, ToFrozenSet...),
+    /// null for other types. Generic code NativeAOT has, where MakeGenericMethod would fail for value types.
+    /// </summary>
+    internal Func<Array, object> FromItems;
+
+    /// <summary>
     /// The properties the type declares (not the inherited ones: those are in the description of the base type, matched by <see cref="PropertyInfo.DeclaringType"/>).
     /// </summary>
     internal readonly GeneratedProperty[] Properties;

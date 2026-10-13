@@ -6,6 +6,7 @@ using LtMsgPack.Generated;
 using LtMsgPack.IO;
 using System;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace LtMsgPack.Writing
@@ -267,6 +268,7 @@ namespace LtMsgPack.Writing
       return true;
     }
 
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
     internal static PropWriter Create(Serializer serializer, FullPropertyInfo info)
     {
       PropertyInfo property = info.PropertyInfo;

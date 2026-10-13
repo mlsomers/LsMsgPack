@@ -117,6 +117,67 @@ namespace Shop
         Assert.Contains(expected, code);
     }
 
+    /// <summary>
+    /// Collections the runtime fills itself (LsMsgPack.Core's CollectionInfo): what it makes for them must exist under NativeAOT.
+    /// </summary>
+    private const string CollectionsModel = @"
+using System.Collections.Generic;
+using System.Collections.Frozen;
+using System.Collections.Immutable;
+using LtMsgPack;
+
+namespace Shelf
+{
+  public class Item
+  {
+    public string Name { get; set; }
+  }
+
+  public class OnlyCollections // no member the generated code reads itself
+  {
+    public HashSet<string> Tags { get; set; }
+  }
+
+  public class Box
+  {
+    public IList<int> Counts { get; set; }
+    public IReadOnlyList<Item> Items { get; set; }
+    public HashSet<string> Tags { get; set; }
+    public ImmutableArray<int> Fixed { get; set; }
+    public IImmutableSet<string> Codes { get; set; }
+    public FrozenSet<string> Frozen { get; set; }
+    public ImmutableDictionary<string, int> Index { get; set; }
+    public Dictionary<string, double> Weights { get; set; }
+    public OnlyCollections Inner { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(Box))]
+  public partial class ShelfMsgPackContext : LtMsgPackContext { }
+}
+";
+
+    [TestMethod]
+    public void Collections_TheTypesTheRuntimeMakesAreDescribed()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(CollectionsModel);
+      result.AssertCompiles();
+      Assert.IsEmpty(result.CompileProblems, string.Join("\n", result.CompileProblems.Select(p => p.ToString()))); // no empty switch blocks (CS1522)
+      string code = result.AllGenerated;
+      foreach (string expected in new[] {
+        "Array<int>()", // the elements are read into an array
+        "Array<string>()",
+        "Array<global::System.Collections.Generic.KeyValuePair<string, int>>()", // an immutable dictionary's factory takes the pairs
+        "List<int>()", // created for IList<int>
+        "List<global::Shelf.Item>()", // created for IReadOnlyList<Item>
+        "Collection<global::System.Collections.Immutable.ImmutableArray<int>, int>(items => global::System.Collections.Immutable.ImmutableArray.CreateRange<int>(items))",
+        "Collection<global::System.Collections.Immutable.ImmutableHashSet<string>, string>(items => global::System.Collections.Immutable.ImmutableHashSet.CreateRange<string>(items))", // created for IImmutableSet<string>
+        "Collection<global::System.Collections.Frozen.FrozenSet<string>, string>(items => global::System.Collections.Frozen.FrozenSet.ToFrozenSet<string>(items))",
+        "Collection<global::System.Collections.Immutable.ImmutableDictionary<string, int>, global::System.Collections.Generic.KeyValuePair<string, int>>(items => global::System.Collections.Immutable.ImmutableDictionary.CreateRange<string, int>(items))",
+        "DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods, typeof(global::System.Collections.Immutable.ImmutableArray))" })
+        Assert.Contains(expected, code, expected);
+      Assert.DoesNotContain("Array<global::System.Collections.Generic.KeyValuePair<string, double>>()", code, "A dictionary is filled by its Add");
+    }
+
     [TestMethod]
     public void ContractVersion_IsTheRuntimes()
     {

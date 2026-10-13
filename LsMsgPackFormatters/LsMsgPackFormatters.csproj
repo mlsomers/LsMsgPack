@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <Import Project="..\Packaging.props" />
 
@@ -8,6 +8,12 @@
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <PackageId>LsMsgPack.AspNetCore</PackageId>
     <Description>Input and output formatters (LtMsgPack) for ASP.NET Core MVC / Web API controllers (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
+  </PropertyGroup>
+
+  <!-- The analyzers check the annotations (ASP.NET Core MVC itself is not trimmable, so the package does not claim to be: the formatters only pass the annotations of LtMsgPack on) -->
+  <PropertyGroup Condition="'$(TargetFramework)'=='net8.0'">
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|netstandard2.0|AnyCPU'">

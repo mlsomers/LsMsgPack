@@ -3,6 +3,7 @@ using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace LsMsgPack.Meta
@@ -108,6 +109,7 @@ namespace LsMsgPack.Meta
     }
 
     /// <returns>Why the type is refused, null when it is not</returns>
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
     private static string UnsupportedReason(Type type)
     {
       if (typeof(Type).IsAssignableFrom(type) || typeof(MemberInfo).IsAssignableFrom(type))

@@ -10,6 +10,7 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -121,7 +122,7 @@ namespace LtMsgPack
         case TypeKind.Enum:
           return Instantiate(type, typeof(EnumHandler<>), type, null);
         case TypeKind.Array:
-          if (type.IsArray && type.GetArrayRank() == 1 && type == type.GetElementType().MakeArrayType())
+          if (IsVector(type))
             return Instantiate(type, typeof(ArrayHandler<>), type.GetElementType(), this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
             return Instantiate(type, typeof(ListHandler<>), type.GenericTypeArguments[0], this);
@@ -133,6 +134,14 @@ namespace LtMsgPack
         default:
           return Boxed(type);
       }
+    }
+
+    /// <summary>
+    /// A one-dimensional array with a lower bound of zero (T[]), not a T[*] (one dimension, any lower bound: what a multidimensional array of rank 1 is).
+    /// </summary>
+    internal static bool IsVector(Type type)
+    {
+      return type.IsArray && type.GetArrayRank() == 1 && !type.Name.EndsWith("[*]", StringComparison.Ordinal);
     }
 
     private object Boxed(Type type)
@@ -638,6 +647,8 @@ namespace LtMsgPack
     internal readonly PropertyInfo PairValue;
     internal readonly PlainForm PlainForm;
 
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(KeyValuePair<,>))]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.KeptMembers)]
     internal WriteTypeInfo(Type type, LtMsgPackOptions options)
     {
       Type = type;

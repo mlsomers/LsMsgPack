@@ -3,6 +3,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -169,6 +170,8 @@ namespace LsMsgPack.Meta
       return ResolveName(typeName, assignedTo, orAssignedTo);
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.TypeNames)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.TypeNames)]
     private static Type SplitByParsing(string args, IMsgPackTypeResolver[] resolvers)
     {
       Stack<KeyValuePair<string, Type[]>> stack = new Stack<KeyValuePair<string, Type[]>>();
@@ -246,6 +249,7 @@ namespace LsMsgPack.Meta
       return true;
     }
 
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.TypeNames)]
     private static Type MakeArrayType(Type element, int rank)
     {
       return rank == 1 ? element.MakeArrayType() : element.MakeArrayType(rank);
@@ -335,6 +339,8 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static readonly char[] UnsafeNameChars = new[] { ',', '[', ']', '&', '*' };
 
+    [UnconditionalSuppressMessage("Trimming", "IL2096", Justification = TrimReasons.TypeNames)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = TrimReasons.TypeNames)]
     private static Type ResolveName(string typeName, Type assignedTo, bool orAssignedTo)
     {
       Type result;
@@ -456,6 +462,7 @@ namespace LsMsgPack.Meta
     /// Caches the assemblies of the types that can be reached from <paramref name="root"/>: generic arguments, element types, base types and the types of public properties (not of framework types).
     /// <para>The names in a schema are resolved before the values are read: a type in another assembly (e.g. the T of List&lt;T&gt;) was not known yet.</para>
     /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
     internal static void CacheReachableAssemblies(Type root)
     {
       if (ReachableCached.ContainsKey(root))
@@ -530,6 +537,7 @@ namespace LsMsgPack.Meta
       }
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = TrimReasons.TypeNames)]
     private static Type CacheAssemblyLocked(Assembly assembly, string typeName)
     {
       if (CachedAssembies.Contains(assembly))

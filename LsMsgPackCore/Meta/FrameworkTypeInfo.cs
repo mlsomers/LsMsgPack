@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Numerics;
 using System.Reflection;
@@ -46,16 +47,65 @@ namespace LsMsgPack.Meta
   /// Half as a float32, Version and StringBuilder as their text, CultureInfo as its name, Rune as its code point, nint and nuint as integers, Memory&lt;byte&gt;, ReadOnlyMemory&lt;byte&gt; and ArraySegment&lt;byte&gt; as bin,
   /// Complex as [real, imaginary], KeyValuePair as [key, value] and tuples as an array of their items.
   /// BigInteger, Int128 and UInt128 are integers when they fit in 64 bits, otherwise extension type -2 (as the proposals for MsgPack's bigint, msgpack/msgpack#206, agree).
-  /// <para>DateOnly, TimeOnly, Half, Rune, Int128 and UInt128 are found by name, .NET Standard does not have them.</para>
+  /// <para>DateOnly, TimeOnly, Half, Rune, Int128 and UInt128 are found by name in the .NET Standard builds, which do not have them. Their members are used by reflection (<see cref="Property"/>, <see cref="Method"/>,
+  /// <see cref="Constructor"/>, <see cref="Operator"/>), kept by DynamicDependency attributes so trimming does not remove them.</para>
   /// </summary>
   internal static class FrameworkTypeInfo
   {
-    internal static readonly Type DateOnlyType = typeof(DateTime).Assembly.GetType("System.DateOnly");
-    internal static readonly Type TimeOnlyType = typeof(DateTime).Assembly.GetType("System.TimeOnly");
-    internal static readonly Type HalfType = typeof(DateTime).Assembly.GetType("System.Half");
-    internal static readonly Type RuneType = typeof(DateTime).Assembly.GetType("System.Text.Rune");
-    internal static readonly Type Int128Type = typeof(DateTime).Assembly.GetType("System.Int128");
-    internal static readonly Type UInt128Type = typeof(DateTime).Assembly.GetType("System.UInt128");
+#if NET7_0_OR_GREATER
+    internal static readonly Type DateOnlyType = typeof(DateOnly);
+    internal static readonly Type TimeOnlyType = typeof(TimeOnly);
+    internal static readonly Type HalfType = typeof(Half);
+    internal static readonly Type RuneType = typeof(Rune);
+    internal static readonly Type Int128Type = typeof(Int128);
+    internal static readonly Type UInt128Type = typeof(UInt128);
+#else
+    internal static readonly Type DateOnlyType = CoreLibType("System.DateOnly");
+    internal static readonly Type TimeOnlyType = CoreLibType("System.TimeOnly");
+    internal static readonly Type HalfType = CoreLibType("System.Half");
+    internal static readonly Type RuneType = CoreLibType("System.Text.Rune");
+    internal static readonly Type Int128Type = CoreLibType("System.Int128");
+    internal static readonly Type UInt128Type = CoreLibType("System.UInt128");
+
+    /// <returns>null on runtimes without the type</returns>
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "A trimmed app that uses the type keeps it (and the DynamicDependency attributes of the members keep it too). An app without it has no values of it, null is then correct.")]
+    private static Type CoreLibType(string name)
+    {
+      return typeof(DateTime).Assembly.GetType(name);
+    }
+#endif
+
+    /// <summary>
+    /// Where the framework types above are (the DynamicDependency attributes name them, the .NET Standard builds cannot use typeof).
+    /// </summary>
+    private const string CoreLib = "System.Private.CoreLib";
+
+    /// <returns>null when <paramref name="type"/> is null (a runtime without it)</returns>
+    [DynamicDependency("DayNumber", "System.DateOnly", CoreLib)]
+    [DynamicDependency("Ticks", "System.TimeOnly", CoreLib)]
+    [DynamicDependency("Value", "System.Text.Rune", CoreLib)]
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.KeptMembers)]
+    private static PropertyInfo Property(Type type, string name)
+    {
+      return type?.GetProperty(name);
+    }
+
+    /// <returns>null when <paramref name="type"/> is null (a runtime without it)</returns>
+    [DynamicDependency("FromDayNumber(System.Int32)", "System.DateOnly", CoreLib)]
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.KeptMembers)]
+    private static MethodInfo Method(Type type, string name, Type parameter)
+    {
+      return type?.GetMethod(name, new[] { parameter });
+    }
+
+    /// <returns>null when <paramref name="type"/> is null (a runtime without it)</returns>
+    [DynamicDependency("#ctor(System.Int64)", "System.TimeOnly", CoreLib)]
+    [DynamicDependency("#ctor(System.Int32)", "System.Text.Rune", CoreLib)]
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.KeptMembers)]
+    private static ConstructorInfo Constructor(Type type, Type parameter)
+    {
+      return type?.GetConstructor(new[] { parameter });
+    }
 
     /// <summary>
     /// The extension type of big integers (proposed in msgpack/msgpack#206, pull requests 248 and 249): the value in big-endian two's complement, as few bytes as possible.
@@ -93,6 +143,8 @@ namespace LsMsgPack.Meta
       internal readonly FullPropertyInfo ValueInfo;
       private readonly Type _type;
 
+      [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicProperties, typeof(KeyValuePair<,>))]
+      [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.KeptMembers)]
       internal PairInfo(Type type)
       {
         _type = type;
@@ -102,6 +154,7 @@ namespace LsMsgPack.Meta
         ValueInfo = new FullPropertyInfo(type.GenericTypeArguments[1]);
       }
 
+      [UnconditionalSuppressMessage("Trimming", "IL2077", Justification = "The constructor is kept by the DynamicDependency of the PairInfo constructor.")]
       internal object Create(object key, object value)
       {
         return Activator.CreateInstance(_type, key, value);
@@ -134,6 +187,8 @@ namespace LsMsgPack.Meta
 
     internal sealed class TupleInfo
     {
+      private const DynamicallyAccessedMemberTypes TupleMembers = DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields;
+
       /// <summary>
       /// The items as they are declared (their values get type ids when they are of other types).
       /// </summary>
@@ -142,6 +197,24 @@ namespace LsMsgPack.Meta
       private readonly object[] _defaults;
       private readonly ConstructorInfo _constructor;
 
+      [DynamicDependency(TupleMembers, typeof(Tuple<>))]
+      [DynamicDependency(TupleMembers, typeof(Tuple<,>))]
+      [DynamicDependency(TupleMembers, typeof(Tuple<,,>))]
+      [DynamicDependency(TupleMembers, typeof(Tuple<,,,>))]
+      [DynamicDependency(TupleMembers, typeof(Tuple<,,,,>))]
+      [DynamicDependency(TupleMembers, typeof(Tuple<,,,,,>))]
+      [DynamicDependency(TupleMembers, typeof(Tuple<,,,,,,>))]
+      [DynamicDependency(TupleMembers, typeof(Tuple<,,,,,,,>))]
+      [DynamicDependency(TupleMembers, typeof(ValueTuple<>))]
+      [DynamicDependency(TupleMembers, typeof(ValueTuple<,>))]
+      [DynamicDependency(TupleMembers, typeof(ValueTuple<,,>))]
+      [DynamicDependency(TupleMembers, typeof(ValueTuple<,,,>))]
+      [DynamicDependency(TupleMembers, typeof(ValueTuple<,,,,>))]
+      [DynamicDependency(TupleMembers, typeof(ValueTuple<,,,,,>))]
+      [DynamicDependency(TupleMembers, typeof(ValueTuple<,,,,,,>))]
+      [DynamicDependency(TupleMembers, typeof(ValueTuple<,,,,,,,>))]
+      [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.KeptMembers)]
+      [UnconditionalSuppressMessage("Trimming", "IL2062", Justification = TrimReasons.ModelTypes)]
       internal TupleInfo(Type type)
       {
         Type[] arguments = type.GenericTypeArguments;
@@ -187,12 +260,17 @@ namespace LsMsgPack.Meta
     private static readonly BigInteger LongMin = long.MinValue;
     private static readonly BigInteger LongMax = long.MaxValue;
     private static readonly BigInteger ULongMax = ulong.MaxValue;
-    private static readonly PropertyInfo RuneValue = RuneType?.GetProperty("Value");
-    private static readonly ConstructorInfo RuneFromInt = RuneType?.GetConstructor(new[] { typeof(int) });
+    private static readonly PropertyInfo RuneValue = Property(RuneType, "Value");
+    private static readonly ConstructorInfo RuneFromInt = Constructor(RuneType, typeof(int));
 
     /// <summary>
     /// A conversion operator (op_Explicit or op_Implicit) of <paramref name="declaringType"/>, found by its parameter and return type (the overloads differ only by their return type).
     /// </summary>
+    [DynamicDependency("op_Explicit", "System.Half", CoreLib)]
+    [DynamicDependency("op_Implicit", "System.Half", CoreLib)]
+    [DynamicDependency("op_Explicit", typeof(BigInteger))]
+    [DynamicDependency("op_Implicit", typeof(BigInteger))]
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.KeptMembers)]
     private static MethodInfo Operator(Type declaringType, Type from, Type to)
     {
       if (declaringType is null)
@@ -395,10 +473,10 @@ namespace LsMsgPack.Meta
 
     #endregion
 
-    internal static readonly PropertyInfo DayNumber = DateOnlyType?.GetProperty("DayNumber");
-    private static readonly MethodInfo FromDayNumber = DateOnlyType?.GetMethod("FromDayNumber", new[] { typeof(int) });
-    internal static readonly PropertyInfo TimeOnlyTicks = TimeOnlyType?.GetProperty("Ticks");
-    private static readonly ConstructorInfo TimeOnlyFromTicks = TimeOnlyType?.GetConstructor(new[] { typeof(long) });
+    internal static readonly PropertyInfo DayNumber = Property(DateOnlyType, "DayNumber");
+    private static readonly MethodInfo FromDayNumber = Method(DateOnlyType, "FromDayNumber", typeof(int));
+    internal static readonly PropertyInfo TimeOnlyTicks = Property(TimeOnlyType, "Ticks");
+    private static readonly ConstructorInfo TimeOnlyFromTicks = Constructor(TimeOnlyType, typeof(long));
 
     /// <summary>
     /// Converts the unpacked value of one of these types (char is converted like the other primitives).

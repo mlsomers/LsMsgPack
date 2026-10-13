@@ -1,6 +1,7 @@
 ﻿using LsMsgPack.Generated;
 using System;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -101,7 +102,7 @@ namespace LsMsgPack.Meta
         if (!MsgPackOptions.CompilePropertyAccessors)
           return false;
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
         return System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
 #else
         return true; // .NET Standard 2.0 cannot ask, the runtimes that pick this build (e.g. .NET Framework) have a JIT. Otherwise switch off MsgPackOptions.CompilePropertyAccessors.
@@ -110,6 +111,8 @@ namespace LsMsgPack.Meta
     }
 
     /// <returns>null when the property cannot (or should not) get typed delegates, reflection is used instead</returns>
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(TypedAccessor<,>))]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only called when the runtime supports dynamic code (CanCompile), a failure falls back to reflection.")]
     internal static ITypedAccessor Compile(PropertyInfo property)
     {
       Type declaringType = property.DeclaringType;

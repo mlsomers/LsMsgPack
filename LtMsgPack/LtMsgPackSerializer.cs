@@ -1,7 +1,8 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LtMsgPack.IO;
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection;
 
@@ -10,19 +11,62 @@ namespace LtMsgPack
   /// <summary>
   /// Serializes .NET objects to MsgPack and back, without an intermediate item tree: the same data as LsMsgPack's MsgPackSerializer with the same settings (see <see cref="MsgPackOptions"/>).
   /// <para>Thread-safe. Create one per set of options and keep it: the plans per type are built once.</para>
+  /// <para>Trimmed and NativeAOT apps: create it with the code of the source generator (<see cref="LtMsgPackSerializer(LtMsgPackContext, LtMsgPackOptions)"/>),
+  /// the constructors without a context require unreferenced and dynamic code (the serializer then finds the members of the types by reflection and instantiates its generic code at runtime).</para>
   /// </summary>
   public sealed class LtMsgPackSerializer
   {
+    internal const string RequiresUnreferencedCodeMessage = "Without generated code the serializer reads the properties and constructors of the types by reflection, trimming may remove them. Create it with the context of LtMsgPack's source generator (LtMsgPackSerializer(LtMsgPackContext, LtMsgPackOptions)).";
+    internal const string RequiresDynamicCodeMessage = "Without generated code the serializer instantiates its generic code for the types at runtime, NativeAOT may not have it. Create it with the context of LtMsgPack's source generator (LtMsgPackSerializer(LtMsgPackContext, LtMsgPackOptions)).";
+
     private readonly Serializer _serializer;
 
-    public LtMsgPackSerializer() : this(new LtMsgPackOptions()) { }
+    [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
+    [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+    public LtMsgPackSerializer() : this(new LtMsgPackOptions(), null) { }
 
     /// <param name="options">Copied, later changes do not apply</param>
-    public LtMsgPackSerializer(LtMsgPackOptions options)
+    [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
+    [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+    public LtMsgPackSerializer(LtMsgPackOptions options) : this(options, null) { }
+
+    /// <summary>
+    /// A serializer with the default options and the code of LtMsgPack's source generator (see <see cref="LtMsgPackSerializer(LtMsgPackContext, LtMsgPackOptions)"/>).
+    /// </summary>
+    /// <param name="context">E.g. <c>AppMsgPackContext.Default</c></param>
+    public LtMsgPackSerializer(LtMsgPackContext context) : this(new LtMsgPackOptions(), NotNull(context)) { }
+
+    /// <summary>
+    /// A serializer with the code of LtMsgPack's source generator: <paramref name="context"/> is asked first, then <see cref="LtMsgPackOptions.Contexts"/> (and the registered contexts, see <see cref="LtMsgPackOptions.UseRegisteredContexts"/>).
+    /// <para>For trimmed and NativeAOT apps: the generated code keeps the classes of the context and creates the serializer's generic code for them.
+    /// Classes it does not describe are still serialized by reflection (the same data), the generator names the ones to list (LTMP010, see docs/SourceGenerator.md).</para>
+    /// </summary>
+    /// <param name="context">E.g. <c>AppMsgPackContext.Default</c></param>
+    /// <param name="options">Copied, later changes do not apply</param>
+    public LtMsgPackSerializer(LtMsgPackContext context, LtMsgPackOptions options) : this(options, NotNull(context)) { }
+
+    /// <param name="options">Copied</param>
+    /// <param name="context">null for none: the public constructors without a context require unreferenced and dynamic code, callers of this one (the HTTP serializer) do the same</param>
+    internal LtMsgPackSerializer(LtMsgPackOptions options, LtMsgPackContext context)
     {
       if (options is null)
         throw new ArgumentNullException(nameof(options));
-      _serializer = new Serializer(options.Clone());
+      LtMsgPackOptions copy = options.Clone();
+      if (context != null)
+      {
+        LtMsgPackContext[] contexts = new LtMsgPackContext[copy._contexts.Length + 1];
+        contexts[0] = context;
+        Array.Copy(copy._contexts, 0, contexts, 1, copy._contexts.Length);
+        copy._contexts = contexts;
+      }
+      _serializer = new Serializer(copy);
+    }
+
+    private static LtMsgPackContext NotNull(LtMsgPackContext context)
+    {
+      if (context is null)
+        throw new ArgumentNullException(nameof(context));
+      return context;
     }
 
     /// <summary>
@@ -45,10 +89,12 @@ namespace LtMsgPack
     private static LtMsgPackSerializer _default;
 
     /// <summary>
-    /// A serializer with the default options.
+    /// A serializer with the default options (without a context: it uses the registered ones, see <see cref="LtMsgPackOptions.UseRegisteredContexts"/>).
     /// </summary>
     public static LtMsgPackSerializer Default
     {
+      [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
+      [RequiresDynamicCode(RequiresDynamicCodeMessage)]
       get { return _default ?? (_default = new LtMsgPackSerializer()); }
     }
 

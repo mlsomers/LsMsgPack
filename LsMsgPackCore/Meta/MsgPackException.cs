@@ -18,6 +18,9 @@ namespace LsMsgPack {
     }
 
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
+#if NET8_0_OR_GREATER
+    [Obsolete("Formatter-based serialization is obsolete (as the constructor of Exception it calls).", DiagnosticId = "SYSLIB0051", UrlFormat = "https://aka.ms/dotnet-warnings/{0}")]
+#endif
     protected MsgPackException(System.Runtime.Serialization.SerializationInfo info, System.Runtime.Serialization.StreamingContext context) : base(info, context) { }
 #endif
   }

@@ -271,7 +271,7 @@ namespace LtMsgPack.IO
       return true;
     }
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
     /// <summary>
     /// A string of at most <paramref name="chars"/>.Length bytes, decoded into <paramref name="chars"/> (formatted values: no string is made).
     /// </summary>
@@ -313,7 +313,7 @@ namespace LtMsgPack.IO
       if (Peek() == 0xC4 && Pos + 1 < End && Buf[Pos + 1] == 16)
       {
         Need(18);
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
         value = new Guid(new ReadOnlySpan<byte>(Buf, Pos + 2, 16));
 #else
         byte[] bytes = new byte[16];

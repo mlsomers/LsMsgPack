@@ -6,6 +6,7 @@ using LtMsgPack.Generated;
 using LtMsgPack.Reading;
 using LtMsgPack.Writing;
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace LtMsgPack
@@ -22,6 +23,11 @@ namespace LtMsgPack
     {
       _contexts = (GeneratedContext[])Options._contexts.Clone(); // the array of the options may be changed later
       _useRegisteredContexts = Options._useRegisteredContexts;
+      if (_useRegisteredContexts) // registered as the module initializer would: LsMsgPack.Core creates collections and objects with the registered code (needed where reflection does not see constructors: NativeAOT)
+      {
+        for (int t = 0; t < _contexts.Length; t++)
+          GeneratedTypes.Register(_contexts[t]);
+      }
     }
 
     /// <returns>The generated description of the type (the options' contexts first, then the registered ones), null when there is none</returns>
@@ -157,6 +163,9 @@ namespace LtMsgPack
     /// <param name="definition">E.g. <c>typeof(ListHandler&lt;&gt;)</c></param>
     /// <param name="argument">The type argument of <paramref name="definition"/> (the element type of a list...)</param>
     /// <param name="constructorArgument">What its constructor takes, null for none</param>
+    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
     private object Instantiate(Type handled, Type definition, Type argument, object constructorArgument)
     {
       if (Generated(handled) is IGeneratedInstantiations generated)

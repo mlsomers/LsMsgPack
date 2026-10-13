@@ -3,6 +3,7 @@ using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
@@ -147,6 +148,7 @@ namespace LsMsgPack.Meta
     /// </summary>
     public object PropertyId { get; set; }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
     public ConstructorInfo GetConstructorTaking(Type type)
     {
       if (_constructorTakingType is null)
@@ -175,6 +177,7 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// Public properties excluding indexers and properties hidden by a property with the same name in a derived class ("new" modifier).
     /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
     private static PropertyInfo[] GetProperties(Type type)
     {
       return PropertiesCache.GetOrAdd(type, t =>
@@ -313,6 +316,7 @@ namespace LsMsgPack.Meta
       /// <summary>
       /// The property an override overrides (recursively), so overriding a property in a derived class does not move it.
       /// </summary>
+      [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
       private static PropertyInfo OriginalDeclaration(PropertyInfo property)
       {
         MethodInfo accessor = property.GetGetMethod(true) ?? property.GetSetMethod(true);

@@ -4,6 +4,7 @@ using LsMsgPack.TypeResolving.Interfaces;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Serialization;
@@ -237,6 +238,7 @@ namespace LsMsgPack.TypeResolving.Types
     }
 
     /// <param name="ambiguous">The reader classes found for more than one writer class, with those writer classes</param>
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
     private Dictionary<Type, ComplexTypeDef> ReaderAliases(Type root, out Dictionary<Type, Type[]> ambiguous)
     {
       Dictionary<Type, ComplexTypeDef> aliases = new Dictionary<Type, ComplexTypeDef>();
@@ -303,6 +305,7 @@ namespace LsMsgPack.TypeResolving.Types
       return ByType.ContainsKey(type) || (_unresolved > 0 && (FindUnresolved(TypeResolver.GetTypeName(type, true)) ?? FindUnresolved(TypeResolver.GetTypeName(type, false))) != null);
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
     private static PropertyInfo NonIndexedProperty(Type type, string name)
     {
       PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);

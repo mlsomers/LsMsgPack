@@ -51,7 +51,7 @@ The package includes a source generator that writes the plans of your classes at
 public partial class AppMsgPackContext : LtMsgPackContext { }
 ```
 
-With C# 9 or later the context is registered when the assembly loads, otherwise pass it: `new LtMsgPackOptions { Contexts = new LtMsgPackContext[] { AppMsgPackContext.Default } }`. To use the classes you already marked, without a context class: `<LtMsgPackGenerate>Serializable;DataContract;JsonSerializable</LtMsgPackGenerate>` in the project file. See [the source generator](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md).
+Create the serializer with it: `new LtMsgPackSerializer(AppMsgPackContext.Default, options)`. For trimmed and NativeAOT apps that's the constructor without trim or AOT warnings: the ones without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`. With C# 9 or later the context is also registered when the assembly loads, so serializers created without it use it too. To use the classes you already marked, without a context class: `<LtMsgPackGenerate>Serializable;DataContract;JsonSerializable</LtMsgPackGenerate>` in the project file. See [the source generator](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md).
 
 ## Reading data you don't trust
 
