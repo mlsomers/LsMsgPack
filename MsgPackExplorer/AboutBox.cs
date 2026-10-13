@@ -85,5 +85,10 @@ namespace MsgPackExplorer {
     {
       Process.Start("https://www.buymeacoffee.com/mlsomers");
     }
+
+    private void label3_Click(object sender, EventArgs e)
+    {
+      Process.Start("https://www.paypal.com/donate/?business=BMSG85VAYSCUC&no_recurring=0&currency_code=EUR");
+    }
   }
 }
