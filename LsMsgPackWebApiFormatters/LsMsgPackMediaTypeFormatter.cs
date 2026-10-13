@@ -79,7 +79,8 @@ namespace LsMsgPackWebApiFormatters
       if (request is null || !Serializer.NegotiatesSchemas || !MsgPackMediaTypes.IsLsMsgPack(mediaType?.MediaType))
         return this;
       string schemas = request.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemasHeader, out System.Collections.Generic.IEnumerable<string> values) ? string.Join(",", values) : null;
-      return new LsMsgPackMediaTypeFormatter(this, new RequestSchemas(schemas));
+      bool described = Serializer.DescribesSchemas && MsgPackMediaTypes.AcceptsDescribedSchema(request.Headers.Accept.ToString());
+      return new LsMsgPackMediaTypeFormatter(this, new RequestSchemas(schemas, described));
     }
 
     public override bool CanReadType(Type type)
@@ -155,13 +156,14 @@ namespace LsMsgPackWebApiFormatters
       string mediaType = content?.Headers.ContentType?.MediaType;
 
       // Serialize to a buffer and write it asynchronously. A request (client side) always carries its schema inline.
-      MsgPackPayload payload = Serializer.Serialize(value, type, mediaType, ServerRequest?.Schemas);
+      bool described = !(ServerRequest is null) && ServerRequest.Described;
+      MsgPackPayload payload = Serializer.Serialize(value, type, mediaType, ServerRequest?.Schemas, described);
       if (!(ServerRequest is null) && !(content is null) && !(payload.SchemaId is null))
       {
         // Web API buffers ObjectContent before sending the headers, so they can still be set. A formatter cannot set response headers (Vary),
-        // so a response that only this client can read expires at once, for caches.
+        // so a response that only this client can read (a reference, or the described schema a .NET client cannot read) expires at once, for caches.
         content.Headers.TryAddWithoutValidation(LtMsgPackHttpSerializer.SchemaHeader, payload.SchemaId);
-        if (payload.IsReference)
+        if (payload.IsReference || described)
           content.Headers.Expires = new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
       }
       return payload.WriteToAsync(writeStream, cancellationToken);
@@ -169,12 +171,18 @@ namespace LsMsgPackWebApiFormatters
 
     private sealed class RequestSchemas
     {
-      internal RequestSchemas(string schemas)
+      internal RequestSchemas(string schemas, bool described)
       {
         Schemas = schemas;
+        Described = described;
       }
 
       internal string Schemas { get; }
+
+      /// <summary>
+      /// The client asked for the described schema (Accept: application/x-lsmsgpack; schema=described).
+      /// </summary>
+      internal bool Described { get; }
     }
   }
 }

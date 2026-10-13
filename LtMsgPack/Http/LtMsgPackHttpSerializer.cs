@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
+using LsMsgPack.TypeResolving.Types;
 
 namespace LtMsgPack.Http
 {
@@ -12,6 +13,8 @@ namespace LtMsgPack.Http
   /// <para><b>Negotiation</b> (responses only): the client lists the schema ids it holds in the request header <see cref="SchemasHeader"/>. The server writes a reference when the client holds the schema of the response and the schema inline otherwise,
   /// names the schema in the response header <see cref="SchemaHeader"/> and adds <c>Vary: MsgPack-Schemas</c>. The client registers the schemas it receives inline, and lists them in its next requests to that server.
   /// Without the request header the response is ordinary application/x-lsmsgpack (the schema inline).</para>
+  /// <para><b>Described schema</b> (<see cref="LtMsgPackHttpOptions.DescribeSchemas"/>): a client without the classes (the TypeScript client) asks for it with <c>Accept: application/x-lsmsgpack; schema=described</c>
+  /// (<see cref="MsgPackMediaTypes.AcceptsDescribedSchema"/>) and gets the schema with the kind and default of each property in its place, with its own id (the body is the same).</para>
   /// <para>Trimmed and NativeAOT apps: create it with the code of LtMsgPack's source generator (<see cref="LtMsgPackHttpSerializer(LtMsgPackContext, LtMsgPackHttpOptions)"/>), as <see cref="LtMsgPackSerializer"/>.</para>
   /// </summary>
   public sealed class LtMsgPackHttpSerializer
@@ -36,6 +39,10 @@ namespace LtMsgPack.Http
     private readonly LtMsgPackOptions _lsOptions;
     private readonly SchemaStore _store;
     private readonly bool _negotiate;
+    private readonly bool _describe;
+    private readonly LtMsgPackContext _context;
+    private readonly ConcurrentDictionary<DescribedKey, DescribedSchema> _described;
+    private LtMsgPackSerializer _defaults; // writes the values of [DefaultValue] for described schemas, made when first needed
     private readonly int _maxAdvertised;
     private readonly bool _reportDifferences;
     private readonly bool _logDifferencesAsWarning;
@@ -82,6 +89,13 @@ namespace LtMsgPack.Http
       }
       _lsOptions = ls;
       _store = ls.SchemaStore;
+      _context = context;
+      _describe = _negotiate && options.DescribeSchemas;
+      if (_describe)
+      {
+        _store.RecordWriters = true; // the types of the schemas it writes, to describe them (recorded when a schema is published, not per call)
+        _described = new ConcurrentDictionary<DescribedKey, DescribedSchema>();
+      }
       _lsMsgPack = new LtMsgPackSerializer(ls, context);
       _maxAdvertised = Math.Max(0, options.MaxAdvertisedSchemas);
       _reportDifferences = options.ReportDifferences;
@@ -128,6 +142,14 @@ namespace LtMsgPack.Http
     }
 
     /// <summary>
+    /// Responses of application/x-lsmsgpack carry the described schema when the client asks for it (<see cref="LtMsgPackHttpOptions.DescribeSchemas"/>, with <see cref="NegotiatesSchemas"/>).
+    /// </summary>
+    public bool DescribesSchemas
+    {
+      get { return _describe; }
+    }
+
+    /// <summary>
     /// The serializer of the media type (the Content-Type, parameters are ignored): application/x-lsmsgpack or plain MsgPack.
     /// </summary>
     public LtMsgPackSerializer For(string mediaType)
@@ -145,6 +167,18 @@ namespace LtMsgPack.Http
     /// <param name="clientSchemas">The request header <see cref="SchemasHeader"/> (null when there is none): the body refers to its schema when the client holds it</param>
     public MsgPackPayload Serialize(object value, Type declaredType, string mediaType, string clientSchemas)
     {
+      return Serialize(value, declaredType, mediaType, clientSchemas, false);
+    }
+
+    /// <summary>
+    /// Serializes a response body, with the described schema when the client asks for it.
+    /// </summary>
+    /// <param name="declaredType">The type the value is declared as (a type id is added when the value's type differs), null: the value's type</param>
+    /// <param name="mediaType">The Content-Type of the response</param>
+    /// <param name="clientSchemas">The request header <see cref="SchemasHeader"/> (null when there is none): the body refers to its schema when the client holds it</param>
+    /// <param name="describedSchema">The client asked for the described schema (<see cref="MsgPackMediaTypes.AcceptsDescribedSchema"/> of the request's Accept header), ignored unless <see cref="DescribesSchemas"/></param>
+    public MsgPackPayload Serialize(object value, Type declaredType, string mediaType, string clientSchemas, bool describedSchema)
+    {
       if (!MsgPackMediaTypes.IsLsMsgPack(mediaType))
         return Whole(_plain.Serialize(value, declaredType));
 
@@ -153,6 +187,18 @@ namespace LtMsgPack.Http
         return Whole(data); // null (nil, no schema)
 
       SchemaId id = new SchemaId(data, 2);
+      if (describedSchema && _describe)
+      {
+        DescribedSchema described = Describe(id, declaredType ?? value.GetType()); // the root type of LtMsgPackSerializer.Serialize(object, Type)
+        if (!(described is null))
+        {
+          ArraySegment<byte> rest = new ArraySegment<byte>(data, SchemaStore.ReferenceLength, data.Length - SchemaStore.ReferenceLength);
+          if (described.Bytes.Length > SchemaStore.ReferenceLength && Holds(clientSchemas, described.Hex))
+            return new MsgPackPayload(new ArraySegment<byte>(described.Reference), rest, described.Hex, true);
+          return new MsgPackPayload(new ArraySegment<byte>(described.Bytes), rest, described.Hex, false);
+        }
+      }
+
       string hex = Hex(id);
       byte[] schema = _store.GetInlineSchema(id, _lsOptions); // the store has every schema it wrote
       if (schema.Length > SchemaStore.ReferenceLength && Holds(clientSchemas, hex)) // a small schema is sent anyway: it is shorter than the reference
@@ -167,6 +213,60 @@ namespace LtMsgPack.Http
     public MsgPackPayload Serialize(object value, Type declaredType, string mediaType)
     {
       return Serialize(value, declaredType, mediaType, null);
+    }
+
+    /// <returns>null when the store did not record the writer of the schema (the plain schema is sent)</returns>
+    private DescribedSchema Describe(SchemaId id, Type root)
+    {
+      DescribedKey key = new DescribedKey(id, root);
+      if (_described.TryGetValue(key, out DescribedSchema described))
+        return described;
+
+      IndexedSchemaTypeResolver resolver = _store.GetWriterResolver(id, root);
+      if (resolver is null)
+        return null;
+      return _described.GetOrAdd(key, k => DescribedSchema.Create(resolver, root, _lsOptions, Defaults));
+    }
+
+    private LtMsgPackSerializer Defaults()
+    {
+      LtMsgPackSerializer defaults = _defaults;
+      if (defaults is null)
+      {
+        LtMsgPackOptions options = _lsOptions.Clone();
+        options.UseInexedSchema = false;
+        options.WriteSchemaReference = false;
+        options.AddTypeIdOptions = AddTypeIdOption.Never;
+        _defaults = defaults = new LtMsgPackSerializer(options, _context);
+      }
+      return defaults;
+    }
+
+    private struct DescribedKey : IEquatable<DescribedKey>
+    {
+      private readonly SchemaId _id;
+      private readonly Type _root;
+
+      internal DescribedKey(SchemaId id, Type root)
+      {
+        _id = id;
+        _root = root;
+      }
+
+      public bool Equals(DescribedKey other)
+      {
+        return _id == other._id && _root == other._root;
+      }
+
+      public override bool Equals(object obj)
+      {
+        return obj is DescribedKey other && Equals(other);
+      }
+
+      public override int GetHashCode()
+      {
+        return _id.GetHashCode() * 31 + _root.GetHashCode();
+      }
     }
 
     private static MsgPackPayload Whole(byte[] data)

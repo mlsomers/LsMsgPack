@@ -17,7 +17,8 @@
       "LsMsgPackFormattersTests/LsMsgPackFormattersTests.csproj",
       "LsMsgPackWebApiFormatters/LsMsgPackWebApiFormatters.csproj",
       "LsMsgPackWebApiFormattersTests/LsMsgPackWebApiFormattersTests.csproj",
-      "LsMsgPackMvc/LsMsgPackMvc.csproj"
+      "LsMsgPackMvc/LsMsgPackMvc.csproj",
+      "clients/typescript/test-server/LsMsgPackTsTestServer.csproj"
     ]
   }
 }

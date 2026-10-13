@@ -325,3 +325,33 @@ Without the handler (or from any other client), nothing changes: the responses c
 - `NegotiateSchemas = false` turns it off (the schema is always inline). It's also off when `XLsMsgPack.UseInexedSchema` is false.
 
 Measured on the invoices of `BenchmarkInvoices` (100 invoices, LtMsgPack with the default options, one serializer, in process, one run): with the schema inline, 214.7 KB, write ~310 µs, read ~425 µs. With references, 176.2 KB (-18%), write ~255 µs, read ~415 µs.
+
+### Described schema (JavaScript clients)
+
+A client without the .NET classes, such as the [TypeScript client](TypeScriptClient.md), cannot tell from the plain schema (property names only) whether a value the server left out was `0`, `false` or `null`, or whether a nested array is an object. It asks for the **described schema**:
+
+```
+Accept: application/x-lsmsgpack; schema=described, application/x-lsmsgpack; q=0.9
+```
+
+The response then has the schema with the kind and default of each property in place of the plain one ([format](TypeScriptClient.md#format)). The body is the same bytes. The described schema has its own id (`MsgPack-Schema`), and is negotiated and referred to like any other. .NET clients never ask for it and get exactly what they got before.
+
+- `LtMsgPackHttpOptions.DescribeSchemas` (default `true`) turns it off; it needs `NegotiateSchemas` (the schema store keeps, per schema it writes, what is needed to describe it).
+- The negotiated responses have `Vary: MsgPack-Schemas, Accept`. Web API 2 cannot set `Vary`: a response with a described schema expires at once, like a reference.
+- The second media type in `Accept` is needed for ASP.NET Core's content negotiation (it only matches a parameter a formatter lists) and for servers that do not know the parameter: they answer with the plain schema.
+- It tells the client the kinds of your properties (`int`, `decimal`, a list of objects of an entry...), next to the names the plain schema already has. No .NET type names beyond those.
+
+### CORS
+
+A browser page on another origin than the API needs CORS to send `MsgPack-Schemas` and to read `MsgPack-Schema`:
+
+```csharp
+builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
+  .WithOrigins("https://app.example.com")
+  .WithHeaders("Content-Type", "MsgPack-Schemas")
+  .WithExposedHeaders("MsgPack-Schema")));
+// ...
+app.UseCors();
+```
+
+Without them the responses keep working, with the schema inline every time.

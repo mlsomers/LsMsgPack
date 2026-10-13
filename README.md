@@ -21,6 +21,8 @@ Three packages let ASP.NET controllers and `HttpClient` receive and return MsgPa
 
 See [docs/WebFormatters.md](docs/WebFormatters.md) for the settings per media type, examples for each package, and how schemas are negotiated.
 
+For browsers and Node, the TypeScript client [`@lsmsgpack/client`](clients/typescript) reads `application/x-lsmsgpack` responses into complete JavaScript objects (also the properties the server left out, and polymorphic values), with the schema sent once: see [docs/TypeScriptClient.md](docs/TypeScriptClient.md).
+
 Client applications
 -------------------
 

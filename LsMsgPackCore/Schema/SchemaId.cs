@@ -18,7 +18,12 @@ namespace LsMsgPack
     /// <summary>
     /// Hashed before the schema bytes, so a future change of the schema layout gets new ids.
     /// </summary>
-    private static readonly byte[] FormatVersion = { 1 };
+    internal const byte FormatVersion = 1;
+
+    /// <summary>
+    /// Hashed before the bytes of a described schema (the schema with the kinds of the properties, for clients without the classes, see LtMsgPack.Http), so its ids never equal those of a schema.
+    /// </summary>
+    internal const byte DescribedFormatVersion = 2;
 
     private readonly ulong _high;
     private readonly ulong _low;
@@ -42,12 +47,18 @@ namespace LsMsgPack
     /// </summary>
     public static SchemaId Compute(byte[] schema)
     {
+      return Compute(schema, FormatVersion);
+    }
+
+    /// <param name="formatVersion"><see cref="FormatVersion"/> or <see cref="DescribedFormatVersion"/></param>
+    internal static SchemaId Compute(byte[] schema, byte formatVersion)
+    {
       if (schema is null)
         throw new ArgumentNullException(nameof(schema));
 
-      byte[] input = new byte[FormatVersion.Length + schema.Length];
-      Buffer.BlockCopy(FormatVersion, 0, input, 0, FormatVersion.Length);
-      Buffer.BlockCopy(schema, 0, input, FormatVersion.Length, schema.Length);
+      byte[] input = new byte[1 + schema.Length];
+      input[0] = formatVersion;
+      Buffer.BlockCopy(schema, 0, input, 1, schema.Length);
 
       // A new instance per call: on .NET Framework a SHA256 reused after TransformFinalBlock fails ("invalid handle" of its CNG hash).
       // Only called when a schema is published or registered, not per value.

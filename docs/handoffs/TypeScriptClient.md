@@ -1,6 +1,6 @@
 ﻿# Handoff: a TypeScript/JavaScript client for application/x-lsmsgpack
 
-Status: assessment only (October 2026), nothing implemented. The measurements are reproducible with the scripts in [typescript-client/](typescript-client/).
+Status: implemented (October 2026) as `@lsmsgpack/client` in [clients/typescript](../../clients/typescript), see [docs/TypeScriptClient.md](../TypeScriptClient.md). The declared types problem below was solved with a third option: the **described schema** (the schema with the kind and default of each property, asked for with `Accept: application/x-lsmsgpack; schema=described`), negotiated and cached like the plain one. The reader is plan-driven like `fused.mjs` and has no dependencies (not built on `@msgpack/msgpack`). Below: the assessment as it was written, the measurements are reproducible with the scripts in [typescript-client/](typescript-client/).
 
 ## The question
 

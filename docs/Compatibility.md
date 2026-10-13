@@ -252,6 +252,8 @@ Without the Guid extension LsMsgPack throws a `MsgPackException` that names exte
 
 ## Python and JavaScript
 
+For a web application that talks to its own ASP.NET backend, the [TypeScript client](TypeScriptClient.md) reads `application/x-lsmsgpack` (the indexed schema, type ids, schema references) into complete objects, with the conversions below built in. This section is about plain MsgPack with the generic libraries.
+
 Tested by hand with msgpack 1.2.2 (Python) and @msgpack/msgpack 3.1.3 (JavaScript), and LsMsgPack with `UseInexedSchema = false` and `ObjectLayout = ObjectLayout.Map`. These libraries have no classes: an object is a dict or a plain object keyed by property names.
 
 **Reading LsMsgPack's output:**

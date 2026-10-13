@@ -48,6 +48,12 @@ namespace LsMsgPack
     public bool CacheInlineSchemas { get; set; } = true;
 
     /// <summary>
+    /// Keep the (frozen) resolver of each schema this store writes, per root type, so it can be described later (<see cref="GetWriterResolver"/>). Off by default: only LtMsgPack.Http.LtMsgPackHttpSerializer sets it, when it describes schemas.
+    /// <para>Costs nothing per call: a resolver is recorded when a schema is published (made or grown).</para>
+    /// </summary>
+    internal bool RecordWriters;
+
+    /// <summary>
     /// Called when data refers to a schema that is not in the store, returns the schema bytes (as returned by <see cref="GetSchema"/> of the writer's store) or null.
     /// <para>The returned bytes must have the requested id (it is checked). Called by the reading thread, which waits for it; without a provider a <see cref="MissingSchemaException"/> is thrown.</para>
     /// </summary>
@@ -201,7 +207,7 @@ namespace LsMsgPack
       SessionKey key = new SessionKey(root, settings);
       if (_writers.TryGetValue(key, out SessionState state))
         return state;
-      return _writers.GetOrAdd(key, k => new SessionState(null));
+      return _writers.GetOrAdd(key, k => new SessionState(null, root));
     }
 
     /// <summary>
@@ -263,7 +269,21 @@ namespace LsMsgPack
       session.Id = SchemaId.Compute(schema);
       session.Reference = WriteReference(session.Id);
       _schemas.TryAdd(session.Id, new Entry(schema));
+      if (RecordWriters && !(state.Root is null))
+        _schemas[session.Id].AddWriter(state.Root, session.Resolver);
       state.Current = session;
+    }
+
+    /// <summary>
+    /// The resolver a writer of this store published the schema with (see <see cref="RecordWriters"/>), with the types of its entries.
+    /// </summary>
+    /// <param name="root">The root type the writer wrote (two root types may write the same schema bytes, e.g. a class and a list of it)</param>
+    /// <returns>null when this store did not write it for that root type, or did not record it</returns>
+    internal IndexedSchemaTypeResolver GetWriterResolver(SchemaId id, Type root)
+    {
+      if (root is null || !_schemas.TryGetValue(id, out Entry entry))
+        return null;
+      return entry.GetWriter(root);
     }
 
     /// <summary>
@@ -327,6 +347,7 @@ namespace LsMsgPack
       /// </summary>
       internal byte[] OtherByteOrder;
       private readonly ConcurrentDictionary<SessionKey, SessionState> _readers = new ConcurrentDictionary<SessionKey, SessionState>();
+      private ConcurrentDictionary<Type, IndexedSchemaTypeResolver> _writers; // see RecordWriters, made when first needed
 
       /// <param name="bytes">Not copied</param>
       internal Entry(byte[] bytes)
@@ -334,12 +355,25 @@ namespace LsMsgPack
         Bytes = bytes;
       }
 
+      internal void AddWriter(Type root, IndexedSchemaTypeResolver resolver)
+      {
+        if (_writers is null)
+          Interlocked.CompareExchange(ref _writers, new ConcurrentDictionary<Type, IndexedSchemaTypeResolver>(), null);
+        _writers.TryAdd(root, resolver); // the same bytes give the same entries, the first one is as good as a later one
+      }
+
+      internal IndexedSchemaTypeResolver GetWriter(Type root)
+      {
+        ConcurrentDictionary<Type, IndexedSchemaTypeResolver> writers = _writers;
+        return !(writers is null) && writers.TryGetValue(root, out IndexedSchemaTypeResolver resolver) ? resolver : null;
+      }
+
       internal SessionState GetReader(MsgPackOptions settings)
       {
         SessionKey key = new SessionKey(null, settings);
         if (_readers.TryGetValue(key, out SessionState state))
           return state;
-        return _readers.GetOrAdd(key, k => new SessionState(this));
+        return _readers.GetOrAdd(key, k => new SessionState(this, null));
       }
 
       /// <summary>
@@ -378,10 +412,16 @@ namespace LsMsgPack
     {
       private volatile SchemaSession _current;
 
-      internal SessionState(Entry schema)
+      internal SessionState(Entry schema, Type root)
       {
         Schema = schema;
+        Root = root;
       }
+
+      /// <summary>
+      /// Writing: the root type of the session. Null for a reader.
+      /// </summary>
+      internal Type Root { get; }
 
       /// <summary>
       /// Reading: the schema of the session. Null for a writer.

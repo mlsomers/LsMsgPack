@@ -15,6 +15,7 @@ namespace LsMsgPackFormatters
   public class LsMsgPackOutputFormatter : OutputFormatter
   {
     private readonly LtMsgPackHttpSerializer Serializer;
+    private const string VarySchemasAndAccept = LtMsgPackHttpSerializer.SchemasHeader + ", Accept";
 
 #if NET8_0_OR_GREATER
     [RequiresUnreferencedCode(LsMsgPackFormatter.RequiresUnreferencedCodeMessage)]
@@ -42,14 +43,15 @@ namespace LsMsgPackFormatters
       string mediaType = context.ContentType.Value;
       bool negotiated = Serializer.NegotiatesSchemas && MsgPackMediaTypes.IsLsMsgPack(mediaType);
       string clientSchemas = negotiated ? context.HttpContext.Request.Headers[LtMsgPackHttpSerializer.SchemasHeader].ToString() : null;
+      bool described = negotiated && Serializer.DescribesSchemas && MsgPackMediaTypes.AcceptsDescribedSchema(context.HttpContext.Request.Headers["Accept"].ToString());
 
       // Serialize to a buffer and write it asynchronously, ASP.NET Core does not allow synchronous writes to the response stream.
-      MsgPackPayload payload = Serializer.Serialize(context.Object, context.ObjectType, mediaType, clientSchemas);
+      MsgPackPayload payload = Serializer.Serialize(context.Object, context.ObjectType, mediaType, clientSchemas, described);
 
       HttpResponse response = context.HttpContext.Response;
       if (negotiated)
       {
-        response.Headers.Append("Vary", LtMsgPackHttpSerializer.SchemasHeader);
+        response.Headers.Append("Vary", Serializer.DescribesSchemas ? VarySchemasAndAccept : LtMsgPackHttpSerializer.SchemasHeader); // the described schema depends on the Accept header
         if (!(payload.SchemaId is null))
           response.Headers[LtMsgPackHttpSerializer.SchemaHeader] = payload.SchemaId;
       }

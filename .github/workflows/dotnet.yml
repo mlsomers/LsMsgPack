@@ -42,3 +42,27 @@ jobs:
         dotnet-version: 8.0.x
     - name: NativeAOT smoke test of the source generator
       run: bash LtMsgPackAotSmokeTest/run.sh
+
+  typescript-client:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 8.0.x
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 22
+    - name: Build the test server (ASP.NET Core formatters)
+      run: dotnet build clients/typescript/test-server -c Debug
+    - name: Test the TypeScript client
+      working-directory: clients/typescript
+      env:
+        LSMSGPACK_TS_REQUIRE_SERVER: 1 # the tests against the formatters must not be skipped
+      run: |
+        npm ci
+        npm test

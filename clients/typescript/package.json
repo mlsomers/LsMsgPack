@@ -1,0 +1,39 @@
+{
+  "name": "@lsmsgpack/client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reads application/x-lsmsgpack responses of LsMsgPack's ASP.NET formatters into complete JavaScript objects, with the cached (described) schema.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "test": "npm run build && node --test \"test/*.test.mjs\"",
+    "bench": "npm run build && node bench/bench.mjs"
+  },
+  "devDependencies": {
+    "@msgpack/msgpack": "3.1.2",
+    "@types/node": "^20.0.0",
+    "typescript": "~5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mlsomers/LsMsgPack.git",
+    "directory": "clients/typescript"
+  }
+}
