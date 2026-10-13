@@ -70,6 +70,8 @@ namespace LtMsgPack
     /// <summary>
     /// The code of LtMsgPack's source generator to use (see <see cref="LtMsgPackContext"/>), asked before the registered contexts (see <see cref="UseRegisteredContexts"/>).
     /// The first context that describes a type is used for it.
+    /// <para>With <see cref="UseRegisteredContexts"/> (the default) a serializer registers these contexts for the process when it is created, as the generated module initializer does:
+    /// LsMsgPack.Core creates collections and objects with the registered code, which NativeAOT needs.</para>
     /// </summary>
     [IgnoreDataMember]
     public LtMsgPackContext[] Contexts
@@ -83,6 +85,8 @@ namespace LtMsgPack
     /// <summary>
     /// Whether the generated code registered for the process (by the module initializers of the generator, see <see cref="LtMsgPackGenerateAttribute.AutoRegister"/>) is used, true by default.
     /// <para>With neither, the serializer builds its plans at runtime (as without the generator). The data is the same either way.</para>
+    /// <para>Also decides whether the serializer registers its own contexts (<see cref="Contexts"/>, the one of its constructor): off, a serializer neither uses nor adds to the registered code.
+    /// Under NativeAOT keep it on (or register the context, e.g. with the module initializer): LsMsgPack.Core creates collections with the registered code.</para>
     /// </summary>
     [IgnoreDataMember]
     public bool UseRegisteredContexts

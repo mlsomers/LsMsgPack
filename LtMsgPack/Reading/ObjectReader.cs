@@ -5,9 +5,10 @@ using LtMsgPack.Generated;
 using System;
 using System.ComponentModel;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
 using System.Reflection.Emit;
 #endif
 using System.Text;
@@ -447,6 +448,8 @@ namespace LtMsgPack.Reading
     /// <summary>
     /// Creates the instances as <see cref="MsgPackOptions.ObjectCreation"/> says (decided once per type, the options of a serializer do not change).
     /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
     private static Func<object> Creator(Type type, ObjectCreation creation, Func<object> generated)
     {
       if (creation == ObjectCreation.Uninitialized)
@@ -501,9 +504,10 @@ namespace LtMsgPack.Reading
       }
     }
 
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (PropertyAccessor.CanCompile), a failure keeps new T().")]
     private static Func<object> Compile()
     {
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       if (!PropertyAccessor.CanCompile)
         return null;
       try
@@ -558,6 +562,7 @@ namespace LtMsgPack.Reading
     /// </summary>
     public abstract void Read(ReadContext c, object target);
 
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
       PropertyInfo property = info.PropertyInfo;

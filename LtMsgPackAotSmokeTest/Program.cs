@@ -1,10 +1,14 @@
 ﻿using LsMsgPack;
 using LtMsgPack;
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -54,6 +58,32 @@ namespace LtMsgPackAotSmokeTest
     public double Side { get; set; }
   }
 
+  /// <summary>
+  /// Framework types the serializers use by reflection (members found by name, generic factories, instantiations): kept by the DynamicDependency attributes of LsMsgPack.Core and the generated code.
+  /// </summary>
+  public class Extras
+  {
+    public DateOnly Day { get; set; }
+    public TimeOnly At { get; set; }
+    public Half Ratio { get; set; }
+    public Int128 Big { get; set; }
+    public UInt128 Huge { get; set; }
+    public BigInteger Giant { get; set; }
+    public Complex Point { get; set; }
+    public Rune Letter { get; set; }
+    public Version Release { get; set; }
+    public (int, string) Pair { get; set; }
+    public Tuple<int, string> Couple { get; set; }
+    public KeyValuePair<string, int> Entry { get; set; }
+    public IList<int> Counts { get; set; }
+    public IReadOnlyList<Address> Places { get; set; }
+    public ImmutableArray<int> Fixed { get; set; }
+    public ImmutableList<string> Names { get; set; }
+    public IImmutableSet<string> Codes { get; set; }
+    public FrozenSet<string> Frozen { get; set; }
+    public List<KeyValuePair<string, double>> Weights { get; set; }
+  }
+
   public class Invoice
   {
     public Guid Id { get; set; }
@@ -72,6 +102,7 @@ namespace LtMsgPackAotSmokeTest
     public List<Shape> Shapes { get; set; }
     public decimal Total { get; set; }
     public bool Urgent { get; set; }
+    public Extras Extras { get; set; }
   }
 
   /// <summary>
@@ -96,6 +127,8 @@ namespace LtMsgPackAotSmokeTest
       yield return ("trimmed", () => new LtMsgPackOptions() { TrimTrailingNulls = true, DynamicallyCompact = false });
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Deliberately without generated code: the JIT run writes the expected data with it, the NativeAOT run only reports how it does.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Deliberately without generated code: the JIT run writes the expected data with it, the NativeAOT run only reports how it does.")]
     private static LtMsgPackSerializer Runtime(LtMsgPackOptions options)
     {
       options.Contexts = null;
@@ -105,11 +138,11 @@ namespace LtMsgPackAotSmokeTest
 
     private static LtMsgPackSerializer Explicit(LtMsgPackOptions options)
     {
-      options.Contexts = new LtMsgPackContext[] { SmokeContext.Default };
-      options.UseRegisteredContexts = false;
-      return new LtMsgPackSerializer(options);
+      return new LtMsgPackSerializer(SmokeContext.Default, options); // the warning-free constructor for trimmed and NativeAOT apps (it registers the context: LsMsgPack.Core creates collections with it)
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Checks the contexts registered by the module initializer, which a serializer without a context uses.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Checks the contexts registered by the module initializer, which a serializer without a context uses.")]
     private static LtMsgPackSerializer Registered(LtMsgPackOptions options)
     {
       return new LtMsgPackSerializer(options); // the module initializer registered SmokeContext
@@ -200,7 +233,7 @@ namespace LtMsgPackAotSmokeTest
       }
       catch (Exception ex)
       {
-        return ex.GetType().Name + ": " + ex.Message;
+        return ex.ToString(); // the first line is shown for the informational runs
       }
     }
 
@@ -236,7 +269,30 @@ namespace LtMsgPackAotSmokeTest
         Stamp = new Circle() { Label = "paid", Radius = 1.5 },
         Shapes = new List<Shape>() { new Square() { Label = "s", Side = 2 }, new Circle() { Radius = 0.25 } },
         Total = 252.47m,
-        Urgent = true
+        Urgent = true,
+        Extras = new Extras()
+        {
+          Day = new DateOnly(2026, 10, 13),
+          At = new TimeOnly(14, 30, 15),
+          Ratio = (Half)0.75,
+          Big = Int128.MaxValue - 5,
+          Huge = UInt128.MaxValue,
+          Giant = BigInteger.Pow(3, 50),
+          Point = new Complex(1.5, -2),
+          Letter = new Rune(0x1F600),
+          Release = new Version(1, 2, 3),
+          Pair = (4, "four"),
+          Couple = Tuple.Create(5, "five"),
+          Entry = new KeyValuePair<string, int>("six", 6),
+          Counts = new List<int>() { 7, 8 },
+          Places = new List<Address>() { home },
+
+          Fixed = ImmutableArray.Create(9, 10),
+          Names = ImmutableList.Create("x", "y"),
+          Codes = ImmutableHashSet.Create("NL"),
+          Frozen = new[] { "f" }.ToFrozenSet(),
+          Weights = new List<KeyValuePair<string, double>>() { new KeyValuePair<string, double>("w", 0.5) }
+        }
       };
     }
 
@@ -250,8 +306,24 @@ namespace LtMsgPackAotSmokeTest
         .Append(Dump(o.Customer)).Append(';').Append(o.Lines is null ? "null" : string.Join(",", o.Lines.Select(Dump))).Append(';')
         .Append(o.Extra is null ? "null" : string.Join(",", o.Extra.Select(Dump))).Append(';').Append(o.Reference?.ToString() ?? "null").Append(';')
         .Append(o.Numbers is null ? "null" : string.Join(",", o.Numbers)).Append(';').Append(Dump(o.Stamp)).Append(';')
-        .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent);
+        .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent).Append(';').Append(Dump(o.Extras));
       return text.ToString();
+    }
+
+    private static string Dump(Extras o)
+    {
+      if (o is null)
+        return "null";
+      return string.Join(" ", new string[]
+      {
+        o.Day.ToString("o", CultureInfo.InvariantCulture), o.At.ToString("o", CultureInfo.InvariantCulture), ((float)o.Ratio).ToString("R", CultureInfo.InvariantCulture),
+        o.Big.ToString(CultureInfo.InvariantCulture), o.Huge.ToString(CultureInfo.InvariantCulture), o.Giant.ToString(CultureInfo.InvariantCulture),
+        o.Point.Real.ToString("R", CultureInfo.InvariantCulture) + "/" + o.Point.Imaginary.ToString("R", CultureInfo.InvariantCulture), o.Letter.Value.ToString(CultureInfo.InvariantCulture),
+        o.Release?.ToString() ?? "null", o.Pair.Item1 + "," + (o.Pair.Item2 ?? "null"), o.Couple is null ? "null" : o.Couple.Item1 + "," + o.Couple.Item2, o.Entry.Key + "=" + o.Entry.Value,
+        o.Counts is null ? "null" : o.Counts.GetType().Name + ":" + string.Join(",", o.Counts), o.Places is null ? "null" : string.Join(",", o.Places.Select(Dump)),
+        o.Fixed.IsDefault ? "default" : string.Join(",", o.Fixed), o.Names is null ? "null" : string.Join(",", o.Names), o.Codes is null ? "null" : o.Codes.GetType().Name + ":" + string.Join(",", o.Codes),
+        o.Frozen is null ? "null" : string.Join(",", o.Frozen), o.Weights is null ? "null" : string.Join(",", o.Weights.Select(w => w.Key + "=" + w.Value.ToString("R", CultureInfo.InvariantCulture)))
+      });
     }
 
     private static string Time(DateTime value)

@@ -3,8 +3,8 @@
   <Import Project="..\Packaging.props" />
 
   <PropertyGroup>
-    <!-- 2.1 can ask whether the runtime compiles code (RuntimeFeature.IsDynamicCodeCompiled, see PropertyAccessor) -->
-    <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
+    <!-- 2.1 can ask whether the runtime supports dynamic code (RuntimeFeature.IsDynamicCodeSupported, see PropertyAccessor), net8.0 runs the trim and AOT analyzers -->
+    <TargetFrameworks>netstandard2.0;netstandard2.1;net8.0</TargetFrameworks>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <Nullable>disable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
@@ -12,6 +12,11 @@
     <RootNamespace>LsMsgPack</RootNamespace>
     <PackageId>LsMsgPack.Core</PackageId>
     <Description>The parts shared by the LsMsgPack serializers: settings, the indexed schema and its store, property metadata, type resolving, attributes and filters.</Description>
+  </PropertyGroup>
+
+  <!-- Trimmed and NativeAOT apps get warnings where their use of the library is unsafe (the analyzers only run for .NET targets; the .NET Standard builds have the same annotations, polyfilled in Core) -->
+  <PropertyGroup Condition="'$(TargetFramework)'=='net8.0'">
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
@@ -23,7 +28,7 @@
     <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
   </PropertyGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)'!='net8.0'">
     <PackageReference Include="System.Memory" Version="4.6.3" />
   </ItemGroup>
 

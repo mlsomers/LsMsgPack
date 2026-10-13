@@ -64,6 +64,104 @@ namespace LtMsgPack.Generator
     {
       while (_queue.Count > 0)
         Visit(_queue.Dequeue());
+      ReportUncovered();
+    }
+
+    /// <summary>
+    /// Properties whose values are of types only known at runtime (declared as object, an interface or an abstract class, also as the elements of a collection).
+    /// </summary>
+    private readonly List<(INamedTypeSymbol Owner, IPropertySymbol Property, ITypeSymbol Declared)> _polymorphic = new List<(INamedTypeSymbol, IPropertySymbol, ITypeSymbol)>();
+
+    private void RecordPolymorphic(INamedTypeSymbol owner, IPropertySymbol property)
+    {
+      ITypeSymbol declared = ValueType(property.Type);
+      if (declared.SpecialType == SpecialType.System_Object
+        || (declared is INamedTypeSymbol named && !IsFramework(named) && (named.TypeKind == TypeKind.Interface || (named.TypeKind == TypeKind.Class && named.IsAbstract))))
+        _polymorphic.Add((owner, property, declared));
+    }
+
+    /// <summary>
+    /// The type of the values a property holds: the underlying type of a Nullable, the elements of an array or collection (the values of a dictionary).
+    /// </summary>
+    private ITypeSymbol ValueType(ITypeSymbol type)
+    {
+      for (int depth = 0; depth < 4; depth++)
+      {
+        if (type is IArrayTypeSymbol array)
+          type = array.ElementType;
+        else if (type is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+          type = named.TypeArguments[0];
+        else if (type is INamedTypeSymbol collection && type.SpecialType != SpecialType.System_String && IsCollection(collection) && Element(collection) is ITypeSymbol element)
+          type = element;
+        else
+          return type;
+      }
+      return type;
+    }
+
+    /// <returns>The T of IEnumerable&lt;T&gt; (the value of a KeyValuePair), null for other collections</returns>
+    private ITypeSymbol Element(INamedTypeSymbol collection)
+    {
+      INamedTypeSymbol enumerable = SymbolEqualityComparer.Default.Equals(collection.OriginalDefinition, _enumerable) ? collection : null;
+      if (enumerable is null)
+      {
+        foreach (INamedTypeSymbol face in collection.AllInterfaces)
+        {
+          if (SymbolEqualityComparer.Default.Equals(face.OriginalDefinition, _enumerable))
+          {
+            enumerable = face;
+            break;
+          }
+        }
+      }
+      if (enumerable is null)
+        return null;
+      ITypeSymbol element = enumerable.TypeArguments[0];
+      if (element is INamedTypeSymbol pair && pair.IsGenericType && pair.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic" && pair.Name == "KeyValuePair")
+        return pair.TypeArguments[1];
+      return element;
+    }
+
+    /// <summary>
+    /// LTMP010 (reported when the project is trimmed or compiled ahead of time): a property of a type only known at runtime that no class of the context fits.
+    /// Those classes get no generated code: trimming may remove their properties, NativeAOT may fail to create their handlers.
+    /// </summary>
+    private void ReportUncovered()
+    {
+      HashSet<string> reported = new HashSet<string>();
+      foreach ((INamedTypeSymbol owner, IPropertySymbol property, ITypeSymbol declared) in _polymorphic)
+      {
+        if (!reported.Add(owner.ToDisplayString() + "." + property.Name) || IsCovered(declared))
+          continue;
+        _diagnostics.Add(DiagnosticInfo.Create(Diagnostics.Uncovered.Id, property.Locations.FirstOrDefault(), owner.ToDisplayString(), property.Name, declared.ToDisplayString()));
+      }
+    }
+
+    /// <summary>
+    /// A concrete class of the context fits the type. Never for object: what it holds cannot be told from the context (suppress LTMP010 where it only holds primitives).
+    /// </summary>
+    private bool IsCovered(ITypeSymbol declared)
+    {
+      if (declared.SpecialType == SpecialType.System_Object)
+        return false;
+      foreach (ITypeSymbol seen in _seen)
+      {
+        if (!(seen is INamedTypeSymbol candidate) || candidate.IsAbstract || (candidate.TypeKind != TypeKind.Class && candidate.TypeKind != TypeKind.Struct) || IsFramework(candidate))
+          continue;
+        if (declared.TypeKind == TypeKind.Interface)
+        {
+          foreach (INamedTypeSymbol face in candidate.AllInterfaces)
+            if (SymbolEqualityComparer.Default.Equals(face, declared))
+              return true;
+        }
+        else
+        {
+          for (INamedTypeSymbol t = candidate.BaseType; t != null; t = t.BaseType)
+            if (SymbolEqualityComparer.Default.Equals(t, declared))
+              return true;
+        }
+      }
+      return false;
     }
 
     private void Enqueue(ITypeSymbol type)
@@ -143,10 +241,19 @@ namespace LtMsgPack.Generator
 
       if (IsCollection(named))
       {
+        ITypeSymbol element = SymbolEqualityComparer.Default.Equals(named.OriginalDefinition, _enumerable) ? named.TypeArguments[0] : null;
         foreach (INamedTypeSymbol face in named.AllInterfaces)
+        {
           if (SymbolEqualityComparer.Default.Equals(face.OriginalDefinition, _enumerable))
+          {
             Enqueue(face.TypeArguments[0]);
-        Add(TypeModelKind.Collection, name, null, HasCreator(named), HasCreator(named));
+            if (element is null)
+              element = face.TypeArguments[0];
+          }
+        }
+        string factory = element is null ? null : FactoryCall(named, element);
+        Add(TypeModelKind.Collection, name, factory is null ? null : element.ToDisplayString(Format), HasCreator(named), HasCreator(named), factory: factory);
+        AddImplied(named, element);
         return;
       }
 
@@ -180,9 +287,127 @@ namespace LtMsgPack.Generator
       Add(TypeModelKind.Object, name, null, creator, true, properties, named.IsAbstract ? null : GetMembers(named));
     }
 
-    private void Add(TypeModelKind kind, string name, string argument = null, bool creator = false, bool keep = false, List<PropertyModel> properties = null, List<MemberModel> members = null)
+    /// <summary>
+    /// The types the runtime makes for a collection it fills (LsMsgPack.Core's CollectionInfo, ValueConverter): the array of the elements (it reads them into one first),
+    /// the class it creates for an interface or abstract class, the static factory class of an immutable or frozen collection.
+    /// They are described (or kept) too, so NativeAOT has their instantiations and trimming keeps what is found by reflection.
+    /// </summary>
+    /// <param name="element">The T of IEnumerable&lt;T&gt;, null for a non-generic collection</param>
+    private void AddImplied(INamedTypeSymbol collection, ITypeSymbol element)
     {
-      _types.Add(new TypeModel(kind, name, argument, creator, keep, (properties ?? new List<PropertyModel>()).ToEquatable(), (members ?? new List<MemberModel>()).ToEquatable()));
+      if (element is null)
+        return;
+
+      string ns = collection.ContainingNamespace?.ToDisplayString();
+      bool immutable = collection.IsGenericType && (ns == "System.Collections.Immutable" || ns == "System.Collections.Frozen");
+      if (immutable || !IsDictionary(collection)) // a dictionary is filled by its Add, the factories take the pairs as an array
+        Enqueue(_compilation.CreateArrayTypeSymbol(element));
+
+      if (collection.TypeKind == TypeKind.Interface || collection.IsAbstract)
+      {
+        INamedTypeSymbol concrete = ConcreteOf(collection, element);
+        if (concrete != null)
+        {
+          Enqueue(concrete);
+          ns = concrete.ContainingNamespace?.ToDisplayString();
+          immutable = concrete.IsGenericType && (ns == "System.Collections.Immutable" || ns == "System.Collections.Frozen");
+          collection = concrete;
+        }
+      }
+
+      if (immutable && collection.TypeKind != TypeKind.Interface)
+      {
+        INamedTypeSymbol factory = _compilation.GetTypeByMetadataName(ns + "." + collection.Name); // the static class of the same name
+        if (factory != null && factory.IsStatic && _seen.Add(factory))
+          Add(TypeModelKind.Factory, factory.ToDisplayString(Format));
+      }
+    }
+
+    /// <summary>
+    /// The factory the runtime uses for an immutable or frozen collection (CollectionInfo.FindFactory): a public static generic method of the static class with the same name,
+    /// with the collection's type arguments, that takes IEnumerable&lt;T&gt; (and optional parameters) and returns the collection. CreateRange when there is one, otherwise the first.
+    /// </summary>
+    /// <returns>The method with its type arguments (to call with the elements), null when the collection has none</returns>
+    private string FactoryCall(INamedTypeSymbol collection, ITypeSymbol element)
+    {
+      string ns = collection.ContainingNamespace?.ToDisplayString();
+      if (!collection.IsGenericType || collection.TypeKind == TypeKind.Interface || (ns != "System.Collections.Immutable" && ns != "System.Collections.Frozen"))
+        return null;
+      INamedTypeSymbol factoryClass = _compilation.GetTypeByMetadataName(ns + "." + collection.Name);
+      if (factoryClass is null)
+        return null;
+
+      INamedTypeSymbol enumerable = _enumerable.Construct(element);
+      IMethodSymbol found = null;
+      foreach (ISymbol member in factoryClass.GetMembers())
+      {
+        if (!(member is IMethodSymbol method) || !method.IsStatic || method.DeclaredAccessibility != Accessibility.Public || method.TypeParameters.Length != collection.TypeArguments.Length || method.Parameters.Length == 0)
+          continue;
+        IMethodSymbol constructed = method.Construct(collection.TypeArguments.ToArray());
+        if (!SymbolEqualityComparer.Default.Equals(constructed.Parameters[0].Type, enumerable) || !_compilation.HasImplicitConversion(constructed.ReturnType, collection))
+          continue;
+        bool optional = true;
+        for (int t = 1; t < constructed.Parameters.Length; t++)
+          optional &= constructed.Parameters[t].IsOptional;
+        if (!optional || !IsAccessible(method))
+          continue;
+        if (found is null || method.Name == "CreateRange")
+          found = method;
+      }
+      if (found is null)
+        return null;
+      return factoryClass.ToDisplayString(Format) + "." + found.Name + "<" + string.Join(", ", collection.TypeArguments.Select(a => a.ToDisplayString(Format))) + ">";
+    }
+
+    private static bool IsDictionary(INamedTypeSymbol type)
+    {
+      if (IsDictionaryInterface(type))
+        return true;
+      foreach (INamedTypeSymbol face in type.AllInterfaces)
+        if (IsDictionaryInterface(face))
+          return true;
+      return false;
+    }
+
+    private static bool IsDictionaryInterface(INamedTypeSymbol type)
+    {
+      if (type.ContainingNamespace?.ToDisplayString() == "System.Collections")
+        return type.Name == "IDictionary";
+      return type.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic" && (type.Name == "IDictionary" || type.Name == "IReadOnlyDictionary") && type.Arity == 2;
+    }
+
+    /// <summary>
+    /// The class the runtime creates for an interface or abstract collection type (as CollectionInfo.GetConcreteType): the implementation of an IImmutable... interface,
+    /// otherwise the first of Dictionary&lt;TKey, TValue&gt; (pairs), object[] (object), List&lt;T&gt;, HashSet&lt;T&gt; and T[] that can be assigned to it.
+    /// </summary>
+    /// <returns>null when none fits (the runtime fails to create it)</returns>
+    private INamedTypeSymbol ConcreteOf(INamedTypeSymbol type, ITypeSymbol element)
+    {
+      if (type.TypeKind == TypeKind.Interface && type.IsGenericType && type.ContainingNamespace?.ToDisplayString() == "System.Collections.Immutable" && type.Name.StartsWith("IImmutable", System.StringComparison.Ordinal))
+      {
+        string name = type.Name == "IImmutableSet" ? "ImmutableHashSet" : type.Name.Substring(1);
+        INamedTypeSymbol definition = _compilation.GetTypeByMetadataName("System.Collections.Immutable." + name + "`" + type.Arity);
+        INamedTypeSymbol implementation = definition?.Construct(type.TypeArguments.ToArray());
+        return implementation != null && _compilation.HasImplicitConversion(implementation, type) ? implementation : null;
+      }
+
+      List<ITypeSymbol> candidates = new List<ITypeSymbol>();
+      if (element is INamedTypeSymbol pair && pair.IsGenericType && pair.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic" && pair.Name == "KeyValuePair")
+        candidates.Add(_compilation.GetTypeByMetadataName("System.Collections.Generic.Dictionary`2")?.Construct(pair.TypeArguments[0], pair.TypeArguments[1]));
+      else
+      {
+        candidates.Add(_list?.Construct(element));
+        candidates.Add(_compilation.GetTypeByMetadataName("System.Collections.Generic.HashSet`1")?.Construct(element));
+      }
+      for (int t = 0; t < candidates.Count; t++)
+        if (candidates[t] is INamedTypeSymbol candidate && _compilation.HasImplicitConversion(candidate, type))
+          return candidate;
+      return null; // object[] and T[] are enqueued anyway
+    }
+
+    private void Add(TypeModelKind kind, string name, string argument = null, bool creator = false, bool keep = false, List<PropertyModel> properties = null, List<MemberModel> members = null, string factory = null)
+    {
+      _types.Add(new TypeModel(kind, name, argument, creator, keep, (properties ?? new List<PropertyModel>()).ToEquatable(), (members ?? new List<MemberModel>()).ToEquatable(), factory));
     }
 
     /// <summary>
@@ -295,6 +520,7 @@ namespace LtMsgPack.Generator
           continue;
 
         Enqueue(property.Type);
+        RecordPolymorphic(type, property);
         if (type.TypeKind != TypeKind.Class)
           continue;
 

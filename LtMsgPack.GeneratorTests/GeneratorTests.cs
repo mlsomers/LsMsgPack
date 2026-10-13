@@ -117,6 +117,67 @@ namespace Shop
         Assert.Contains(expected, code);
     }
 
+    /// <summary>
+    /// Collections the runtime fills itself (LsMsgPack.Core's CollectionInfo): what it makes for them must exist under NativeAOT.
+    /// </summary>
+    private const string CollectionsModel = @"
+using System.Collections.Generic;
+using System.Collections.Frozen;
+using System.Collections.Immutable;
+using LtMsgPack;
+
+namespace Shelf
+{
+  public class Item
+  {
+    public string Name { get; set; }
+  }
+
+  public class OnlyCollections // no member the generated code reads itself
+  {
+    public HashSet<string> Tags { get; set; }
+  }
+
+  public class Box
+  {
+    public IList<int> Counts { get; set; }
+    public IReadOnlyList<Item> Items { get; set; }
+    public HashSet<string> Tags { get; set; }
+    public ImmutableArray<int> Fixed { get; set; }
+    public IImmutableSet<string> Codes { get; set; }
+    public FrozenSet<string> Frozen { get; set; }
+    public ImmutableDictionary<string, int> Index { get; set; }
+    public Dictionary<string, double> Weights { get; set; }
+    public OnlyCollections Inner { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(Box))]
+  public partial class ShelfMsgPackContext : LtMsgPackContext { }
+}
+";
+
+    [TestMethod]
+    public void Collections_TheTypesTheRuntimeMakesAreDescribed()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(CollectionsModel);
+      result.AssertCompiles();
+      Assert.IsEmpty(result.CompileProblems, string.Join("\n", result.CompileProblems.Select(p => p.ToString()))); // no empty switch blocks (CS1522)
+      string code = result.AllGenerated;
+      foreach (string expected in new[] {
+        "Array<int>()", // the elements are read into an array
+        "Array<string>()",
+        "Array<global::System.Collections.Generic.KeyValuePair<string, int>>()", // an immutable dictionary's factory takes the pairs
+        "List<int>()", // created for IList<int>
+        "List<global::Shelf.Item>()", // created for IReadOnlyList<Item>
+        "Collection<global::System.Collections.Immutable.ImmutableArray<int>, int>(items => global::System.Collections.Immutable.ImmutableArray.CreateRange<int>(items))",
+        "Collection<global::System.Collections.Immutable.ImmutableHashSet<string>, string>(items => global::System.Collections.Immutable.ImmutableHashSet.CreateRange<string>(items))", // created for IImmutableSet<string>
+        "Collection<global::System.Collections.Frozen.FrozenSet<string>, string>(items => global::System.Collections.Frozen.FrozenSet.ToFrozenSet<string>(items))",
+        "Collection<global::System.Collections.Immutable.ImmutableDictionary<string, int>, global::System.Collections.Generic.KeyValuePair<string, int>>(items => global::System.Collections.Immutable.ImmutableDictionary.CreateRange<string, int>(items))",
+        "DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods, typeof(global::System.Collections.Immutable.ImmutableArray))" })
+        Assert.Contains(expected, code, expected);
+      Assert.DoesNotContain("Array<global::System.Collections.Generic.KeyValuePair<string, double>>()", code, "A dictionary is filled by its Add");
+    }
+
     [TestMethod]
     public void ContractVersion_IsTheRuntimes()
     {
@@ -302,6 +363,72 @@ namespace M
       GeneratorHarness.Result result = GeneratorHarness.Run(@"using LtMsgPack; public class W<T> { public T X { get; set; } } [LtMsgPackSerializable(typeof(W<>))] public partial class C : LtMsgPackContext { }");
       Assert.IsTrue(result.GeneratorDiagnostics.Any(d => d.Id == "LTMP008"));
       result.AssertCompiles(); // the context is written, without the open type
+    }
+
+    #endregion
+
+    #region Types only known at runtime (LTMP010)
+
+    private const string Polymorphic = @"
+using System.Collections.Generic;
+using LtMsgPack;
+namespace M
+{
+  public interface IShape { string Label { get; set; } }
+  public abstract class Animal { public string Name { get; set; } }
+  public class Circle : IShape { public string Label { get; set; } public double Radius { get; set; } }
+  public class Dog : Animal { public bool Barks { get; set; } }
+  public class Drawing
+  {
+    public IShape Main { get; set; }
+    public List<IShape> Shapes { get; set; }
+    public Dictionary<string, Animal> Pets { get; set; }
+    public object Tag { get; set; }
+    public string Title { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(Drawing))]
+  ROOTS
+  public partial class Context : LtMsgPackContext { }
+}";
+
+    private static string[] Uncovered(GeneratorHarness.Result result)
+    {
+      return result.GeneratorDiagnostics.Where(d => d.Id == "LTMP010").Select(d => d.GetMessage()).OrderBy(m => m, StringComparer.Ordinal).ToArray();
+    }
+
+    [TestMethod]
+    public void Uncovered_ReportedWhenPublishedAheadOfTime()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(Polymorphic.Replace("ROOTS", ""), msbuild: new Dictionary<string, string>() { { "PublishAot", "true" } });
+      result.AssertCompiles();
+      string[] messages = Uncovered(result);
+      Assert.HasCount(4, messages, messages.Length + ": " + string.Join(" | ", messages));
+      Assert.IsTrue(messages.Any(m => m.Contains("'M.Drawing.Main' holds values of 'M.IShape'")));
+      Assert.IsTrue(messages.Any(m => m.Contains("'M.Drawing.Shapes' holds values of 'M.IShape'")), "the elements of a list");
+      Assert.IsTrue(messages.Any(m => m.Contains("'M.Drawing.Pets' holds values of 'M.Animal'")), "the values of a dictionary");
+      Assert.IsTrue(messages.Any(m => m.Contains("'M.Drawing.Tag' holds values of 'object'")));
+      Assert.AreEqual("Model.cs", result.GeneratorDiagnostics.First(d => d.Id == "LTMP010").Location.GetLineSpan().Path, "at the property");
+    }
+
+    [TestMethod]
+    public void Uncovered_NotReportedWithoutTrimmingOrAot()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(Polymorphic.Replace("ROOTS", ""));
+      Assert.IsEmpty(Uncovered(result));
+      foreach (string property in new[] { "PublishTrimmed", "IsAotCompatible", "IsTrimmable" })
+        Assert.HasCount(4, Uncovered(GeneratorHarness.Run(Polymorphic.Replace("ROOTS", ""), msbuild: new Dictionary<string, string>() { { property, "true" } })), property);
+    }
+
+    [TestMethod]
+    public void Uncovered_NotReportedForListedClasses()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(Polymorphic.Replace("ROOTS", "[LtMsgPackSerializable(typeof(Circle))] [LtMsgPackSerializable(typeof(Dog))]"),
+        msbuild: new Dictionary<string, string>() { { "PublishAot", "true" } });
+      result.AssertCompiles();
+      string[] messages = Uncovered(result);
+      Assert.HasCount(1, messages, "Circle implements IShape, Dog derives from Animal");
+      Assert.Contains("'M.Drawing.Tag' holds values of 'object'", messages[0], "what an object holds cannot be told from the context");
     }
 
     #endregion

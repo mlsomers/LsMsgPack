@@ -276,11 +276,11 @@ namespace LsMsgPackUnitTests
 
       // With the code of the source generator (TestMsgPackContext, see GeneratedContext.cs)
       LtMsgPack.LtMsgPackContext[] generated = new LtMsgPack.LtMsgPackContext[] { TestMsgPackContext.Default };
-      LtMsgPack.LtMsgPackSerializer genIndexed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map, Contexts = generated });
-      LtMsgPack.LtMsgPackSerializer genNamed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, Contexts = generated });
-      LtMsgPack.LtMsgPackSerializer genIndexedArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array, Contexts = generated });
-      LtMsgPack.LtMsgPackSerializer genReferenceArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array, Contexts = generated });
-      LtMsgPack.LtMsgPackSerializer genPositional = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration, Contexts = generated });
+      LtMsgPack.LtMsgPackSerializer genIndexed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map, Contexts = generated, UseRegisteredContexts = false });
+      LtMsgPack.LtMsgPackSerializer genNamed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, Contexts = generated, UseRegisteredContexts = false });
+      LtMsgPack.LtMsgPackSerializer genIndexedArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array, Contexts = generated, UseRegisteredContexts = false });
+      LtMsgPack.LtMsgPackSerializer genReferenceArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array, Contexts = generated, UseRegisteredContexts = false });
+      LtMsgPack.LtMsgPackSerializer genPositional = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration, Contexts = generated, UseRegisteredContexts = false });
 
       JsonSerializerOptions stj = new JsonSerializerOptions(); // one instance, it caches the metadata
 

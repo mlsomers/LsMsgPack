@@ -245,7 +245,7 @@ namespace LtMsgPack.Reading
     {
       int start = c.R.Pos;
       if (c.R.TryReadGuid(out Guid value)) return value;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[64];
       if (c.R.TryReadShortString(chars, out int count))
       {
@@ -279,7 +279,7 @@ namespace LtMsgPack.Reading
         return simple;
       }
       r.Pos = start;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[64];
       if (c.R.TryReadShortString(chars, out int count))
       {

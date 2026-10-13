@@ -34,6 +34,8 @@ builder.Services.AddControllers()
   });
 ```
 
+With the code of LtMsgPack's source generator, pass the context first: `.AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)`. The overloads without one are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` (see [Trimming and NativeAOT](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md#trimming-and-nativeaot)).
+
 To find out what didn't match between request bodies and your classes (properties of another version of the models), set `o.ReportDifferences = true`: the differences are available as `HttpContext.GetReadDifferences()` and logged at the `Debug` level (as a warning with `o.LogDifferencesAsWarning = true`). For example, to tell the client why a value is missing:
 
 ```csharp

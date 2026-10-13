@@ -3,6 +3,7 @@ using LsMsgPack.TypeResolving.Interfaces;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace LsMsgPack.TypeResolving.Filters
@@ -162,6 +163,7 @@ namespace LsMsgPack.TypeResolving.Filters
             private readonly PropertyInfo _systemTextJsonCondition;
             private readonly PropertyInfo _polyTypeIgnore;
 
+            [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "The type of an attribute on a kept property. Condition (System.Text.Json) and Ignore (PolyType) are read by their own libraries, so they are kept when those libraries use them.")]
             internal AttributeKind(Type type)
             {
                 switch (type.FullName)

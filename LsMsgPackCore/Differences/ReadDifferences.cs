@@ -2,6 +2,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
@@ -518,6 +519,7 @@ namespace LsMsgPack
       }
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "Only for value types, which Activator creates without a constructor.")]
     private static bool IsDefault(object value)
     {
       if (value is null)

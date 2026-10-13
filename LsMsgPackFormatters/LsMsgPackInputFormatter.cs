@@ -1,10 +1,11 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LtMsgPack.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading.Tasks;
 #if NETCOREAPP3_0_OR_GREATER
@@ -22,9 +23,17 @@ namespace LsMsgPackFormatters
   {
     private readonly LtMsgPackHttpSerializer Serializer;
 
+#if NET8_0_OR_GREATER
+    [RequiresUnreferencedCode(LsMsgPackFormatter.RequiresUnreferencedCodeMessage)]
+    [RequiresDynamicCode(LsMsgPackFormatter.RequiresDynamicCodeMessage)]
+#endif
     public LsMsgPackInputFormatter() : this(new LtMsgPackHttpOptions()) { }
 
     /// <param name="options">Read once, later changes have no effect.</param>
+#if NET8_0_OR_GREATER
+    [RequiresUnreferencedCode(LsMsgPackFormatter.RequiresUnreferencedCodeMessage)]
+    [RequiresDynamicCode(LsMsgPackFormatter.RequiresDynamicCodeMessage)]
+#endif
     public LsMsgPackInputFormatter(LtMsgPackHttpOptions options) : this(new LtMsgPackHttpSerializer(options ?? new LtMsgPackHttpOptions())) { }
 
     /// <param name="serializer">Share it with the output formatter (one schema store).</param>

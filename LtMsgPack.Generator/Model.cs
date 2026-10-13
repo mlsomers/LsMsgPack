@@ -116,6 +116,9 @@ namespace LtMsgPack.Generator
     /// <summary>List&lt;T&gt; (<see cref="TypeModel.Argument"/> is T)</summary>
     List,
 
+    /// <summary>The static class of the factory methods of an immutable or frozen collection (ImmutableArray, FrozenSet...): only kept for trimming (its public methods), not described</summary>
+    Factory,
+
     /// <summary>T[] (<see cref="TypeModel.Argument"/> is T)</summary>
     Array,
 
@@ -152,11 +155,12 @@ namespace LtMsgPack.Generator
   internal sealed record TypeModel(
     TypeModelKind Kind,
     string TypeName, // fully qualified (global::...)
-    string Argument, // the element or underlying type, fully qualified
+    string Argument, // the element or underlying type, fully qualified (Collection: the element type when there is a Factory)
     bool HasCreator,
     bool KeepMetadata, // its properties and constructors are kept by the trimmer (DynamicDependency)
     EquatableArray<PropertyModel> Properties,
-    EquatableArray<MemberModel> Members); // the generated writer and reader (concrete classes), empty when there is none
+    EquatableArray<MemberModel> Members, // the generated writer and reader (concrete classes), empty when there is none
+    string Factory = null); // Collection: the static method that creates the immutable or frozen collection from its elements (with its type arguments), null for others
 
   /// <summary>
   /// A context class: one written by the user (with LtMsgPackSerializable attributes), or the one of the assembly (LtMsgPackGenerate, MSBuild properties).
@@ -181,5 +185,6 @@ namespace LtMsgPack.Generator
     string RootNamespace,
     bool ModuleInitializers, // C# 9 or later
     bool HasModuleInitializerAttribute,
-    bool HasDynamicDependency);
+    bool HasDynamicDependency,
+    bool Trimmed); // PublishTrimmed, PublishAot, IsAotCompatible or IsTrimmable: LTMP010 is reported
 }

@@ -35,6 +35,17 @@ namespace LsMsgPackUnitTests
       public int Number { get; set; }
     }
 
+    public class GcByConstructor
+    {
+      public string Name { get; set; }
+      public HashSet<int> Numbers { get; set; }
+    }
+
+    public class GcIsolated
+    {
+      public string Name { get; set; }
+    }
+
     public class GcStale
     {
       public string Name { get; set; }
@@ -462,6 +473,57 @@ namespace LsMsgPackUnitTests
 
       LtMsgPackSerializer lt = new LtMsgPackSerializer(); // UseRegisteredContexts: on by default
       Assert.AreEqual(5, lt.Deserialize<GcRegistered>(lt.Serialize(value)).Number);
+    }
+
+    [LtMsgPackSerializable(typeof(GcByConstructor))]
+    public partial class GcConstructorContext : LtMsgPackContext { }
+
+    [LtMsgPackSerializable(typeof(GcIsolated))]
+    public partial class GcIsolatedContext : LtMsgPackContext { }
+
+    /// <summary>
+    /// The constructor for trimmed and NativeAOT apps: its context is asked first, and registered (LsMsgPack.Core creates collections and objects with the registered code).
+    /// </summary>
+    [TestMethod]
+    public void ContextConstructor_IsAskedFirstAndRegistered()
+    {
+      // Not TestMsgPackContext: registered, it would make the Ls and Lt runs of other tests use generated code
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer(GcConstructorContext.Default, new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { GcRegisteredContext.Default }, UseRegisteredContexts = true });
+      CollectionAssert.AreEqual(new LtMsgPackContext[] { GcConstructorContext.Default, GcRegisteredContext.Default }, serializer.Options.Contexts);
+      Assert.IsNotNull(GeneratedTypes.Find(typeof(GcByConstructor)), "registered");
+
+      GcByConstructor value = new GcByConstructor() { Name = "x", Numbers = new HashSet<int>() { 1, 2 } };
+      GcByConstructor read = serializer.Deserialize<GcByConstructor>(serializer.Serialize(value));
+      Assert.AreEqual("x", read.Name);
+      CollectionAssert.AreEquivalent(new[] { 1, 2 }, read.Numbers.ToArray());
+    }
+
+    /// <summary>
+    /// UseRegisteredContexts off: the serializer neither uses the registered code nor adds its own (the Ls and Lt test runs keep the runtime paths).
+    /// </summary>
+    [TestMethod]
+    public void ContextConstructor_WithoutTheRegistry_DoesNotRegister()
+    {
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer(GcIsolatedContext.Default, new LtMsgPackOptions() { UseRegisteredContexts = false });
+      Assert.IsNull(GeneratedTypes.Find(typeof(GcIsolated)));
+      Assert.AreEqual("y", serializer.Deserialize<GcIsolated>(serializer.Serialize(new GcIsolated() { Name = "y" })).Name);
+      Assert.IsNull(GeneratedTypes.Find(typeof(GcIsolated)));
+    }
+
+    [TestMethod]
+    public void HttpSerializer_PassesTheContextToBothMediaTypes()
+    {
+      LtMsgPack.Http.LtMsgPackHttpSerializer http = new LtMsgPack.Http.LtMsgPackHttpSerializer(GcConstructorContext.Default, new LtMsgPack.Http.LtMsgPackHttpOptions());
+      Assert.AreSame(GcConstructorContext.Default, http.For(MsgPackMediaTypes.XLsMsgPack).Options.Contexts[0]);
+      Assert.AreSame(GcConstructorContext.Default, http.For(MsgPackMediaTypes.MsgPack).Options.Contexts[0]);
+    }
+
+    [TestMethod]
+    public void ContextConstructor_RefusesNull()
+    {
+      Assert.ThrowsExactly<ArgumentNullException>(() => new LtMsgPackSerializer((LtMsgPackContext)null));
+      Assert.ThrowsExactly<ArgumentNullException>(() => new LtMsgPackSerializer((LtMsgPackContext)null, new LtMsgPackOptions()));
+      Assert.ThrowsExactly<ArgumentNullException>(() => new LtMsgPackSerializer(GcIsolatedContext.Default, null));
     }
 
     #endregion

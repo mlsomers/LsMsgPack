@@ -43,6 +43,10 @@ namespace LtMsgPack.Generator
     public static readonly DiagnosticDescriptor NotRegistered = new DiagnosticDescriptor("LTMP009", "Context is not registered automatically",
       "The context class '{0}' is not registered for the process: {1}. Pass it with LtMsgPackOptions.Contexts.", Category, DiagnosticSeverity.Info, true);
 
+    public static readonly DiagnosticDescriptor Uncovered = new DiagnosticDescriptor("LTMP010", "Values of types only known at runtime",
+      "'{0}.{1}' holds values of '{2}' and no class of the context fits it: list the classes it holds with [LtMsgPackSerializable] (when trimmed their properties may be removed, under NativeAOT their handlers cannot be created)",
+      Category, DiagnosticSeverity.Warning, true);
+
     public static DiagnosticDescriptor Get(string id)
     {
       switch (id)
@@ -56,6 +60,7 @@ namespace LtMsgPack.Generator
         case "LTMP007": return HasConstructor;
         case "LTMP008": return OpenGeneric;
         case "LTMP009": return NotRegistered;
+        case "LTMP010": return Uncovered;
         default: throw new System.ArgumentException("Unknown diagnostic " + id);
       }
     }

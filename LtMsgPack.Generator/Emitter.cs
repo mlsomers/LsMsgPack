@@ -36,7 +36,8 @@ namespace LtMsgPack.Generator
       foreach (ContextModel context in contexts)
       {
         foreach (DiagnosticInfo diagnostic in context.Diagnostics)
-          output.ReportDiagnostic(diagnostic.ToDiagnostic());
+          if (options.Trimmed || diagnostic.Id != Diagnostics.Uncovered.Id) // LTMP010 only matters when trimmed or compiled ahead of time
+            output.ReportDiagnostic(diagnostic.ToDiagnostic());
         if (context.FullName is null || HasErrors(context))
           continue;
 
@@ -121,7 +122,9 @@ namespace LtMsgPack.Generator
       {
         foreach (TypeModel type in context.Types)
         {
-          if (type.KeepMetadata) // the runtime reads the properties and constructors by reflection: kept when trimming
+          if (type.Kind == TypeModelKind.Factory) // the runtime finds CreateRange, ToFrozenSet... by reflection
+            w.Line("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods, typeof(" + type.TypeName + "))]");
+          else if (type.KeepMetadata) // the runtime reads the properties and constructors by reflection: kept when trimming
             w.Line("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties"
               + " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof("
               + type.TypeName + "))]");
@@ -165,11 +168,16 @@ namespace LtMsgPack.Generator
         case TypeModelKind.Array:
           w.Line("types.Add(" + Values + ".Array<" + type.Argument + ">());");
           return;
+        case TypeModelKind.Collection when type.Factory != null:
+          w.Line("types.Add(" + Values + ".Collection<" + type.TypeName + ", " + type.Argument + ">(items => " + type.Factory + "(items)));");
+          return;
         case TypeModelKind.Collection:
           w.Line("types.Add(" + Values + ".Collection<" + type.TypeName + ">(" + Creator(type) + "));");
           return;
         case TypeModelKind.Boxed:
           w.Line("types.Add(" + Values + ".Boxed<" + type.TypeName + ">());");
+          return;
+        case TypeModelKind.Factory: // a DynamicDependency only
           return;
       }
 
@@ -331,8 +339,12 @@ namespace LtMsgPack.Generator
       w.Close();
       w.Line("if (r.TryReadNil())");
       w.Line("  continue; // a nil leaves the property as the constructor made it");
-      w.Line("switch (prop.GeneratedId)");
-      w.Open();
+      bool reads = ReadsAny(type); // no empty switch (warning CS1522)
+      if (reads)
+      {
+        w.Line("switch (prop.GeneratedId)");
+        w.Open();
+      }
       for (int m = 0; m < type.Members.Length; m++)
       {
         MemberModel member = type.Members[m];
@@ -344,7 +356,8 @@ namespace LtMsgPack.Generator
         w.Line("break;");
         w.Close();
       }
-      w.Close();
+      if (reads)
+        w.Close();
       w.Line("prop.Read(c, o); // another format: read as the runtime does");
       w.Close();
       w.Close();
@@ -353,9 +366,12 @@ namespace LtMsgPack.Generator
       w.Line();
       w.Line("public override bool ReadValue(" + Reading + "ReadContext c, " + t + " o, int id, " + Generated + "GeneratedReadPlan p)");
       w.Open();
-      w.Line(IO + "MsgPackReader r = c.R;");
-      w.Line("switch (id)");
-      w.Open();
+      if (reads)
+      {
+        w.Line(IO + "MsgPackReader r = c.R;");
+        w.Line("switch (id)");
+        w.Open();
+      }
       for (int m = 0; m < type.Members.Length; m++)
       {
         MemberModel member = type.Members[m];
@@ -384,11 +400,23 @@ namespace LtMsgPack.Generator
         w.Line("return false;");
         w.Close();
       }
-      w.Close();
+      if (reads)
+        w.Close();
       w.Line("return false;");
       w.Close();
 
       w.Close();
+    }
+
+    /// <summary>
+    /// Whether the generated code reads any member of the type itself (otherwise the runtime reads them all).
+    /// </summary>
+    private static bool ReadsAny(TypeModel type)
+    {
+      for (int m = 0; m < type.Members.Length; m++)
+        if (type.Members[m].Kind != "None" && type.Members[m].CanSet)
+          return true;
+      return false;
     }
 
     private static string Bool(bool value)

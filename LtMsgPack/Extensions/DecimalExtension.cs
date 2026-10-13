@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using System;
 using System.Runtime.InteropServices;
 
@@ -33,7 +33,11 @@ namespace LtMsgPack.Extensions
 
     public override int Write(decimal value, Span<byte> destination)
     {
+#if NET8_0_OR_GREATER
+      MemoryMarshal.Write(destination, in value);
+#else
       MemoryMarshal.Write(destination, ref value);
+#endif
       return 16;
     }
 

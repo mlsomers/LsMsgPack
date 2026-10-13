@@ -270,7 +270,7 @@ namespace LtMsgPack.IO
         // One pass: UTF-8 has at least one byte per char, so the header is reserved for that many bytes and moved when the string turns out longer (only non-ASCII text near a boundary)
         Ensure(encoding.GetMaxByteCount(length) + 5);
         int reserved = StringHeaderSize(length);
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
         int count = encoding.GetBytes(value.AsSpan(), new Span<byte>(Buf, Pos + reserved, Buf.Length - Pos - reserved));
 #else
         int count = encoding.GetBytes(value, 0, length, Buf, Pos + reserved);
@@ -363,7 +363,7 @@ namespace LtMsgPack.IO
           return;
         }
       }
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[32]; // at most 31: sign, 29 digits and the point
       if (IsUtf8(MsgPackOptions.StringEncoding) && value.TryFormat(chars, out int length, default, System.Globalization.CultureInfo.InvariantCulture)) // ASCII, the same bytes in UTF-8
       {
@@ -379,7 +379,7 @@ namespace LtMsgPack.IO
     /// </summary>
     internal void GuidString(Guid value)
     {
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[36];
       if (IsUtf8(MsgPackOptions.StringEncoding) && value.TryFormat(chars, out int length, "D")) // ASCII, the same bytes in UTF-8
       {
@@ -390,7 +390,7 @@ namespace LtMsgPack.IO
       String(value.ToString("D"));
     }
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
     /// <summary>
     /// A string of ASCII chars shorter than 256 (formatted numbers, Guids): one byte per char.
     /// </summary>
@@ -428,7 +428,7 @@ namespace LtMsgPack.IO
       Ensure(18);
       Buf[Pos++] = 0xC4;
       Buf[Pos++] = 16;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       value.TryWriteBytes(new Span<byte>(Buf, Pos, 16));
 #else
       Buffer.BlockCopy(value.ToByteArray(), 0, Buf, Pos, 16);

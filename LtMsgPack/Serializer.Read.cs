@@ -9,6 +9,7 @@ using LtMsgPack.Writing;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
@@ -158,7 +159,7 @@ namespace LtMsgPack
         case TypeKind.Enum:
           return (ValueReader)Instantiate(type, typeof(EnumReader<>), type, null);
         case TypeKind.Array:
-          if (type.IsArray && type.GetArrayRank() == 1 && type == type.GetElementType().MakeArrayType())
+          if (IsVector(type))
             return (ValueReader)Instantiate(type, typeof(ArrayReader<>), type.GetElementType(), this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
             return (ValueReader)Instantiate(type, typeof(ListReader<>), type.GenericTypeArguments[0], this);
@@ -172,6 +173,7 @@ namespace LtMsgPack
     }
 
     /// <returns>The reader of a custom extension of the type (an LtExtension&lt;T&gt; of the type), null for others</returns>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
     private ValueReader ExtensionReader(Type type, LtExtension extension)
     {
       if (Generated(type) is IGeneratedInstantiations generated)
