@@ -1,5 +1,6 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using System;
+using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -10,10 +11,12 @@ namespace LtMsgPack.IO
   /// Writes MsgPack values into a growable buffer, with the same encodings as LsMsgPack's items (MpInt, MpString, MpBin, MpFloat, MpDateTime, MpExt, MpArray, MpMap).
   /// <para>Integers follow <see cref="MsgPackOptions.DynamicallyCompact"/>: the smallest format for the value, or the format of the .NET type. Multi-byte values follow <see cref="MsgPackOptions.EndianAction"/>.</para>
   /// </summary>
-  internal sealed class MsgPackWriter
+  /// <para>Public for the code of the source generator (see LtMsgPack.LtMsgPackContext): may change between releases.</para>
+  [EditorBrowsable(EditorBrowsableState.Never)]
+  public sealed class MsgPackWriter
   {
-    internal byte[] Buf;
-    internal int Pos;
+    public byte[] Buf;
+    public int Pos;
     private bool _compact;
     private bool _littleEndian; // the byte order of multi-byte values on the wire (big-endian unless EndianAction says otherwise)
 
@@ -40,7 +43,7 @@ namespace LtMsgPack.IO
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void Ensure(int count)
+    public void Ensure(int count)
     {
       if (Pos + count > Buf.Length)
         Grow(count);
@@ -58,7 +61,7 @@ namespace LtMsgPack.IO
       Buf[Pos++] = value;
     }
 
-    internal void Raw(byte[] bytes)
+    public void Raw(byte[] bytes)
     {
       Raw(bytes, 0, bytes.Length);
     }
@@ -124,12 +127,12 @@ namespace LtMsgPack.IO
 
     #region Values
 
-    internal void Nil()
+    public void Nil()
     {
       Byte(0xC0);
     }
 
-    internal void Bool(bool value)
+    public void Bool(bool value)
     {
       Byte(value ? (byte)0xC3 : (byte)0xC2);
     }
@@ -167,7 +170,7 @@ namespace LtMsgPack.IO
 
     // Without DynamicallyCompact the format of the .NET type is kept (only fixints stay single bytes), like MpInt
 
-    internal void SByte(sbyte value)
+    public void SByte(sbyte value)
     {
       if (_compact || (value >= -32 && value <= 31)) { CompactSigned(value); return; }
       Ensure(2);
@@ -175,7 +178,7 @@ namespace LtMsgPack.IO
       Buf[Pos++] = (byte)value;
     }
 
-    internal void Int16(short value)
+    public void Int16(short value)
     {
       if (_compact) { CompactSigned(value); return; }
       Ensure(3);
@@ -183,7 +186,7 @@ namespace LtMsgPack.IO
       U16((ushort)value);
     }
 
-    internal void Int32(int value)
+    public void Int32(int value)
     {
       if (_compact) { CompactSigned(value); return; }
       Ensure(5);
@@ -191,7 +194,7 @@ namespace LtMsgPack.IO
       U32((uint)value);
     }
 
-    internal void Int64(long value)
+    public void Int64(long value)
     {
       if (_compact) { CompactSigned(value); return; }
       Ensure(9);
@@ -199,12 +202,12 @@ namespace LtMsgPack.IO
       U64((ulong)value);
     }
 
-    internal void UInt8(byte value)
+    public void UInt8(byte value)
     {
       CompactUnsigned(value); // the same in both modes: a fixint up to 127, then 0xCC
     }
 
-    internal void UInt16(ushort value)
+    public void UInt16(ushort value)
     {
       if (_compact) { CompactUnsigned(value); return; }
       Ensure(3);
@@ -212,7 +215,7 @@ namespace LtMsgPack.IO
       U16(value);
     }
 
-    internal void UInt32(uint value)
+    public void UInt32(uint value)
     {
       if (_compact) { CompactUnsigned(value); return; }
       Ensure(5);
@@ -220,7 +223,7 @@ namespace LtMsgPack.IO
       U32(value);
     }
 
-    internal void UInt64(ulong value)
+    public void UInt64(ulong value)
     {
       if (_compact) { CompactUnsigned(value); return; }
       Ensure(9);
@@ -228,14 +231,14 @@ namespace LtMsgPack.IO
       U64(value);
     }
 
-    internal void Single(float value)
+    public void Single(float value)
     {
       Ensure(5);
       Buf[Pos++] = 0xCA;
       U32(new SingleBits(value).Bits);
     }
 
-    internal void Double(double value)
+    public void Double(double value)
     {
       Ensure(9);
       Buf[Pos++] = 0xCB;
@@ -255,7 +258,7 @@ namespace LtMsgPack.IO
       }
     }
 
-    internal void String(string value)
+    public void String(string value)
     {
       Encoding encoding = MsgPackOptions.StringEncoding;
       int length = value.Length;
@@ -267,7 +270,7 @@ namespace LtMsgPack.IO
         // One pass: UTF-8 has at least one byte per char, so the header is reserved for that many bytes and moved when the string turns out longer (only non-ASCII text near a boundary)
         Ensure(encoding.GetMaxByteCount(length) + 5);
         int reserved = StringHeaderSize(length);
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
         int count = encoding.GetBytes(value.AsSpan(), new Span<byte>(Buf, Pos + reserved, Buf.Length - Pos - reserved));
 #else
         int count = encoding.GetBytes(value, 0, length, Buf, Pos + reserved);
@@ -360,7 +363,7 @@ namespace LtMsgPack.IO
           return;
         }
       }
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[32]; // at most 31: sign, 29 digits and the point
       if (IsUtf8(MsgPackOptions.StringEncoding) && value.TryFormat(chars, out int length, default, System.Globalization.CultureInfo.InvariantCulture)) // ASCII, the same bytes in UTF-8
       {
@@ -376,7 +379,7 @@ namespace LtMsgPack.IO
     /// </summary>
     internal void GuidString(Guid value)
     {
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[36];
       if (IsUtf8(MsgPackOptions.StringEncoding) && value.TryFormat(chars, out int length, "D")) // ASCII, the same bytes in UTF-8
       {
@@ -387,7 +390,7 @@ namespace LtMsgPack.IO
       String(value.ToString("D"));
     }
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
     /// <summary>
     /// A string of ASCII chars shorter than 256 (formatted numbers, Guids): one byte per char.
     /// </summary>
@@ -420,12 +423,12 @@ namespace LtMsgPack.IO
     /// <summary>
     /// A Guid is binary data of 16 bytes, in the order of <see cref="System.Guid.ToByteArray"/> (as MpBin).
     /// </summary>
-    internal void Guid(Guid value)
+    public void Guid(Guid value)
     {
       Ensure(18);
       Buf[Pos++] = 0xC4;
       Buf[Pos++] = 16;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       value.TryWriteBytes(new Span<byte>(Buf, Pos, 16));
 #else
       Buffer.BlockCopy(value.ToByteArray(), 0, Buf, Pos, 16);
@@ -460,7 +463,7 @@ namespace LtMsgPack.IO
     /// <summary>
     /// A timestamp (extension type -1) in UTC, the smallest of the three formats (as MpDateTime): 32 bit seconds, 64 bit with nanoseconds, 96 bit before 1970 or after 2514.
     /// </summary>
-    internal void DateTime(DateTime value)
+    public void DateTime(DateTime value)
     {
       DateTime utc = value.ToUniversalTime(); // Unspecified is taken as local time, as MpDateTime does
       long seconds = utc.Ticks / TimeSpan.TicksPerSecond - Zero.Ticks / TimeSpan.TicksPerSecond; // rounded down, also before 1970

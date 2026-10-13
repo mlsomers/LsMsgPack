@@ -3,6 +3,7 @@ using LsMsgPack.TypeResolving.Interfaces;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Xml.Serialization;
 
@@ -45,6 +46,7 @@ namespace LsMsgPack.TypeResolving.Types
         /// Bulk preregister types.
         /// An easy way to get the assembly is <code>typeof(YourType).Assembly</code>.
         /// </summary>
+        [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Meta.TrimReasons.TypeNames)]
         public void RegisterAssembly(Assembly assembly)
         {
             Type[] types = assembly.GetExportedTypes();

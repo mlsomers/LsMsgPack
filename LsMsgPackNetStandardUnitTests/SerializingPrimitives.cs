@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 
@@ -185,5 +185,11 @@ namespace LsMsgPackUnitTests
   public class LtSerializingPrimitives : SerializingPrimitives
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+  }
+
+  [TestClass]
+  public class GenSerializingPrimitives : SerializingPrimitives
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
   }
 }

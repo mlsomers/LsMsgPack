@@ -2,6 +2,7 @@
 // Usage: <exe> table [seconds]                    all candidates, fastest write/read (20 rounds x 100 invoices), relative to System.Text.Json
 //        <exe> write|read|both <candidate> <seconds>   one candidate in a loop (for perf), prints the fastest
 //        <exe> small <seconds>                    per call cost of a single Address / tiny object
+// The gen-* candidates use the code of LtMsgPack's source generator (BenchContext), only when the library has it (setup.sh defines GENERATED for the "new" build then).
 using LsMsgPack;
 using LtMsgPack;
 using LtMsgPack.Http;
@@ -12,6 +13,13 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
+
+#if GENERATED
+[assembly: LtMsgPackGenerate(AutoRegister = false)] // the lt-* candidates keep the runtime's plans, the gen-* ones pass the context
+
+[LtMsgPackSerializable(typeof(Bench.Invoice))]
+public partial class BenchContext : LtMsgPackContext { }
+#endif
 
 public static class Bench
 {
@@ -198,6 +206,20 @@ public static class Bench
   }
 
   /// <summary>
+  /// With the code of the source generator, null when the library does not have it.
+  /// </summary>
+  static Candidate Gen(string name, LtMsgPackOptions o)
+  {
+#if GENERATED
+    o.Contexts = new LtMsgPackContext[] { BenchContext.Default };
+    o.UseRegisteredContexts = false;
+    return Lt(name, o);
+#else
+    return null;
+#endif
+  }
+
+  /// <summary>
   /// Reading with an out ReadDifferences (the data matches, so this is the cost of the reporting path). Null when the library does not have the overload (the base before it was added).
   /// </summary>
   static Candidate LtReport(string name, LtMsgPackOptions o)
@@ -259,6 +281,12 @@ public static class Bench
       LtReport("lt-report-map-indexed", new LtMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map }),
       LtReport("lt-report-map-reference", new LtMsgPackOptions { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map }),
       LtReport("lt-report-map-named", new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }),
+      Gen("gen-default", new LtMsgPackOptions()),
+      Gen("gen-map-indexed", new LtMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map }),
+      Gen("gen-map-named", new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }),
+      Gen("gen-arr-indexed", new LtMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array }),
+      Gen("gen-arr-reference", new LtMsgPackOptions { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array }),
+      Gen("gen-arr-noschema", new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }),
     };
     list.RemoveAll(c => c is null);
     return list;

@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -196,5 +196,11 @@ namespace LsMsgPackUnitTests
   public class LtPropertyOrderTests : PropertyOrderTests
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+  }
+
+  [TestClass]
+  public class GenPropertyOrderTests : PropertyOrderTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
   }
 }

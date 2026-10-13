@@ -1,8 +1,10 @@
-﻿using LsMsgPack.TypeResolving.Attributes;
+﻿using LsMsgPack.Generated;
+using LsMsgPack.TypeResolving.Attributes;
 using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace LsMsgPack.Meta
@@ -70,6 +72,15 @@ namespace LsMsgPack.Meta
     private readonly MethodInfo _factory;
     private readonly object[] _factoryDefaults;
 
+    /// <summary>
+    /// The generated code creates the collection from its elements (<see cref="GeneratedType.FromItems"/>) instead of <see cref="_factory"/>.
+    /// </summary>
+    private readonly bool _generatedFactory;
+
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(KeyValuePair<,>))]
+    [UnconditionalSuppressMessage("Trimming", "IL2080", Justification = TrimReasons.ModelTypes)]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Instantiations)]
     private CollectionInfo(Type type)
     {
       ElementType = GetElementType(type);
@@ -94,8 +105,10 @@ namespace LsMsgPack.Meta
       if (ConcreteType.IsArray)
         return;
 
-      _factory = FindFactory(ConcreteType, ElementType, out _factoryDefaults);
-      if (_factory != null)
+      _generatedFactory = GeneratedTypes.Find(ConcreteType)?.FromItems != null; // the factory call of the source generator (registered for the process): no reflection, NativeAOT has it
+      if (!_generatedFactory)
+        _factory = FindFactory(ConcreteType, ElementType, out _factoryDefaults);
+      if (_factory != null || _generatedFactory)
       {
         FillsPairs = IsDictionary; // the factory takes the pairs
         _reverseItems = ConcreteType.IsGenericType && ConcreteType.GetGenericTypeDefinition().FullName == "System.Collections.Immutable.ImmutableStack`1";
@@ -106,8 +119,8 @@ namespace LsMsgPack.Meta
       {
         if (typeof(IDictionary).IsAssignableFrom(ConcreteType))
           return;
-        Type dictInterface = typeof(IDictionary<,>).MakeGenericType(KeyType, ValueType);
-        if (dictInterface.IsAssignableFrom(ConcreteType))
+        Type dictInterface = FindInterface(ConcreteType, typeof(IDictionary<,>), KeyType, ValueType);
+        if (dictInterface != null)
         {
           AddMethod = dictInterface.GetMethod(nameof(IDictionary.Add));
           return;
@@ -124,8 +137,8 @@ namespace LsMsgPack.Meta
 
       if (_itemsConstructor is null && !typeof(IList).IsAssignableFrom(ConcreteType))
       {
-        Type collInterface = typeof(ICollection<>).MakeGenericType(ElementType);
-        if (collInterface.IsAssignableFrom(ConcreteType))
+        Type collInterface = FindInterface(ConcreteType, typeof(ICollection<>), ElementType, null);
+        if (collInterface != null)
           AddMethod = collInterface.GetMethod(nameof(ICollection<object>.Add));
         else // IEnumerable<T> with an Add(T), which is what XmlSerializer needs
           AddMethod = ConcreteType.GetMethod(nameof(ICollection<object>.Add), BindingFlags.Public | BindingFlags.Instance, null, new[] { ElementType }, null);
@@ -151,6 +164,13 @@ namespace LsMsgPack.Meta
     {
       if (ConcreteType.IsArray)
         return elements;
+
+      if (_generatedFactory)
+      {
+        if (_reverseItems)
+          Array.Reverse(elements);
+        return GeneratedTypes.Find(ConcreteType).FromItems(elements); // registered contexts are never removed
+      }
 
       if (_factory != null)
       {
@@ -193,6 +213,10 @@ namespace LsMsgPack.Meta
     /// CreateRange when there is one, otherwise e.g. ToFrozenSet.
     /// </summary>
     /// <param name="defaults">The arguments of the factory: the default values of the optional parameters (the first one is replaced by the elements)</param>
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = TrimReasons.ImmutableFactories)]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ImmutableFactories)]
+    [UnconditionalSuppressMessage("Trimming", "IL2060", Justification = TrimReasons.ImmutableFactories)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.ImmutableFactories)]
     private static MethodInfo FindFactory(Type concrete, Type elementType, out object[] defaults)
     {
       defaults = null;
@@ -222,6 +246,10 @@ namespace LsMsgPack.Meta
         {
           continue;
         }
+        catch (NotSupportedException) // NativeAOT without this instantiation (another method may be the factory)
+        {
+          continue;
+        }
         ParameterInfo[] parameters = constructed.GetParameters();
         if (parameters.Length == 0 || parameters[0].ParameterType != enumerable || !concrete.IsAssignableFrom(constructed.ReturnType) || !OptionalAfterFirst(parameters))
           continue;
@@ -246,6 +274,32 @@ namespace LsMsgPack.Meta
       return true;
     }
 
+    /// <summary>
+    /// The generic interface <paramref name="definition"/>&lt;<paramref name="first"/>, <paramref name="second"/>&gt; when <paramref name="type"/> implements it (or is it), null otherwise.
+    /// <para>Found among the interfaces of the type rather than made with MakeGenericType: NativeAOT only has the instantiations the application uses (e.g. no IDictionary&lt;string, double&gt; for a List&lt;KeyValuePair&lt;string, double&gt;&gt;).</para>
+    /// </summary>
+    /// <param name="second">null for an interface with one type argument</param>
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
+    private static Type FindInterface(Type type, Type definition, Type first, Type second)
+    {
+      if (Implements(type, definition, first, second))
+        return type;
+      Type[] interfaces = type.GetInterfaces();
+      for (int t = 0; t < interfaces.Length; t++)
+        if (Implements(interfaces[t], definition, first, second))
+          return interfaces[t];
+      return null;
+    }
+
+    private static bool Implements(Type candidate, Type definition, Type first, Type second)
+    {
+      if (!candidate.IsGenericType || candidate.GetGenericTypeDefinition() != definition)
+        return false;
+      Type[] arguments = candidate.GenericTypeArguments;
+      return arguments[0] == first && (second is null || arguments[1] == second);
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
     private static Type GetElementType(Type type)
     {
       if (type.IsArray)
@@ -267,6 +321,7 @@ namespace LsMsgPack.Meta
       return typeof(object);
     }
 
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Instantiations)]
     private Type GetConcreteType(Type type)
     {
       if (!(type.IsInterface || type.IsAbstract) || type.IsArray)
@@ -297,6 +352,9 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// The framework's implementation of an interface of System.Collections.Immutable: IImmutableList&lt;T&gt; is an ImmutableList&lt;T&gt;, IImmutableSet&lt;T&gt; an ImmutableHashSet&lt;T&gt;...
     /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = TrimReasons.ImmutableFactories)]
+    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.ImmutableFactories)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.ImmutableFactories)]
     private static Type ImmutableImplementation(Type type)
     {
       if (!type.IsInterface || !type.IsGenericType || type.Namespace != "System.Collections.Immutable" || !type.Name.StartsWith("IImmutable", StringComparison.Ordinal))

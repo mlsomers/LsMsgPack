@@ -1,6 +1,7 @@
 ﻿using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Interfaces;
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Xml;
 using System.Xml.Serialization;
@@ -16,7 +17,7 @@ namespace LsMsgPack.TypeResolving.Names
         private PropertyInfo _customAttributePropertyInfo;
 
         public AttributePropertyNameResolver() { }
-        public AttributePropertyNameResolver(Type customAttribute, string customAttributePropertyName)
+        public AttributePropertyNameResolver([DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties)] Type customAttribute, string customAttributePropertyName)
         {
             _customAttribute = customAttribute;
             _customAttributePropertyName = customAttributePropertyName;

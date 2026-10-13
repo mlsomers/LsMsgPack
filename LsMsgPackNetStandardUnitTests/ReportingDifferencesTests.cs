@@ -675,6 +675,12 @@ namespace LsMsgPackUnitTests
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
   }
 
+  [TestClass]
+  public class GenReportingDifferencesTests : ReportingDifferencesTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
+  }
+
   /// <summary>
   /// Both serializers report the same differences for the same data (the order of the differences and of their samples may differ: LsMsgPack converts from the last value to the first).
   /// </summary>

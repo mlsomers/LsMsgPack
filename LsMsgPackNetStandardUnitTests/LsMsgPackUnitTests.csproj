@@ -24,6 +24,10 @@
     <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
     <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
     <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj" />
+    <!-- LtMsgPack's source generator, as the package adds it: the code of TestMsgPackContext (GeneratedContext.cs) for the Gen* tests -->
+    <ProjectReference Include="..\LtMsgPack.Generator\LtMsgPack.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <Import Project="..\LtMsgPack\buildTransitive\LtMsgPack.props" />
 
 </Project>

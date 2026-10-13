@@ -1,5 +1,7 @@
-﻿using System;
+﻿using LsMsgPack.Generated;
+using System;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Threading;
@@ -8,7 +10,8 @@ namespace LsMsgPack.Meta
 {
   /// <summary>
   /// Gets and sets the value of one property, shared by all <see cref="FullPropertyInfo"/> instances of that property (they can be per session).
-  /// <para>Starts with reflection, once a property has been used <see cref="CompileAfterCalls"/> times, typed delegates bound to its get and set methods take over (when the runtime supports dynamic code, see <see cref="CanCompile"/>).</para>
+  /// <para>Uses the accessors of the source generator when they are registered (<see cref="GeneratedTypes"/>).
+  /// Otherwise starts with reflection, once a property has been used <see cref="CompileAfterCalls"/> times, typed delegates bound to its get and set methods take over (when the runtime supports dynamic code, see <see cref="CanCompile"/>).</para>
   /// <para>Exceptions thrown by the getter or setter are rethrown as they are, not wrapped in a <see cref="TargetInvocationException"/> (as reflection does), so they do not depend on whether the delegates are bound yet.</para>
   /// </summary>
   internal sealed class PropertyAccessor
@@ -35,6 +38,12 @@ namespace LsMsgPack.Meta
     private PropertyAccessor(PropertyInfo property)
     {
       _property = property;
+      GeneratedProperty generated = GeneratedTypes.FindProperty(property); // the accessors of the source generator, registered for the process
+      if (generated != null)
+      {
+        _getter = generated.BoxedGetter;
+        _setter = generated.BoxedSetter(property);
+      }
     }
 
     public object GetValue(object instance)
@@ -93,7 +102,7 @@ namespace LsMsgPack.Meta
         if (!MsgPackOptions.CompilePropertyAccessors)
           return false;
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
         return System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
 #else
         return true; // .NET Standard 2.0 cannot ask, the runtimes that pick this build (e.g. .NET Framework) have a JIT. Otherwise switch off MsgPackOptions.CompilePropertyAccessors.
@@ -102,6 +111,8 @@ namespace LsMsgPack.Meta
     }
 
     /// <returns>null when the property cannot (or should not) get typed delegates, reflection is used instead</returns>
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(TypedAccessor<,>))]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only called when the runtime supports dynamic code (CanCompile), a failure falls back to reflection.")]
     internal static ITypedAccessor Compile(PropertyInfo property)
     {
       Type declaringType = property.DeclaringType;

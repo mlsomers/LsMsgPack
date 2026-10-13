@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json;
 using System;
@@ -369,5 +369,11 @@ namespace LsMsgPackUnitTests
   public class LtArrayLayoutTests : ArrayLayoutTests
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+  }
+
+  [TestClass]
+  public class GenArrayLayoutTests : ArrayLayoutTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
   }
 }

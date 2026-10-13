@@ -364,6 +364,12 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
+  public class GenTypeInjectionTests : TypeInjectionTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Gen; } }
+  }
+
+  [TestClass]
   public class AllowedTypesGuardTests
   {
     [TestMethod]

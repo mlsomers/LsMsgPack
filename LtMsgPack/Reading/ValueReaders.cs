@@ -1,8 +1,9 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LtMsgPack.Extensions;
 using LtMsgPack.IO;
 using System;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -13,10 +14,12 @@ namespace LtMsgPack.Reading
   /// <summary>
   /// The state of one Deserialize call.
   /// </summary>
-  internal sealed class ReadContext
+  /// <para>Public for the code of the source generator (see LtMsgPack.LtMsgPackContext): may change between releases.</para>
+  [EditorBrowsable(EditorBrowsableState.Never)]
+  public sealed class ReadContext
   {
     internal readonly Serializer Serializer;
-    internal MsgPackReader R;
+    public MsgPackReader R;
 
     /// <summary>
     /// The property ids are indexes of an indexed schema (<see cref="Bound"/>).
@@ -28,7 +31,7 @@ namespace LtMsgPack.Reading
     /// The settings for the conversions of LsMsgPack.Core (ValueConverter): the options, or in schema mode a copy using the session.
     /// </summary>
     internal MsgPackOptions SlowSettings;
-    internal int Depth;
+    public int Depth;
 
     /// <summary>
     /// Collects the differences between the data and the classes (null when not asked for). <see cref="SlowSettings"/> then has them too, for LsMsgPack.Core's conversions.
@@ -242,7 +245,7 @@ namespace LtMsgPack.Reading
     {
       int start = c.R.Pos;
       if (c.R.TryReadGuid(out Guid value)) return value;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[64];
       if (c.R.TryReadShortString(chars, out int count))
       {
@@ -276,7 +279,7 @@ namespace LtMsgPack.Reading
         return simple;
       }
       r.Pos = start;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[64];
       if (c.R.TryReadShortString(chars, out int count))
       {

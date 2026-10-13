@@ -1,13 +1,15 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Types;
 using LtMsgPack.Extensions;
+using LtMsgPack.Generated;
 using LtMsgPack.IO;
 using LtMsgPack.Reading;
 using LtMsgPack.Writing;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
@@ -117,7 +119,7 @@ namespace LtMsgPack
     {
       Type underlying = Nullable.GetUnderlyingType(type);
       if (underlying != null)
-        return (ValueReader)Activator.CreateInstance(typeof(NullableReader<>).MakeGenericType(underlying), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { Reader(underlying) }, null);
+        return (ValueReader)Instantiate(type, typeof(NullableReader<>), underlying, Reader(underlying));
 
       WriteTypeInfo info = GetTypeInfo(type);
       switch (info.Kind)
@@ -150,24 +152,37 @@ namespace LtMsgPack
         case TypeKind.Extension:
           if (type == typeof(decimal) && info.Extension is DecimalExtension builtIn && builtIn.TypeCode != -1) // -1 is the timestamp, read as such (as LsMsgPack)
             return new DecimalReader(builtIn);
-          Type typedExtension = typeof(LtExtension<>).MakeGenericType(type);
-          if (typedExtension.IsInstanceOfType(info.Extension))
-            return (ValueReader)Activator.CreateInstance(typeof(ExtensionReader<>).MakeGenericType(type), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { info.Extension }, null);
+          ValueReader extension = ExtensionReader(type, info.Extension);
+          if (extension != null)
+            return extension;
           break;
         case TypeKind.Enum:
-          return (ValueReader)Activator.CreateInstance(typeof(EnumReader<>).MakeGenericType(type), true);
+          return (ValueReader)Instantiate(type, typeof(EnumReader<>), type, null);
         case TypeKind.Array:
-          if (type.IsArray && type.GetArrayRank() == 1 && type == type.GetElementType().MakeArrayType())
-            return (ValueReader)Activator.CreateInstance(typeof(ArrayReader<>).MakeGenericType(type.GetElementType()), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { this }, null);
+          if (IsVector(type))
+            return (ValueReader)Instantiate(type, typeof(ArrayReader<>), type.GetElementType(), this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
-            return (ValueReader)Activator.CreateInstance(typeof(ListReader<>).MakeGenericType(type.GenericTypeArguments[0]), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { this }, null);
+            return (ValueReader)Instantiate(type, typeof(ListReader<>), type.GenericTypeArguments[0], this);
           break;
         case TypeKind.Complex:
           if (!type.IsValueType && type != typeof(object) && !type.ContainsGenericParameters)
-            return (ValueReader)Activator.CreateInstance(typeof(ObjectReader<>).MakeGenericType(type), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { this }, null);
+            return (ValueReader)Instantiate(type, typeof(ObjectReader<>), type, this);
           break;
       }
-      return (ValueReader)Activator.CreateInstance(typeof(BoxedReader<>).MakeGenericType(type), true);
+      return (ValueReader)Instantiate(type, typeof(BoxedReader<>), type, null);
+    }
+
+    /// <returns>The reader of a custom extension of the type (an LtExtension&lt;T&gt; of the type), null for others</returns>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
+    private ValueReader ExtensionReader(Type type, LtExtension extension)
+    {
+      if (Generated(type) is IGeneratedInstantiations generated)
+        return (ValueReader)generated.Instantiate(typeof(ExtensionReader<>), extension);
+
+      Type typedExtension = typeof(LtExtension<>).MakeGenericType(type);
+      if (!typedExtension.IsInstanceOfType(extension))
+        return null;
+      return (ValueReader)Activator.CreateInstance(typeof(ExtensionReader<>).MakeGenericType(type), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { extension }, null);
     }
 
     /// <returns>null when the type is not an object with properties that can be created</returns>
@@ -180,7 +195,7 @@ namespace LtMsgPack
         return null;
 
       // The properties LsMsgPack sets: names mode FullPropertyInfo.GetSerializedProps (their ids are the names without custom resolvers), the schema binds the same ones by name
-      return _readPlans.GetOrAdd(type, t => new ReadPlan(this, t, FullPropertyInfo.GetSerializedProps(t, Options)));
+      return _readPlans.GetOrAdd(type, t => new ReadPlan(this, t, FullPropertyInfo.GetSerializedProps(t, Options), Generated(t)?.Creator));
     }
 
     /// <param name="orAssignedTo">Return <paramref name="assignedTo"/> when the name is not found, otherwise null</param>

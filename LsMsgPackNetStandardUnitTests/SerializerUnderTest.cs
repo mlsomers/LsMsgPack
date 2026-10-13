@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Types.Extensions;
 using LtMsgPack;
 using LtMsgPack.Extensions;
@@ -86,6 +86,11 @@ namespace LsMsgPackUnitTests
   {
     public static readonly ISerializerUnderTest Ls = new LsSerializer();
     public static readonly ISerializerUnderTest Lt = new LtSerializer();
+
+    /// <summary>
+    /// LtMsgPack with the code of the source generator (TestMsgPackContext: all classes of the test assembly, see GeneratedContext.cs).
+    /// </summary>
+    public static readonly ISerializerUnderTest Gen = new LtSerializer(TestMsgPackContext.Default);
   }
 
   public sealed class LsSerializer : ISerializerUnderTest
@@ -123,8 +128,15 @@ namespace LsMsgPackUnitTests
   public sealed class LtSerializer : ISerializerUnderTest
   {
     private readonly ConcurrentDictionary<object, LtMsgPackSerializer> _serializers = new ConcurrentDictionary<object, LtMsgPackSerializer>();
+    private readonly LtMsgPackContext[] _contexts;
 
-    public string Name { get { return "LtMsgPack"; } }
+    /// <param name="context">The code of the source generator to use, null: none (the plans the serializer builds at runtime)</param>
+    public LtSerializer(LtMsgPackContext context = null)
+    {
+      _contexts = context is null ? new LtMsgPackContext[0] : new[] { context };
+    }
+
+    public string Name { get { return _contexts.Length == 0 ? "LtMsgPack" : "LtMsgPack (generated)"; } }
 
     /// <summary>
     /// A serializer with the format settings of the MsgPackSettings (cached per combination of their values, a serializer builds its plans once).
@@ -160,7 +172,9 @@ namespace LsMsgPackUnitTests
         ReadDateTimeKind = settings.ReadDateTimeKind,
         DateTimeOffsetFormat = settings.DateTimeOffsetFormat,
         ReadErrors = settings.ReadErrors,
-        Extensions = extensions
+        Extensions = extensions,
+        Contexts = _contexts,
+        UseRegisteredContexts = false
       }));
     }
 

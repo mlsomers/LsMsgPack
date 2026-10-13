@@ -1,5 +1,7 @@
-﻿using System;
+﻿using LsMsgPack.Generated;
+using System;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 
@@ -36,6 +38,10 @@ namespace LsMsgPack.Meta
       if (creation == ObjectCreation.Uninitialized)
         return Uninitialized(type);
 
+      Func<object> generated = GeneratedTypes.Find(type)?.Creator; // the constructor call of the source generator, registered for the process: also where reflection does not see the constructor (trimmed, NativeAOT)
+      if (generated != null)
+        return generated(); // an exception of the constructor is passed on as it is
+
       if (HasConstructor(type))
         return Construct(type);
 
@@ -45,6 +51,7 @@ namespace LsMsgPack.Meta
       return Uninitialized(type);
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
     internal static bool HasConstructor(Type type)
     {
       return HasParameterlessConstructor.GetOrAdd(type, t => t.IsValueType || t.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null);
@@ -53,6 +60,7 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// With the parameterless constructor, an exception of the constructor is passed on as it is (not as the TargetInvocationException of Activator).
     /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.ModelTypes)]
     private static object Construct(Type type)
     {
       try
@@ -81,12 +89,13 @@ namespace LsMsgPack.Meta
       return result;
     }
 
+    [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.ModelTypes)]
     internal static object GetUninitializedObject(Type type)
     {
       if (typeof(WeakReference).IsAssignableFrom(type) || (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(WeakReference<>)))
         throw new MsgPackException($"{type.FullName} is not created without its constructor: the garbage collector crashes the process on an uninitialized weak reference, also when its finalizer is suppressed (see docs/security.md).");
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       return System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(type);
 #else
       try

@@ -177,9 +177,19 @@ export class ExplorerView implements vscode.Disposable {
     const choice = await vscode.window.showInformationMessage(
       `MsgPack Explorer ${extension?.packageJSON?.version ?? ''}`,
       { modal: true, detail: `Inspector (LsMsgPack) ${inspector}\nCopyright © Matheu Louis Somers 2015-2026, Apache License 2.0.\nhttps://github.com/mlsomers/LsMsgPack` },
+      'Buy me a coffee',
+      'Donate via PayPal',
       'Open on GitHub');
-    if (choice) {
-      await vscode.env.openExternal(vscode.Uri.parse('https://github.com/mlsomers/LsMsgPack'));
+    switch (choice) {
+      case "Buy me a coffee":
+        await vscode.env.openExternal(vscode.Uri.parse('https://www.buymeacoffee.com/mlsomers'));
+        break;
+      case "Donate via PayPal":
+        await vscode.env.openExternal(vscode.Uri.parse('https://www.paypal.com/donate/?business=BMSG85VAYSCUC&no_recurring=0&currency_code=EUR'));
+        break;
+      case "Open on GitHub":
+        await vscode.env.openExternal(vscode.Uri.parse('https://github.com/mlsomers/LsMsgPack'));
+        break;
     }
   }
 

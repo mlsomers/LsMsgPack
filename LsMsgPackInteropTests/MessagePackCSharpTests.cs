@@ -369,4 +369,10 @@ namespace LsMsgPackInteropTests
   {
     protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Lt; } }
   }
+
+  [TestClass]
+  public class GenMessagePackCSharpTests : MessagePackCSharpTests
+  {
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Gen; } }
+  }
 }

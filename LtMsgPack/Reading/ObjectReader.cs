@@ -1,11 +1,14 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Types;
+using LtMsgPack.Generated;
 using System;
+using System.ComponentModel;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
 using System.Reflection.Emit;
 #endif
 using System.Text;
@@ -107,7 +110,7 @@ namespace LtMsgPack.Reading
 
         if (prop is null)
           c.R.Skip(c.Depth); // not a property of this type (removed, or ignored here)
-        else
+        else if (prop.GeneratedId < 0 || !plan.Code.ReadValueBoxed(c, result, prop.GeneratedId, plan.GeneratedRead)) // the reader of the source generator, the runtime's when it does not read the value
           prop.Read(c, result);
       }
       c.Depth = depth;
@@ -131,12 +134,17 @@ namespace LtMsgPack.Reading
       int depth = c.Depth;
       c.Enter();
       object result = plan.Create();
-      for (int t = 0; t < items; t++)
+      if (plan.Positional) // the reader of the source generator: the same loop
+        plan.Code.ReadPositionalBoxed(c, result, props, items, plan.GeneratedRead);
+      else
       {
-        if (t >= props.Length || props[t] is null)
-          c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
-        else if (!c.R.TryReadNil())
-          props[t].Read(c, result);
+        for (int t = 0; t < items; t++)
+        {
+          if (t >= props.Length || props[t] is null)
+            c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
+          else if (!c.R.TryReadNil())
+            props[t].Read(c, result);
+        }
       }
       c.Depth = depth;
       return (T)result;
@@ -375,14 +383,36 @@ namespace LtMsgPack.Reading
     /// </summary>
     internal volatile BoundSchema.Cached LastBinding;
 
-    internal ReadPlan(Serializer serializer, Type type, FullPropertyInfo[] infos)
+    /// <param name="generated">The constructor call of the source generator, null when there is none</param>
+    /// <summary>
+    /// The reader of the source generator (see LtMsgPackContext), null when there is none: the <see cref="Props"/> with a <see cref="PropReader.GeneratedId"/> are read by it.
+    /// </summary>
+    internal readonly GeneratedObjectCode Code;
+    internal readonly GeneratedReadPlan GeneratedRead;
+
+    /// <summary>
+    /// Arrays are read by the generated <see cref="GeneratedObjectCode{T}.ReadPositional"/>.
+    /// </summary>
+    internal readonly bool Positional;
+
+    internal ReadPlan(Serializer serializer, Type type, FullPropertyInfo[] infos, Func<object> generated)
     {
       Type = type;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
       Props = new PropReader[infos.Length];
       for (int t = 0; t < infos.Length; t++)
         Props[t] = PropReader.Create(serializer, infos[t]);
-      _create = Creator(type, serializer.Options._objectCreation);
+      _create = Creator(type, serializer.Options._objectCreation, generated);
+
+      GeneratedObjectCode code = serializer.GeneratedCode(type);
+      if (code != null && (code.Capabilities & GeneratedCapabilities.ReadValue) != 0)
+      {
+        Code = code;
+        GeneratedRead = serializer.GeneratedReadPlan;
+        Positional = (code.Capabilities & GeneratedCapabilities.ReadPositional) != 0;
+        for (int t = 0; t < infos.Length; t++)
+          Props[t].GeneratedId = serializer.ReadMember(code, infos[t]);
+      }
     }
 
     internal object Create()
@@ -418,10 +448,15 @@ namespace LtMsgPack.Reading
     /// <summary>
     /// Creates the instances as <see cref="MsgPackOptions.ObjectCreation"/> says (decided once per type, the options of a serializer do not change).
     /// </summary>
-    private static Func<object> Creator(Type type, ObjectCreation creation)
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
+    private static Func<object> Creator(Type type, ObjectCreation creation, Func<object> generated)
     {
       if (creation == ObjectCreation.Uninitialized)
         return () => Instances.Uninitialized(type);
+
+      if (generated != null) // the parameterless constructor (an exception of the constructor is passed on as it is)
+        return generated;
 
       if (type.GetConstructor(Type.EmptyTypes) != null)
       {
@@ -469,9 +504,10 @@ namespace LtMsgPack.Reading
       }
     }
 
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (PropertyAccessor.CanCompile), a failure keeps new T().")]
     private static Func<object> Compile()
     {
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       if (!PropertyAccessor.CanCompile)
         return null;
       try
@@ -495,13 +531,20 @@ namespace LtMsgPack.Reading
   /// <summary>
   /// Reads the value of one property and sets it.
   /// </summary>
-  internal abstract class PropReader
+  /// <para>Public for the code of the source generator (see LtMsgPack.LtMsgPackContext): may change between releases.</para>
+  [EditorBrowsable(EditorBrowsableState.Never)]
+  public abstract class PropReader
   {
     internal readonly string Name;
     internal readonly FullPropertyInfo Info;
     private readonly byte[] _nameBytes;
 
-    protected PropReader(FullPropertyInfo info)
+    /// <summary>
+    /// The member of the generated reader of the type (<see cref="GeneratedObjectCode{T}.ReadValue"/>), -1 when the runtime reads it.
+    /// </summary>
+    public int GeneratedId { get; internal set; } = -1;
+
+    internal PropReader(FullPropertyInfo info)
     {
       Info = info;
       Name = info.PropertyInfo.Name;
@@ -514,11 +557,19 @@ namespace LtMsgPack.Reading
       return name.Length == length && new ReadOnlySpan<byte>(buffer, offset, length).SequenceEqual(name);
     }
 
-    internal abstract void Read(ReadContext c, object target);
+    /// <summary>
+    /// Reads the value at the reader's position as the runtime does (converted when its format is not the expected one) and sets it.
+    /// </summary>
+    public abstract void Read(ReadContext c, object target);
 
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
       PropertyInfo property = info.PropertyInfo;
+      PropReader generated = serializer.GeneratedProperty(property)?.CreateReader(serializer, info); // the setter of the source generator
+      if (generated != null)
+        return generated;
+
       MethodInfo set = property.GetSetMethod(true);
       if (set != null && !set.IsStatic && !property.DeclaringType.IsValueType && !property.DeclaringType.ContainsGenericParameters && serializer.CanBindDelegates)
       {
@@ -547,7 +598,14 @@ namespace LtMsgPack.Reading
       _set = (Action<TTarget, TValue>)Delegate.CreateDelegate(typeof(Action<TTarget, TValue>), set);
     }
 
-    internal override void Read(ReadContext c, object target)
+    /// <param name="set">The setter of the source generator</param>
+    internal PropReader(Serializer serializer, FullPropertyInfo info, Action<TTarget, TValue> set) : base(info)
+    {
+      _serializer = serializer;
+      _set = set;
+    }
+
+    public override void Read(ReadContext c, object target)
     {
       ValueReader<TValue> reader = _reader ?? (_reader = _serializer.Reader<TValue>());
       _set((TTarget)target, reader.Read(c, Info));
@@ -567,7 +625,7 @@ namespace LtMsgPack.Reading
       _serializer = serializer;
     }
 
-    internal override void Read(ReadContext c, object target)
+    public override void Read(ReadContext c, object target)
     {
       ValueReader reader = _reader ?? (_reader = _serializer.Reader(Info.PropertyInfo.PropertyType));
       Info.SetValue(target, reader.ReadBoxed(c, Info));

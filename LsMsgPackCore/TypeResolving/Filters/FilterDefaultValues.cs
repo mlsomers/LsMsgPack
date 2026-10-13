@@ -3,6 +3,7 @@ using LsMsgPack.TypeResolving.Interfaces;
 using System;
 using System.Collections.Concurrent;
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 
 namespace LsMsgPack.TypeResolving.Filters
 {
@@ -35,6 +36,7 @@ namespace LsMsgPack.TypeResolving.Filters
         private static readonly ConcurrentDictionary<Type, object> DefaultInstances = new ConcurrentDictionary<Type, object>();
 
         /// <inheritdoc cref="IMsgPackPropertyIncludeDynamically.IncludeProperty(FullPropertyInfo, object)"/>
+        [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.ModelTypes)]
         public bool IncludeProperty(FullPropertyInfo propertyInfo, object value)
         {
             // return value != default; // not going to work on boxed values...

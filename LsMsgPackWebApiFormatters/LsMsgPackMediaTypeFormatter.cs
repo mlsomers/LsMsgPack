@@ -1,6 +1,7 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LtMsgPack.Http;
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -16,6 +17,7 @@ namespace LsMsgPackWebApiFormatters
   /// <para>Server side (ASP.NET Web API 2): <c>config.Formatters.Add(new LsMsgPackMediaTypeFormatter());</c></para>
   /// <para>Client side (HttpClient): <c>new ObjectContent&lt;T&gt;(value, formatter, MsgPackMediaTypes.XLsMsgPack)</c> and <c>response.Content.ReadAsAsync&lt;T&gt;(new[] { formatter })</c>.
   /// Create the HttpClient with <c>new HttpClient(formatter.CreateHandler())</c> so application/x-lsmsgpack responses refer to the schemas the client already received instead of repeating them.</para>
+  /// <para>Trimmed and NativeAOT apps: <c>new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options))</c>, with the context of LtMsgPack's source generator.</para>
   /// </summary>
   public class LsMsgPackMediaTypeFormatter : MediaTypeFormatter
   {
@@ -26,11 +28,19 @@ namespace LsMsgPackWebApiFormatters
     /// </summary>
     private readonly RequestSchemas ServerRequest;
 
+    private const string RequiresUnreferencedCodeMessage = "Without generated code the serializer reads the properties and constructors of the types by reflection, trimming may remove them. Pass an LtMsgPackHttpSerializer created with the context of LtMsgPack's source generator.";
+    private const string RequiresDynamicCodeMessage = "Without generated code the serializer instantiates its generic code for the types at runtime, NativeAOT may not have it. Pass an LtMsgPackHttpSerializer created with the context of LtMsgPack's source generator.";
+
+    [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
+    [RequiresDynamicCode(RequiresDynamicCodeMessage)]
     public LsMsgPackMediaTypeFormatter() : this(new LtMsgPackHttpOptions()) { }
 
     /// <param name="options">Read once, later changes have no effect.</param>
+    [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
+    [RequiresDynamicCode(RequiresDynamicCodeMessage)]
     public LsMsgPackMediaTypeFormatter(LtMsgPackHttpOptions options) : this(new LtMsgPackHttpSerializer(options ?? new LtMsgPackHttpOptions())) { }
 
+    /// <param name="serializer">E.g. <c>new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options)</c> (with the code of LtMsgPack's source generator)</param>
     public LsMsgPackMediaTypeFormatter(LtMsgPackHttpSerializer serializer)
     {
       Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
