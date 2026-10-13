@@ -1,103 +1,87 @@
-﻿# Handoff: a TypeScript/JavaScript client for application/x-lsmsgpack
+# Handoff: the TypeScript client, what is left
 
-Status: implemented (October 2026) as `@lsmsgpack/client` in [clients/typescript](../../clients/typescript), see [docs/TypeScriptClient.md](../TypeScriptClient.md). The declared types problem below was solved with a third option: the **described schema** (the schema with the kind and default of each property, asked for with `Accept: application/x-lsmsgpack; schema=described`), negotiated and cached like the plain one. The reader is plan-driven like `fused.mjs` and has no dependencies (not built on `@msgpack/msgpack`). Below: the assessment as it was written, the measurements are reproducible with the scripts in [typescript-client/](typescript-client/).
+Status (October 2026): the client is implemented and committed (9c8df0a), see [docs/TypeScriptClient.md](../TypeScriptClient.md) and `CLAUDE.md` ("TypeScript client"). This handoff lists what it does not do yet, with what was found while building it. The first version of this handoff, the assessment that led to it, is in the git history (315c9a8); its measurement scripts are still in [typescript-client/](typescript-client/).
 
-## The question
+## Where things are
 
-Would a TypeScript/JavaScript implementation that supports the cached schema of `application/x-lsmsgpack` be worth it? If so, should it be built on an existing library or be a port of (part of) LtMsgPack? Or should JavaScript users use an existing library with `application/msgpack`, because a dynamic language would not get faster from the indexed schema?
+- `clients/typescript/`: the package `@lsmsgpack/client` (`"private": true` until the npm name is settled). `src/decoder.ts` (plans per schema entry, defaults, type ids), `src/schema.ts` (plain and described schema), `src/store.ts`, `src/client.ts` (fetch wrapper), `src/writer.ts` (plain MsgPack request bodies).
+- `clients/typescript/test-server/`: ASP.NET Core with the formatters on 127.0.0.1. `/expected/...` returns System.Text.Json of the same values (the oracle for complete objects), `/echo/...` reads a request body and answers it as JSON. `test/server.test.mjs` runs against it.
+- Server side: `LtMsgPack/Http/DescribedSchema.cs` writes the described schema from the frozen resolver of the writer (`SchemaStore.GetWriterResolver`, recorded only when `SchemaStore.RecordWriters` is set by `LtMsgPackHttpSerializer`). Its format is specified in [docs/TypeScriptClient.md#format](../TypeScriptClient.md#format).
+- Tests: `npm test` in `clients/typescript` (the live tests need `dotnet build clients/typescript/test-server`), `LsMsgPackFormattersTests/DescribedSchemaTests.cs`. Performance: `npm run bench`, and the `lsmsgpack-perf` skill for anything that touches the server.
 
-## Conclusion
+## 1. Request bodies with type ids (polymorphic requests)
 
-- **Worth building, as a small client library on top of `@msgpack/msgpack`, not as a port of LtMsgPack.**
-- The performance hunch is mostly right: with off-the-shelf decoding x-lsmsgpack is no faster in JavaScript. Only a reader that builds the objects from the schema directly is 20-25% faster (measured below). Speed is a bonus, not the reason.
-- The reason is **size**. Once a response is compressed, `application/msgpack` is the same size as JSON, so it gives a browser almost nothing over JSON except type fidelity. The schema reference still saves ~30% per small response after gzip (~15% on one large response).
-- The real obstacle is not performance: **a JavaScript client has no declared types**, and an x-lsmsgpack body depends on them (see [Declared types](#the-real-problem-declared-types)). That needs a decision: generated descriptors, or type ids on every object for clients that ask for them.
-- The audience is an SPA talking to its own ASP.NET backend: the "own client and own server" case x-lsmsgpack is made for, where polymorphism without `[JsonDerivedType]` attributes is a real draw. Public APIs and other JavaScript consumers keep `application/msgpack` (or JSON).
+**Now:** request bodies are plain MsgPack (`application/msgpack`): maps keyed by property names, no type ids. The server reads them with its `Plain` options. A property declared as an abstract class or interface cannot be filled from such a body (the server does not know which class to create), so a client cannot send e.g. a `Zoo` with `Dog` and `Cat` in `List<Animal>`.
 
-## Measurements
+**What it needs:** writing `application/x-lsmsgpack` bodies: the schema inline (always, by design: see WebFormatters.md, "Request bodies always carry their schema inline"), then the body with type ids where the class differs from the declared type.
 
-`dotnet` was not available in the session that made this assessment (the SDK download was blocked), so the numbers come from the `BenchmarkInvoices` model ported to JavaScript (`typescript-client/data.mjs`) and encoded with `@msgpack/msgpack` 3.1.2 on Node 22, one run each (repeated runs varied by ~5-10%). Differences with what the .NET formatters write: decimals are strings here (x-lsmsgpack writes extension type 1), no type ids (the invoice model has no polymorphism), the seeded random numbers differ from .NET's `Random`. The x-lsmsgpack shape is the default: the indexed schema, then objects as arrays of their values in schema order, nil for a value the filters leave out.
+- **The class of each object.** JavaScript objects do not have one. Options: the `classes` option in reverse (constructor → .NET name), a property the caller sets (`$type`?), or the entry an object was read from (the decoder could remember it in a `WeakMap` per object, so an object that was read, changed and sent back keeps its class).
+- **The declared types.** The client does not know them for a request (a described schema is per root type of a *response*). Simplest: write a type id on every object that has a class (as `AddTypeIdOption.Always` does for objects). The readers accept a type id wherever one is, and check that the class is assignable to the declared type (`TypeResolver.Resolve`, docs/security.md).
+- **The schema.** Build it while writing, as LtMsgPack's `InlineSchema` does: an entry when a class is first written, its property names in the order the client writes them (the readers match positions by the names of the payload's schema, any order reads). Type ids are entry indexes. Arrays of values (the default layout) or maps from index to value: both are read.
+- **Names.** Type names are short by default: the server resolves them among the assemblies its root type reaches (`TypeResolver.CacheReachableAssemblies`), a class in another assembly needs `MsgPackTypes.CacheAssemblyTypes` on the server. The names the client sends must be the server's `ComplexTypeDef.TypeName` (the entry names of a described schema it received are exactly those).
+- **Values.** Guid as a string, decimals as numbers and dates as timestamps are converted by the server (`ValueConverter`). This is already tested for plain bodies (`request bodies: plain MsgPack the server reads`).
+- **Test:** add a polymorphic `/echo/zoo` to the test server and compare its JSON with what was sent.
 
-### Size
+Open decision for the maintainer: how a caller names the class of an object (the three options above, or several of them).
 
-| | 100 invoices raw | gzip (6) | brotli (5) | 1 invoice raw | gzip (6) |
-|---|---|---|---|---|---|
-| JSON (names) | 298 KB | 41.5 KB | 38.0 KB | 2005 | 782 |
-| msgpack names (`application/msgpack`) | 242 KB | 40.8 KB | 38.4 KB | 1586 | 808 |
-| x-lsmsgpack, schema inline | 108 KB | 34.8 KB | 33.8 KB | 1089 | 793 |
-| x-lsmsgpack, schema reference | 108 KB | 34.5 KB | 33.6 KB | 704 | **565** |
+## 2. TypeScript types
 
-The schema alone is 403 bytes. Compression removes the repeated names within one response, but cannot remove the schema repeated across responses, which the reference does. For comparison, the .NET formatters measured 214.7 KB → 176.2 KB (-18%) for 100 invoices as 100 separate payloads, uncompressed (docs/WebFormatters.md).
+**Now:** `api.get<Invoice>(url)` trusts the type the caller names. The caller writes the interfaces by hand.
 
-### Reading (100 invoices, bytes → named JavaScript objects)
+**What exists:** a described schema has what a generator needs for the types it contains: entry names, property names in order, kinds, nullables, lists, dictionaries, structs, and which entry a property holds. Kinds map to TypeScript per decode options: `long` is `number` or `bigint` (`int64`), `decimal` is `number` or `string` (`decimal`), `datetime` is `Date` or `string` (`dates`).
 
-| | µs |
-|---|---|
-| `JSON.parse` of a string | 1650-1940 |
-| `JSON.parse` including the UTF-8 decoding | 2650-2850 |
-| `@msgpack/msgpack`, names | 2520-2740 |
-| `@msgpack/msgpack`, x-lsmsgpack body (arrays, not yet objects) | 1660-1820 |
-| `@msgpack/msgpack`, x-lsmsgpack body, then mapped to names | 2340-2630 |
-| minimal hand-written reader, names (generic maps, cached keys) | 1650-1830 |
-| same reader, x-lsmsgpack body read straight into objects (plans per schema entry) | **1330-1460** |
+**Limits of generating from the schema:**
 
-- Decoding the arrays is a third faster than decoding maps, but mapping them to named objects afterwards takes that back.
-- The plan-driven reader (`typescript-client/fused.mjs`, ~150 lines: per schema entry the names and a constructor with the properties in a fixed order, like LtMsgPack's `BoundSchema`) is 20-25% faster than a reader of the same quality for names, and a bit faster than `JSON.parse`. It is minimal (no str32, no big integers, no extension codecs): a complete one would be somewhat slower.
-- Writing: `JSON.stringify` 1170-1210 µs, `@msgpack/msgpack` names 2290-2430 µs, x-lsmsgpack (to arrays, then encode) 1800-1940 µs.
+- A schema only has the classes the server wrote so far for that root type, so a class never sent is missing. Call a few endpoints, or keep the store (`SchemaStore.export()`) and generate from all the schemas in it, merging entries by name. Two classes with the same short name are separate entries with the same key.
+- **Inheritance is not in the schema.** A property declared as `Animal` is `any`. To generate `Dog | Cat` (or a base interface) the described schema would need the base classes of each entry (a format addition: e.g. an item `["^", baseName...]`), or the generator reads the .NET assembly instead.
 
-### A type id on every object (`AddTypeIdOption.Always`)
+**Two ways:**
 
-| | raw | gzip |
-|---|---|---|
-| x-lsmsgpack inline, `IfAmbiguious` (default) | 108014 | 34798 |
-| x-lsmsgpack inline, `Always`, arrays (`{ "": typeIndex, "@": [values] }`) | 116509 (+7.9%) | 35435 (+1.8%) |
-| x-lsmsgpack inline, `Always`, `ObjectLayout.Map` (`{ "": typeIndex, 0: v, ... }`) | 122765 (+13.7%) | not measured |
-| msgpack names | 241608 | 40842 |
+1. A small CLI in the package (`npx lsmsgpack-ts types <url or exported store> > api.d.ts`). No build integration, and it only knows what the server sent.
+2. A `dotnet` tool that reflects over the model assembly (or Roslyn, like `LtMsgPack.Generator`'s `TypeWalker`; a source generator cannot write `.ts` files). It knows every class and the inheritance, and can also write the runtime descriptors the decoder would otherwise get from the schema.
 
-## The real problem: declared types
+Recommendation: 1 first (cheap, uses what is there), 2 when users ask for unions of derived classes.
 
-An x-lsmsgpack body says which class an object is only where the type differs from the declared type (`AddTypeIdOption.IfAmbiguious`). Elsewhere the reader knows it from the declared type of the property (`IndexedSchemaTypeResolver.BindReaderTypes` pairs them up from the root class). With the array layout, `[ "Ann", [[...], [...]] ]` cannot be turned into named objects without knowing that the second value is a list of `Pet`. ObjectDebugger infers it (`ObjectReconstructor`), but marks those types `TypeIsGuess`: fine for an explorer, not for a client.
+## 3. The explorers and the MCP server do not understand described schemas
 
-Two ways around it:
+**Now:** a captured response with a described schema (e.g. from the browser's network tab) is shown as two values: the schema as a map of arrays, then the body, with the error "The type id of [0] is a fixarray: type ids are names, or indexes of the schema" (`ObjectDebugger/PayloadValidation.cs`). Checked with `msgpack_decode` of the MCP server.
 
-1. **Generated descriptors**: a tool (a `dotnet` tool reading the model assembly, or from OpenAPI) that writes TypeScript types plus runtime descriptors (the class name, its properties and which of them hold objects, lists or dictionaries of which class, and the conversions: Guid, decimal, `DateTimeOffset`, `TimeSpan`, 64 bit integers). The best developer experience (typed objects), enables the fast reader and the writing of x-lsmsgpack requests (type ids need the .NET type names). A code generator to build and keep in sync.
-2. **Type ids on every object for clients that ask for them**, e.g. `Accept: application/x-lsmsgpack; typeids=always` or a request header: the formatters already support `AddTypeIdOption.Always`. +8% raw, +2% gzipped (above), still half the size of names. A generic JavaScript decoder then needs only the schema (every object names its schema entry, which also tells an object from a dictionary with string keys), and the fast reader works per schema index. A protocol addition: the maintainer decides.
+**Where:**
 
-Recommendation: start with 2, add descriptors later if users want typed objects.
+- `ObjectDebugger/RootObject.cs`, `ReadSchemaTypes`: returns null (not a schema) as soon as an item is not a string or nil. It should take an array item `[name, type, default?]` by its first element, skip `["@", type]` items, and leave out the last entry when its name is `""` (the root).
+- `SchemaType` (`ObjectDebugger/SchemaInfo.cs`) could keep the kinds and defaults. Then `ObjectReconstructor` does not need to guess what the described schema tells:
+  - the class of a nested value;
+  - object or list;
+  - the root type.
 
-## Build on a library, or port LtMsgPack?
+  Such values would no longer be `TypeIsGuess`, and `ObjectAssessment` could rate them `Certain`. The defaults could be shown for left out values.
+- References to a described schema: the MCP server's `schemas` parameter and the explorers' stores use `SchemaStore.Register`, which parses with `SchemaBytes.Parse` (its `ReadName` refuses an array) and hashes with format version 1. A described schema needs version 2 (`SchemaId.Compute(bytes, SchemaId.DescribedFormatVersion)`) and a parser that takes the items by their first element. Core keeps parsing plain schemas strictly: the serializers must never take a described schema for a plain one.
+- `PayloadValidation` could check the described schema against the body: a value's kind, an object of the entry the property names, `[DefaultValue]`.
+- Three UIs use this (MsgPackExplorer, the VS Code inspector, the MCP server, all through ObjectDebugger), so one change covers them. MsgPackExplorer can only be built and tried on Windows.
 
-**Build on `@msgpack/msgpack`.** LtMsgPack's speed comes from .NET specifics: typed `ValueHandler<T>`/`ValueReader<T>` without boxing, delegates instead of reflection, plans per `Type`, avoiding the `MsgPackItem` tree, Core's type resolving and type injection checks. None of that carries over to JavaScript (there are no types to instantiate from names). What carries over is small:
+## 4. Constructor values of left out properties
 
-- schema map followed by the body: `Decoder.decodeMulti`;
-- the schema reference `D8 02` + 16 bytes is a fixext 16 of type 2: an `ExtensionCodec` entry;
-- the reserved keys `""` (type id, a schema index) and `"@"` (the content of a wrapped value);
-- the .NET value formats: decimal as extension type 1, `BigInteger`/`Int128` as extension type -2 (big-endian two's complement), Guid as bin 16 in .NET byte order, `DateTimeOffset` as `[timestamp, offset minutes]`, `TimeSpan` as ticks, enums as integers, `int64` → `bigint` where needed (`useBigInt64`);
-- a schema store: `Map<id, schema>`, at most 32 ids advertised per origin (`MaxAdvertisedSchemas`), optionally persisted in IndexedDB (safe: ids are content hashes, and a server that does not hold an id writes the schema inline);
-- a `fetch` wrapper: request header `MsgPack-Schemas` (comma separated ids of 32 hex digits), response header `MsgPack-Schema`; register an inline schema only when SHA-256 over the format version byte `1` + the schema bytes as received (first 16 bytes) equals the header's id, as `LtMsgPackHttpSerializer.LearnSchema` / `SchemaStore.RegisterInline` do (`crypto.subtle.digest`, async, secure contexts only).
+**Now:** for a property the server left out, a .NET reader keeps what the constructor set, while the JavaScript client sets the default of the type. They differ only for a property whose constructor sets something else than the default and whose value was the default (documented in docs/TypeScriptClient.md, "Values"):
 
-If reading speed matters later, replace the decoding of bodies by a plan-driven reader (`typescript-client/fused.mjs` is the sketch).
-
-## Things to plan for
-
-- **Request bodies**: send `application/msgpack` (plain maps) at first; request bodies carry the schema inline anyway (by design), and writing x-lsmsgpack needs the .NET type names for type ids. Polymorphic request bodies are the exception (plain has no type ids): they need x-lsmsgpack and the descriptors.
-- **CORS**: a cross-origin browser client needs `MsgPack-Schemas` in `Access-Control-Allow-Headers` and `MsgPack-Schema` in `Access-Control-Expose-Headers`. docs/WebFormatters.md does not mention it yet.
-- **Tests**: CI already runs Node for the VS Code extension; payloads written by the .NET formatters can be checked by the TypeScript reader the way `LsMsgPackVsCode/test/mcpBridge.test.js` runs the .NET server against the TypeScript bridge. Keep docs/Compatibility.md in sync.
-- **Packaging**: a new npm package (name to decide), next to the not yet published VS Code extension.
-
-## Not verified
-
-- The .NET side was not run (no `dotnet` in that session): the sizes are from the JavaScript port of the model, not from the formatters' output.
-- Whether `AddTypeIdOption.Always` also wraps collections (e.g. `List<InvoiceLine>` as `{ "": typeIndex, "@": [...] }`), which would add a little to the +8%.
-- Whether the server writes the same schema (so the same id) after a restart: it depends on the order in which types are first written. Harmless either way (the schema then comes inline once).
-
-## Reproducing
-
-```bash
-cd docs/handoffs/typescript-client
-npm install
-node bench.mjs 100   # sizes, and @msgpack/msgpack timings for 100 invoices
-node bench.mjs 1     # sizes for one invoice
-node fused.mjs       # the minimal hand-written reader: names vs plan-driven x-lsmsgpack
-node always.mjs      # what AddTypeIdOption.Always costs
+```csharp
+public int Retries { get; set; } = 3; // sent as 0: left out; .NET reads 3, JavaScript 0
 ```
+
+**Option:** the described schema could carry the constructor's value as the property's default (the third item, as `[DefaultValue]` does now). `DescribedSchema` would create one instance per class (`Instances.Create`, the server's own model classes) and read the properties whose values differ from the type's default. That is once per class and schema, cached, nothing per call.
+
+**Things to decide:**
+
+- **Value types only.** A constructor that creates a list (`Items = new List<X>()`) would make the default an empty list. Reference types the server writes anyway (nil for null), and a nil in an array leaves the constructor's value in .NET too: the accepted difference `ExplicitNullKeepsTheConstructorValue` (CLAUDE.md, "Array layout"). So the difference is only real for value types.
+- **Classes without a parameterless constructor**, or `ObjectCreation.Uninitialized`, have no constructor values: they keep the type defaults.
+- **Constructors with side effects** run once on the server, when the schema is described.
+
+Recommendation: value types only, behind an option (`LtMsgPackHttpOptions.DescribeConstructorValues`?). Or leave it documented as it is: it is rare, and JSON clients have the same difference.
+
+## Smaller follow-ups
+
+- **npm.** Publish when the name is settled (`@lsmsgpack/client` needs the `lsmsgpack` scope on npm), then remove `"private": true`. The package has no build step beyond `tsc`, no bundle.
+- **camelCase.** The property names are the .NET names (`InvoiceDate`). Apps that come from ASP.NET Core's JSON (camelCase by default) would like a naming option. It must apply to reading and writing alike, and never to dictionary keys.
+- **The Accept check for described clients** costs ~0.3 µs per response (`MsgPackMediaTypes.AcceptsDescribedSchema` splits the header). Clients that do not ask pay ~45 ns. It could scan without splitting if it ever matters.
+- **A dictionary whose first key is `""`** is read as a value with a type id (`{ "": typeId, ... }`). The .NET readers have the same ambiguity, wider: `ValueConverter.ConvertMap` takes a key `""` in any position as the type id.
+- **`dates: 'iso'`** applies to typed properties only. Untyped values (`object`) stay `Date`.
+- **No IndexedDB adapter.** `SchemaStore.export()`/`import()` give JSON for any storage.
