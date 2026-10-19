@@ -11,6 +11,7 @@ using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Formatting;
@@ -220,6 +221,53 @@ namespace LsMsgPackWebApiFormattersTests
           Assert.That(((Dog)MsgPackSerializer.Deserialize<Animal>(body)).Barks, Is.EqualTo(3));
         }
       }
+    }
+
+    [Test]
+    public async Task WebApiServerWritesSchemaVersion2WhenAsked()
+    {
+      System.Web.Http.HttpConfiguration config = new System.Web.Http.HttpConfiguration();
+      System.Web.Http.HttpConfigurationExtensions.MapHttpAttributeRoutes(config);
+      config.Formatters.Add(new LsMsgPackMediaTypeFormatter());
+      using (System.Web.Http.HttpServer server = new System.Web.Http.HttpServer(config))
+      using (HttpClient client = new HttpClient(server) { BaseAddress = new Uri("http://localhost/") })
+      {
+        async Task<(byte[] body, string id, HttpResponseMessage response)> Get(string accept, string schemas)
+        {
+          HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "webapi/order");
+          request.Headers.TryAddWithoutValidation("Accept", accept);
+          if (!(schemas is null))
+            request.Headers.Add(LtMsgPackHttpSerializer.SchemasHeader, schemas);
+          HttpResponseMessage response = await client.SendAsync(request);
+          byte[] body = await response.Content.ReadAsByteArrayAsync();
+          return (body, response.Content.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemaHeader, out IEnumerable<string> values) ? string.Join(",", values) : null, response);
+        }
+
+        const string Described = "application/x-lsmsgpack; schema=described, application/x-lsmsgpack; q=0.9"; // as the TypeScript client asks
+        (byte[] plain, string plainId, _) = await Get(MsgPackMediaTypes.XLsMsgPack, null);
+        (byte[] described, string describedId, HttpResponseMessage response) = await Get(Described, null);
+        Assert.That(describedId, Is.Not.EqualTo(plainId));
+        Assert.That(response.Content.Headers.Expires, Is.Null, "Either version is read by any client (unlike a reference): it can be cached");
+
+        int plainSchema = SchemaLength(plain);
+        int describedSchema = SchemaLength(described);
+        Assert.That(described.Skip(describedSchema), Is.EqualTo(plain.Skip(plainSchema)), "The same body");
+        byte[] input = new byte[describedSchema + 1];
+        input[0] = 2;
+        Buffer.BlockCopy(described, 0, input, 1, describedSchema);
+        Assert.That(describedId, Is.EqualTo(string.Concat(System.Security.Cryptography.SHA256.HashData(input).Take(16).Select(b => b.ToString("x2")))));
+
+        (byte[] reference, string referenceId, _) = await Get(Described, describedId);
+        Assert.That(IsReference(reference), Is.True);
+        Assert.That(referenceId, Is.EqualTo(describedId));
+      }
+    }
+
+    private static int SchemaLength(byte[] body)
+    {
+      System.IO.MemoryStream stream = new System.IO.MemoryStream(body);
+      MsgPackItem.Unpack(stream);
+      return (int)stream.Position;
     }
 
     [Test]

@@ -25,8 +25,8 @@ namespace LsMsgPack
     public const string XLsMsgPack = "application/x-lsmsgpack";
 
     /// <summary>
-    /// The parameter of <see cref="XLsMsgPack"/> in an Accept header that asks for the described schema: the schema with the kind and default of each property, for clients without the classes
-    /// (the TypeScript client, see docs/TypeScriptClient.md). E.g. <c>Accept: application/x-lsmsgpack; schema=described</c>. The body is the same.
+    /// The parameter of <see cref="XLsMsgPack"/> in an Accept header that asks for version 2 of the schema (<see cref="SchemaVersion.Described"/>): the kind and default of each property and the type of the root,
+    /// for clients without the classes (e.g. JavaScript). E.g. <c>Accept: application/x-lsmsgpack; schema=described</c>. The body is the same, .NET readers read either version.
     /// </summary>
     public const string DescribedSchemaParameter = "schema=described";
 

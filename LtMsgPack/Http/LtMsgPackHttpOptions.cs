@@ -28,6 +28,13 @@ namespace LtMsgPack.Http
     public bool NegotiateSchemas { get; set; } = true;
 
     /// <summary>
+    /// application/x-lsmsgpack: a client that asks for it (<c>Accept: application/x-lsmsgpack; schema=described</c>, see <see cref="MsgPackMediaTypes.AcceptsDescribedSchema"/>) gets version 2 of the schema
+    /// (<see cref="SchemaVersion.Described"/>: the kind and default of each property and the type of the root), so a client without the classes (JavaScript) can make complete objects. Default true.
+    /// <para>The body is the same. The schema of each version has its own id (negotiated like any other), and the .NET readers read both.</para>
+    /// </summary>
+    public bool DescribeSchemas { get; set; } = true;
+
+    /// <summary>
     /// Collect what did not match between a body and the classes it is read into (<see cref="ReadDifferences"/>: unknown properties, classes without a schema entry, type ids that are not found...). Default false.
     /// <para>ASP.NET Core: in <c>HttpContext.Features</c> (<c>HttpContext.GetReadDifferences()</c>) and logged (see <see cref="LogDifferencesAsWarning"/>). Web API and HttpClient: <c>HttpContent.GetReadDifferences()</c> (also <c>request.GetReadDifferences()</c>).
     /// MVC 5: <c>HttpContextBase.GetReadDifferences()</c>. Reading with it is a bit slower (see docs/ReadDifferences.md), the report itself is only made when it is asked for.</para>

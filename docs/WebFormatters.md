@@ -325,3 +325,17 @@ Without the handler (or from any other client), nothing changes: the responses c
 - `NegotiateSchemas = false` turns it off (the schema is always inline). It's also off when `XLsMsgPack.UseInexedSchema` is false.
 
 Measured on the invoices of `BenchmarkInvoices` (100 invoices, LtMsgPack with the default options, one serializer, in process, one run): with the schema inline, 214.7 KB, write ~310 µs, read ~425 µs. With references, 176.2 KB (-18%), write ~255 µs, read ~415 µs.
+
+### Schema version 2 for clients without the classes
+
+A client that doesn't have the .NET classes (e.g. JavaScript) can't tell from the property names alone whether a left-out value was `0`, `false` or `null`, or whether a nested array is an object or a list. It asks for [version 2 of the schema](schema.md#version-2-the-declared-types), which also has the type and default of each property and the type of the root:
+
+```
+Accept: application/x-lsmsgpack; schema=described, application/x-lsmsgpack; q=0.9
+```
+
+- The body is the same, only the schema differs. Its schema has its own id, and is negotiated and referred to like any other (`MsgPack-Schemas`, `MsgPack-Schema`).
+- List the plain media type as well: ASP.NET Core's content negotiation only matches a parameter it knows, and a server that doesn't offer version 2 then answers with version 1.
+- The .NET readers read both versions, so a response that a cache serves to another client can be read by it either way. ASP.NET Core and MVC 5 add `Accept` to `Vary`. Web API 2 can't set `Vary`, which is harmless here.
+- `DescribeSchemas = false` turns it off: the server always writes version 1. It also needs `XLsMsgPack.UseInexedSchema`, and works with or without `NegotiateSchemas`.
+- With `XLsMsgPack.SchemaVersion = SchemaVersion.Described`, every response has version 2.

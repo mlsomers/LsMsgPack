@@ -549,7 +549,7 @@ namespace LsMsgPackFormattersTests
       {
         HttpResponseMessage first = await client.SendAsync(Get("/test/animal", null));
         Assert.That(SchemaHeader(first), Is.Null);
-        Assert.That(first.Headers.Vary, Is.Empty);
+        Assert.That(first.Headers.Vary, Is.EqualTo(new[] { "Accept" }), "Not MsgPack-Schemas: version 2 of the schema is still offered (DescribeSchemas), it depends on the Accept header");
         byte[] body = await first.Content.ReadAsByteArrayAsync();
         Assert.That(body, Is.EqualTo(MsgPackSerializer.Serialize<Animal>(new Dog { Name = "Rex", Barks = 3 })));
       }
