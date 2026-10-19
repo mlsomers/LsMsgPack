@@ -3,6 +3,9 @@
     "path": "LsMsgPack.sln",
     "projects": [
       "LsMsgPackCore/LsMsgPack.Core.csproj",
+      "LsMsgPack.Analyzers/LsMsgPack.Analyzers.csproj",
+      "LsMsgPack.Analyzers.CodeFixes/LsMsgPack.Analyzers.CodeFixes.csproj",
+      "LsMsgPack.AnalyzerTests/LsMsgPack.AnalyzerTests.csproj",
       "LsMsgPackNetStandard/LsMsgPack.csproj",
       "LtMsgPack/LtMsgPack.csproj",
       "LtMsgPack.Generator/LtMsgPack.Generator.csproj",

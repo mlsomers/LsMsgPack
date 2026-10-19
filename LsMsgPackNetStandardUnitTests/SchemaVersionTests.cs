@@ -207,9 +207,9 @@ namespace LsMsgPackUnitTests
     public class SvTimed
     {
       [DefaultValue(typeof(DateTime), "2026-01-02T03:04:05Z")]
-      public DateTime When { get; set; }
+      public DateTime When { get; set; } = DateTime.Parse("2026-01-02T03:04:05Z", System.Globalization.CultureInfo.InvariantCulture); // as the attribute converts it
       [DefaultValue(1234567.5)]
-      public double Ratio { get; set; }
+      public double Ratio { get; set; } = 1234567.5;
       [DefaultValue(70000)]
       public int Value { get; set; } = 70000; // left out, a reader keeps what the constructor sets
     }

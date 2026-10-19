@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <Import Project="..\Packaging.props" />
 
@@ -27,6 +27,16 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugKeepTrack|AnyCPU'">
     <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
   </PropertyGroup>
+
+  <!-- The analyzers (and their code fixes) ship in this package (analyzers/dotnet/cs): LsMsgPack and LtMsgPack depend on it, so both get them (see docs/Analyzers.md) -->
+  <ItemGroup>
+    <ProjectReference Include="..\LsMsgPack.Analyzers\LsMsgPack.Analyzers.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <ProjectReference Include="..\LsMsgPack.Analyzers.CodeFixes\LsMsgPack.Analyzers.CodeFixes.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <None Include="..\LsMsgPack.Analyzers\bin\$(Configuration)\netstandard2.0\LsMsgPack.Analyzers.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Include="..\LsMsgPack.Analyzers.CodeFixes\bin\$(Configuration)\netstandard2.0\LsMsgPack.Analyzers.CodeFixes.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    <None Remove="buildTransitive\LsMsgPack.Core.props" />
+    <None Include="buildTransitive\LsMsgPack.Core.props" Pack="true" PackagePath="buildTransitive;build" />
+  </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)'!='net8.0'">
     <PackageReference Include="System.Memory" Version="4.6.3" />

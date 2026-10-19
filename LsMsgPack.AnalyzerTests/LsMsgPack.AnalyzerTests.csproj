@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Tests of LsMsgPack.Analyzers and its code fixes: source text compiled against the libraries (and the ASP.NET Core formatters), the diagnostics and the fixed text -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.4.1" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.4.1" />
+    <!-- newer than the analyzers' 4.8: a newer compiler and IDE load them, as in a newer SDK -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LsMsgPack.Analyzers\LsMsgPack.Analyzers.csproj" />
+    <ProjectReference Include="..\LsMsgPack.Analyzers.CodeFixes\LsMsgPack.Analyzers.CodeFixes.csproj" />
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
+    <ProjectReference Include="..\LsMsgPackFormatters\LsMsgPackFormatters.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,7 @@
+<Project>
+  <!-- The MSBuild property the analyzers of LsMsgPack read (see docs/Analyzers.md):
+       <LsMsgPackAnalyze>AllTypes</LsMsgPackAnalyze> checks every public class and struct of the project, e.g. a project of models that does not call the serializers itself -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="LsMsgPackAnalyze" />
+  </ItemGroup>
+</Project>
