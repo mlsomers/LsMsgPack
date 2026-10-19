@@ -320,6 +320,29 @@ namespace LsMsgPackUnitTests
       CompareCorpus(ls, ltOptions);
     }
 
+    private static IEnumerable<object[]> DescribedSettings()
+    {
+      foreach (EndianAction endian in Enum.GetValues(typeof(EndianAction)))
+        foreach (bool compact in new[] { true, false })
+          foreach (SchemaMode mode in new[] { SchemaMode.Inline, SchemaMode.Reference })
+            foreach (ObjectLayout layout in Enum.GetValues(typeof(ObjectLayout)))
+              yield return new object[] { endian, compact, mode, layout };
+    }
+
+    /// <summary>
+    /// Version 2 of the schema (SchemaVersion.Described): the same bytes, the schema included (a reference is the hash of its bytes).
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(DescribedSettings))]
+    public void SameBytesAndValuesDescribed(EndianAction endian, bool compact, SchemaMode mode, ObjectLayout layout)
+    {
+      MsgPackSettings ls = new MsgPackSettings() { SchemaVersion = SchemaVersion.Described };
+      Configure(ls, endian, compact, mode, layout);
+      LtMsgPackOptions ltOptions = new LtMsgPackOptions() { SchemaVersion = SchemaVersion.Described };
+      Configure(ltOptions, endian, compact, mode, layout);
+      CompareCorpus(ls, ltOptions);
+    }
+
     /// <summary>
     /// LtMsgPack with the options, as it builds its plans at runtime and with the code of the source generator (TestMsgPackContext).
     /// </summary>

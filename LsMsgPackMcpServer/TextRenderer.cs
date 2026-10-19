@@ -194,7 +194,7 @@ namespace LsMsgPackMcp
       else if (objects != null && objects.Schema != null)
       {
         parts.Add(objects.Schema.Source == SchemaSource.Inline
-          ? string.Concat("indexed schema (inline, ", objects.Schema.Types.Count.ToString(CultureInfo.InvariantCulture), " types) followed by the body")
+          ? string.Concat("indexed schema (inline, ", objects.Schema.Types.Count.ToString(CultureInfo.InvariantCulture), objects.Schema.Version == 2 ? " types, version 2 with the declared types) followed by the body" : " types) followed by the body")
           : string.Concat("reference to schema ", objects.Schema.Id, objects.Schema.IsAvailable ? " (found)" : " (not available)", " followed by the body"));
       }
       else if (doc.Root.Item is MpRoot root)
@@ -237,11 +237,14 @@ namespace LsMsgPackMcp
         return;
       }
       sb.Append(schema.Source == SchemaSource.Inline ? "Schema (inline)" : string.Concat("Schema ", schema.Id))
+        .Append(schema.Version == 2 ? " version 2 (with the declared types, \"= x\" is a default the writer leaves out)" : string.Empty)
         .Append(": type ids and property ids in the body are indexes into these lists.").Append('\n');
+      if (schema.RootType != null)
+        sb.Append("  root: ").Append(schema.RootType.Format(schema.Types)).Append('\n');
       foreach (SchemaType type in schema.Types)
       {
         sb.Append("  #").Append(type.Index.ToString(CultureInfo.InvariantCulture)).Append(' ').Append(type.Name).Append(": ")
-          .Append(string.Join(", ", type.Properties.ConvertAll(p => p ?? "(null)")));
+          .Append(type.Describe(schema.Types));
         if (!type.IsUsed)
           sb.Append(" (no value matched)");
         sb.Append('\n');
@@ -358,6 +361,10 @@ namespace LsMsgPackMcp
         text = Primitive(obj.ValueKind, obj.Value, options, notes);
         if (obj.Type != null)
           notes.Insert(0, obj.TypeIsGuess ? obj.Type + "~" : obj.Type);
+        else if (obj.DeclaredTypeText != null && !obj.DeclaredType.IsAny && obj.DeclaredTypeText != obj.TypeText && !notes.Contains(obj.DeclaredTypeText)) // not "int" for an int
+          notes.Insert(0, obj.DeclaredTypeText);
+        if (obj.DefaultText != null)
+          notes.Add(string.Concat("left out: ", obj.DefaultText));
       }
 
       if (error == NestedError)
@@ -398,13 +405,14 @@ namespace LsMsgPackMcp
       switch (obj.Kind)
       {
         case ObjectKind.Collection:
-          notes.Add(obj.Type != null ? string.Concat(obj.Type, ", ", Claimed(read, claimed, "item", "items")) : Claimed(read, claimed, "item", "items"));
+          string collectionType = obj.Type ?? (obj.DeclaredType != null && !obj.DeclaredType.IsAny ? obj.DeclaredTypeText : null);
+          notes.Add(collectionType != null ? string.Concat(collectionType, ", ", Claimed(read, claimed, "item", "items")) : Claimed(read, claimed, "item", "items"));
           string moment = AsDateTimeOffset(obj);
           if (moment != null)
             notes.Add(moment);
           break;
         case ObjectKind.Dictionary:
-          notes.Add(string.Concat(obj.Type ?? "dictionary", ", ", Claimed(read, claimed, "entry", "entries")));
+          notes.Add(string.Concat(obj.Type ?? (obj.DeclaredType != null && !obj.DeclaredType.IsAny ? obj.DeclaredTypeText : "dictionary"), ", ", Claimed(read, claimed, "entry", "entries")));
           break;
         case ObjectKind.Sequence:
           notes.Add(Count(obj.Members.Count, "payload", "payloads"));

@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Types;
 using LtMsgPack.IO;
@@ -132,7 +132,10 @@ namespace LtMsgPack
           c.Inline.Clear();
           c.IdSettings = Options;
           write(c, root);
-          c.Inline.WriteTo(schema);
+          if (Options._schemaVersion == SchemaVersion.Described)
+            schema.Raw(_described.Get(c.Inline, assignedTo, Options));
+          else
+            c.Inline.WriteTo(schema);
         }
         else
         {
@@ -142,7 +145,7 @@ namespace LtMsgPack
           c.Mode = IdMode.Session;
           c.IdSettings = session.Apply(Options);
           write(c, root);
-          schema.Raw(resolver.Pack(Options));
+          schema.Raw(resolver.Pack(Options, assignedTo, Options));
         }
         Output(schema.Buf, schema.Pos, c.W, target, out result);
       }
@@ -157,6 +160,11 @@ namespace LtMsgPack
     /// The writer sessions of the root type read last: (store, root type) to SessionState, which SchemaStore.GetWriter finds by a key of the settings, which do not change.
     /// </summary>
     private volatile WriterHit _lastWriter;
+
+    /// <summary>
+    /// The inline schemas of <see cref="SchemaVersion.Described"/>, made once per root type and sequence of types.
+    /// </summary>
+    private readonly DescribedInlineSchemas _described = new DescribedInlineSchemas();
 
     private sealed class WriterHit
     {

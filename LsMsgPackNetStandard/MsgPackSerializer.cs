@@ -109,7 +109,7 @@ namespace LsMsgPack
       ByteWriter buffer = new ByteWriter();
       packed.WriteTo(buffer); // Fills the schema, so this needs to be done before packing the schema
 
-      byte[] schema = resolver.Pack(settings);
+      byte[] schema = resolver.Pack(settings, assignedTo, settings);
       target.Write(schema, 0, schema.Length);
       buffer.CopyTo(target);
     }

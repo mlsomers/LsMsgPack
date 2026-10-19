@@ -133,6 +133,35 @@ Cons:
 
 `null` is written without a schema (a single MsgPack `nil`), and deserializing it returns `null`.
 
+### Version 2: the declared types
+
+A .NET reader only needs the names: its classes know the rest. A reader without the classes (e.g. JavaScript) can't tell from a `nil` whether the writer left out `0`, `false` or `null`, or whether a nested array is an object or a list. Version 2 of the schema tells it:
+
+```csharp
+var settings = new MsgPackSettings { SchemaVersion = SchemaVersion.Described }; // also LtMsgPackOptions; SchemaVersion.Names (version 1) is the default
+```
+
+```
+{"Invoice": [["Id", "guid"], ["Due", ["?", "datetime"]], ["Lines", ["list", 1]], ["Country", "string", "NL"]],
+ "Line":    [["Qty", "int"], ["Text", "string"]],
+ "":        [["@", ["list", 0]]]}
+```
+
+- The same map as version 1, with the same keys in the same order, so the type ids of the body don't change.
+- Each property is `[name, type]`, or `[name, type, default]` for a property with `[DefaultValue]` that the writer leaves out (`FilterDefaultValues`). The default is encoded as the body would encode it.
+- An entry that isn't an object (a collection or a value that got a type id, e.g. a `List<int>` in a property declared as `object`) starts with `["@", type]`: the type of the content of `{ "": typeId, "@": content }`. It isn't a property: property ids are the positions of the other items.
+- The last entry has the key `""` (no type has an empty name) and holds `[["@", type]]`: the declared type of the root. Type ids never refer to it.
+
+Types:
+
+- A kind: `string`, `bool`, `int` (32 bits and smaller, and `uint`), `long`, `ulong`, `float` (`float`, `double`, `Half`), `decimal`, `char`, `bigint`, `guid`, `bin`, `uri`, `datetime`, `dto` (`DateTimeOffset` as `[timestamp, offset minutes]` or a bare timestamp), `dto-clock` (`DateTimeOffsetFormat.ClockTimeAndOffset`), `timespan` (ticks), `dateonly` (day number), `timeonly` (ticks), `any` (`object`, interfaces, abstract classes, custom extensions, multidimensional arrays, a class the schema never wrote). Enums are their underlying kind. A reader should read a kind it doesn't know as `any`.
+- An integer `k`: an object of entry `k`.
+- `["?", T]`: `Nullable<T>`.
+- `["struct", k]`: a struct of entry `k` (its default is an object, not `null`). `["struct", [items]]`: a struct the schema has no entry for (only written as its default so far), with its properties as an entry has them.
+- `["list", T]`, `["dict", K, V]`, `["pair", K, V]`, `["tuple", T1, T2, ...]` (the 8th item of a long tuple is a nested tuple).
+
+Both versions are read by both serializers with any settings: `SchemaVersion` only decides what is written. The version is part of the schema id (SHA-256 over the version byte and the schema), so the same classes have different ids in version 1 and 2. Readers tell the versions apart by the last entry `""`. Version 2 is larger (5 to 10 bytes per property), and with a `SchemaStore` it's made once per schema; inline, LtMsgPack keeps the ones it made, while LsMsgPack makes it for every call. MsgPack Explorer, the VS Code extension and the MCP server show the declared types, use them instead of inferring the types of objects, and show the defaults of left-out values.
+
 Polymorphic class-hierarchy support
 -----------------------------------
 

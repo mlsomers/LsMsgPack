@@ -13,6 +13,7 @@ namespace ObjectDebugger
   /// </list>
   /// <para>Without a type id the data does not tell the type. With the schema it is inferred: the writer adds a type to the schema when it starts writing the first value of that type (depth first), so a value of a type that was not seen yet must be of the first type of the schema that was not seen yet.
   /// Candidates must have the shape of the value (number of values, property ids in range), and the kinds of values seen before at the same positions. Values in the same place (the same property of the same type, or the elements of the same collection) are assumed to have the same type.</para>
+  /// <para>Version 2 of the schema (<c>SchemaVersion.Described</c>) declares the types (<see cref="DeclaredType"/>): of the root, of each property, of the content of a wrapped value. Where it does, nothing is inferred.</para>
   /// </summary>
   internal sealed class ObjectReconstructor
   {
@@ -65,9 +66,11 @@ namespace ObjectDebugger
     /// </summary>
     public int Unexplained { get; private set; }
 
-    public void FillRoot(RootObject root, Node body)
+    /// <param name="declared">The declared type of the root (version 2 of the schema), null when unknown</param>
+    public void FillRoot(RootObject root, Node body, DeclaredType declared = null)
     {
       root.Slot = string.Empty;
+      SetDeclared(root, declared);
       if (body.Kind == ValueKind.Map && IsWrappedValue(body))
       {
         // A primitive value that needed a type id
@@ -88,13 +91,14 @@ namespace ObjectDebugger
         return;
       }
 
-      Fill(root, body);
+      Fill(root, body, declared);
     }
 
     /// <summary>
     /// Adds the value to the parent's members before filling it, so what was reconstructed stays when it fails half way.
     /// </summary>
-    private PrimitiveObject BuildMember(Node node, string name, ComplexObject parent, string slot, Node key)
+    /// <param name="declared">The declared type of the value (version 2 of the schema), null when unknown</param>
+    private PrimitiveObject BuildMember(Node node, string name, ComplexObject parent, string slot, Node key, DeclaredType declared = null)
     {
       PrimitiveObject member;
       if (node.IsContainer && !IsWrappedValue(node))
@@ -110,12 +114,15 @@ namespace ObjectDebugger
         member.AddError(key.Error);
       if (node.Error != null)
         member.AddError(node.Error);
+      SetDeclared(member, declared);
+      if (declared != null && node.Kind == ValueKind.Nil)
+        member.DefaultText = declared.DefaultText(_types);
       parent.Members.Add(member);
 
       try
       {
         if (member is ComplexObject complex)
-          Fill(complex, node);
+          Fill(complex, node, declared);
         else if (node.Kind == ValueKind.Map)
           FillWrappedValue(member, node);
         else
@@ -131,12 +138,55 @@ namespace ObjectDebugger
       return member;
     }
 
-    private void Fill(ComplexObject target, Node node)
+    private void SetDeclared(PrimitiveObject member, DeclaredType declared)
     {
+      member.DeclaredType = declared;
+      member.DeclaredTypeText = declared?.Format(_types);
+    }
+
+    /// <summary>
+    /// What the declared type tells about a value: null for "any" (or unknown), the type without the nullable.
+    /// </summary>
+    private static DeclaredType Usable(DeclaredType declared)
+    {
+      declared = declared?.WithoutNullable;
+      return declared is null || declared.IsAny ? null : declared;
+    }
+
+    /// <summary>
+    /// The type of the schema an object of the declared type has (an object or struct of a type of the schema), null otherwise.
+    /// </summary>
+    private SchemaType DeclaredObject(DeclaredType declared)
+    {
+      if (declared is null || _types is null || (declared.Kind != DeclaredType.EntryKind && declared.Kind != "struct") || declared.Entry < 0 || declared.Entry >= _types.Count)
+        return null;
+      return _types[declared.Entry];
+    }
+
+    private static DeclaredType Item(DeclaredType declared, int index)
+    {
+      return declared != null && index < declared.Items.Count ? declared.Items[index] : null;
+    }
+
+    private void Fill(ComplexObject target, Node node, DeclaredType declared = null)
+    {
+      declared = Usable(declared);
       if (node.Kind == ValueKind.Map)
-        FillMap(target, node);
+        FillMap(target, node, declared);
       else
-        FillArray(target, node);
+        FillArray(target, node, declared);
+    }
+
+    /// <summary>
+    /// An object of a type the schema declares (not inferred).
+    /// </summary>
+    private void SetObject(ComplexObject target, SchemaType type)
+    {
+      target.Kind = ObjectKind.Object;
+      target.Type = type.Name;
+      target.TypeIsGuess = false;
+      target.SchemaType = type;
+      MarkSeen(type);
     }
 
     /// <summary>
@@ -164,7 +214,7 @@ namespace ObjectDebugger
         target.AddError(content.Error);
     }
 
-    private void FillMap(ComplexObject target, Node node)
+    private void FillMap(ComplexObject target, Node node, DeclaredType declared)
     {
       Node typeId = null;
       Node content = null;
@@ -202,10 +252,11 @@ namespace ObjectDebugger
         // A collection (or dictionary) wrapped for its type id or its properties: the writer writes the elements before it adds the collection's type
         target.Kind = content.Kind == ValueKind.Map ? ObjectKind.Dictionary : ObjectKind.Collection;
         target.SchemaType = type;
+        DeclaredType contentType = Usable(type?.ContentType ?? declared);
         if (content.Kind == ValueKind.Array)
-          FillElements(target, content);
+          FillElements(target, content, contentType?.Kind == "list" ? Item(contentType, 0) : null);
         else if (content.Kind == ValueKind.Map)
-          FillEntries(target, content);
+          FillEntries(target, content, contentType?.Kind == "dict" ? Item(contentType, 0) : null, contentType?.Kind == "dict" ? Item(contentType, 1) : null);
         else
           BuildMember(content, ContentKey, target, ElementSlot(target), null);
         if (type != null)
@@ -220,6 +271,21 @@ namespace ObjectDebugger
         target.SchemaType = type;
         MarkSeen(type);
         FillProperties(target, others, type);
+        return;
+      }
+
+      SchemaType declaredType = DeclaredObject(declared);
+      if (typeId is null && declaredType != null && AllKeysAreIndexes(others))
+      {
+        SetObject(target, declaredType);
+        FillProperties(target, others, declaredType);
+        return;
+      }
+
+      if (typeId is null && declared?.Kind == "dict")
+      {
+        target.Kind = ObjectKind.Dictionary;
+        FillEntries(target, node, Item(declared, 0), Item(declared, 1));
         return;
       }
 
@@ -249,8 +315,35 @@ namespace ObjectDebugger
       FillProperties(target, others, null);
     }
 
-    private void FillArray(ComplexObject target, Node node)
+    private void FillArray(ComplexObject target, Node node, DeclaredType declared)
     {
+      SchemaType declaredType = DeclaredObject(declared);
+      if (declaredType != null)
+      {
+        SetObject(target, declaredType);
+        FillPositional(target, node, declaredType);
+        return;
+      }
+
+      switch (declared?.Kind)
+      {
+        case "list":
+          target.Kind = ObjectKind.Collection;
+          FillElements(target, node, Item(declared, 0));
+          return;
+        case "pair":
+        case "tuple":
+          target.Kind = ObjectKind.Collection;
+          FillItems(target, node, declared);
+          return;
+        case "dto":
+        case "dto-clock":
+          target.Kind = ObjectKind.Collection;
+          target.Type = "DateTimeOffset";
+          FillItems(target, node, null);
+          return;
+      }
+
       SchemaType type = _types is null ? null : Infer(node, target.Slot);
       if (type is null)
       {
@@ -282,40 +375,68 @@ namespace ObjectDebugger
       for (int t = 0; t < values.Elements.Length; t++)
       {
         string name = t < type.Properties.Count ? PropertyName(type, t) : Index(t);
-        BuildMember(values.Elements[t], name, target, MemberSlot(target, name), null);
+        PrimitiveObject member = BuildMember(values.Elements[t], name, target, MemberSlot(target, name), null, type.PropertyType(t));
+        SetDefault(member, type, t);
       }
     }
 
-    private void FillElements(ComplexObject target, Node values)
+    /// <summary>
+    /// A value that was left out (nil) of a property with <c>[DefaultValue]</c> (version 2 of the schema): a reader gets the default.
+    /// </summary>
+    private static void SetDefault(PrimitiveObject member, SchemaType type, int index)
     {
-      string slot = ElementSlot(target);
-      InferTogether(values.Elements, slot);
-      for (int t = 0; t < values.Elements.Length; t++)
-        BuildMember(values.Elements[t], Index(t), target, slot, null);
+      PrimitiveObject value = type.PropertyDefault(index);
+      if (value != null && member.ValueKind == ValueKind.Nil && !(member is ComplexObject))
+        member.DefaultText = value.ValueText;
     }
 
-    private void FillEntries(ComplexObject target, Node map)
+    /// <param name="element">The declared type of the elements (version 2 of the schema), null when unknown</param>
+    private void FillElements(ComplexObject target, Node values, DeclaredType element = null)
+    {
+      string slot = ElementSlot(target);
+      if (Usable(element) is null)
+        InferTogether(values.Elements, slot);
+      for (int t = 0; t < values.Elements.Length; t++)
+        BuildMember(values.Elements[t], Index(t), target, slot, null, element);
+    }
+
+    /// <summary>
+    /// The items of a KeyValuePair or tuple (an array), each with its own declared type (the 8th item of a long tuple is a tuple).
+    /// </summary>
+    private void FillItems(ComplexObject target, Node values, DeclaredType declared)
+    {
+      for (int t = 0; t < values.Elements.Length; t++)
+      {
+        string slot = string.Concat(TypeKey(target), Index(t));
+        BuildMember(values.Elements[t], Index(t), target, slot, null, Item(declared, t));
+      }
+    }
+
+    /// <param name="keyType">The declared type of the keys (version 2 of the schema), null when unknown</param>
+    /// <param name="valueType">The declared type of the values, null when unknown</param>
+    private void FillEntries(ComplexObject target, Node map, DeclaredType keyType = null, DeclaredType valueType = null)
     {
       string slot = TypeKey(target) + "{}";
       Node[] values = new Node[map.Entries.Length];
       for (int t = 0; t < values.Length; t++)
         values[t] = map.Entries[t].Value;
-      InferTogether(values, slot);
+      if (Usable(valueType) is null)
+        InferTogether(values, slot);
       for (int t = 0; t < map.Entries.Length; t++)
       {
         Node key = map.Entries[t].Key;
         Node value = map.Entries[t].Value;
         if (!key.IsContainer)
         {
-          BuildMember(value, KeyText(key), target, slot, key);
+          BuildMember(value, KeyText(key), target, slot, key, valueType);
           continue;
         }
 
         // A key that is an object or collection, keep key and value together
         ComplexObject entry = new ComplexObject() { Kind = ObjectKind.Entry, Name = Index(t), Parent = target, FirstItemRef = key.Item, LastItemRef = value.Item };
         target.Members.Add(entry);
-        BuildMember(key, "Key", entry, TypeKey(target) + "{key}", null);
-        BuildMember(value, "Value", entry, slot, null);
+        BuildMember(key, "Key", entry, TypeKey(target) + "{key}", null, keyType);
+        BuildMember(value, "Value", entry, slot, null, valueType);
       }
     }
 
@@ -329,11 +450,15 @@ namespace ObjectDebugger
         KeyValuePair<Node, Node> entry = entries[t];
         long index;
         string name;
+        DeclaredType declared = null;
         if (type != null && entry.Key.TryGetIndex(out index) && index >= 0 && index < type.Properties.Count)
+        {
           name = PropertyName(type, (int)index);
+          declared = type.PropertyType((int)index);
+        }
         else
           name = KeyText(entry.Key);
-        BuildMember(entry.Value, name, target, MemberSlot(target, name), entry.Key);
+        BuildMember(entry.Value, name, target, MemberSlot(target, name), entry.Key, declared);
       }
     }
 

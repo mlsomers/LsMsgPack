@@ -4,7 +4,7 @@ The parts shared by the [LtMsgPack](https://www.nuget.org/packages/LtMsgPack) an
 
 Its types are in the `LsMsgPack.*` namespaces, so they work the same with either serializer:
 
-- `MsgPackOptions`: the format settings (`UseInexedSchema`, `ObjectLayout`, `AddTypeIdOptions`, `PropertyOrder`, `TypeGuard`...), the base class of `LtMsgPackOptions` and `MsgPackSettings`.
+- `MsgPackOptions`: the format settings (`UseInexedSchema`, `SchemaVersion`, `ObjectLayout`, `AddTypeIdOptions`, `PropertyOrder`, `TypeGuard`...), the base class of `LtMsgPackOptions` and `MsgPackSettings`.
 - Type resolvers (`IMsgPackTypeResolver`, `XmlRootAttributeTypeResolver`) and property id resolvers (`IMsgPackPropertyIdResolver`, `AttributePropertyNameResolver`): choose the ids written for types and properties.
 - Filters (`FilterDefaultValues`, `FilterNullValues`, `FilterIgnoredAttribute`...): decide which properties are written. `FilterIgnoredAttribute.LikeNewtonsoft`, `LikeSystemTextJson` and the other presets leave out the same properties as those serializers ([property names and filters](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md#property-names-and-filters)).
 - Type guards (`IMsgPackTypeGuard`, `AllowedTypesGuard`): limit the types the data may create.

@@ -131,6 +131,14 @@ namespace LsMsgPackUnitTests
           List<ValidationItem> issues = Validate(MsgPackSerializer.Serialize(value, Settings(schema, layout)));
           Assert.AreEqual(0, issues.Count(i => i.Severity != ValidationSeverity.Comment), $"schema {schema}, {layout}:{Environment.NewLine}{Describe(issues)}");
         }
+
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+      {
+        MsgPackSettings described = Settings(true, layout);
+        described.SchemaVersion = SchemaVersion.Described;
+        List<ValidationItem> issues = Validate(MsgPackSerializer.Serialize(value, described));
+        Assert.AreEqual(0, issues.Count(i => i.Severity != ValidationSeverity.Comment), $"described schema, {layout}:{Environment.NewLine}{Describe(issues)}");
+      }
     }
 
     [TestMethod]

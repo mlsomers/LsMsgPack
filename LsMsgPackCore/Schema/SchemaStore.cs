@@ -89,11 +89,11 @@ namespace LsMsgPack
       if (schema is null)
         throw new ArgumentNullException(nameof(schema));
 
-      SchemaId id = SchemaId.Compute(schema);
+      SchemaBytes.Parse(schema, null, out SchemaVersion version); // refuse anything that is not a schema (the types are resolved when it is used)
+      SchemaId id = SchemaId.Compute(schema, version);
       if (_schemas.ContainsKey(id))
         return id;
 
-      SchemaBytes.Parse(schema, null); // refuse anything that is not a schema (the types are resolved when it is used)
       if (!TryReserve())
         throw new MsgPackException($"The {nameof(SchemaStore)} already holds {nameof(MaxSchemas)} ({MaxSchemas}) received schemas.");
 
@@ -179,8 +179,7 @@ namespace LsMsgPack
 
     private static byte[] Repack(byte[] schema, MsgPackOptions from, MsgPackOptions to)
     {
-      IndexedSchemaTypeResolver resolver = new IndexedSchemaTypeResolver() { ByTypeId = SchemaBytes.Parse(schema, from) };
-      return resolver.Pack(to);
+      return SchemaBytes.Repack(schema, from, to);
     }
 
     private bool TryReserve()
@@ -201,7 +200,7 @@ namespace LsMsgPack
       SessionKey key = new SessionKey(root, settings);
       if (_writers.TryGetValue(key, out SessionState state))
         return state;
-      return _writers.GetOrAdd(key, k => new SessionState(null));
+      return _writers.GetOrAdd(key, k => new SessionState(null, root));
     }
 
     /// <summary>
@@ -232,7 +231,7 @@ namespace LsMsgPack
 
         SchemaSession grown = current?.Thaw(settings) ?? new SchemaSession(new IndexedSchemaTypeResolver(), settings);
         result = work(grown, grown.Apply(settings));
-        PublishWriter(state, grown);
+        PublishWriter(state, grown, settings);
         used = grown;
         return result;
       }
@@ -256,11 +255,12 @@ namespace LsMsgPack
     /// <summary>
     /// Freezes and publishes a session that was extended while writing: its schema gets an id and can be referred to.
     /// </summary>
-    internal void PublishWriter(SessionState state, SchemaSession session)
+    /// <param name="settings">The settings of the writer (<see cref="MsgPackOptions.SchemaVersion"/>, and what version 2 describes)</param>
+    internal void PublishWriter(SessionState state, SchemaSession session, MsgPackOptions settings)
     {
       session.Freeze();
-      byte[] schema = session.Resolver.Pack(SchemaBytes.Canonical); // the byte order of the MsgPack specification, whatever the EndianAction of the writer
-      session.Id = SchemaId.Compute(schema);
+      byte[] schema = session.Resolver.Pack(SchemaBytes.Canonical, state.Root, settings); // the byte order of the MsgPack specification, whatever the EndianAction of the writer
+      session.Id = SchemaId.Compute(schema, settings._schemaVersion);
       session.Reference = WriteReference(session.Id);
       _schemas.TryAdd(session.Id, new Entry(schema));
       state.Current = session;
@@ -339,7 +339,7 @@ namespace LsMsgPack
         SessionKey key = new SessionKey(null, settings);
         if (_readers.TryGetValue(key, out SessionState state))
           return state;
-        return _readers.GetOrAdd(key, k => new SessionState(this));
+        return _readers.GetOrAdd(key, k => new SessionState(this, null));
       }
 
       /// <summary>
@@ -378,10 +378,16 @@ namespace LsMsgPack
     {
       private volatile SchemaSession _current;
 
-      internal SessionState(Entry schema)
+      internal SessionState(Entry schema, Type root)
       {
         Schema = schema;
+        Root = root;
       }
+
+      /// <summary>
+      /// Writing: the root type of the session (described by <see cref="SchemaVersion.Described"/>). Null for a reader.
+      /// </summary>
+      internal Type Root { get; }
 
       /// <summary>
       /// Reading: the schema of the session. Null for a writer.
@@ -397,6 +403,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// The settings that decide what a session contains: the type names (type resolvers, <see cref="AddTypeIdOption.FullName"/>), the properties (static filters), their order (<see cref="PropertyOrder"/>, the schema lists them in that order) and their ids (property id resolvers).
+    /// Writers also by <see cref="MsgPackOptions.SchemaVersion"/> (the schema of a version has its own id), readers take both versions alike.
     /// The arrays are compared by reference: settings that share them (e.g. the defaults) share the sessions.
     /// </summary>
     internal struct SessionKey : IEquatable<SessionKey>
@@ -408,6 +415,7 @@ namespace LsMsgPack
       private readonly AddTypeIdOption _addTypeIdOptions;
       private readonly EndianAction _endianAction; // inline schemas are read in the byte order of the reader
       private readonly PropertyOrder _propertyOrder;
+      private readonly SchemaVersion _version; // writers only, 0 for readers
 
       internal SessionKey(Type root, MsgPackOptions settings)
       {
@@ -418,6 +426,7 @@ namespace LsMsgPack
         _addTypeIdOptions = settings._addTypeIdOptions;
         _endianAction = settings._endianAction;
         _propertyOrder = settings._propertyOrder;
+        _version = root is null ? 0 : settings._schemaVersion;
       }
 
       public bool Equals(SessionKey other)
@@ -428,7 +437,8 @@ namespace LsMsgPack
           && ReferenceEquals(_propertyIdResolvers, other._propertyIdResolvers)
           && _addTypeIdOptions == other._addTypeIdOptions
           && _endianAction == other._endianAction
-          && _propertyOrder == other._propertyOrder;
+          && _propertyOrder == other._propertyOrder
+          && _version == other._version;
       }
 
       public override bool Equals(object obj)
@@ -446,7 +456,8 @@ namespace LsMsgPack
           hash = hash * 31 + RuntimeHelpers.GetHashCode(_propertyIdResolvers);
           hash = hash * 31 + (int)_addTypeIdOptions;
           hash = hash * 31 + (int)_endianAction;
-          return hash * 31 + (int)_propertyOrder;
+          hash = hash * 31 + (int)_propertyOrder;
+          return hash * 31 + (int)_version;
         }
       }
     }

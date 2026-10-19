@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LtMsgPack.Extensions;
 using System;
 using System.Runtime.Serialization;
@@ -93,6 +93,28 @@ namespace LtMsgPack
     {
       get { return _useRegisteredContexts; }
       set { _useRegisteredContexts = value; }
+    }
+
+    internal override bool HasCustomExtension(Type type)
+    {
+      LtExtension[] extensions = _extensions;
+      for (int t = 0; t < extensions.Length; t++)
+        if (extensions[t] != null && extensions[t].SupportsType(type))
+          return true;
+      return false;
+    }
+
+    /// <summary>
+    /// Only called when a described schema (<see cref="SchemaVersion.Described"/>) is made, for the values of [DefaultValue].
+    /// </summary>
+    internal override byte[] SerializePlainValue(object value, Type type, EndianAction endianAction)
+    {
+      LtMsgPackOptions plain = Clone();
+      plain._useInexedSchema = false;
+      plain._writeSchemaReference = false;
+      plain._endianAction = endianAction;
+      plain._differences = null;
+      return new LtMsgPackSerializer(plain, null).Serialize(value, type); // the contexts of these options are copied (the one of the serializer too)
     }
 
     /// <summary>

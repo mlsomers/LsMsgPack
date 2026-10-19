@@ -293,8 +293,10 @@ namespace MsgPackExplorer {
 
         const string schemaCategory = "Schema";
         props.Add(new ValueDescriptor("s", "Schema", schemaCategory, "The indexed schema: type ids and property ids in the data are indexes of these names.", root.Schema.ToString()));
+        if (root.Schema.RootType != null)
+          props.Add(new ValueDescriptor("s.root", "Root", schemaCategory, "The declared type of the root (version 2 of the schema).", root.Schema.RootType.Format(root.Schema.Types)));
         foreach (SchemaType type in root.Schema.Types) {
-          string text = string.Join(", ", type.Properties);
+          string text = type.Describe(root.Schema.Types);
           if (!type.IsUsed)
             text = string.Concat(text, " (no value found)");
           props.Add(new ValueDescriptor(string.Concat("s", type.Index.ToString(CultureInfo.InvariantCulture)), string.Concat("#", type.Index.ToString(CultureInfo.InvariantCulture), " ", type.Name), schemaCategory, "The properties of the type, a property id is the index in this list.", text));
@@ -317,6 +319,10 @@ namespace MsgPackExplorer {
         MsgPackItem valueItem = member.LastItemRef;
         if (valueItem != null)
           sb.Append(", MsgPack ").Append(MsgPackItem.GetOfficialTypeName(valueItem.TypeId)).Append(" at offset ").Append(valueItem.StoredOffset);
+        if (member.DeclaredTypeText != null)
+          sb.Append(", declared as ").Append(member.DeclaredTypeText);
+        if (member.DefaultText != null)
+          sb.Append(", left out: a reader gets ").Append(member.DefaultText);
         if (member.Error != null)
           sb.Append(Environment.NewLine).Append(member.Error);
         return sb.ToString();
@@ -327,6 +333,8 @@ namespace MsgPackExplorer {
       /// </summary>
       private static object GetDisplayValue(PrimitiveObject member) {
         object value = member.Value;
+        if (member.DefaultText != null)
+          return string.Concat(member.ValueText, " (left out: ", member.DefaultText, ")");
         if (value is bool || value is string || value is DateTime || value is decimal || value is float || value is double
           || value is sbyte || value is byte || value is short || value is ushort || value is int || value is uint || value is long || value is ulong)
           return value;

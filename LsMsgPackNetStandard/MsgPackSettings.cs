@@ -86,6 +86,25 @@ namespace LsMsgPack
       return (MsgPackSettings)CloneOptions();
     }
 
+    internal override bool HasCustomExtension(Type type)
+    {
+      ICustomExt[] extensions = _customExtentionTypes;
+      for (int t = 0; t < extensions.Length; t++)
+        if (extensions[t] != null && extensions[t].SupportsType(type))
+          return true;
+      return false;
+    }
+
+    internal override byte[] SerializePlainValue(object value, Type type, EndianAction endianAction)
+    {
+      MsgPackSettings plain = Clone();
+      plain._useInexedSchema = false;
+      plain._writeSchemaReference = false;
+      plain._endianAction = endianAction;
+      plain._differences = null;
+      return MsgPackSerializer.Serialize(value, type, plain);
+    }
+
     [ThreadStatic]
     private static Buffers _threadBuffers;
 

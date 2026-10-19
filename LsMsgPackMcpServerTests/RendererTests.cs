@@ -38,6 +38,25 @@ namespace LsMsgPackMcpServerTests
     }
 
     /// <summary>
+    /// Version 2 of the schema (SchemaVersion.Described): the declared types, nothing inferred, the defaults of values that were left out.
+    /// </summary>
+    [TestMethod]
+    public void DescribedSchema_DeclaredTypes()
+    {
+      McpInvoice invoice = Payloads.Invoice();
+      invoice.Id = 0;
+      string text = Render(MsgPackSerializer.Serialize(invoice, new MsgPackSettings() { SchemaVersion = SchemaVersion.Described }));
+      AssertContains(text, "indexed schema (inline, 3 types, version 2 with the declared types) followed by the body");
+      AssertContains(text, "No errors");
+      AssertContains(text, "  root: McpInvoice\n");
+      AssertContains(text, "#0 McpInvoice: Id: int, Customer: string, Billing: McpAddress, Lines: list<McpLine>, Date: datetime, Reference: guid, Tags: list<string>");
+      AssertContains(text, "{ // McpInvoice\n");
+      AssertContains(text, "\"Id\": null, // int, left out: 0");
+      AssertContains(text, "\"Lines\": [ // list<McpLine>, ");
+      Assert.IsFalse(System.Text.RegularExpressions.Regex.IsMatch(text, @"Mcp\w+~"), text); // nothing inferred
+    }
+
+    /// <summary>
     /// { "Process": ["FileName"] } followed by { "": 0, 0: "calc" }: a schema made to attack a reader, listed with the errors by default.
     /// </summary>
     [TestMethod]

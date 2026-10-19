@@ -1,4 +1,4 @@
-using LsMsgPack.Meta;
+﻿using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections.Generic;
@@ -28,7 +28,7 @@ namespace LsMsgPack
     internal static readonly MsgPackOptions Canonical = new DefaultOptions() { EndianAction = EndianAction.SwapIfCurrentSystemIsLittleEndian };
 
     /// <summary>
-    /// Copies the schema from the stream.
+    /// Copies the schema from the stream (of either <see cref="SchemaVersion"/>).
     /// </summary>
     /// <param name="firstByte">The first byte of the schema, already read from the stream</param>
     /// <param name="settings">Only the <see cref="MsgPackSettings.EndianAction"/> is used (for the lengths of long names and large schemas)</param>
@@ -41,10 +41,16 @@ namespace LsMsgPack
       long types = ReadMapLength(stream, firstByte, raw, settings);
       for (long t = 0; t < types; t++)
       {
-        CopyName(stream, raw, settings);
+        CopyName(stream, ReadByte(stream, raw), raw, settings);
         long props = ReadArrayLength(stream, ReadByte(stream, raw), raw, settings);
         for (long p = 0; p < props; p++)
-          CopyName(stream, raw, settings);
+        {
+          int first = ReadByte(stream, raw);
+          if (IsArray(first)) // version 2: [name, type] or [name, type, default], ["@", type]
+            CopyRest(stream, first, raw, settings, settings, 1);
+          else
+            CopyName(stream, first, raw, settings);
+        }
       }
 
       return raw.ToArray();
@@ -57,25 +63,92 @@ namespace LsMsgPack
     /// <param name="settings">The <see cref="MsgPackSettings.EndianAction"/> of the lengths, null for <see cref="Canonical"/></param>
     internal static List<ComplexTypeDef> Parse(byte[] raw, MsgPackOptions settings)
     {
+      return Parse(raw, settings, out SchemaVersion _);
+    }
+
+    /// <summary>
+    /// Version 2 (<see cref="DescribedSchema"/>) has a last entry <c>""</c> (no type has an empty name), its properties are <c>[name, type]</c> or <c>[name, type, default]</c>,
+    /// items <c>["@", type]</c> describe the content of an entry and are not properties (the property ids are the positions of the other items). Only the names are kept:
+    /// the descriptions are for readers without the classes.
+    /// </summary>
+    /// <param name="version">The version of the schema</param>
+    internal static List<ComplexTypeDef> Parse(byte[] raw, MsgPackOptions settings, out SchemaVersion version)
+    {
       if (settings is null)
         settings = Canonical;
       MemoryStream stream = new MemoryStream(raw, false);
       int first = stream.ReadByte();
       long types = ReadMapLength(stream, first, null, settings);
       List<ComplexTypeDef> defs = new List<ComplexTypeDef>((int)Math.Min(types, 1024));
+      bool described = false;
+      version = SchemaVersion.Names;
       for (int t = 0; t < types; t++)
       {
         string typeName = ReadName(stream, settings);
         long props = ReadArrayLength(stream, ReadByte(stream, null), null, settings);
+        if (typeName.Length == 0) // the root of version 2: [["@", type]], the last entry
+        {
+          if (t != types - 1 || props != 1 || ReadItem(stream, settings, out bool content) != DescribedSchema.ContentName || !content)
+            throw InvalidSchema();
+          version = SchemaVersion.Described;
+          break;
+        }
+
         ComplexTypeDef def = new ComplexTypeDef() { TypeId = t, TypeName = typeName, Props = new List<string>((int)Math.Min(props, 1024)) };
         for (long p = 0; p < props; p++)
-          def.Props.Add(ReadName(stream, settings));
+        {
+          string name = ReadItem(stream, settings, out bool isDescribed);
+          described |= isDescribed;
+          if (isDescribed && name == DescribedSchema.ContentName)
+          {
+            if (p != 0) // first, so the positions of the properties do not depend on it
+              throw InvalidSchema();
+            continue;
+          }
+          def.Props.Add(name);
+        }
         defs.Add(def);
       }
 
-      if (stream.Position != raw.Length)
+      if (stream.Position != raw.Length || (described && version != SchemaVersion.Described))
         throw InvalidSchema();
       return defs;
+    }
+
+    /// <summary>
+    /// A property name (version 1), or an item of version 2: <c>[name, type]</c>, <c>[name, type, default]</c> or <c>["@", type]</c>.
+    /// </summary>
+    /// <param name="described">An item of version 2</param>
+    /// <returns>The name</returns>
+    private static string ReadItem(Stream stream, MsgPackOptions settings, out bool described)
+    {
+      int first = ReadByte(stream, null);
+      described = IsArray(first);
+      if (!described)
+        return ReadName(stream, first, settings);
+
+      long count = ReadArrayLength(stream, first, null, settings);
+      if (count < 2 || count > 3)
+        throw InvalidSchema();
+      string name = ReadName(stream, ReadByte(stream, null), settings);
+      if (count == 3 && name == DescribedSchema.ContentName)
+        throw InvalidSchema();
+      for (long t = 1; t < count; t++) // the type and the default: any value, for other readers
+        CopyValue(stream, null, settings, settings, 1);
+      return name;
+    }
+
+    /// <summary>
+    /// The schema in another byte order (the lengths of long names and large schemas, and in version 2 also the numbers of the default values).
+    /// </summary>
+    internal static byte[] Repack(byte[] schema, MsgPackOptions from, MsgPackOptions to)
+    {
+      MemoryStream stream = new MemoryStream(schema, false);
+      ByteWriter bytes = new ByteWriter(schema.Length);
+      CopyValue(stream, bytes, from, to, 0);
+      if (stream.Position != schema.Length)
+        throw InvalidSchema();
+      return bytes.ToArray();
     }
 
     /// <summary>
@@ -195,9 +268,9 @@ namespace LsMsgPack
       return length;
     }
 
-    private static void CopyName(Stream stream, ByteWriter raw, MsgPackOptions settings)
+    private static void CopyName(Stream stream, int first, ByteWriter raw, MsgPackOptions settings)
     {
-      long length = ReadNameLength(stream, ReadByte(stream, raw), raw, settings);
+      long length = ReadNameLength(stream, first, raw, settings);
       if (length <= 0)
         return;
       byte[] name = ReadBytes(stream, (int)length);
@@ -209,12 +282,139 @@ namespace LsMsgPack
     /// </summary>
     private static string ReadName(Stream stream, MsgPackOptions settings)
     {
-      long length = ReadNameLength(stream, ReadByte(stream, null), null, settings);
+      return ReadName(stream, ReadByte(stream, null), settings);
+    }
+
+    private static string ReadName(Stream stream, int first, MsgPackOptions settings)
+    {
+      long length = ReadNameLength(stream, first, null, settings);
       if (length < 0)
         throw InvalidSchema();
       if (length == 0)
         return string.Empty;
       return MsgPackOptions.StringEncoding.GetString(ReadBytes(stream, (int)length));
+    }
+
+    private static bool IsArray(int firstByte)
+    {
+      return (firstByte & 0xF0) == 0x90 || firstByte == (int)MsgPackTypeId.MpArray16 || firstByte == (int)MsgPackTypeId.MpArray32;
+    }
+
+    /// <summary>
+    /// The deepest nesting of a value in a schema (the types of version 2, default values).
+    /// </summary>
+    private const int MaxValueDepth = 64;
+
+    /// <summary>
+    /// Copies (or skips, <paramref name="target"/> null) one MsgPack value, converting its numbers and lengths from the byte order of <paramref name="from"/> to the one of <paramref name="to"/>
+    /// (as the serializers write them: integers, floats, lengths and timestamps; the data of other extensions as it is).
+    /// </summary>
+    private static void CopyValue(Stream stream, ByteWriter target, MsgPackOptions from, MsgPackOptions to, int depth)
+    {
+      int first = ReadByte(stream, null);
+      target?.Write((byte)first);
+      CopyRest(stream, first, target, from, to, depth);
+    }
+
+    /// <summary>
+    /// <see cref="CopyValue"/> after the first byte (already copied).
+    /// </summary>
+    private static void CopyRest(Stream stream, int first, ByteWriter target, MsgPackOptions from, MsgPackOptions to, int depth)
+    {
+      if (depth > MaxValueDepth)
+        throw InvalidSchema();
+
+      if (first <= 0x7F || first >= 0xE0 || first == 0xC0 || first == 0xC2 || first == 0xC3) // fixint, nil, false, true
+        return;
+      if ((first & 0xF0) == 0x80) { CopyItems(stream, (first & 0x0F) * 2L, target, from, to, depth); return; }
+      if ((first & 0xF0) == 0x90) { CopyItems(stream, first & 0x0F, target, from, to, depth); return; }
+      if ((first & 0xE0) == 0xA0) { CopyBytes(stream, first & 0x1F, target); return; }
+
+      switch ((MsgPackTypeId)first)
+      {
+        case MsgPackTypeId.MpStr8:
+        case MsgPackTypeId.MpBin8: CopyBytes(stream, CopyLength(stream, 1, target, from, to), target); return;
+        case MsgPackTypeId.MpStr16:
+        case MsgPackTypeId.MpBin16: CopyBytes(stream, CopyLength(stream, 2, target, from, to), target); return;
+        case MsgPackTypeId.MpStr32:
+        case MsgPackTypeId.MpBin32: CopyBytes(stream, CopyLength(stream, 4, target, from, to), target); return;
+        case MsgPackTypeId.MpUByte:
+        case MsgPackTypeId.MpSByte: CopyLength(stream, 1, target, from, to); return;
+        case MsgPackTypeId.MpUShort:
+        case MsgPackTypeId.MpShort: CopyLength(stream, 2, target, from, to); return;
+        case MsgPackTypeId.MpUInt:
+        case MsgPackTypeId.MpInt:
+        case MsgPackTypeId.MpFloat: CopyLength(stream, 4, target, from, to); return;
+        case MsgPackTypeId.MpULong:
+        case MsgPackTypeId.MpLong:
+        case MsgPackTypeId.MpDouble: CopyLength(stream, 8, target, from, to); return;
+        case MsgPackTypeId.MpArray16: CopyItems(stream, CopyLength(stream, 2, target, from, to), target, from, to, depth); return;
+        case MsgPackTypeId.MpArray32: CopyItems(stream, CopyLength(stream, 4, target, from, to), target, from, to, depth); return;
+        case MsgPackTypeId.MpMap16: CopyItems(stream, CopyLength(stream, 2, target, from, to) * 2, target, from, to, depth); return;
+        case MsgPackTypeId.MpMap32: CopyItems(stream, CopyLength(stream, 4, target, from, to) * 2, target, from, to, depth); return;
+        case MsgPackTypeId.MpFExt1: CopyExtension(stream, 1, target, from, to); return;
+        case MsgPackTypeId.MpFExt2: CopyExtension(stream, 2, target, from, to); return;
+        case MsgPackTypeId.MpFExt4: CopyExtension(stream, 4, target, from, to); return;
+        case MsgPackTypeId.MpFExt8: CopyExtension(stream, 8, target, from, to); return;
+        case MsgPackTypeId.MpFExt16: CopyExtension(stream, 16, target, from, to); return;
+        case MsgPackTypeId.MpExt8: CopyExtension(stream, CopyLength(stream, 1, target, from, to), target, from, to); return;
+        case MsgPackTypeId.MpExt16: CopyExtension(stream, CopyLength(stream, 2, target, from, to), target, from, to); return;
+        case MsgPackTypeId.MpExt32: CopyExtension(stream, CopyLength(stream, 4, target, from, to), target, from, to); return;
+        default: throw InvalidSchema(); // never used (0xC1)
+      }
+    }
+
+    private static void CopyItems(Stream stream, long count, ByteWriter target, MsgPackOptions from, MsgPackOptions to, int depth)
+    {
+      for (long t = 0; t < count; t++) // each item has at least one byte: data that ends early throws
+        CopyValue(stream, target, from, to, depth + 1);
+    }
+
+    /// <summary>
+    /// A number of <paramref name="size"/> bytes (a length, an integer or the bits of a float), in the byte order of <paramref name="to"/>.
+    /// </summary>
+    /// <returns>The value as an unsigned number</returns>
+    private static long CopyLength(Stream stream, int size, ByteWriter target, MsgPackOptions from, MsgPackOptions to)
+    {
+      ulong value = ReadNumber(stream, size, from);
+      target?.WriteEndian(value, size, to);
+      return (long)value;
+    }
+
+    private static ulong ReadNumber(Stream stream, int size, MsgPackOptions settings)
+    {
+      byte[] bytes = ReadBytes(stream, size);
+      bool littleEndian = BitConverter.IsLittleEndian != MsgPackOptions.SwapEndianChoice(settings, size);
+      ulong value = 0;
+      for (int t = 0; t < size; t++)
+        value = (value << 8) | bytes[littleEndian ? size - 1 - t : t];
+      return value;
+    }
+
+    /// <summary>
+    /// The type and data of an extension. A timestamp (type -1) holds numbers in the byte order of the settings (see MpDateTime), any other extension is copied as it is.
+    /// </summary>
+    private static void CopyExtension(Stream stream, long length, ByteWriter target, MsgPackOptions from, MsgPackOptions to)
+    {
+      int type = ReadByte(stream, null);
+      target?.Write((byte)type);
+      if (unchecked((sbyte)type) == -1 && (length == 4 || length == 8))
+        CopyLength(stream, (int)length, target, from, to);
+      else if (unchecked((sbyte)type) == -1 && length == 12)
+      {
+        CopyLength(stream, 4, target, from, to); // nanoseconds
+        CopyLength(stream, 8, target, from, to); // seconds
+      }
+      else
+        CopyBytes(stream, length, target);
+    }
+
+    private static void CopyBytes(Stream stream, long length, ByteWriter target)
+    {
+      if (length > MaxExportedLength || (stream.CanSeek && length > stream.Length - stream.Position)) // a corrupt or hostile length should not make the reader allocate a huge buffer
+        throw EndOfData();
+      byte[] bytes = ReadBytes(stream, (int)length);
+      target?.Write(bytes);
     }
 
     private static int ReadByte(Stream stream, ByteWriter raw)
