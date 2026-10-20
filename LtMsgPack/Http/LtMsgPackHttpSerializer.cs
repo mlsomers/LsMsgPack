@@ -12,6 +12,8 @@ namespace LtMsgPack.Http
   /// <para><b>Negotiation</b> (responses only): the client lists the schema ids it holds in the request header <see cref="SchemasHeader"/>. The server writes a reference when the client holds the schema of the response and the schema inline otherwise,
   /// names the schema in the response header <see cref="SchemaHeader"/> and adds <c>Vary: MsgPack-Schemas</c>. The client registers the schemas it receives inline, and lists them in its next requests to that server.
   /// Without the request header the response is ordinary application/x-lsmsgpack (the schema inline).</para>
+  /// <para><b>Version 2 of the schema</b> (<see cref="LtMsgPackHttpOptions.DescribeSchemas"/>): a client without the classes asks for it with <c>Accept: application/x-lsmsgpack; schema=described</c>
+  /// (<see cref="MsgPackMediaTypes.AcceptsDescribedSchema"/>). A second serializer writes it (<see cref="SchemaVersion.Described"/>), with the same store: its schemas have their own ids and are negotiated alike.</para>
   /// <para>Trimmed and NativeAOT apps: create it with the code of LtMsgPack's source generator (<see cref="LtMsgPackHttpSerializer(LtMsgPackContext, LtMsgPackHttpOptions)"/>), as <see cref="LtMsgPackSerializer"/>.</para>
   /// </summary>
   public sealed class LtMsgPackHttpSerializer
@@ -33,6 +35,7 @@ namespace LtMsgPack.Http
 
     private readonly LtMsgPackSerializer _plain;
     private readonly LtMsgPackSerializer _lsMsgPack;
+    private readonly LtMsgPackSerializer _described; // version 2 of the schema, null without DescribeSchemas
     private readonly LtMsgPackOptions _lsOptions;
     private readonly SchemaStore _store;
     private readonly bool _negotiate;
@@ -79,10 +82,17 @@ namespace LtMsgPack.Http
         if (ls.SchemaStore is null)
           ls.SchemaStore = new SchemaStore();
         ls.WriteSchemaReference = true; // written with a reference, replaced by the schema when the client does not hold it
+        ls.CompleteSchemas = options.CompleteSchemas;
       }
       _lsOptions = ls;
       _store = ls.SchemaStore;
       _lsMsgPack = new LtMsgPackSerializer(ls, context);
+      if (options.DescribeSchemas && ls.UseInexedSchema)
+      {
+        LtMsgPackOptions described = ls.Clone(); // the same store: the writer sessions are kept per version
+        described.SchemaVersion = SchemaVersion.Described;
+        _described = new LtMsgPackSerializer(described, context);
+      }
       _maxAdvertised = Math.Max(0, options.MaxAdvertisedSchemas);
       _reportDifferences = options.ReportDifferences;
       _logDifferencesAsWarning = options.ReportDifferences && options.LogDifferencesAsWarning;
@@ -128,6 +138,15 @@ namespace LtMsgPack.Http
     }
 
     /// <summary>
+    /// Responses of application/x-lsmsgpack have version 2 of the schema when the client asks for it (<see cref="LtMsgPackHttpOptions.DescribeSchemas"/>, with the indexed schema).
+    /// They then depend on the Accept header (<c>Vary: Accept</c>).
+    /// </summary>
+    public bool DescribesSchemas
+    {
+      get { return !(_described is null); }
+    }
+
+    /// <summary>
     /// The serializer of the media type (the Content-Type, parameters are ignored): application/x-lsmsgpack or plain MsgPack.
     /// </summary>
     public LtMsgPackSerializer For(string mediaType)
@@ -138,6 +157,22 @@ namespace LtMsgPack.Http
     #region Server
 
     /// <summary>
+    /// Makes the schema of responses of the declared type before the first one is written (with <see cref="LtMsgPackHttpOptions.CompleteSchemas"/>: every class its values can hold), and returns its id.
+    /// Does nothing when such responses were written already.
+    /// </summary>
+    /// <param name="declaredType">The type the responses are declared as (as passed to <see cref="Serialize(object, Type, string, string, bool)"/>)</param>
+    /// <param name="describedSchema">The schema of clients that ask for version 2 (<see cref="DescribesSchemas"/>), otherwise version 1</param>
+    /// <exception cref="InvalidOperationException">Without <see cref="NegotiatesSchemas"/> (no schema is referred to), or version 2 without <see cref="DescribesSchemas"/></exception>
+    public SchemaId PrepareSchema(Type declaredType, bool describedSchema)
+    {
+      if (!_negotiate)
+        throw new InvalidOperationException($"Schemas are only kept with {nameof(LtMsgPackHttpOptions.NegotiateSchemas)} and the indexed schema.");
+      if (describedSchema && _described is null)
+        throw new InvalidOperationException($"Version 2 of the schema needs {nameof(LtMsgPackHttpOptions.DescribeSchemas)}.");
+      return (describedSchema ? _described : _lsMsgPack).PrepareSchema(declaredType);
+    }
+
+    /// <summary>
     /// Serializes a response body.
     /// </summary>
     /// <param name="declaredType">The type the value is declared as (a type id is added when the value's type differs), null: the value's type</param>
@@ -145,10 +180,22 @@ namespace LtMsgPack.Http
     /// <param name="clientSchemas">The request header <see cref="SchemasHeader"/> (null when there is none): the body refers to its schema when the client holds it</param>
     public MsgPackPayload Serialize(object value, Type declaredType, string mediaType, string clientSchemas)
     {
+      return Serialize(value, declaredType, mediaType, clientSchemas, false);
+    }
+
+    /// <summary>
+    /// Serializes a response body, with version 2 of the schema when the client asks for it.
+    /// </summary>
+    /// <param name="declaredType">The type the value is declared as (a type id is added when the value's type differs), null: the value's type</param>
+    /// <param name="mediaType">The Content-Type of the response</param>
+    /// <param name="clientSchemas">The request header <see cref="SchemasHeader"/> (null when there is none): the body refers to its schema when the client holds it</param>
+    /// <param name="describedSchema">The client asked for version 2 of the schema (<see cref="MsgPackMediaTypes.AcceptsDescribedSchema"/> of the request's Accept header), ignored unless <see cref="DescribesSchemas"/></param>
+    public MsgPackPayload Serialize(object value, Type declaredType, string mediaType, string clientSchemas, bool describedSchema)
+    {
       if (!MsgPackMediaTypes.IsLsMsgPack(mediaType))
         return Whole(_plain.Serialize(value, declaredType));
 
-      byte[] data = _lsMsgPack.Serialize(value, declaredType);
+      byte[] data = (describedSchema && !(_described is null) ? _described : _lsMsgPack).Serialize(value, declaredType);
       if (!_negotiate || data.Length < SchemaStore.ReferenceLength || data[0] != (byte)MsgPackTypeId.MpFExt16 || data[1] != unchecked((byte)SchemaStore.ReferenceExtensionType))
         return Whole(data); // null (nil, no schema)
 

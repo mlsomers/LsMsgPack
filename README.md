@@ -90,6 +90,8 @@ See [docs/schema.md](docs/schema.md) for examples of each wire format, their pro
 
 Reading data you don't trust (request bodies, messages from clients)? Type ids let the data pick the classes that are created: see [docs/security.md](docs/security.md) for what the serializers check and how to limit the allowed types with a type guard.
 
+The packages include analyzers that check the classes you serialize while you type: initialized properties whose left-out default would be read back as another value (with code fixes that add the `[DefaultValue]`), and properties declared as `object` where the data picks the type. See [docs/Analyzers.md](docs/Analyzers.md).
+
 Data that doesn't match your classes exactly (older or newer versions, a misspelled name) is read anyway, like the JSON serializers do. Pass an `out ReadDifferences` to `Deserialize` to find out what was skipped, counted per class and property, with the paths of the objects: see [docs/ReadDifferences.md](docs/ReadDifferences.md).
 
 Standalone Debugger (for Windows)
@@ -130,6 +132,13 @@ AI agents (MCP)
 ---------------
 
 [LsMsgPackMcpServer](LsMsgPackMcpServer/README.md) (`lsmsgpack-mcp`) is an MCP server and command line tool for AI agents. It decodes MsgPack into JSON with comments (types from the indexed schema and type ids, timestamps, decimals, errors with their offsets). It also reads the bytes of a variable while a program is paused in VS Code or Visual Studio, through their MsgPack extensions. See [docs/Mcp.md](docs/Mcp.md).
+
+TypeScript
+----------
+
+[@lsmsgpack/client](clients/typescript/README.md) reads the `application/x-lsmsgpack` responses of the web formatters into complete JavaScript objects (also the properties the server left out, and polymorphic values) and writes request bodies they read, as fast as `JSON.parse` and `JSON.stringify`. See [docs/TypeScriptClient.md](docs/TypeScriptClient.md).
+
+[LsMsgPackTypeScript](LsMsgPackTypeScript/README.md) (`lsmsgpack-ts`) writes TypeScript classes for the .NET models of a server (with the values their constructors set) and the schemas the server will write, so the client holds them before its first request. See [docs/TypeScriptModels.md](docs/TypeScriptModels.md).
 
 Source documentation
 --------------------

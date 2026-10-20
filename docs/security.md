@@ -103,6 +103,8 @@ public class ShapeGuard : IMsgPackTypeGuard
 - And your model has places where the declared type accepts more than you want: `object`, `List<object>`, `Dictionary<string, object>`, non-generic collections, broad interfaces (`IEnumerable`, `IDisposable`, `ISerializable`...), or base classes of other libraries.
 - Or you use `WildGooseChaseResolver`, which can find types in every loaded assembly.
 
+The [analyzers](Analyzers.md) point out such places in the classes you serialize (LSMP004) and the calls and controller actions that read into them (LSMP005).
+
 Data that only your own code writes and reads, such as files, caches or queues that nobody else can write to, doesn't need a guard.
 
 ### Web formatters

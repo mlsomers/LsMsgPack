@@ -516,7 +516,7 @@ namespace LsMsgPackFormattersTests
     [Test]
     public async Task GrownSchemaGetsANewId()
     {
-      (IHost host, HttpClient client) = await StartAsync();
+      (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(o => o.CompleteSchemas = false)); // a complete schema has Cat already
       using (host)
       {
         LtMsgPackHttpSerializer clientSide = new LtMsgPackHttpSerializer();
@@ -542,6 +542,28 @@ namespace LsMsgPackFormattersTests
     }
 
     [Test]
+    public async Task CompleteSchemaKnowsEveryClassFromTheStart()
+    {
+      (IHost host, HttpClient client) = await StartAsync();
+      using (host)
+      {
+        LtMsgPackHttpSerializer clientSide = new LtMsgPackHttpSerializer();
+        Uri server = new Uri("http://localhost/");
+
+        HttpResponseMessage dog = await client.SendAsync(Get("/test/animal", null));
+        byte[] dogBody = await dog.Content.ReadAsByteArrayAsync();
+        clientSide.LearnSchema(server, SchemaHeader(dog), dogBody, 0, dogBody.Length, MsgPackMediaTypes.XLsMsgPack);
+        Assert.That(SchemaHeader(dog), Is.EqualTo(new LtMsgPackHttpSerializer().PrepareSchema(typeof(Animal), false).ToString()), "Known before the first response: the same in every process");
+
+        HttpResponseMessage cat = await client.SendAsync(Get("/test/cat", clientSide.GetSchemasHeader(server))); // Cat is in the schema already: a reference
+        byte[] catBody = await cat.Content.ReadAsByteArrayAsync();
+        Assert.That(SchemaHeader(cat), Is.EqualTo(SchemaHeader(dog)));
+        Assert.That(IsReference(catBody), Is.True);
+        Assert.That(((Cat)clientSide.Deserialize(typeof(Animal), catBody, 0, catBody.Length, MsgPackMediaTypes.XLsMsgPack)).Purrs, Is.True);
+      }
+    }
+
+    [Test]
     public async Task NegotiationCanBeTurnedOff()
     {
       (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(settings => settings.NegotiateSchemas = false));
@@ -549,7 +571,7 @@ namespace LsMsgPackFormattersTests
       {
         HttpResponseMessage first = await client.SendAsync(Get("/test/animal", null));
         Assert.That(SchemaHeader(first), Is.Null);
-        Assert.That(first.Headers.Vary, Is.Empty);
+        Assert.That(first.Headers.Vary, Is.EqualTo(new[] { "Accept" }), "Not MsgPack-Schemas: version 2 of the schema is still offered (DescribeSchemas), it depends on the Accept header");
         byte[] body = await first.Content.ReadAsByteArrayAsync();
         Assert.That(body, Is.EqualTo(MsgPackSerializer.Serialize<Animal>(new Dog { Name = "Rex", Barks = 3 })));
       }

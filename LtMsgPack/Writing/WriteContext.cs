@@ -1,5 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Types;
 using LtMsgPack.IO;
 using System;
 using System.ComponentModel;
@@ -244,6 +245,69 @@ namespace LtMsgPack.Writing
       }
     }
 
+    /// <summary>
+    /// The entries as LsMsgPack's IndexedSchemaTypeResolver has them (for the described schema), the names are shared.
+    /// </summary>
+    internal List<ComplexTypeDef> ToDefs()
+    {
+      List<ComplexTypeDef> defs = new List<ComplexTypeDef>(_types.Count);
+      for (int t = 0; t < _types.Count; t++)
+      {
+        SchemaTypeInfo info = _types[t];
+        List<string> props = info.IsCollection ? _collectionProps[t] : new List<string>(info.PropertyNames);
+        defs.Add(new ComplexTypeDef() { Type = info.Type, TypeName = info.Name, TypeId = t, Props = props });
+      }
+      return defs;
+    }
+
+    /// <summary>
+    /// Same types (and properties of collections) in the same order: the same schema.
+    /// </summary>
+    internal bool SameAs(SchemaTypeInfo[] types, string[][] collectionProps)
+    {
+      if (types.Length != _types.Count)
+        return false;
+      for (int t = 0; t < types.Length; t++)
+      {
+        if (!ReferenceEquals(types[t], _types[t]))
+          return false;
+        List<string> props = _collectionProps[t];
+        if (props is null)
+          continue;
+        string[] other = collectionProps[t];
+        if (other.Length != props.Count)
+          return false;
+        for (int p = 0; p < other.Length; p++)
+          if (!string.Equals(other[p], props[p], StringComparison.Ordinal))
+            return false;
+      }
+      return true;
+    }
+
+    internal SchemaTypeInfo[] Types()
+    {
+      return _types.ToArray();
+    }
+
+    internal string[][] CollectionProps()
+    {
+      string[][] props = new string[_collectionProps.Count][];
+      for (int t = 0; t < props.Length; t++)
+        props[t] = _collectionProps[t]?.ToArray();
+      return props;
+    }
+
+    internal int TypesHash()
+    {
+      unchecked
+      {
+        int hash = _types.Count;
+        for (int t = 0; t < _types.Count; t++)
+          hash = hash * 31 + RuntimeHelpers.GetHashCode(_types[t]);
+        return hash;
+      }
+    }
+
     private static byte[] EncodeEntry(MsgPackWriter like, SchemaTypeInfo info)
     {
       MsgPackWriter writer = like.Like(64);
@@ -260,6 +324,54 @@ namespace LtMsgPack.Writing
         writer.Nil();
       else
         writer.String(name);
+    }
+  }
+
+  /// <summary>
+  /// The described schemas (<see cref="SchemaVersion.Described"/>) of a serializer's inline schemas, made once per root type and sequence of types (a few per root type) instead of per call.
+  /// </summary>
+  internal sealed class DescribedInlineSchemas
+  {
+    private const int MaxCount = 256; // beyond this (endless variations of types) they are made per call
+
+    private readonly object _lock = new object();
+    private volatile Described[] _all = new Described[0];
+
+    private sealed class Described
+    {
+      internal Type Root;
+      internal int Hash;
+      internal SchemaTypeInfo[] Types;
+      internal string[][] CollectionProps;
+      internal byte[] Bytes;
+    }
+
+    internal byte[] Get(InlineSchema inline, Type root, MsgPackOptions options)
+    {
+      int hash = inline.TypesHash();
+      Described[] all = _all;
+      for (int t = 0; t < all.Length; t++)
+      {
+        Described known = all[t];
+        if (known.Hash == hash && known.Root == root && inline.SameAs(known.Types, known.CollectionProps))
+          return known.Bytes;
+      }
+
+      ByteWriter bytes = new ByteWriter();
+      DescribedSchema.Write(bytes, inline.ToDefs(), root, options, options);
+      byte[] schema = bytes.ToArray();
+      if (all.Length < MaxCount)
+      {
+        Described made = new Described() { Root = root, Hash = hash, Types = inline.Types(), CollectionProps = inline.CollectionProps(), Bytes = schema };
+        lock (_lock)
+        {
+          Described[] grown = new Described[_all.Length + 1];
+          Array.Copy(_all, grown, _all.Length);
+          grown[grown.Length - 1] = made;
+          _all = grown;
+        }
+      }
+      return schema;
     }
   }
 }

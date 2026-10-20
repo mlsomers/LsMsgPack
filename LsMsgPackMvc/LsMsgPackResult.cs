@@ -48,19 +48,20 @@ namespace LsMsgPackMvc
 
       string mediaType = ContentType ?? Negotiate(context.HttpContext.Request);
       LtMsgPackHttpSerializer serializer = Serializer ?? LsMsgPackMvc.Serializer;
-      bool negotiated = serializer.NegotiatesSchemas && MsgPackMediaTypes.IsLsMsgPack(mediaType);
+      bool lsMsgPack = MsgPackMediaTypes.IsLsMsgPack(mediaType);
+      bool negotiated = serializer.NegotiatesSchemas && lsMsgPack;
+      bool describes = serializer.DescribesSchemas && lsMsgPack;
       string clientSchemas = negotiated ? context.HttpContext.Request.Headers[LtMsgPackHttpSerializer.SchemasHeader] : null;
+      bool described = describes && MsgPackMediaTypes.AcceptsDescribedSchema(context.HttpContext.Request.Headers["Accept"]);
 
-      MsgPackPayload payload = serializer.Serialize(Data, DeclaredType ?? Data?.GetType(), mediaType, clientSchemas);
+      MsgPackPayload payload = serializer.Serialize(Data, DeclaredType ?? Data?.GetType(), mediaType, clientSchemas, described);
 
       HttpResponseBase response = context.HttpContext.Response;
       response.ContentType = mediaType;
-      if (negotiated)
-      {
-        response.AppendHeader("Vary", LtMsgPackHttpSerializer.SchemasHeader);
-        if (!(payload.SchemaId is null))
-          response.AppendHeader(LtMsgPackHttpSerializer.SchemaHeader, payload.SchemaId);
-      }
+      if (negotiated || describes) // version 2 of the schema depends on the Accept header
+        response.AppendHeader("Vary", !negotiated ? "Accept" : describes ? LtMsgPackHttpSerializer.SchemasHeader + ", Accept" : LtMsgPackHttpSerializer.SchemasHeader);
+      if (negotiated && !(payload.SchemaId is null))
+        response.AppendHeader(LtMsgPackHttpSerializer.SchemaHeader, payload.SchemaId);
       payload.WriteTo(response.OutputStream);
     }
 

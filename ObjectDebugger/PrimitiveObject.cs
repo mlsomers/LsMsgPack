@@ -27,6 +27,22 @@ namespace ObjectDebugger
     public bool TypeIsGuess { get; set; }
 
     /// <summary>
+    /// The type the writer declared for this value (version 2 of the indexed schema, <c>SchemaVersion.Described</c>), null when the data does not tell it.
+    /// </summary>
+    public DeclaredType DeclaredType { get; set; }
+
+    /// <summary>
+    /// <see cref="DeclaredType"/> as text, with the names of the types of the schema (e.g. "list&lt;Line&gt;", "datetime?").
+    /// </summary>
+    public string DeclaredTypeText { get; set; }
+
+    /// <summary>
+    /// For a nil whose declared type (version 2 of the schema) is a value type, or whose property has <c>[DefaultValue]</c>: the value that was left out, as a reader gets it
+    /// (e.g. "0", "false", "NL"). Null otherwise (a nil that is null).
+    /// </summary>
+    public string DefaultText { get; set; }
+
+    /// <summary>
     /// The item holding the type id (the value of the key ""), null when the value has none (or the item tree was not kept).
     /// </summary>
     public MsgPackItem TypeIdItemRef { get; set; }

@@ -72,14 +72,15 @@ namespace LsMsgPackWebApiFormatters
     }
 
     /// <summary>
-    /// Server side (Web API content negotiation): an instance that knows which schemas the client holds.
+    /// Server side (Web API content negotiation): an instance that knows which schemas the client holds, and whether it asks for version 2 of the schema.
     /// </summary>
     public override MediaTypeFormatter GetPerRequestFormatterInstance(Type type, HttpRequestMessage request, MediaTypeHeaderValue mediaType)
     {
-      if (request is null || !Serializer.NegotiatesSchemas || !MsgPackMediaTypes.IsLsMsgPack(mediaType?.MediaType))
+      if (request is null || !(Serializer.NegotiatesSchemas || Serializer.DescribesSchemas) || !MsgPackMediaTypes.IsLsMsgPack(mediaType?.MediaType))
         return this;
-      string schemas = request.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemasHeader, out System.Collections.Generic.IEnumerable<string> values) ? string.Join(",", values) : null;
-      return new LsMsgPackMediaTypeFormatter(this, new RequestSchemas(schemas));
+      string schemas = Serializer.NegotiatesSchemas && request.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemasHeader, out System.Collections.Generic.IEnumerable<string> values) ? string.Join(",", values) : null;
+      bool described = Serializer.DescribesSchemas && MsgPackMediaTypes.AcceptsDescribedSchema(request.Headers.Accept.ToString());
+      return new LsMsgPackMediaTypeFormatter(this, new RequestSchemas(schemas, described));
     }
 
     public override bool CanReadType(Type type)
@@ -155,11 +156,11 @@ namespace LsMsgPackWebApiFormatters
       string mediaType = content?.Headers.ContentType?.MediaType;
 
       // Serialize to a buffer and write it asynchronously. A request (client side) always carries its schema inline.
-      MsgPackPayload payload = Serializer.Serialize(value, type, mediaType, ServerRequest?.Schemas);
+      MsgPackPayload payload = Serializer.Serialize(value, type, mediaType, ServerRequest?.Schemas, !(ServerRequest is null) && ServerRequest.Described);
       if (!(ServerRequest is null) && !(content is null) && !(payload.SchemaId is null))
       {
         // Web API buffers ObjectContent before sending the headers, so they can still be set. A formatter cannot set response headers (Vary),
-        // so a response that only this client can read expires at once, for caches.
+        // so a response that only this client can read expires at once, for caches (either version of the schema is read by any client: the .NET readers take both).
         content.Headers.TryAddWithoutValidation(LtMsgPackHttpSerializer.SchemaHeader, payload.SchemaId);
         if (payload.IsReference)
           content.Headers.Expires = new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -169,12 +170,18 @@ namespace LsMsgPackWebApiFormatters
 
     private sealed class RequestSchemas
     {
-      internal RequestSchemas(string schemas)
+      internal RequestSchemas(string schemas, bool described)
       {
         Schemas = schemas;
+        Described = described;
       }
 
       internal string Schemas { get; }
+
+      /// <summary>
+      /// The client asked for version 2 of the schema (Accept: application/x-lsmsgpack; schema=described).
+      /// </summary>
+      internal bool Described { get; }
     }
   }
 }

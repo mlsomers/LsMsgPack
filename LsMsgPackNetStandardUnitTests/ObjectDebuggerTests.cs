@@ -326,6 +326,121 @@ namespace LsMsgPackUnitTests
       AssertInvoice(root, true);
     }
 
+    private static MsgPackSettings Described(ObjectLayout layout)
+    {
+      MsgPackSettings settings = Settings(layout, true);
+      settings.SchemaVersion = SchemaVersion.Described;
+      return settings;
+    }
+
+    /// <summary>
+    /// Version 2 of the schema declares the types: nothing is inferred.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Array)]
+    [DataRow(ObjectLayout.Map)]
+    public void Described_TypesAreDeclared(ObjectLayout layout)
+    {
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), Described(layout)));
+      Assert.AreEqual(2, root.Schema.Version);
+      Assert.AreEqual(nameof(OdInvoice), root.Schema.RootType.Format(root.Schema.Types));
+      CollectionAssert.AreEqual(new[] { nameof(OdInvoice), nameof(OdAddress), nameof(OdLine) }, root.Schema.Types.Select(t => t.Name).ToArray());
+      SchemaType invoice = root.Schema.Types[0];
+      CollectionAssert.AreEqual(new[] { "Id", "Customer", "Billing", "Shipping", "Lines", "Date", "Tags" }, invoice.Properties);
+      Assert.AreEqual("Id: int, Customer: string, Billing: OdAddress, Shipping: OdAddress, Lines: list<OdLine>, Date: datetime, Tags: list<string>", invoice.Describe(root.Schema.Types));
+
+      AssertNoIssues(root);
+      Assert.AreEqual(nameof(OdInvoice), root.Type);
+      Assert.IsFalse(root.TypeIsGuess);
+      foreach (PrimitiveObject member in All(root))
+        Assert.IsFalse(member.TypeIsGuess, member.Path);
+
+      ComplexObject lines = Complex(root, "Lines");
+      Assert.AreEqual(ObjectKind.Collection, lines.Kind);
+      Assert.AreEqual("list<OdLine>", lines.DeclaredTypeText);
+      ComplexObject line = Complex(lines, "[1]");
+      Assert.AreEqual(nameof(OdLine), line.Type);
+      AssertValue("Pear", line, "Product");
+      AssertValue(0.75m, line, "Price");
+      Assert.AreEqual("decimal", Member(line, "Price").DeclaredTypeText);
+      Assert.AreEqual(nameof(OdAddress), Complex(root, "Shipping").Type);
+      Assert.AreEqual("datetime", Member(root, "Date").DeclaredTypeText);
+      AssertValue("fresh", Complex(root, "Tags"), "[1]");
+    }
+
+    /// <summary>
+    /// A left out value (nil with the array layout) of a value type: the default a reader gets.
+    /// </summary>
+    [TestMethod]
+    public void Described_LeftOutValues_HaveTheirDefault()
+    {
+      OdInvoice invoice = CreateInvoice();
+      invoice.Id = 0;
+      invoice.Customer = null;
+      invoice.Date = default(DateTime);
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(invoice, Described(ObjectLayout.Array)));
+      AssertNoIssues(root);
+      Assert.AreEqual("0", Member(root, "Id").DefaultText);
+      Assert.IsNull(Member(root, "Customer").DefaultText, "a string left out is null");
+      Assert.AreEqual("0001-01-01T00:00:00", Member(root, "Date").DefaultText);
+    }
+
+    [TestMethod]
+    public void Described_ListRoot_AndReference()
+    {
+      List<OdLine> lines = CreateInvoice().Lines;
+      SchemaStore store = new SchemaStore();
+      MsgPackSettings settings = Described(ObjectLayout.Array);
+      settings.SchemaStore = store;
+      settings.WriteSchemaReference = true;
+      byte[] bytes = MsgPackSerializer.Serialize(lines, settings);
+
+      RootObject missing = Reconstruct(bytes);
+      Assert.IsFalse(missing.Schema.IsAvailable);
+
+      RootObject root = Reconstruct(bytes, store);
+      AssertNoIssues(root);
+      Assert.AreEqual(SchemaSource.Reference, root.Schema.Source);
+      Assert.AreEqual(2, root.Schema.Version);
+      Assert.AreEqual("list<OdLine>", root.Schema.RootType.Format(root.Schema.Types));
+      Assert.AreEqual(ObjectKind.Collection, root.Kind);
+      ComplexObject line = Complex(root, "[0]");
+      Assert.AreEqual(nameof(OdLine), line.Type);
+      Assert.IsFalse(line.TypeIsGuess);
+      AssertValue("Apple", line, "Product");
+    }
+
+    /// <summary>
+    /// A DateTimeOffset is declared as such (no need to tell it from a type with two properties), the content of a wrapped collection has its element type.
+    /// </summary>
+    [TestMethod]
+    public void Described_DateTimeOffsetAndWrappedCollection()
+    {
+      OdStamped stamped = new OdStamped()
+      {
+        Offset = new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.FromHours(2)),
+        History = new List<DateTimeOffset>() { new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
+        Addresses = new List<OdAddress>() { new OdAddress() { Street = "Main street", Number = 1, City = "Springfield" } }
+      };
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(stamped, Described(ObjectLayout.Array)));
+      AssertNoIssues(root);
+      ComplexObject offset = Complex(root, nameof(OdStamped.Offset));
+      Assert.AreEqual("DateTimeOffset", offset.Type);
+      Assert.IsFalse(offset.TypeIsGuess);
+      Assert.AreEqual("dto", Complex(Complex(root, nameof(OdStamped.History)), "[0]").DeclaredTypeText);
+
+      OdZoo zoo = new OdZoo() { Animals = new List<OdAnimal>() { new OdDog() { Name = "Rex" } }, Anything = new List<int>() { 7 } };
+      root = Reconstruct(MsgPackSerializer.Serialize(zoo, Described(ObjectLayout.Array)));
+      AssertNoIssues(root);
+      ComplexObject anything = Complex(root, nameof(OdZoo.Anything));
+      Assert.AreEqual("any", anything.DeclaredTypeText);
+      Assert.AreEqual(ObjectKind.Collection, anything.Kind);
+      Assert.AreEqual("int", Member(anything, "[0]").DeclaredTypeText);
+      ComplexObject dog = Complex(Complex(root, nameof(OdZoo.Animals)), "[0]");
+      Assert.AreEqual(nameof(OdDog), dog.Type);
+      AssertValue("Rex", dog, nameof(OdDog.Name));
+    }
+
 #if KEEPTRACK
     /// <summary>
     /// A map cut off by the end of the data keeps slots for the entries it claims: they were taken for keys that are not property indexes,

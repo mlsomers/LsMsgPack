@@ -473,6 +473,21 @@ namespace LsMsgPack.TypeResolving.Types
     }
 
     /// <summary>
+    /// The schema in the <see cref="MsgPackOptions.SchemaVersion"/> of the settings.
+    /// </summary>
+    /// <param name="byteOrder">The <see cref="MsgPackSettings.EndianAction"/> of the bytes</param>
+    /// <param name="root">The declared type of the root (version 2 describes it)</param>
+    /// <param name="settings">The settings the body is written with</param>
+    internal byte[] Pack(MsgPackOptions byteOrder, Type root, MsgPackOptions settings)
+    {
+      if (settings._schemaVersion != SchemaVersion.Described)
+        return Pack(byteOrder);
+      ByteWriter bytes = new ByteWriter();
+      DescribedSchema.Write(bytes, ByTypeId, root, settings, byteOrder);
+      return bytes.ToArray();
+    }
+
+    /// <summary>
     /// A map of type names with an array of property names, written directly (the same bytes as packing them as MpMap, MpArray and MpString items)
     /// </summary>
     /// <param name="settings">Only the <see cref="MsgPackSettings.EndianAction"/> is used (for the lengths of long names and large schemas)</param>

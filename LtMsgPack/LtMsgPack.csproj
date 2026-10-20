@@ -28,7 +28,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" />
+    <!-- PrivateAssets none: the analyzers of LsMsgPack.Core reach the projects that reference this package (NuGet leaves out the analyzers of dependencies otherwise) -->
+    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" PrivateAssets="none" />
   </ItemGroup>
 
   <!-- The source generator ships in this package (analyzers/dotnet/cs), so the generator and the runtime always have the same version, with the MSBuild properties it reads -->

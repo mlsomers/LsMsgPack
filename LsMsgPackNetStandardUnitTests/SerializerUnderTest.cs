@@ -149,7 +149,7 @@ namespace LsMsgPackUnitTests
       LtExtension[] extensions = Extensions(settings.CustomExtentionTypes);
       object key = (settings.UseInexedSchema, settings.DynamicallyCompact, settings.EndianAction, settings.AddTypeIdOptions,
         settings.TypeResolvers, settings.StaticFilters, settings.DynamicFilters, settings.PropertyNameResolvers,
-        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat));
+        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas));
       return _serializers.GetOrAdd(key, k => new LtMsgPackSerializer(new LtMsgPackOptions()
       {
         UseInexedSchema = settings.UseInexedSchema,
@@ -171,6 +171,8 @@ namespace LsMsgPackUnitTests
         UnspecifiedDateTimeKind = settings.UnspecifiedDateTimeKind,
         ReadDateTimeKind = settings.ReadDateTimeKind,
         DateTimeOffsetFormat = settings.DateTimeOffsetFormat,
+        SchemaVersion = settings.SchemaVersion,
+        CompleteSchemas = settings.CompleteSchemas,
         ReadErrors = settings.ReadErrors,
         Extensions = extensions,
         Contexts = _contexts,

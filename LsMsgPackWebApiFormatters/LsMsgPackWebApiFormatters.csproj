@@ -17,7 +17,8 @@
   <ItemGroup>
     <!-- In the configuration the solution gives LtMsgPack: LtMsgPack and LsMsgPack.Core have no KEEPTRACK code, so their KeepTrack builds are the same.
          (A mapping to Debug/Release here made Visual Studio compile against an old LtMsgPack: the IDE does not build references, so nothing built that configuration.) -->
-    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
+    <!-- PrivateAssets none: the analyzers (LsMsgPack.Core) and LtMsgPack's source generator reach the projects that reference this package -->
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" PrivateAssets="none" />
   </ItemGroup>
 
 </Project>

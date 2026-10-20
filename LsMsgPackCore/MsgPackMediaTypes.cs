@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace LsMsgPack
 {
@@ -24,6 +25,12 @@ namespace LsMsgPack
     public const string XLsMsgPack = "application/x-lsmsgpack";
 
     /// <summary>
+    /// The parameter of <see cref="XLsMsgPack"/> in an Accept header that asks for version 2 of the schema (<see cref="SchemaVersion.Described"/>): the kind and default of each property and the type of the root,
+    /// for clients without the classes (e.g. JavaScript). E.g. <c>Accept: application/x-lsmsgpack; schema=described</c>. The body is the same, .NET readers read either version.
+    /// </summary>
+    public const string DescribedSchemaParameter = "schema=described";
+
+    /// <summary>
     /// All supported media types, the first one is the default.
     /// </summary>
     public static readonly IReadOnlyList<string> All = new[] { MsgPack, XMsgPack, XLsMsgPack };
@@ -46,6 +53,42 @@ namespace LsMsgPack
     public static bool IsLsMsgPack(string contentType)
     {
       return string.Equals(WithoutParameters(contentType), XLsMsgPack, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// True if the Accept header lists <see cref="XLsMsgPack"/> with <see cref="DescribedSchemaParameter"/> (and not with q=0).
+    /// </summary>
+    /// <param name="accept">The Accept header of the request (several values joined by commas)</param>
+    public static bool AcceptsDescribedSchema(string accept)
+    {
+      if (accept is null || accept.IndexOf("described", StringComparison.OrdinalIgnoreCase) < 0) // the usual case: one scan, no allocations
+        return false;
+
+      string[] ranges = accept.Split(',');
+      for (int r = 0; r < ranges.Length; r++)
+      {
+        string[] parts = ranges[r].Split(';');
+        if (!string.Equals(parts[0].Trim(), XLsMsgPack, StringComparison.OrdinalIgnoreCase))
+          continue;
+
+        bool described = false;
+        bool refused = false;
+        for (int p = 1; p < parts.Length; p++)
+        {
+          int equals = parts[p].IndexOf('=');
+          if (equals < 0)
+            continue;
+          string name = parts[p].Substring(0, equals).Trim();
+          string value = parts[p].Substring(equals + 1).Trim().Trim('"');
+          if (string.Equals(name, "schema", StringComparison.OrdinalIgnoreCase))
+            described = string.Equals(value, "described", StringComparison.OrdinalIgnoreCase);
+          else if (string.Equals(name, "q", StringComparison.OrdinalIgnoreCase))
+            refused = double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double q) && q <= 0;
+        }
+        if (described && !refused)
+          return true;
+      }
+      return false;
     }
 
     /// <summary>

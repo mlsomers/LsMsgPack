@@ -325,3 +325,28 @@ Without the handler (or from any other client), nothing changes: the responses c
 - `NegotiateSchemas = false` turns it off (the schema is always inline). It's also off when `XLsMsgPack.UseInexedSchema` is false.
 
 Measured on the invoices of `BenchmarkInvoices` (100 invoices, LtMsgPack with the default options, one serializer, in process, one run): with the schema inline, 214.7 KB, write ~310 µs, read ~425 µs. With references, 176.2 KB (-18%), write ~255 µs, read ~415 µs.
+
+### Complete schemas
+
+By default (`CompleteSchemas`, with `NegotiateSchemas`) the schema of a response type is made at once with every class its values can hold, in a fixed order: the classes of its properties, the elements of collections and values of dictionaries, and the classes deriving from them (or implementing an interface) in the assemblies the type reaches. So its id depends only on the classes and the options, not on what the first response happened to contain:
+
+- Every instance of the server (a web farm, after a restart) writes the same schemas, so a client keeps using the ones it holds.
+- A client can hold them before its first request: [lsmsgpack-ts](TypeScriptModels.md) writes them for the TypeScript client, made by the same code (`LtMsgPackHttpSerializer.PrepareSchema(declaredType, describedSchema)`, which also tells the id of a type's schema).
+- A value with a class the schema does not have still makes it grow: a value in a property declared as `object`, a class of an assembly the type does not reach, a collection with a type id (`IEnumerable<Address>` holding a `List<Address>`).
+- `CompleteSchemas = false`: a schema gets the classes of the values written so far (the behavior before October 2026), smaller when most derived classes are never sent.
+
+It is `MsgPackOptions.CompleteSchemas` of the `application/x-lsmsgpack` serializers, which both serializers support with `WriteSchemaReference`.
+
+### Schema version 2 for clients without the classes
+
+A client that doesn't have the .NET classes (e.g. JavaScript) can't tell from the property names alone whether a left-out value was `0`, `false` or `null`, or whether a nested array is an object or a list. It asks for [version 2 of the schema](schema.md#version-2-the-declared-types), which also has the type and default of each property and the type of the root:
+
+```
+Accept: application/x-lsmsgpack; schema=described, application/x-lsmsgpack; q=0.9
+```
+
+- The body is the same, only the schema differs. Its schema has its own id, and is negotiated and referred to like any other (`MsgPack-Schemas`, `MsgPack-Schema`).
+- List the plain media type as well: ASP.NET Core's content negotiation only matches a parameter it knows, and a server that doesn't offer version 2 then answers with version 1.
+- The .NET readers read both versions, so a response that a cache serves to another client can be read by it either way. ASP.NET Core and MVC 5 add `Accept` to `Vary`. Web API 2 can't set `Vary`, which is harmless here.
+- `DescribeSchemas = false` turns it off: the server always writes version 1. It also needs `XLsMsgPack.UseInexedSchema`, and works with or without `NegotiateSchemas`.
+- With `XLsMsgPack.SchemaVersion = SchemaVersion.Described`, every response has version 2.

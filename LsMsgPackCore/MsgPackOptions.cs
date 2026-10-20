@@ -111,6 +111,12 @@ namespace LsMsgPack
     public static bool Default_WriteSchemaReference { get; set; } = false;
 
     /// <summary>
+    /// The <see cref="CompleteSchemas"/> of new settings (false by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool Default_CompleteSchemas { get; set; } = false;
+
+    /// <summary>
     /// The <see cref="PropertyOrder"/> of new settings (<see cref="LsMsgPack.PropertyOrder.Reflection"/> by default, the order so far).
     /// </summary>
     [IgnoreDataMember]
@@ -127,6 +133,12 @@ namespace LsMsgPack
     /// </summary>
     [IgnoreDataMember]
     public static bool Default_TrimTrailingNulls { get; set; } = false;
+
+    /// <summary>
+    /// The <see cref="SchemaVersion"/> of new settings (<see cref="LsMsgPack.SchemaVersion.Names"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static SchemaVersion Default_SchemaVersion { get; set; } = SchemaVersion.Names;
 
     /// <summary>
     /// The <see cref="MaxDepth"/> of new settings, 256 by default.
@@ -187,9 +199,11 @@ namespace LsMsgPack
     internal IMsgPackPropertyIdResolver[] _propertyNameResolvers = Default_PropertyNameResolvers;
     internal SchemaStore _schemaStore = Default_SchemaStore;
     internal bool _writeSchemaReference = Default_WriteSchemaReference;
+    internal bool _completeSchemas = Default_CompleteSchemas;
     internal PropertyOrder _propertyOrder = Default_PropertyOrder;
     internal ObjectLayout _objectLayout = Default_ObjectLayout;
     internal bool _trimTrailingNulls = Default_TrimTrailingNulls;
+    internal SchemaVersion _schemaVersion = Default_SchemaVersion;
     internal int _maxDepth = Default_MaxDepth;
     internal ObjectCreation _objectCreation = Default_ObjectCreation;
     internal ReadErrorHandling _readErrors = Default_ReadErrors;
@@ -368,6 +382,23 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// With <see cref="WriteSchemaReference"/>: the schema of a root type is made at once with every class a value of it can hold (the classes of its properties, elements and dictionary values,
+    /// and the classes deriving from them in the assemblies the root type reaches), in a fixed order. False by default: a schema gets the classes the values written so far had.
+    /// <para>Its id then only depends on the root type, the classes and the settings, not on the data: every process (e.g. the instances of a web farm) writes the same schemas,
+    /// and a reader can hold them before the first value arrives (the TypeScript generator writes them for its clients). A value with a class the schema does not have (one of another assembly,
+    /// or in a property declared as object) makes it grow as usual.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Complete Schemas")]
+    [Description("With schema references: the schema of a root type gets every class its values can hold at once (in a fixed order), so its id does not depend on the data.")]
+    [DefaultValue(false)]
+    public bool CompleteSchemas
+    {
+      get { return _completeSchemas; }
+      set { _completeSchemas = value; }
+    }
+
+    /// <summary>
     /// The order in which the properties of an object are written (and listed in the indexed schema), <see cref="LsMsgPack.PropertyOrder.Reflection"/> by default.
     /// <para>Readers look properties up by name (or by their name in the schema), so data written in any order is read by settings with any order.</para>
     /// </summary>
@@ -418,6 +449,26 @@ namespace LsMsgPack
     {
       get { return _trimTrailingNulls; }
       set { _trimTrailingNulls = value; }
+    }
+
+    /// <summary>
+    /// The version of the indexed schema that is written: <see cref="LsMsgPack.SchemaVersion.Names"/> (the default, the property names) or <see cref="LsMsgPack.SchemaVersion.Described"/>
+    /// (also the kind and default of each property and the type of the root, for readers without the classes, e.g. JavaScript; see docs/schema.md).
+    /// <para>Only affects writing: readers take both versions (the names are all they need).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Schema Version")]
+    [Description("The version of the indexed schema that is written: the property names (default), or also the kind and default of each property, for readers without the classes. Readers read both.")]
+    [DefaultValue(SchemaVersion.Names)]
+    public SchemaVersion SchemaVersion
+    {
+      get { return _schemaVersion; }
+      set
+      {
+        if (value != SchemaVersion.Names && value != SchemaVersion.Described)
+          throw new ArgumentOutOfRangeException(nameof(value), value, "Not a defined SchemaVersion.");
+        _schemaVersion = value;
+      }
     }
 
     /// <summary>
@@ -582,6 +633,24 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// Whether a custom extension of these settings writes values of the type (asked by <see cref="DescribedSchema"/>, the serializers keep their own extensions).
+    /// </summary>
+    internal virtual bool HasCustomExtension(Type type)
+    {
+      return false;
+    }
+
+    /// <summary>
+    /// The value as the serializer of these settings writes it without the schema (a default value in <see cref="DescribedSchema"/>), null when it cannot.
+    /// </summary>
+    /// <param name="type">The declared type of the value</param>
+    /// <param name="endianAction">The byte order of the schema</param>
+    internal virtual byte[] SerializePlainValue(object value, Type type, EndianAction endianAction)
+    {
+      return null;
+    }
+
+    /// <summary>
     /// Map key holding the type identifier.
     /// </summary>
     internal const string TypeIdKey = "";
@@ -607,6 +676,24 @@ namespace LsMsgPack
         return false;
       return true;
     }
+  }
+
+  /// <summary>
+  /// The version of the indexed schema (see <see cref="MsgPackOptions.SchemaVersion"/>). It is part of the <see cref="SchemaId"/>, readers tell the versions apart by their content.
+  /// </summary>
+  public enum SchemaVersion
+  {
+    /// <summary>
+    /// Version 1 (the default): a map of type names with an array of property names each.
+    /// </summary>
+    [Description("Version 1 (default): the type names with the names of their properties.")]
+    Names = 1,
+
+    /// <summary>
+    /// Version 2: the same map, each property an array <c>[name, type]</c> or <c>[name, type, default]</c>, and a last entry <c>""</c> with the type of the root (see docs/schema.md).
+    /// </summary>
+    [Description("Version 2: also the kind and default of each property and the type of the root, for readers without the classes (e.g. JavaScript).")]
+    Described = 2
   }
 
   public enum EndianAction

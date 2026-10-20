@@ -4,15 +4,17 @@ The parts shared by the [LtMsgPack](https://www.nuget.org/packages/LtMsgPack) an
 
 Its types are in the `LsMsgPack.*` namespaces, so they work the same with either serializer:
 
-- `MsgPackOptions`: the format settings (`UseInexedSchema`, `ObjectLayout`, `AddTypeIdOptions`, `PropertyOrder`, `TypeGuard`...), the base class of `LtMsgPackOptions` and `MsgPackSettings`.
+- `MsgPackOptions`: the format settings (`UseInexedSchema`, `SchemaVersion`, `ObjectLayout`, `AddTypeIdOptions`, `PropertyOrder`, `TypeGuard`...), the base class of `LtMsgPackOptions` and `MsgPackSettings`.
 - Type resolvers (`IMsgPackTypeResolver`, `XmlRootAttributeTypeResolver`) and property id resolvers (`IMsgPackPropertyIdResolver`, `AttributePropertyNameResolver`): choose the ids written for types and properties.
 - Filters (`FilterDefaultValues`, `FilterNullValues`, `FilterIgnoredAttribute`...): decide which properties are written. `FilterIgnoredAttribute.LikeNewtonsoft`, `LikeSystemTextJson` and the other presets leave out the same properties as those serializers ([property names and filters](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md#property-names-and-filters)).
 - Type guards (`IMsgPackTypeGuard`, `AllowedTypesGuard`): limit the types the data may create.
 - `SchemaStore`: keeps indexed schemas between calls, so messages can refer to a schema instead of carrying it.
 - `MsgPackMediaTypes`: the MsgPack media types (`application/msgpack`, `application/x-msgpack`, `application/x-lsmsgpack`).
+- Analyzers, for the projects that reference either serializer: initialized properties without a matching `[DefaultValue]` (a left-out value would be read back as the initial value, with code fixes), and properties or reads declared as `object` where the data picks the type ([analyzers](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Analyzers.md)).
 
 ## Documentation
 
 - [Wire formats, the indexed schema and type resolvers](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md)
 - [Security](https://github.com/mlsomers/LsMsgPack/blob/master/docs/security.md): type guards
+- [Analyzers](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Analyzers.md): the rules, which classes they check, and how to configure them
 - Source and issues: [github.com/mlsomers/LsMsgPack](https://github.com/mlsomers/LsMsgPack)

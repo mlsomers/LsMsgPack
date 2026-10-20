@@ -40,19 +40,21 @@ namespace LsMsgPackFormatters
     public override async Task WriteResponseBodyAsync(OutputFormatterWriteContext context)
     {
       string mediaType = context.ContentType.Value;
-      bool negotiated = Serializer.NegotiatesSchemas && MsgPackMediaTypes.IsLsMsgPack(mediaType);
-      string clientSchemas = negotiated ? context.HttpContext.Request.Headers[LtMsgPackHttpSerializer.SchemasHeader].ToString() : null;
+      bool lsMsgPack = MsgPackMediaTypes.IsLsMsgPack(mediaType);
+      bool negotiated = Serializer.NegotiatesSchemas && lsMsgPack;
+      bool describes = Serializer.DescribesSchemas && lsMsgPack;
+      HttpRequest request = context.HttpContext.Request;
+      string clientSchemas = negotiated ? request.Headers[LtMsgPackHttpSerializer.SchemasHeader].ToString() : null;
+      bool described = describes && MsgPackMediaTypes.AcceptsDescribedSchema(request.Headers["Accept"].ToString());
 
       // Serialize to a buffer and write it asynchronously, ASP.NET Core does not allow synchronous writes to the response stream.
-      MsgPackPayload payload = Serializer.Serialize(context.Object, context.ObjectType, mediaType, clientSchemas);
+      MsgPackPayload payload = Serializer.Serialize(context.Object, context.ObjectType, mediaType, clientSchemas, described);
 
       HttpResponse response = context.HttpContext.Response;
-      if (negotiated)
-      {
-        response.Headers.Append("Vary", LtMsgPackHttpSerializer.SchemasHeader);
-        if (!(payload.SchemaId is null))
-          response.Headers[LtMsgPackHttpSerializer.SchemaHeader] = payload.SchemaId;
-      }
+      if (negotiated || describes)
+        response.Headers.Append("Vary", Vary(negotiated, describes)); // version 2 of the schema depends on the Accept header
+      if (negotiated && !(payload.SchemaId is null))
+        response.Headers[LtMsgPackHttpSerializer.SchemaHeader] = payload.SchemaId;
       response.ContentLength = payload.Length;
 #if NETCOREAPP3_0_OR_GREATER
       System.IO.Pipelines.PipeWriter writer = response.BodyWriter; // copied into the buffers of the response, one flush
@@ -63,6 +65,15 @@ namespace LsMsgPackFormatters
 #else
       await payload.WriteToAsync(response.Body, context.HttpContext.RequestAborted);
 #endif
+    }
+
+    private const string VarySchemasAndAccept = LtMsgPackHttpSerializer.SchemasHeader + ", Accept";
+
+    private static string Vary(bool negotiated, bool describes)
+    {
+      if (!negotiated)
+        return "Accept";
+      return describes ? VarySchemasAndAccept : LtMsgPackHttpSerializer.SchemasHeader;
     }
   }
 }

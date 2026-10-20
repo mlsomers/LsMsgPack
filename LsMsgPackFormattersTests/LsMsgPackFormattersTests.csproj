@@ -16,10 +16,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPackFormatters\LsMsgPackFormatters.csproj" />
-    <!-- Explicit (instead of transitive) so the KEEPTRACK configuration mapping of the formatter projects applies here as well -->
-    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
-    <!-- LsMsgPack checks that what the formatters (LtMsgPack) write is what LsMsgPack writes and reads -->
-    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=$(Configuration.Replace('KeepTrack', ''))" />
+    <!-- LsMsgPack checks that what the formatters (LtMsgPack) write is what LsMsgPack writes and reads. LtMsgPack comes with the formatter.
+         No configuration mapping: Visual Studio does not build references, so a mapped configuration that the solution build does not produce compiles against an old build (CLAUDE.md) -->
+    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
   </ItemGroup>
 
 </Project>

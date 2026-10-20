@@ -37,6 +37,8 @@ namespace ObjectDebugger
       Type = null;
       TypeIsGuess = false;
       SchemaType = null;
+      DeclaredType = null;
+      DeclaredTypeText = null;
       Kind = ObjectKind.Object;
       FirstItemRef = item;
       LastItemRef = item;
@@ -83,7 +85,7 @@ namespace ObjectDebugger
         List<SchemaType> types = Schema != null && Schema.IsAvailable ? Schema.Types : null;
         Node body = Node.FromItem(payload.Body);
         ObjectReconstructor reconstructor = new ObjectReconstructor(types);
-        reconstructor.FillRoot(this, body);
+        reconstructor.FillRoot(this, body, Schema != null && Schema.IsAvailable ? Schema.RootType : null);
         if (reconstructor.Suspects.Count > 0 && reconstructor.Unexplained > 0)
           RetryWithValues(body, types, reconstructor);
 
@@ -125,7 +127,7 @@ namespace ObjectDebugger
         for (int t = 0; t < types.Count; t++)
           types[t].IsUsed = false;
         ObjectReconstructor retry = new ObjectReconstructor(types, forced);
-        retry.FillRoot(new RootObject(), body);
+        retry.FillRoot(new RootObject(), body, Schema?.RootType);
         if (retry.Unexplained < fewest)
         {
           fewest = retry.Unexplained;
@@ -155,7 +157,7 @@ namespace ObjectDebugger
       SchemaType = null;
       ValueKind = ValueKind.Nil;
       Value = null;
-      new ObjectReconstructor(types, best).FillRoot(this, body);
+      new ObjectReconstructor(types, best).FillRoot(this, body, Schema?.RootType);
     }
 
     /// <summary>
@@ -217,45 +219,125 @@ namespace ObjectDebugger
     }
 
     /// <summary>
-    /// A map of type names, each with an array of property names (see <c>IndexedSchemaTypeResolver.Pack</c>).
+    /// A map of type names, each with an array of property names (see <c>IndexedSchemaTypeResolver.Pack</c>), or version 2 of it (see <see cref="ReadSchema"/>).
     /// </summary>
     /// <returns>Null when the node is not a schema</returns>
     internal static SchemaInfo ReadInlineSchema(Node node)
     {
-      List<SchemaType> types = ReadSchemaTypes(node);
-      if (types is null)
-        return null;
-
       SchemaInfo schema = new SchemaInfo() { Source = SchemaSource.Inline, IsAvailable = true };
-      schema.Types.AddRange(types);
-      return schema;
+      return ReadSchema(node, schema) ? schema : null;
     }
 
-    private static List<SchemaType> ReadSchemaTypes(Node node)
+    private const string RootKey = "";
+    private const string ContentName = "@";
+
+    /// <summary>
+    /// Version 1: <c>{ typeName: [propertyName, ...], ... }</c>. Version 2 (<c>SchemaVersion.Described</c>): the properties are <c>[name, type]</c> or <c>[name, type, default]</c>,
+    /// an entry that is not an object starts with <c>["@", type]</c>, and the last entry <c>""</c> holds <c>[["@", rootType]]</c>.
+    /// </summary>
+    /// <returns>False when the node is not a schema (the schema is then incomplete)</returns>
+    private static bool ReadSchema(Node node, SchemaInfo schema)
     {
       if (node.Kind != ValueKind.Map)
-        return null;
+        return false;
 
-      List<SchemaType> types = new List<SchemaType>(node.Entries.Length);
-      for (int t = 0; t < node.Entries.Length; t++)
+      bool described = false;
+      int count = node.Entries.Length;
+      if (count > 0 && node.Entries[count - 1].Key.IsString(RootKey))
+      {
+        Node root = node.Entries[count - 1].Value;
+        if (root.Kind != ValueKind.Array || root.Elements.Length != 1 || !IsContentItem(root.Elements[0]))
+          return false;
+        schema.RootType = ReadDeclaredType(root.Elements[0].Elements[1], 0);
+        schema.Version = 2;
+        count--;
+      }
+      else
+        schema.Version = 1;
+
+      for (int t = 0; t < count; t++)
       {
         Node name = node.Entries[t].Key;
         Node props = node.Entries[t].Value;
         if (name.Kind != ValueKind.String || props.Kind != ValueKind.Array)
-          return null;
+          return false;
 
         SchemaType type = new SchemaType() { Index = t, Name = (string)name.Value, NameItemRef = name.Item };
-        for (int p = 0; p < props.Elements.Length; p++)
+        if (!ReadProperties(props, type, ref described))
+          return false;
+        schema.Types.Add(type);
+      }
+      return !described || schema.Version == 2;
+    }
+
+    /// <param name="described">Set when an item of version 2 is found</param>
+    private static bool ReadProperties(Node props, SchemaType type, ref bool described)
+    {
+      for (int p = 0; p < props.Elements.Length; p++)
+      {
+        Node prop = props.Elements[p];
+        if (prop.Kind == ValueKind.String || prop.Kind == ValueKind.Nil)
         {
-          Node prop = props.Elements[p];
-          if (prop.Kind != ValueKind.String && prop.Kind != ValueKind.Nil)
-            return null;
           type.Properties.Add((string)prop.Value);
           type.PropertyItemRefs.Add(prop.Item);
+          type.PropertyTypes.Add(null);
+          type.PropertyDefaults.Add(null);
+          continue;
         }
-        types.Add(type);
+
+        described = true;
+        if (p == 0 && IsContentItem(prop))
+        {
+          type.ContentType = ReadDeclaredType(prop.Elements[1], 0);
+          continue;
+        }
+        if (prop.Kind != ValueKind.Array || prop.Elements.Length < 2 || prop.Elements.Length > 3 || prop.Elements[0].Kind != ValueKind.String)
+          return false;
+        type.Properties.Add((string)prop.Elements[0].Value);
+        type.PropertyItemRefs.Add(prop.Item);
+        type.PropertyTypes.Add(ReadDeclaredType(prop.Elements[1], 0));
+        Node value = prop.Elements.Length == 3 ? prop.Elements[2] : null;
+        type.PropertyDefaults.Add(value is null ? null : new PrimitiveObject() { Name = (string)prop.Elements[0].Value, ValueKind = value.Kind, Value = value.Value, FirstItemRef = value.Item, LastItemRef = value.Item });
       }
-      return types;
+      return true;
+    }
+
+    private static bool IsContentItem(Node item)
+    {
+      return item.Kind == ValueKind.Array && item.Elements.Length == 2 && item.Elements[0].IsString(ContentName);
+    }
+
+    /// <summary>
+    /// A type of version 2: a kind, an index of a type of the schema, or <c>[composite, items...]</c>. Anything else is read as "any" (a later version may have more).
+    /// </summary>
+    private static DeclaredType ReadDeclaredType(Node node, int depth)
+    {
+      long index;
+      if (node.Kind == ValueKind.String)
+        return new DeclaredType() { Kind = (string)node.Value };
+      if (node.TryGetIndex(out index) && index >= 0 && index <= int.MaxValue)
+        return new DeclaredType() { Kind = DeclaredType.EntryKind, Entry = (int)index };
+      if (node.Kind != ValueKind.Array || node.Elements.Length == 0 || node.Elements[0].Kind != ValueKind.String || depth > 32)
+        return new DeclaredType() { Kind = "any" };
+
+      DeclaredType type = new DeclaredType() { Kind = (string)node.Elements[0].Value };
+      if (type.Kind == "struct" && node.Elements.Length == 2)
+      {
+        Node of = node.Elements[1];
+        if (of.TryGetIndex(out index) && index >= 0 && index <= int.MaxValue)
+          type.Entry = (int)index;
+        else if (of.Kind == ValueKind.Array)
+        {
+          SchemaType inline = new SchemaType() { Index = -1 };
+          bool described = false;
+          if (ReadProperties(of, inline, ref described))
+            type.InlineStruct = inline;
+        }
+        return type;
+      }
+      for (int t = 1; t < node.Elements.Length; t++)
+        type.Items.Add(ReadDeclaredType(node.Elements[t], depth + 1));
+      return type;
     }
 
     /// <summary>
@@ -286,14 +368,14 @@ namespace ObjectDebugger
 
         // The store keeps the schema in the byte order of the specification, the default of the settings
         MsgPackItem unpacked = MsgPackItem.Unpack(new MemoryStream(bytes), new MsgPackSettings() { EndianAction = EndianAction.SwapIfCurrentSystemIsLittleEndian });
-        List<SchemaType> types = ReadSchemaTypes(Node.FromItem(unpacked));
-        if (types is null)
+        SchemaInfo read = new SchemaInfo() { Source = SchemaSource.Reference, Id = schema.Id };
+        if (!ReadSchema(Node.FromItem(unpacked), read))
         {
           error = $"The schema store returned something else than a schema for {id}.";
           return schema;
         }
-        schema.Types.AddRange(types);
-        schema.IsAvailable = true;
+        read.IsAvailable = true;
+        return read;
       }
       catch (Exception ex)
       {

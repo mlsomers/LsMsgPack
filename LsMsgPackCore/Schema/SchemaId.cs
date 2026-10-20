@@ -16,9 +16,12 @@ namespace LsMsgPack
     public const int Length = 16;
 
     /// <summary>
-    /// Hashed before the schema bytes, so a future change of the schema layout gets new ids.
+    /// Hashed before the schema bytes (the <see cref="SchemaVersion"/>: 1 for the names, 2 for the described schema), so a change of the schema layout gets new ids.
     /// </summary>
-    private static readonly byte[] FormatVersion = { 1 };
+    private static byte FormatVersion(SchemaVersion version)
+    {
+      return (byte)version;
+    }
 
     private readonly ulong _high;
     private readonly ulong _low;
@@ -38,16 +41,23 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// The id of the given schema bytes (as written by <see cref="TypeResolving.Types.IndexedSchemaTypeResolver.Pack()"/>).
+    /// The id of the given schema bytes (as written by <see cref="TypeResolving.Types.IndexedSchemaTypeResolver.Pack()"/>), of either <see cref="SchemaVersion"/> (it is read from the bytes).
     /// </summary>
+    /// <exception cref="MsgPackException">When the bytes are not a schema</exception>
     public static SchemaId Compute(byte[] schema)
     {
       if (schema is null)
         throw new ArgumentNullException(nameof(schema));
+      SchemaBytes.Parse(schema, null, out SchemaVersion version);
+      return Compute(schema, version);
+    }
 
-      byte[] input = new byte[FormatVersion.Length + schema.Length];
-      Buffer.BlockCopy(FormatVersion, 0, input, 0, FormatVersion.Length);
-      Buffer.BlockCopy(schema, 0, input, FormatVersion.Length, schema.Length);
+    /// <param name="version">The version of the bytes (the writer knows it)</param>
+    internal static SchemaId Compute(byte[] schema, SchemaVersion version)
+    {
+      byte[] input = new byte[1 + schema.Length];
+      input[0] = FormatVersion(version);
+      Buffer.BlockCopy(schema, 0, input, 1, schema.Length);
 
       // A new instance per call: on .NET Framework a SHA256 reused after TransformFinalBlock fails ("invalid handle" of its CNG hash).
       // Only called when a schema is published or registered, not per value.

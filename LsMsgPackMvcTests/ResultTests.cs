@@ -94,7 +94,7 @@ namespace LsMsgPackMvcTests
       FakeHttpContext first = Execute(new LsMsgPackResult(SampleOrder) { Serializer = serializer }, MsgPackMediaTypes.XLsMsgPack);
       string schemaId = first.ResponseHeaders[LtMsgPackHttpSerializer.SchemaHeader];
       Assert.That(schemaId, Has.Length.EqualTo(32));
-      Assert.That(first.ResponseHeaders["Vary"], Is.EqualTo(LtMsgPackHttpSerializer.SchemasHeader));
+      Assert.That(first.ResponseHeaders["Vary"], Is.EqualTo(LtMsgPackHttpSerializer.SchemasHeader + ", Accept")); // Accept: version 2 of the schema (DescribeSchemas)
       Assert.That(first.ResponseBody, Is.EqualTo(MsgPackSerializer.Serialize(SampleOrder)));
 
       FakeHttpContext second = ExecuteWithSchemas(new LsMsgPackResult(SampleOrder) { Serializer = serializer }, schemaId, MsgPackMediaTypes.XLsMsgPack);

@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\Packaging.props" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+    <RootNamespace>LsMsgPackTypeScript</RootNamespace>
+    <AssemblyName>LsMsgPackTs</AssemblyName>
+    <Description>Writes TypeScript classes for the .NET model classes a server sends and receives with LsMsgPack's web formatters (with the values their constructors set), and the schemas the server will write, for the TypeScript client of application/x-lsmsgpack (@lsmsgpack/client) to hold before its first request.</Description>
+    <!-- Framework-dependent and portable: runs with the user's dotnet on any OS (also as a .NET tool), like lsmsgpack-mcp -->
+    <SelfContained>false</SelfContained>
+    <UseAppHost>false</UseAppHost>
+    <RollForward>Major</RollForward>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>lsmsgpack-ts</ToolCommandName>
+    <PackageId>LsMsgPack.TypeScript</PackageId>
+    <Title>LsMsgPack TypeScript generator</Title>
+    <PackageTags>msgpack;messagepack;typescript;codegen;aspnetcore</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="LsMsgPackTypeScriptTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
+    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" />
+    <!-- The roots of a solution (lsmsgpack-ts -solution) are found as the analyzers find them -->
+    <ProjectReference Include="..\LsMsgPack.Analyzers\LsMsgPack.Analyzers.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 4.11: MSBuildWorkspace loads the projects in a build host process of its own (the SDK's MSBuild may need a newer runtime than this tool) -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.11.0" />
+    <PackageReference Include="Microsoft.Build.Locator" Version="1.7.8" />
+  </ItemGroup>
+
+</Project>
