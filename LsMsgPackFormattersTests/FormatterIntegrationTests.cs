@@ -516,7 +516,7 @@ namespace LsMsgPackFormattersTests
     [Test]
     public async Task GrownSchemaGetsANewId()
     {
-      (IHost host, HttpClient client) = await StartAsync();
+      (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(o => o.CompleteSchemas = false)); // a complete schema has Cat already
       using (host)
       {
         LtMsgPackHttpSerializer clientSide = new LtMsgPackHttpSerializer();
@@ -538,6 +538,28 @@ namespace LsMsgPackFormattersTests
         Assert.That(SchemaHeader(again), Is.EqualTo(SchemaHeader(cat)));
         Assert.That(IsReference(againBody), Is.True);
         Assert.That(((Dog)clientSide.Deserialize(typeof(Animal), againBody, 0, againBody.Length, MsgPackMediaTypes.XLsMsgPack)).Barks, Is.EqualTo(3));
+      }
+    }
+
+    [Test]
+    public async Task CompleteSchemaKnowsEveryClassFromTheStart()
+    {
+      (IHost host, HttpClient client) = await StartAsync();
+      using (host)
+      {
+        LtMsgPackHttpSerializer clientSide = new LtMsgPackHttpSerializer();
+        Uri server = new Uri("http://localhost/");
+
+        HttpResponseMessage dog = await client.SendAsync(Get("/test/animal", null));
+        byte[] dogBody = await dog.Content.ReadAsByteArrayAsync();
+        clientSide.LearnSchema(server, SchemaHeader(dog), dogBody, 0, dogBody.Length, MsgPackMediaTypes.XLsMsgPack);
+        Assert.That(SchemaHeader(dog), Is.EqualTo(new LtMsgPackHttpSerializer().PrepareSchema(typeof(Animal), false).ToString()), "Known before the first response: the same in every process");
+
+        HttpResponseMessage cat = await client.SendAsync(Get("/test/cat", clientSide.GetSchemasHeader(server))); // Cat is in the schema already: a reference
+        byte[] catBody = await cat.Content.ReadAsByteArrayAsync();
+        Assert.That(SchemaHeader(cat), Is.EqualTo(SchemaHeader(dog)));
+        Assert.That(IsReference(catBody), Is.True);
+        Assert.That(((Cat)clientSide.Deserialize(typeof(Animal), catBody, 0, catBody.Length, MsgPackMediaTypes.XLsMsgPack)).Purrs, Is.True);
       }
     }
 

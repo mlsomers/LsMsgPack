@@ -206,7 +206,7 @@ namespace LsMsgPackFormattersTests
     [Test]
     public async Task KindsOfTheProperties()
     {
-      (IHost host, HttpClient client) = await StartAsync();
+      (IHost host, HttpClient client) = await StartAsync(o => o.CompleteSchemas = false); // the schema of the values written (a complete one has an entry for every struct)
       using (host)
       {
         Response r = await GetAsync(client, "/described/kinds", true);
@@ -258,6 +258,19 @@ namespace LsMsgPackFormattersTests
         object[] list = (object[])r.Property("List<ShippingAddress>", "@")[1];
         Assert.That(list[0], Is.EqualTo("list"), "A collection with a type id describes its content");
         Assert.That(Index(list[1]), Is.EqualTo(address));
+      }
+    }
+
+    [Test]
+    public async Task CompleteSchemaHasEveryStruct()
+    {
+      (IHost host, HttpClient client) = await StartAsync();
+      using (host)
+      {
+        Response r = await GetAsync(client, "/described/kinds", true);
+        object[] point = (object[])r.Property(nameof(DescribedKinds), "Point")[1];
+        Assert.That(point[0], Is.EqualTo("struct"));
+        Assert.That(Index(point[1]), Is.EqualTo(r.IndexOf(nameof(DescribedOrigin))), "Never written, but in the complete schema");
       }
     }
 

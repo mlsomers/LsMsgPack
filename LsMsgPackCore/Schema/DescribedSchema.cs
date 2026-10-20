@@ -101,7 +101,7 @@ namespace LsMsgPack
         return;
       }
 
-      bool content = def.IsCollection || !IsObject(type);
+      bool content = def.IsCollection || !IsObject(type, _settings);
       _bytes.WriteArrayHeader(names.Count + (content ? 1 : 0), _byteOrder);
       if (content)
         WriteContent(type);
@@ -169,13 +169,13 @@ namespace LsMsgPack
     /// <summary>
     /// An object with properties (written as an array or map of its values), not a value the serializers write otherwise. In the order of LtMsgPack's TypeKinds.Classify (LsMsgPack's MsgPackItem.Pack).
     /// </summary>
-    private bool IsObject(Type type)
+    internal static bool IsObject(Type type, MsgPackOptions settings)
     {
       type = Nullable.GetUnderlyingType(type) ?? type;
       if (type.IsPrimitive || type == typeof(string) || type == typeof(decimal) || type == typeof(byte[]) || type == typeof(sbyte[]) || type == typeof(Guid)
         || type == typeof(DateTime) || type == typeof(DateTimeOffset) || type.IsArray || type.IsEnum)
         return false;
-      if (_settings.HasCustomExtension(type) || FrameworkTypeInfo.GetPlainForm(type) != PlainForm.None || FrameworkTypeInfo.IsKeyValuePair(type) || FrameworkTypeInfo.IsTuple(type))
+      if (settings.HasCustomExtension(type) || FrameworkTypeInfo.GetPlainForm(type) != PlainForm.None || FrameworkTypeInfo.IsKeyValuePair(type) || FrameworkTypeInfo.IsTuple(type))
         return false;
       if (typeof(IEnumerable).IsAssignableFrom(type))
         return false;

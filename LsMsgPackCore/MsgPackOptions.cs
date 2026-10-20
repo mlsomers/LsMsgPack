@@ -111,6 +111,12 @@ namespace LsMsgPack
     public static bool Default_WriteSchemaReference { get; set; } = false;
 
     /// <summary>
+    /// The <see cref="CompleteSchemas"/> of new settings (false by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool Default_CompleteSchemas { get; set; } = false;
+
+    /// <summary>
     /// The <see cref="PropertyOrder"/> of new settings (<see cref="LsMsgPack.PropertyOrder.Reflection"/> by default, the order so far).
     /// </summary>
     [IgnoreDataMember]
@@ -193,6 +199,7 @@ namespace LsMsgPack
     internal IMsgPackPropertyIdResolver[] _propertyNameResolvers = Default_PropertyNameResolvers;
     internal SchemaStore _schemaStore = Default_SchemaStore;
     internal bool _writeSchemaReference = Default_WriteSchemaReference;
+    internal bool _completeSchemas = Default_CompleteSchemas;
     internal PropertyOrder _propertyOrder = Default_PropertyOrder;
     internal ObjectLayout _objectLayout = Default_ObjectLayout;
     internal bool _trimTrailingNulls = Default_TrimTrailingNulls;
@@ -372,6 +379,23 @@ namespace LsMsgPack
     {
       get { return _writeSchemaReference; }
       set { _writeSchemaReference = value; }
+    }
+
+    /// <summary>
+    /// With <see cref="WriteSchemaReference"/>: the schema of a root type is made at once with every class a value of it can hold (the classes of its properties, elements and dictionary values,
+    /// and the classes deriving from them in the assemblies the root type reaches), in a fixed order. False by default: a schema gets the classes the values written so far had.
+    /// <para>Its id then only depends on the root type, the classes and the settings, not on the data: every process (e.g. the instances of a web farm) writes the same schemas,
+    /// and a reader can hold them before the first value arrives (the TypeScript generator writes them for its clients). A value with a class the schema does not have (one of another assembly,
+    /// or in a property declared as object) makes it grow as usual.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Complete Schemas")]
+    [Description("With schema references: the schema of a root type gets every class its values can hold at once (in a fixed order), so its id does not depend on the data.")]
+    [DefaultValue(false)]
+    public bool CompleteSchemas
+    {
+      get { return _completeSchemas; }
+      set { _completeSchemas = value; }
     }
 
     /// <summary>

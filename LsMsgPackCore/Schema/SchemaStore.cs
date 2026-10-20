@@ -229,12 +229,42 @@ namespace LsMsgPack
           return result;
         }
 
-        SchemaSession grown = current?.Thaw(settings) ?? new SchemaSession(new IndexedSchemaTypeResolver(), settings);
+        SchemaSession grown = current?.Thaw(settings) ?? NewWriter(root, settings);
         result = work(grown, grown.Apply(settings));
         PublishWriter(state, grown, settings);
         used = grown;
         return result;
       }
+    }
+
+    /// <summary>
+    /// Publishes the schema of the root type before anything is written (see <see cref="MsgPackOptions.CompleteSchemas"/>), unless a writer of these settings already has one.
+    /// </summary>
+    /// <returns>The id of the current schema of the root type</returns>
+    internal SchemaId PrepareWriter(Type root, MsgPackOptions settings)
+    {
+      SessionState state = GetWriter(root, settings);
+      lock (state)
+      {
+        if (state.Current is null)
+          PublishWriter(state, NewWriter(root, settings), settings);
+        return state.Current.Id;
+      }
+    }
+
+    /// <summary>
+    /// The first session of a root type: empty (the values add their classes), or with the entries of the complete schema (<see cref="MsgPackOptions.CompleteSchemas"/>).
+    /// </summary>
+    private static SchemaSession NewWriter(Type root, MsgPackOptions settings)
+    {
+      SchemaSession session = new SchemaSession(new IndexedSchemaTypeResolver(), settings);
+      if (!settings._completeSchemas || root is null)
+        return session;
+      MsgPackOptions sessionSettings = session.Apply(settings); // the properties are resolved as the writes will (the entries remember them, see IndexedSchemaTypeResolver.TryAssignIds)
+      List<Type> types = SchemaTypes.Of(root, sessionSettings);
+      for (int t = 0; t < types.Count; t++)
+        session.Resolver.GetComplex(types[t], sessionSettings);
+      return session;
     }
 
     /// <returns>false when the (frozen) session needs to grow</returns>
@@ -403,7 +433,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// The settings that decide what a session contains: the type names (type resolvers, <see cref="AddTypeIdOption.FullName"/>), the properties (static filters), their order (<see cref="PropertyOrder"/>, the schema lists them in that order) and their ids (property id resolvers).
-    /// Writers also by <see cref="MsgPackOptions.SchemaVersion"/> (the schema of a version has its own id), readers take both versions alike.
+    /// Writers also by <see cref="MsgPackOptions.SchemaVersion"/> (the schema of a version has its own id) and <see cref="MsgPackOptions.CompleteSchemas"/>, readers take both versions alike.
     /// The arrays are compared by reference: settings that share them (e.g. the defaults) share the sessions.
     /// </summary>
     internal struct SessionKey : IEquatable<SessionKey>
@@ -416,6 +446,7 @@ namespace LsMsgPack
       private readonly EndianAction _endianAction; // inline schemas are read in the byte order of the reader
       private readonly PropertyOrder _propertyOrder;
       private readonly SchemaVersion _version; // writers only, 0 for readers
+      private readonly bool _complete; // writers only: a complete schema has other entries (in another order) than one made by the values
 
       internal SessionKey(Type root, MsgPackOptions settings)
       {
@@ -427,6 +458,7 @@ namespace LsMsgPack
         _endianAction = settings._endianAction;
         _propertyOrder = settings._propertyOrder;
         _version = root is null ? 0 : settings._schemaVersion;
+        _complete = !(root is null) && settings._completeSchemas;
       }
 
       public bool Equals(SessionKey other)
@@ -438,7 +470,8 @@ namespace LsMsgPack
           && _addTypeIdOptions == other._addTypeIdOptions
           && _endianAction == other._endianAction
           && _propertyOrder == other._propertyOrder
-          && _version == other._version;
+          && _version == other._version
+          && _complete == other._complete;
       }
 
       public override bool Equals(object obj)
@@ -457,7 +490,8 @@ namespace LsMsgPack
           hash = hash * 31 + (int)_addTypeIdOptions;
           hash = hash * 31 + (int)_endianAction;
           hash = hash * 31 + (int)_propertyOrder;
-          return hash * 31 + (int)_version;
+          hash = hash * 31 + (int)_version;
+          return _complete ? ~hash : hash;
         }
       }
     }

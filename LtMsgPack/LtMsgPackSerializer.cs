@@ -106,6 +106,23 @@ namespace LtMsgPack
       get { return _serializer.Options.Clone(); }
     }
 
+    /// <summary>
+    /// Makes the schema that values of the root type will refer to before the first one is written, and returns its id (e.g. to compare it with the schemas a client holds).
+    /// With <see cref="MsgPackOptions.CompleteSchemas"/> it has every class the values can hold, so its id is known ahead; otherwise it starts without classes (the values add them).
+    /// Does nothing when values of the root type were written already (their schema is kept).
+    /// </summary>
+    /// <param name="root">The declared type of the values (as the type argument of <see cref="Serialize{T}(T)"/>)</param>
+    /// <exception cref="InvalidOperationException">Without <see cref="MsgPackOptions.WriteSchemaReference"/>, a <see cref="MsgPackOptions.SchemaStore"/> and the indexed schema: there is no schema to refer to</exception>
+    public SchemaId PrepareSchema(Type root)
+    {
+      if (root is null)
+        throw new ArgumentNullException(nameof(root));
+      LtMsgPackOptions options = _serializer.Options;
+      if (!options._useInexedSchema || !options._writeSchemaReference || options._schemaStore is null)
+        throw new InvalidOperationException($"Only schemas that are referred to are kept: set {nameof(MsgPackOptions.UseInexedSchema)}, {nameof(MsgPackOptions.WriteSchemaReference)} and a {nameof(MsgPackOptions.SchemaStore)}.");
+      return options._schemaStore.PrepareWriter(root, options);
+    }
+
     #region Serialize
 
     public byte[] Serialize<T>(T value)

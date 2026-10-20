@@ -82,6 +82,7 @@ namespace LtMsgPack.Http
         if (ls.SchemaStore is null)
           ls.SchemaStore = new SchemaStore();
         ls.WriteSchemaReference = true; // written with a reference, replaced by the schema when the client does not hold it
+        ls.CompleteSchemas = options.CompleteSchemas;
       }
       _lsOptions = ls;
       _store = ls.SchemaStore;
@@ -154,6 +155,22 @@ namespace LtMsgPack.Http
     }
 
     #region Server
+
+    /// <summary>
+    /// Makes the schema of responses of the declared type before the first one is written (with <see cref="LtMsgPackHttpOptions.CompleteSchemas"/>: every class its values can hold), and returns its id.
+    /// Does nothing when such responses were written already.
+    /// </summary>
+    /// <param name="declaredType">The type the responses are declared as (as passed to <see cref="Serialize(object, Type, string, string, bool)"/>)</param>
+    /// <param name="describedSchema">The schema of clients that ask for version 2 (<see cref="DescribesSchemas"/>), otherwise version 1</param>
+    /// <exception cref="InvalidOperationException">Without <see cref="NegotiatesSchemas"/> (no schema is referred to), or version 2 without <see cref="DescribesSchemas"/></exception>
+    public SchemaId PrepareSchema(Type declaredType, bool describedSchema)
+    {
+      if (!_negotiate)
+        throw new InvalidOperationException($"Schemas are only kept with {nameof(LtMsgPackHttpOptions.NegotiateSchemas)} and the indexed schema.");
+      if (describedSchema && _described is null)
+        throw new InvalidOperationException($"Version 2 of the schema needs {nameof(LtMsgPackHttpOptions.DescribeSchemas)}.");
+      return (describedSchema ? _described : _lsMsgPack).PrepareSchema(declaredType);
+    }
 
     /// <summary>
     /// Serializes a response body.

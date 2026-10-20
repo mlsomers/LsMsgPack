@@ -133,6 +133,11 @@ AI agents (MCP)
 
 [LsMsgPackMcpServer](LsMsgPackMcpServer/README.md) (`lsmsgpack-mcp`) is an MCP server and command line tool for AI agents. It decodes MsgPack into JSON with comments (types from the indexed schema and type ids, timestamps, decimals, errors with their offsets). It also reads the bytes of a variable while a program is paused in VS Code or Visual Studio, through their MsgPack extensions. See [docs/Mcp.md](docs/Mcp.md).
 
+TypeScript
+----------
+
+[LsMsgPackTypeScript](LsMsgPackTypeScript/README.md) (`lsmsgpack-ts`) writes TypeScript classes for the .NET models of a server (with the values their constructors set) and the schemas the server will write, for JavaScript clients of `application/x-lsmsgpack`. See [docs/TypeScriptModels.md](docs/TypeScriptModels.md).
+
 Source documentation
 --------------------
 

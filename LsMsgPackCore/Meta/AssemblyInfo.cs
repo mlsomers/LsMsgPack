@@ -4,3 +4,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("LsMsgPack")]
 [assembly: InternalsVisibleTo("LtMsgPack")]
 [assembly: InternalsVisibleTo("LsMsgPackUnitTests")]
+[assembly: InternalsVisibleTo("LsMsgPackTs")] // the TypeScript generator writes the schemas the server writes (SchemaTypes, DescribedSchema)

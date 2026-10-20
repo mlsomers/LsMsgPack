@@ -37,26 +37,46 @@ namespace LsMsgPack.Analyzers
 
       bool allTypes = options.AnalyzerConfigOptionsProvider.GlobalOptions.TryGetValue("build_property.LsMsgPackAnalyze", out string analyze)
         && string.Equals(analyze?.Trim(), "AllTypes", StringComparison.OrdinalIgnoreCase);
+      if (allTypes)
+        for (int t = 0; t < types._sourceTypes.Count; t++)
+        {
+          INamedTypeSymbol type = types._sourceTypes[t];
+          if (type.DeclaredAccessibility == Accessibility.Public && (type.TypeKind == TypeKind.Class || type.TypeKind == TypeKind.Struct) && !type.IsStatic)
+            types.Add(type);
+        }
+
+      List<SerializedUse> uses = types.CollectUses(compilation, known, cancellation);
+      for (int t = 0; t < uses.Count; t++)
+        if (!(uses[t].Type is ITypeParameterSymbol))
+          types.Add(uses[t].Type);
+      types.Walk(cancellation);
+      return types;
+    }
+
+    /// <summary>
+    /// The roots: what the project hands to the serializers and the formatters (also through its generic wrappers of them). Also used by the TypeScript generator (lsmsgpack-ts --solution).
+    /// </summary>
+    public static List<SerializedUse> FindUses(Compilation compilation, KnownSymbols known, CancellationToken cancellation)
+    {
+      ModelTypes types = new ModelTypes();
+      types.CollectSourceTypes(compilation.Assembly.GlobalNamespace, cancellation);
+      return types.CollectUses(compilation, known, cancellation);
+    }
+
+    private List<SerializedUse> CollectUses(Compilation compilation, KnownSymbols known, CancellationToken cancellation)
+    {
       List<SerializedUse> uses = new List<SerializedUse>();
-      for (int t = 0; t < types._sourceTypes.Count; t++)
+      for (int t = 0; t < _sourceTypes.Count; t++)
       {
-        INamedTypeSymbol type = types._sourceTypes[t];
-        if (allTypes && type.DeclaredAccessibility == Accessibility.Public && (type.TypeKind == TypeKind.Class || type.TypeKind == TypeKind.Struct) && !type.IsStatic)
-          types.Add(type);
-        SerializerUses.FromAttributes(type, known, uses);
-        SerializerUses.FromController(type, known, uses);
+        SerializerUses.FromAttributes(_sourceTypes[t], known, uses);
+        SerializerUses.FromController(_sourceTypes[t], known, uses);
       }
 
       Scan(compilation, node => SerializerUses.IsCandidate(node), operation => SerializerUses.FromOperation(operation, known, uses), cancellation);
       Wrappers wrappers = new Wrappers();
       for (int scanned = 0; wrappers.Learn(uses, ref scanned);) // until no new wrapper is found
         Scan(compilation, wrappers.IsCandidate, operation => wrappers.FromOperation(operation, uses), cancellation);
-
-      for (int t = 0; t < uses.Count; t++)
-        if (!(uses[t].Type is ITypeParameterSymbol))
-          types.Add(uses[t].Type);
-      types.Walk(cancellation);
-      return types;
+      return uses;
     }
 
     /// <summary>
