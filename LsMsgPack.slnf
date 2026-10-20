@@ -16,6 +16,7 @@
       "LsMsgPackMcpServerTests/LsMsgPackMcpServerTests.csproj",
       "LsMsgPackTypeScript/LsMsgPackTypeScript.csproj",
       "LsMsgPackTypeScriptTests/LsMsgPackTypeScriptTests.csproj",
+      "clients/typescript/test-server/LsMsgPackTsTestServer.csproj",
       "LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj",
       "LsMsgPackInteropTests/LsMsgPackInteropTests.csproj",
       "LsMsgPackFormatters/LsMsgPackFormatters.csproj",

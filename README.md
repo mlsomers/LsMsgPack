@@ -136,7 +136,9 @@ AI agents (MCP)
 TypeScript
 ----------
 
-[LsMsgPackTypeScript](LsMsgPackTypeScript/README.md) (`lsmsgpack-ts`) writes TypeScript classes for the .NET models of a server (with the values their constructors set) and the schemas the server will write, for JavaScript clients of `application/x-lsmsgpack`. See [docs/TypeScriptModels.md](docs/TypeScriptModels.md).
+[@lsmsgpack/client](clients/typescript/README.md) reads the `application/x-lsmsgpack` responses of the web formatters into complete JavaScript objects (also the properties the server left out, and polymorphic values) and writes request bodies they read, as fast as `JSON.parse` and `JSON.stringify`. See [docs/TypeScriptClient.md](docs/TypeScriptClient.md).
+
+[LsMsgPackTypeScript](LsMsgPackTypeScript/README.md) (`lsmsgpack-ts`) writes TypeScript classes for the .NET models of a server (with the values their constructors set) and the schemas the server will write, so the client holds them before its first request. See [docs/TypeScriptModels.md](docs/TypeScriptModels.md).
 
 Source documentation
 --------------------
