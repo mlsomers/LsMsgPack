@@ -3,6 +3,7 @@ using System;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace LtMsgPack.IO
@@ -267,10 +268,27 @@ namespace LtMsgPack.IO
         if (length <= MaxAsciiLoopLength && Ascii(value))
           return;
 
+        int reserved = StringHeaderSize(length);
+#if NET8_0_OR_GREATER
+        int ascii = 0; // the chars before the first one that is not ASCII, written where the one pass below writes them
+        if (length > MaxAsciiLoopLength)
+        {
+          Ensure(reserved + length);
+          if (System.Text.Ascii.FromUtf16(value.AsSpan(), new Span<byte>(Buf, Pos + reserved, length), out ascii) == System.Buffers.OperationStatus.Done) // vectorized, without the cost of the encoder's calls
+          {
+            StringHeader(length);
+            Pos += length;
+            return;
+          }
+        }
+#endif
+
         // One pass: UTF-8 has at least one byte per char, so the header is reserved for that many bytes and moved when the string turns out longer (only non-ASCII text near a boundary)
         Ensure(encoding.GetMaxByteCount(length) + 5);
-        int reserved = StringHeaderSize(length);
-#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+#if NET8_0_OR_GREATER
+        int at = Pos + reserved + ascii; // from the first char that is not ASCII: no surrogate pair is split there, the same bytes as encoding it all
+        int count = ascii + encoding.GetBytes(value.AsSpan(ascii), new Span<byte>(Buf, at, Buf.Length - at));
+#elif NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
         int count = encoding.GetBytes(value.AsSpan(), new Span<byte>(Buf, Pos + reserved, Buf.Length - Pos - reserved));
 #else
         int count = encoding.GetBytes(value, 0, length, Buf, Pos + reserved);
@@ -295,13 +313,17 @@ namespace LtMsgPack.IO
     private const int MaxOnePassLength = 1 << 16;
 
     /// <summary>
-    /// Up to this length a loop over the chars is faster than the encoder (which costs 10-15 ns per call).
+    /// Up to this length a loop over the chars is faster than the encoder (which costs 10-15 ns per call), on .NET 8 than Ascii.FromUtf16.
     /// </summary>
+#if NET8_0_OR_GREATER
+    private const int MaxAsciiLoopLength = 8;
+#else
     private const int MaxAsciiLoopLength = 16;
+#endif
 
     private static Encoding _utf8; // the StringEncoding that was found to be UTF-8 (the type check is a call)
 
-    private static bool IsUtf8(Encoding encoding)
+    internal static bool IsUtf8(Encoding encoding)
     {
       if (ReferenceEquals(encoding, _utf8))
         return true;
@@ -317,6 +339,9 @@ namespace LtMsgPack.IO
     private bool Ascii(string value)
     {
       int length = value.Length;
+      if (length <= 8 && BitConverter.IsLittleEndian)
+        return ShortAscii(value, length);
+
       Ensure(length + 1);
       byte[] b = Buf;
       int at = Pos + 1;
@@ -330,6 +355,54 @@ namespace LtMsgPack.IO
       b[Pos] = (byte)(0xA0 | length);
       Pos = at + length;
       return true;
+    }
+
+    /// <summary>
+    /// <see cref="Ascii"/> for up to 8 chars on a little-endian machine: two (overlapping) blocks of 4 or 2 chars, each checked and narrowed at once (about half the time of the loop from 5 chars on).
+    /// </summary>
+    private bool ShortAscii(string value, int length)
+    {
+      Ensure(length + 1);
+      ref byte header = ref Buf[Pos]; // the space is ensured
+      ref byte chars = ref Unsafe.As<char, byte>(ref MemoryMarshal.GetReference(value.AsSpan()));
+      if (length >= 4)
+      {
+        ulong first = Unsafe.ReadUnaligned<ulong>(ref chars);
+        ulong last = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref chars, 2 * (length - 4)));
+        if (((first | last) & 0xFF80FF80FF80FF80UL) != 0)
+          return false;
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref header, 1), Narrow(first));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref header, length - 3), Narrow(last));
+      }
+      else if (length >= 2)
+      {
+        uint first = Unsafe.ReadUnaligned<uint>(ref chars);
+        uint last = Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref chars, 2 * (length - 2)));
+        if (((first | last) & 0xFF80FF80U) != 0)
+          return false;
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref header, 1), (ushort)(first | first >> 8));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref header, length - 1), (ushort)(last | last >> 8));
+      }
+      else if (length == 1)
+      {
+        char c = value[0];
+        if (c >= 0x80)
+          return false;
+        Unsafe.Add(ref header, 1) = (byte)c;
+      }
+      header = (byte)(0xA0 | length);
+      Pos += length + 1;
+      return true;
+    }
+
+    /// <summary>
+    /// 4 ASCII chars (16 bit each, little-endian) to their 4 bytes.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint Narrow(ulong chars)
+    {
+      chars = (chars | chars >> 8) & 0x0000FFFF0000FFFFUL;
+      return (uint)(chars | chars >> 16);
     }
 
     private static int StringHeaderSize(int byteCount)

@@ -8,7 +8,8 @@ SRC=$(cd "$(dirname "$0")" && pwd)
 REPO=$(git -C "$SRC" rev-parse --show-toplevel)
 mkdir -p "$WORK"
 rm -rf "$WORK/baseline" "$WORK/base.txt" && mkdir -p "$WORK/baseline"
-git -C "$REPO" archive "$BASE_REF" LsMsgPackNetStandard LsMsgPackCore LtMsgPack LsMsgPackFormatters CommonAssemblyInfo.cs Packaging.props | tar -x -C "$WORK/baseline"
+GENERATOR=""; git -C "$REPO" cat-file -e "$BASE_REF:LtMsgPack.Generator" 2>/dev/null && GENERATOR=LtMsgPack.Generator # the gen-* candidates in the base too
+git -C "$REPO" archive "$BASE_REF" LsMsgPackNetStandard LsMsgPackCore LtMsgPack LsMsgPackFormatters $GENERATOR CommonAssemblyInfo.cs Packaging.props | tar -x -C "$WORK/baseline"
 echo "$BASE_REF ($(git -C "$REPO" rev-parse --short "$BASE_REF"))" > "$WORK/baseline/REF"
 sed 's/CreateInvoices(5)/CreateInvoices(100)/' "$SRC/EquivModel.cs" > "$WORK/WebModel.cs"
 
