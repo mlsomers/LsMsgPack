@@ -64,7 +64,12 @@ namespace LtMsgPack.Writing
     internal void EnterContainer()
     {
       if (++Depth > Serializer.Options._maxDepth)
-        throw new MsgPackException($"The object graph is nested deeper than {nameof(LtMsgPackOptions)}.{nameof(LtMsgPackOptions.MaxDepth)} ({Serializer.Options._maxDepth}), it may contain a cycle.");
+        throw TooDeep();
+    }
+
+    private MsgPackException TooDeep() // apart, so EnterContainer is inlined
+    {
+      return new MsgPackException($"The object graph is nested deeper than {nameof(LtMsgPackOptions)}.{nameof(LtMsgPackOptions.MaxDepth)} ({Serializer.Options._maxDepth}), it may contain a cycle.");
     }
 
     internal void LeaveContainer()

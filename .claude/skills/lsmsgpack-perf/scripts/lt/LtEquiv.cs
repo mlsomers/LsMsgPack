@@ -1,4 +1,4 @@
-// Byte and round trip equivalence of LtMsgPack (and its HTTP serializer): run against two builds and diff the output.
+﻿// Byte and round trip equivalence of LtMsgPack (and its HTTP serializer): run against two builds and diff the output.
 using LsMsgPack;
 using LtMsgPack;
 using LtMsgPack.Http;
@@ -55,7 +55,7 @@ public static class P {
     values.Add(nested);
     values.Add(new Bcl { C = 'Z', T = TimeSpan.FromSeconds(-1.5), N = TimeSpan.FromDays(3), D = new DateOnly(1999, 12, 31), O = new TimeOnly(23, 59), U = new Uri("https://example.com/a"), Boxed = new List<object> { TimeSpan.FromHours(1), 'q', new DateOnly(2000, 1, 1) } });
     values.Add(new Poly { Any = new Nested { Name = "p" }, Base = new Attributed { A = "x", Kids = new List<Attributed> { new Attributed() } }, Items = new List<object> { 1L, "s", new WithGuid { G = Guid.Empty, O = 3 }, null, new int[] { 1, 2 } }, Ints = new[] { 5, -5, 500 }, Bag = new Dictionary<string, object> { { "a", 1 }, { "b", new Nested() }, { "c", null } } });
-    values.Add(new string('é', 16)); values.Add(new string('é', 30)); values.Add(new string('é', 200)); values.Add(new string('✓', 85)); values.Add(new string('✓', 40000)); values.Add(new string('é', 70000)); values.Add("\ud800x"); values.Add(new string('a', 65537));
+    values.Add(new string('é', 16)); values.Add(new string('é', 30)); values.Add(new string('é', 200)); values.Add(new string('✓', 85)); values.Add(new string('✓', 40000)); values.Add(new string('é', 70000)); values.Add("\ud800x"); foreach (string shortText in new[] { "ab", "abc", "abcd", "abcde", "abcdefg", "abcdefgh", "abcdefghi", "aé", "éb", "abé", "abcé", "éabcdefg", "abcdéfgh", "abcdefgé", "\u0100bc", "ab\u8080", "\u0080", "\u007f\u007f\u007f\u007f" }) values.Add(shortText); values.Add(new string('x', 30) + "é"); values.Add(new string('x', 254) + "é"); values.Add(new string('x', 65534) + "é"); values.Add("abc\ud800"); values.Add("abc\udc00def"); values.Add("abc😀def" + new string('q', 40)); values.Add(new string('x', 17) + "ü" + new string('y', 17)); values.Add(new string('a', 65537));
     values.Add(new Nested { Name = "", Objs = new List<object> { "", null } }); // empty strings are written (FilterDefaultValues), null is left out
     values.Add(new WithDefault { Sound = null, Zero = 0, Last = null }); values.Add(new WithDefault { Sound = "Woof", Zero = 7, Last = "l" });
     values.Add(new Bench.Invoice[] { }); values.AddRange(Bench.Invoices.Take(3));

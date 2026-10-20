@@ -111,8 +111,13 @@ namespace LtMsgPack.IO
     private int Count(long count, int bytesPerItem)
     {
       if (count > (End - Pos) / bytesPerItem)
-        throw new MsgPackException($"The data claims {count} items, more than the remaining {End - Pos} bytes can hold.");
+        throw TooMany(count);
       return (int)count;
+    }
+
+    private MsgPackException TooMany(long count) // apart: Count is inlined into the readers of arrays and maps
+    {
+      return new MsgPackException($"The data claims {count} items, more than the remaining {End - Pos} bytes can hold.");
     }
 
     #endregion
@@ -266,9 +271,24 @@ namespace LtMsgPack.IO
     {
       int length = TryReadStringHeader();
       if (length < 0) { value = null; return false; }
-      value = length == 0 ? string.Empty : MsgPackOptions.StringEncoding.GetString(Buf, Pos, length);
+      value = Decode(length);
       Pos += length;
       return true;
+    }
+
+    /// <summary>
+    /// The string of <paramref name="length"/> bytes at the position (checked by the caller), the position is not moved.
+    /// </summary>
+    private string Decode(int length)
+    {
+      if (length == 0)
+        return string.Empty;
+      Encoding encoding = MsgPackOptions.StringEncoding;
+#if NET8_0_OR_GREATER
+      if (MsgPackWriter.IsUtf8(encoding) && Ascii.IsValid(new ReadOnlySpan<byte>(Buf, Pos, length))) // ASCII text: the same chars in Latin-1, which widens the bytes without validating them again (UTF8Encoding.GetString takes 30-40% longer)
+        return Encoding.Latin1.GetString(Buf, Pos, length);
+#endif
+      return encoding.GetString(Buf, Pos, length);
     }
 
 #if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
@@ -477,7 +497,7 @@ namespace LtMsgPack.IO
     {
       if (length > End - Pos)
         throw EndOfData();
-      string value = length == 0 ? string.Empty : MsgPackOptions.StringEncoding.GetString(Buf, Pos, (int)length);
+      string value = Decode((int)length);
       Pos += (int)length;
       return value;
     }

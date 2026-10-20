@@ -77,8 +77,12 @@ namespace LsMsgPack.Meta
     {
       if (assignedTo?.AssignedToType is null || assignedTo.AssignedToType == tType || !usesIndexedSchema)
         return;
+      throw UnresolvableWithSchema(tType, assignedTo);
+    }
 
-      throw new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id while using the indexed schema: the property keys are schema indexes of {tType.Name}, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} (with the schema a type id costs about 1 byte) or set MsgPackSettings.UseInexedSchema = false.");
+    private static MsgPackException UnresolvableWithSchema(Type tType, FullPropertyInfo assignedTo) // apart, so the check above is inlined (called per object)
+    {
+      return new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id while using the indexed schema: the property keys are schema indexes of {tType.Name}, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} (with the schema a type id costs about 1 byte) or set MsgPackSettings.UseInexedSchema = false.");
     }
 
     /// <summary>
@@ -88,8 +92,12 @@ namespace LsMsgPack.Meta
     {
       if (assignedTo?.AssignedToType is null || assignedTo.AssignedToType == tType)
         return;
+      throw UnresolvableAsArray(tType, assignedTo);
+    }
 
-      throw new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id as an array ({nameof(ObjectLayout)}.{nameof(ObjectLayout.Array)}): the values have no property ids, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} or {nameof(ObjectLayout)}.{nameof(ObjectLayout.Map)}.");
+    private static MsgPackException UnresolvableAsArray(Type tType, FullPropertyInfo assignedTo) // apart, so the check above is inlined (called per object)
+    {
+      return new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id as an array ({nameof(ObjectLayout)}.{nameof(ObjectLayout.Array)}): the values have no property ids, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} or {nameof(ObjectLayout)}.{nameof(ObjectLayout.Map)}.");
     }
 
     private static readonly ConcurrentDictionary<Type, string> Unsupported = new ConcurrentDictionary<Type, string>();
