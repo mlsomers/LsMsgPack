@@ -18,6 +18,8 @@ export interface EncodeOptions {
    * TimeOnly text as the numbers .NET writes, decimal text as a decimal...), and with its type id only where the declared type is not its class.
    */
   models?: ModelSet;
+  /** Generate the code that writes the properties of each model class (new Function, the property names as string literals), default true. Without it (or when a Content-Security-Policy does not allow it) a generic loop does the same. */
+  generateCode?: boolean;
 }
 
 /**
@@ -26,7 +28,7 @@ export interface EncodeOptions {
  * The property $type of an object (a string: the .NET type name, as the decoder sets it) is written as the type id, the key "" (a Map is written as it is).
  */
 export function encode(value: unknown, options: EncodeOptions = {}): Uint8Array {
-  const writer = new Writer(options.maxDepth ?? 256, options.models);
+  const writer = new Writer(options.maxDepth ?? 256, options.models, options.generateCode ?? true);
   writer.write(value, 0);
   return writer.result();
 }
@@ -36,7 +38,7 @@ class Writer {
   private view = new DataView(this.buf.buffer);
   private pos = 0;
 
-  constructor(private readonly maxDepth: number, private readonly models?: ModelSet) {}
+  constructor(private readonly maxDepth: number, private readonly models: ModelSet | undefined, private readonly generateCode: boolean) {}
 
   isModel(value: object): boolean {
     return this.models?.of(value) !== undefined;
@@ -47,7 +49,10 @@ class Writer {
   }
 
   private ensure(count: number): void {
-    if (this.pos + count <= this.buf.length) return;
+    if (this.pos + count > this.buf.length) this.grow(count); // small enough to be inlined
+  }
+
+  private grow(count: number): void {
     let size = this.buf.length * 2;
     while (size < this.pos + count) size *= 2;
     const grown = new Uint8Array(size);
@@ -205,28 +210,75 @@ class Writer {
   object(o: Record<string, unknown>, depth: number, declared: string | undefined): void {
     const model = this.models?.of(o);
     if (model !== undefined) return this.model(o, model, depth, declared);
-    const keys = Object.keys(o);
+    let n = 0;
+    for (const k in o) if (hasOwn.call(o, k)) n++;
+    const start = this.pos;
+    this.mapHeader(n); // one pass: the header for every key, made smaller when some are left out
+    let count = 0;
+    for (const k in o) {
+      if (!hasOwn.call(o, k)) continue;
+      const v = o[k];
+      if (v === undefined || typeof v === 'function') continue;
+      if (k === TypeProperty) {
+        if (count !== 0) { // after other properties: written again with the type id first
+          this.pos = start;
+          return this.typedObject(o, Object.keys(o), depth);
+        }
+        if (typeof v !== 'string') throw typePropertyError(v);
+        this.u8(0xa0); // the key "": the type id, first (LtMsgPack's fast path, System.Text.Json also wants it first)
+        this.string(v);
+      } else {
+        this.key(k);
+        this.write(v, depth + 1);
+      }
+      count++;
+    }
+    if (count !== n) this.patchMapHeader(start, n, count);
+  }
+
+  /** An object whose $type is not its first property: the type id first. */
+  private typedObject(o: Record<string, unknown>, keys: string[], depth: number): void {
     let count = 0, typeName: string | undefined;
     for (let t = 0; t < keys.length; t++) {
       const v = o[keys[t]];
       if (v === undefined || typeof v === 'function') continue;
       if (keys[t] === TypeProperty) {
-        if (typeof v !== 'string') throw new MsgPackError(`${TypeProperty} is a .NET type name (a string), not a ${typeof v}.`);
+        if (typeof v !== 'string') throw typePropertyError(v);
         typeName = v;
       }
       count++;
     }
     this.mapHeader(count);
-    if (typeName !== undefined) {
-      this.u8(0xa0); // the key "": the type id, first (LtMsgPack's fast path, System.Text.Json also wants it first)
-      this.string(typeName);
-    }
+    this.u8(0xa0);
+    this.string(typeName!);
     for (let t = 0; t < keys.length; t++) {
       const k = keys[t], v = o[k];
       if (v === undefined || typeof v === 'function' || k === TypeProperty) continue;
-      this.string(k);
+      this.key(k);
       this.write(v, depth + 1);
     }
+  }
+
+  /** Replaces the map header written at start for n entries by the one for count (smaller): the entries move when it is shorter. */
+  private patchMapHeader(start: number, n: number, count: number): void {
+    const reserved = n <= 15 ? 1 : n <= 0xffff ? 3 : 5;
+    const size = count <= 15 ? 1 : count <= 0xffff ? 3 : 5;
+    const end = this.pos;
+    if (size !== reserved) this.buf.copyWithin(start + size, start + reserved, end);
+    this.pos = start;
+    this.mapHeader(count);
+    this.pos = end - reserved + size;
+  }
+
+  /** A property name: the encoded names are kept (they repeat in every object of a type). */
+  private key(k: string): void {
+    let bytes = encodedKeys.get(k);
+    if (bytes === undefined) {
+      if (k.length > 32 || encodedKeys.size >= MaxEncodedKeys) return this.string(k);
+      bytes = encode(k);
+      encodedKeys.set(k, bytes);
+    }
+    this.small(bytes);
   }
 
   /**
@@ -237,27 +289,35 @@ class Writer {
     if (depth >= this.maxDepth) throw new MsgPackError(`The value is nested deeper than ${this.maxDepth} levels.`);
     const typeId = declared === undefined ? model.derived : declared !== model.typeName;
     const plan = planOf(model);
-    const names = plan.names, writers = plan.writers, encoded = plan.encoded;
-    let count = typeId ? 1 : 0;
-    for (let t = 0; t < names.length; t++) if (o[names[t]] !== undefined) count++;
     const keys = Object.keys(o);
     const extra = sameKeys(keys, plan.shape) ? undefined : this.extraKeys(o, keys, model, plan);
-    this.mapHeader(count + (extra?.length ?? 0));
+    const max = (typeId ? 1 : 0) + plan.names.length + (extra?.length ?? 0), start = this.pos;
+    this.mapHeader(max); // one pass: the header for every property, made smaller for the undefined ones
+    let count = 0;
     if (typeId) {
       this.u8(0xa0);
       this.string(model.typeName);
+      count++;
     }
-    for (let t = 0; t < names.length; t++) {
-      const v = o[names[t]];
-      if (v === undefined) continue;
-      this.small(encoded[t]);
-      writers[t](this, v, depth + 1);
+    if (this.generateCode && plan.generated === undefined) plan.generated = generateModelWriter(plan);
+    if (this.generateCode && plan.generated !== null) count += plan.generated!(this, o, depth + 1);
+    else {
+      const names = plan.names, writers = plan.writers, encoded = plan.encoded;
+      for (let t = 0; t < names.length; t++) {
+        const v = o[names[t]];
+        if (v === undefined) continue;
+        this.small(encoded[t]);
+        writers[t](this, v, depth + 1);
+        count++;
+      }
     }
     if (extra !== undefined)
       for (let t = 0; t < extra.length; t++) {
         this.string(extra[t]);
         this.write(o[extra[t]], depth + 1);
+        count++;
       }
+    if (count !== max) this.patchMapHeader(start, max, count);
   }
 
   /** The own properties the model does not have (e.g. one the server has and the models not yet). Keys without any are remembered: the next instance with them is not checked. */
@@ -274,7 +334,7 @@ class Writer {
   }
 
   /** Pre-encoded bytes (a property name), copied by a loop: set() costs more for a few bytes. */
-  private small(bytes: Uint8Array): void {
+  small(bytes: Uint8Array): void {
     const n = bytes.length;
     this.ensure(n);
     const b = this.buf;
@@ -454,6 +514,14 @@ class Writer {
   }
 }
 
+const hasOwn = Object.prototype.hasOwnProperty;
+const encodedKeys = new Map<string, Uint8Array>();
+const MaxEncodedKeys = 4096;
+
+function typePropertyError(value: unknown): MsgPackError {
+  return new MsgPackError(`${TypeProperty} is a .NET type name (a string), not a ${typeof value}.`);
+}
+
 /** The declared type object (or an interface, an abstract class the models do not have): an instance of a model always gets its type id. */
 const AnyDeclared = '\u0000any';
 
@@ -508,22 +576,26 @@ function compile(type: TypeExpr): ValueWriter {
   return writeAsIs; // an entry of a schema: not in models
 }
 
+/** The values in the form the kind usually has are written without the dispatch of write. */
 function kindWriter(kind: Kind): ValueWriter {
   switch (kind) {
+    case 'string': return (w, v, d) => (typeof v === 'string' ? w.string(v) : w.write(v, d));
     case 'guid': return (w, v, d) => (typeof v === 'string' ? w.guid(v) : w.write(v, d));
     case 'any': return (w, v, d) => (isPlainObject(v) ? w.object(v as Record<string, unknown>, d, AnyDeclared) : w.write(v, d));
-    case 'timespan':
-    case 'timeonly':
-    case 'dateonly':
-    case 'char':
     case 'datetime':
     case 'dto':
     case 'dto-clock':
+      return (w, v, d) => (v instanceof Date ? w.date(v) : typeof v === 'string' ? w.text(v, kind, d) : w.write(v, d));
     case 'decimal':
     case 'int':
     case 'long':
     case 'ulong':
     case 'float':
+      return (w, v, d) => (typeof v === 'number' ? w.number(v) : typeof v === 'string' ? w.text(v, kind, d) : w.write(v, d));
+    case 'timespan':
+    case 'timeonly':
+    case 'dateonly':
+    case 'char':
       return (w, v, d) => (typeof v === 'string' ? w.text(v, kind, d) : w.write(v, d));
   }
   return writeAsIs; // string, bool, bin, uri, bigint: as they are
@@ -536,6 +608,33 @@ interface ModelPlan {
   encoded: Uint8Array[];
   /** The own keys of an instance that had no other properties than the model's. */
   shape?: string[];
+  /** The generated code writing the properties (see generateModelWriter), null when it cannot be generated, undefined until first needed. */
+  generated?: WriteProperties | null;
+}
+
+/** Writes the properties of a model instance that are not undefined (their names and values), returns how many. */
+type WriteProperties = (w: Writer, o: Record<string, unknown>, depth: number) => number;
+
+let codeAllowed = true; // false once new Function failed (Content-Security-Policy without 'unsafe-eval')
+
+/**
+ * The properties of a model class as code: the names as literals (V8 then sees one property load per place, of instances of one class), the encoded names and the
+ * value writers as constants (one function per call site). Undefined values are left out as in the generic loop.
+ */
+function generateModelWriter(plan: ModelPlan): WriteProperties | null {
+  const names = plan.names;
+  if (!codeAllowed || names.length === 0 || names.length > 512) return null;
+  let code = `const ${names.map((_, t) => `e${t} = encoded[${t}], w${t} = writers[${t}]`).join(', ')};\nreturn function writeProperties(w, o, d) {\nlet c = 0, v;\n`;
+  names.forEach((n, t) => {
+    code += `v = o[${JSON.stringify(n)}];\nif (v !== undefined) { w.small(e${t}); w${t}(w, v, d); c++; }\n`;
+  });
+  code += 'return c;\n};';
+  try {
+    return (new Function('encoded', 'writers', code) as (encoded: Uint8Array[], writers: ValueWriter[]) => WriteProperties)(plan.encoded, plan.writers);
+  } catch {
+    codeAllowed = false;
+    return null;
+  }
 }
 
 const plans = new WeakMap<ModelClass, ModelPlan>();

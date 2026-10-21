@@ -11,7 +11,7 @@ test('every format reads as @msgpack/msgpack reads it', () => {
     0, 1, 127, 128, 255, 256, 65535, 65536, 4294967295, 4294967296, Number.MAX_SAFE_INTEGER,
     -1, -32, -33, -128, -129, -32768, -32769, -2147483648, -2147483649, Number.MIN_SAFE_INTEGER,
     0.5, -1.25, 1e300, true, false, null,
-    '', 'a', 'x'.repeat(31), 'x'.repeat(32), 'x'.repeat(255), 'x'.repeat(256), 'x'.repeat(70000), 'héllo wörld €', '😀'.repeat(20),
+    '', 'a', 'x'.repeat(31), 'x'.repeat(32), 'x'.repeat(33), 'é'.repeat(16), 'x'.repeat(31) + 'é', 'x'.repeat(255), 'x'.repeat(256), 'x'.repeat(70000), 'héllo wörld €', '😀'.repeat(20),
     new Uint8Array([1, 2, 3]), new Uint8Array(300), new Uint8Array(70000),
     [], [1, [2, [3]]], new Array(20).fill(7), new Array(70000).fill(1),
     {}, { a: 1, b: { c: [true, null] } }, Object.fromEntries(Array.from({ length: 20 }, (_, t) => ['k' + t, t])),
@@ -68,4 +68,14 @@ test('nesting deeper than maxDepth is refused', () => {
 
 test('a byte that is not a MsgPack type', () => {
   assert.throws(() => read(new Uint8Array([0xc1])), /not a MsgPack type/);
+});
+
+test('map keys: the same text for the same bytes, also for keys that share a slot of the key cache', () => {
+  const keys = [];
+  for (let t = 0; t < 3000; t++) keys.push((t % 7 === 0 ? 'é' : '') + t.toString(36).repeat(1 + (t % 9)).slice(0, 31));
+  keys.push('constructor', 'x'.repeat(31), 'y'.repeat(31));
+  const maps = [];
+  for (let t = 0; t < keys.length; t += 10) maps.push(Object.fromEntries(keys.slice(t, t + 10).map((k, i) => [k, i])));
+  const bytes = reference(maps);
+  for (let round = 0; round < 2; round++) assert.deepStrictEqual(read(bytes), decode(bytes), `round ${round}`);
 });

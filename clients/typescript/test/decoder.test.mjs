@@ -140,3 +140,13 @@ test('dictionaries, pairs, tuples, timespans, characters, DateTimeOffset', () =>
   assert.deepStrictEqual(value, { D: { 1: 'one' }, P: { Key: 'a', Value: 1 }, T: [2, 'b'], S: '1.02:03:04.5000000', C: 'é', O: moment, K: moment, E: { Key: null, Value: 0 } });
   assert.strictEqual(new Decoder({ dates: 'iso' }).decode(concat(schema, body)).value.O, '2026-10-13T14:00:00.000+02:00');
 });
+
+test('values in other formats than the usual ones read as they are converted', () => {
+  const long = 'x'.repeat(300);
+  const body = encode([[long, 300, new Date(-62135596800000), nil, nil, '12.50', nil, nil, 'é'.repeat(20)], ['Ann', -5, new MsgPackExtension(-1, new Uint8Array(12)), nil, nil, 7]]);
+  for (const generateCode of [true, false]) {
+    const [first, second] = new Decoder({ generateCode }).decode(concat(described, body)).value;
+    assert.deepStrictEqual([first.Name, first.Age, first.Born, first.Score, first.Nick], [long, 300, MinDate, 12.5, 'é'.repeat(20)], 'str16, uint16, timestamp 96, decimal text');
+    assert.deepStrictEqual([second.Age, second.Born, second.Score], [-5, new Date(0), 7], 'negative fixint, timestamp 96, a number');
+  }
+});

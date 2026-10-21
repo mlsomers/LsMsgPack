@@ -1,7 +1,7 @@
 // Request bodies: what the encoder writes reads back as @msgpack/msgpack and the reader of this package read it.
 import assert from 'node:assert';
 import { test } from 'node:test';
-import { decode } from '@msgpack/msgpack';
+import { decode, encode as reference } from '@msgpack/msgpack';
 import { encode, MsgPackExtension, MsgPackReader } from '../dist/index.js';
 
 test('values read back as they were', () => {
@@ -65,4 +65,25 @@ test('$type is the type id: the key "", first', () => {
   assert.deepStrictEqual([...encode({ $type: undefined, Name: 'Rex' })], [...encode({ Name: 'Rex' })], 'undefined: left out');
   assert.throws(() => encode({ $type: 1 }), /\$type is a \.NET type name/);
   assert.deepStrictEqual(decode(encode(new Map([['$type', 'x']]))), { $type: 'x' }, 'a Map is a dictionary: written as it is');
+});
+
+test('left out properties: the map header counts the entries written, also when it gets smaller', () => {
+  for (const [keys, left] of [[20, 6], [17, 1], [16, 1], [20, 0], [70000, 1]]) {
+    const o = {};
+    for (let t = 0; t < keys; t++) o['k' + t] = t < left ? undefined : t;
+    const written = Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
+    assert.deepStrictEqual(Buffer.from(encode(o)), Buffer.from(reference(written)), `${keys} keys, ${left} undefined`);
+  }
+  const late = { a: 1, b: undefined };
+  for (let t = 0; t < 18; t++) late['k' + t] = t;
+  late.$type = 'Late';
+  assert.deepStrictEqual(decode(encode(late)), { '': 'Late', a: 1, ...Object.fromEntries(Array.from({ length: 18 }, (_, t) => ['k' + t, t])) }, '$type after other properties: first');
+  assert.strictEqual(encode(late)[0], 0xde, 'map16 for 20 entries');
+});
+
+test('only own properties are written', () => {
+  const o = Object.create({ inherited: 1 });
+  o.own = 2;
+  assert.deepStrictEqual(decode(encode(o)), { own: 2 });
+  assert.deepStrictEqual(decode(encode(Object.assign(Object.create(null), { a: 1 }))), { a: 1 });
 });

@@ -45,6 +45,7 @@ try {
   time('JSON.parse of the text', () => JSON.parse(text));
   time('JSON.parse with the UTF-8 decoding', () => JSON.parse(new TextDecoder().decode(json)));
   time('@msgpack/msgpack, application/msgpack (names)', () => decode(plain));
+  time('this client, application/msgpack (names)', () => client.decoder.decodePlain(plain));
   time('this client, x-lsmsgpack described, schema reference', () => client.decode(reference, origin));
   time('this client, x-lsmsgpack described, schema inline', () => client.decode(inline.body, origin, inline.schema));
   const generic = new LsMsgPackClient({ baseUrl: server.url, store: client.store, generateCode: false });
