@@ -5,6 +5,7 @@
 import { MissingSchemaError, MsgPackError } from './errors.js';
 import { MsgPackExtension, MsgPackReader, ReaderOptions } from './reader.js';
 import type { ModelSet } from './models.js';
+import { nameFunction, PropertyNames } from './names.js';
 import { AnyType, Kind, Schema, SchemaEntry, TypeExpr } from './schema.js';
 import { toHex } from './sha256.js';
 import { convertDecimal, dateOnlyText, decodeDecimal, DecimalMode, EmptyGuid, guidString, MinDateTimeMs, offsetText, timeOnlyText, timeSpanText } from './values.js';
@@ -21,6 +22,11 @@ export interface DecodeOptions extends ReaderOptions {
   models?: ModelSet;
   /** Classes to create for schema entries (by the type name of the writer), e.g. { Invoice: Invoice }. A property the class does not initialize gets the default. The models come first. */
   classes?: Record<string, new () => object>;
+  /**
+   * The names of the properties of the objects: 'dotnet' (default, the names of the .NET properties: InvoiceDate) or 'camelCase' (invoiceDate, as System.Text.Json's
+   * JsonNamingPolicy.CamelCase names them; also key and value of a KeyValuePair). Never dictionary keys or $type. Models generated with it read with it.
+   */
+  propertyNames?: PropertyNames;
   /** The data starts with the indexed schema (default true, as the formatters write application/x-lsmsgpack). False: the body only (UseInexedSchema off). */
   indexedSchema?: boolean;
   /**
@@ -201,12 +207,13 @@ class Plan {
   readonly missing: number[] = [];
 
   /**
+   * @param names the names of the properties in JavaScript (DecodeOptions.propertyNames)
    * @param cls the class of the entry (a model, or one of DecodeOptions.classes)
    * @param model the class is a model: it has $type on its prototype
    */
-  constructor(readonly entry: SchemaEntry, readonly cls: (new () => object) | undefined, readonly model = false) {
+  constructor(readonly entry: SchemaEntry, names: string[], readonly cls: (new () => object) | undefined, readonly model = false) {
     const count = entry.properties.length;
-    this.names = entry.properties.map((p) => p.name);
+    this.names = names;
     this.reads = new Array(count);
     this.values = new Array(count);
     this.makers = new Array(count);
@@ -262,6 +269,18 @@ class Plan {
     }
     return this._byName.get(name) ?? -1;
   }
+
+  private _byWriterName?: Map<string, number>;
+
+  /** The index of a property by the name the writer gave it (a key of ObjectLayout.Map without the schema): the .NET name. */
+  indexOfWriterName(name: string): number {
+    const properties = this.entry.properties;
+    if (this._byWriterName === undefined) {
+      this._byWriterName = new Map();
+      for (let t = properties.length - 1; t >= 0; t--) this._byWriterName.set(properties[t].name, t);
+    }
+    return this._byWriterName.get(name) ?? -1;
+  }
 }
 
 /** The plans of one schema for one set of options, made when first used. */
@@ -269,8 +288,14 @@ class Plans {
   private readonly plans: (Plan | undefined)[];
   private readonly inline = new Map<SchemaEntry, Plan>();
   readonly root: Read;
+  private readonly field: (name: string) => string;
+  private readonly keyName: string;
+  private readonly valueName: string;
 
   constructor(readonly schema: Schema, private readonly options: ResolvedOptions) {
+    this.field = nameFunction(options.propertyNames);
+    this.keyName = this.field('Key');
+    this.valueName = this.field('Value');
     this.plans = new Array(schema.entries.length);
     this.root = schema.root === undefined ? readDynamic : this.compile(schema.root);
   }
@@ -292,7 +317,7 @@ class Plans {
 
   private build(index: number, entry = this.schema.entries[index]): Plan {
     const model = entry.name === null ? undefined : this.options.models?.byName(entry.name);
-    const plan = new Plan(entry, model?.ctor ?? (entry.name === null ? undefined : this.options.classes?.[entry.name]), model !== undefined);
+    const plan = new Plan(entry, entry.properties.map((p) => this.field(p.name)), model?.ctor ?? (entry.name === null ? undefined : this.options.classes?.[entry.name]), model !== undefined);
     if (index >= 0) this.plans[index] = plan; // before the properties: they may refer to this entry
     else this.inline.set(entry, plan);
     entry.properties.forEach((p, t) => {
@@ -327,10 +352,10 @@ class Plans {
         return (r) => r.readDictionary(key, value);
       }
       case 'pair': {
-        const key = this.compile(type.key), value = this.compile(type.value);
+        const key = this.compile(type.key), value = this.compile(type.value), keyName = this.keyName, valueName = this.valueName;
         return (r) => {
           const items = r.readItems([key, value]);
-          return Array.isArray(items) ? { Key: items[0], Value: items[1] } : items;
+          return Array.isArray(items) ? { [keyName]: items[0], [valueName]: items[1] } : items;
         };
       }
       case 'tuple': {
@@ -434,8 +459,8 @@ class Plans {
         }
         return { value: null };
       case 'pair': {
-        const key = this.defaultOf(type.key), value = this.defaultOf(type.value);
-        return { value: null, make: () => ({ Key: key.make ? key.make() : key.value, Value: value.make ? value.make() : value.value }) };
+        const key = this.defaultOf(type.key), value = this.defaultOf(type.value), keyName = this.keyName, valueName = this.valueName;
+        return { value: null, make: () => ({ [keyName]: key.make ? key.make() : key.value, [valueName]: value.make ? value.make() : value.value }) };
       }
       case 'model': {
         if (!type.struct) return { value: null };
@@ -499,6 +524,7 @@ interface ResolvedOptions {
   dates: 'date' | 'iso';
   models?: ModelSet;
   classes?: Record<string, new () => object>;
+  propertyNames: PropertyNames;
   generateCode: boolean;
 }
 
@@ -597,7 +623,7 @@ export class SchemaReader extends MsgPackReader {
 
   /** ObjectLayout.Map: the key is the index of the property in the entry (or its name). */
   private setByKey(plan: Plan, o: Record<string, unknown>, key: unknown): void {
-    const index = typeof key === 'number' ? key : typeof key === 'string' ? plan.indexOf(key) : -1;
+    const index = typeof key === 'number' ? key : typeof key === 'string' ? plan.indexOfWriterName(key) : -1;
     if (index >= 0 && index < plan.names.length) setOwn(o, plan.names[index], plan.reads[index](this));
     else this.value();
   }
@@ -679,6 +705,7 @@ function checkModelOptions(models: ModelSet, o: ResolvedOptions): void {
   differs('int64', models.int64, o.int64);
   differs('dates', models.dates, o.dates);
   if (typeof o.decimal !== 'function') differs('decimal', models.decimal, o.decimal); // a function of the text: the user's own type
+  differs('propertyNames', models.propertyNames, o.propertyNames); // the field names of the classes
 }
 
 /** What decoding a payload found. */
@@ -705,6 +732,7 @@ export class Decoder {
       dates: options.dates ?? models?.dates ?? 'date',
       models,
       classes: options.classes,
+      propertyNames: options.propertyNames ?? models?.propertyNames ?? 'dotnet',
       generateCode: options.generateCode ?? true,
     };
     if (models !== undefined) checkModelOptions(models, this.options);

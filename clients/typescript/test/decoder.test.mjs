@@ -141,6 +141,29 @@ test('dictionaries, pairs, tuples, timespans, characters, DateTimeOffset', () =>
   assert.strictEqual(new Decoder({ dates: 'iso' }).decode(concat(schema, body)).value.O, '2026-10-13T14:00:00.000+02:00');
 });
 
+test("propertyNames: 'camelCase': the properties of objects and pairs, not dictionary keys or $type", () => {
+  const schema = schemaBytes([
+    ['Item', [['ID', 'int'], ['URLValue', 'string'], ['Created', 'datetime'], ['Labels', ['dict', 'string', 'int']], ['Entry', ['pair', 'string', 'int']], ['Owner', 1]]],
+    ['Person', [['Name', 'string']]],
+    ['', [['@', ['list', 0]]]],
+  ]);
+  const body = encode([[7, 'u', nil, new Map([['Big', 1]]), ['k', 2], new Map([['', 1], ['@', ['Ann']]])], [], new Map([[1, 'by index']])]);
+  for (const generateCode of [true, false]) {
+    const value = new Decoder({ propertyNames: 'camelCase', generateCode }).decode(concat(schema, body)).value;
+    assert.deepStrictEqual(value, [
+      { id: 7, urlValue: 'u', created: MinDate, labels: { Big: 1 }, entry: { key: 'k', value: 2 }, owner: { $type: 'Person', name: 'Ann' } },
+      { id: 0, urlValue: null, created: MinDate, labels: null, entry: { key: null, value: 0 }, owner: null },
+      { id: 0, urlValue: 'by index', created: MinDate, labels: null, entry: { key: null, value: 0 }, owner: null },
+    ]);
+  }
+  const named = new Decoder({ propertyNames: 'camelCase', indexedSchema: false }).decode(encode(new Map([['ID', 1]]))).value;
+  assert.deepStrictEqual(named, { ID: 1 }, 'without a schema maps are read as they are');
+  class Item {}
+  const [item] = new Decoder({ propertyNames: 'camelCase', classes: { Item } }).decode(concat(schema, body)).value;
+  assert.ok(item instanceof Item);
+  assert.strictEqual(item.urlValue, 'u');
+});
+
 test('values in other formats than the usual ones read as they are converted', () => {
   const long = 'x'.repeat(300);
   const body = encode([[long, 300, new Date(-62135596800000), nil, nil, '12.50', nil, nil, 'é'.repeat(20)], ['Ann', -5, new MsgPackExtension(-1, new Uint8Array(12)), nil, nil, 7]]);

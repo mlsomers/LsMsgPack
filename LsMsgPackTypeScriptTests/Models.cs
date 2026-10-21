@@ -81,6 +81,15 @@ namespace LsMsgPackTypeScriptTests
     public int ReadOnly { get { return 7; } } // not serialized: no setter
   }
 
+  /// <summary>
+  /// Id and ID are both id in camelCase.
+  /// </summary>
+  public class TsClash
+  {
+    public int Id { get; set; }
+    public int ID { get; set; }
+  }
+
   public static class TsSetup
   {
     /// <summary>

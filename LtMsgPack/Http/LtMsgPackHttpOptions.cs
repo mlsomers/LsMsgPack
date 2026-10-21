@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 
 namespace LtMsgPack.Http
 {
@@ -40,6 +40,13 @@ namespace LtMsgPack.Http
     /// and a client can hold them before its first request (the schemas the TypeScript generator writes, see docs/TypeScriptClient.md).</para>
     /// </summary>
     public bool CompleteSchemas { get; set; } = true;
+
+    /// <summary>
+    /// Bodies with maps keyed by property names (application/msgpack, x-msgpack; x-lsmsgpack without the indexed schema): a key that is not a property name sets the one property
+    /// whose name equals it ignoring case (<see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>), default true, as ASP.NET Core reads JSON.
+    /// <para>For clients that write other names, e.g. the TypeScript client with <c>propertyNames: 'camelCase'</c> (docs/TypeScriptClient.md). Set on the options of both media types, the exact name is looked up first.</para>
+    /// </summary>
+    public bool PropertyNameCaseInsensitive { get; set; } = true;
 
     /// <summary>
     /// Collect what did not match between a body and the classes it is read into (<see cref="ReadDifferences"/>: unknown properties, classes without a schema entry, type ids that are not found...). Default false.

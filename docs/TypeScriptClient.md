@@ -51,7 +51,7 @@ await api.post('api/orders', order);
 
 - `get`, `post`, `put`, `patch` and `delete` return the decoded body and throw an `HttpError` (with `status` and the decoded `body`) when the status is not 2xx. `send` returns `{ value, response, schema, reference }`.
 - A body that is already text or bytes (`string`, `Uint8Array`, `Blob`, `FormData`...) is sent as it is, anything else is encoded as MsgPack with `Content-Type: application/msgpack`.
-- The property names are the names of the .NET properties (as the schema has them, e.g. `InvoiceDate`). Use the same names in request bodies.
+- The property names are the names of the .NET properties (as the schema has them, e.g. `InvoiceDate`), or camelCase with `propertyNames: 'camelCase'` (below).
 - Responses that are not MsgPack (JSON, text) are decoded as such, an empty body (`204 No Content`, a `null` result) is `undefined`.
 - Already have a `Response` (your own `fetch`, an interceptor)? `api.read(response)` decodes it and learns its schema. Your own fetch needs the headers below: `Accept` and `MsgPack-Schemas` (`api.store.advertise(origin)`).
 - `Decoder` and `encode` work without HTTP (e.g. for MsgPack from a WebSocket): `new Decoder({ models }).decode(bytes)`, `encode(value, { models })`.
@@ -66,6 +66,7 @@ new LsMsgPackClient({
   decimal: 'number',      // 'number' (default), 'string' (the text of decimal.ToString(), every digit), or a function of that text: (t) => new Decimal(t)
   int64: 'number',        // long/ulong: 'number' (default, as JSON.parse: precision is lost beyond 2^53) or 'bigint'
   dates: 'date',          // DateTime/DateTimeOffset: 'date' (default) or 'iso' (text; DateTimeOffset keeps its offset)
+  propertyNames: 'dotnet', // 'dotnet' (default, InvoiceDate) or 'camelCase' (invoiceDate), see below
   classes: { Invoice },   // without models: create instances of your own classes for these .NET type names
   store: sharedStore,     // a SchemaStore shared by several clients of the same servers
   headers: { Authorization: 'Bearer ...' }, // added to every request
@@ -77,7 +78,16 @@ new LsMsgPackClient({
 });
 ```
 
-The models were generated for `int64`, `dates` and `decimal` (their TypeScript types depend on them): the client takes those, and throws when you pass others.
+The models were generated for `int64`, `dates`, `decimal` and `propertyNames` (their TypeScript types and field names depend on them): the client takes those, and throws when you pass others.
+
+### camelCase property names
+
+`propertyNames: 'camelCase'` gives the properties the names System.Text.Json's `JsonNamingPolicy.CamelCase` gives them, so the objects look like the JSON of an API with ASP.NET Core's defaults: `invoiceDate`, `id` for `ID`, `urlValue` for `URLValue`.
+
+- It applies to the properties of objects and to `Key` and `Value` of a `KeyValuePair` (`{ key, value }`). Dictionary keys and `$type` stay as they are, and so do the keys of `application/msgpack` responses (maps without a schema).
+- **Models**: generate them with `--property-names camelCase` (see [TypeScriptModels.md](TypeScriptModels.md)). Their fields are camelCase, the client reads with the same, and an instance is written with the .NET names.
+- **Other request bodies** (plain objects, a property the models don't have) are written as they are, with camelCase keys. The formatters match names ignoring case when no property has the exact name (`PropertyNameCaseInsensitive`, on by default, see [WebFormatters.md](WebFormatters.md#media-types-and-settings)).
+- Two properties that differ only in case (`Id` and `ID`) have the same camelCase name. The generator refuses them, System.Text.Json does too, and the server sets neither for a key `id`.
 
 ### The models
 
@@ -119,7 +129,7 @@ const api = new LsMsgPackClient({ baseUrl, store });
 
 ## The server
 
-Nothing to change: the [ASP.NET Core, Web API and MVC 5 formatters](WebFormatters.md) support it (`LtMsgPackHttpOptions.DescribeSchemas` and `CompleteSchemas`, on by default).
+Nothing to change: the [ASP.NET Core, Web API and MVC 5 formatters](WebFormatters.md) support it (`LtMsgPackHttpOptions.DescribeSchemas`, `CompleteSchemas` and, for camelCase request bodies, `PropertyNameCaseInsensitive`, on by default).
 
 **Cross-origin requests** (the page is not served by the API's origin) need CORS to allow the request header and expose the response header:
 
@@ -157,7 +167,7 @@ Without them it still works, the client just gets every schema inline (it cannot
 | `Nullable<T>` | as `T` | `null` |
 | lists, arrays, sets | arrays | `null` |
 | dictionaries | objects (keys as text, like JSON) | `null` |
-| `KeyValuePair<K, V>` | `{ Key, Value }` | `{ Key: default, Value: default }` |
+| `KeyValuePair<K, V>` | `{ Key, Value }` (`{ key, value }` with camelCase) | `{ Key: default, Value: default }` |
 | tuples | arrays | `null` |
 | `object`, interfaces | what the value is (an object of its class with a type id, its name in `$type`) | `null` |
 
@@ -172,6 +182,8 @@ The indexed schema only has names: `{ "Invoice": ["Id", "InvoiceNumber", ...], .
 The client asks for it: `Accept: application/x-lsmsgpack; schema=described, application/x-lsmsgpack; q=0.9`. The server sends the schema with the type of each property (format: [schema.md, version 2](schema.md#version-2-the-declared-types)). The body is the same bytes, and the schema has its own id, so it is negotiated and referred to like a plain one (see [WebFormatters.md](WebFormatters.md#schema-version-2-for-clients-without-the-classes)). The second media type is for servers that do not know the parameter, and for ASP.NET Core's content negotiation, which only matches a parameter it lists.
 
 A server that does not describe schemas (`DescribeSchemas = false`, `NegotiateSchemas = false`) sends the plain schema. With models the client still reads everything (the models know the types, and the root when it has a type id). Without them values with a type id become objects (left out properties `null`), the root and other objects stay arrays of their values.
+
+Without the described schema the client does not know the type of the root, and it does not guess: the first entry of the schema is the root's class only when the root is an object (for a `List<Invoice>` it is `Invoice`), and an object written as an array of its values looks like a list. So the root of such a payload is an object only when it has a type id. Keep `DescribeSchemas` on (the default) when the client needs it.
 
 The client keeps an inline schema only when its hash equals the `MsgPack-Schema` response header (SHA-256 over the version byte and the bytes, first 16 bytes).
 
@@ -197,8 +209,6 @@ One invoice: JSON 4022 bytes (1048 gzipped), schema reference 2111 bytes (810 gz
 
 Writing the same objects as a request body: `JSON.stringify` 1230-1250 µs (1580 µs with the UTF-8 encoding), this client 1100-1190 µs, with the models 1110-1230 µs, @msgpack/msgpack 2400-2450 µs. In the browser both formats cost about the same; the server reads MsgPack about 3.5x faster than System.Text.Json reads JSON (LtMsgPack, names).
 
-## Not covered (yet)
+## Generic classes
 
-- The root of a payload with a plain schema (no described schema) is only an object when it has a type id.
-- Property names are the .NET names (`InvoiceDate`); a camelCase option would have to apply to reading and writing alike, never to dictionary keys.
-- Generic classes are generated per closed type (`Page<Invoice>` is `class Page_Invoice`).
+The models have a class per closed generic type: `Page<Invoice>` is `class Page_Invoice`, as NSwag makes `PageOfInvoice`. Each closed type has its own schema entry, property types and constructor values (a field of type `T` is `0` in `Page<int>` and `null` in `Page<Invoice>`), and `$type` (on the prototype) is the name of the closed type. A generic interface `Page<T>` that the closed classes implement, so the code can say `Page<Invoice>`, is not generated (yet).

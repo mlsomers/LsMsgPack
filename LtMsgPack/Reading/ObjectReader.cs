@@ -395,9 +395,12 @@ namespace LtMsgPack.Reading
     /// </summary>
     internal readonly bool Positional;
 
+    private readonly bool _caseInsensitive;
+
     internal ReadPlan(Serializer serializer, Type type, FullPropertyInfo[] infos, Func<object> generated)
     {
       Type = type;
+      _caseInsensitive = serializer.Options._propertyNameCaseInsensitive;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
       Props = new PropReader[infos.Length];
       for (int t = 0; t < infos.Length; t++)
@@ -434,7 +437,24 @@ namespace LtMsgPack.Reading
           return props[t];
         }
       }
-      return null;
+      return _caseInsensitive ? FindIgnoringCase(MsgPackOptions.StringEncoding.GetString(buffer, offset, length)) : null;
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>, for a name that is not a property's: the one property whose name equals it ignoring case, null when none or several do.
+    /// </summary>
+    private PropReader FindIgnoringCase(string name)
+    {
+      PropReader found = null;
+      for (int t = Props.Length - 1; t >= 0; t--)
+      {
+        if (!string.Equals(Props[t].Name, name, StringComparison.OrdinalIgnoreCase))
+          continue;
+        if (found != null)
+          return null;
+        found = Props[t];
+      }
+      return found;
     }
 
     internal PropReader FindByName(string name)

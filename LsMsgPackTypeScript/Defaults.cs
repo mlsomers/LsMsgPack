@@ -120,7 +120,7 @@ namespace LsMsgPackTypeScript
         case "dateonly": return "'0001-01-01'";
         case "timeonly": return "'00:00:00'";
         case "struct": return string.Concat("new ", spec.Class.TsName, "()");
-        case "pair": return string.Concat("{ Key: ", TypeDefault(spec.Items[0]), ", Value: ", TypeDefault(spec.Items[1]), " }");
+        case "pair": return Pair(TypeDefault(spec.Items[0]), TypeDefault(spec.Items[1]));
       }
       return "null";
     }
@@ -184,7 +184,7 @@ namespace LsMsgPackTypeScript
           object key = value.GetType().GetProperty("Key").GetValue(value);
           object item = value.GetType().GetProperty("Value").GetValue(value);
           string k = Value(key, spec.Items[0], depth + 1), v = Value(item, spec.Items[1], depth + 1);
-          return k == null || v == null ? null : string.Concat("{ Key: ", k, ", Value: ", v, " }");
+          return k == null || v == null ? null : Pair(k, v);
         case "tuple":
           List<string> items = new List<string>();
           for (int t = 0; t < spec.Items.Length; t++)
@@ -205,6 +205,14 @@ namespace LsMsgPackTypeScript
         return Value(value, _models.SpecOf(value.GetType()), depth);
       ModelClass model = _models.ClassOf(value.GetType());
       return model is null ? null : Object(value, depth);
+    }
+
+    /// <summary>
+    /// A KeyValuePair as the client reads it.
+    /// </summary>
+    private string Pair(string key, string value)
+    {
+      return string.Concat("{ ", _options.Field("Key"), ": ", key, ", ", _options.Field("Value"), ": ", value, " }");
     }
 
     private static object TupleItem(object tuple, int index)
@@ -229,7 +237,7 @@ namespace LsMsgPackTypeScript
         if (v == null)
           return null;
         if (!defaults.TryGetValue(prop.Name, out string d) || !string.Equals(d, v, StringComparison.Ordinal))
-          differ.Add(string.Concat(TypeScriptWriter.PropertyKey(prop.Name), ": ", v));
+          differ.Add(string.Concat(TypeScriptWriter.PropertyKey(_options.Field(prop.Name)), ": ", v));
       }
       string created = string.Concat("new ", model.TsName, "()");
       return differ.Count == 0 ? created : string.Concat("Object.assign(", created, ", { ", string.Join(", ", differ), " })");

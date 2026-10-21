@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 
 namespace LsMsgPackTsTestServer
 {
@@ -38,10 +39,10 @@ namespace LsMsgPackTsTestServer
     public Address GetNothing() => null;
 
     /// <summary>
-    /// System.Text.Json of what the endpoint returns (every property, with the names of the classes): the objects the client should make.
+    /// System.Text.Json of what the endpoint returns (every property, with the names of the classes, or with <paramref name="camel"/> camelCase): the objects the client should make.
     /// </summary>
     [HttpGet("expected/{name}")]
-    public IActionResult Expected(string name, [FromQuery] int count = 10)
+    public IActionResult Expected(string name, [FromQuery] int count = 10, [FromQuery] bool camel = false)
     {
       object value = name switch
       {
@@ -52,7 +53,9 @@ namespace LsMsgPackTsTestServer
         "addresses" => GetAddresses(),
         _ => null
       };
-      return value is null ? NotFound() : new JsonResult(value);
+      if (value is null)
+        return NotFound();
+      return camel ? new JsonResult(value, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }) : new JsonResult(value);
     }
 
     /// <summary>
@@ -60,7 +63,7 @@ namespace LsMsgPackTsTestServer
     /// The models of lsmsgpack-ts make the TypeScript client read the same.
     /// </summary>
     [HttpGet("dotnet/{name}")]
-    public IActionResult DotNet(string name)
+    public IActionResult DotNet(string name, [FromQuery] bool camel = false)
     {
       object value = name switch
       {
@@ -73,7 +76,8 @@ namespace LsMsgPackTsTestServer
       if (value is null)
         return NotFound();
       LtMsgPackSerializer serializer = new LtMsgPackSerializer(LtMsgPackPresets.LsMsgPack());
-      return new JsonResult(serializer.Deserialize(value.GetType(), serializer.Serialize(value, value.GetType())));
+      object read = serializer.Deserialize(value.GetType(), serializer.Serialize(value, value.GetType()));
+      return camel ? new JsonResult(read, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }) : new JsonResult(read);
     }
 
     /// <summary>

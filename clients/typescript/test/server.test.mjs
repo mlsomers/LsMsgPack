@@ -120,6 +120,14 @@ test('request bodies: plain MsgPack the server reads', { skip }, async () => {
   assertLikeJson(echoed, await expected('invoice'));
 });
 
+test("propertyNames: 'camelCase': the objects of System.Text.Json with camelCase, request bodies read ignoring case", { skip }, async () => {
+  const client = new LsMsgPackClient({ baseUrl: server.url, propertyNames: 'camelCase' });
+  assertLikeJson(await client.get('/invoices?count=20'), await expected('invoices', '?count=20&camel=true'));
+  assertLikeJson(await client.get('/kinds/defaults'), await expected('defaults', '?camel=true'));
+  assertLikeJson(await client.get('/kinds/values'), await expected('values', '?camel=true'));
+  assertLikeJson(await client.post('/echo/invoice', await client.get('/invoice')), await expected('invoice'), 'the echo is written with the .NET names');
+});
+
 test('polymorphic request bodies: $type is the class the server creates', { skip }, async () => {
   const client = new LsMsgPackClient({ baseUrl: server.url });
   const zoo = await client.get('/zoo'); // read, changed and sent back: the objects keep their classes

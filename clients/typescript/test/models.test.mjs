@@ -116,6 +116,44 @@ test('the options must be the ones the models were generated with', () => {
   assert.strictEqual(new Decoder({ models: defineModels({ dates: 'iso', classes: [] }) }).decode(payload).value, '1970-01-01T00:00:00.000Z', 'taken from the models when not given');
 });
 
+// The same models generated with --property-names camelCase
+class CamelAddress {
+  street = null;
+  city = 'Utrecht';
+}
+class CamelOrder {
+  id = '00000000-0000-0000-0000-000000000000';
+  retries = 3;
+  home = null;
+  entry = { key: null, value: 0 };
+}
+const camelModels = defineModels({
+  int64: 'number', dates: 'date', decimal: 'number', propertyNames: 'camelCase',
+  classes: [
+    [CamelAddress, 'Address', [['Street', 'string'], ['City', 'string']]],
+    [CamelOrder, 'Order', [['Id', 'guid'], ['Retries', 'int'], ['Home', ['class', 'Address']], ['Entry', ['pair', 'string', 'int']]]],
+  ],
+});
+
+test("models generated with propertyNames: 'camelCase': read into their fields, written with the .NET names", () => {
+  const items = [['Id', 'guid'], ['Retries', 'int'], ['Home', 1], ['Entry', ['pair', 'string', 'int']], ['Priority', 'int']];
+  const body = [0x95, ...guidBin, 0xc0, 0x92, 0xc0, 0xa4, ...Buffer.from('Rome'), 0x92, 0xa1, 0x6b, 2, 9];
+  for (const generateCode of [true, false]) {
+    const order = new Decoder({ models: camelModels, generateCode }).decode(orderPayload(body, items)).value;
+    assert.ok(order instanceof CamelOrder);
+    assert.deepStrictEqual({ ...order, home: { ...order.home } }, { id: '0f8fad5b-d9cb-469f-a165-70867728950e', retries: 3, home: { street: null, city: 'Rome' }, entry: { key: 'k', value: 2 }, priority: 9 });
+
+    order.retries = 5;
+    const written = entries(encode(order, { models: camelModels, generateCode }));
+    assert.deepStrictEqual(written.map(([k]) => k), ['Id', 'Retries', 'Home', 'Entry', 'priority'], 'the .NET names; a property the models do not have as it is (the server reads names ignoring case)');
+    assert.deepStrictEqual(written[2][1], { Street: null, City: 'Rome' });
+    assert.deepStrictEqual(written[3][1], ['k', 2], 'the pair as [key, value]');
+  }
+  assert.throws(() => new Decoder({ models: camelModels, propertyNames: 'dotnet' }), /propertyNames/);
+  assert.throws(() => new Decoder({ models, propertyNames: 'camelCase' }), /propertyNames/, 'models with the .NET names');
+  assert.strictEqual(new LsMsgPackClient({ models: camelModels }).decoder.decode(orderPayload(body, items)).value.retries, 3, 'taken from the models when not given');
+});
+
 /** The map of an encoded object as [key, value] pairs (in order). */
 function entries(bytes) {
   const r = new MsgPackReader(bytes, { decimal: 'raw' });
@@ -276,6 +314,26 @@ test('request bodies with models: every kind as the server reads it', { skip }, 
   assert.strictEqual(echoed.Timeout, '1.02:03:04.5000000');
   assert.strictEqual(echoed.Retries, 3);
   assert.deepStrictEqual(echoed.Home, { Street: null, HouseNumber: null, PostalCode: null, City: 'Utrecht', Region: null, CountryCode: null });
+});
+
+test('the generated models with camelCase field names (--property-names camelCase)', { skip }, async () => {
+  const camel = await generateModels(['--property-names', 'camelCase']);
+  const client = new LsMsgPackClient({ baseUrl: server.url, models: camel.models, schemas: camel.schemas });
+  const first = await client.send('/kinds/values');
+  assert.strictEqual(first.reference, true, 'the same schemas');
+  const kinds = first.value;
+  assert.ok(kinds instanceof camel.Kinds);
+  assertLikeJson(kinds, await json('/dotnet/values?camel=true'));
+  assertLikeJson(await client.get('/kinds/defaults'), await json('/dotnet/defaults?camel=true'));
+  assertLikeJson(await client.get('/invoices'), await json('/dotnet/invoices?camel=true'));
+  assertLikeJson(await client.post('/echo/kinds', kinds), await json('/expected/values'), 'written with the .NET names');
+
+  const zoo = await client.get('/zoo');
+  assert.ok(zoo.animals[0] instanceof camel.Dog);
+  zoo.animals.push(Object.assign(new camel.Cat(), { name: 'Kit', indoor: true }));
+  const echoed = await client.post('/echo/zoo', zoo);
+  assert.deepStrictEqual(echoed.Animals.at(-1), { Type: 'Cat', Value: { Indoor: true, Name: 'Kit' } });
+  assert.throws(() => new LsMsgPackClient({ models: camel.models, propertyNames: 'dotnet' }), /propertyNames/);
 });
 
 test('the generated models with other read options', { skip }, async () => {

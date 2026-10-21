@@ -325,7 +325,7 @@ class Writer {
     let extra: string[] | undefined, other = false;
     for (let t = 0; t < keys.length; t++) {
       const k = keys[t], v = o[k];
-      if (model.byName.has(k) || k === TypeProperty) continue;
+      if (model.fields.has(k) || k === TypeProperty) continue;
       if (v !== undefined && typeof v !== 'function') (extra ??= []).push(k);
       else other = true; // left out now, but such a key may have a value in the next instance: not a shape to remember
     }
@@ -566,7 +566,13 @@ function compile(type: TypeExpr): ValueWriter {
     }
     case 'pair': {
       const items = [writerOf(type.key), writerOf(type.value)];
-      return (w, v, d) => (isPlainObject(v) && 'Key' in (v as object) ? w.items([(v as { Key: unknown }).Key, (v as { Value: unknown }).Value], items, d) : w.write(v, d));
+      return (w, v, d) => {
+        if (!isPlainObject(v)) return w.write(v, d);
+        const pair = v as { Key?: unknown; Value?: unknown; key?: unknown; value?: unknown };
+        if ('Key' in pair) return w.items([pair.Key, pair.Value], items, d);
+        if ('key' in pair) return w.items([pair.key, pair.value], items, d); // propertyNames: 'camelCase'
+        w.write(v, d);
+      };
     }
     case 'dict': {
       const key = writerOf(type.key), value = writerOf(type.value);
@@ -602,9 +608,10 @@ function kindWriter(kind: Kind): ValueWriter {
 }
 
 interface ModelPlan {
+  /** The field names (read from the instances). */
   names: string[];
   writers: ValueWriter[];
-  /** The names as MsgPack strings. */
+  /** The .NET names as MsgPack strings (the keys). */
   encoded: Uint8Array[];
   /** The own keys of an instance that had no other properties than the model's. */
   shape?: string[];
@@ -642,7 +649,7 @@ const plans = new WeakMap<ModelClass, ModelPlan>();
 function planOf(model: ModelClass): ModelPlan {
   let plan = plans.get(model);
   if (plan === undefined) {
-    plan = { names: model.properties.map((p) => p.name), writers: model.properties.map((p) => writerOf(p.type)), encoded: model.properties.map((p) => encode(p.name)) };
+    plan = { names: model.properties.map((p) => p.field), writers: model.properties.map((p) => writerOf(p.type)), encoded: model.properties.map((p) => encode(p.name)) };
     plans.set(model, plan);
   }
   return plan;

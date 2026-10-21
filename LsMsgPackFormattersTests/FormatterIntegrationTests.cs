@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPackFormatters;
 using LtMsgPack;
 using LtMsgPack.Http;
@@ -273,6 +273,28 @@ namespace LsMsgPackFormattersTests
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
         AssertSampleOrder(MsgPackSerializer.Deserialize<Order>(await response.Content.ReadAsByteArrayAsync(), Plain));
+      }
+    }
+
+    /// <summary>
+    /// The TypeScript client with propertyNames: 'camelCase' writes { id, customer, amounts }: read as Order (LtMsgPackHttpOptions.PropertyNameCaseInsensitive, on by default).
+    /// </summary>
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task CamelCaseNamesAreReadIgnoringCase(bool caseInsensitive)
+    {
+      (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(settings => settings.PropertyNameCaseInsensitive = caseInsensitive));
+      using (host)
+      {
+        Dictionary<string, object> camel = new Dictionary<string, object>() { { "id", 42 }, { "customer", "Infotopie" }, { "amounts", new[] { 1.5, 2.25 } } };
+        HttpResponseMessage response = await client.SendAsync(Post(MsgPackSerializer.Serialize(camel, Plain), MsgPackMediaTypes.MsgPack, MsgPackMediaTypes.MsgPack));
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
+        Order echoed = MsgPackSerializer.Deserialize<Order>(await response.Content.ReadAsByteArrayAsync(), Plain);
+        if (caseInsensitive)
+          AssertSampleOrder(echoed);
+        else
+          Assert.That(echoed.Customer, Is.Null);
       }
     }
 

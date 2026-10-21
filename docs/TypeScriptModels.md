@@ -36,6 +36,7 @@ Options:
 | `--out <file.ts>` | The models. |
 | `--schemas <file.ts>` | The schema set, by default next to `--out` with `.schemas.ts`. `--no-schemas`: none. |
 | `--int64 number\|bigint`, `--dates date\|iso`, `--decimal number\|string` | How the client reads `long`, `DateTime`/`DateTimeOffset` and `decimal` (the TypeScript types depend on it). The client checks that it reads with the same options. |
+| `--property-names dotnet\|camelCase` | The field names: the names of the .NET properties (default) or camelCase as System.Text.Json's `JsonNamingPolicy.CamelCase` writes them (`invoiceDate`, `id` for `ID`; also `key`/`value` of a `KeyValuePair`). The client reads with the same (its `propertyNames` option) and writes request bodies with the .NET names. Two properties of a class with the same camelCase name (`Id` and `ID`) are refused. |
 | `--options <Type.Member>` | A static property, field or method of the assemblies that returns the server's `LtMsgPackHttpOptions` (or the `LtMsgPackOptions` of `application/x-lsmsgpack`). The static filters, `PropertyOrder` and `AddTypeIdOptions` decide which properties the models have and what the schemas are. Default: the defaults of the formatters. |
 | `--import <module>` | Where the models import `defineModels` from (default `@lsmsgpack/client`). |
 

@@ -73,9 +73,12 @@ namespace LtMsgPack.Http
       if (options is null)
         throw new ArgumentNullException(nameof(options));
 
-      _plain = new LtMsgPackSerializer(options.Plain ?? MsgPackMediaTypes.ToPlain(new LtMsgPackOptions()), context);
+      LtMsgPackOptions plain = options.Plain?.Clone() ?? MsgPackMediaTypes.ToPlain(new LtMsgPackOptions());
+      plain.PropertyNameCaseInsensitive |= options.PropertyNameCaseInsensitive;
+      _plain = new LtMsgPackSerializer(plain, context);
 
       LtMsgPackOptions ls = (options.XLsMsgPack ?? LtMsgPackPresets.LsMsgPack()).Clone();
+      ls.PropertyNameCaseInsensitive |= options.PropertyNameCaseInsensitive;
       _negotiate = options.NegotiateSchemas && ls.UseInexedSchema;
       if (_negotiate)
       {
