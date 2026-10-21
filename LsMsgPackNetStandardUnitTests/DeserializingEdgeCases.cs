@@ -517,7 +517,11 @@ namespace LsMsgPackUnitTests
       public string id { get; set; }
       public string other { get; set; }
     }
+
+    public class CaseWrittenUnicode { public string größe { get; set; } }
 #pragma warning restore IDE1006
+
+    public class CaseReadUnicode { public string Größe { get; set; } }
 
     public class CaseRead
     {
@@ -547,6 +551,9 @@ namespace LsMsgPackUnitTests
       CollectionAssert.AreEqual(caseInsensitive ? new[] { "id", "other" } : new[] { "id", "name", "other", "retries" }, unknown);
 
       Assert.AreEqual(caseInsensitive ? "Nut" : null, Serializer.Deserialize<CaseRead>(bytes, settings).Name, "without collecting the differences");
+
+      byte[] unicode = Serializer.Serialize(new CaseWrittenUnicode() { größe = "XL" }, settings);
+      Assert.AreEqual(caseInsensitive ? "XL" : null, Serializer.Deserialize<CaseReadUnicode>(unicode, settings).Größe, "names that are not ASCII");
     }
 
     [TestMethod]

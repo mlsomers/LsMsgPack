@@ -397,6 +397,16 @@ namespace LtMsgPack.Reading
 
     private readonly bool _caseInsensitive;
 
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the properties whose name equals another one's ignoring case (a key matching them sets none), null without the option.
+    /// </summary>
+    private readonly bool[] _ambiguous;
+
+    /// <summary>
+    /// Every property name is ASCII: keys in ASCII are compared ignoring ASCII case as bytes (the same as <see cref="StringComparison.OrdinalIgnoreCase"/> for ASCII).
+    /// </summary>
+    private readonly bool _asciiNames;
+
     internal ReadPlan(Serializer serializer, Type type, FullPropertyInfo[] infos, Func<object> generated)
     {
       Type = type;
@@ -405,6 +415,17 @@ namespace LtMsgPack.Reading
       Props = new PropReader[infos.Length];
       for (int t = 0; t < infos.Length; t++)
         Props[t] = PropReader.Create(serializer, infos[t]);
+      if (_caseInsensitive)
+      {
+        _ambiguous = new bool[Props.Length];
+        _asciiNames = true;
+        for (int t = Props.Length - 1; t >= 0; t--)
+        {
+          _asciiNames &= IsAscii(Props[t].Name);
+          for (int u = Props.Length - 1; u >= 0; u--)
+            _ambiguous[t] |= u != t && string.Equals(Props[t].Name, Props[u].Name, StringComparison.OrdinalIgnoreCase);
+        }
+      }
       _create = Creator(type, serializer.Options._objectCreation, generated);
 
       GeneratedObjectCode code = serializer.GeneratedCode(type);
@@ -428,6 +449,8 @@ namespace LtMsgPack.Reading
       PropReader[] props = Props;
       if (next < props.Length && props[next].NameIs(buffer, offset, length))
         return props[next++];
+      if (_caseInsensitive)
+        return FindOrMatchIgnoringCase(buffer, offset, length, ref next);
 
       for (int t = props.Length - 1; t >= 0; t--) // the names are unique
       {
@@ -437,7 +460,57 @@ namespace LtMsgPack.Reading
           return props[t];
         }
       }
-      return _caseInsensitive ? FindIgnoringCase(MsgPackOptions.StringEncoding.GetString(buffer, offset, length)) : null;
+      return null;
+    }
+
+    /// <summary>
+    /// FindByName with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/> (apart, so FindByName stays as small as without it), after the next property did not have the name:
+    /// the next property ignoring case (camelCase keys in the order of the properties), the exact names, then ignoring case: ASCII keys and names as bytes, anything else as strings.
+    /// </summary>
+    private PropReader FindOrMatchIgnoringCase(byte[] buffer, int offset, int length, ref int next)
+    {
+      PropReader[] props = Props;
+      if (next < props.Length && length > 0 && props[next].FirstDiffersInCase(buffer[offset]) && _asciiNames && !_ambiguous[next] && props[next].NameIsIgnoringAsciiCase(buffer, offset, length))
+        return props[next++]; // no other property equals the key ignoring case, so none has it as its name
+
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        if (props[t].NameIs(buffer, offset, length))
+        {
+          next = t + 1;
+          return props[t];
+        }
+      }
+
+      if (!_asciiNames || !IsAscii(buffer, offset, length))
+        return FindIgnoringCase(MsgPackOptions.StringEncoding.GetString(buffer, offset, length));
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        if (props[t].NameIsIgnoringAsciiCase(buffer, offset, length))
+        {
+          if (_ambiguous[t])
+            return null;
+          next = t + 1;
+          return props[t];
+        }
+      }
+      return null;
+    }
+
+    private static bool IsAscii(string name)
+    {
+      for (int t = name.Length - 1; t >= 0; t--)
+        if (name[t] >= 0x80)
+          return false;
+      return true;
+    }
+
+    private static bool IsAscii(byte[] buffer, int offset, int length)
+    {
+      for (int t = offset + length - 1; t >= offset; t--)
+        if (buffer[t] >= 0x80)
+          return false;
+      return true;
     }
 
     /// <summary>
@@ -575,6 +648,32 @@ namespace LtMsgPack.Reading
     {
       byte[] name = _nameBytes;
       return name.Length == length && new ReadOnlySpan<byte>(buffer, offset, length).SequenceEqual(name);
+    }
+
+    /// <summary>
+    /// The first byte of the key is the first letter of the name in the other case (one check before NameIsIgnoringAsciiCase, keys that are left out make the next property another one).
+    /// </summary>
+    internal bool FirstDiffersInCase(byte first)
+    {
+      byte[] name = _nameBytes;
+      return name.Length > 0 && (first ^ name[0]) == 0x20 && (uint)((first | 0x20) - 'a') <= 'z' - 'a';
+    }
+
+    /// <summary>
+    /// The name (ASCII) equals the key ignoring ASCII case, false for a key that is not ASCII (see ReadPlan.FindIgnoringCase).
+    /// </summary>
+    internal bool NameIsIgnoringAsciiCase(byte[] buffer, int offset, int length)
+    {
+      byte[] name = _nameBytes;
+      if (name.Length != length)
+        return false;
+      for (int t = 0; t < length; t++)
+      {
+        int a = buffer[offset + t], b = name[t];
+        if (a != b && ((a | 0x20) != (b | 0x20) || (uint)((a | 0x20) - 'a') > 'z' - 'a')) // the same letter in the other case
+          return false;
+      }
+      return true;
     }
 
     /// <summary>
