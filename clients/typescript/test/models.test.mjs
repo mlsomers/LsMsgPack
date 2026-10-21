@@ -64,6 +64,8 @@ test('an entry of a model becomes an instance of its class, a left out value kee
   const body = [0x98, ...guidBin, 0xc0, 0xc0, 0x92, 0xc0, 0xa4, ...Buffer.from('Rome'), 0x82, 0xa0, 2, 0xa1, 0x40, 0x92, 5, 0xa3, ...Buffer.from('Rex'), 0xc0, 0xce, 0x11, 0xe1, 0xa3, 0x00, 0xc0];
   const order = decoder.decode(orderPayload(body)).value;
   assert.ok(order instanceof Order);
+  assert.strictEqual(order.constructor, Order);
+  assert.deepStrictEqual(Object.keys(order), Object.keys(new Order()), 'the fields in the order of the class');
   assert.strictEqual(order.Id, '0f8fad5b-d9cb-469f-a165-70867728950e');
   assert.strictEqual(order.Retries, 3, 'nil: the constructor value, as a .NET reader keeps it');
   assert.deepStrictEqual(order.Tags, ['new']);
@@ -92,6 +94,8 @@ test('the server and the models differ: the schema decides which value is which'
   assert.strictEqual(order.Id, '0f8fad5b-d9cb-469f-a165-70867728950e');
   assert.deepStrictEqual(order.Tags, ['new'], 'a property the server does not write keeps the class value');
   assert.strictEqual(order.Home.Street, 'Main');
+  assert.deepStrictEqual(Object.keys(order), [...Object.keys(new Order()), 'Priority'], 'the class\'s fields, then the ones it does not have');
+  assert.notStrictEqual(decoder.decode(orderPayload([0x94, 9, 1, ...guidBin, 0xc0], items)).value.Tags, order.Tags, 'not shared either when the server does not write them');
 });
 
 test('a schema with names only: the models give the kinds', () => {

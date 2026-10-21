@@ -65,6 +65,67 @@ function generate(names: string[], reads: Read[], literals: boolean): { create?:
   }
 }
 
+/** Reads an object of the array layout (the header of n values is read) and returns it complete. */
+type ReadArray = (r: SchemaReader, n: number) => Record<string, unknown>;
+
+/** A field a model's class sets that the schema entry does not have (the server no longer writes it): it keeps the class's value. */
+interface Extra {
+  name: string;
+  value: unknown;
+  make?: () => unknown;
+}
+
+/**
+ * Generates the reading of an object of the array layout: the values into variables first (the defaults where the data left them out), then the object at once,
+ * so its properties are written once (a literal, or for a model a constructor function with the class's prototype: new of the class would make its initial values
+ * only to have them replaced). The defaults that are made per object (makers, null until then) are made after the values, as Plan.complete does.
+ * @param order the properties in the order the object gets them: an index of names, or an Extra
+ * @param proto the prototype of the model's class, undefined for a plain object
+ */
+function generateReadArray(names: string[], reads: Read[], defaults: unknown[], makers: ((() => unknown) | undefined)[], order: (number | Extra)[], proto: object | undefined): ReadArray | undefined {
+  const count = names.length;
+  if (!codeAllowed || count === 0 || count > 512 || names.includes('__proto__') || names.includes(TypeProperty) || order.some((p) => typeof p !== 'number' && p.name === '__proto__')) return undefined;
+  const v = names.map((_, t) => `v${t}`);
+  let code = `const ${names.map((_, t) => `read${t} = reads[${t}], d${t} = defaults[${t}], m${t} = makers[${t}]`).join(', ')};\n`;
+  let result: string;
+  if (proto === undefined) result = `{ ${order.map((p) => `${JSON.stringify(names[p as number])}: v${p}`).join(', ')} }`;
+  else {
+    code += `const extras = order.filter((p) => typeof p !== 'number');\n`;
+    let extra = 0;
+    code += `function Model(${v.join(', ')}) {\n${order.map((p) => typeof p === 'number'
+      ? `this[${JSON.stringify(names[p])}] = v${p};\n`
+      : `this[${JSON.stringify(p.name)}] = ${p.make === undefined ? `extras[${extra++}].value` : `extras[${extra++}].make()`};\n`).join('')}}\nModel.prototype = proto;\n`;
+    result = `new Model(${v.join(', ')})`;
+  }
+  code += `return function readArray(r, n) {\nconst b = r.bytes;\nlet ${names.map((_, t) => `v${t} = d${t}`).join(', ')};\nvalues: {\n`;
+  names.forEach((_, t) => {
+    code += `if (n === ${t}) break values;\nif (b[r.pos] === 0xc0) r.pos++; else v${t} = read${t}(r);\n`;
+  });
+  code += `for (let k = ${count}; k < n; k++) r.value();\n}\n`;
+  makers.forEach((m, t) => {
+    if (m !== undefined) code += `if (v${t} === null) v${t} = m${t}();\n`;
+  });
+  code += `return ${result};\n};`;
+  try {
+    return (new Function('reads', 'defaults', 'makers', 'order', 'proto', code) as (...args: unknown[]) => ReadArray)(reads, defaults, makers, order, proto);
+  } catch {
+    codeAllowed = false;
+    return undefined;
+  }
+}
+
+/** The initial value of a field of a model's class (probe: an instance), and how to make it for each object when it is not a primitive. */
+function initialOf(cls: new () => object, probe: Record<string, unknown>, name: string): { value: unknown; make?: () => unknown } {
+  const value = probe[name];
+  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return { value };
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return { value: null, make: () => new Date(time) };
+  }
+  if (Array.isArray(value) && value.length === 0 && Object.getPrototypeOf(value) === Array.prototype) return { value: null, make: () => [] };
+  return { value: null, make: () => (new cls() as Record<string, unknown>)[name] }; // e.g. a nested object: as the class makes it
+}
+
 /** Sets a property, also one named __proto__ (as JSON.parse does: an own property, not the prototype). */
 export function setOwn(o: Record<string, unknown>, name: string, value: unknown): void {
   if (name === '__proto__') Object.defineProperty(o, name, { value, writable: true, enumerable: true, configurable: true });
@@ -109,7 +170,32 @@ class Plan {
     this.createFn = code?.create;
     this.createTypedFn = code?.createTyped;
     this.fillFn = code?.fill;
+    this.readArrayFn = this.generateReadArray();
   }
+
+  /** readArrayFn for plain objects and the models (not for DecodeOptions.classes: their constructors may do more than set fields). */
+  private generateReadArray(): ReadArray | undefined {
+    const names = this.names;
+    if (this.cls === undefined) return generateReadArray(names, this.reads, this.values, this.makers, names.map((_, t) => t), undefined);
+    if (!this.model) return undefined;
+    // The generated classes only initialize their fields: the same fields with the same values in the same order, without new of the class.
+    const cls = this.cls, probe = new cls() as Record<string, unknown>;
+    const defaults = this.values.slice(), makers = this.makers.slice(), order: (number | Extra)[] = [];
+    for (const name of Object.keys(probe)) {
+      const t = this.indexOf(name), initial = initialOf(cls, probe, name);
+      if (t < 0) order.push({ name, ...initial });
+      else {
+        order.push(t);
+        defaults[t] = initial.value;
+        makers[t] = initial.make;
+      }
+    }
+    for (let t = 0; t < this.missing.length; t++) order.push(this.missing[t]); // after the class's fields, as create sets them
+    return generateReadArray(names, this.reads, defaults, makers, order, cls.prototype);
+  }
+
+  /** Reads an object of the array layout into a new object (see generateReadArray), undefined without generated code. */
+  readArrayFn?: ReadArray;
 
   /** The properties the class does not initialize (they get the defaults of the schema: e.g. a property the server has and the models do not have yet). */
   readonly missing: number[] = [];
@@ -474,6 +560,12 @@ export class SchemaReader extends MsgPackReader {
     let n = this.arrayLength();
     if (n >= 0) {
       this.enter();
+      const readArray = plan.readArrayFn;
+      if (readArray !== undefined) {
+        const o = readArray(this, n);
+        this.depth--;
+        return o;
+      }
       const o = plan.create();
       this.fill(plan, o, n);
       this.depth--;
