@@ -135,6 +135,12 @@ namespace LsMsgPack
     public static bool Default_TrimTrailingNulls { get; set; } = false;
 
     /// <summary>
+    /// The <see cref="PropertyNameCaseInsensitive"/> of new settings (false by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool Default_PropertyNameCaseInsensitive { get; set; } = false;
+
+    /// <summary>
     /// The <see cref="SchemaVersion"/> of new settings (<see cref="LsMsgPack.SchemaVersion.Names"/> by default).
     /// </summary>
     [IgnoreDataMember]
@@ -203,6 +209,7 @@ namespace LsMsgPack
     internal PropertyOrder _propertyOrder = Default_PropertyOrder;
     internal ObjectLayout _objectLayout = Default_ObjectLayout;
     internal bool _trimTrailingNulls = Default_TrimTrailingNulls;
+    internal bool _propertyNameCaseInsensitive = Default_PropertyNameCaseInsensitive;
     internal SchemaVersion _schemaVersion = Default_SchemaVersion;
     internal int _maxDepth = Default_MaxDepth;
     internal ObjectCreation _objectCreation = Default_ObjectCreation;
@@ -449,6 +456,21 @@ namespace LsMsgPack
     {
       get { return _trimTrailingNulls; }
       set { _trimTrailingNulls = value; }
+    }
+
+    /// <summary>
+    /// Reading maps keyed by property names (without the indexed schema): a key that is not the name of a property sets the one property whose name equals it ignoring case
+    /// (ordinal; none when several properties do), false by default. For writers that change the names, e.g. camelCase (the TypeScript client, JSON habits).
+    /// <para>The exact name is looked up first, so it only costs something for keys that are not properties. The web formatters turn it on (<c>LtMsgPackHttpOptions.PropertyNameCaseInsensitive</c>).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Property Name Case Insensitive")]
+    [Description("Reading maps keyed by property names: a key that is not a property name sets the one property whose name equals it ignoring case.")]
+    [DefaultValue(false)]
+    public bool PropertyNameCaseInsensitive
+    {
+      get { return _propertyNameCaseInsensitive; }
+      set { _propertyNameCaseInsensitive = value; }
     }
 
     /// <summary>

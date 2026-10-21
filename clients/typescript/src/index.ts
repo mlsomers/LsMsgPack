@@ -14,4 +14,6 @@ export type { ModelsDefinition, ModelClassDefinition, ModelClass, ModelProperty,
 export type { EncodeOptions } from './writer.js';
 export { MsgPackError, MissingSchemaError, HttpError } from './errors.js';
 export { guidString, guidBytes } from './values.js';
+export { camelCase } from './names.js';
+export type { PropertyNames } from './names.js';
 export type { DecimalMode } from './values.js';

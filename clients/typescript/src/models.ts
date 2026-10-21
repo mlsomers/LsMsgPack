@@ -5,11 +5,12 @@
 
 import { AnyType, parseType, TypeExpr } from './schema.js';
 import { TypeProperty } from './decoder.js';
+import { nameFunction, PropertyNames } from './names.js';
 
 /** A declared type as the generator writes it. */
 export type ModelType = string | readonly unknown[];
 
-/** A class of the models: [constructor, type name, [[property, declared type], ...]]. */
+/** A class of the models: [constructor, type name, [[property, declared type], ...]] (the .NET property names: the fields are named as propertyNames says). */
 export type ModelClassDefinition = readonly [new () => object, string, readonly (readonly [string, ModelType])[]];
 
 /** What the generated code passes to defineModels. */
@@ -20,11 +21,16 @@ export interface ModelsDefinition {
   int64?: 'number' | 'bigint';
   dates?: 'date' | 'iso';
   decimal?: 'number' | 'string';
+  /** The field names of the classes (default 'dotnet'). */
+  propertyNames?: PropertyNames;
   classes: readonly ModelClassDefinition[];
 }
 
 export interface ModelProperty {
+  /** The name of the .NET property (as the server writes and reads it). */
   readonly name: string;
+  /** The name of the field (the .NET name, or camelCase). */
+  readonly field: string;
   readonly type: TypeExpr;
 }
 
@@ -34,7 +40,10 @@ export interface ModelClass {
   readonly typeName: string;
   /** The serialized properties in the server's order (inherited ones too). */
   readonly properties: readonly ModelProperty[];
+  /** The declared types by .NET name. */
   readonly byName: ReadonlyMap<string, TypeExpr>;
+  /** The field names of the properties. */
+  readonly fields: ReadonlySet<string>;
   /** Extends another class (its .NET base class): where the declared type is unknown (the root of a request body), the encoder writes its type id. */
   readonly derived: boolean;
 }
@@ -45,6 +54,7 @@ export class ModelSet {
   readonly int64?: 'number' | 'bigint';
   readonly dates?: 'date' | 'iso';
   readonly decimal?: 'number' | 'string';
+  readonly propertyNames: PropertyNames;
   private readonly names = new Map<string, ModelClass>();
   private readonly ctors = new Map<Function, ModelClass>();
 
@@ -53,12 +63,14 @@ export class ModelSet {
     this.int64 = definition.int64;
     this.dates = definition.dates;
     this.decimal = definition.decimal;
+    this.propertyNames = definition.propertyNames ?? 'dotnet';
+    const field = nameFunction(this.propertyNames);
     const classes = definition.classes ?? [];
     for (const [ctor, typeName, props] of classes) {
       if (typeof ctor !== 'function' || typeof typeName !== 'string') throw new Error('defineModels: a class is [constructor, type name, properties].');
-      const properties = (props ?? []).map(([name, type]) => ({ name, type: parseModelType(type) }));
+      const properties = (props ?? []).map(([name, type]) => ({ name, field: field(name), type: parseModelType(type) }));
       const derived = Object.getPrototypeOf(ctor) !== Function.prototype; // generated classes only extend their .NET base class (abstract ones are not in the list)
-      const model: ModelClass = { ctor, typeName, properties, byName: new Map(properties.map((p) => [p.name, p.type])), derived };
+      const model: ModelClass = { ctor, typeName, properties, byName: new Map(properties.map((p) => [p.name, p.type])), fields: new Set(properties.map((p) => p.field)), derived };
       this.names.set(typeName, model);
       this.ctors.set(ctor, model);
       // The type name on the prototype: every instance has it, none pays for it (and JSON.stringify leaves it out). Writable: assigning it on an instance shadows it.

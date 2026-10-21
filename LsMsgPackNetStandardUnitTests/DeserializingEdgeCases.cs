@@ -6,6 +6,7 @@ using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 
 namespace LsMsgPackUnitTests
 {
@@ -506,6 +507,46 @@ namespace LsMsgPackUnitTests
         MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<Dictionary<string, object>>(bytes, settings));
         StringAssert.Contains(ex.Message, "property names");
       }
+    }
+
+#pragma warning disable IDE1006 // the names a camelCase writer (the TypeScript client) writes
+    public class CaseWritten
+    {
+      public string name { get; set; }
+      public int retries { get; set; }
+      public string id { get; set; }
+      public string other { get; set; }
+    }
+#pragma warning restore IDE1006
+
+    public class CaseRead
+    {
+      public string Name { get; set; }
+      public int Retries { get; set; } = 3;
+      public string Id { get; set; }
+      public string ID { get; set; }
+    }
+
+    /// <summary>
+    /// MsgPackOptions.PropertyNameCaseInsensitive: a key that is no property name sets the one property whose name equals it ignoring case (none when several do), and is not an unknown property.
+    /// </summary>
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void PropertyNameCaseInsensitive(bool caseInsensitive)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = caseInsensitive, ReadErrors = ReadErrorHandling.ReportAndContinue };
+      byte[] bytes = Serializer.Serialize(new CaseWritten() { name = "Nut", retries = 5, id = "x", other = "y" }, settings);
+      CaseRead read = Serializer.Deserialize<CaseRead>(bytes, settings, out ReadDifferences differences);
+
+      Assert.AreEqual(caseInsensitive ? "Nut" : null, read.Name);
+      Assert.AreEqual(caseInsensitive ? 5 : 3, read.Retries);
+      Assert.IsNull(read.Id, "Id and ID both equal id ignoring case");
+      Assert.IsNull(read.ID);
+      string[] unknown = differences.Differences.Where(d => d.Kind == DifferenceKind.UnknownProperty).Select(d => d.Name).OrderBy(n => n, StringComparer.Ordinal).ToArray();
+      CollectionAssert.AreEqual(caseInsensitive ? new[] { "id", "other" } : new[] { "id", "name", "other", "retries" }, unknown);
+
+      Assert.AreEqual(caseInsensitive ? "Nut" : null, Serializer.Deserialize<CaseRead>(bytes, settings).Name, "without collecting the differences");
     }
 
     [TestMethod]

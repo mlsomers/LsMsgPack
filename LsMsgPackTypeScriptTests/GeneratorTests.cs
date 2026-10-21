@@ -59,6 +59,23 @@ namespace LsMsgPackTypeScriptTests
     }
 
     [TestMethod]
+    public void CamelCaseFieldNames()
+    {
+      string models = Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--property-names", "camelCase").Models;
+      string order = ClassOf(models, "TsOrder");
+      StringAssert.Contains(order, "  retries: number = 3;");
+      StringAssert.Contains(order, "  address: TsAddress | null = Object.assign(new TsAddress(), { street: 'Main' });");
+      StringAssert.Contains(order, "  pair: { key: string | null; value: number } = { key: null, value: 0 };");
+      StringAssert.Contains(models, "  propertyNames: 'camelCase',\n");
+      StringAssert.Contains(models, "['Retries', 'int']", "defineModels has the .NET names (the keys the client writes)");
+      Assert.IsFalse(Run("--root", "LsMsgPackTypeScriptTests.TsOrder").Models.Contains("propertyNames"), "the default is not written");
+
+      StringWriter output = new StringWriter(), errors = new StringWriter();
+      UsageException ex = Assert.ThrowsExactly<UsageException>(() => Program.Run(new[] { "--assembly", Assembly, "--out", Path.Combine(_folder, "clash.ts"), "--root", "LsMsgPackTypeScriptTests.TsClash", "--property-names", "camelCase" }, output, errors));
+      StringAssert.Contains(ex.Message, "the same field name id");
+    }
+
+    [TestMethod]
     public void FieldsHaveTheConstructorValues()
     {
       string order = ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder").Models, "TsOrder");

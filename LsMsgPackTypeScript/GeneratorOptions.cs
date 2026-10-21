@@ -1,5 +1,6 @@
 using LtMsgPack.Http;
 using System.Reflection;
+using System.Text.Json;
 
 namespace LsMsgPackTypeScript
 {
@@ -25,6 +26,19 @@ namespace LsMsgPackTypeScript
     /// decimal: 'number' or 'string' (the client's decimal option).
     /// </summary>
     internal string Decimal = "number";
+
+    /// <summary>
+    /// The field names: 'dotnet' (the names of the .NET properties) or 'camelCase' (as System.Text.Json's JsonNamingPolicy.CamelCase names them; the client's propertyNames option).
+    /// </summary>
+    internal string PropertyNames = "dotnet";
+
+    /// <summary>
+    /// The field name of a .NET property (also of Key and Value of a KeyValuePair).
+    /// </summary>
+    internal string Field(string name)
+    {
+      return PropertyNames == "camelCase" ? JsonNamingPolicy.CamelCase.ConvertName(name) : name;
+    }
 
     /// <summary>
     /// The module the generated code imports defineModels from.

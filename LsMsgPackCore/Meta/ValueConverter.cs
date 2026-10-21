@@ -269,18 +269,56 @@ namespace LsMsgPack.Meta
         ReportUnknownKeys(instance, tType, props, propVals, settings); // before the values (the objects in them), as LtMsgPack finds them
         differences.Push(instance);
       }
+      int set = 0;
       for (int t = props.Length - 1; t >= 0; t--)
       {
         FullPropertyInfo prop = props[t];
         if (propVals.TryGetValue(prop.PropertyId, out object propval))
         {
+          set++;
           if (differences is null)
             prop.SetValue(instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
           else
             ReadProperty(prop, instance, propval, settings, differences);
         }
       }
+      if (settings._propertyNameCaseInsensitive && set < propVals.Count) // keys that are not property ids (or the reserved ones)
+        SetIgnoringCase(instance, props, propVals, settings, differences);
       differences?.Pop();
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the keys that are not property ids set the property they equal ignoring case.
+    /// </summary>
+    private static void SetIgnoringCase(object instance, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings, ReadDifferences differences)
+    {
+      foreach (KeyValuePair<object, object> entry in propVals)
+      {
+        FullPropertyInfo prop = MatchIgnoringCase(entry.Key, props, propVals);
+        if (prop is null)
+          continue;
+        if (differences is null)
+          prop.SetValue(instance, ConvertDeserializeValue(entry.Value, prop.PropertyInfo.PropertyType, settings, prop));
+        else
+          ReadProperty(prop, instance, entry.Value, settings, differences);
+      }
+    }
+
+    /// <returns>The one property whose name equals the key ignoring case, null when the key is a property id, none or several properties match, or the exact name is in the map too</returns>
+    private static FullPropertyInfo MatchIgnoringCase(object key, FullPropertyInfo[] props, Dictionary<object, object> propVals)
+    {
+      if (!(key is string name) || name.Length == 0 || name == MsgPackOptions.ContentKey)
+        return null;
+      FullPropertyInfo found = null;
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        if (!(props[t].PropertyId is string id) || !string.Equals(id, name, StringComparison.OrdinalIgnoreCase))
+          continue;
+        if (found != null || string.Equals(id, name, StringComparison.Ordinal)) // several properties, or the key is the property's own name (set already)
+          return null;
+        found = props[t];
+      }
+      return found != null && !propVals.ContainsKey(found.PropertyId) ? found : null;
     }
 
     /// <summary>
@@ -295,7 +333,8 @@ namespace LsMsgPack.Meta
       List<object> unknown = null;
       foreach (object key in propVals.Keys)
       {
-        if (MsgPackOptions.TypeIdKey.Equals(key) || MsgPackOptions.ContentKey.Equals(key) || known.Contains(key))
+        if (MsgPackOptions.TypeIdKey.Equals(key) || MsgPackOptions.ContentKey.Equals(key) || known.Contains(key)
+          || (settings._propertyNameCaseInsensitive && MatchIgnoringCase(key, props, propVals) != null))
           continue;
         (unknown ?? (unknown = new List<object>())).Add(key);
       }
