@@ -179,7 +179,7 @@ The client keeps an inline schema only when its hash equals the `MsgPack-Schema`
 
 - **Schemas from the server are data.** A schema is kept only when its hash is the id the server names, ids are compared in full (SHA-256, 128 bits). Lengths in the data are checked against the rest of the bytes before anything is allocated, nesting is limited to `maxDepth` (256), and data after the value is refused.
 - **`__proto__`** as a property name or dictionary key becomes an own property (as `JSON.parse` makes it), never the prototype.
-- **Generated code.** For speed, the client generates a function per schema entry that creates and fills its objects (`new Function`). The property names from the schema are only embedded as JSON string literals, a schema with a property `__proto__` uses the generic path. With a Content-Security-Policy without `'unsafe-eval'` the generic path is used automatically (`new Function` throws once). `generateCode: false` turns it off; reading is then 20% slower with models, 55% without (below).
+- **Generated code.** For speed, the client generates a function per schema entry that creates and fills its objects, and one per model class that writes its properties (`new Function`). The property names from the schema and the models are only embedded as JSON string literals, a schema with a property `__proto__` uses the generic path. With a Content-Security-Policy without `'unsafe-eval'` the generic path is used automatically (`new Function` throws once). `generateCode: false` turns it off; reading is then 30-35% slower (below), writing with the models about 15%.
 - **Types from the data**: a type id only picks a class of the models or makes a plain object, nothing else is created.
 
 ## Performance
@@ -189,13 +189,13 @@ The client keeps an inline schema only when its hash equals the `MsgPack-Schema`
 | | raw | gzip | read |
 |---|---|---|---|
 | JSON (System.Text.Json, every property) | 316.7 KB | 42.1 KB | 1080 µs `JSON.parse` of the string, 1290-1310 µs with the UTF-8 decoding |
-| `application/msgpack` with @msgpack/msgpack | 300.6 KB | 42.8 KB | 2200 µs |
-| `application/x-lsmsgpack`, schema reference | 166.9 KB | 38.0 KB | 1000-1035 µs; with the models 1036-1050 µs |
-| the same without generated code (CSP) | | | 1590 µs; with the models 1256-1259 µs |
+| `application/msgpack` with @msgpack/msgpack | 300.6 KB | 42.8 KB | 2200 µs; this client 1580 µs |
+| `application/x-lsmsgpack`, schema reference | 166.9 KB | 38.0 KB | 705-717 µs; with the models 775-791 µs |
+| the same without generated code (CSP) | | | 960-970 µs; with the models 1024-1027 µs |
 
 One invoice: JSON 4022 bytes (1048 gzipped), schema reference 2111 bytes (810 gzipped, -23%). The described schema is about 300 bytes larger than the plain one and is sent once per client and schema (with the generated schema set: never).
 
-Writing the same objects as a request body: `JSON.stringify` 1270 µs (1600 µs with the UTF-8 encoding), this client 1840-1880 µs, with the models 1720 µs, @msgpack/msgpack 2420 µs. In the browser both formats cost about the same; the server reads MsgPack about 3.5x faster than System.Text.Json reads JSON (LtMsgPack, names).
+Writing the same objects as a request body: `JSON.stringify` 1230-1250 µs (1580 µs with the UTF-8 encoding), this client 1100-1190 µs, with the models 1110-1230 µs, @msgpack/msgpack 2400-2450 µs. In the browser both formats cost about the same; the server reads MsgPack about 3.5x faster than System.Text.Json reads JSON (LtMsgPack, names).
 
 ## Not covered (yet)
 

@@ -30,7 +30,7 @@ export interface DecodeOptions extends ReaderOptions {
   generateCode?: boolean;
 }
 
-type Fill = (r: SchemaReader, o: Record<string, unknown>, n: number, reads: Read[]) => void;
+type Fill = (r: SchemaReader, o: Record<string, unknown>, n: number) => void;
 
 let codeAllowed = true; // false once new Function failed (Content-Security-Policy without 'unsafe-eval')
 
@@ -39,17 +39,20 @@ export const TypeProperty = '$type';
 
 type Create = (values: unknown[], typeName: string | null) => Record<string, unknown>;
 
-/** The generated create and fill of a plan (see DecodeOptions.generateCode), undefined when code cannot be generated. Instances of classes only get the fill (create is new). */
-function generate(names: string[], literals: boolean): { create?: Create; createTyped?: Create; fill: Fill } | undefined {
+/**
+ * The generated create and fill of a plan (see DecodeOptions.generateCode), undefined when code cannot be generated. Instances of classes only get the fill (create is new).
+ * The fill has the read functions of the properties as constants: each call site then always calls the same function (reads[t](r) was one call site for all of them).
+ */
+function generate(names: string[], reads: Read[], literals: boolean): { create?: Create; createTyped?: Create; fill: Fill } | undefined {
   if (!codeAllowed || names.length === 0 || names.length > 512 || names.includes('__proto__') || names.includes(TypeProperty)) return undefined; // an object literal would set the prototype, or have $type twice
   const literal = names.map((n, t) => `${JSON.stringify(n)}: v[${t}]`).join(', ');
-  let fill = 'const b = r.bytes;\n';
+  let fill = `const ${names.map((_, t) => `read${t} = reads[${t}]`).join(', ')};\nreturn function fill(r, o, n) {\nconst b = r.bytes;\n`;
   names.forEach((n, t) => {
-    fill += `if (n === ${t}) return;\nif (b[r.pos] === 0xc0) r.pos++; else o[${JSON.stringify(n)}] = reads[${t}](r);\n`;
+    fill += `if (n === ${t}) return;\nif (b[r.pos] === 0xc0) r.pos++; else o[${JSON.stringify(n)}] = read${t}(r);\n`;
   });
-  fill += `for (let k = ${names.length}; k < n; k++) r.value();`;
+  fill += `for (let k = ${names.length}; k < n; k++) r.value();\n};`;
   try {
-    const fillFn = new Function('r', 'o', 'n', 'reads', fill) as Fill;
+    const fillFn = (new Function('reads', fill) as (reads: Read[]) => Fill)(reads);
     if (!literals) return { fill: fillFn };
     return {
       create: new Function('v', `return { ${literal} };`) as Create,
@@ -91,9 +94,18 @@ class Plan {
   private createTypedFn?: Create;
   fillFn?: Fill;
 
-  /** Generates the code of create and fill (when the properties are known). */
-  generate(): void {
-    const code = generate(this.names, this.cls === undefined);
+  /** An object with the defaults, copied by create without generated code (a spread copies an object of the same shape faster than setting each property). */
+  private template?: Record<string, unknown>;
+
+  /** Makes what create and fill use, once the properties are known: the template, and with generateCode their code. */
+  prepare(generateCode: boolean): void {
+    if (this.cls === undefined) {
+      const o: Record<string, unknown> = {};
+      for (let t = 0; t < this.names.length; t++) setOwn(o, this.names[t], this.values[t]);
+      this.template = o;
+    }
+    if (!generateCode) return;
+    const code = generate(this.names, this.reads, this.cls === undefined);
     this.createFn = code?.create;
     this.createTypedFn = code?.createTyped;
     this.fillFn = code?.fill;
@@ -123,12 +135,8 @@ class Plan {
   create(): Record<string, unknown> {
     const names = this.names, values = this.values;
     if (this.createFn !== undefined) return this.createFn(values, null);
-    if (this.cls === undefined) {
-      const o: Record<string, unknown> = {};
-      for (let t = 0; t < names.length; t++) setOwn(o, names[t], values[t]);
-      return o;
-    }
-    const o = new this.cls() as Record<string, unknown>; // new rather than a copy of one instance: the initial values (Date, arrays, nested objects) are not shared
+    if (this.template !== undefined) return { ...this.template }; // own properties, also one named __proto__
+    const o = new this.cls!() as Record<string, unknown>; // new rather than a copy of one instance: the initial values (Date, arrays, nested objects) are not shared
     const missing = this.missing;
     for (let t = 0; t < missing.length; t++) setOwn(o, names[missing[t]], values[missing[t]]);
     return o;
@@ -139,12 +147,7 @@ class Plan {
     const typeName = this.entry.name;
     if (typeName === null) return this.create(); // the root entry of a described schema (type ids never refer to it) or a nameless entry
     if (this.createTypedFn !== undefined) return this.createTypedFn(this.values, typeName);
-    if (this.cls === undefined) {
-      const o: Record<string, unknown> = { [TypeProperty]: typeName };
-      const names = this.names, values = this.values;
-      for (let t = 0; t < names.length; t++) setOwn(o, names[t], values[t]);
-      return o;
-    }
+    if (this.template !== undefined) return { [TypeProperty]: typeName, ...this.template };
     const o = this.create();
     if (!this.model) o[TypeProperty] = typeName; // a model has it on its prototype
     return o;
@@ -215,7 +218,7 @@ class Plans {
       if (d.make !== undefined && (plan.cls === undefined || plan.missing.includes(t))) (plan.made ??= []).push(t);
     });
     if (entry.content !== undefined) plan.content = this.compile(entry.content);
-    if (this.options.generateCode) plan.generate();
+    plan.prepare(this.options.generateCode);
     return plan;
   }
 
@@ -226,7 +229,8 @@ class Plans {
       case 'nullable': return this.compile(type.of);
       case 'object': {
         const entry = type.entry;
-        return (r) => r.readObject(this.planOf(entry));
+        let plan: Plan | undefined; // not when compiled: the entry may refer to itself
+        return (r) => r.readObject(plan ?? (plan = this.planOf(entry)));
       }
       case 'list': {
         const element = this.compile(type.of);
@@ -254,8 +258,30 @@ class Plans {
     }
   }
 
+  /** The kinds the formatters write most have their usual format read in place, without the dispatch of value(). */
   private kind(kind: Kind): Read {
-    if (kind === 'guid') return readGuid;
+    switch (kind) {
+      case 'guid': return readGuid;
+      case 'string': return readString;
+      case 'int': return readInt;
+      case 'decimal': {
+        const mode = this.options.decimal, convert = this.converter(kind)!;
+        return (r) => {
+          const bytes = r.bytes, p = r.pos;
+          if (bytes[p] === 0xd8 && bytes[p + 1] === 1 && p + 18 <= bytes.length) { // fixext 16 of type 1
+            r.pos = p + 18;
+            return decodeDecimal(bytes, p + 2, mode);
+          }
+          return convert(r.value());
+        };
+      }
+      case 'datetime':
+        if (this.options.dates === 'iso') return (r) => {
+          const v = r.readDate();
+          return v instanceof Date ? v.toISOString() : v;
+        };
+        return (r) => r.readDate();
+    }
     const convert = this.converter(kind);
     return convert === undefined ? readDynamic : (r) => convert(r.value());
   }
@@ -345,6 +371,30 @@ class Plans {
 }
 
 const readDynamic: Read = (r) => r.value();
+
+/** A string: fixstr and str8 read in place. */
+const readString: Read = (r) => {
+  const bytes = r.bytes, p = r.pos, b = bytes[p];
+  if (b >= 0xa0 && b <= 0xbf) {
+    r.pos = p + 1;
+    return r.str(b & 0x1f);
+  }
+  if (b === 0xd9 && p + 1 < bytes.length) {
+    r.pos = p + 2;
+    return r.str(bytes[p + 1]);
+  }
+  return r.value();
+};
+
+/** An int (also enums): a positive fixint read in place. */
+const readInt: Read = (r) => {
+  const b = r.bytes[r.pos];
+  if (b <= 0x7f) {
+    r.pos++;
+    return b;
+  }
+  return r.value();
+};
 
 /** A Guid: bin 16 read in place (no copy of the bytes), any other form as the converter does. */
 const readGuid: Read = (r) => {
@@ -441,7 +491,7 @@ export class SchemaReader extends MsgPackReader {
 
   /** Values by position, nil leaves the default (the writer left the value out), values beyond the entry are skipped. */
   private fill(plan: Plan, o: Record<string, unknown>, n: number): void {
-    if (plan.fillFn !== undefined) return plan.fillFn(this, o, n, plan.reads);
+    if (plan.fillFn !== undefined) return plan.fillFn(this, o, n);
     const names = plan.names, reads = plan.reads, count = names.length, bytes = this.bytes;
     for (let k = 0; k < n; k++) {
       if (bytes[this.pos] === 0xc0) {
@@ -508,6 +558,19 @@ export class SchemaReader extends MsgPackReader {
     for (let t = 0; t < n; t++) result[t] = t < items.length ? items[t](this) : this.value();
     this.depth--;
     return result;
+  }
+
+  /** A DateTime: the timestamps of 4 and 8 bytes read in place. */
+  readDate(): unknown {
+    const bytes = this.bytes, p = this.pos, b = bytes[p];
+    if (bytes[p + 1] === 0xff && (b === 0xd6 || b === 0xd7)) {
+      const length = b === 0xd6 ? 4 : 8;
+      if (p + 2 + length <= bytes.length) {
+        this.pos = p + 2;
+        return this.timestamp(length);
+      }
+    }
+    return this.value();
   }
 
   readRoot(): unknown {

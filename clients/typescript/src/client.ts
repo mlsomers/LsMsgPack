@@ -65,11 +65,13 @@ export class LsMsgPackClient {
   private readonly negotiate: boolean;
   private readonly headers?: HeadersInit;
   private readonly models?: ModelSet;
+  private readonly generateCode?: boolean;
 
   constructor(options: ClientOptions = {}) {
     this.store = options.store ?? new SchemaStore();
     this.decoder = new Decoder(options);
     this.models = options.models;
+    this.generateCode = options.generateCode;
     if (options.schemas !== undefined) this.store.preload(options.schemas);
     this.fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.baseUrl = options.baseUrl;
@@ -113,7 +115,7 @@ export class LsMsgPackClient {
     let body: BodyInit | null | undefined;
     if (init.body === undefined || init.body === null || isBodyInit(init.body)) body = init.body as BodyInit | null | undefined;
     else {
-      body = encode(init.body, { models: this.models }) as unknown as BodyInit;
+      body = encode(init.body, { models: this.models, generateCode: this.generateCode }) as unknown as BodyInit;
       if (!headers.has('Content-Type')) headers.set('Content-Type', MediaTypes.MsgPack);
     }
 

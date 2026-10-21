@@ -149,6 +149,17 @@ test('writing a model: other own properties are written after its own, also when
   assert.deepStrictEqual(entries(encode(noted, { models }))[2], ['Skipped', 'now'], 'the same keys as before, with a value now');
 });
 
+test('writing a model without generated code: the same bytes', () => {
+  const order = new Order();
+  order.Pet = Object.assign(new Dog(), { Name: 'Rex' });
+  order.Retries = undefined;
+  order.Extra = 'kept';
+  const values = [order, new Order(), [new Dog(), Object.assign(new Address(), { Street: undefined, City: undefined })], Object.assign(new Address(), { Zip: '1234' })];
+  for (const value of values) assert.deepStrictEqual(Buffer.from(encode(value, { models, generateCode: false })), Buffer.from(encode(value, { models })));
+  assert.deepStrictEqual(entries(encode(order, { models })).map(([k]) => k), ['Id', 'Tags', 'Home', 'Pet', 'Pets', 'Timeout', 'Due', 'Extra'], 'undefined: left out, the header counts the rest');
+  assert.deepStrictEqual(entries(encode(Object.assign(new Address(), { Street: undefined, City: undefined }), { models })), []);
+});
+
 test('writing the other kinds', () => {
   const kinds = defineModels({
     classes: [[class K { }, 'K', [['C', 'char'], ['D', 'dateonly'], ['T', 'timeonly'], ['M', 'decimal'], ['O', 'dto'], ['N', ['dict', 'int', 'string']], ['P', ['pair', 'string', 'int']]]]],
