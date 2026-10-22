@@ -4,7 +4,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createInterface } from 'node:readline';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { encode } from '../dist/index.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -37,7 +37,8 @@ export async function generateModels(extraArgs = []) {
   const tsc = createRequire(import.meta.url).resolve('typescript/bin/tsc');
   execFileSync(process.execPath, [tsc, '--strict', '--noImplicitOverride', '--target', 'ES2022', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--skipLibCheck',
     `${folder}models.ts`, `${folder}models.schemas.ts`], { stdio: 'inherit' });
-  return { ...(await import(`${folder}models.js`)), ...(await import(`${folder}models.schemas.js`)) };
+  // file URLs: on Windows import() reads an absolute path (d:\...) as a URL with the scheme d:
+  return { ...(await import(pathToFileURL(`${folder}models.js`).href)), ...(await import(pathToFileURL(`${folder}models.schemas.js`).href)) };
 }
 
 /** A schema map with the entries in order (encode of an object cannot repeat a name). */
