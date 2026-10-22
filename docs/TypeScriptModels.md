@@ -12,7 +12,7 @@ It reads the compiled assemblies (the build output of the server or its models) 
 ## Usage
 
 ```bash
-dotnet tool install -g LsMsgPack.TypeScript     # not published yet: dotnet run --project LsMsgPackTypeScript -- <arguments>
+dotnet tool install -g LsMsgPack.TypeScript
 
 lsmsgpack-ts --assembly Shop.Api/bin/Release/net8.0/Shop.Api.dll --solution Shop.sln --out web/src/api/models.ts
 ```

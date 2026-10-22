@@ -19,7 +19,7 @@ It works in two ways, which can be mixed:
 
 Without models the client gets what it needs at runtime from the **described schema** (version 2 of the indexed schema: the kind and default of each property). That is also the fallback with models: a server newer than the models (a property or class they don't have yet), classes the models don't cover, a schema that varies with the data. The schema of the payload always decides which value is which property, the models only add the class, the constructor values and the types.
 
-Not published to npm yet: build it from the repository (`cd clients/typescript && npm install && npm run build`, the package is in `dist/`).
+Install it with `npm install @lsmsgpack/client`. Its version is the NuGet version of the server packages, `yyyy.M.d.build` written as `yyyy.M.(d*100+build)` (npm takes three numbers): 2026.10.2201 goes with 2026.10.22.1.
 
 ## Usage
 
