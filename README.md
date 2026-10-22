@@ -4,8 +4,6 @@ MsgPack serializers for .NET classes (like the xml and json serializers), with a
 More info about MsgPack Explorer (and screenshots) can be found at:
 http://www.infotopie.nl/open-source/msgpack-explorer
 
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/yellow_img.png)](https://www.buymeacoffee.com/mlsomers)
-
 [![.NET](https://github.com/mlsomers/LsMsgPack/actions/workflows/dotnet.yml/badge.svg)](https://github.com/mlsomers/LsMsgPack/actions/workflows/dotnet.yml)
 
 ASP.NET Integration
@@ -144,3 +142,7 @@ Source documentation
 --------------------
 
 The repository holds the shared core (`LsMsgPack.Core`), the two serializers (`LsMsgPack` with its item tree, `LtMsgPack` without it), the web formatters, MsgPack Explorer with its Fiddler and Visual Studio wrappers, the VS Code extension, and their tests. See [docs/Architecture.md](docs/Architecture.md) for what each project does, how the serializers work, and the class diagrams.
+
+
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/yellow_img.png)](https://www.buymeacoffee.com/mlsomers)
+or [Donate via PayPal](https://www.paypal.com/donate/?business=BMSG85VAYSCUC&no_recurring=0&currency_code=EUR)
