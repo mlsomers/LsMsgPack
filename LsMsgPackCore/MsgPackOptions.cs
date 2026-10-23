@@ -225,6 +225,11 @@ namespace LsMsgPack
     internal Meta.FullPropertyInfo.SharedPropsCache _sharedPropsCache;
 
     /// <summary>
+    /// Set when properties got a former id (FullPropertyInfo.FormerId) with these settings: only then does ValueConverter.SetProperties look for the keys of former ids. Never reset (a session or the settings of custom property id resolvers).
+    /// </summary>
+    internal bool _formerIds;
+
+    /// <summary>
     /// The highest <see cref="LsMsgPack.PropertyOrder"/>, the orders are indexes of the caches in FullPropertyInfo.
     /// </summary>
     internal const PropertyOrder LastPropertyOrder = PropertyOrder.TypeThenDeclaration;

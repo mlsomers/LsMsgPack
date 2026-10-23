@@ -1,4 +1,5 @@
 ﻿using LsMsgPack.TypeResolving.Interfaces;
+using LsMsgPack.TypeResolving.Names;
 using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections.Concurrent;
@@ -40,16 +41,87 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static void ResolvePropertyId(FullPropertyInfo full, MsgPackOptions settings)
     {
+      IMsgPackPropertyIdResolver[] resolvers = settings._propertyNameResolvers;
       full.PropertyId = null;
-      for (int t = settings._propertyNameResolvers.Length - 1; t >= 0; t--)
+      full.FormerId = null;
+      int t = resolvers.Length - 1;
+      for (; t >= 0; t--)
       {
-        full.PropertyId = settings._propertyNameResolvers[t].GetId(full, settings);
+        full.PropertyId = resolvers[t].GetId(full, settings);
         if (full.PropertyId != null)
           break;
       }
 
       if (full.PropertyId == null)
         full.PropertyId = full.PropertyInfo.Name;
+      else if (resolvers[t] is AttributePropertyNameResolver attributes && attributes.TryGetFormerId(full, out string xmlName))
+        full.FormerId = ResolveFormerId(full, xmlName, resolvers, t, settings);
+    }
+
+    /// <summary>
+    /// The id the property got before <see cref="AttributePropertyNameResolver"/> (at index <paramref name="byAttribute"/>) found the attributes of the JSON serializers: the XML name, or what the resolvers before it give.
+    /// The schema is not asked to add entries or names (data written with this id has them, see <see cref="IndexedSchemaTypeResolver.IdOfName"/>).
+    /// </summary>
+    private static object ResolveFormerId(FullPropertyInfo full, string xmlName, IMsgPackPropertyIdResolver[] resolvers, int byAttribute, MsgPackOptions settings)
+    {
+      object former = xmlName;
+      for (int t = byAttribute - 1; former == null && t >= 0; t--)
+        former = resolvers[t] is IndexedSchemaTypeResolver schema ? schema.IdOfName(full) : resolvers[t].GetId(full, settings);
+      if (former == null)
+        former = full.PropertyInfo.Name;
+      return MapConversionEqualityComparer.Instance.Equals(former, full.PropertyId) ? null : former;
+    }
+
+    /// <summary>
+    /// Clears the former ids that are another property's id (also ignoring case with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>) or former id, so a key of the data means one property.
+    /// Sets <see cref="MsgPackOptions._formerIds"/> when some are left (ValueConverter only looks for them then).
+    /// </summary>
+    private static void KeepUnambiguousFormerIds(FullPropertyInfo[] props, MsgPackOptions settings)
+    {
+      bool any = false;
+      for (int t = props.Length - 1; t >= 0; t--)
+        any |= props[t].FormerId != null;
+      if (!any)
+        return;
+
+      // Without the schema, custom property id resolvers run for every object: nothing is allocated unless a former id is ambiguous
+      List<int> ambiguous = null; // cleared afterwards: two properties with the same former id both lose it
+      any = false;
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        object key = props[t].FormerId;
+        if (key is null)
+          continue;
+        if (IsAmbiguous(props, t, key, settings._propertyNameCaseInsensitive))
+          (ambiguous ?? (ambiguous = new List<int>())).Add(t);
+        else
+          any = true;
+      }
+      if (ambiguous != null)
+        for (int t = ambiguous.Count - 1; t >= 0; t--)
+          props[ambiguous[t]].FormerId = null;
+      if (any)
+        settings._formerIds = true;
+    }
+
+    private static bool IsAmbiguous(FullPropertyInfo[] props, int index, object key, bool ignoreCase)
+    {
+      string text = key as string;
+      for (int o = props.Length - 1; o >= 0; o--)
+      {
+        object id = props[o].PropertyId;
+        if (text != null && id is string name)
+        {
+          if (ignoreCase ? string.Equals(name, text, StringComparison.OrdinalIgnoreCase) : string.Equals(name, text))
+            return true;
+        }
+        else if (MapConversionEqualityComparer.Instance.Equals(id, key))
+          return true;
+        object former = props[o].FormerId;
+        if (o != index && former != null && MapConversionEqualityComparer.Instance.Equals(former, key))
+          return true;
+      }
+      return false;
     }
 
     // Attributes are static metadata, so they are read once per property (even when the FullPropertyInfo itself cannot be cached because of custom property id resolvers)
@@ -75,6 +147,7 @@ namespace LsMsgPack.Meta
       _accessor = kept._accessor;
       _uniqueName = kept._uniqueName;
       PropertyId = kept.PropertyInfo.Name;
+      FormerId = null;
       StaticallyIgnored = false;
     }
 
@@ -147,6 +220,12 @@ namespace LsMsgPack.Meta
     /// By default the property name (string), but can be overridden by IMsgPackPropertyIdResolver
     /// </summary>
     public object PropertyId { get; set; }
+
+    /// <summary>
+    /// Another id data written by released versions may have for this property, null when there is none: <see cref="AttributePropertyNameResolver"/> did not find the names of the JSON serializers' attributes
+    /// until October 2026 (see <see cref="ValueConverter"/>.SetProperties, which reads a key that is no property's id into the property of that former id).
+    /// </summary>
+    internal object FormerId;
 
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
     public ConstructorInfo GetConstructorTaking(Type type)
@@ -372,6 +451,7 @@ namespace LsMsgPack.Meta
       for (int t = 0; t < props.Length; t++)
         ResolvePropertyId(props[t], settings);
       ThrowIfIdsNotUnique(type, props);
+      KeepUnambiguousFormerIds(props, settings);
 
       sessionCache[type] = props;
       return props;
@@ -439,6 +519,8 @@ namespace LsMsgPack.Meta
 
       FullPropertyInfo[] result = keptProps.ToArray();
       ThrowIfIdsNotUnique(type, result); // custom resolvers are consulted for every call (they may have their own cache), so are their ids
+      if (!shared)
+        KeepUnambiguousFormerIds(result, settings);
 
       if (shared)
         return sharedCache.GetOrAdd(type, result);

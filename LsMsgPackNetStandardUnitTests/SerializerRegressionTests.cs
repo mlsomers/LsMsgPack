@@ -2,6 +2,7 @@
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
+using LsMsgPack.TypeResolving.Names;
 using LsMsgPack.TypeResolving.Types;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
@@ -423,6 +424,213 @@ namespace LsMsgPackUnitTests
 
       MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Serialize(new TwoNames() { First = "a", Second = "b" }, settings));
       StringAssert.Contains(ex.Message, "reserved");
+    }
+
+    public class JsonNamed
+    {
+      [System.Text.Json.Serialization.JsonPropertyName("renamed")] public string A { get; set; }
+      [Newtonsoft.Json.JsonProperty("newton")] public int B { get; set; }
+      [Newtonsoft.Json.JsonProperty(Order = 1)] public string Unnamed { get; set; } // no name: the .NET name
+      public string Plain { get; set; }
+      [System.Text.Json.Serialization.JsonPropertyName("json")][XmlElement("xml")] public string Both { get; set; } // the released versions wrote the XML name
+      [XmlArray("items")] public List<int> Items { get; set; }
+      public ContractNamed Contract { get; set; }
+      public NotAContract Loose { get; set; }
+      public JsonNamed Child { get; set; }
+    }
+
+    [System.Runtime.Serialization.DataContract]
+    public class ContractNamed
+    {
+      [System.Runtime.Serialization.DataMember(Name = "dm")] public string D { get; set; }
+      [System.Runtime.Serialization.DataMember] public string E { get; set; } // no name: the .NET name
+      public string F { get; set; }
+    }
+
+    public class NotAContract
+    {
+      [System.Runtime.Serialization.DataMember(Name = "ignored")] public string P { get; set; } // DataContractSerializer reads [DataMember] only in a [DataContract]
+    }
+
+    public class JsonNamedAsWritten
+    {
+      public string renamed { get; set; }
+      public int newton { get; set; }
+      public string Unnamed { get; set; }
+      public string Plain { get; set; }
+      public string json { get; set; }
+      public List<int> items { get; set; }
+      public ContractNamedAsWritten Contract { get; set; }
+      public NotAContractAsWritten Loose { get; set; }
+      public JsonNamedAsWritten Child { get; set; }
+    }
+
+    public class ContractNamedAsWritten
+    {
+      public string dm { get; set; }
+      public string E { get; set; }
+      public string F { get; set; }
+    }
+
+    public class NotAContractAsWritten
+    {
+      public string P { get; set; }
+    }
+
+    /// <summary>
+    /// What AttributePropertyNameResolver did until October 2026: it did not find the attributes of the JSON serializers.
+    /// </summary>
+    private class ReleasedAttributeNames : IMsgPackPropertyIdResolver
+    {
+      public object GetId(FullPropertyInfo assignedTo, MsgPackOptions settings)
+      {
+        if (assignedTo.CustomAttributes.TryGetValue(nameof(XmlElementAttribute), out object element))
+          return ((XmlElementAttribute)element).ElementName;
+        return null;
+      }
+    }
+
+    private static JsonNamed NewJsonNamed()
+    {
+      return new JsonNamed
+      {
+        A = "a", B = 7, Unnamed = "u", Plain = "p", Both = "b", Items = new List<int> { 1, 2 },
+        Contract = new ContractNamed { D = "d", E = "e", F = "f" }, Loose = new NotAContract { P = "l" }, Child = new JsonNamed { A = "ca", B = 8 }
+      };
+    }
+
+    private static void AssertJsonNamed(JsonNamed read)
+    {
+      Assert.AreEqual("a", read.A);
+      Assert.AreEqual(7, read.B);
+      Assert.AreEqual("u", read.Unnamed);
+      Assert.AreEqual("p", read.Plain);
+      Assert.AreEqual("b", read.Both);
+      CollectionAssert.AreEqual(new[] { 1, 2 }, read.Items);
+      Assert.AreEqual("d", read.Contract.D);
+      Assert.AreEqual("e", read.Contract.E);
+      Assert.AreEqual("f", read.Contract.F);
+      Assert.AreEqual("l", read.Loose.P);
+      Assert.AreEqual("ca", read.Child.A);
+      Assert.AreEqual(8, read.Child.B);
+    }
+
+    private static MsgPackSettings JsonNamedSettings(bool schema, ObjectLayout layout, bool resolver, bool released = false)
+    {
+      MsgPackSettings settings = new MsgPackSettings { UseInexedSchema = schema, ObjectLayout = layout };
+      if (resolver)
+        settings.PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { released ? (IMsgPackPropertyIdResolver)new ReleasedAttributeNames() : new AttributePropertyNameResolver() };
+      return settings;
+    }
+
+    /// <summary>
+    /// AttributePropertyNameResolver writes the names of [JsonPropertyName] (System.Text.Json) and [JsonProperty] (Json.NET), it used to look them up by the wrong key, and of [XmlArray] and [DataMember] (in a [DataContract]), which it did not read.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void AttributeNamesOfJsonSerializers(bool schema)
+    {
+      byte[] bytes = Serializer.Serialize(NewJsonNamed(), JsonNamedSettings(schema, ObjectLayout.Map, true));
+
+      AssertJsonNamed(Serializer.Deserialize<JsonNamed>(bytes, JsonNamedSettings(schema, ObjectLayout.Map, true)));
+
+      if (schema)
+        return; // with the schema the renamed keys are written as names, the others as indexes: only readers with the same resolver understand them
+      JsonNamedAsWritten written = Serializer.Deserialize<JsonNamedAsWritten>(bytes, JsonNamedSettings(false, ObjectLayout.Map, false));
+      Assert.AreEqual("a", written.renamed);
+      Assert.AreEqual(7, written.newton);
+      Assert.AreEqual("u", written.Unnamed);
+      Assert.AreEqual("p", written.Plain);
+      Assert.AreEqual("b", written.json);
+      CollectionAssert.AreEqual(new[] { 1, 2 }, written.items);
+      Assert.AreEqual("d", written.Contract.dm);
+      Assert.AreEqual("e", written.Contract.E);
+      Assert.AreEqual("f", written.Contract.F);
+      Assert.AreEqual("l", written.Loose.P);
+      Assert.AreEqual("ca", written.Child.renamed);
+    }
+
+    /// <summary>
+    /// Data written by the versions that ignored the JSON attributes, [XmlArray] and [DataMember] (the .NET names, or their schema indexes) is still read into the renamed properties.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false, ObjectLayout.Map)]
+    [DataRow(true, ObjectLayout.Map)]
+    [DataRow(false, ObjectLayout.Array)]
+    [DataRow(true, ObjectLayout.Array)]
+    public void AttributeNamesReadDataWithDotNetNames(bool schema, ObjectLayout layout)
+    {
+      byte[] old = Serializer.Serialize(NewJsonNamed(), JsonNamedSettings(schema, layout, true, true)); // as the resolver wrote them before
+
+      AssertJsonNamed(Serializer.Deserialize<JsonNamed>(old, JsonNamedSettings(schema, layout, true)));
+
+      Serializer.Deserialize<JsonNamed>(old, JsonNamedSettings(schema, layout, true), out ReadDifferences differences);
+      Assert.IsNull(differences, differences?.ToString());
+    }
+
+    public class XmlUnnamed
+    {
+      [XmlElement] public string Element { get; set; }
+      [XmlElement(Order = 1)] public string Ordered { get; set; }
+      [XmlAttribute] public string Attribute { get; set; }
+      [XmlAttribute(DataType = "string")] public string Typed { get; set; }
+      [XmlElement("named")] public string Named { get; set; }
+    }
+
+    public class XmlUnnamedAsWritten
+    {
+      public string Element { get; set; }
+      public string Ordered { get; set; }
+      public string Attribute { get; set; }
+      public string Typed { get; set; }
+      public string named { get; set; }
+    }
+
+    /// <summary>
+    /// [XmlElement] and [XmlAttribute] without a name keep the .NET name, as XmlSerializer does (the empty name was written as the reserved id "", which threw).
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void AttributeNamesXmlWithoutName(bool schema)
+    {
+      XmlUnnamed value = new XmlUnnamed { Element = "e", Ordered = "o", Attribute = "a", Typed = "t", Named = "n" };
+      byte[] bytes = Serializer.Serialize(value, JsonNamedSettings(schema, ObjectLayout.Map, true));
+
+      XmlUnnamed read = Serializer.Deserialize<XmlUnnamed>(bytes, JsonNamedSettings(schema, ObjectLayout.Map, true));
+      Assert.AreEqual("e", read.Element);
+      Assert.AreEqual("o", read.Ordered);
+      Assert.AreEqual("a", read.Attribute);
+      Assert.AreEqual("t", read.Typed);
+      Assert.AreEqual("n", read.Named);
+
+      if (schema)
+        return;
+      XmlUnnamedAsWritten written = Serializer.Deserialize<XmlUnnamedAsWritten>(bytes, JsonNamedSettings(false, ObjectLayout.Map, false));
+      Assert.AreEqual("e", written.Element);
+      Assert.AreEqual("o", written.Ordered);
+      Assert.AreEqual("a", written.Attribute);
+      Assert.AreEqual("t", written.Typed);
+      Assert.AreEqual("n", written.named);
+    }
+
+    public class JsonNamedOldAndNew
+    {
+      public string A { get; set; }
+      public string renamed { get; set; }
+    }
+
+    /// <summary>
+    /// The former id (the .NET name) only counts when the map does not have the property's id.
+    /// </summary>
+    [TestMethod]
+    public void AttributeNamesPreferTheNewName()
+    {
+      MsgPackSettings settings = JsonNamedSettings(false, ObjectLayout.Map, false);
+      byte[] bytes = Serializer.Serialize(new JsonNamedOldAndNew { A = "old", renamed = "new" }, settings);
+
+      Assert.AreEqual("new", Serializer.Deserialize<JsonNamed>(bytes, JsonNamedSettings(false, ObjectLayout.Map, true)).A);
     }
 
     private class NumberedPets : IMsgPackTypeResolver
