@@ -21,6 +21,11 @@ namespace LsMsgPack.Meta
 
     private volatile Looked _looked;
 
+    /// <summary>
+    /// The names AttributePropertyNameResolver reads from the attributes of other serializers, set when it first asks (the same value by any thread).
+    /// </summary>
+    internal TypeResolving.Names.AttributePropertyNameResolver.AttributeNames Names;
+
     private sealed class Looked
     {
       internal object[] Declared;
