@@ -361,6 +361,23 @@ namespace LsMsgPack
     /// </summary>
     public IMsgPackPropertyIncludeDynamically[] DynamicFilters { get { return _dynamicFilters; } set { _dynamicFilters = value; } }
 
+    /// <summary>
+    /// The dynamic filters leave out default values (<see cref="FilterDefaultValues"/>): a nil in the array layout is then the value of [DefaultValue] where a property has one (see FullPropertyInfo.NilValue).
+    /// </summary>
+    internal bool LeavesOutDefaultValues
+    {
+      get
+      {
+        IMsgPackPropertyIncludeDynamically[] filters = _dynamicFilters;
+        if (filters is null)
+          return false;
+        for (int t = filters.Length - 1; t >= 0; t--)
+          if (filters[t] is FilterDefaultValues)
+            return true;
+        return false;
+      }
+    }
+
 
     /// <summary>
     /// Available:

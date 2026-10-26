@@ -14,7 +14,7 @@ namespace LtMsgPack.Generator
     /// <summary>
     /// The version of the generated code (LsMsgPack.Generated.GeneratedContract.Current of the runtime this generator is released with, checked by a test).
     /// </summary>
-    internal const int ContractVersion = 1;
+    internal const int ContractVersion = 2;
 
     private const string Values = "global::LtMsgPack.Generated.GeneratedValues";
 
@@ -238,7 +238,7 @@ namespace LtMsgPack.Generator
       }
       w.Indent--;
       w.Line("}, new int[] { " + string.Join(", ", unrolled) + " }, " + Generated + "GeneratedCapabilities.Write | " + Generated + "GeneratedCapabilities.WriteUnrolled | "
-        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadValue)");
+        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadValue)");
       w.Open();
       w.Close();
 
@@ -338,7 +338,29 @@ namespace LtMsgPack.Generator
       w.Line("continue;");
       w.Close();
       w.Line("if (r.TryReadNil())");
-      w.Line("  continue; // a nil leaves the property as the constructor made it");
+      w.Open();
+      // The value the writer leaves out: without [DefaultValue] the default of the type, whatever the options are (FullPropertyInfo.NilValue)
+      bool direct = false;
+      for (int m = 0; m < type.Members.Length; m++)
+        direct |= IsReadHere(type.Members[m]) && !type.Members[m].HasDefaultValue;
+      if (direct)
+      {
+        w.Line("switch (prop.GeneratedId)");
+        w.Open();
+        for (int m = 0; m < type.Members.Length; m++)
+        {
+          MemberModel member = type.Members[m];
+          if (!IsReadHere(member) || member.HasDefaultValue)
+            continue;
+          w.Line("case " + m + ":");
+          w.Line("  o." + member.Access + " = default(" + member.TypeName + ");");
+          w.Line("  continue;");
+        }
+        w.Close();
+      }
+      w.Line("prop.ReadNil(o); // the value the writer leaves out (null, the default of the type or of [DefaultValue])");
+      w.Line("continue;");
+      w.Close();
       bool reads = ReadsAny(type); // no empty switch (warning CS1522)
       if (reads)
       {
@@ -414,9 +436,17 @@ namespace LtMsgPack.Generator
     private static bool ReadsAny(TypeModel type)
     {
       for (int m = 0; m < type.Members.Length; m++)
-        if (type.Members[m].Kind != "None" && type.Members[m].CanSet)
+        if (IsReadHere(type.Members[m]))
           return true;
       return false;
+    }
+
+    /// <summary>
+    /// The generated code reads the member (otherwise the runtime does).
+    /// </summary>
+    private static bool IsReadHere(MemberModel member)
+    {
+      return member.Kind != "None" && member.CanSet;
     }
 
     private static string Bool(bool value)

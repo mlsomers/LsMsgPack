@@ -71,7 +71,13 @@ namespace LtMsgPack.Generated
     ReadPositional = 4,
 
     /// <summary><see cref="GeneratedObjectCode{T}.ReadValue"/></summary>
-    ReadValue = 8
+    ReadValue = 8,
+
+    /// <summary>
+    /// <see cref="GeneratedObjectCode{T}.ReadPositional"/> sets the value of a nil (<see cref="Reading.PropReader.ReadNil"/>, version 2). Without it (version 1: a nil left the property as the constructor made it)
+    /// the runtime reads the array layout itself.
+    /// </summary>
+    ReadPositionalNil = 16
   }
 
   /// <summary>
@@ -136,7 +142,8 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
-    /// The values of an array (the header is read, the instance created): by position, a nil leaves the property as it is, positions without a property are skipped (as ObjectReader.ReadPositional).
+    /// The values of an array (the header is read, the instance created): by position, a nil sets the value the writer leaves out (<see cref="Reading.PropReader.ReadNil"/>),
+    /// positions without a property are skipped (as ObjectReader.ReadPositional).
     /// </summary>
     public virtual void ReadPositional(ReadContext c, T target, PropReader[] props, int items, GeneratedReadPlan p)
     {

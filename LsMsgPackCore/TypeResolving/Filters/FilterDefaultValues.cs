@@ -19,14 +19,14 @@ namespace LsMsgPack.TypeResolving.Filters
         /// </summary>
         public FilterDefaultValues() { } // kept parameterless (compiled callers, Activator)
 
-        /// <param name="omitEmptyStrings">Also leave out empty strings (read back as the value the constructor sets, often null)</param>
+        /// <param name="omitEmptyStrings">Also leave out empty strings (read back as null in the array layout, as the value the constructor sets in a map)</param>
         public FilterDefaultValues(bool omitEmptyStrings)
         {
             OmitEmptyStrings = omitEmptyStrings;
         }
 
         /// <summary>
-        /// Empty strings are left out like default values (smaller, but they are read back as the value the constructor sets, often null). Off by default.
+        /// Empty strings are left out like default values (smaller, but they are read back as null in the array layout, as the value the constructor sets in a map). Off by default.
         /// </summary>
         public bool OmitEmptyStrings { get; }
 

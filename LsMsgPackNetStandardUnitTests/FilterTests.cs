@@ -288,10 +288,10 @@ namespace LsMsgPackUnitTests
       if (!useSchema && layout == ObjectLayout.Map)
         CollectionAssert.AreEqual(Sorted("Number"), Keys(bytes));
 
-      // Left out, so the reader keeps what the constructor set
+      // Left out: a map's reader keeps what the constructor set, a nil in an array is null (the default of a string)
       TextProbe read = Serializer.Deserialize<TextProbe>(bytes, settings);
       Assert.IsNull(read.Text);
-      Assert.AreEqual("init", read.Initialized);
+      Assert.AreEqual(layout == ObjectLayout.Map ? "init" : null, read.Initialized);
       Assert.IsNull(read.Boxed);
       Assert.AreEqual(1, read.Number);
     }

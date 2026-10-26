@@ -52,8 +52,8 @@ public static class Use { public static byte[] Write(Order o) => MsgPackSerializ
     {
       ImmutableArray<Diagnostic> diagnostics = Analyze(Initialized);
       AssertDiagnostics(diagnostics, "LSMP001 Retries", "LSMP001 Country", "LSMP001 Big", "LSMP001 Rate", "LSMP001 Shade", "LSMP001 Count", "LSMP001 Small");
-      Assert.AreEqual("'Order.Retries' is initialized to 3 but has no [DefaultValue(3)]: the serializers leave out the value 0, and a reader gets 3", diagnostics[0].GetMessage());
-      Assert.AreEqual("'Order.Count' is initialized to 0 but has no [DefaultValue(0)]: the serializers leave out the value null, and a reader gets 0", diagnostics[5].GetMessage());
+      Assert.AreEqual("'Order.Retries' is initialized to 3 but has no [DefaultValue(3)]: in a map (ObjectLayout.Map, application/msgpack) the serializers leave out the value 0, and a reader gets 3", diagnostics[0].GetMessage());
+      Assert.AreEqual("'Order.Count' is initialized to 0 but has no [DefaultValue(0)]: in a map (ObjectLayout.Map, application/msgpack) the serializers leave out the value null, and a reader gets 0", diagnostics[5].GetMessage());
     }
 
     [TestMethod]
@@ -203,8 +203,8 @@ public static class Use { public static byte[] Write(Settings s) => new LtMsgPac
     {
       ImmutableArray<Diagnostic> diagnostics = Analyze(Mismatched);
       AssertDiagnostics(diagnostics, "LSMP002 DefaultValue(5)", "LSMP002 DefaultValue(5)", "LSMP003 DefaultValue(1)", "LSMP003 DefaultValue(2)", "LSMP003 DefaultValue(typeof(int), \"3\")", "LSMP002 DefaultValue(typeof(DateTime), \"2026-01-02\")");
-      Assert.AreEqual("'Settings.Differs' has [DefaultValue(5)] but the constructor sets 3: the serializers leave out the value 5, and a reader gets 3", diagnostics[0].GetMessage());
-      Assert.AreEqual("'Settings.NotSet' has [DefaultValue(5)] but the constructor sets 0: the serializers leave out the value 5, and a reader gets 0", diagnostics[1].GetMessage());
+      Assert.AreEqual("'Settings.Differs' has [DefaultValue(5)] but the constructor sets 3: in a map (ObjectLayout.Map, application/msgpack) the serializers leave out the value 5, and a reader gets 3", diagnostics[0].GetMessage());
+      Assert.AreEqual("'Settings.NotSet' has [DefaultValue(5)] but the constructor sets 0: in a map (ObjectLayout.Map, application/msgpack) the serializers leave out the value 5, and a reader gets 0", diagnostics[1].GetMessage());
       Assert.AreEqual("The [DefaultValue] of 'Settings.OtherType' is 1 (int), not long: it never equals the value, so the value is always written", diagnostics[2].GetMessage());
     }
 
@@ -299,7 +299,7 @@ public static class Use { public static byte[] Write(Options o) => MsgPackSerial
     {
       ImmutableArray<Diagnostic> diagnostics = Analyze(NullableDefaults);
       AssertDiagnostics(diagnostics, "LSMP006 Mode", "LSMP006 Retries", "LSMP006 Rate", "LSMP006 Empty");
-      Assert.AreEqual("'Options.Mode' is initialized to \"auto\": in an object written as an array of its values (ObjectLayout.Array, the default) null is nil, which a reader takes as left out, so it gets \"auto\". "
+      Assert.AreEqual("'Options.Mode' is initialized to \"auto\": in an object written as an array of its values (ObjectLayout.Array, the default) null is nil, the same as the left out [DefaultValue], so a reader gets \"auto\". "
         + "Remove the initializer and the [DefaultValue] if null must arrive, or write objects as maps (ObjectLayout.Map).", diagnostics[0].GetMessage());
     }
 

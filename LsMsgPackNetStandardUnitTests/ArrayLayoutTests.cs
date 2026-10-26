@@ -75,6 +75,17 @@ namespace LsMsgPackUnitTests
       public string Verb { get; set; } = "Woof";
     }
 
+    public class AlInitialized
+    {
+      public int Retries { get; set; } = 3;
+      public bool Enabled { get; set; } = true;
+      public string Mode { get; set; } = "auto";
+      public int? Limit { get; set; } = 10;
+      [DefaultValue(5)]
+      public int Level { get; set; } = 5;
+      public DateTime Since { get; set; } = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    }
+
     public class AlWide // more than 15 values: an array 16 header of 3 bytes
     {
       public int V1 { get; set; }
@@ -173,18 +184,21 @@ namespace LsMsgPackUnitTests
     [DataRow(SchemaMode.Names)]
     [DataRow(SchemaMode.Inline)]
     [DataRow(SchemaMode.Reference)]
-    public void SameValuesAsMap(SchemaMode mode)
+    public void LeftOutValuesAsJson(SchemaMode mode)
     {
-      // Values the filters leave out keep what the constructor made, as with a map: the null Note becomes "default note" again
+      // A nil sets the value the filters left out (here null), a map leaves the key out, so its reader keeps what the constructor made: the null Note becomes "default note" again
       AlPerson person = Person();
       person.Note = null;
       person.Age = 0;
       MsgPackSettings asMap = Settings(mode);
       asMap.ObjectLayout = ObjectLayout.Map;
 
-      string viaArray = Json(RoundTrip(person, Settings(mode)));
-      Assert.AreEqual(Json(RoundTrip(person, asMap)), viaArray);
-      StringAssert.Contains(viaArray, "default note");
+      AlPerson viaArray = RoundTrip(person, Settings(mode));
+      Assert.AreEqual(Json(person), Json(viaArray));
+      AlPerson viaMap = RoundTrip(person, asMap);
+      Assert.AreEqual("default note", viaMap.Note);
+      viaMap.Note = null;
+      Assert.AreEqual(Json(viaArray), Json(viaMap), "the rest is the same");
     }
 
     [TestMethod]
@@ -252,11 +266,14 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual("b", read.Street);
       Assert.AreEqual(0, read.Number);
 
-      byte[] nils = { 0x96, 0xA1, (byte)'n', 0xC0, 0xC0, 0xC0, 0xC0, 0xC0 }; // Name, then nil for Age, Home, Others, Score and Note
+      byte[] nils = { 0x96, 0xA1, (byte)'n', 0xC0, 0xC0, 0xC0, 0xC0, 0xC0 }; // Name, then nil for Age, Home, Others, Score and Note, Born is missing
       AlPerson person = Serializer.Deserialize<AlPerson>(nils, settings);
       Assert.AreEqual("n", person.Name);
-      Assert.AreEqual("default note", person.Note);
+      Assert.IsNull(person.Note, "a nil is null");
       Assert.IsNull(person.Score);
+
+      byte[] fewer = { 0x95, 0xA1, (byte)'n', 0xC0, 0xC0, 0xC0, 0xC0 }; // Note is missing too
+      Assert.AreEqual("default note", Serializer.Deserialize<AlPerson>(fewer, settings).Note, "missing: as the constructor made it");
     }
 
     [TestMethod]
@@ -331,17 +348,58 @@ namespace LsMsgPackUnitTests
       person.Born = default(DateTime); // the last values are left out
       person.Note = null;
       AlPerson read = RoundTrip(person, settings);
-      Assert.AreEqual(Json(RoundTrip(person, Settings(mode))), Json(read));
+      AlPerson expected = RoundTrip(person, Settings(mode));
+      Assert.IsNull(expected.Note, "a nil sets null");
+      expected.Note = "default note"; // trimmed: after the end of the array, so as the constructor made it
+      Assert.AreEqual(Json(expected), Json(read));
 
       AlOwner owner = new AlOwner() { Pet = new AlDog() { Name = "Rex" }, Pets = new List<IAlPet>() { new AlCat() { Name = "Tom" } } };
       Assert.AreEqual(Json(owner), Json(RoundTrip(owner, settings)));
     }
 
     /// <summary>
-    /// The known difference with maps: a null that the filters keep (here it is not the [DefaultValue]) is nil, which the reader takes as "not written", so the property keeps what the constructor made.
+    /// A nil sets what the writer left out (the default of the type, or null), as JSON reads them, not what the constructor sets: until October 2026 a nil left the property as the constructor
+    /// made it, so null could not be read into an initialized property, and a left out 0 or false was read as the initial value (still so for maps, where the key is left out: analyzer rule LSMP001).
     /// </summary>
     [TestMethod]
-    public void ExplicitNullKeepsTheConstructorValue()
+    [DataRow(SchemaMode.Names)]
+    [DataRow(SchemaMode.Inline)]
+    [DataRow(SchemaMode.Reference)]
+    public void ExplicitNilSetsTheLeftOutValue(SchemaMode mode)
+    {
+      AlInitialized value = new AlInitialized() { Retries = 0, Enabled = false, Mode = null, Limit = null, Level = 5, Since = default(DateTime) };
+      AlInitialized read = RoundTrip(value, Settings(mode));
+      Assert.AreEqual(0, read.Retries);
+      Assert.IsFalse(read.Enabled);
+      Assert.IsNull(read.Mode);
+      Assert.IsNull(read.Limit);
+      Assert.AreEqual(5, read.Level, "the [DefaultValue] that was left out");
+      Assert.AreEqual(default(DateTime), read.Since);
+
+      value.Level = 0; // not the [DefaultValue]: written
+      Assert.AreEqual(0, RoundTrip(value, Settings(mode)).Level);
+    }
+
+    /// <summary>
+    /// Values after the end of the array (a writer whose class has fewer properties, or TrimTrailingNulls) are left as the constructor made them, like the keys a map does not have.
+    /// </summary>
+    [TestMethod]
+    public void MissingValuesKeepTheConstructorValue()
+    {
+      AlInitialized read = Serializer.Deserialize<AlInitialized>(new byte[] { 0x92, 0x00, 0xC0 }, Settings(SchemaMode.Names)); // [0, nil]
+      Assert.AreEqual(0, read.Retries);
+      Assert.IsFalse(read.Enabled);
+      Assert.AreEqual("auto", read.Mode);
+      Assert.AreEqual(10, read.Limit);
+      Assert.AreEqual(5, read.Level);
+    }
+
+    /// <summary>
+    /// The case nil cannot tell apart: a null where [DefaultValue] is not null is nil too, so it is read as the [DefaultValue] (maps keep the null; analyzer rule LSMP006).
+    /// Without FilterDefaultValues the writer leaves nothing out, so a nil is null.
+    /// </summary>
+    [TestMethod]
+    public void NullOfAPropertyWithADefaultValue()
     {
       MsgPackSettings asArray = Settings(SchemaMode.Names);
       MsgPackSettings asMap = Settings(SchemaMode.Names);
@@ -350,6 +408,11 @@ namespace LsMsgPackUnitTests
 
       Assert.IsNull(RoundTrip(silent, asMap).Verb);
       Assert.AreEqual("Woof", RoundTrip(silent, asArray).Verb);
+
+      MsgPackSettings everything = Settings(SchemaMode.Names);
+      everything.DynamicFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeDynamically[0];
+      Assert.IsNull(RoundTrip(silent, everything).Verb);
+      Assert.AreEqual("Woof", RoundTrip(new AlBark(), everything).Verb);
     }
 
     [TestMethod]

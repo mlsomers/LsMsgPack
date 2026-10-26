@@ -24,16 +24,17 @@ namespace LsMsgPack.Analyzers
     public const string InitializerKey = "Initializer";
 
     public static readonly DiagnosticDescriptor MissingDefaultValue = new DiagnosticDescriptor("LSMP001", "Initialized property without [DefaultValue]",
-      "'{0}' is initialized to {1} but has no [DefaultValue({1})]: the serializers leave out the value {2}, and a reader gets {1}",
+      "'{0}' is initialized to {1} but has no [DefaultValue({1})]: in a map (ObjectLayout.Map, application/msgpack) the serializers leave out the value {2}, and a reader gets {1}",
       DefaultsCategory, DiagnosticSeverity.Warning, true,
-      "The serializers leave out default values (FilterDefaultValues): the type's default, or the value of [DefaultValue]. A reader gives a left out property what the constructor sets. "
-      + "When that is not the type's default, the value is lost. [DefaultValue] with the initial value makes the writer leave out that value instead (and version 2 of the schema tells it to readers without the classes).",
+      "The serializers leave out default values (FilterDefaultValues): the type's default, or the value of [DefaultValue]. A reader gives a property whose key a map lacks (or that a trimmed array ends before) what the constructor sets. "
+      + "When that is not the type's default, the value is lost. [DefaultValue] with the initial value makes the writer leave out that value instead (and version 2 of the schema tells it to readers without the classes). "
+      + "In the array layout (the default) a left out value is nil, which a reader reads as the value that was left out.",
       DocsUrl + "lsmp001-initialized-property-without-defaultvalue");
 
     public static readonly DiagnosticDescriptor DefaultValueDiffers = new DiagnosticDescriptor("LSMP002", "[DefaultValue] differs from the initial value",
-      "'{0}' has [DefaultValue({1})] but the constructor sets {2}: the serializers leave out the value {1}, and a reader gets {2}",
+      "'{0}' has [DefaultValue({1})] but the constructor sets {2}: in a map (ObjectLayout.Map, application/msgpack) the serializers leave out the value {1}, and a reader gets {2}",
       DefaultsCategory, DiagnosticSeverity.Warning, true,
-      "The serializers leave out the value of [DefaultValue], a reader gives a left out property what the constructor sets: they must be the same.",
+      "The serializers leave out the value of [DefaultValue], a reader gives a property whose key a map lacks what the constructor sets: they must be the same (the array layout writes nil, which a reader reads as the [DefaultValue]).",
       DocsUrl + "lsmp002-defaultvalue-differs-from-the-initial-value");
 
     public static readonly DiagnosticDescriptor DefaultValueType = new DiagnosticDescriptor("LSMP003", "[DefaultValue] of another type than the property",
@@ -55,9 +56,9 @@ namespace LsMsgPack.Analyzers
       DocsUrl + "lsmp005-data-is-read-into-any-type-it-picks");
 
     public static readonly DiagnosticDescriptor NullReadAsInitial = new DiagnosticDescriptor("LSMP006", "Null is read back as the initial value",
-      "'{0}' is initialized to {1}: in an object written as an array of its values (ObjectLayout.Array, the default) null is nil, which a reader takes as left out, so it gets {1}. Remove the initializer and the [DefaultValue] if null must arrive, or write objects as maps (ObjectLayout.Map).",
+      "'{0}' is initialized to {1}: in an object written as an array of its values (ObjectLayout.Array, the default) null is nil, the same as the left out [DefaultValue], so a reader gets {1}. Remove the initializer and the [DefaultValue] if null must arrive, or write objects as maps (ObjectLayout.Map).",
       DefaultsCategory, DiagnosticSeverity.Warning, true,
-      "In the array layout a value the writer leaves out is nil, so a reader cannot tell a null from a left out value: both keep what the constructor set. [DefaultValue] makes the writer keep null, but only maps can carry it.",
+      "In the array layout a value the writer leaves out is nil, and so is null: a reader cannot tell them apart and reads the [DefaultValue]. [DefaultValue] makes the writer keep null, but only maps can carry it.",
       DocsUrl + "lsmp006-null-is-read-back-as-the-initial-value");
 
     public static readonly DiagnosticDescriptor UntypedRead = new DiagnosticDescriptor("LSMP007", "Objects are read without their property names",

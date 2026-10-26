@@ -45,13 +45,18 @@ dotnet_diagnostic.LSMP004.severity = none
 
 ## Default values
 
-The serializers leave out properties that hold their default value (`FilterDefaultValues`): the type's default (`0`, `false`, `null`), or the value of `[DefaultValue]`. A reader gives a left-out property whatever the constructor set. When the constructor sets something other than what was left out, the value is lost:
+The serializers leave out properties that hold their default value (`FilterDefaultValues`): the type's default (`0`, `false`, `null`), or the value of `[DefaultValue]`. How a reader fills them in depends on the layout:
+
+- **Arrays** (`ObjectLayout.Array`, the default, and `application/x-lsmsgpack`): a left-out value is written as nil, and a reader reads a nil as the value that was left out: the `[DefaultValue]`, otherwise the type's default (`null`, `0`, `false`), as JSON reads them. Only values missing after the end of the array (a writer with fewer properties, or `TrimTrailingNulls`) keep what the constructor set.
+- **Maps** (`ObjectLayout.Map`, `application/msgpack`): a left-out value has no key, and a reader keeps what the constructor set.
+
+So in a map, when the constructor sets something other than what was left out, the value is lost:
 
 ```csharp
-public int Retries { get; set; } = 3;   // a value of 0 is left out, a reader gets 3
+public int Retries { get; set; } = 3;   // a map leaves out 0, a reader gets 3
 ```
 
-`[DefaultValue(3)]` makes the writer leave out 3 instead, and write 0. Version 2 of the schema (`SchemaVersion.Described`) also tells the default to readers without the classes, e.g. JavaScript.
+`[DefaultValue(3)]` makes the writer leave out 3 instead, and write 0. Until October 2026 a nil also kept what the constructor set, so this happened in the array layout too. Version 2 of the schema (`SchemaVersion.Described`) also tells the default to readers without the classes, e.g. JavaScript.
 
 What the constructor sets is the property's initializer, the initializer of the field its getter returns, or the last assignment to either in the body of the parameterless constructor. Only constant values count: there is nothing to check for `= DateTime.Now`, `= Guid.NewGuid()` or `= new List<int>()`. An empty string isn't flagged (`= ""` is the usual way to avoid `null`, and reading `null` back as `""` is what such code wants).
 
@@ -70,8 +75,8 @@ The code fix adds `[DefaultValue(...)]` with the initial value in the property's
 ### LSMP002: [DefaultValue] differs from the initial value
 
 ```csharp
-[DefaultValue(5)] public int Level { get; set; } = 3;   // 5 is left out and read back as 3
-[DefaultValue(5)] public int Limit { get; set; }        // 5 is left out and read back as 0
+[DefaultValue(5)] public int Level { get; set; } = 3;   // in a map 5 is left out and read back as 3
+[DefaultValue(5)] public int Limit { get; set; }        // in a map 5 is left out and read back as 0
 ```
 
 The code fixes write the initial value into the attribute, or (for an auto-property) the attribute's value into the initializer.
@@ -91,7 +96,7 @@ The code fixes write the initial value into the attribute, or (for an auto-prope
 [DefaultValue(3)] public int? Retries { get; set; } = 3;             // LSMP006: null is read back as 3
 ```
 
-`[DefaultValue]` (the fix of LSMP001) makes the writer leave out the initial value and keep null. In a map, a reader then gets null. In the array layout (`ObjectLayout.Array`, the default), null is written as nil, which a reader can't tell apart from a left-out value, so it keeps what the constructor set. Only nullable properties (reference types and `Nullable<T>`) with a non-null initial value are reported.
+`[DefaultValue]` (the fix of LSMP001) makes the writer leave out the initial value and keep null. In a map, a reader then gets null. In the array layout (`ObjectLayout.Array`, the default), both the left-out `[DefaultValue]` and null are written as nil, so a reader can't tell them apart and reads the `[DefaultValue]`. Only nullable properties (reference types and `Nullable<T>`) with a non-null initial value are reported.
 
 If null must arrive, remove the initializer and the `[DefaultValue]`, or write objects as maps. If your writers use maps (e.g. only `application/msgpack`), turn the rule off.
 

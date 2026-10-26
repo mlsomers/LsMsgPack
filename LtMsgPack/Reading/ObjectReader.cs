@@ -120,7 +120,7 @@ namespace LtMsgPack.Reading
 
     /// <summary>
     /// An object written as an array (<see cref="ObjectLayout.Array"/>), the header is read: the values by position, or with the schema by the names of the schema.
-    /// A nil value leaves the property as the constructor made it (LsMsgPack: ValueConverter.ConvertPositional).
+    /// A nil sets the value the writer leaves out (PropReader.ReadNil), values after the end of the array are left as the constructor made them (LsMsgPack: ValueConverter.ConvertPositional).
     /// </summary>
     private T ReadPositional(ReadContext c, ReadPlan plan, int items, int start, FullPropertyInfo assignedTo)
     {
@@ -143,7 +143,9 @@ namespace LtMsgPack.Reading
         {
           if (t >= props.Length || props[t] is null)
             c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
-          else if (!c.R.TryReadNil())
+          else if (c.R.TryReadNil())
+            props[t].ReadNil(result);
+          else
             props[t].Read(c, result);
         }
       }
@@ -307,7 +309,9 @@ namespace LtMsgPack.Reading
               }
               c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
             }
-            else if (!c.R.TryReadNil())
+            else if (c.R.TryReadNil())
+              props[t].ReadNil(result);
+            else
             {
               valueStart = c.R.Pos;
               props[t].Read(c, result);
@@ -436,7 +440,9 @@ namespace LtMsgPack.Reading
       {
         Code = code;
         GeneratedRead = serializer.GeneratedReadPlan;
-        Positional = (code.Capabilities & GeneratedCapabilities.ReadPositional) != 0;
+        // Version 1 of the generated code left a nil as the constructor made it: the runtime reads the array layout then
+        GeneratedCapabilities positional = GeneratedCapabilities.ReadPositional | GeneratedCapabilities.ReadPositionalNil;
+        Positional = (code.Capabilities & positional) == positional;
         for (int t = 0; t < infos.Length; t++)
           Props[t].GeneratedId = serializer.ReadMember(code, infos[t]);
       }
@@ -684,6 +690,12 @@ namespace LtMsgPack.Reading
     /// </summary>
     public abstract void Read(ReadContext c, object target);
 
+    /// <summary>
+    /// Sets the value of a nil in the array layout (the nil is read): what the writer leaves out (FullPropertyInfo.NilValue: null, the default of the type or the value of [DefaultValue]).
+    /// Called by ObjectReader.ReadPositional and the generated code (version 2).
+    /// </summary>
+    public abstract void ReadNil(object target);
+
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
@@ -712,12 +724,14 @@ namespace LtMsgPack.Reading
   {
     private readonly Serializer _serializer;
     private readonly Action<TTarget, TValue> _set;
+    private readonly TValue _nil;
     private ValueReader<TValue> _reader;
 
     public PropReader(Serializer serializer, FullPropertyInfo info, MethodInfo set) : base(info)
     {
       _serializer = serializer;
       _set = (Action<TTarget, TValue>)Delegate.CreateDelegate(typeof(Action<TTarget, TValue>), set);
+      _nil = NilOf(serializer, info);
     }
 
     /// <param name="set">The setter of the source generator</param>
@@ -725,12 +739,24 @@ namespace LtMsgPack.Reading
     {
       _serializer = serializer;
       _set = set;
+      _nil = NilOf(serializer, info);
+    }
+
+    private static TValue NilOf(Serializer serializer, FullPropertyInfo info)
+    {
+      object nil = info.NilValue(serializer.Options);
+      return nil is null ? default(TValue) : (TValue)nil;
     }
 
     public override void Read(ReadContext c, object target)
     {
       ValueReader<TValue> reader = _reader ?? (_reader = _serializer.Reader<TValue>());
       _set((TTarget)target, reader.Read(c, Info));
+    }
+
+    public override void ReadNil(object target)
+    {
+      _set((TTarget)target, _nil);
     }
   }
 
@@ -751,6 +777,11 @@ namespace LtMsgPack.Reading
     {
       ValueReader reader = _reader ?? (_reader = _serializer.Reader(Info.PropertyInfo.PropertyType));
       Info.SetValue(target, reader.ReadBoxed(c, Info));
+    }
+
+    public override void ReadNil(object target)
+    {
+      Info.SetValue(target, Info.NilValue(_serializer.Options));
     }
   }
 

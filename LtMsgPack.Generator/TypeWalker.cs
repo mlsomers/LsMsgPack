@@ -558,7 +558,8 @@ namespace LtMsgPack.Generator
             continue;
 
           // [DefaultValue]: the runtime's filter compares the value with the attribute's (boxed), the generated writer leaves it to the runtime
-          bool canGet = property.GetMethod != null && IsAccessible(property.GetMethod) && !IsObsoleteError(property.GetMethod) && !HasAttribute(property, "System.ComponentModel.DefaultValueAttribute");
+          bool hasDefaultValue = HasAttribute(property, "System.ComponentModel.DefaultValueAttribute");
+          bool canGet = property.GetMethod != null && IsAccessible(property.GetMethod) && !IsObsoleteError(property.GetMethod) && !hasDefaultValue;
           bool canSet = property.SetMethod != null && !property.SetMethod.IsInitOnly && IsAccessible(property.SetMethod) && !IsObsoleteError(property.SetMethod);
           bool unrolled = property.SetMethod != null && property.SetMethod.DeclaredAccessibility == Accessibility.Public && !HasIgnoreAttribute(property); // FilterNonSettable, FilterIgnoredAttribute
 
@@ -574,7 +575,7 @@ namespace LtMsgPack.Generator
             nullable = false;
           members.Add(new MemberModel(t.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), property.Name, Escape(property.Name),
             property.Type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), kind, nullable,
-            valueType.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), underlying, canGet, canSet, unrolled));
+            valueType.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), underlying, canGet, canSet, unrolled, hasDefaultValue));
         }
       }
       return members;
