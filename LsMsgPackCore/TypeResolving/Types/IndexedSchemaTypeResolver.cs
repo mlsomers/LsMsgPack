@@ -54,9 +54,9 @@ namespace LsMsgPack.TypeResolving.Types
       if (newEntry.IsCollection)
         return newEntry;
 
-      // Only the names are needed, so the property id resolvers (including this one) are not consulted
+      // Only the names are needed: the property id resolvers (not this one) only for the names they give (see FullPropertyInfo.SchemaName)
       FullPropertyInfo[] props = FullPropertyInfo.GetStaticallyIncludedProps(type, settings);
-      newEntry.ParseProps(props);
+      newEntry.ParseProps(props, settings);
 
       return newEntry;
     }
@@ -135,10 +135,28 @@ namespace LsMsgPack.TypeResolving.Types
       // Not resolved when the schema was read (another assembly, or a name of several types): now the declared type helps
       Type type = ResolveTypeName(def.TypeName, assignedTo, settings);
       if (type is null)
-        throw UnresolvedType(def, settings);
+        return PairedWith(def, assignedTo) ?? throw UnresolvedType(def, settings);
       def.Type = type;
       ByType[type] = def;
       return type;
+    }
+
+    /// <summary>
+    /// A type id of a class the reader does not have: the one reader class that <see cref="BindReaderTypes"/> paired with its entry and fits where it goes, null when there is none.
+    /// </summary>
+    private Type PairedWith(ComplexTypeDef def, Type assignedTo)
+    {
+      Type target = assignedTo is null ? null : Nullable.GetUnderlyingType(assignedTo) ?? assignedTo;
+      Type found = null;
+      foreach (KeyValuePair<Type, ComplexTypeDef> entry in ByType)
+      {
+        if (!ReferenceEquals(entry.Value, def) || entry.Key.IsAbstract || entry.Key.IsInterface || (target != null && !target.IsAssignableFrom(entry.Key)))
+          continue;
+        if (found != null)
+          return null;
+        found = entry.Key;
+      }
+      return found;
     }
 
     /// <summary>
@@ -186,6 +204,11 @@ namespace LsMsgPack.TypeResolving.Types
     /// </summary>
     private int _unresolved;
 
+    /// <summary>
+    /// A schema of version 2 read from the data: the entry of the objects the root holds (the root's class, or the elements' of a root collection), -1 when not known.
+    /// </summary>
+    internal int RootEntry = -1;
+
     // The root types BindReaderTypes was called for (the last one checked without a lookup)
     private volatile Type _lastBoundRoot;
     private ConcurrentDictionary<Type, bool> _boundRoots;
@@ -200,10 +223,13 @@ namespace LsMsgPack.TypeResolving.Types
     /// not which class that was. The root of the payload is the first entry of the schema, and the other classes follow from the properties both sides have:
     /// the writer's class of a property is the declared type of the writer's property with the same name (also of collection elements, dictionary values and nullables).
     /// Adds an entry for each class that is read this way (the entry of the writer's class), so the values are matched by name. Does nothing when the root class is in the schema.
-    /// <para>Once per root type and schema. Needs the writer's classes (resolved from their names). A class that would get two different entries gets none (it is remembered for the report, see <see cref="SkipIfNoEntry"/>).</para>
+    /// <para>Without the writer's classes (their names are not resolved, e.g. a client of a server) the types of a schema of version 2 say which entries the properties hold (<see cref="ComplexTypeDef.ValueEntries"/>), and the root is its root entry;
+    /// a schema of version 1 only pairs the root (the first entry).</para>
+    /// <para>Once per root type and schema. A class that would get two different entries gets none (it is remembered for the report, see <see cref="SkipIfNoEntry"/>).</para>
     /// </summary>
+    /// <param name="ignoreCase"><see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: a property of the reader without the exact name of one of the writer's follows the one whose name equals its name ignoring case</param>
     /// <exception cref="SchemaGrowthException">When a frozen schema would get an entry (a copy remembers it)</exception>
-    internal void BindReaderTypes(Type root)
+    internal void BindReaderTypes(Type root, bool ignoreCase)
     {
       if (_lastBoundRoot == root)
         return;
@@ -213,7 +239,7 @@ namespace LsMsgPack.TypeResolving.Types
         return;
       }
 
-      Dictionary<Type, ComplexTypeDef> aliases = ReaderAliases(root, out Dictionary<Type, Type[]> ambiguous);
+      Dictionary<Type, ComplexTypeDef> aliases = ReaderAliases(root, ignoreCase, out Dictionary<Type, Type[]> ambiguous);
       bool newAmbiguous = false;
       foreach (Type read in ambiguous.Keys)
         newAmbiguous |= _ambiguous is null || !_ambiguous.ContainsKey(read);
@@ -239,40 +265,40 @@ namespace LsMsgPack.TypeResolving.Types
 
     /// <param name="ambiguous">The reader classes found for more than one writer class, with those writer classes</param>
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
-    private Dictionary<Type, ComplexTypeDef> ReaderAliases(Type root, out Dictionary<Type, Type[]> ambiguous)
+    private Dictionary<Type, ComplexTypeDef> ReaderAliases(Type root, bool ignoreCase, out Dictionary<Type, Type[]> ambiguous)
     {
       Dictionary<Type, ComplexTypeDef> aliases = new Dictionary<Type, ComplexTypeDef>();
       ambiguous = new Dictionary<Type, Type[]>();
       Type reader = ObjectTypeOf(root, 0);
       if (reader is null || ByTypeId.Count == 0 || HasOwnEntry(reader))
         return aliases;
-      ComplexTypeDef first = ByTypeId[0]; // the writer adds the entries depth first: the first one is the class of the root (or of the first element of a root collection)
-      if (first.Type is null || first.IsCollection)
+      ComplexTypeDef start = RootDef();
+      if (start is null)
         return aliases;
 
-      Dictionary<Type, List<Type>> conflicts = new Dictionary<Type, List<Type>>();
-      HashSet<KeyValuePair<Type, Type>> visited = new HashSet<KeyValuePair<Type, Type>>();
-      Queue<KeyValuePair<Type, Type>> pairs = new Queue<KeyValuePair<Type, Type>>();
-      pairs.Enqueue(new KeyValuePair<Type, Type>(reader, first.Type));
+      Dictionary<Type, List<ComplexTypeDef>> conflicts = new Dictionary<Type, List<ComplexTypeDef>>();
+      HashSet<KeyValuePair<Type, ComplexTypeDef>> visited = new HashSet<KeyValuePair<Type, ComplexTypeDef>>();
+      Queue<KeyValuePair<Type, ComplexTypeDef>> pairs = new Queue<KeyValuePair<Type, ComplexTypeDef>>();
+      pairs.Enqueue(new KeyValuePair<Type, ComplexTypeDef>(reader, start));
       while (pairs.Count > 0)
       {
-        KeyValuePair<Type, Type> pair = pairs.Dequeue();
+        KeyValuePair<Type, ComplexTypeDef> pair = pairs.Dequeue();
         Type read = pair.Key;
-        Type written = pair.Value;
-        if (read == written || !visited.Add(pair))
+        ComplexTypeDef def = pair.Value;
+        if (read == def.Type || !visited.Add(pair))
           continue;
-        if (!ByType.TryGetValue(written, out ComplexTypeDef def) || def.IsCollection || HasOwnEntry(read))
-          continue; // nothing was written with the writer's class, or the reader's class has its own entry (and its own properties below it)
+        if (def.IsCollection || HasOwnEntry(read))
+          continue; // the reader's class has its own entry (and its own properties below it)
 
         if (aliases.TryGetValue(read, out ComplexTypeDef earlier) && !ReferenceEquals(earlier, def))
         {
-          if (!conflicts.TryGetValue(read, out List<Type> writers))
+          if (!conflicts.TryGetValue(read, out List<ComplexTypeDef> writers))
           {
-            writers = new List<Type>() { earlier.Type };
+            writers = new List<ComplexTypeDef>() { earlier };
             conflicts.Add(read, writers);
           }
-          if (!writers.Contains(def.Type))
-            writers.Add(def.Type);
+          if (!writers.Contains(def))
+            writers.Add(def);
         }
         aliases[read] = def;
 
@@ -282,22 +308,71 @@ namespace LsMsgPack.TypeResolving.Types
           PropertyInfo readProp = readProps[t];
           if (readProp.GetIndexParameters().Length > 0)
             continue;
-          PropertyInfo writtenProp = NonIndexedProperty(written, readProp.Name);
-          if (writtenProp is null)
-            continue;
           Type readValue = ObjectTypeOf(readProp.PropertyType, 0);
-          Type writtenValue = ObjectTypeOf(writtenProp.PropertyType, 0);
-          if (readValue != null && writtenValue != null)
-            pairs.Enqueue(new KeyValuePair<Type, Type>(readValue, writtenValue));
+          ComplexTypeDef next = readValue is null ? null : ValueDef(def, readProp.Name, ignoreCase);
+          if (next != null)
+            pairs.Enqueue(new KeyValuePair<Type, ComplexTypeDef>(readValue, next));
         }
       }
 
-      foreach (KeyValuePair<Type, List<Type>> conflict in conflicts)
+      foreach (KeyValuePair<Type, List<ComplexTypeDef>> conflict in conflicts)
       {
         aliases.Remove(conflict.Key);
-        ambiguous.Add(conflict.Key, conflict.Value.ToArray());
+        ambiguous.Add(conflict.Key, conflict.Value.Where(d => d.Type != null).Select(d => d.Type).ToArray());
       }
       return aliases;
+    }
+
+    /// <summary>
+    /// The entry of the root's class: the first entry (the writer adds the entries depth first: the class of the root, or of the first element of a root collection) when its class was found,
+    /// otherwise the root of a schema of version 2, otherwise the first entry when it has properties (the reader has none of the writer's classes).
+    /// </summary>
+    private ComplexTypeDef RootDef()
+    {
+      ComplexTypeDef first = ByTypeId[0];
+      if (first.Type != null)
+        return first.IsCollection ? null : first;
+      if (RootEntry >= 0)
+        return RootEntry < ByTypeId.Count ? ByTypeId[RootEntry] : null;
+      return first.Props.Count > 0 ? first : null;
+    }
+
+    /// <summary>
+    /// The entry of the objects the property <paramref name="name"/> of the writer's class of <paramref name="def"/> holds: by the declared type of the writer's property (its class was found),
+    /// or by the type a schema of version 2 describes. Null when there is none.
+    /// </summary>
+    private ComplexTypeDef ValueDef(ComplexTypeDef def, string name, bool ignoreCase)
+    {
+      if (def.Type != null)
+      {
+        PropertyInfo writtenProp = NonIndexedProperty(def.Type, name, ignoreCase);
+        Type writtenValue = writtenProp is null ? null : ObjectTypeOf(writtenProp.PropertyType, 0);
+        return writtenValue != null && ByType.TryGetValue(writtenValue, out ComplexTypeDef next) ? next : null;
+      }
+      if (def.ValueEntries is null)
+        return null;
+      int position = PositionOf(def, name, ignoreCase);
+      int entry = position < 0 || position >= def.ValueEntries.Length ? -1 : def.ValueEntries[position];
+      return entry >= 0 && entry < ByTypeId.Count ? ByTypeId[entry] : null;
+    }
+
+    /// <returns>The position of the name in the entry, or with <paramref name="ignoreCase"/> of the one name that equals it ignoring case, -1 when none</returns>
+    private static int PositionOf(ComplexTypeDef def, string name, bool ignoreCase)
+    {
+      if (def.IdByName.TryGetValue(name, out int position))
+        return position;
+      if (!ignoreCase)
+        return -1;
+      position = -1;
+      for (int t = 0; t < def.Props.Count; t++)
+      {
+        if (!string.Equals(def.Props[t], name, StringComparison.OrdinalIgnoreCase))
+          continue;
+        if (position >= 0)
+          return -1; // several names (as IdsIgnoringCase)
+        position = t;
+      }
+      return position;
     }
 
     private bool HasOwnEntry(Type type)
@@ -306,13 +381,24 @@ namespace LsMsgPack.TypeResolving.Types
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
-    private static PropertyInfo NonIndexedProperty(Type type, string name)
+    private static PropertyInfo NonIndexedProperty(Type type, string name, bool ignoreCase)
     {
       PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
+      PropertyInfo found = null;
+      int matches = 0;
       for (int t = 0; t < props.Length; t++)
-        if (string.Equals(props[t].Name, name, StringComparison.Ordinal) && props[t].GetIndexParameters().Length == 0)
+      {
+        if (props[t].GetIndexParameters().Length > 0)
+          continue;
+        if (string.Equals(props[t].Name, name, StringComparison.Ordinal))
           return props[t];
-      return null;
+        if (ignoreCase && string.Equals(props[t].Name, name, StringComparison.OrdinalIgnoreCase))
+        {
+          found = props[t];
+          matches++;
+        }
+      }
+      return matches == 1 ? found : null; // as IdsIgnoringCase: none when several names equal it
     }
 
     /// <summary>
@@ -371,7 +457,7 @@ namespace LsMsgPack.TypeResolving.Types
     {
       string pairing = writers is null
         ? $"The data was written with another class ({string.Join(", ", ByTypeId.Select(d => d.TypeName))}), and none of them could be paired with {type.Name} "
-          + "(the root is the first class of the schema, the other classes follow from the properties both classes have, and the reader needs the writer's classes). "
+          + "(the root is the first class of the schema, the other classes follow from the properties both classes have: by the types of the writer's classes, or without them by the types schema version 2 describes). "
         : $"{type.Name} is read where the writer had different classes ({string.Join(", ", writers.Select(w => w.Name))}), so it could not be paired with one of them. ";
       return new MsgPackException($"The data has no schema entry for {type.FullName}, so its values cannot be matched to its properties. "
         + pairing + "Deserialize with an out ReadDifferences to skip such objects and get them reported.");
@@ -414,17 +500,58 @@ namespace LsMsgPack.TypeResolving.Types
         def = GetComplex(assignedTo.PropertyInfo.ReflectedType, settings); // does not resolve property ids, so no recursion
       }
 
-      if (def.IdByName.TryGetValue(assignedTo.PropertyInfo.Name, out int id))
+      object found = IdIn(def, assignedTo.PropertyInfo.Name);
+      if (found is null && settings._propertyNameCaseInsensitive && IdIgnoringCase(def, assignedTo, settings, out int id))
+        return BoxedId(id);
+      return found;
+    }
+
+    /// <summary>
+    /// The id of a property that a property id resolver gave the string id <paramref name="name"/>: the index of that name in the entry (see <see cref="FullPropertyInfo"/>.SchemaName),
+    /// null when the entry (of the data) does not have it.
+    /// </summary>
+    internal object IdOfSchemaName(FullPropertyInfo assignedTo, string name, MsgPackOptions settings)
+    {
+      ComplexTypeDef def;
+      if (!TryGetDef(assignedTo.PropertyInfo.ReflectedType, out def))
+      {
+        if (assignedTo.AssignedToType is null)
+          return null;
+        def = GetComplex(assignedTo.PropertyInfo.ReflectedType, settings);
+      }
+      return IdIn(def, name);
+    }
+
+    private object IdIn(ComplexTypeDef def, string name)
+    {
+      if (def.IdByName.TryGetValue(name, out int id))
         return BoxedId(id);
 
       if (def.IsCollection)
       {
         if (IsFrozen)
           throw SchemaGrowthException.Instance;
-        return def.AddProp(assignedTo.PropertyInfo.Name);
+        return def.AddProp(name);
       }
-
       return null;
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the position of the name in the entry that equals the property's name ignoring case (see <see cref="ComplexTypeDef.IdsIgnoringCase"/>).
+    /// </summary>
+    private static bool IdIgnoringCase(ComplexTypeDef def, FullPropertyInfo assignedTo, MsgPackOptions settings, out int id)
+    {
+      Type reader = assignedTo.PropertyInfo.ReflectedType;
+      ComplexTypeDef.CaseInsensitiveIds known = def.IgnoringCase;
+      if (known is null || known.Reader != reader)
+      {
+        FullPropertyInfo[] props = FullPropertyInfo.GetStaticallyIncludedProps(reader, settings);
+        string[] names = new string[props.Length];
+        for (int t = 0; t < props.Length; t++)
+          names[t] = props[t].PropertyInfo.Name; // GetId is only asked for the properties without a name of another resolver
+        def.IgnoringCase = known = new ComplexTypeDef.CaseInsensitiveIds(reader, def.IdsIgnoringCase(names));
+      }
+      return known.Ids.TryGetValue(assignedTo.PropertyInfo.Name, out id);
     }
 
     /// <summary>
@@ -547,8 +674,8 @@ namespace LsMsgPack.TypeResolving.Types
     /// <param name="settings">Resolves the types</param>
     internal static IndexedSchemaTypeResolver FromBytes(byte[] raw, MsgPackOptions lengthSettings, MsgPackOptions settings)
     {
-      List<ComplexTypeDef> defs = SchemaBytes.Parse(raw, lengthSettings);
-      IndexedSchemaTypeResolver ret = new IndexedSchemaTypeResolver() { ByTypeId = defs, ByType = new Dictionary<Type, ComplexTypeDef>(defs.Count) };
+      List<ComplexTypeDef> defs = SchemaBytes.Parse(raw, lengthSettings, out SchemaVersion _, out int rootEntry);
+      IndexedSchemaTypeResolver ret = new IndexedSchemaTypeResolver() { ByTypeId = defs, ByType = new Dictionary<Type, ComplexTypeDef>(defs.Count), RootEntry = rootEntry };
       ret.ResolveDeserializedTypes(settings);
       return ret;
     }
@@ -563,14 +690,15 @@ namespace LsMsgPack.TypeResolving.Types
         ByTypeId = new List<ComplexTypeDef>(ByTypeId.Count),
         ByType = new Dictionary<Type, ComplexTypeDef>(ByType.Count),
         _unresolved = _unresolved,
-        _ambiguous = _ambiguous is null ? null : new Dictionary<Type, Type[]>(_ambiguous)
+        _ambiguous = _ambiguous is null ? null : new Dictionary<Type, Type[]>(_ambiguous),
+        RootEntry = RootEntry
       };
 
       Dictionary<ComplexTypeDef, ComplexTypeDef> copies = new Dictionary<ComplexTypeDef, ComplexTypeDef>(ByTypeId.Count);
       for (int t = 0; t < ByTypeId.Count; t++)
       {
         ComplexTypeDef def = ByTypeId[t];
-        ComplexTypeDef defCopy = new ComplexTypeDef() { Type = def.Type, TypeName = def.TypeName, TypeId = def.TypeId, Props = new List<string>(def.Props), ResolveError = def.ResolveError };
+        ComplexTypeDef defCopy = new ComplexTypeDef() { Type = def.Type, TypeName = def.TypeName, TypeId = def.TypeId, Props = new List<string>(def.Props), ResolveError = def.ResolveError, ValueEntries = def.ValueEntries, ContentEntry = def.ContentEntry };
         copy.ByTypeId.Add(defCopy);
         copies.Add(def, defCopy);
       }
@@ -620,12 +748,35 @@ namespace LsMsgPack.TypeResolving.Types
         TypeName = TypeResolver.GetTypeName(type, (settings._addTypeIdOptions & AddTypeIdOption.FullName) > 0);
     }
 
-    internal void ParseProps(FullPropertyInfo[] props)
+    /// <exception cref="MsgPackException">When property id resolvers give two properties the same name (as FullPropertyInfo checks the ids)</exception>
+    internal void ParseProps(FullPropertyInfo[] props, MsgPackOptions settings)
     {
+      bool renamed = false;
       for (int t = 0; t < props.Length; t++)
-        Props.Add(props[t].PropertyInfo.Name);
+      {
+        string name = FullPropertyInfo.SchemaNameOf(props[t], settings);
+        renamed |= props[t].SchemaName != null;
+        if (renamed) // the .NET names are unique (see FullPropertyInfo._uniqueName), a resolver's may equal another name
+        {
+          int other = Props.IndexOf(name);
+          if (other >= 0)
+            throw new MsgPackException($"The properties {Type.Name}.{props[other].PropertyInfo.Name} and {Type.Name}.{props[t].PropertyInfo.Name} have the same id \"{name}\", the keys of a map must be unique.");
+        }
+        Props.Add(name);
+      }
       ParsedFrom = props;
     }
+
+    /// <summary>
+    /// A schema of version 2 read from the data: per property (the positions of <see cref="Props"/>) the entry of the objects its values hold (-1 for none), null for version 1 or an entry made here.
+    /// For readers without the writer's classes (see IndexedSchemaTypeResolver.BindReaderTypes).
+    /// </summary>
+    internal int[] ValueEntries;
+
+    /// <summary>
+    /// A schema of version 2 read from the data: the entry of the objects the content of this entry holds (<c>["@", type]</c>: the elements of a collection), -1 for none.
+    /// </summary>
+    internal int ContentEntry = -1;
 
     /// <summary>
     /// The properties (of the session) <see cref="Props"/> was made of, null for an entry read from the data or copied: see <see cref="IndexedSchemaTypeResolver.TryAssignIds"/>.
@@ -649,6 +800,49 @@ namespace LsMsgPack.TypeResolving.Types
         Props = props;
         Count = count;
         Properties = properties;
+      }
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/> with the indexed schema: the positions of the names of this entry that a property of the reader has only ignoring case (camelCase writers), by the name of the property.
+    /// A property that is not named in the entry gets the one name that equals its name ignoring case, none when several names of the entry or several properties equal each other ignoring case (as keys of maps are matched).
+    /// </summary>
+    /// <param name="readerNames">The names of the reader's properties</param>
+    internal Dictionary<string, int> IdsIgnoringCase(IList<string> readerNames)
+    {
+      Dictionary<string, int> result = new Dictionary<string, int>(StringComparer.Ordinal);
+      Dictionary<string, int> byName = new Dictionary<string, int>(Props.Count, StringComparer.OrdinalIgnoreCase); // the position, -1 for several names
+      for (int t = 0; t < Props.Count; t++)
+        if (Props[t] != null)
+          byName[Props[t]] = byName.ContainsKey(Props[t]) ? -1 : t;
+
+      Dictionary<string, int> readers = new Dictionary<string, int>(readerNames.Count, StringComparer.OrdinalIgnoreCase); // how many properties have the name
+      for (int t = 0; t < readerNames.Count; t++)
+        readers[readerNames[t]] = readers.TryGetValue(readerNames[t], out int count) ? count + 1 : 1;
+
+      for (int t = 0; t < readerNames.Count; t++)
+      {
+        string name = readerNames[t];
+        if (byName.TryGetValue(name, out int position) && position >= 0 && readers[name] == 1 && !string.Equals(Props[position], name, StringComparison.Ordinal))
+          result[name] = position;
+      }
+      return result;
+    }
+
+    /// <summary>
+    /// <see cref="IdsIgnoringCase"/> for the properties of the last reader class IndexedSchemaTypeResolver.GetId asked for, replaced as a whole: a frozen schema is read by several threads.
+    /// </summary>
+    internal volatile CaseInsensitiveIds IgnoringCase;
+
+    internal sealed class CaseInsensitiveIds
+    {
+      internal readonly Type Reader;
+      internal readonly Dictionary<string, int> Ids;
+
+      internal CaseInsensitiveIds(Type reader, Dictionary<string, int> ids)
+      {
+        Reader = reader;
+        Ids = ids;
       }
     }
 

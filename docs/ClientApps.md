@@ -102,7 +102,7 @@ response.EnsureSuccessStatusCode();
 Order saved = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
 ```
 
-`application/x-lsmsgpack` sends the indexed schema and type ids, and with `formatter.CreateHandler()` the server stops repeating schemas the client already has. See [WebFormatters.md](WebFormatters.md#httpclient) for the details.
+`application/x-lsmsgpack` sends the indexed schema and type ids, and with `formatter.CreateHandler()` the server stops repeating schemas the client already has (`formatter.CreateHandler(true)` also asks for the described schema, for client classes that differ from the server's). See [WebFormatters.md](WebFormatters.md#httpclient) for the details.
 
 **Any other server** that speaks MsgPack (or when you'd rather not depend on `System.Net.Http.Formatting`): serialize yourself with the settings the server expects:
 

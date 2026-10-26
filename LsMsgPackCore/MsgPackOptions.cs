@@ -464,13 +464,14 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// Reading maps keyed by property names (without the indexed schema): a key that is not the name of a property sets the one property whose name equals it ignoring case
+    /// Reading property names: a key that is not the name of a property sets the one property whose name equals it ignoring case
     /// (ordinal; none when several properties do), false by default. For writers that change the names, e.g. camelCase (the TypeScript client, JSON habits).
+    /// <para>With the indexed schema (since October 2026) the names of the schema are matched the same way, once per class and schema, and the reader's classes are paired with the writer's by these names too.</para>
     /// <para>The exact name is looked up first, so it only costs something for keys that are not properties. The web formatters turn it on (<c>LtMsgPackHttpOptions.PropertyNameCaseInsensitive</c>).</para>
     /// </summary>
     [Category("Control")]
     [DisplayName("Property Name Case Insensitive")]
-    [Description("Reading maps keyed by property names: a key that is not a property name sets the one property whose name equals it ignoring case.")]
+    [Description("Reading property names (maps and the indexed schema): a name that is not a property name sets the one property whose name equals it ignoring case.")]
     [DefaultValue(false)]
     public bool PropertyNameCaseInsensitive
     {

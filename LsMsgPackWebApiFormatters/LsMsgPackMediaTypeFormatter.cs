@@ -72,6 +72,18 @@ namespace LsMsgPackWebApiFormatters
     }
 
     /// <summary>
+    /// <see cref="CreateHandler(HttpMessageHandler)"/>, also asking for version 2 of the schema (<see cref="LsMsgPackSchemaHandler.RequestDescribedSchemas"/>): for a client whose classes differ from the server's.
+    /// </summary>
+    /// <param name="requestDescribedSchemas">Ask for version 2 of the schema</param>
+    /// <param name="innerHandler">The next handler, null: a new HttpClientHandler</param>
+    public LsMsgPackSchemaHandler CreateHandler(bool requestDescribedSchemas, HttpMessageHandler innerHandler = null)
+    {
+      LsMsgPackSchemaHandler handler = CreateHandler(innerHandler);
+      handler.RequestDescribedSchemas = requestDescribedSchemas;
+      return handler;
+    }
+
+    /// <summary>
     /// Server side (Web API content negotiation): an instance that knows which schemas the client holds, and whether it asks for version 2 of the schema.
     /// </summary>
     public override MediaTypeFormatter GetPerRequestFormatterInstance(Type type, HttpRequestMessage request, MediaTypeHeaderValue mediaType)

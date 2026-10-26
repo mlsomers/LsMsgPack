@@ -2,6 +2,7 @@ using LsMsgPack;
 using LtMsgPack.Http;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -21,8 +22,19 @@ namespace LsMsgPackWebApiFormatters
       _serializer = serializer ?? throw new System.ArgumentNullException(nameof(serializer));
     }
 
+    /// <summary>
+    /// Ask for version 2 of the schema (<see cref="MsgPackMediaTypes.DescribedSchemaParameter"/>, see docs/WebFormatters.md), false by default: it describes the type of each property,
+    /// so a client whose classes differ from the server's (other names, other namespaces) still pairs them with the server's (see docs/schema.md). The body is the same.
+    /// <para>A request that accepts application/x-lsmsgpack gets <c>application/x-lsmsgpack; schema=described</c> with the same quality, a request without an Accept header
+    /// <c>application/x-lsmsgpack; schema=described, application/x-lsmsgpack; q=0.9</c> (as the TypeScript client asks; the plain type for servers that don't know the parameter). Other Accept headers are left as they are.</para>
+    /// </summary>
+    public bool RequestDescribedSchemas { get; set; }
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
+      if (RequestDescribedSchemas)
+        AskForDescribedSchema(request.Headers.Accept);
+
       if (_serializer.NegotiatesSchemas && !request.Headers.Contains(LtMsgPackHttpSerializer.SchemasHeader))
       {
         string schemas = _serializer.GetSchemasHeader(request.RequestUri);
@@ -44,6 +56,38 @@ namespace LsMsgPackWebApiFormatters
         }
       }
       return response;
+    }
+
+    private static void AskForDescribedSchema(HttpHeaderValueCollection<MediaTypeWithQualityHeaderValue> accept)
+    {
+      if (accept.Count == 0)
+      {
+        accept.Add(Described(null));
+        accept.Add(new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack, 0.9));
+        return;
+      }
+      if (MsgPackMediaTypes.AcceptsDescribedSchema(accept.ToString()))
+        return;
+
+      MediaTypeWithQualityHeaderValue plain = null;
+      foreach (MediaTypeWithQualityHeaderValue range in accept)
+      {
+        if (MsgPackMediaTypes.IsLsMsgPack(range.MediaType) && range.Quality != 0)
+        {
+          plain = range;
+          break;
+        }
+      }
+      if (!(plain is null))
+        accept.Add(Described(plain.Quality));
+    }
+
+    private static MediaTypeWithQualityHeaderValue Described(double? quality)
+    {
+      MediaTypeWithQualityHeaderValue described = new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack);
+      described.Parameters.Add(new NameValueHeaderValue("schema", "described"));
+      described.Quality = quality;
+      return described;
     }
 
     private static string HeaderValue(HttpResponseMessage response, string name)

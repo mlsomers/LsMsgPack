@@ -31,6 +31,32 @@ namespace LsMsgPackUnitTests
     }
   }
 
+  /// <summary>
+  /// Classes nested in a generic class have its generic arguments (like the reply class of a generic API controller).
+  /// </summary>
+  public class NestingGeneric<T>
+  {
+    public class Reply
+    {
+      public T Value { get; set; }
+      public int Count { get; set; }
+    }
+
+    public class Pair<U>
+    {
+      public T First { get; set; }
+      public U Second { get; set; }
+    }
+
+    public class Middle
+    {
+      public class Deep<U>
+      {
+        public List<U> Items { get; set; }
+      }
+    }
+  }
+
   public class TwinHolder
   {
     public TwinsA.TwinBaseA First { get; set; }
@@ -110,6 +136,53 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(1, read.Count);
       Assert.AreEqual("fresh", entity.GetProperty("Name").GetValue(read[0]));
       Assert.AreEqual(42, entity.GetProperty("Number").GetValue(read[0]));
+    }
+
+    [TestMethod]
+    public void NamesOfClassesNestedInGenericClasses()
+    {
+      Assert.AreEqual("NestingGeneric<Int32>+Reply", LsMsgPack.Meta.TypeResolver.GetTypeName(typeof(NestingGeneric<int>.Reply), false));
+      Assert.AreEqual("LsMsgPackUnitTests.NestingGeneric<System.Int32>+Reply", LsMsgPack.Meta.TypeResolver.GetTypeName(typeof(NestingGeneric<int>.Reply), true));
+      Assert.AreEqual("NestingGeneric<Int32>+Pair<String>", LsMsgPack.Meta.TypeResolver.GetTypeName(typeof(NestingGeneric<int>.Pair<string>), false));
+      Assert.AreEqual("NestingGeneric<Int32>+Middle+Deep<String>[]", LsMsgPack.Meta.TypeResolver.GetTypeName(typeof(NestingGeneric<int>.Middle.Deep<string>[]), false));
+      Assert.AreEqual("List<NestingGeneric<NestingGeneric<Int32>+Reply>+Reply>", LsMsgPack.Meta.TypeResolver.GetTypeName(typeof(List<NestingGeneric<NestingGeneric<int>.Reply>.Reply>), false));
+    }
+
+    /// <summary>
+    /// The short name of a class nested in a generic class threw (ArgumentOutOfRangeException), the full name was the outer class's.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map, false, false)]
+    [DataRow(ObjectLayout.Array, false, false)]
+    [DataRow(ObjectLayout.Array, true, false)]
+    [DataRow(ObjectLayout.Map, false, true)]
+    [DataRow(ObjectLayout.Array, false, true)]
+    [DataRow(ObjectLayout.Array, true, true)]
+    public void ClassesNestedInGenericClasses(ObjectLayout layout, bool fullNames, bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema };
+      if (fullNames)
+        settings.AddTypeIdOptions |= AddTypeIdOption.FullName;
+
+      NestingGeneric<string>.Reply root = new NestingGeneric<string>.Reply() { Value = "root", Count = 1 };
+      NestingGeneric<string>.Reply readRoot = Serializer.Deserialize<NestingGeneric<string>.Reply>(Serializer.Serialize(root, settings), settings);
+      Assert.AreEqual("root", readRoot.Value);
+      Assert.AreEqual(1, readRoot.Count);
+
+      object[] values =
+      {
+        new NestingGeneric<int>.Reply() { Value = 7, Count = 2 },
+        new NestingGeneric<int>.Pair<string>() { First = 3, Second = "three" },
+        new NestingGeneric<int>.Middle.Deep<string>() { Items = new List<string>() { "deep" } },
+        new List<NestingGeneric<int>.Reply[]>() { new[] { new NestingGeneric<int>.Reply() { Value = 8 } } }
+      };
+      object[] read = Serializer.Deserialize<object[]>(Serializer.Serialize(values, settings), settings);
+      Assert.AreEqual(7, ((NestingGeneric<int>.Reply)read[0]).Value);
+      Assert.AreEqual(2, ((NestingGeneric<int>.Reply)read[0]).Count);
+      Assert.AreEqual("three", ((NestingGeneric<int>.Pair<string>)read[1]).Second);
+      Assert.AreEqual(3, ((NestingGeneric<int>.Pair<string>)read[1]).First);
+      Assert.AreEqual("deep", ((NestingGeneric<int>.Middle.Deep<string>)read[2]).Items[0]);
+      Assert.AreEqual(8, ((List<NestingGeneric<int>.Reply[]>)read[3])[0][0].Value);
     }
 
     /// <summary>

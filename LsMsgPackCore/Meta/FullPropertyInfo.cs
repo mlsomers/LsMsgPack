@@ -53,9 +53,61 @@ namespace LsMsgPack.Meta
       }
 
       if (full.PropertyId == null)
+      {
         full.PropertyId = full.PropertyInfo.Name;
-      else if (resolvers[t] is AttributePropertyNameResolver attributes && attributes.TryGetFormerId(full, out string xmlName))
+        return;
+      }
+
+      if (full.PropertyId is string name && IsSchemaName(name) && !(resolvers[t] is IndexedSchemaTypeResolver))
+      {
+        IndexedSchemaTypeResolver schema = SchemaAfter(resolvers, t);
+        if (schema != null) // the schema has the name the resolver gives (see SchemaName), the id is its index
+        {
+          full.SchemaName = name;
+          full.PropertyId = schema.IdOfSchemaName(full, name, settings) ?? name; // the name itself when the schema of the data lacks it: written before October 2026 (the name was the key)
+        }
+      }
+      if (resolvers[t] is AttributePropertyNameResolver attributes && attributes.TryGetFormerId(full, out string xmlName))
         full.FormerId = ResolveFormerId(full, xmlName, resolvers, t, settings);
+    }
+
+    /// <summary>
+    /// The indexed schema among the resolvers asked after the one at <paramref name="index"/> (the session adds it first, so it is asked last), null when there is none.
+    /// </summary>
+    private static IndexedSchemaTypeResolver SchemaAfter(IMsgPackPropertyIdResolver[] resolvers, int index)
+    {
+      for (int t = index - 1; t >= 0; t--)
+        if (resolvers[t] is IndexedSchemaTypeResolver schema)
+          return schema;
+      return null;
+    }
+
+    /// <summary>
+    /// Ids the schema cannot hold as names: the empty string and "@" (reserved, see ThrowIfIdsNotUnique; "@" marks the content in version 2 of the schema).
+    /// </summary>
+    private static bool IsSchemaName(string id)
+    {
+      return id.Length > 0 && id != MsgPackOptions.ContentKey;
+    }
+
+    /// <summary>
+    /// The name of a property in the indexed schema (see <see cref="SchemaName"/>): the string id the first property id resolver asked before the schema gives it, otherwise its .NET name.
+    /// </summary>
+    internal static string SchemaNameOf(FullPropertyInfo full, MsgPackOptions settings)
+    {
+      if (full.SchemaName != null)
+        return full.SchemaName;
+      IMsgPackPropertyIdResolver[] resolvers = settings._propertyNameResolvers;
+      for (int t = resolvers.Length - 1; t >= 0 && !(resolvers[t] is IndexedSchemaTypeResolver); t--) // as ResolvePropertyId asks them
+      {
+        object id = resolvers[t].GetId(full, settings);
+        if (id is null)
+          continue;
+        if (id is string name && IsSchemaName(name))
+          return full.SchemaName = name;
+        break;
+      }
+      return full.PropertyInfo.Name;
     }
 
     /// <summary>
@@ -148,6 +200,7 @@ namespace LsMsgPack.Meta
       _uniqueName = kept._uniqueName;
       PropertyId = kept.PropertyInfo.Name;
       FormerId = null;
+      SchemaName = null;
       StaticallyIgnored = false;
     }
 
@@ -226,6 +279,12 @@ namespace LsMsgPack.Meta
     /// until October 2026 (see <see cref="ValueConverter"/>.SetProperties, which reads a key that is no property's id into the property of that former id).
     /// </summary>
     internal object FormerId;
+
+    /// <summary>
+    /// With the indexed schema: the name the schema has for the property when a property id resolver gives it a string id (e.g. the name of [JsonPropertyName] with <see cref="AttributePropertyNameResolver"/>), null for its .NET name.
+    /// The id is then the index of that name, as for any other property (until October 2026 the schema had the .NET name, and the resolver's id was written as the key; readers still read that).
+    /// </summary>
+    internal string SchemaName;
 
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
     public ConstructorInfo GetConstructorTaking(Type type)

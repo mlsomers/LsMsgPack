@@ -1,5 +1,8 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Interfaces;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -35,6 +38,28 @@ namespace LsMsgPackUnitTests
       public AddressDto Home { get; set; }
       public LineDto Work { get; set; }
     }
+
+    public class WithExtraDto
+    {
+      public AddressDto Address { get; set; }
+      public object Extra { get; set; }
+    }
+
+    /// <summary>
+    /// Names the writer's classes as no reader resolves them (a server's classes the client does not have).
+    /// </summary>
+    public class ServerNames : IMsgPackTypeResolver
+    {
+      public object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackOptions settings)
+      {
+        return type.Namespace == typeof(ServerNames).Namespace ? "Server." + type.Name : null;
+      }
+
+      public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackOptions settings)
+      {
+        return null;
+      }
+    }
   }
 
   namespace OtherClassesReader
@@ -63,6 +88,12 @@ namespace LsMsgPackUnitTests
     {
       public int Quantity { get; set; }
       public string Product { get; set; }
+    }
+
+    public class WithExtraEntity
+    {
+      public AddressEntity Address { get; set; }
+      public AddressEntity Extra { get; set; }
     }
 
     /// <summary>
@@ -168,6 +199,78 @@ namespace LsMsgPackUnitTests
       byte[] bytes = Serializer.Serialize(written, settings);
       MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<OtherClassesReader.TwoKindsEntity>(bytes, settings));
       StringAssert.Contains(ex.Message, "no schema entry for " + typeof(OtherClassesReader.AddressEntity).FullName);
+    }
+
+    /// <summary>
+    /// Writer and reader settings for a reader without the writer's classes (their names are not resolved, see <see cref="OtherClassesWriter.ServerNames"/>).
+    /// </summary>
+    private static MsgPackSettings[] WithoutWriterClasses(ObjectLayout layout, string schema, SchemaVersion version)
+    {
+      MsgPackSettings writer = Settings(layout, schema);
+      writer.SchemaVersion = version;
+      writer.TypeResolvers = new IMsgPackTypeResolver[] { new OtherClassesWriter.ServerNames() };
+      MsgPackSettings reader = Settings(layout, schema);
+      reader.SchemaStore = writer.SchemaStore;
+      return new[] { writer, reader };
+    }
+
+    /// <summary>
+    /// A reader without the writer's classes pairs its classes by the types of schema version 2: the root by the root entry, then the entries of the properties with the same names.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map, "inline")]
+    [DataRow(ObjectLayout.Array, "inline")]
+    [DataRow(ObjectLayout.Map, "store")]
+    [DataRow(ObjectLayout.Array, "reference")]
+    public void ClassesTheReaderDoesNotHave(ObjectLayout layout, string schema)
+    {
+      MsgPackSettings[] settings = WithoutWriterClasses(layout, schema, SchemaVersion.Described);
+      for (int call = 0; call < 3; call++) // later calls use the shared session of the store
+        AssertCustomer(call, Serializer.Deserialize<OtherClassesReader.CustomerEntity>(Serializer.Serialize(Customer(call), settings[0]), settings[1]));
+
+      List<OtherClassesWriter.CustomerDto> written = new List<OtherClassesWriter.CustomerDto>() { Customer(1), Customer(2) };
+      List<OtherClassesReader.CustomerEntity> read = Serializer.Deserialize<List<OtherClassesReader.CustomerEntity>>(Serializer.Serialize(written, settings[0]), settings[1]);
+      AssertCustomer(1, read[0]);
+      AssertCustomer(2, read[1]);
+    }
+
+    /// <summary>
+    /// A type id of a class the reader does not have: the reader's class paired with its entry, when it fits.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map)]
+    [DataRow(ObjectLayout.Array)]
+    public void TypeIdOfAClassTheReaderDoesNotHave(ObjectLayout layout)
+    {
+      MsgPackSettings[] settings = WithoutWriterClasses(layout, "inline", SchemaVersion.Described);
+      OtherClassesWriter.WithExtraDto written = new OtherClassesWriter.WithExtraDto()
+      {
+        Address = new OtherClassesWriter.AddressDto() { Street = "Main street" },
+        Extra = new OtherClassesWriter.AddressDto() { Street = "Side street" }
+      };
+      OtherClassesReader.WithExtraEntity read = Serializer.Deserialize<OtherClassesReader.WithExtraEntity>(Serializer.Serialize(written, settings[0]), settings[1]);
+      Assert.AreEqual("Main street", read.Address.Street);
+      Assert.AreEqual("Side street", read.Extra.Street);
+    }
+
+    /// <summary>
+    /// Schema version 1 does not say which classes the properties hold: only the root (the first entry) is paired.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map)]
+    [DataRow(ObjectLayout.Array)]
+    public void ClassesTheReaderDoesNotHaveVersion1(ObjectLayout layout)
+    {
+      MsgPackSettings[] settings = WithoutWriterClasses(layout, "inline", SchemaVersion.Names);
+      OtherClassesWriter.CustomerDto flat = new OtherClassesWriter.CustomerDto() { Id = 4, Name = "Ann", City = "Utrecht" };
+      OtherClassesReader.CustomerEntity read = Serializer.Deserialize<OtherClassesReader.CustomerEntity>(Serializer.Serialize(flat, settings[0]), settings[1]);
+      Assert.AreEqual(4, read.Id);
+      Assert.AreEqual("Ann", read.Name);
+      Assert.AreEqual("Utrecht", read.City);
+
+      byte[] nested = Serializer.Serialize(Customer(5), settings[0]);
+      MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<OtherClassesReader.CustomerEntity>(nested, settings[1]));
+      StringAssert.Contains(ex.Message, "no schema entry for " + typeof(OtherClassesReader.AddressEntity).Namespace); // the address or the line, whichever is read first
     }
 
     /// <summary>

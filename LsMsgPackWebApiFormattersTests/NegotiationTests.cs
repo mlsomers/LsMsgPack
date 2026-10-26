@@ -43,12 +43,14 @@ namespace LsMsgPackWebApiFormattersTests
     public readonly List<byte[]> Requests = new List<byte[]>();
     public readonly List<byte[]> Responses = new List<byte[]>();
     public readonly List<string> SchemasHeaders = new List<string>();
+    public readonly List<string> AcceptHeaders = new List<string>();
 
     public Recorder(HttpMessageHandler inner) : base(inner) { }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
       SchemasHeaders.Add(request.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemasHeader, out IEnumerable<string> values) ? string.Join(",", values) : null);
+      AcceptHeaders.Add(request.Headers.Accept.ToString());
       if (!(request.Content is null))
         Requests.Add(await request.Content.ReadAsByteArrayAsync());
       HttpResponseMessage response = await base.SendAsync(request, cancellationToken);
@@ -117,6 +119,44 @@ namespace LsMsgPackWebApiFormattersTests
           Assert.That(IsReference(recorder.Responses[1]), Is.True);
           Assert.That(IsReference(recorder.Responses[2]), Is.True);
           Assert.That(recorder.Responses[1].Length, Is.LessThan(recorder.Responses[0].Length));
+        }
+      }
+    }
+
+    /// <summary>
+    /// LsMsgPackSchemaHandler.RequestDescribedSchemas: the client asks for version 2 of the schema, which is negotiated like version 1 (inline once, then referred to).
+    /// </summary>
+    [Test]
+    public async Task ClientAsksForDescribedSchemas()
+    {
+      using (IHost host = await StartAspNetCore())
+      {
+        LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter();
+        Recorder recorder = new Recorder(host.GetTestServer().CreateHandler());
+        using (HttpClient client = new HttpClient(formatter.CreateHandler(true, recorder)) { BaseAddress = new Uri("http://localhost/") })
+        {
+          for (int t = 0; t < 2; t++)
+            Assert.That((await GetOrder(client, formatter)).Customer, Is.EqualTo(SampleOrder.Customer));
+
+          HttpResponseMessage response = await client.GetAsync("negotiation/order"); // no Accept header
+          Assert.That(response.Content.Headers.ContentType.MediaType, Is.EqualTo(MsgPackMediaTypes.XLsMsgPack));
+          Assert.That((await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter })).Customer, Is.EqualTo(SampleOrder.Customer));
+
+          Assert.That(recorder.AcceptHeaders[0], Is.EqualTo("application/x-lsmsgpack, application/x-lsmsgpack; schema=described"));
+          Assert.That(recorder.AcceptHeaders[2], Is.EqualTo("application/x-lsmsgpack; schema=described, application/x-lsmsgpack; q=0.9"));
+          Assert.That(IsReference(recorder.Responses[0]), Is.False);
+          Assert.That(IsReference(recorder.Responses[1]), Is.True);
+          Assert.That(IsReference(recorder.Responses[2]), Is.True);
+          Assert.That(System.Text.Encoding.UTF8.GetString(recorder.Responses[0]), Does.Contain("float"), "the described schema has the types of the properties (Amounts: [\"list\", \"float\"])");
+        }
+
+        LsMsgPackMediaTypeFormatter plain = new LsMsgPackMediaTypeFormatter();
+        Recorder plainRecorder = new Recorder(host.GetTestServer().CreateHandler());
+        using (HttpClient client = new HttpClient(plain.CreateHandler(plainRecorder)) { BaseAddress = new Uri("http://localhost/") })
+        {
+          await GetOrder(client, plain);
+          Assert.That(plainRecorder.AcceptHeaders[0], Is.EqualTo(MsgPackMediaTypes.XLsMsgPack), "off by default");
+          Assert.That(plainRecorder.Responses[0].Length, Is.LessThan(recorder.Responses[0].Length));
         }
       }
     }
