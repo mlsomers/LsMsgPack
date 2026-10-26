@@ -519,7 +519,19 @@ namespace LsMsgPackUnitTests
     }
 
     public class CaseWrittenUnicode { public string größe { get; set; } }
+
+    public class CaseWrittenOuter
+    {
+      public CaseWritten child { get; set; }
+      public List<CaseWritten> items { get; set; }
+    }
 #pragma warning restore IDE1006
+
+    public class CaseReadOuter
+    {
+      public CaseRead Child { get; set; }
+      public List<CaseRead> Items { get; set; }
+    }
 
     public class CaseReadUnicode { public string Größe { get; set; } }
 
@@ -554,6 +566,48 @@ namespace LsMsgPackUnitTests
 
       byte[] unicode = Serializer.Serialize(new CaseWrittenUnicode() { größe = "XL" }, settings);
       Assert.AreEqual(caseInsensitive ? "XL" : null, Serializer.Deserialize<CaseReadUnicode>(unicode, settings).Größe, "names that are not ASCII");
+    }
+
+    /// <summary>
+    /// PropertyNameCaseInsensitive with the indexed schema: the names of the schema that a property has ignoring case, also to pair the classes of the reader with the writer's.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Array, true)]
+    [DataRow(ObjectLayout.Map, true)]
+    [DataRow(ObjectLayout.Array, false)]
+    [DataRow(ObjectLayout.Map, false)]
+    public void PropertyNameCaseInsensitiveWithSchema(ObjectLayout layout, bool caseInsensitive)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = layout, PropertyNameCaseInsensitive = caseInsensitive, ReadErrors = ReadErrorHandling.ReportAndContinue };
+      CaseWrittenOuter value = new CaseWrittenOuter()
+      {
+        child = new CaseWritten() { name = "Nut", retries = 5, id = "x", other = "y" },
+        items = new List<CaseWritten>() { new CaseWritten() { name = "Bolt", retries = 6 } }
+      };
+      byte[] bytes = Serializer.Serialize(value, settings);
+      CaseReadOuter read = Serializer.Deserialize<CaseReadOuter>(bytes, settings, out ReadDifferences differences);
+
+      if (!caseInsensitive)
+      {
+        Assert.IsNull(read.Child);
+        Assert.IsNull(read.Items);
+        return;
+      }
+      Assert.AreEqual("Nut", read.Child.Name);
+      Assert.AreEqual(5, read.Child.Retries);
+      Assert.IsNull(read.Child.Id, "Id and ID both equal id ignoring case");
+      Assert.IsNull(read.Child.ID);
+      Assert.AreEqual("Bolt", read.Items[0].Name);
+      Assert.AreEqual(6, read.Items[0].Retries);
+      string[] unknown = differences.Differences.Where(d => d.Kind == DifferenceKind.UnknownProperty).Select(d => d.Name).Distinct().OrderBy(n => n, StringComparer.Ordinal).ToArray();
+      CollectionAssert.AreEqual(new[] { "id", "other" }, unknown);
+
+      read = Serializer.Deserialize<CaseReadOuter>(bytes, settings);
+      Assert.AreEqual("Nut", read.Child.Name, "without collecting the differences");
+      Assert.AreEqual(6, read.Items[0].Retries);
+
+      byte[] unicode = Serializer.Serialize(new CaseWrittenUnicode() { größe = "XL" }, settings);
+      Assert.AreEqual("XL", Serializer.Deserialize<CaseReadUnicode>(unicode, settings).Größe, "names that are not ASCII");
     }
 
     [TestMethod]

@@ -63,17 +63,24 @@ namespace LsMsgPack
     /// <param name="settings">The <see cref="MsgPackSettings.EndianAction"/> of the lengths, null for <see cref="Canonical"/></param>
     internal static List<ComplexTypeDef> Parse(byte[] raw, MsgPackOptions settings)
     {
-      return Parse(raw, settings, out SchemaVersion _);
+      return Parse(raw, settings, out SchemaVersion _, out int _);
+    }
+
+    internal static List<ComplexTypeDef> Parse(byte[] raw, MsgPackOptions settings, out SchemaVersion version)
+    {
+      return Parse(raw, settings, out version, out int _);
     }
 
     /// <summary>
     /// Version 2 (<see cref="DescribedSchema"/>) has a last entry <c>""</c> (no type has an empty name), its properties are <c>[name, type]</c> or <c>[name, type, default]</c>,
-    /// items <c>["@", type]</c> describe the content of an entry and are not properties (the property ids are the positions of the other items). Only the names are kept:
-    /// the descriptions are for readers without the classes.
+    /// items <c>["@", type]</c> describe the content of an entry and are not properties (the property ids are the positions of the other items). The names are kept, and of the types
+    /// only the entries of the objects they hold (<see cref="ComplexTypeDef.ValueEntries"/>, <see cref="ComplexTypeDef.ContentEntry"/>), to pair the classes of a reader without the writer's classes (IndexedSchemaTypeResolver.BindReaderTypes).
     /// </summary>
     /// <param name="version">The version of the schema</param>
-    internal static List<ComplexTypeDef> Parse(byte[] raw, MsgPackOptions settings, out SchemaVersion version)
+    /// <param name="rootEntry">Version 2: the entry of the objects the root holds (see <see cref="ReadValueEntry"/>), otherwise -1</param>
+    internal static List<ComplexTypeDef> Parse(byte[] raw, MsgPackOptions settings, out SchemaVersion version, out int rootEntry)
     {
+      rootEntry = -1;
       if (settings is null)
         settings = Canonical;
       MemoryStream stream = new MemoryStream(raw, false);
@@ -88,25 +95,36 @@ namespace LsMsgPack
         long props = ReadArrayLength(stream, ReadByte(stream, null), null, settings);
         if (typeName.Length == 0) // the root of version 2: [["@", type]], the last entry
         {
-          if (t != types - 1 || props != 1 || ReadItem(stream, settings, out bool content) != DescribedSchema.ContentName || !content)
+          if (t != types - 1 || props != 1 || ReadItem(stream, settings, out bool content, out rootEntry) != DescribedSchema.ContentName || !content)
             throw InvalidSchema();
           version = SchemaVersion.Described;
           break;
         }
 
         ComplexTypeDef def = new ComplexTypeDef() { TypeId = t, TypeName = typeName, Props = new List<string>((int)Math.Min(props, 1024)) };
+        List<int> valueEntries = null;
         for (long p = 0; p < props; p++)
         {
-          string name = ReadItem(stream, settings, out bool isDescribed);
+          string name = ReadItem(stream, settings, out bool isDescribed, out int valueEntry);
           described |= isDescribed;
           if (isDescribed && name == DescribedSchema.ContentName)
           {
             if (p != 0) // first, so the positions of the properties do not depend on it
               throw InvalidSchema();
+            def.ContentEntry = valueEntry;
             continue;
+          }
+          if (isDescribed && valueEntries is null)
+            valueEntries = new List<int>(def.Props.Count + 1);
+          if (valueEntries != null)
+          {
+            while (valueEntries.Count < def.Props.Count)
+              valueEntries.Add(-1);
+            valueEntries.Add(valueEntry);
           }
           def.Props.Add(name);
         }
+        def.ValueEntries = valueEntries?.ToArray();
         defs.Add(def);
       }
 
@@ -119,9 +137,11 @@ namespace LsMsgPack
     /// A property name (version 1), or an item of version 2: <c>[name, type]</c>, <c>[name, type, default]</c> or <c>["@", type]</c>.
     /// </summary>
     /// <param name="described">An item of version 2</param>
+    /// <param name="valueEntry">The entry of the objects its type holds (see <see cref="ReadValueEntry"/>), -1 for none</param>
     /// <returns>The name</returns>
-    private static string ReadItem(Stream stream, MsgPackOptions settings, out bool described)
+    private static string ReadItem(Stream stream, MsgPackOptions settings, out bool described, out int valueEntry)
     {
+      valueEntry = -1;
       int first = ReadByte(stream, null);
       described = IsArray(first);
       if (!described)
@@ -133,9 +153,58 @@ namespace LsMsgPack
       string name = ReadName(stream, ReadByte(stream, null), settings);
       if (count == 3 && name == DescribedSchema.ContentName)
         throw InvalidSchema();
-      for (long t = 1; t < count; t++) // the type and the default: any value, for other readers
+      valueEntry = ReadValueEntry(stream, settings, 1);
+      if (count == 3) // the default: any value, for other readers
         CopyValue(stream, null, settings, settings, 1);
       return name;
+    }
+
+    /// <summary>
+    /// A type of version 2 (see <see cref="DescribedSchema"/>): the entry of the objects a value of it holds, as IndexedSchemaTypeResolver.ObjectTypeOf finds the class of a reader's type:
+    /// an entry index itself, or one in <c>["?", T]</c>, <c>["struct", k]</c>, <c>["list", T]</c> or the value of <c>["dict", K, V]</c>. -1 for anything else (kinds, pairs, tuples, other readers' additions).
+    /// </summary>
+    private static int ReadValueEntry(Stream stream, MsgPackOptions settings, int depth)
+    {
+      if (depth > MaxValueDepth)
+        throw InvalidSchema();
+      int first = ReadByte(stream, null);
+      if (first <= 0x7F)
+        return first;
+      if (first == (int)MsgPackTypeId.MpUByte)
+        return (int)ReadNumber(stream, 1, settings);
+      if (first == (int)MsgPackTypeId.MpUShort)
+        return (int)ReadNumber(stream, 2, settings);
+      if (first == (int)MsgPackTypeId.MpUInt)
+      {
+        ulong index = ReadNumber(stream, 4, settings);
+        return index > int.MaxValue ? -1 : (int)index;
+      }
+      if (!IsArray(first))
+      {
+        CopyRest(stream, first, null, settings, settings, depth);
+        return -1;
+      }
+
+      long count = ReadArrayLength(stream, first, null, settings);
+      if (count == 0)
+        return -1;
+      int kindFirst = ReadByte(stream, null);
+      string kind = null;
+      if ((kindFirst & 0xE0) == 0xA0 || kindFirst == (int)MsgPackTypeId.MpStr8)
+        kind = ReadName(stream, kindFirst, settings);
+      else
+        CopyRest(stream, kindFirst, null, settings, settings, depth + 1);
+
+      int entry = -1;
+      int follow = kind == "?" || kind == "struct" || kind == "list" ? 1 : kind == "dict" ? 2 : -1; // the item of the type of the values
+      for (long t = 1; t < count; t++)
+      {
+        if (t == follow)
+          entry = ReadValueEntry(stream, settings, depth + 1);
+        else
+          CopyValue(stream, null, settings, settings, depth + 1);
+      }
+      return entry;
     }
 
     /// <summary>

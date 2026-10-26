@@ -37,6 +37,9 @@ namespace LsMsgPack.Meta
       if (args.Length == 0)
         return fullname ? type.FullName : type.Name;
 
+      if (IsNestedInGeneric(type))
+        return NestedInGenericName(type, args, fullname);
+
       // Get the generic type name...
 
       string[] names = new string[args.Length];
@@ -47,6 +50,53 @@ namespace LsMsgPack.Meta
       typeName = typeName.Substring(0, typeName.IndexOf('`'));
 
       return $"{typeName}<{string.Join(", ", names)}>";
+    }
+
+    private static bool IsNestedInGeneric(Type type)
+    {
+      for (Type outer = type.DeclaringType; outer != null; outer = outer.DeclaringType)
+        if (outer.IsGenericType)
+          return true;
+      return false;
+    }
+
+    /// <summary>
+    /// A class nested in a generic class has the generic arguments of the classes around it (Outer&lt;T&gt;.Inner is Outer`1+Inner[T]): each class gets its own ones, joined by '+' as in its full name,
+    /// "Outer&lt;Int32&gt;+Inner", "Gen&lt;Int32&gt;+NestedGen&lt;String&gt;" (full names "Ns.Outer&lt;System.Int32&gt;+Inner"). The short name starts at the outermost class that has generic parameters.
+    /// <para>Until October 2026 the full name was the one of the outer class ("Ns.Outer&lt;System.Int32&gt;", every argument after it) and the short name threw.</para>
+    /// </summary>
+    private static string NestedInGenericName(Type type, Type[] args, bool fullname)
+    {
+      List<Type> chain = new List<Type>(); // the definitions, innermost first
+      for (Type level = type.GetGenericTypeDefinition(); level != null; level = level.DeclaringType)
+        chain.Add(level);
+
+      StringBuilder name = new StringBuilder();
+      int used = 0;
+      for (int t = chain.Count - 1; t >= 0; t--)
+      {
+        Type level = chain[t];
+        int count = level.GetGenericArguments().Length; // a nested definition declares the parameters of the classes around it too
+        if (name.Length > 0)
+          name.Append('+');
+        if (fullname || name.Length > 0 || count > used)
+          name.Append(WithoutArity(fullname && t == chain.Count - 1 ? level.FullName : level.Name));
+        if (count > used)
+        {
+          name.Append('<');
+          for (int a = used; a < count; a++)
+            name.Append(a == used ? "" : ", ").Append(GetTypeName(args[a], fullname));
+          name.Append('>');
+          used = count;
+        }
+      }
+      return name.ToString();
+    }
+
+    private static string WithoutArity(string name)
+    {
+      int arity = name.IndexOf('`');
+      return arity < 0 ? name : name.Substring(0, arity);
     }
 
     /// <summary>
@@ -170,63 +220,118 @@ namespace LsMsgPack.Meta
       return ResolveName(typeName, assignedTo, orAssignedTo);
     }
 
+    /// <summary>
+    /// A name as <see cref="GetTypeName"/> writes generic types: "Dictionary&lt;String, List&lt;Int32&gt;&gt;", "List&lt;Gen&lt;Int32&gt;[]&gt;", "Outer&lt;Int32&gt;+Inner" (a class nested in a generic class).
+    /// </summary>
+    /// <returns>null when the name is not of that form</returns>
+    /// <exception cref="Exception">When a name in it is not found</exception>
+    private static Type SplitByParsing(string name, IMsgPackTypeResolver[] resolvers)
+    {
+      int idx = 0;
+      Type type = ParseType(name, ref idx, resolvers);
+      SkipWhiteSpace(name, ref idx);
+      return idx == name.Length ? type : null;
+    }
+
+    /// <summary>
+    /// A type: a name with or without generic arguments, the classes nested in it after '+' (the '+' of a full name without generic arguments is part of the name), then array ranks.
+    /// </summary>
+    private static Type ParseType(string name, ref int idx, IMsgPackTypeResolver[] resolvers)
+    {
+      Type type = ParseGeneric(name, ref idx, null, resolvers);
+      while (type != null && idx < name.Length && name[idx] == '+')
+      {
+        idx++;
+        type = ParseGeneric(name, ref idx, type, resolvers);
+      }
+      while (type != null && idx < name.Length && name[idx] == '[')
+      {
+        int close = idx + 1;
+        while (close < name.Length && name[close] == ',')
+          close++;
+        if (close == name.Length || name[close] != ']')
+          return null;
+        type = MakeArrayType(type, close - idx);
+        idx = close + 1;
+      }
+      SkipWhiteSpace(name, ref idx);
+      return type;
+    }
+
+    /// <param name="outer">The (generic) class the name is nested in, null for a name that is resolved by itself</param>
+    private static Type ParseGeneric(string name, ref int idx, Type outer, IMsgPackTypeResolver[] resolvers)
+    {
+      SkipWhiteSpace(name, ref idx);
+      int start = idx;
+      while (idx < name.Length && name[idx] != '<' && name[idx] != '>' && name[idx] != ',' && name[idx] != '[' && !char.IsWhiteSpace(name[idx]))
+        idx++;
+      if (idx == start)
+        return null;
+      string typeName = name.Substring(start, idx - start);
+      SkipWhiteSpace(name, ref idx);
+
+      List<Type> args = null;
+      if (idx < name.Length && name[idx] == '<')
+      {
+        idx++;
+        args = new List<Type>();
+        while (true)
+        {
+          Type arg = ParseType(name, ref idx, resolvers);
+          if (arg is null || idx == name.Length)
+            return null;
+          args.Add(arg);
+          char c = name[idx++];
+          if (c == '>')
+            break;
+          if (c != ',')
+            return null;
+        }
+      }
+
+      if (outer != null)
+        return Nested(outer, typeName, args);
+      if (args is null)
+        return ResolveIndirect(typeName, resolvers);
+      return MakeGenericType(ResolveIndirect($"{typeName}`{args.Count}", resolvers), args.ToArray()); // https://learn.microsoft.com/en-us/dotnet/api/system.type.gettype
+    }
+
+    /// <summary>
+    /// The class <paramref name="names"/> ("Inner", "Mid+Inner") nested in the generic class <paramref name="outer"/>, with the generic arguments of <paramref name="outer"/> and its own ones.
+    /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.TypeNames)]
+    private static Type Nested(Type outer, string names, List<Type> args)
+    {
+      Type nested = outer.GetGenericTypeDefinition();
+      string[] levels = names.Split('+');
+      for (int t = 0; t < levels.Length && nested != null; t++)
+      {
+        string level = t == levels.Length - 1 && args != null ? $"{levels[t]}`{args.Count}" : levels[t];
+        nested = Visible(nested.GetNestedType(level, BindingFlags.Public | BindingFlags.NonPublic));
+      }
+      if (nested is null)
+        throw new Exception($"Unable to resolve the type \"{names}\" nested in {GetTypeName(outer, true)}.");
+
+      Type[] outerArgs = outer.GenericTypeArguments;
+      if (args is null && !nested.IsGenericTypeDefinition)
+        return nested;
+      Type[] all = new Type[outerArgs.Length + (args?.Count ?? 0)];
+      outerArgs.CopyTo(all, 0);
+      args?.CopyTo(all, outerArgs.Length);
+      return MakeGenericType(nested, all);
+    }
+
     [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.TypeNames)]
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.TypeNames)]
-    private static Type SplitByParsing(string args, IMsgPackTypeResolver[] resolvers)
+    private static Type MakeGenericType(Type definition, Type[] args)
     {
-      Stack<KeyValuePair<string, Type[]>> stack = new Stack<KeyValuePair<string, Type[]>>();
+      return definition.MakeGenericType(args);
+    }
 
-      int idx = 0;
-      List<Type> genArgs = new List<Type>();
-      StringBuilder sb = new StringBuilder();
-      while (idx < args.Length)
-      {
-        char c = args[idx];
+    private static void SkipWhiteSpace(string name, ref int idx)
+    {
+      while (idx < name.Length && char.IsWhiteSpace(name[idx]))
         idx++;
-        if (c == '<')
-        {
-          stack.Push(new KeyValuePair<string, Type[]>(sb.ToString(), genArgs.ToArray()));
-          sb.Clear();
-          genArgs.Clear();
-          continue;
-        }
-        else if (c == '>')
-        {
-          string typename = sb.ToString();
-          sb.Clear();
-          if (typename.Length > 0)
-          {
-            Type type = ResolveIndirect(typename, resolvers);
-            genArgs.Add(type);
-          }
-
-          KeyValuePair<string, Type[]> gen = stack.Pop();
-          Type genericType = ResolveIndirect(string.Concat($"{gen.Key}`{genArgs.Count}"), resolvers); // https://learn.microsoft.com/en-us/dotnet/api/system.type.gettype
-          Type spcificGenericType = genericType.MakeGenericType(genArgs.ToArray());
-          genArgs.Clear();
-          genArgs.AddRange(gen.Value); // restore parent args
-          genArgs.Add(spcificGenericType); // and add the nested generic type
-        }
-        else if (c == ',' && !InRankBrackets(sb)) // not the commas of "Int32[,]"
-        {
-          string typename = sb.ToString();
-          sb.Clear();
-          Type type = ResolveIndirect(typename, resolvers);
-          genArgs.Add(type);
-        }
-        else if (char.IsWhiteSpace(c))
-          continue;
-        else
-          sb.Append(c);
-      }
-      if (sb.Length > 0)
-      {
-        string typename = sb.ToString();
-        Type type = ResolveIndirect(typename, resolvers);
-        genArgs.Add(type);
-      }
-
-      return genArgs[0];
     }
 
     /// <summary>
@@ -253,21 +358,6 @@ namespace LsMsgPack.Meta
     private static Type MakeArrayType(Type element, int rank)
     {
       return rank == 1 ? element.MakeArrayType() : element.MakeArrayType(rank);
-    }
-
-    /// <summary>
-    /// Whether the name so far ends inside the brackets of an array type ("Int32[" or "Int32[,").
-    /// </summary>
-    private static bool InRankBrackets(StringBuilder name)
-    {
-      for (int t = name.Length - 1; t >= 0; t--)
-      {
-        if (name[t] == '[')
-          return true;
-        if (name[t] != ',')
-          return false;
-      }
-      return false;
     }
 
     /// <summary>

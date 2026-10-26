@@ -110,7 +110,7 @@ namespace LsMsgPack
         return;
       FullPropertyInfo[] props = FullPropertyInfo.GetStaticallyIncludedProps(type, _settings); // the shared cache of the static filters, as the session made them
       for (int p = 0; p < names.Count; p++)
-        WriteProperty(names[p], Find(props, names[p]));
+        WriteProperty(names[p], Find(props, names[p], _settings));
     }
 
     /// <summary>
@@ -123,10 +123,10 @@ namespace LsMsgPack
       WriteType(type);
     }
 
-    private static FullPropertyInfo Find(FullPropertyInfo[] props, string name)
+    private static FullPropertyInfo Find(FullPropertyInfo[] props, string name, MsgPackOptions settings)
     {
       for (int t = 0; t < props.Length; t++)
-        if (string.Equals(props[t].PropertyInfo.Name, name, StringComparison.Ordinal))
+        if (string.Equals(FullPropertyInfo.SchemaNameOf(props[t], settings), name, StringComparison.Ordinal))
           return props[t];
       return null;
     }
@@ -248,7 +248,7 @@ namespace LsMsgPack
         _bytes.WriteString("struct", _byteOrder);
         _bytes.WriteArrayHeader(props.Length, _byteOrder);
         for (int p = 0; p < props.Length; p++)
-          WriteProperty(props[p].PropertyInfo.Name, props[p]);
+          WriteProperty(FullPropertyInfo.SchemaNameOf(props[p], _settings), props[p]);
         _inlineStructs.Remove(type);
         return;
       }

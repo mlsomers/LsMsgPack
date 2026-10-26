@@ -543,6 +543,35 @@ namespace LsMsgPack.Meta
       return result;
     }
 
+    /// <summary>
+    /// Properties named in the schema by a property id resolver (FullPropertyInfo.SchemaName) whose name the entry lacks: data written before October 2026 has their .NET name.
+    /// </summary>
+    private static void BindOlderNames(FullPropertyInfo[] byPosition, FullPropertyInfo[] props, ComplexTypeDef def)
+    {
+      for (int p = 0; p < props.Length; p++)
+      {
+        if (props[p].SchemaName is null || !def.IdByName.TryGetValue(props[p].PropertyInfo.Name, out int position) || byPosition[position] != null || Array.IndexOf(byPosition, props[p]) >= 0)
+          continue;
+        byPosition[position] = props[p];
+      }
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the properties the entry names only ignoring case (see <see cref="ComplexTypeDef.IdsIgnoringCase"/>).
+    /// </summary>
+    private static void BindIgnoringCase(FullPropertyInfo[] byPosition, FullPropertyInfo[] props, ComplexTypeDef def)
+    {
+      string[] names = new string[props.Length];
+      for (int t = 0; t < props.Length; t++)
+        names[t] = props[t].SchemaName ?? props[t].PropertyInfo.Name;
+      Dictionary<string, int> ids = def.IdsIgnoringCase(names);
+      if (ids.Count == 0)
+        return;
+      for (int t = 0; t < props.Length; t++)
+        if (ids.TryGetValue(names[t], out int position) && byPosition[position] is null && Array.IndexOf(byPosition, props[t]) < 0)
+          byPosition[position] = props[t];
+    }
+
     /// <returns>The property of each position: the properties themselves, or with the indexed schema the ones named by the schema of the data (null when not a property here)</returns>
     /// <param name="def">The schema entry the positions are of (null without)</param>
     private static FullPropertyInfo[] PropertiesByPosition(Type type, FullPropertyInfo[] props, MsgPackOptions settings, out ComplexTypeDef def)
@@ -567,7 +596,7 @@ namespace LsMsgPack.Meta
         if (name is null)
           continue;
 
-        if (next < props.Length && props[next].PropertyInfo.Name == name)
+        if (next < props.Length && (props[next].SchemaName ?? props[next].PropertyInfo.Name) == name)
         {
           byPosition[t] = props[next++];
           continue;
@@ -575,7 +604,7 @@ namespace LsMsgPack.Meta
 
         for (int p = 0; p < props.Length; p++)
         {
-          if (props[p].PropertyInfo.Name == name)
+          if ((props[p].SchemaName ?? props[p].PropertyInfo.Name) == name)
           {
             byPosition[t] = props[p];
             next = p + 1;
@@ -583,6 +612,9 @@ namespace LsMsgPack.Meta
           }
         }
       }
+      BindOlderNames(byPosition, props, def);
+      if (settings._propertyNameCaseInsensitive)
+        BindIgnoringCase(byPosition, props, def);
       def.ByPosition = new ComplexTypeDef.PositionBinding(props, byPosition.Length, byPosition);
       return byPosition;
     }

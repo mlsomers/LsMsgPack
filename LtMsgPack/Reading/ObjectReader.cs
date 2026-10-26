@@ -5,6 +5,7 @@ using LtMsgPack.Generated;
 using System;
 using System.ComponentModel;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
@@ -396,6 +397,8 @@ namespace LtMsgPack.Reading
     internal readonly bool Positional;
 
     private readonly bool _caseInsensitive;
+
+    internal bool CaseInsensitive { get { return _caseInsensitive; } }
 
     /// <summary>
     /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the properties whose name equals another one's ignoring case (a key matching them sets none), null without the option.
@@ -823,9 +826,27 @@ namespace LtMsgPack.Reading
         bound = new PropReader[def.Props.Count];
         for (int t = 0; t < bound.Length; t++)
           bound[t] = def.Props[t] is null ? null : plan.FindByName(def.Props[t]);
+        if (plan.CaseInsensitive)
+          BindIgnoringCase(bound, plan, def);
       }
       _bindings.TryAdd(plan, bound);
       return ReferenceEquals(bound, NotBound) ? null : bound;
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the properties the entry names only ignoring case (see <see cref="ComplexTypeDef.IdsIgnoringCase"/>).
+    /// </summary>
+    private static void BindIgnoringCase(PropReader[] bound, ReadPlan plan, ComplexTypeDef def)
+    {
+      string[] names = new string[plan.Props.Length];
+      for (int t = 0; t < names.Length; t++)
+        names[t] = plan.Props[t].Name;
+      Dictionary<string, int> ids = def.IdsIgnoringCase(names);
+      if (ids.Count == 0)
+        return;
+      for (int t = 0; t < names.Length; t++)
+        if (ids.TryGetValue(names[t], out int position) && bound[position] is null)
+          bound[position] = plan.Props[t];
     }
   }
 }

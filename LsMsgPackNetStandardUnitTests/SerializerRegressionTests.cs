@@ -9,6 +9,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Xml.Serialization;
 
@@ -525,19 +526,19 @@ namespace LsMsgPackUnitTests
 
     /// <summary>
     /// AttributePropertyNameResolver writes the names of [JsonPropertyName] (System.Text.Json) and [JsonProperty] (Json.NET), it used to look them up by the wrong key, and of [XmlArray] and [DataMember] (in a [DataContract]), which it did not read.
+    /// With the indexed schema these names are the names in the schema (since October 2026), so readers without the resolver read them too.
     /// </summary>
     [TestMethod]
-    [DataRow(false)]
-    [DataRow(true)]
-    public void AttributeNamesOfJsonSerializers(bool schema)
+    [DataRow(false, ObjectLayout.Map)]
+    [DataRow(true, ObjectLayout.Map)]
+    [DataRow(true, ObjectLayout.Array)]
+    public void AttributeNamesOfJsonSerializers(bool schema, ObjectLayout layout)
     {
-      byte[] bytes = Serializer.Serialize(NewJsonNamed(), JsonNamedSettings(schema, ObjectLayout.Map, true));
+      byte[] bytes = Serializer.Serialize(NewJsonNamed(), JsonNamedSettings(schema, layout, true));
 
-      AssertJsonNamed(Serializer.Deserialize<JsonNamed>(bytes, JsonNamedSettings(schema, ObjectLayout.Map, true)));
+      AssertJsonNamed(Serializer.Deserialize<JsonNamed>(bytes, JsonNamedSettings(schema, layout, true)));
 
-      if (schema)
-        return; // with the schema the renamed keys are written as names, the others as indexes: only readers with the same resolver understand them
-      JsonNamedAsWritten written = Serializer.Deserialize<JsonNamedAsWritten>(bytes, JsonNamedSettings(false, ObjectLayout.Map, false));
+      JsonNamedAsWritten written = Serializer.Deserialize<JsonNamedAsWritten>(bytes, JsonNamedSettings(schema, layout, false));
       Assert.AreEqual("a", written.renamed);
       Assert.AreEqual(7, written.newton);
       Assert.AreEqual("u", written.Unnamed);
@@ -552,21 +553,92 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// Data written by the versions that ignored the JSON attributes, [XmlArray] and [DataMember] (the .NET names, or their schema indexes) is still read into the renamed properties.
+    /// Data written by the versions that ignored the JSON attributes, [XmlArray] and [DataMember] (the .NET names) is still read into the renamed properties.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map)]
+    [DataRow(ObjectLayout.Array)]
+    public void AttributeNamesReadDataWithDotNetNames(ObjectLayout layout)
+    {
+      byte[] old = Serializer.Serialize(NewJsonNamed(), JsonNamedSettings(false, layout, true, true)); // as the resolver wrote them before
+
+      AssertJsonNamed(Serializer.Deserialize<JsonNamed>(old, JsonNamedSettings(false, layout, true)));
+
+      Serializer.Deserialize<JsonNamed>(old, JsonNamedSettings(false, layout, true), out ReadDifferences differences);
+      Assert.IsNull(differences, differences?.ToString());
+    }
+
+    /// <summary>
+    /// What the released versions wrote with AttributePropertyNameResolver and the indexed schema (MsgPackSerializer.Serialize(NewJsonNamed()) with the packages of nuget.org): the schema has the .NET names,
+    /// 2026.10.22.1 did not find the JSON attributes (their schema indexes, the XML name as the key), 2026.10.24.1 wrote their names as the keys. The array layout is the same in both.
+    /// </summary>
+    [TestMethod]
+    [DataRow("2026.10.22.1", ObjectLayout.Map, "g6lKc29uTmFtZWSZoUGhQqdVbm5hbWVkpVBsYWlupEJvdGilSXRlbXOoQ29udHJhY3SlTG9vc2WlQ2hpbGStQ29udHJhY3ROYW1lZJOhRKFFoUasTm90QUNvbnRyYWN0kaFQiQChYQEHAqF1A6Fwo3htbKFiBZIBAgaDAKFkAaFlAqFmB4EAoWwIggCiY2EBCA==")]
+    [DataRow("2026.10.24.1", ObjectLayout.Map, "g6lKc29uTmFtZWSZoUGhQqdVbm5hbWVkpVBsYWlupEJvdGilSXRlbXOoQ29udHJhY3SlTG9vc2WlQ2hpbGStQ29udHJhY3ROYW1lZJOhRKFFoUasTm90QUNvbnRyYWN0kaFQiadyZW5hbWVkoWGmbmV3dG9uBwKhdQOhcKRqc29uoWKlaXRlbXOSAQIGg6JkbaFkAaFlAqFmB4EAoWwIgqdyZW5hbWVkomNhpm5ld3Rvbgg=")]
+    [DataRow("2026.10.24.1", ObjectLayout.Array, "g6lKc29uTmFtZWSZoUGhQqdVbm5hbWVkpVBsYWlupEJvdGilSXRlbXOoQ29udHJhY3SlTG9vc2WlQ2hpbGStQ29udHJhY3ROYW1lZJOhRKFFoUasTm90QUNvbnRyYWN0kaFQmaFhB6F1oXChYpIBApOhZKFloWaRoWyZomNhCMDAwMDAwMA=")]
+    public void AttributeNamesReadReleasedSchemas(string version, ObjectLayout layout, string written)
+    {
+      byte[] old = Convert.FromBase64String(written);
+
+      AssertJsonNamed(Serializer.Deserialize<JsonNamed>(old, JsonNamedSettings(true, layout, true)));
+
+      Serializer.Deserialize<JsonNamed>(old, JsonNamedSettings(true, layout, true), out ReadDifferences differences);
+      Assert.IsNull(differences, differences?.ToString());
+    }
+
+    public class RenamedOnce
+    {
+      [System.Text.Json.Serialization.JsonPropertyName("short")] public string LongName { get; set; }
+      public int Other { get; set; }
+    }
+
+    /// <summary>
+    /// The versions from 2026.10.23 to October 2026 wrote the .NET names in the schema and the names AttributePropertyNameResolver gives as the keys (map layout), or by the position of the .NET name (array layout).
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map)]
+    [DataRow(ObjectLayout.Array)]
+    public void AttributeNamesReadSchemaWithDotNetNames(ObjectLayout layout)
+    {
+      MsgPackSettings plain = new MsgPackSettings { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      byte[] schema = Serializer.Serialize(new Dictionary<string, string[]> { { nameof(RenamedOnce), new[] { "LongName", "Other" } } }, plain);
+      byte[] old = schema.Concat(Body(layout, "short", plain)).ToArray();
+
+      RenamedOnce read = Serializer.Deserialize<RenamedOnce>(old, JsonNamedSettings(true, layout, true), out ReadDifferences differences);
+      Assert.AreEqual("x", read.LongName);
+      Assert.AreEqual(5, read.Other);
+      Assert.IsNull(differences, differences?.ToString());
+
+      byte[] now = Serializer.Serialize(new RenamedOnce { LongName = "x", Other = 5 }, JsonNamedSettings(true, layout, true));
+      byte[] expected = Serializer.Serialize(new Dictionary<string, string[]> { { nameof(RenamedOnce), new[] { "short", "Other" } } }, plain)
+        .Concat(Body(layout, 0, plain)).ToArray();
+      CollectionAssert.AreEqual(expected, now, "the name of the attribute in the schema, the index as the key");
+    }
+
+    private byte[] Body(ObjectLayout layout, object firstKey, MsgPackSettings plain)
+    {
+      if (layout == ObjectLayout.Map)
+        return Serializer.Serialize(new Dictionary<object, object> { { firstKey, "x" }, { 1, 5 } }, plain);
+      return Serializer.Serialize(new object[] { "x", 5 }, plain);
+    }
+
+    public class RenamedOntoOther
+    {
+      [System.Text.Json.Serialization.JsonPropertyName("Other")] public string First { get; set; }
+      public string Other { get; set; }
+    }
+
+    /// <summary>
+    /// An attribute's name that is another property's name: two keys (or two names in the schema) for different properties.
     /// </summary>
     [TestMethod]
     [DataRow(false, ObjectLayout.Map)]
     [DataRow(true, ObjectLayout.Map)]
-    [DataRow(false, ObjectLayout.Array)]
     [DataRow(true, ObjectLayout.Array)]
-    public void AttributeNamesReadDataWithDotNetNames(bool schema, ObjectLayout layout)
+    public void AttributeNameOfAnotherProperty(bool schema, ObjectLayout layout)
     {
-      byte[] old = Serializer.Serialize(NewJsonNamed(), JsonNamedSettings(schema, layout, true, true)); // as the resolver wrote them before
-
-      AssertJsonNamed(Serializer.Deserialize<JsonNamed>(old, JsonNamedSettings(schema, layout, true)));
-
-      Serializer.Deserialize<JsonNamed>(old, JsonNamedSettings(schema, layout, true), out ReadDifferences differences);
-      Assert.IsNull(differences, differences?.ToString());
+      MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Serialize(new RenamedOntoOther { First = "a", Other = "b" }, JsonNamedSettings(schema, layout, true)));
+      StringAssert.Contains(ex.Message, "same id");
     }
 
     public class XmlUnnamed
