@@ -42,6 +42,8 @@ response.EnsureSuccessStatusCode();
 Order saved = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
 ```
 
+When your classes differ from the server's (other names or namespaces, e.g. an SDK with its own models), create the handler with `formatter.CreateHandler(true)`: it asks for the described schema, by which the reader pairs your classes with the server's ([details](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#schema-version-2-for-clients-without-the-classes)).
+
 Settings are passed as `new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpOptions { ... })`. In trimmed or AOT apps (e.g. iOS), use the code of LtMsgPack's source generator: `new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options))` (the constructors without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`, see [Trimming and NativeAOT](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md#trimming-and-nativeaot)). With `ReportDifferences = true`, `response.GetReadDifferences()` (on the server `Request.GetReadDifferences()`) says what didn't match between the body and your classes, for example properties of another version of the models.
 
 ## Documentation

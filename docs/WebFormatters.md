@@ -160,6 +160,7 @@ Order result = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[
 
 Notes:
 - `formatter.CreateHandler()` enables [schema references](#schema-references-applicationx-lsmsgpack) for the responses. It's optional: without it (or with `new HttpClient()`), every response carries its schema inline. Use `formatter.CreateHandler(inner)` to chain another handler.
+- `formatter.CreateHandler(true)` (`LsMsgPackSchemaHandler.RequestDescribedSchemas`) also asks for [version 2 of the schema](#schema-version-2-for-clients-without-the-classes), for a client whose classes differ from the server's (other names or namespaces, e.g. an SDK with its own models): the reader then pairs its classes with the server's by the declared types (see [schema.md](schema.md)).
 - Without an explicit media type, `ObjectContent` uses the formatter's first media type, `application/msgpack` (plain MsgPack).
 - Set the `Accept` header, or the server will probably answer with JSON.
 - On the client side, a response that can't be deserialized throws from `ReadAsAsync` instead of being logged.
@@ -350,5 +351,6 @@ Accept: application/x-lsmsgpack; schema=described, application/x-lsmsgpack; q=0.
 - The body is the same, only the schema differs. Its schema has its own id, and is negotiated and referred to like any other (`MsgPack-Schemas`, `MsgPack-Schema`).
 - List the plain media type as well: ASP.NET Core's content negotiation only matches a parameter it knows, and a server that doesn't offer version 2 then answers with version 1.
 - The .NET readers read both versions, so a response that a cache serves to another client can be read by it either way. ASP.NET Core and MVC 5 add `Accept` to `Vary`. Web API 2 can't set `Vary`, which is harmless here.
+- The .NET client asks for it with `formatter.CreateHandler(true)` (`LsMsgPackSchemaHandler.RequestDescribedSchemas`): it adds `application/x-lsmsgpack; schema=described` next to an `application/x-lsmsgpack` the request accepts, or sets the header above when the request has none.
 - `DescribeSchemas = false` turns it off: the server always writes version 1. It also needs `XLsMsgPack.UseInexedSchema`, and works with or without `NegotiateSchemas`.
 - With `XLsMsgPack.SchemaVersion = SchemaVersion.Described`, every response has version 2.
