@@ -23,16 +23,19 @@ namespace LsMsgPack.AnalyzerTests
   {
     private const string FileName = "Model.cs";
 
-    public static ImmutableArray<Diagnostic> Analyze(string source, bool formatters = false, IDictionary<string, string> msbuild = null)
+    public static ImmutableArray<Diagnostic> Analyze(string source, bool formatters = false, IDictionary<string, string> msbuild = null, MetadataReference other = null)
     {
-      CSharpCompilation compilation = CSharpCompilation.Create("TestModels", new[] { CSharpSyntaxTree.ParseText(source, path: FileName) }, References(formatters),
+      MetadataReference[] references = References(formatters);
+      if (other != null)
+        references = references.Append(other).ToArray();
+      CSharpCompilation compilation = CSharpCompilation.Create("TestModels", new[] { CSharpSyntaxTree.ParseText(source, path: FileName) }, references,
         new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
       Diagnostic[] errors = compilation.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToArray();
       Assert.IsEmpty(errors, "The test source does not compile: " + string.Join("\n", errors.Select(e => e.ToString())));
       return Run(compilation, msbuild);
     }
 
-    private static ImmutableArray<Diagnostic> Run(Compilation compilation, IDictionary<string, string> msbuild)
+    public static ImmutableArray<Diagnostic> Run(Compilation compilation, IDictionary<string, string> msbuild)
     {
       AnalyzerOptions options = new AnalyzerOptions(ImmutableArray<AdditionalText>.Empty, new Options(msbuild));
       CompilationWithAnalyzers analyzed = compilation.WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(new ModelAnalyzer()), options);
@@ -84,6 +87,21 @@ namespace LsMsgPack.AnalyzerTests
     {
       string[] left = Summary(Analyze(fixedSource, formatters)).Where(s => s.StartsWith(id, StringComparison.Ordinal)).ToArray();
       Assert.IsEmpty(left, string.Join("\n", left) + "\n" + fixedSource);
+    }
+
+    /// <summary>
+    /// Another project's assembly: the source compiled into a reference (as a file at <paramref name="filePath"/>, e.g. in a NuGet package folder).
+    /// </summary>
+    public static MetadataReference Compile(string assemblyName, string source, string filePath = null)
+    {
+      CSharpCompilation compilation = CSharpCompilation.Create(assemblyName, new[] { CSharpSyntaxTree.ParseText(source) }, References(false),
+        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+      using (MemoryStream stream = new MemoryStream())
+      {
+        Microsoft.CodeAnalysis.Emit.EmitResult result = compilation.Emit(stream);
+        Assert.IsTrue(result.Success, string.Join("\n", result.Diagnostics));
+        return MetadataReference.CreateFromImage(stream.ToArray(), filePath: filePath);
+      }
     }
 
     private static MetadataReference[] References(bool formatters)

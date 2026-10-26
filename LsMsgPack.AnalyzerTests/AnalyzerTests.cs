@@ -1,4 +1,5 @@
 ﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -166,6 +167,16 @@ public static class Use { public static void Run(IStore store) => store.SaveTwic
       AssertDiagnostics(Usings + "public class Model { public int Level { get; set; } = 2; }\n");
     }
 
+    [TestMethod]
+    public void OnlyCoreReferenced_AllTypesIsChecked()
+    {
+      // A project of models with the smallest package (LsMsgPack.Core) asks for its classes to be checked (and so marks its assembly for LSMP008)
+      CSharpCompilation compilation = CSharpCompilation.Create("Models", new[] { CSharpSyntaxTree.ParseText("public class Model { public int Level { get; set; } = 2; }\n", path: "Model.cs") },
+        new MetadataReference[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location), MetadataReference.CreateFromFile(typeof(MsgPackOptions).Assembly.Location) },
+        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+      AssertDiagnostics(Run(compilation, new Dictionary<string, string>() { { "LsMsgPackAnalyze", "AllTypes" } }), "LSMP001 Level");
+    }
+
     #endregion
 
     #region LSMP002, LSMP003: [DefaultValue] that does not match
@@ -261,8 +272,80 @@ public static class Use
   }
 }
 ");
-      AssertDiagnostics(diagnostics, "LSMP005 object", "LSMP005 List<object>", "LSMP005 typeof(Dictionary<string, object>)");
-      StringAssert.StartsWith(diagnostics[1].GetMessage(), "LtMsgPackSerializer.Deserialize reads List<object>: the data can make the reader create any type that fits object");
+      AssertDiagnostics(diagnostics, "LSMP005 object", "LSMP007 object", "LSMP005 List<object>", "LSMP005 typeof(Dictionary<string, object>)", "LSMP007 typeof(Dictionary<string, object>)");
+      StringAssert.StartsWith(diagnostics[2].GetMessage(), "LtMsgPackSerializer.Deserialize reads List<object>: the data can make the reader create any type that fits object");
+    }
+
+    #endregion
+
+    #region LSMP006: null read back as the initial value
+
+    private const string NullableDefaults = Usings + @"
+public class Options
+{
+  [DefaultValue(""auto"")] public string Mode { get; set; } = ""auto"";
+  [DefaultValue(3)] public int? Retries { get; set; } = 3;
+  [DefaultValue(typeof(decimal), ""1.5"")] public decimal? Rate { get; set; } = 1.5m;
+  [DefaultValue(3)] public int Count { get; set; } = 3;
+  [DefaultValue("""")] public string Empty { get; set; } = """";
+  public string Name { get; set; }
+  [DefaultValue(null)] public string Nothing { get; set; }
+}
+public static class Use { public static byte[] Write(Options o) => MsgPackSerializer.Serialize(o); }
+";
+
+    [TestMethod]
+    public void NullReadAsInitial_NullablesWithTheirDefault()
+    {
+      ImmutableArray<Diagnostic> diagnostics = Analyze(NullableDefaults);
+      AssertDiagnostics(diagnostics, "LSMP006 Mode", "LSMP006 Retries", "LSMP006 Rate", "LSMP006 Empty");
+      Assert.AreEqual("'Options.Mode' is initialized to \"auto\": in an object written as an array of its values (ObjectLayout.Array, the default) null is nil, which a reader takes as left out, so it gets \"auto\". "
+        + "Remove the initializer and the [DefaultValue] if null must arrive, or write objects as maps (ObjectLayout.Map).", diagnostics[0].GetMessage());
+    }
+
+    [TestMethod]
+    public void NullReadAsInitial_AfterTheFixOfMissingDefaultValue()
+    {
+      // LSMP001's fix keeps null in maps, LSMP006 then tells about the array layout
+      string source = Usings + "public class Item\n{\n  public string Mode { get; set; } = \"auto\";\n}\npublic static class Use { public static Item Read(byte[] b) => MsgPackSerializer.Deserialize<Item>(b); }\n";
+      AssertDiagnostics(source, "LSMP001 Mode");
+      AssertDiagnostics(Fix(source, "LSMP001", "Add [DefaultValue(\"auto\")]"), "LSMP006 Mode");
+    }
+
+    [TestMethod]
+    public void NullReadAsInitial_NotWithoutAParameterlessConstructor()
+    {
+      AssertDiagnostics(Usings + @"
+public class Point { public Point(int x) { } [DefaultValue(""a"")] public string Label { get; set; } = ""a""; }
+public static class Use { public static byte[] Write(Point p) => MsgPackSerializer.Serialize(p); }
+");
+    }
+
+    #endregion
+
+    #region LSMP007: read without property names
+
+    [TestMethod]
+    public void UntypedReads()
+    {
+      ImmutableArray<Diagnostic> diagnostics = Analyze(Usings + @"
+public static class Use
+{
+  public static void Calls(byte[] b)
+  {
+    MsgPackSerializer.Deserialize<IDictionary<string, object>>(b);
+    MsgPackSerializer.Deserialize<IReadOnlyDictionary<string, dynamic>>(b);
+    MsgPackSerializer.Deserialize<System.Dynamic.ExpandoObject>(b);
+    MsgPackSerializer.Deserialize<Dictionary<string, int>>(b);
+    MsgPackSerializer.Deserialize<Dictionary<int, object>>(b);
+    MsgPackSerializer.Serialize<Dictionary<string, object>>(null);
+  }
+}
+");
+      string[] untyped = Summary(diagnostics).Where(s => s.StartsWith("LSMP007", System.StringComparison.Ordinal)).ToArray();
+      CollectionAssert.AreEqual(new[] { "LSMP007 IDictionary<string, object>", "LSMP007 IReadOnlyDictionary<string, dynamic>", "LSMP007 System.Dynamic.ExpandoObject" }, untyped);
+      StringAssert.StartsWith(diagnostics.First(d => d.Id == "LSMP007").GetMessage(),
+        "MsgPackSerializer.Deserialize reads IDictionary<string, object>: an object written from a class arrives without its property names, and a dictionary cannot be filled from it (MsgPackException)");
     }
 
     #endregion
@@ -286,8 +369,92 @@ public class InvoicesController : ControllerBase
     public void Controllers_WithTheFormatters()
     {
       ImmutableArray<Diagnostic> diagnostics = Analyze(Controller, formatters: true);
-      AssertDiagnostics(diagnostics, "LSMP001 Copies", "LSMP001 Stars", "LSMP005 body");
+      AssertDiagnostics(diagnostics, "LSMP001 Copies", "LSMP001 Stars", "LSMP005 body", "LSMP007 body");
       StringAssert.StartsWith(diagnostics[2].GetMessage(), "The action InvoicesController.Post reads object");
+    }
+
+    /// <summary>
+    /// Actions returning IActionResult: the values passed to Ok(value), CreatedAtAction(..., value), BadRequest(error)... and to new ...ObjectResult(value) are serialized.
+    /// </summary>
+    [TestMethod]
+    public void Controllers_ValuesOfResults()
+    {
+      string source = Usings + @"
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+public class Order { public int Copies { get; set; } = 1; }
+public class Line { public int Quantity { get; set; } = 1; }
+public class Created { public int Version { get; set; } = 1; }
+public class Problem { public int Code { get; set; } = 400; }
+public class Wrapped { public int Level { get; set; } = 2; }
+public class Route { public int Id { get; set; } = 7; }
+public class Untouched { public int Size { get; set; } = 3; }
+public class OrdersController : ControllerBase
+{
+  public IActionResult Get() => Ok(new Order());
+  public async Task<IActionResult> List() { await Task.Yield(); List<Line> lines = new List<Line>(); return Ok(lines); }
+  public IActionResult Post() => CreatedAtAction(nameof(Get), new Route(), new Created());
+  public IActionResult Fail() => BadRequest(new Problem());
+  public IActionResult Wrap() => new OkObjectResult(new Wrapped());
+  public IActionResult Nothing() { object value = new Untouched(); return Ok(value); }
+  public IActionResult Empty() => Ok();
+}
+";
+      AssertDiagnostics(Analyze(source, formatters: true), "LSMP001 Copies", "LSMP001 Quantity", "LSMP001 Version", "LSMP001 Code", "LSMP001 Level");
+    }
+
+    #endregion
+
+    #region LSMP008: classes of other projects
+
+    private const string OtherProject = @"
+namespace Dtos
+{
+  public class OrderDto { public int Retries { get; set; } = 3; }
+  public class EntityBase { public string Id { get; set; } }
+  public class ReadOnlyDto { public int Total { get; } }
+}
+";
+
+    private const string UsesOtherProject = Usings + @"
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Dtos;
+public class Customer : EntityBase { public List<OrderDto> Orders { get; set; } public ReadOnlyDto Totals { get; set; } }
+public class CustomersController : ControllerBase
+{
+  public ActionResult<OrderDto> Get() => new OrderDto();
+  public IActionResult Find() => Ok(new Customer());
+  public Task<IActionResult> Post(OrderDto order) => Task.FromResult<IActionResult>(Ok(order));
+}
+";
+
+    [TestMethod]
+    public void UncheckedModels_OfAnotherProject()
+    {
+      ImmutableArray<Diagnostic> diagnostics = Analyze(UsesOtherProject, formatters: true, other: Compile("Dtos", OtherProject, "/src/Dtos/obj/Debug/net8.0/ref/Dtos.dll"));
+      AssertDiagnostics(diagnostics, "LSMP008 Customer", "LSMP008 Orders", "LSMP008 Get", "LSMP008 order", "LSMP008 order");
+      Assert.AreEqual("'EntityBase' is declared in Dtos, which the analyzers do not check: classes are checked in the project that declares them. "
+        + "Reference the LsMsgPack.Core package in that project (or a package that depends on it) and set <LsMsgPackAnalyze>AllTypes</LsMsgPackAnalyze> there.", diagnostics[0].GetMessage());
+    }
+
+    [TestMethod]
+    public void UncheckedModels_NotWhenTheProjectChecksThem()
+    {
+      string marked = "[assembly: System.Reflection.AssemblyMetadata(\"LsMsgPackAnalyze\", \"AllTypes\")]\n" + OtherProject;
+      AssertDiagnostics(Analyze(UsesOtherProject, formatters: true, other: Compile("Dtos", marked)));
+    }
+
+    [TestMethod]
+    [DataRow("/home/me/.nuget/packages/dtos/1.0.0/lib/net8.0/Dtos.dll", null)]
+    [DataRow("C:\\Users\\me\\.nuget\\packages\\dtos\\1.0.0\\lib\\net8.0\\Dtos.dll", null)]
+    [DataRow("/cache/pkgs/dtos/1.0.0/lib/net8.0/Dtos.dll", "/cache/pkgs")]
+    public void UncheckedModels_NotOfPackages(string path, string packageRoot)
+    {
+      Dictionary<string, string> msbuild = new Dictionary<string, string>();
+      if (packageRoot != null)
+        msbuild.Add("NuGetPackageRoot", packageRoot + "/");
+      AssertDiagnostics(Analyze(UsesOtherProject, formatters: true, msbuild: msbuild, other: Compile("Dtos", OtherProject, path)));
     }
 
     #endregion

@@ -9,6 +9,8 @@ namespace LsMsgPack.Analyzers
   {
     private const string DefaultsCategory = "LsMsgPack.Defaults";
     private const string SecurityCategory = "LsMsgPack.Security";
+    private const string ReadingCategory = "LsMsgPack.Reading";
+    private const string CoverageCategory = "LsMsgPack.Coverage";
     private const string DocsUrl = "https://github.com/mlsomers/LsMsgPack/blob/master/docs/Analyzers.md#";
 
     /// <summary>
@@ -51,5 +53,23 @@ namespace LsMsgPack.Analyzers
       SecurityCategory, DiagnosticSeverity.Warning, true,
       "Reading into object (or into an interface or abstract class of the framework) lets the type id in the data pick the type the reader creates (docs/security.md).",
       DocsUrl + "lsmp005-data-is-read-into-any-type-it-picks");
+
+    public static readonly DiagnosticDescriptor NullReadAsInitial = new DiagnosticDescriptor("LSMP006", "Null is read back as the initial value",
+      "'{0}' is initialized to {1}: in an object written as an array of its values (ObjectLayout.Array, the default) null is nil, which a reader takes as left out, so it gets {1}. Remove the initializer and the [DefaultValue] if null must arrive, or write objects as maps (ObjectLayout.Map).",
+      DefaultsCategory, DiagnosticSeverity.Warning, true,
+      "In the array layout a value the writer leaves out is nil, so a reader cannot tell a null from a left out value: both keep what the constructor set. [DefaultValue] makes the writer keep null, but only maps can carry it.",
+      DocsUrl + "lsmp006-null-is-read-back-as-the-initial-value");
+
+    public static readonly DiagnosticDescriptor UntypedRead = new DiagnosticDescriptor("LSMP007", "Objects are read without their property names",
+      "{0} reads {1}: an object written from a class arrives without its property names, {2} (by default, and for application/x-lsmsgpack, it is an array of its values with the indexed schema). Read into a class (with nullable properties for a partial update), or write maps without the schema (ObjectLayout.Map and UseInexedSchema = false, as for application/msgpack).",
+      ReadingCategory, DiagnosticSeverity.Warning, true,
+      "The names of an object's properties are in the schema, or nowhere in the array layout: only the class they are read into gives them back. Only maps without the indexed schema (ObjectLayout.Map, UseInexedSchema = false, as application/msgpack writes them) carry the names.",
+      DocsUrl + "lsmp007-objects-are-read-without-their-property-names");
+
+    public static readonly DiagnosticDescriptor UncheckedModel = new DiagnosticDescriptor("LSMP008", "Serialized class of another project is not checked",
+      "'{0}' is declared in {1}, which the analyzers do not check: classes are checked in the project that declares them. Reference the LsMsgPack.Core package in that project (or a package that depends on it) and set <LsMsgPackAnalyze>AllTypes</LsMsgPackAnalyze> there.",
+      CoverageCategory, DiagnosticSeverity.Warning, true,
+      "The rules need the source of a class (its initializers and constructor). A class of a referenced project is only checked when that project asks for it; a project with LsMsgPackAnalyze=AllTypes marks its assembly ([assembly: AssemblyMetadata(\"LsMsgPackAnalyze\", \"AllTypes\")]), which stops this warning. Classes of NuGet packages are not reported.",
+      DocsUrl + "lsmp008-serialized-class-of-another-project-is-not-checked");
   }
 }

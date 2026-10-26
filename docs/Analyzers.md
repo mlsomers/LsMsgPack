@@ -1,9 +1,11 @@
 # Analyzers
 
-The `LsMsgPack.Core` package includes analyzers, so every project that references `LsMsgPack`, `LtMsgPack` or one of the web formatter packages gets them. They warn about two things in the classes you serialize:
+The `LsMsgPack.Core` package includes analyzers, so every project that references `LsMsgPack`, `LtMsgPack` or one of the web formatter packages gets them. They warn about these things in the classes you serialize:
 
-- **Values that are lost** because a left-out default doesn't match what the constructor sets (LSMP001 to LSMP003). Code fixes add or correct the `[DefaultValue]`.
+- **Values that are lost** because a left-out default doesn't match what the constructor sets (LSMP001 to LSMP003), or because null can't be told apart from a left-out value (LSMP006). Code fixes add or correct the `[DefaultValue]`.
 - **Places where the data picks the type** that a reader creates (LSMP004, LSMP005), see [security.md](security.md).
+- **Reads without property names**: `object` and `Dictionary<string, object>` (LSMP007).
+- **Classes of other projects** that no analyzer checked (LSMP008).
 
 The warnings show while you type in Visual Studio, VS Code (C# Dev Kit) and Rider, and in the build output.
 
@@ -15,16 +17,22 @@ Only the classes your project serializes. Options classes, view models and anyth
 - **Your own generic methods** that pass their type parameter on to one of these (`Save<T>(T item) => MsgPackSerializer.Serialize(item)`), also through the interface methods they implement: the type arguments of their callers.
 - **Contexts of the source generator**: `[LtMsgPackSerializable(typeof(Invoice))]`.
 - **Controller actions**, when the project references one of the web formatters: the result type (`ActionResult<Invoice>`, `Task<List<Invoice>>`) and the parameters of the public methods of ASP.NET Core controllers (`ControllerBase`), Web API controllers (`ApiController`) and MVC 5 controllers (`Controller`). `[NonAction]` methods and `[FromServices]` parameters are skipped.
+- **Values of ASP.NET Core results**, for actions that return `IActionResult`: the type of the value passed to `Ok(value)`, `Created...(..., value)`, `Accepted...(..., value)`, `StatusCode(code, value)`, `NotFound(value)`, `BadRequest(error)`, `Conflict(error)`, `UnprocessableEntity(error)`, `Unauthorized(value)` and to the constructors of `ObjectResult` and its subclasses (`new OkObjectResult(value)`). As with `Serialize`, a value declared as `object` tells nothing.
 - **HttpClient with the Web API formatter**: `ReadAsAsync<T>`, `PostAsync<T>`, `PutAsync<T>`, `new ObjectContent<T>`. MVC 5: `new LsMsgPackResult(value)`.
 - **What those reach**: the types of public properties, elements of collections, generic arguments, base classes, and the classes of the project that derive from any of them (a type id can name those).
 
-Classes declared in another project are checked in that project. A project of models that never calls the serializers itself can ask for all its public classes and structs to be checked:
+Classes declared in another project are checked in that project. A project of models that never calls the serializers itself can ask for all its public classes and structs to be checked, with a reference to `LsMsgPack.Core` (the smallest package) or a package that depends on it:
 
 ```xml
 <PropertyGroup>
   <LsMsgPackAnalyze>AllTypes</LsMsgPackAnalyze>
 </PropertyGroup>
+<ItemGroup>
+  <PackageReference Include="LsMsgPack.Core" Version="..." />
+</ItemGroup>
 ```
+
+This also marks the assembly as checked (`[assembly: AssemblyMetadata("LsMsgPackAnalyze", "AllTypes")]`, written by the SDK's assembly info), so the projects using its classes don't report them (LSMP008). With `GenerateAssemblyInfo` set to `false`, add that attribute yourself.
 
 Only the properties the serializers write are checked: public, not static, with a public getter and setter, and not ignored (`[IgnoreDataMember]`, `[JsonIgnore]`, `[XmlIgnore]`, MessagePack's `[IgnoreMember]`...).
 
@@ -76,6 +84,17 @@ The code fixes write the initial value into the attribute, or (for an auto-prope
 
 `FilterDefaultValues` compares the value with the attribute's value using `object.Equals`, and a value of another type is never equal. The code fix writes the value in the property's type (`1L`). An enum property needs the enum value (`Color.Red`, not `1`).
 
+### LSMP006: Null is read back as the initial value
+
+```csharp
+[DefaultValue("auto")] public string Mode { get; set; } = "auto";   // LSMP006: null is read back as "auto"
+[DefaultValue(3)] public int? Retries { get; set; } = 3;             // LSMP006: null is read back as 3
+```
+
+`[DefaultValue]` (the fix of LSMP001) makes the writer leave out the initial value and keep null. In a map, a reader then gets null. In the array layout (`ObjectLayout.Array`, the default), null is written as nil, which a reader can't tell apart from a left-out value, so it keeps what the constructor set. Only nullable properties (reference types and `Nullable<T>`) with a non-null initial value are reported.
+
+If null must arrive, remove the initializer and the `[DefaultValue]`, or write objects as maps. If your writers use maps (e.g. only `application/msgpack`), turn the rule off.
+
 ## The data picks the type
 
 A type id in the data names the type that a reader creates. The serializers only accept types that fit the declared type, so a property of your own interface can only get your own classes. A property declared as `object` can get anything the type resolver finds, including framework types that run code when they are created or filled (see [security.md](security.md)). The same goes for an interface or abstract class of the framework (`IDisposable`, `IEnumerable`, `Stream`...), which the dangerous framework types implement, and for collections without an element type (`ArrayList`, `Hashtable`).
@@ -103,3 +122,29 @@ public IActionResult Post([FromBody] object body) => Ok();         // LSMP005, w
 ```
 
 Only reading is flagged: writing an `object` writes what it holds.
+
+## Reads without property names
+
+### LSMP007: Objects are read without their property names
+
+```csharp
+MsgPackSerializer.Deserialize<object>(bytes);                                         // LSMP007: an object[] of the values
+public IActionResult Patch([FromBody] Dictionary<string, object> changes) => ...;     // LSMP007: 400, the dictionary can't be filled
+```
+
+By default (and for `application/x-lsmsgpack`) an object is written as an array of its values with the indexed schema: the property names are in the schema, or nowhere, and only the class it is read into gives them back. Read into `object`, such an object becomes an `object[]` of its values. Read into a dictionary with string keys and values of any type (`Dictionary<string, object>`, `IDictionary<string, object>`, `ExpandoObject`), it throws a `MsgPackException`, and a web formatter answers 400.
+
+Read into a class instead. For a partial update, give the class nullable properties, so that a property the client didn't send stays null. Only maps without the schema carry the names (`ObjectLayout.Map` and `UseInexedSchema = false`, as for `application/msgpack`). If all the writers do that, suppress the warning.
+
+A dictionary that the client also writes as a dictionary (not from a class) arrives as a map with its keys, so it works.
+
+## Classes of other projects
+
+### LSMP008: Serialized class of another project is not checked
+
+The rules need the source of a class (its initializers and constructor), so a class is checked in the project that declares it, and only when that project serializes it or sets `LsMsgPackAnalyze` to `AllTypes` (see [Which classes are checked](#which-classes-are-checked)). Where a serialized type uses a class of another project that wasn't checked, LSMP008 says so: at the property, the base class, the action or the call. It isn't reported for:
+
+- classes of NuGet packages (a reference in the NuGet package folder: `NuGetPackageRoot`, `.nuget/packages`), which the project can't change;
+- the framework's classes (namespaces `System` and `Microsoft`);
+- classes without public settable properties;
+- assemblies marked as checked (`LsMsgPackAnalyze` = `AllTypes`, see above).

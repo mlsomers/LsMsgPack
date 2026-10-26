@@ -77,8 +77,8 @@ namespace LsMsgPackTypeScript
           foreach (SerializedUse use in ModelTypes.FindUses(compilation, known, CancellationToken.None))
           {
             ITypeSymbol symbol = use.Reads ? use.Type : Unwrap(use.Type);
-            if (symbol is null)
-              continue;
+            if (symbol is null || HasAnonymousType(symbol, 0))
+              continue; // Ok(new { ... }): no class to generate (and written without properties)
             Type type = ToType(symbol);
             if (type is null)
             {
@@ -113,6 +113,20 @@ namespace LsMsgPackTypeScript
         || display == "System.Threading.Tasks.ValueTask" || display == "System.Net.Http.HttpResponseMessage")
         return null;
       return type;
+    }
+
+    private static bool HasAnonymousType(ITypeSymbol symbol, int depth)
+    {
+      if (symbol is IArrayTypeSymbol array)
+        return HasAnonymousType(array.ElementType, depth + 1);
+      if (!(symbol is INamedTypeSymbol named) || depth > 16)
+        return false;
+      if (named.IsAnonymousType)
+        return true;
+      foreach (ITypeSymbol argument in named.TypeArguments)
+        if (HasAnonymousType(argument, depth + 1))
+          return true;
+      return false;
     }
 
     private static bool IsUseless(Type type)
