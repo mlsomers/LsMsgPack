@@ -27,9 +27,9 @@ namespace Shop
     public static ShopMsgPackContext Default { get; } = new ShopMsgPackContext();
 
     /// <summary>
-    /// Written by the generator (version 1 of the generated code).
+    /// Written by the generator (version 2 of the generated code).
     /// </summary>
-    public ShopMsgPackContext() : base(1)
+    public ShopMsgPackContext() : base(2)
     {
     }
 
@@ -78,7 +78,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Customer", typeof(global::Shop.Customer), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Lines", typeof(global::System.Collections.Generic.List<global::Shop.InvoiceLine>), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Total", typeof(decimal), global::LtMsgPack.Generated.GeneratedKind.Decimal, false, true, true)
-      }, new int[] { 0, 1, 2, 3, 4, 5, 6 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadValue)
+      }, new int[] { 0, 1, 2, 3, 4, 5, 6 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadValue)
       {
       }
 
@@ -264,7 +264,28 @@ namespace Shop
             continue;
           }
           if (r.TryReadNil())
-            continue; // a nil leaves the property as the constructor made it
+          {
+            switch (prop.GeneratedId)
+            {
+              case 0:
+                o.Id = default(global::System.Guid);
+                continue;
+              case 1:
+                o.InvoiceDate = default(global::System.DateTime);
+                continue;
+              case 2:
+                o.PaidDate = default(global::System.DateTime?);
+                continue;
+              case 3:
+                o.Status = default(global::Shop.InvoiceStatus);
+                continue;
+              case 6:
+                o.Total = default(decimal);
+                continue;
+            }
+            prop.ReadNil(o); // the value the writer leaves out (null, the default of the type or of [DefaultValue])
+            continue;
+          }
           switch (prop.GeneratedId)
           {
             case 0:
@@ -407,7 +428,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "CustomerId", typeof(int), global::LtMsgPack.Generated.GeneratedKind.Int32, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "CompanyName", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "BillingAddress", typeof(global::Shop.Address), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadValue)
+      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadValue)
       {
       }
 
@@ -516,7 +537,19 @@ namespace Shop
             continue;
           }
           if (r.TryReadNil())
-            continue; // a nil leaves the property as the constructor made it
+          {
+            switch (prop.GeneratedId)
+            {
+              case 0:
+                o.CustomerId = default(int);
+                continue;
+              case 1:
+                o.CompanyName = default(string);
+                continue;
+            }
+            prop.ReadNil(o); // the value the writer leaves out (null, the default of the type or of [DefaultValue])
+            continue;
+          }
           switch (prop.GeneratedId)
           {
             case 0:
@@ -599,7 +632,7 @@ namespace Shop
       {
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "Street", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "City", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true)
-      }, new int[] { 0, 1 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadValue)
+      }, new int[] { 0, 1 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadValue)
       {
       }
 
@@ -712,7 +745,19 @@ namespace Shop
             continue;
           }
           if (r.TryReadNil())
-            continue; // a nil leaves the property as the constructor made it
+          {
+            switch (prop.GeneratedId)
+            {
+              case 0:
+                o.Street = default(string);
+                continue;
+              case 1:
+                o.City = default(string);
+                continue;
+            }
+            prop.ReadNil(o); // the value the writer leaves out (null, the default of the type or of [DefaultValue])
+            continue;
+          }
           switch (prop.GeneratedId)
           {
             case 0:
@@ -786,7 +831,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "LineNumber", typeof(int), global::LtMsgPack.Generated.GeneratedKind.Int32, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "Quantity", typeof(decimal), global::LtMsgPack.Generated.GeneratedKind.Decimal, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "Unit", typeof(global::Shop.UnitOfMeasure), global::LtMsgPack.Generated.GeneratedKind.Enum, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadValue)
+      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadValue)
       {
       }
 
@@ -910,7 +955,22 @@ namespace Shop
             continue;
           }
           if (r.TryReadNil())
-            continue; // a nil leaves the property as the constructor made it
+          {
+            switch (prop.GeneratedId)
+            {
+              case 0:
+                o.LineNumber = default(int);
+                continue;
+              case 1:
+                o.Quantity = default(decimal);
+                continue;
+              case 2:
+                o.Unit = default(global::Shop.UnitOfMeasure);
+                continue;
+            }
+            prop.ReadNil(o); // the value the writer leaves out (null, the default of the type or of [DefaultValue])
+            continue;
+          }
           switch (prop.GeneratedId)
           {
             case 0:

@@ -259,6 +259,20 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
+    /// The value a nil sets in an object written as an array (<see cref="ObjectLayout.Array"/>): what the writer's <see cref="TypeResolving.Filters.FilterDefaultValues"/> leaves out,
+    /// so the value of [DefaultValue] when the settings have that filter, otherwise the default of the type (null for references and nullables), as JSON reads a null.
+    /// A value missing after the end of the array leaves the property as the constructor made it (like a key that is not in a map).
+    /// <para>Until October 2026 a nil also left the property as the constructor made it, so a null could not be read into a property the constructor initializes, and a left out 0 or false was read as the initial value.</para>
+    /// </summary>
+    internal object NilValue(MsgPackOptions settings)
+    {
+      PropertyAttributeSet.NilValues nil = Attributes.Nil;
+      if (nil.DefaultValue != null && settings.LeavesOutDefaultValues)
+        return nil.DefaultValue;
+      return nil.TypeDefault;
+    }
+
+    /// <summary>
     /// Note that this may not be the complete set, When multiple attributes of the same type are applied, only the first one will be listed here, so if your custom attribute supports multiple instances on a property you will need to get them from the propertyInfo.
     /// </summary>
     public Dictionary<string, object> CustomAttributes { get; set; }

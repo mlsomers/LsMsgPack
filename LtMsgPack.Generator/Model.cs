@@ -150,7 +150,8 @@ namespace LtMsgPack.Generator
     string EnumUnderlying, // the keyword of the underlying type of an enum (int, byte...)
     bool CanGet, // the generated code writes it (its getter is accessible, no [DefaultValue])
     bool CanSet,
-    bool Unrolled); // kept by the default static filters (the unrolled writer)
+    bool Unrolled, // kept by the default static filters (the unrolled writer)
+    bool HasDefaultValue); // [DefaultValue]: a nil in the array layout may be its value (PropReader.ReadNil), otherwise it is default(T)
 
   internal sealed record TypeModel(
     TypeModelKind Kind,

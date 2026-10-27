@@ -58,7 +58,7 @@ function orderPayload(body, orderItems) {
   return Uint8Array.from([...schema, ...body]);
 }
 
-test('an entry of a model becomes an instance of its class, a left out value keeps what the class set', () => {
+test('an entry of a model becomes an instance of its class: a nil is the default the writer left out, a missing value keeps what the class set', () => {
   const decoder = new Decoder({ models });
   // [Id, nil, nil, [nil, "Rome"], {"": 2, "@": [5, "Rex"]}, nil, 300000000 (30 s), nil]
   const body = [0x98, ...guidBin, 0xc0, 0xc0, 0x92, 0xc0, 0xa4, ...Buffer.from('Rome'), 0x82, 0xa0, 2, 0xa1, 0x40, 0x92, 5, 0xa3, ...Buffer.from('Rex'), 0xc0, 0xce, 0x11, 0xe1, 0xa3, 0x00, 0xc0];
@@ -67,8 +67,8 @@ test('an entry of a model becomes an instance of its class, a left out value kee
   assert.strictEqual(order.constructor, Order);
   assert.deepStrictEqual(Object.keys(order), Object.keys(new Order()), 'the fields in the order of the class');
   assert.strictEqual(order.Id, '0f8fad5b-d9cb-469f-a165-70867728950e');
-  assert.strictEqual(order.Retries, 3, 'nil: the constructor value, as a .NET reader keeps it');
-  assert.deepStrictEqual(order.Tags, ['new']);
+  assert.strictEqual(order.Retries, 0, 'nil: the value the writer left out, as a .NET reader reads it (not the constructor value)');
+  assert.strictEqual(order.Tags, null, 'nil: null');
   assert.ok(order.Home instanceof Address);
   assert.strictEqual(order.Home.Street, null, 'nil keeps the value of a new Address (as the .NET reader makes one), not the one the Order constructor put in its own');
   assert.strictEqual(order.Home.City, 'Rome');
@@ -79,8 +79,15 @@ test('an entry of a model becomes an instance of its class, a left out value kee
   assert.strictEqual(order.Due.getTime(), -62135596800000);
 
   const again = decoder.decode(orderPayload(body)).value;
-  assert.notStrictEqual(again.Tags, order.Tags, 'initial values are not shared between objects');
-  assert.notStrictEqual(again.Due, order.Due);
+  assert.notStrictEqual(again.Due, order.Due, 'made for each object');
+
+  for (const generateCode of [true, false]) {
+    const shorter = new Decoder({ models, generateCode }).decode(orderPayload([0x92, ...guidBin, 5])).value; // [Id, 5]: the rest is missing (an older writer, or trimmed)
+    assert.strictEqual(shorter.Retries, 5);
+    assert.deepStrictEqual(shorter.Tags, ['new'], 'missing: the class value');
+    assert.strictEqual(shorter.Home.Street, 'Main');
+    assert.strictEqual(shorter.Timeout, '00:00:30');
+  }
 });
 
 test('the server and the models differ: the schema decides which value is which', () => {
@@ -93,7 +100,7 @@ test('the server and the models differ: the schema decides which value is which'
   assert.strictEqual(order.Retries, 1);
   assert.strictEqual(order.Id, '0f8fad5b-d9cb-469f-a165-70867728950e');
   assert.deepStrictEqual(order.Tags, ['new'], 'a property the server does not write keeps the class value');
-  assert.strictEqual(order.Home.Street, 'Main');
+  assert.strictEqual(order.Home, null, 'nil: null, as a .NET reader reads it');
   assert.deepStrictEqual(Object.keys(order), [...Object.keys(new Order()), 'Priority'], 'the class\'s fields, then the ones it does not have');
   assert.notStrictEqual(decoder.decode(orderPayload([0x94, 9, 1, ...guidBin, 0xc0], items)).value.Tags, order.Tags, 'not shared either when the server does not write them');
 });
@@ -141,7 +148,7 @@ test("models generated with propertyNames: 'camelCase': read into their fields, 
   for (const generateCode of [true, false]) {
     const order = new Decoder({ models: camelModels, generateCode }).decode(orderPayload(body, items)).value;
     assert.ok(order instanceof CamelOrder);
-    assert.deepStrictEqual({ ...order, home: { ...order.home } }, { id: '0f8fad5b-d9cb-469f-a165-70867728950e', retries: 3, home: { street: null, city: 'Rome' }, entry: { key: 'k', value: 2 }, priority: 9 });
+    assert.deepStrictEqual({ ...order, home: { ...order.home } }, { id: '0f8fad5b-d9cb-469f-a165-70867728950e', retries: 0, home: { street: null, city: 'Rome' }, entry: { key: 'k', value: 2 }, priority: 9 });
 
     order.retries = 5;
     const written = entries(encode(order, { models: camelModels, generateCode }));
@@ -151,7 +158,7 @@ test("models generated with propertyNames: 'camelCase': read into their fields, 
   }
   assert.throws(() => new Decoder({ models: camelModels, propertyNames: 'dotnet' }), /propertyNames/);
   assert.throws(() => new Decoder({ models, propertyNames: 'camelCase' }), /propertyNames/, 'models with the .NET names');
-  assert.strictEqual(new LsMsgPackClient({ models: camelModels }).decoder.decode(orderPayload(body, items)).value.retries, 3, 'taken from the models when not given');
+  assert.strictEqual(new LsMsgPackClient({ models: camelModels }).decoder.decode(orderPayload(body, items)).value.retries, 0, 'taken from the models when not given');
 });
 
 /** The map of an encoded object as [key, value] pairs (in order). */
@@ -266,12 +273,12 @@ test('hot-loaded schemas: the first response refers to its schema', { skip }, as
   assert.strictEqual((await client.send('/kinds/values')).reference, true);
 });
 
-test('with models the client reads what a .NET client reads (constructor values)', { skip }, async () => {
+test('with models the client reads what a .NET client reads (left out values, constructor values)', { skip }, async () => {
   const client = new LsMsgPackClient({ baseUrl: server.url, models: generated.models, schemas: generated.schemas });
   const preferences = await client.get('/preferences');
   const dotnet = await json('/dotnet/preferences');
-  assert.strictEqual(preferences.Retries, 3, 'sent as 0, left out: .NET keeps the constructor value');
-  assert.strictEqual(dotnet.Retries, 3);
+  assert.strictEqual(preferences.Retries, 0, 'sent as 0, left out (nil): the default of the type, not the constructor value');
+  assert.strictEqual(dotnet.Retries, 0);
   // DateTime.UtcNow in the constructor: each instance of the server has another moment (the generated class has DateTime.MinValue, the data replaces it)
   const { Created: created, ...rest } = dotnet;
   const { Created: read, ...others } = preferences;

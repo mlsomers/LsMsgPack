@@ -63,6 +63,39 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal object[] Interfaces { get { return Look().Interfaces; } }
 
+    private volatile NilValues _nil;
+
+    /// <summary>
+    /// What a nil in the array layout sets (see <see cref="FullPropertyInfo.NilValue"/>): the value of [DefaultValue] when it fits the property (otherwise FilterDefaultValues never
+    /// leaves out a value for it: <c>Equals</c> fails), and the default of the type.
+    /// </summary>
+    internal sealed class NilValues
+    {
+      internal object DefaultValue;
+      internal object TypeDefault;
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = TrimReasons.ModelTypes)]
+    internal NilValues Nil
+    {
+      get
+      {
+        NilValues nil = _nil;
+        if (nil != null)
+          return nil;
+        Type type = _property.PropertyType;
+        Type underlying = Nullable.GetUnderlyingType(type);
+        nil = new NilValues();
+        if (type.IsValueType && underlying is null)
+          nil.TypeDefault = Activator.CreateInstance(type); // as FilterDefaultValues compares with it
+        if (ByName.TryGetValue(nameof(System.ComponentModel.DefaultValueAttribute), out object attribute) && attribute is System.ComponentModel.DefaultValueAttribute def
+          && def.Value != null && ((underlying ?? type).IsInstanceOfType(def.Value)))
+          nil.DefaultValue = def.Value;
+        _nil = nil; // the same for every thread that computes it
+        return nil;
+      }
+    }
+
     private Looked Look()
     {
       Looked looked = _looked;

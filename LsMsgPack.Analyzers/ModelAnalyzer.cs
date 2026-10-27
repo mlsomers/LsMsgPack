@@ -12,15 +12,16 @@ using System.Threading;
 namespace LsMsgPack.Analyzers
 {
   /// <summary>
-  /// The properties of the serialized types (<see cref="ModelTypes"/>): default values that are lost (LSMP001-003) and places where the data picks the type (LSMP004),
-  /// and the calls and actions that read into such a place (LSMP005). See docs/Analyzers.md.
+  /// The properties of the serialized types (<see cref="ModelTypes"/>): default values that are lost (LSMP001-003, LSMP006) and places where the data picks the type (LSMP004),
+  /// the calls and actions that read into such a place (LSMP005) or into a place without property names (LSMP007), and classes of other projects that are not checked (LSMP008). See docs/Analyzers.md.
   /// <para>Reported from symbol and operation actions (not at the end of the compilation), so the IDE shows them while typing and offers the code fixes.</para>
   /// </summary>
   [DiagnosticAnalyzer(LanguageNames.CSharp)]
   public sealed class ModelAnalyzer : DiagnosticAnalyzer
   {
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
-      ImmutableArray.Create(Rules.MissingDefaultValue, Rules.DefaultValueDiffers, Rules.DefaultValueType, Rules.OpenProperty, Rules.OpenRead);
+      ImmutableArray.Create(Rules.MissingDefaultValue, Rules.DefaultValueDiffers, Rules.DefaultValueType, Rules.OpenProperty, Rules.OpenRead,
+        Rules.NullReadAsInitial, Rules.UntypedRead, Rules.UncheckedModel);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -29,12 +30,14 @@ namespace LsMsgPack.Analyzers
       context.RegisterCompilationStartAction(start =>
       {
         KnownSymbols known = new KnownSymbols(start.Compilation);
-        if (known.IsEmpty)
-          return; // neither serializer is referenced
+        if (known.IsEmpty && !ModelTypes.AllTypes(start.Options))
+          return; // neither serializer is referenced, and the project of models does not ask for its classes to be checked
         Models models = new Models(start.Compilation, known, start.Options);
-        start.RegisterSymbolAction(c => AnalyzeProperty(c, known, models), SymbolKind.Property);
-        start.RegisterSymbolAction(c => AnalyzeAction(c, known), SymbolKind.Method);
-        start.RegisterOperationAction(c => AnalyzeCall(c, known), OperationKind.Invocation);
+        OtherAssemblies others = new OtherAssemblies(start.Compilation, start.Options);
+        start.RegisterSymbolAction(c => AnalyzeProperty(c, known, models, others), SymbolKind.Property);
+        start.RegisterSymbolAction(c => AnalyzeBaseType(c, models, others), SymbolKind.NamedType);
+        start.RegisterSymbolAction(c => AnalyzeAction(c, known, others), SymbolKind.Method);
+        start.RegisterOperationAction(c => AnalyzeCall(c, known, others), OperationKind.Invocation, OperationKind.ObjectCreation);
       });
     }
 
@@ -72,7 +75,7 @@ namespace LsMsgPack.Analyzers
 
     #region Properties
 
-    private static void AnalyzeProperty(SymbolAnalysisContext context, KnownSymbols known, Models models)
+    private static void AnalyzeProperty(SymbolAnalysisContext context, KnownSymbols known, Models models, OtherAssemblies others)
     {
       IPropertySymbol property = (IPropertySymbol)context.Symbol;
       if (property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public || property.GetMethod is null
@@ -85,8 +88,24 @@ namespace LsMsgPack.Analyzers
       ITypeSymbol open = OpenPart(property.Type);
       if (open != null)
         context.ReportDiagnostic(Diagnostic.Create(Rules.OpenProperty, property.Locations[0], name, Display(property.Type), Display(open)));
+      INamedTypeSymbol other = others.FindUnchecked(property.Type);
+      if (other != null)
+        context.ReportDiagnostic(Diagnostic.Create(Rules.UncheckedModel, property.Locations[0], Display(other), other.ContainingAssembly.Name));
 
       CheckDefaults(context, property, name, known);
+    }
+
+    /// <summary>
+    /// A serialized class deriving from a class of another assembly that no analyzer checked (LSMP008): the properties of the base class are written too.
+    /// </summary>
+    private static void AnalyzeBaseType(SymbolAnalysisContext context, Models models, OtherAssemblies others)
+    {
+      INamedTypeSymbol type = (INamedTypeSymbol)context.Symbol;
+      if (type.TypeKind != TypeKind.Class || type.BaseType is null || type.IsImplicitlyDeclared || !models.Get(context.CancellationToken).Contains(type))
+        return;
+      INamedTypeSymbol other = others.FindUnchecked(type.BaseType);
+      if (other != null)
+        context.ReportDiagnostic(Diagnostic.Create(Rules.UncheckedModel, type.Locations[0], Display(other), other.ContainingAssembly.Name));
     }
 
     /// <summary>
@@ -172,10 +191,15 @@ namespace LsMsgPack.Analyzers
           return;
         }
         if (underlying.SpecialType == SpecialType.System_Decimal && arguments[1].Value is string decimalText && initial.IsConstant
-          && decimal.TryParse(decimalText, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal parsed) && !Equals(parsed, initial.Value))
+          && decimal.TryParse(decimalText, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal parsed))
         {
-          string argument = Literal(initial.Value, underlying, initial.Expression, initial.Model, location);
-          context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueDiffers, at, Properties(argument, null), name, attributeSyntax.ArgumentList?.Arguments.ToString(), argument));
+          if (!Equals(parsed, initial.Value))
+          {
+            string argument = Literal(initial.Value, underlying, initial.Expression, initial.Model, location);
+            context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueDiffers, at, Properties(argument, null), name, attributeSyntax.ArgumentList?.Arguments.ToString(), argument));
+          }
+          else if (IsNullable(type))
+            ReportNullReadAsInitial(context, name, initial, underlying, location);
         }
         else if (!initial.Found && arguments[1].Value is string text && text.Length > 0)
           context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueDiffers, at, NoFix, name, attributeSyntax.ArgumentList?.Arguments.ToString(), DefaultText(type))); // nothing sets it
@@ -201,6 +225,8 @@ namespace LsMsgPack.Analyzers
           string initializer = initial.CanReplace ? written : null;
           context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueDiffers, at, Properties(argument, initializer), name, written, argument));
         }
+        else if (IsNullable(type))
+          ReportNullReadAsInitial(context, name, initial, underlying, location);
       }
       else if (!initial.Found && !IsDefault(value.Value, type))
       {
@@ -208,6 +234,23 @@ namespace LsMsgPack.Analyzers
         string initializer = initial.CanAdd ? written : null;
         context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueDiffers, at, Properties(null, initializer), name, written, DefaultText(type)));
       }
+    }
+
+    /// <summary>
+    /// LSMP006: [DefaultValue] equals the initial value, so the writer keeps null, but as nil in the array layout, which a reader takes as left out (ExplicitNullKeepsTheConstructorValue).
+    /// </summary>
+    private static void ReportNullReadAsInitial(SymbolAnalysisContext context, string name, InitialValue initial, ITypeSymbol underlying, Location location)
+    {
+      string value = Literal(initial.Value, underlying, initial.Expression, initial.Model, location);
+      context.ReportDiagnostic(Diagnostic.Create(Rules.NullReadAsInitial, location, name, value));
+    }
+
+    /// <summary>
+    /// The property can hold null: a reference type or a nullable value type.
+    /// </summary>
+    private static bool IsNullable(ITypeSymbol type)
+    {
+      return !type.IsValueType || !SameType(UnderlyingType(type), type);
     }
 
     private static readonly ImmutableDictionary<string, string> NoFix = ImmutableDictionary<string, string>.Empty;
@@ -359,39 +402,75 @@ namespace LsMsgPack.Analyzers
     #region Reading into any type
 
     /// <summary>
-    /// <c>Deserialize&lt;object&gt;</c>, <c>ReadAsAsync&lt;List&lt;object&gt;&gt;</c>...
+    /// <c>Deserialize&lt;object&gt;</c>, <c>ReadAsAsync&lt;List&lt;object&gt;&gt;</c>, <c>Ok(value)</c>, <c>new ObjectContent&lt;T&gt;</c>...
     /// </summary>
-    private static void AnalyzeCall(OperationAnalysisContext context, KnownSymbols known)
+    private static void AnalyzeCall(OperationAnalysisContext context, KnownSymbols known, OtherAssemblies others)
     {
       List<SerializedUse> uses = new List<SerializedUse>(1);
-      SerializerUses.FromInvocation((IInvocationOperation)context.Operation, known, uses);
-      Report(context.ReportDiagnostic, uses);
+      SerializerUses.FromOperation(context.Operation, known, uses);
+      Report(context.ReportDiagnostic, uses, others);
     }
 
     /// <summary>
-    /// The parameters of a controller action, with a reference to the web formatter of its framework.
+    /// The result and parameters of a controller action, with a reference to the web formatter of its framework.
     /// </summary>
-    private static void AnalyzeAction(SymbolAnalysisContext context, KnownSymbols known)
+    private static void AnalyzeAction(SymbolAnalysisContext context, KnownSymbols known, OtherAssemblies others)
     {
       IMethodSymbol method = (IMethodSymbol)context.Symbol;
       if (!SerializerUses.IsController(method.ContainingType, known))
         return;
       List<SerializedUse> uses = new List<SerializedUse>();
       SerializerUses.FromAction(method, known, uses);
-      Report(context.ReportDiagnostic, uses);
+      Report(context.ReportDiagnostic, uses, others);
     }
 
-    private static void Report(Action<Diagnostic> report, List<SerializedUse> uses)
+    private static void Report(Action<Diagnostic> report, List<SerializedUse> uses, OtherAssemblies others)
     {
       for (int t = 0; t < uses.Count; t++)
       {
         SerializedUse use = uses[t];
-        if (!use.Reads || use.Location is null || !use.Location.IsInSource)
+        if (use.Location is null || !use.Location.IsInSource)
+          continue;
+        INamedTypeSymbol other = others.FindUnchecked(use.Type);
+        if (other != null)
+          report(Diagnostic.Create(Rules.UncheckedModel, use.Location, Display(other), other.ContainingAssembly.Name));
+        if (!use.Reads)
           continue;
         ITypeSymbol open = OpenPart(use.Type);
         if (open != null)
           report(Diagnostic.Create(Rules.OpenRead, use.Location, use.What, Display(use.Type), Display(open)));
+        string untyped = WithoutNames(use.Type);
+        if (untyped != null)
+          report(Diagnostic.Create(Rules.UntypedRead, use.Location, use.What, Display(use.Type), untyped));
       }
+    }
+
+    /// <summary>
+    /// What a read into an untyped place makes of an object written as an array of its values (LSMP007): object, or a dictionary with string keys and values of any type. Null for other types.
+    /// </summary>
+    private static string WithoutNames(ITypeSymbol type)
+    {
+      if (type.SpecialType == SpecialType.System_Object || type.TypeKind == TypeKind.Dynamic)
+        return "as an object[] of its values";
+      if (!(type is INamedTypeSymbol named))
+        return null;
+      if (IsUntypedDictionary(named))
+        return "and a dictionary cannot be filled from it (MsgPackException)";
+      foreach (INamedTypeSymbol i in named.AllInterfaces)
+        if (IsUntypedDictionary(i))
+          return "and a dictionary cannot be filled from it (MsgPackException)";
+      return null;
+    }
+
+    private static bool IsUntypedDictionary(INamedTypeSymbol type)
+    {
+      if (type.TypeArguments.Length != 2 || type.TypeArguments[0].SpecialType != SpecialType.System_String)
+        return false;
+      ITypeSymbol value = type.TypeArguments[1];
+      if (value.SpecialType != SpecialType.System_Object && value.TypeKind != TypeKind.Dynamic)
+        return false;
+      string name = type.OriginalDefinition.ToDisplayString();
+      return name == "System.Collections.Generic.IDictionary<TKey, TValue>" || name == "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>";
     }
 
     /// <summary>
@@ -433,7 +512,7 @@ namespace LsMsgPack.Analyzers
       return IsUntypedCollection(named) ? named : null;
     }
 
-    private static bool IsFramework(INamedTypeSymbol type)
+    internal static bool IsFramework(INamedTypeSymbol type)
     {
       INamespaceSymbol ns = type.ContainingNamespace;
       while (ns != null && !ns.IsGlobalNamespace && !ns.ContainingNamespace.IsGlobalNamespace)

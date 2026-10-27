@@ -216,7 +216,7 @@ namespace LsMsgPack.Meta
           : ConvertDeserializeValue(content, tType, settings, null);
 
         int reservedKeys = hasTypeId ? 2 : 1;
-        if (propVals.Count > reservedKeys && !(result is null)) // properties serialized along with the content (see SerializeEnumerableAttribute.SerializeProperties)
+        if (propVals.Count > reservedKeys && !(result is null) && SetsContentProperties(result.GetType(), settings, prop)) // properties serialized along with the content (see SerializeEnumerableAttribute.SerializeProperties)
           SetProperties(result, result.GetType(), propVals, settings);
 
         return result;
@@ -240,6 +240,22 @@ namespace LsMsgPack.Meta
       result = Instances.CreateObject(tType, settings);
       SetProperties(result, tType, props, propVals, settings);
       return result;
+    }
+
+    /// <summary>
+    /// The properties written along with the content of a collection. With the indexed schema their keys are indexes into the entry of the writer's class, so a class without an entry
+    /// (e.g. a list read from a collection with properties of a class the reader does not have) cannot match them: it ignores them when it does not serialize properties itself,
+    /// otherwise it is reported or throws as an object without an entry (the content is kept).
+    /// </summary>
+    private static bool SetsContentProperties(Type type, MsgPackOptions settings, FullPropertyInfo prop)
+    {
+      IndexedSchemaTypeResolver schema = SerializationRules.GetIndexedSchema(settings);
+      if (schema is null || !schema.HasNoEntry(type, settings))
+        return true;
+      SerializeEnumerableAttribute att = SerializationRules.GetEnumerableAttribute(type, prop);
+      if (att is null || !att.SerializeProperties)
+        return false;
+      return !schema.SkipIfNoEntry(type, settings, prop);
     }
 
     /// <summary>
@@ -510,7 +526,8 @@ namespace LsMsgPack.Meta
 
     /// <summary>
     /// The values of an object written as an array: by position in the order of the properties, or with the indexed schema by the names of the schema.
-    /// <para>A nil or missing value leaves the property as the constructor made it (like a property that is not in a map), values after the known properties are skipped.</para>
+    /// <para>A nil sets the value the writer leaves out (<see cref="FullPropertyInfo.NilValue"/>: null, the default of the type or the value of [DefaultValue]), a missing value (after the end of the array)
+    /// leaves the property as the constructor made it (like a property that is not in a map), values after the known properties are skipped.</para>
     /// </summary>
     private static object ConvertPositional(object[] items, Type type, FullPropertyInfo[] props, MsgPackOptions settings)
     {
@@ -522,13 +539,15 @@ namespace LsMsgPack.Meta
       for (int t = 0; t < count; t++)
       {
         FullPropertyInfo prop = byPosition[t];
-        if (prop is null || items[t] is null)
+        if (prop is null)
         {
           if (differences != null && items[t] != null) // a nil is a value left out (as a key that is not in a map)
             differences.UnknownProperty(result, NameOf(t, def));
           continue;
         }
-        if (differences is null)
+        if (items[t] is null)
+          prop.SetValue(result, prop.NilValue(settings));
+        else if (differences is null)
           prop.SetValue(result, ConvertDeserializeValue(items[t], prop.PropertyInfo.PropertyType, settings, prop));
         else
           ReadProperty(prop, result, items[t], settings, differences);

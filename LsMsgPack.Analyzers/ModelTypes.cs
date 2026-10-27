@@ -5,6 +5,7 @@ using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Operations;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Threading;
 
 namespace LsMsgPack.Analyzers
@@ -35,9 +36,7 @@ namespace LsMsgPack.Analyzers
       ModelTypes types = new ModelTypes();
       types.CollectSourceTypes(compilation.Assembly.GlobalNamespace, cancellation);
 
-      bool allTypes = options.AnalyzerConfigOptionsProvider.GlobalOptions.TryGetValue("build_property.LsMsgPackAnalyze", out string analyze)
-        && string.Equals(analyze?.Trim(), "AllTypes", StringComparison.OrdinalIgnoreCase);
-      if (allTypes)
+      if (AllTypes(options))
         for (int t = 0; t < types._sourceTypes.Count; t++)
         {
           INamedTypeSymbol type = types._sourceTypes[t];
@@ -51,6 +50,15 @@ namespace LsMsgPack.Analyzers
           types.Add(uses[t].Type);
       types.Walk(cancellation);
       return types;
+    }
+
+    /// <summary>
+    /// The MSBuild property <c>LsMsgPackAnalyze</c> = <c>AllTypes</c>: every public class and struct of the project is checked, also when it references only LsMsgPack.Core.
+    /// </summary>
+    public static bool AllTypes(AnalyzerOptions options)
+    {
+      return options.AnalyzerConfigOptionsProvider.GlobalOptions.TryGetValue("build_property.LsMsgPackAnalyze", out string analyze)
+        && string.Equals(analyze?.Trim(), "AllTypes", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -280,6 +288,7 @@ namespace LsMsgPack.Analyzers
 
     // The web formatters: only with a reference to them (a controller does not read msgpack otherwise)
     public readonly INamedTypeSymbol AspNetCoreController;
+    public readonly INamedTypeSymbol AspNetCoreObjectResult;
     public readonly INamedTypeSymbol WebApiController;
     public readonly INamedTypeSymbol MvcController;
     public readonly INamedTypeSymbol MvcResult;
@@ -304,7 +313,10 @@ namespace LsMsgPack.Analyzers
         mvc |= reference.Name == "LsMsgPackMvc";
       }
       if (aspNetCore)
+      {
         AspNetCoreController = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Mvc.ControllerBase");
+        AspNetCoreObjectResult = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Mvc.ObjectResult");
+      }
       if (webApi)
       {
         WebApiController = compilation.GetTypeByMetadataName("System.Web.Http.ApiController");
@@ -341,10 +353,20 @@ namespace LsMsgPack.Analyzers
       if (node is InvocationExpressionSyntax invocation)
       {
         string name = MethodName(invocation.Expression);
-        return name == "Serialize" || name == "Deserialize" || name == "DeserializeBody" || name == "SerializeObject" || name == "ReadAsAsync" || name == "PostAsync" || name == "PutAsync";
+        return name == "Serialize" || name == "Deserialize" || name == "DeserializeBody" || name == "SerializeObject" || name == "ReadAsAsync" || name == "PostAsync" || name == "PutAsync"
+          || (name != null && ResultMethods.Contains(name));
       }
       return node is ObjectCreationExpressionSyntax || node is ImplicitObjectCreationExpressionSyntax;
     }
+
+    /// <summary>
+    /// The methods of ASP.NET Core's ControllerBase that take the value of the response as object (<c>Ok(value)</c>, <c>CreatedAtAction(..., value)</c>, <c>BadRequest(error)</c>...).
+    /// </summary>
+    private static readonly HashSet<string> ResultMethods = new HashSet<string>(StringComparer.Ordinal)
+    {
+      "Ok", "Created", "CreatedAtAction", "CreatedAtRoute", "Accepted", "AcceptedAtAction", "AcceptedAtRoute", "StatusCode",
+      "NotFound", "BadRequest", "Conflict", "UnprocessableEntity", "Unauthorized",
+    };
 
     private static string MethodName(ExpressionSyntax expression)
     {
@@ -398,6 +420,13 @@ namespace LsMsgPack.Analyzers
         return;
       }
 
+      if (Same(container, known.AspNetCoreController))
+      {
+        if (ResultMethods.Contains(method.Name))
+          AddResultValue(invocation.Arguments, string.Concat("ControllerBase.", method.Name), uses);
+        return;
+      }
+
       if (method.IsGenericMethod && ((Same(container, known.HttpContentExtensions) && method.Name == "ReadAsAsync")
         || (Same(container, known.HttpClientExtensions) && (method.Name == "PostAsync" || method.Name == "PutAsync"))))
       {
@@ -415,6 +444,30 @@ namespace LsMsgPack.Analyzers
         uses.Add(new SerializedUse(type.TypeArguments[0], false, creation.Syntax.GetLocation(), "ObjectContent"));
       else if (Same(type, known.MvcResult) && creation.Arguments.Length > 0)
         AddValue(creation.Arguments[0].Value, "LsMsgPackResult", uses);
+      else if (known.AspNetCoreObjectResult != null && DerivesFrom(type, known.AspNetCoreObjectResult))
+        AddResultValue(creation.Arguments, type.Name, uses);
+    }
+
+    /// <summary>
+    /// The value of an ASP.NET Core result (<c>Ok(value)</c>, <c>new OkObjectResult(value)</c>): the argument of the parameter <c>value</c> (<c>error</c> for BadRequest...) declared as object,
+    /// which the output formatters write. Its static type is the root, as for a value passed to <c>Serialize</c>.
+    /// </summary>
+    private static void AddResultValue(ImmutableArray<IArgumentOperation> arguments, string what, List<SerializedUse> uses)
+    {
+      for (int t = 0; t < arguments.Length; t++)
+      {
+        IParameterSymbol parameter = arguments[t].Parameter;
+        if (parameter != null && parameter.Type.SpecialType == SpecialType.System_Object && (parameter.Name == "value" || parameter.Name == "error"))
+          AddValue(arguments[t].Value, what, uses);
+      }
+    }
+
+    private static bool DerivesFrom(INamedTypeSymbol type, INamedTypeSymbol baseType)
+    {
+      for (INamedTypeSymbol b = type; b != null; b = b.BaseType)
+        if (Same(b, baseType))
+          return true;
+      return false;
     }
 
     /// <summary>

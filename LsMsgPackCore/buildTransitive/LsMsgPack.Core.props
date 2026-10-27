@@ -3,5 +3,12 @@
        <LsMsgPackAnalyze>AllTypes</LsMsgPackAnalyze> checks every public class and struct of the project, e.g. a project of models that does not call the serializers itself -->
   <ItemGroup>
     <CompilerVisibleProperty Include="LsMsgPackAnalyze" />
+    <!-- LSMP008 leaves out the classes of NuGet packages (references in this folder) -->
+    <CompilerVisibleProperty Include="NuGetPackageRoot" />
+  </ItemGroup>
+  <!-- Marks the assembly as checked, so the projects that reference it do not report its classes (LSMP008). Items are evaluated after all properties, so the project's own value counts.
+       Written by the SDK's assembly info (GenerateAssemblyInfo); without it, add [assembly: System.Reflection.AssemblyMetadata("LsMsgPackAnalyze", "AllTypes")] yourself. -->
+  <ItemGroup Condition="'$(LsMsgPackAnalyze)' == 'AllTypes'">
+    <AssemblyMetadata Include="LsMsgPackAnalyze" Value="AllTypes" />
   </ItemGroup>
 </Project>

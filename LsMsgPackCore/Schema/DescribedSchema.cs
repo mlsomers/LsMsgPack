@@ -1,4 +1,5 @@
 ﻿using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Types;
 using System;
@@ -78,7 +79,7 @@ namespace LsMsgPack
 
       _bytes.WriteString(RootKey, _byteOrder);
       _bytes.WriteArrayHeader(1, _byteOrder);
-      WriteContent(root);
+      WriteContent(root, false);
     }
 
     private void WriteName(string name)
@@ -101,10 +102,10 @@ namespace LsMsgPack
         return;
       }
 
-      bool content = def.IsCollection || !IsObject(type, _settings);
+      bool content = def.IsCollection ? WritesElements(type) : !IsObject(type, _settings);
       _bytes.WriteArrayHeader(names.Count + (content ? 1 : 0), _byteOrder);
       if (content)
-        WriteContent(type);
+        WriteContent(type, true);
 
       if (names.Count == 0)
         return;
@@ -114,13 +115,23 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// The entry of a collection describes its elements (<c>"@"</c>) unless its class leaves them out (<see cref="SerializeEnumerableAttribute.SerializeElements"/>; an attribute of a property is not known here).
+    /// </summary>
+    private static bool WritesElements(Type type)
+    {
+      SerializeEnumerableAttribute attribute = SerializationRules.GetEnumerableAttribute(type, null);
+      return attribute is null || attribute.SerializeElements;
+    }
+
+    /// <summary>
     /// <c>["@", type]</c>: the content of a value wrapped with a type id (<c>{ "": typeId, "@": content }</c>), or the root.
     /// </summary>
-    private void WriteContent(Type type)
+    /// <param name="elements">The content of an entry: of a collection its elements, also when the collection is written as a map with them (that map is the entry)</param>
+    private void WriteContent(Type type, bool elements)
     {
       _bytes.WriteArrayHeader(2, _byteOrder);
       _bytes.WriteString(ContentName, _byteOrder);
-      WriteType(type);
+      WriteType(type, null, elements);
     }
 
     private static FullPropertyInfo Find(FullPropertyInfo[] props, string name, MsgPackOptions settings)
@@ -143,7 +154,7 @@ namespace LsMsgPack
       byte[] defaultValue = _leavesOutDefaults ? DefaultOf(prop) : null;
       _bytes.WriteArrayHeader(defaultValue is null ? 2 : 3, _byteOrder);
       WriteName(name);
-      WriteType(type);
+      WriteType(type, prop);
       if (!(defaultValue is null))
         _bytes.Write(defaultValue);
     }
@@ -184,7 +195,9 @@ namespace LsMsgPack
 
     [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = TrimReasons.ModelTypes)]
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
-    private void WriteType(Type type)
+    /// <param name="assignedTo">The property of the type (its <see cref="SerializeEnumerableAttribute"/>), null for elements and the root</param>
+    /// <param name="elements">A collection as its elements, whatever its <see cref="SerializeEnumerableAttribute"/> says (see <see cref="WriteContent"/>)</param>
+    private void WriteType(Type type, FullPropertyInfo assignedTo = null, bool elements = false)
     {
       Type nullable = Nullable.GetUnderlyingType(type);
       if (!(nullable is null))
@@ -223,6 +236,16 @@ namespace LsMsgPack
       if (FrameworkTypeInfo.IsTuple(type)) { Composite("tuple", type.GetGenericArguments()); return; } // the 8th item (Rest) is a tuple: a nested array
       if (typeof(IEnumerable).IsAssignableFrom(type))
       {
+        SerializeEnumerableAttribute attribute = SerializationRules.GetEnumerableAttribute(type, assignedTo);
+        if (!elements && !(attribute is null) && (attribute.SerializeProperties || !attribute.SerializeElements))
+        {
+          // Written as a map ({ "@": elements, ...properties }, see the serializers' SerializeCollection): an object of its entry, which the collection gets once its properties are written
+          if (!type.IsAbstract && !type.IsInterface && _entries.TryGetValue(type, out int collection))
+            WriteIndex(collection);
+          else
+            Kind("any");
+          return;
+        }
         CollectionInfo info = CollectionInfo.Get(type);
         if (info.IsDictionary || !(info.PairKey is null) || typeof(IDictionary).IsAssignableFrom(type))
         {

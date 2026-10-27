@@ -171,7 +171,7 @@ MsgPackSettings positional = new MsgPackSettings()
 };
 ```
 
-LsMsgPack leaves a property as the constructor made it when its value is nil, MessagePack-CSharp sets it to null.
+A nil sets the property to null (the type's default for value types), as MessagePack-CSharp does. Only with `FilterDefaultValues` in the `DynamicFilters` (the default, not in these settings) does LsMsgPack read a nil as the value of the property's `[DefaultValue]`, which is the value it left out. A value missing after the end of the array leaves the property as the constructor made it. Until October 2026 LsMsgPack left the property as the constructor made it for a nil too.
 
 **Incompatible**: `[Union]` and `DateTimeKind.Unspecified` (see the settings above). `DateTimeOffset` needs `DateTimeOffsetFormat.ClockTimeAndOffset`.
 

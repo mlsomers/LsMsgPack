@@ -1,5 +1,6 @@
 // Reads application/x-lsmsgpack payloads (the schema, or a reference to it, followed by the body) into complete objects:
-// every property of the schema entry is set, the ones the writer left out (nil, or missing) get their default.
+// every property of the schema entry is set, the ones the writer left out (nil) get their default (of the schema or the type), the ones missing after the end of an array
+// keep what the class sets (plain objects: the default).
 // An object that came with a type id gets its type name as the property $type (as System.Text.Json names it): the encoder writes it back as the type id.
 
 import { MissingSchemaError, MsgPackError } from './errors.js';
@@ -49,16 +50,18 @@ type Create = (values: unknown[], typeName: string | null) => Record<string, unk
  * The generated create and fill of a plan (see DecodeOptions.generateCode), undefined when code cannot be generated. Instances of classes only get the fill (create is new).
  * The fill has the read functions of the properties as constants: each call site then always calls the same function (reads[t](r) was one call site for all of them).
  */
-function generate(names: string[], reads: Read[], literals: boolean): { create?: Create; createTyped?: Create; fill: Fill } | undefined {
+function generate(names: string[], reads: Read[], literals: boolean, nil: ((t: number) => unknown) | undefined): { create?: Create; createTyped?: Create; fill: Fill } | undefined {
   if (!codeAllowed || names.length === 0 || names.length > 512 || names.includes('__proto__') || names.includes(TypeProperty)) return undefined; // an object literal would set the prototype, or have $type twice
   const literal = names.map((n, t) => `${JSON.stringify(n)}: v[${t}]`).join(', ');
   let fill = `const ${names.map((_, t) => `read${t} = reads[${t}]`).join(', ')};\nreturn function fill(r, o, n) {\nconst b = r.bytes;\n`;
   names.forEach((n, t) => {
-    fill += `if (n === ${t}) return;\nif (b[r.pos] === 0xc0) r.pos++; else o[${JSON.stringify(n)}] = read${t}(r);\n`;
+    // a nil is the value the writer left out: already there in an object made with the defaults, set on an instance of a class (its constructor set its own)
+    const left = nil === undefined ? 'r.pos++;' : `{ r.pos++; o[${JSON.stringify(n)}] = nil(${t}); }`;
+    fill += `if (n === ${t}) return;\nif (b[r.pos] === 0xc0) ${left} else o[${JSON.stringify(n)}] = read${t}(r);\n`;
   });
   fill += `for (let k = ${names.length}; k < n; k++) r.value();\n};`;
   try {
-    const fillFn = (new Function('reads', fill) as (reads: Read[]) => Fill)(reads);
+    const fillFn = (new Function('reads', 'nil', fill) as (reads: Read[], nil: ((t: number) => unknown) | undefined) => Fill)(reads, nil);
     if (!literals) return { fill: fillFn };
     return {
       create: new Function('v', `return { ${literal} };`) as Create,
@@ -74,6 +77,9 @@ function generate(names: string[], reads: Read[], literals: boolean): { create?:
 /** Reads an object of the array layout (the header of n values is read) and returns it complete. */
 type ReadArray = (r: SchemaReader, n: number) => Record<string, unknown>;
 
+/** A value of generateReadArray that is still to be made (a value the data did not have: null is a value). */
+const Unread = Object.freeze({});
+
 /** A field a model's class sets that the schema entry does not have (the server no longer writes it): it keeps the class's value. */
 interface Extra {
   name: string;
@@ -84,15 +90,18 @@ interface Extra {
 /**
  * Generates the reading of an object of the array layout: the values into variables first (the defaults where the data left them out), then the object at once,
  * so its properties are written once (a literal, or for a model a constructor function with the class's prototype: new of the class would make its initial values
- * only to have them replaced). The defaults that are made per object (makers, null until then) are made after the values, as Plan.complete does.
+ * only to have them replaced). The defaults that are made per object (makers) are made after the values, as Plan.complete does.
+ * A nil is the value the writer left out (nils, nilMakers: the schema's default or the type's), a value missing after the end of the array keeps the default (for a model: what its class sets).
  * @param order the properties in the order the object gets them: an index of names, or an Extra
  * @param proto the prototype of the model's class, undefined for a plain object
  */
-function generateReadArray(names: string[], reads: Read[], defaults: unknown[], makers: ((() => unknown) | undefined)[], order: (number | Extra)[], proto: object | undefined): ReadArray | undefined {
+function generateReadArray(names: string[], reads: Read[], defaults: unknown[], makers: ((() => unknown) | undefined)[], nils: unknown[], nilMakers: ((() => unknown) | undefined)[],
+  order: (number | Extra)[], proto: object | undefined): ReadArray | undefined {
   const count = names.length;
   if (!codeAllowed || count === 0 || count > 512 || names.includes('__proto__') || names.includes(TypeProperty) || order.some((p) => typeof p !== 'number' && p.name === '__proto__')) return undefined;
   const v = names.map((_, t) => `v${t}`);
-  let code = `const ${names.map((_, t) => `read${t} = reads[${t}], d${t} = defaults[${t}], m${t} = makers[${t}]`).join(', ')};\n`;
+  defaults = defaults.map((d, t) => makers[t] === undefined ? d : Unread);
+  let code = `const ${names.map((_, t) => `read${t} = reads[${t}], d${t} = defaults[${t}], m${t} = makers[${t}], z${t} = nils[${t}], zm${t} = nilMakers[${t}]`).join(', ')};\n`;
   let result: string;
   if (proto === undefined) result = `{ ${order.map((p) => `${JSON.stringify(names[p as number])}: v${p}`).join(', ')} }`;
   else {
@@ -105,15 +114,16 @@ function generateReadArray(names: string[], reads: Read[], defaults: unknown[], 
   }
   code += `return function readArray(r, n) {\nconst b = r.bytes;\nlet ${names.map((_, t) => `v${t} = d${t}`).join(', ')};\nvalues: {\n`;
   names.forEach((_, t) => {
-    code += `if (n === ${t}) break values;\nif (b[r.pos] === 0xc0) r.pos++; else v${t} = read${t}(r);\n`;
+    const nil = nilMakers[t] === undefined ? `v${t} = z${t};` : `v${t} = zm${t}();`;
+    code += `if (n === ${t}) break values;\nif (b[r.pos] === 0xc0) { r.pos++; ${nil} } else v${t} = read${t}(r);\n`;
   });
   code += `for (let k = ${count}; k < n; k++) r.value();\n}\n`;
   makers.forEach((m, t) => {
-    if (m !== undefined) code += `if (v${t} === null) v${t} = m${t}();\n`;
+    if (m !== undefined) code += `if (v${t} === unread) v${t} = m${t}();\n`;
   });
   code += `return ${result};\n};`;
   try {
-    return (new Function('reads', 'defaults', 'makers', 'order', 'proto', code) as (...args: unknown[]) => ReadArray)(reads, defaults, makers, order, proto);
+    return (new Function('reads', 'defaults', 'makers', 'nils', 'nilMakers', 'order', 'proto', 'unread', code) as (...args: unknown[]) => ReadArray)(reads, defaults, makers, nils, nilMakers, order, proto, Unread);
   } catch {
     codeAllowed = false;
     return undefined;
@@ -172,7 +182,7 @@ class Plan {
       this.template = o;
     }
     if (!generateCode) return;
-    const code = generate(this.names, this.reads, this.cls === undefined);
+    const code = generate(this.names, this.reads, this.cls === undefined, this.cls === undefined ? undefined : (t) => this.nilValue(t));
     this.createFn = code?.create;
     this.createTypedFn = code?.createTyped;
     this.fillFn = code?.fill;
@@ -182,7 +192,7 @@ class Plan {
   /** readArrayFn for plain objects and the models (not for DecodeOptions.classes: their constructors may do more than set fields). */
   private generateReadArray(): ReadArray | undefined {
     const names = this.names;
-    if (this.cls === undefined) return generateReadArray(names, this.reads, this.values, this.makers, names.map((_, t) => t), undefined);
+    if (this.cls === undefined) return generateReadArray(names, this.reads, this.values, this.makers, this.values, this.makers, names.map((_, t) => t), undefined);
     if (!this.model) return undefined;
     // The generated classes only initialize their fields: the same fields with the same values in the same order, without new of the class.
     const cls = this.cls, probe = new cls() as Record<string, unknown>;
@@ -197,7 +207,13 @@ class Plan {
       }
     }
     for (let t = 0; t < this.missing.length; t++) order.push(this.missing[t]); // after the class's fields, as create sets them
-    return generateReadArray(names, this.reads, defaults, makers, order, cls.prototype);
+    return generateReadArray(names, this.reads, defaults, makers, this.values, this.makers, order, cls.prototype);
+  }
+
+  /** The value of a nil in the array layout: what the writer left out (the default of the schema or of the type), not what a class sets. */
+  nilValue(t: number): unknown {
+    const make = this.makers[t];
+    return make === undefined ? this.values[t] : make();
   }
 
   /** Reads an object of the array layout into a new object (see generateReadArray), undefined without generated code. */
@@ -607,13 +623,17 @@ export class SchemaReader extends MsgPackReader {
     return plan.complete(o);
   }
 
-  /** Values by position, nil leaves the default (the writer left the value out), values beyond the entry are skipped. */
+  /**
+   * Values by position, values beyond the entry are skipped. A nil is the value the writer left out (Plan.nilValue: the object made with the defaults has it, an instance of a class gets it),
+   * a value missing after the end of the array keeps what create made (for a class: what its constructor sets).
+   */
   private fill(plan: Plan, o: Record<string, unknown>, n: number): void {
     if (plan.fillFn !== undefined) return plan.fillFn(this, o, n);
     const names = plan.names, reads = plan.reads, count = names.length, bytes = this.bytes;
     for (let k = 0; k < n; k++) {
       if (bytes[this.pos] === 0xc0) {
         this.pos++;
+        if (plan.cls !== undefined && k < count) setOwn(o, names[k], plan.nilValue(k));
         continue;
       }
       if (k < count) setOwn(o, names[k], reads[k](this));
