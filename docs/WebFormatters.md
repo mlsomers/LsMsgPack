@@ -4,7 +4,7 @@ Three packages let controllers receive and return MsgPack the same way they hand
 
 | Scenario | NuGet package | Targets | Namespace |
 |---|---|---|---|
-| [ASP.NET Core](#aspnet-core) MVC / Web API controllers | `LsMsgPack.AspNetCore` | ASP.NET Core 2.x (netstandard2.0, also on .NET Framework) and ASP.NET Core 3.0 and up (net8.0) | `LsMsgPackFormatters` |
+| [ASP.NET Core](#aspnet-core) MVC / Web API controllers, [minimal APIs](#minimal-apis) | `LsMsgPack.AspNetCore` | ASP.NET Core 2.x (netstandard2.0, also on .NET Framework) and ASP.NET Core 3.0 and up (net8.0) | `LsMsgPackFormatters` |
 | [ASP.NET Web API 2](#aspnet-web-api-2) (`System.Web.Http`) | `LsMsgPack.AspNet.WebApi` | netstandard2.0 (Web API 2 runs on .NET Framework) | `LsMsgPackWebApiFormatters` |
 | [HttpClient](#httpclient) (`ObjectContent` / `ReadAsAsync`) | `LsMsgPack.AspNet.WebApi` | netstandard2.0, any platform | `LsMsgPackWebApiFormatters` |
 | [ASP.NET MVC 5](#aspnet-mvc-5) (`System.Web.Mvc`) | `LsMsgPack.AspNet.Mvc` | .NET Framework 4.6.2+ | `LsMsgPackMvc` |
@@ -109,6 +109,38 @@ Notes:
 - An empty body binds as `null` (or the type's default value) when empty bodies are allowed, like the JSON formatter does.
 - Request bodies are buffered (on .NET 8 read in place from the request pipe) and responses are written asynchronously, so no `AllowSynchronousIO` is needed.
 - With `application/x-lsmsgpack`, a response whose runtime type differs from the action's declared return type gets a type id on the root. The client can then deserialize it as the declared base type or interface.
+
+### Minimal APIs
+
+Minimal APIs (ASP.NET Core 8 and up) don't use formatters: they write results that implement `IResult` and bind parameters that read themselves. `LsMsgPack.AspNetCore` has both, and they behave like a controller with the formatters. Register the serializer:
+
+```csharp
+using LsMsgPackFormatters;
+
+builder.Services.AddLsMsgPack(); // or AddLsMsgPack(o => ...), AddLsMsgPack(AppMsgPackContext.Default, o => ...)
+```
+
+It registers an `LtMsgPackHttpSerializer` singleton (unless one is registered already) with the `LtMsgPackHttpOptions` of the services, the same options `AddLsMsgPackSerializerFormatters` configures. An app with controllers too gets a second serializer with its own schema store: the schema ids are the same in both, so negotiation works either way.
+
+Return `MsgPackResults.MsgPack(value)` (or `Results.Extensions.MsgPack(value)`), and take the body as a `MsgPackBody<T>`:
+
+```csharp
+app.MapGet("/api/orders/{id}", (int id) => MsgPackResults.MsgPack(orders.Find(id)));
+
+app.MapPost("/api/orders", (MsgPackBody<Order> order) =>
+  MsgPackResults.MsgPack(orders.Add(order.Value), StatusCodes.Status201Created));
+
+// with TypedResults
+app.MapGet("/api/invoices/{id}", Results<MsgPackResult<Invoice>, NotFound> (int id) =>
+  invoices.Find(id) is Invoice invoice ? MsgPackResults.MsgPack(invoice) : TypedResults.NotFound());
+```
+
+- **The response** is MsgPack when the `Accept` header asks for one of the MsgPack media types, and JSON otherwise (with the JSON options of minimal APIs, `ConfigureHttpJsonOptions`), as MVC chooses between the JSON formatter and the MsgPack output formatter: by quality, then by position, and JSON when the header lists `*/*`. Responses have `Vary: Accept`. Schema negotiation, version 2 of the schema and the headers are the same as the output formatter's.
+- **The declared type** is the type argument: `MsgPackResults.MsgPack<Animal>(dog)` gets a type id on the root with `application/x-lsmsgpack`, as an action declared to return `Animal`. Declared as `object`, the value is written as its class, as `Ok(value)`.
+- **The body** is read with LtMsgPack when the `Content-Type` is one of the MsgPack media types, and as JSON for a JSON `Content-Type`. An empty body, nil or JSON `null` is no value: a `MsgPackBody<Order>?` parameter (or one with a default value) is then `null`, and ASP.NET Core answers `400 Bad Request` for a required one. In a project without nullable annotations, ASP.NET Core takes every reference type parameter as optional. A body that can't be read throws a `BadHttpRequestException` with `400`, another `Content-Type` one with `415 Unsupported Media Type`: Kestrel answers with that status code (an exception handler of your own can read it from the exception).
+- `ReportDifferences` works as with the input formatter: `HttpContext.GetReadDifferences()` and the log (category `LsMsgPackFormatters.MsgPackBody`).
+- Both add their media types to the endpoint's metadata (`Produces` and `Accepts`), so OpenAPI lists them.
+- Trimmed and NativeAOT apps: pass the context of the [source generator](SourceGenerator.md) to `AddLsMsgPack`, the overload without one is marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`. The JSON path uses the type info of the JSON options, as `Results.Json` does.
 
 ASP.NET Web API 2
 -----------------

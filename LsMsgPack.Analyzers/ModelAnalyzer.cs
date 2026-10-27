@@ -38,6 +38,8 @@ namespace LsMsgPack.Analyzers
         start.RegisterSymbolAction(c => AnalyzeBaseType(c, models, others), SymbolKind.NamedType);
         start.RegisterSymbolAction(c => AnalyzeAction(c, known, others), SymbolKind.Method);
         start.RegisterOperationAction(c => AnalyzeCall(c, known, others), OperationKind.Invocation, OperationKind.ObjectCreation);
+        if (known.MinimalApiBody != null)
+          start.RegisterSyntaxNodeAction(c => AnalyzeMinimalApiType(c, known, others), SyntaxKind.GenericName);
       });
     }
 
@@ -408,6 +410,19 @@ namespace LsMsgPack.Analyzers
     {
       List<SerializedUse> uses = new List<SerializedUse>(1);
       SerializerUses.FromOperation(context.Operation, known, uses);
+      Report(context.ReportDiagnostic, uses, others);
+    }
+
+    /// <summary>
+    /// <c>MsgPackBody&lt;object&gt;</c>, <c>MsgPackResult&lt;T&gt;</c> where a minimal API names them.
+    /// </summary>
+    private static void AnalyzeMinimalApiType(SyntaxNodeAnalysisContext context, KnownSymbols known, OtherAssemblies others)
+    {
+      GenericNameSyntax name = (GenericNameSyntax)context.Node;
+      if (!SerializerUses.IsMinimalApiTypeName(name))
+        return;
+      List<SerializedUse> uses = new List<SerializedUse>(1);
+      SerializerUses.FromTypeName(name, context.SemanticModel, known, uses, context.CancellationToken);
       Report(context.ReportDiagnostic, uses, others);
     }
 

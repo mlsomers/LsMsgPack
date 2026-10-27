@@ -16,7 +16,7 @@ namespace LsMsgPackTypeScript
 {
   /// <summary>
   /// The roots of a solution or project, found as LsMsgPack's analyzers find them (LsMsgPack.Analyzers ModelTypes.FindUses): the results and parameters of controller actions
-  /// (with a reference to a formatter), the types handed to the serializers (also through generic wrappers), <c>[LtMsgPackSerializable]</c>.
+  /// (with a reference to a formatter), the results and bodies of minimal APIs (MsgPackResults.MsgPack, MsgPackBody&lt;T&gt;), the types handed to the serializers (also through generic wrappers), <c>[LtMsgPackSerializable]</c>.
   /// The types are then looked up in the loaded assemblies (the compiled code is what the server runs).
   /// </summary>
   internal static class SolutionRoots

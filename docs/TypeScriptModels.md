@@ -26,7 +26,7 @@ Which classes (at least one):
 | `--root <type>` | A type the server responds with, e.g. `Shop.Invoice[]` or `List<Shop.Invoice>` (C# notation, short names when unique). Repeatable. |
 | `--request <type>` | A type the server reads (a request body): a model, no schema. Repeatable. |
 | `[LtMsgPackSerializable(typeof(T))]` | The types of the contexts of LtMsgPack's [source generator](SourceGenerator.md) in the assemblies are roots too. |
-| `--solution <sln\|csproj>` | Finds the roots as the [analyzers](Analyzers.md) do: the results (`Task<ActionResult<T>>` is `T`) and parameters of controller actions in projects that reference a formatter, and the types handed to the serializers. The project must be built: the types are taken from `--assembly`. |
+| `--solution <sln\|csproj>` | Finds the roots as the [analyzers](Analyzers.md) do: the results (`Task<ActionResult<T>>` is `T`) and parameters of controller actions in projects that reference a formatter, the values of `MsgPackResults.MsgPack(value)` and the bodies (`MsgPackBody<T>`) of minimal APIs, and the types handed to the serializers. The project must be built: the types are taken from `--assembly`. |
 | `--all-types` | Every public class, struct and enum of the assemblies (models only). |
 
 Options:

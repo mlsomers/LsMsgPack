@@ -1,6 +1,9 @@
-using LsMsgPack;
+﻿using LsMsgPack;
+using LsMsgPackFormatters;
 using LtMsgPack;
 using LtMsgPack.Http;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Routing;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -106,14 +109,32 @@ namespace LsMsgPackTypeScriptTests
     }
   }
 
+  public class TsReply
+  {
+    public string Message { get; set; }
+  }
+
+  public class TsRequest
+  {
+    public int Count { get; set; }
+  }
+
   /// <summary>
-  /// A use the analyzers find (the root of --solution).
+  /// Uses the analyzers find (the roots of --solution).
   /// </summary>
   internal static class TsUses
   {
     internal static byte[] Save(TsOrder order)
     {
       return LtMsgPackSerializer.Default.Serialize(order);
+    }
+
+    /// <summary>
+    /// A minimal API: the body is read (models only), the result written (models and schemas).
+    /// </summary>
+    internal static void Map(IEndpointRouteBuilder endpoints)
+    {
+      endpoints.MapPost("/reply", (MsgPackBody<TsRequest> request) => MsgPackResults.MsgPack(new TsReply()));
     }
   }
 }

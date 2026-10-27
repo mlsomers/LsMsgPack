@@ -423,6 +423,59 @@ public class OrdersController : ControllerBase
       AssertDiagnostics(Analyze(source, formatters: true), "LSMP001 Copies", "LSMP001 Quantity");
     }
 
+    /// <summary>
+    /// Minimal APIs: MsgPackBody&lt;T&gt; parameters are read, the values of MsgPackResults.MsgPack(value) / Results.Extensions.MsgPack(value) and MsgPackResult&lt;T&gt; are written (as Ok(value)).
+    /// </summary>
+    [TestMethod]
+    public void MinimalApis_BodiesAndResults()
+    {
+      string source = Usings + @"
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using LsMsgPackFormatters;
+public class Order { public int Copies { get; set; } = 1; }
+public class Line { public int Quantity { get; set; } = 1; }
+public class Problem { public int Code { get; set; } = 400; }
+public class Created { public int Version { get; set; } = 1; }
+public class Typed { public int Level { get; set; } = 2; }
+public class Untouched { public int Size { get; set; } = 3; }
+public static class Endpoints
+{
+  public static void Map(WebApplication app)
+  {
+    app.MapPost(""/orders"", (MsgPackBody<Order> order) => MsgPackResults.MsgPack(new List<Line>()));
+    app.MapPost(""/any"", (MsgPackBody<object> body) => Results.Extensions.MsgPack(new Problem(), 400));
+    app.MapGet(""/created"", () => MsgPackResults.MsgPack<object>(new Created()));
+    app.MapGet(""/untouched"", () => { object value = new Untouched(); return MsgPackResults.MsgPack(value); });
+    app.MapGet(""/typed"", GetTyped);
+  }
+  private static Results<MsgPackResult<Typed>, NotFound> GetTyped() => TypedResults.NotFound();
+}
+";
+      ImmutableArray<Diagnostic> diagnostics = Analyze(source, formatters: true);
+      AssertDiagnostics(diagnostics, "LSMP001 Copies", "LSMP001 Quantity", "LSMP001 Code", "LSMP001 Version", "LSMP001 Level", "LSMP005 object", "LSMP007 object");
+      StringAssert.StartsWith(diagnostics[5].GetMessage(), "MsgPackBody reads object");
+    }
+
+    /// <summary>
+    /// Without the formatters MsgPackBody and MsgPackResult are other classes.
+    /// </summary>
+    [TestMethod]
+    public void MinimalApis_OnlyWithTheFormatters()
+    {
+      string source = Usings + @"
+public class MsgPackBody<T> { public T Value { get; set; } }
+public class Order { public int Copies { get; set; } = 1; }
+public static class Endpoints
+{
+  public static int Handle(MsgPackBody<object> body, MsgPackBody<Order> order) => 0;
+  public static byte[] Write() => MsgPackSerializer.Serialize(1);
+}
+";
+      AssertDiagnostics(Analyze(source));
+    }
+
     #endregion
 
     #region LSMP008: classes of other projects

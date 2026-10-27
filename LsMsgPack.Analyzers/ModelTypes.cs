@@ -80,17 +80,22 @@ namespace LsMsgPack.Analyzers
         SerializerUses.FromController(_sourceTypes[t], known, uses);
       }
 
-      Scan(compilation, node => SerializerUses.IsCandidate(node), operation => SerializerUses.FromOperation(operation, known, uses), cancellation);
+      Scan(compilation, node => SerializerUses.IsCandidate(node), (node, model) => SerializerUses.FromNode(node, model, known, uses, cancellation), cancellation);
       Wrappers wrappers = new Wrappers();
       for (int scanned = 0; wrappers.Learn(uses, ref scanned);) // until no new wrapper is found
-        Scan(compilation, wrappers.IsCandidate, operation => wrappers.FromOperation(operation, uses), cancellation);
+        Scan(compilation, wrappers.IsCandidate, (node, model) =>
+        {
+          IOperation operation = model.GetOperation(node, cancellation);
+          if (operation != null)
+            wrappers.FromOperation(operation, uses);
+        }, cancellation);
       return uses;
     }
 
     /// <summary>
-    /// The operations of the nodes that may be uses (the trees are only bound where a node is a candidate).
+    /// The nodes that may be uses, with their semantic model (the trees are only bound where a node is a candidate).
     /// </summary>
-    private static void Scan(Compilation compilation, Func<SyntaxNode, bool> isCandidate, Action<IOperation> found, CancellationToken cancellation)
+    private static void Scan(Compilation compilation, Func<SyntaxNode, bool> isCandidate, Action<SyntaxNode, SemanticModel> found, CancellationToken cancellation)
     {
       foreach (SyntaxTree tree in compilation.SyntaxTrees)
       {
@@ -102,9 +107,7 @@ namespace LsMsgPack.Analyzers
             continue;
           if (model is null)
             model = compilation.GetSemanticModel(tree);
-          IOperation operation = model.GetOperation(node, cancellation);
-          if (operation != null)
-            found(operation);
+          found(node, model);
         }
       }
     }
@@ -289,6 +292,10 @@ namespace LsMsgPack.Analyzers
     // The web formatters: only with a reference to them (a controller does not read msgpack otherwise)
     public readonly INamedTypeSymbol AspNetCoreController;
     public readonly INamedTypeSymbol AspNetCoreObjectResult;
+    public readonly INamedTypeSymbol MinimalApiResults; // MsgPackResults.MsgPack(value)
+    public readonly INamedTypeSymbol MinimalApiResultExtensions; // Results.Extensions.MsgPack(value)
+    public readonly INamedTypeSymbol MinimalApiResult; // MsgPackResult<T>
+    public readonly INamedTypeSymbol MinimalApiBody; // MsgPackBody<T>
     public readonly INamedTypeSymbol WebApiController;
     public readonly INamedTypeSymbol MvcController;
     public readonly INamedTypeSymbol MvcResult;
@@ -316,6 +323,10 @@ namespace LsMsgPack.Analyzers
       {
         AspNetCoreController = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Mvc.ControllerBase");
         AspNetCoreObjectResult = compilation.GetTypeByMetadataName("Microsoft.AspNetCore.Mvc.ObjectResult");
+        MinimalApiResults = compilation.GetTypeByMetadataName("LsMsgPackFormatters.MsgPackResults");
+        MinimalApiResultExtensions = compilation.GetTypeByMetadataName("LsMsgPackFormatters.MsgPackResultExtensions");
+        MinimalApiResult = compilation.GetTypeByMetadataName("LsMsgPackFormatters.MsgPackResult`1");
+        MinimalApiBody = compilation.GetTypeByMetadataName("LsMsgPackFormatters.MsgPackBody`1");
       }
       if (webApi)
       {
@@ -354,9 +365,48 @@ namespace LsMsgPack.Analyzers
       {
         string name = MethodName(invocation.Expression);
         return name == "Serialize" || name == "Deserialize" || name == "DeserializeBody" || name == "SerializeObject" || name == "ReadAsAsync" || name == "PostAsync" || name == "PutAsync"
-          || (name != null && ResultMethods.Contains(name));
+          || name == "MsgPack" || (name != null && ResultMethods.Contains(name));
       }
+      if (node is GenericNameSyntax generic)
+        return IsMinimalApiTypeName(generic);
       return node is ObjectCreationExpressionSyntax || node is ImplicitObjectCreationExpressionSyntax;
+    }
+
+    /// <summary>
+    /// <c>MsgPackBody&lt;T&gt;</c> or <c>MsgPackResult&lt;T&gt;</c> (by name: may be one, see <see cref="FromTypeName"/>).
+    /// </summary>
+    public static bool IsMinimalApiTypeName(GenericNameSyntax name)
+    {
+      string identifier = name.Identifier.ValueText;
+      return (identifier == "MsgPackBody" || identifier == "MsgPackResult") && name.TypeArgumentList.Arguments.Count == 1;
+    }
+
+    /// <summary>
+    /// A candidate node (see <see cref="IsCandidate"/>): a type name, or a call or creation.
+    /// </summary>
+    public static void FromNode(SyntaxNode node, SemanticModel model, KnownSymbols known, List<SerializedUse> uses, CancellationToken cancellation)
+    {
+      if (node is GenericNameSyntax name)
+      {
+        FromTypeName(name, model, known, uses, cancellation);
+        return;
+      }
+      IOperation operation = model.GetOperation(node, cancellation);
+      if (operation != null)
+        FromOperation(operation, known, uses);
+    }
+
+    /// <summary>
+    /// Where a minimal API names <c>MsgPackBody&lt;T&gt;</c> (a parameter: the body is read as T) or <c>MsgPackResult&lt;T&gt;</c> (a declared result: T is written),
+    /// e.g. <c>(MsgPackBody&lt;Order&gt; order) =&gt; ...</c>, <c>Results&lt;MsgPackResult&lt;Order&gt;, NotFound&gt;</c>. Calls of <c>MsgPackResults.MsgPack(value)</c> are invocations.
+    /// </summary>
+    public static void FromTypeName(GenericNameSyntax name, SemanticModel model, KnownSymbols known, List<SerializedUse> uses, CancellationToken cancellation)
+    {
+      if (known.MinimalApiBody is null || !IsMinimalApiTypeName(name) || !(model.GetSymbolInfo(name, cancellation).Symbol is INamedTypeSymbol type) || type.TypeArguments.Length != 1)
+        return;
+      bool reads = Same(type.OriginalDefinition, known.MinimalApiBody);
+      if (reads || Same(type.OriginalDefinition, known.MinimalApiResult))
+        uses.Add(new SerializedUse(type.TypeArguments[0], reads, name.TypeArgumentList.Arguments[0].GetLocation(), type.Name));
     }
 
     /// <summary>
@@ -420,6 +470,13 @@ namespace LsMsgPack.Analyzers
         return;
       }
 
+      if (Same(container, known.MinimalApiResults) || Same(container, known.MinimalApiResultExtensions))
+      {
+        if (method.Name == "MsgPack" && method.IsGenericMethod)
+          FromMinimalApiResult(invocation, Same(container, known.MinimalApiResults) ? "MsgPackResults.MsgPack" : "Results.Extensions.MsgPack", uses);
+        return;
+      }
+
       if (Same(container, known.AspNetCoreController))
       {
         if (ResultMethods.Contains(method.Name))
@@ -460,6 +517,25 @@ namespace LsMsgPack.Analyzers
         if (parameter != null && parameter.Type.SpecialType == SpecialType.System_Object && (parameter.Name == "value" || parameter.Name == "error"))
           AddValue(arguments[t].Value, what, uses);
       }
+    }
+
+    /// <summary>
+    /// <c>MsgPackResults.MsgPack(value)</c>, <c>Results.Extensions.MsgPack(value)</c>: the type argument is the declared type of the response, as the type argument of <c>Serialize&lt;T&gt;</c>.
+    /// Declared as object the response is written as the value's class (as <c>Ok(value)</c>): the static type of the value.
+    /// </summary>
+    private static void FromMinimalApiResult(IInvocationOperation invocation, string what, List<SerializedUse> uses)
+    {
+      ITypeSymbol declared = invocation.TargetMethod.TypeArguments[0];
+      if (declared.SpecialType == SpecialType.System_Object)
+      {
+        AddResultValue(invocation.Arguments, what, uses);
+        return;
+      }
+      Location location = TypeArgumentLocation(invocation.Syntax);
+      for (int t = 0; location is null && t < invocation.Arguments.Length; t++)
+        if (invocation.Arguments[t].Parameter?.Name == "value")
+          location = invocation.Arguments[t].Value.Syntax.GetLocation();
+      uses.Add(new SerializedUse(declared, false, location ?? invocation.Syntax.GetLocation(), what));
     }
 
     private static bool DerivesFrom(INamedTypeSymbol type, INamedTypeSymbol baseType)
