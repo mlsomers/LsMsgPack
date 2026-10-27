@@ -126,14 +126,16 @@ namespace LtMsgPack.Generator
             w.Line("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods, typeof(" + type.TypeName + "))]");
           else if (type.KeepMetadata) // the runtime reads the properties and constructors by reflection: kept when trimming
             w.Line("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties"
+              + (type.KeepNonPublic ? " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicProperties" : "")
               + " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof("
               + type.TypeName + "))]");
         }
       }
+      Accessors accessors = new Accessors();
       w.Line("protected override void AddTypes(global::LsMsgPack.Generated.GeneratedTypeSet types)");
       w.Open();
       for (int t = 0; t < context.Types.Length; t++)
-        AddType(w, context.Types[t], t);
+        AddType(w, context.Types[t], t, accessors);
       w.Close();
 
       for (int t = 0; t < context.Types.Length; t++)
@@ -141,8 +143,9 @@ namespace LtMsgPack.Generator
         if (context.Types[t].Members.Length == 0)
           continue;
         w.Line();
-        ObjectCode(w, context.Types[t], t);
+        ObjectCode(w, context.Types[t], t, accessors);
       }
+      accessors.Write(w);
 
       w.Close();
       for (int t = 0; t < context.ContainingTypes.Length; t++)
@@ -152,7 +155,7 @@ namespace LtMsgPack.Generator
       return w.ToString();
     }
 
-    private static void AddType(CodeWriter w, TypeModel type, int index)
+    private static void AddType(CodeWriter w, TypeModel type, int index, Accessors accessors)
     {
       switch (type.Kind)
       {
@@ -193,8 +196,8 @@ namespace LtMsgPack.Generator
       for (int t = 0; t < type.Properties.Length; t++)
       {
         PropertyModel property = type.Properties[t];
-        string get = property.CanGet ? "o => o." + property.Access : "null";
-        string set = property.CanSet ? "(o, v) => o." + property.Access + " = v" : "null";
+        string get = property.CanGet ? "o => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o") : "null";
+        string set = property.CanSet ? "(o, v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v") : "null";
         w.Line(Values + ".Property<" + type.TypeName + ", " + property.TypeName + ">(\"" + property.Name + "\", " + get + ", " + set + ")" + (t < type.Properties.Length - 1 ? "," : "));"));
       }
       w.Indent--;
@@ -214,7 +217,7 @@ namespace LtMsgPack.Generator
     /// The writer and reader of a class: the per property part of the runtime's ObjectPlan and ObjectReader, for the members of the kinds it writes and reads itself
     /// (the runtime does the others, and the ones its options write otherwise: see GeneratedWritePlan.Ids and PropReader.GeneratedId).
     /// </summary>
-    private static void ObjectCode(CodeWriter w, TypeModel type, int index)
+    private static void ObjectCode(CodeWriter w, TypeModel type, int index, Accessors accessors)
     {
       string t = type.TypeName;
       w.Line("/// <summary>");
@@ -267,7 +270,7 @@ namespace LtMsgPack.Generator
           continue;
         w.Line("case " + m + ":");
         w.Open();
-        w.Line(member.TypeName + " v = o." + member.Access + ";");
+        w.Line(member.TypeName + " v = " + Get(accessors, member) + ";");
         w.Line("if (filter && " + Omitted(member, "v") + ")");
         w.Open();
         w.Line("written = false;");
@@ -313,7 +316,7 @@ namespace LtMsgPack.Generator
           continue;
         }
         w.Open();
-        w.Line(member.TypeName + " v = o." + member.Access + ";");
+        w.Line(member.TypeName + " v = " + Get(accessors, member) + ";");
         w.Line("if (filter && " + Omitted(member, "v") + ")");
         w.Line("  w.Nil();");
         w.Line("else");
@@ -353,7 +356,7 @@ namespace LtMsgPack.Generator
           if (!IsReadHere(member) || member.HasDefaultValue)
             continue;
           w.Line("case " + m + ":");
-          w.Line("  o." + member.Access + " = default(" + member.TypeName + ");");
+          w.Line("  " + Set(accessors, member, "default(" + member.TypeName + ")") + ";");
           w.Line("  continue;");
         }
         w.Close();
@@ -374,7 +377,7 @@ namespace LtMsgPack.Generator
           continue;
         w.Line("case " + m + ":");
         w.Open();
-        ReadValue(w, member, "continue;");
+        ReadValue(w, member, "continue;", accessors);
         w.Line("break;");
         w.Close();
       }
@@ -405,17 +408,17 @@ namespace LtMsgPack.Generator
         {
           w.Line("if (r.TryReadNil())");
           w.Open();
-          w.Line("o." + member.Access + " = null;");
+          w.Line(Set(accessors, member, "null") + ";");
           w.Line("return true;");
           w.Close();
-          ReadValue(w, member, "return true;");
+          ReadValue(w, member, "return true;", accessors);
         }
         else
         {
-          ReadValue(w, member, "return true;");
+          ReadValue(w, member, "return true;", accessors);
           w.Line("if (r.TryReadNil())");
           w.Open();
-          w.Line("o." + member.Access + " = default(" + member.TypeName + ");");
+          w.Line(Set(accessors, member, "default(" + member.TypeName + ")") + ";");
           w.Line("return true;");
           w.Close();
         }
@@ -538,29 +541,29 @@ namespace LtMsgPack.Generator
     /// <summary>
     /// Reads the value when it is in the format the runtime's reader of its type reads directly (then <paramref name="done"/>), otherwise leaves the position where it was.
     /// </summary>
-    private static void ReadValue(CodeWriter w, MemberModel member, string done)
+    private static void ReadValue(CodeWriter w, MemberModel member, string done, Accessors accessors)
     {
-      string set = "o." + member.Access + " = ";
+      string set = Set(accessors, member, "v") + ";";
       switch (member.Kind)
       {
-        case "String": Fast(w, "r.TryReadString(out string v)", set + "v;", done); return;
-        case "Boolean": Fast(w, "r.TryReadBool(out bool v)", set + "v;", done); return;
-        case "Single": Fast(w, "r.TryReadSingle(out float v)", set + "v;", done); return;
-        case "Double": Fast(w, "r.TryReadDouble(out double v)", set + "v;", done); return;
-        case "Int64": Fast(w, "r.TryReadInt64(out long v)", set + "v;", done); return;
-        case "UInt64": Fast(w, "r.TryReadUInt64(out ulong v)", set + "v;", done); return;
-        case "SByte": Ranged(w, "sbyte", "sbyte.MinValue", "sbyte.MaxValue", set, done); return;
-        case "Int16": Ranged(w, "short", "short.MinValue", "short.MaxValue", set, done); return;
-        case "Int32": Ranged(w, "int", "int.MinValue", "int.MaxValue", set, done); return;
-        case "Byte": Ranged(w, "byte", "byte.MinValue", "byte.MaxValue", set, done); return;
-        case "UInt16": Ranged(w, "ushort", "ushort.MinValue", "ushort.MaxValue", set, done); return;
-        case "UInt32": Ranged(w, "uint", "uint.MinValue", "uint.MaxValue", set, done); return;
-        case "Char": Ranged(w, "char", "char.MinValue", "char.MaxValue", set, done); return;
-        case "Decimal": Fast(w, Generated + "GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v)", set + "v;", done); return;
-        case "Guid": Fast(w, "r.TryReadGuid(out global::System.Guid v)", set + "v;", done); return;
-        case "DateTime": Fast(w, "r.TryReadDateTime(out global::System.DateTime v)", set + "v;", done); return;
-        case "TimeSpan": Fast(w, "r.TryReadInt64(out long v)", set + "new global::System.TimeSpan(v);", done); return;
-        case "Enum": Fast(w, "r.TryReadInt64(out long v)", set + "(" + member.ValueType + ")unchecked((" + member.EnumUnderlying + ")v);", done); return; // values out of range wrap around (EnumReader)
+        case "String": Fast(w, "r.TryReadString(out string v)", set, done); return;
+        case "Boolean": Fast(w, "r.TryReadBool(out bool v)", set, done); return;
+        case "Single": Fast(w, "r.TryReadSingle(out float v)", set, done); return;
+        case "Double": Fast(w, "r.TryReadDouble(out double v)", set, done); return;
+        case "Int64": Fast(w, "r.TryReadInt64(out long v)", set, done); return;
+        case "UInt64": Fast(w, "r.TryReadUInt64(out ulong v)", set, done); return;
+        case "SByte": Ranged(w, "sbyte", "sbyte.MinValue", "sbyte.MaxValue", accessors, member, done); return;
+        case "Int16": Ranged(w, "short", "short.MinValue", "short.MaxValue", accessors, member, done); return;
+        case "Int32": Ranged(w, "int", "int.MinValue", "int.MaxValue", accessors, member, done); return;
+        case "Byte": Ranged(w, "byte", "byte.MinValue", "byte.MaxValue", accessors, member, done); return;
+        case "UInt16": Ranged(w, "ushort", "ushort.MinValue", "ushort.MaxValue", accessors, member, done); return;
+        case "UInt32": Ranged(w, "uint", "uint.MinValue", "uint.MaxValue", accessors, member, done); return;
+        case "Char": Ranged(w, "char", "char.MinValue", "char.MaxValue", accessors, member, done); return;
+        case "Decimal": Fast(w, Generated + "GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v)", set, done); return;
+        case "Guid": Fast(w, "r.TryReadGuid(out global::System.Guid v)", set, done); return;
+        case "DateTime": Fast(w, "r.TryReadDateTime(out global::System.DateTime v)", set, done); return;
+        case "TimeSpan": Fast(w, "r.TryReadInt64(out long v)", Set(accessors, member, "new global::System.TimeSpan(v)") + ";", done); return;
+        case "Enum": Fast(w, "r.TryReadInt64(out long v)", Set(accessors, member, "(" + member.ValueType + ")unchecked((" + member.EnumUnderlying + ")v)") + ";", done); return; // values out of range wrap around (EnumReader)
       }
       throw new System.InvalidOperationException("Unknown kind " + member.Kind);
     }
@@ -577,18 +580,85 @@ namespace LtMsgPack.Generator
     /// <summary>
     /// An integer read as long and checked (IntegerReader): out of range the position is restored, the runtime throws the overflow as it does.
     /// </summary>
-    private static void Ranged(CodeWriter w, string type, string min, string max, string set, string done)
+    private static void Ranged(CodeWriter w, string type, string min, string max, Accessors accessors, MemberModel member, string done)
     {
       w.Line("int start = r.Pos;");
       w.Line("if (r.TryReadInt64(out long v))");
       w.Open();
       w.Line("if (v >= " + min + " && v <= " + max + ")");
       w.Open();
-      w.Line(set + "(" + type + ")v;");
+      w.Line(Set(accessors, member, "(" + type + ")v") + ";");
       w.Line(done);
       w.Close();
       w.Line("r.Pos = start;");
       w.Close();
+    }
+
+    /// <summary>
+    /// The value of the member of <c>o</c> (an expression).
+    /// </summary>
+    private static string Get(Accessors accessors, MemberModel member)
+    {
+      return accessors.Get(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeGet, "o");
+    }
+
+    /// <summary>
+    /// Sets the member of <c>o</c> to the value (a statement without its semicolon).
+    /// </summary>
+    private static string Set(Accessors accessors, MemberModel member, string value)
+    {
+      return accessors.Set(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeSet, "o", value);
+    }
+
+    /// <summary>
+    /// The UnsafeAccessor methods of a context (.NET 8): the non-public getters and setters the generated code calls, declared once per property (written by <see cref="Write"/> at the end of the context class,
+    /// the generated writers and readers are nested in it).
+    /// </summary>
+    private sealed class Accessors
+    {
+      private readonly Dictionary<string, string> _names = new Dictionary<string, string>();
+      private readonly List<string> _declarations = new List<string>();
+
+      /// <returns>The value of the property of <paramref name="target"/> (an expression)</returns>
+      public string Get(string declaringType, string name, string typeName, string access, bool viaAccessor, string target)
+      {
+        if (!viaAccessor)
+          return target + "." + access;
+        return Method(declaringType, name, typeName, true) + "(" + target + ")";
+      }
+
+      /// <returns>The assignment of the property of <paramref name="target"/> (a statement without its semicolon, or a lambda body)</returns>
+      public string Set(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, string value)
+      {
+        if (!viaAccessor)
+          return target + "." + access + " = " + value;
+        return Method(declaringType, name, typeName, false) + "(" + target + ", " + value + ")";
+      }
+
+      private string Method(string declaringType, string name, string typeName, bool get)
+      {
+        string key = (get ? "get " : "set ") + declaringType + " " + name;
+        if (_names.TryGetValue(key, out string method))
+          return method;
+        method = (get ? "LtMsgPackGet" : "LtMsgPackSet") + _names.Count;
+        _names.Add(key, method);
+        string accessor = "[global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Method, Name = \"" + (get ? "get_" : "set_") + name + "\")]";
+        _declarations.Add(accessor);
+        _declarations.Add(get
+          ? "private static extern " + typeName + " " + method + "(" + declaringType + " o);"
+          : "private static extern void " + method + "(" + declaringType + " o, " + typeName + " value);");
+        return method;
+      }
+
+      public void Write(CodeWriter w)
+      {
+        if (_declarations.Count == 0)
+          return;
+        w.Line();
+        w.Line("// The non-public accessors of properties the runtime may serialize (FilterNonSettable's NonPublicProperties)");
+        foreach (string line in _declarations)
+          w.Line(line);
+      }
     }
 
     private static string Creator(TypeModel type)

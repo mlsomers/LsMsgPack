@@ -7,8 +7,8 @@ namespace LtMsgPack.Generator
 {
   /// <summary>
   /// Finds the types a context needs code for: the roots and the types they reach (property types, elements, type arguments, base classes), as models.
-  /// <para>The properties are the ones the runtime looks at (FullPropertyInfo.GetProperties: public, instance, no indexers), matched there by declaring type, name and type,
-  /// so a property the generator leaves out is simply handled by reflection.</para>
+  /// <para>The properties are the ones the runtime looks at (FullPropertyInfo.GetProperties: public, instance, no indexers, and the non-public ones of GenerateOptions.NonPublic),
+  /// matched there by declaring type, name and type, so a property the generator leaves out is simply handled by reflection.</para>
   /// </summary>
   internal sealed class TypeWalker
   {
@@ -23,14 +23,18 @@ namespace LtMsgPack.Generator
     private readonly HashSet<ITypeSymbol> _seen = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
     private readonly Queue<ITypeSymbol> _queue = new Queue<ITypeSymbol>();
     private readonly List<DiagnosticInfo> _diagnostics;
+    private readonly int _nonPublic;
+    private readonly bool _unsafeAccessors;
 
     /// <param name="within">Where the generated code is (the context class, or the assembly for the context of the assembly): what it can access</param>
-    public TypeWalker(Compilation compilation, ISymbol within, string contextName, List<DiagnosticInfo> diagnostics)
+    public TypeWalker(Compilation compilation, ISymbol within, string contextName, List<DiagnosticInfo> diagnostics, GenerateOptions options)
     {
       _compilation = compilation;
       _within = within;
       _contextName = contextName;
       _diagnostics = diagnostics;
+      _nonPublic = options.NonPublic;
+      _unsafeAccessors = options.UnsafeAccessors;
       _list = compilation.GetTypeByMetadataName("System.Collections.Generic.List`1");
       _enumerable = compilation.GetSpecialType(SpecialType.System_Collections_Generic_IEnumerable_T);
     }
@@ -265,7 +269,7 @@ namespace LtMsgPack.Generator
 
       if (named.TypeKind == TypeKind.Struct)
       {
-        GetProperties(named); // the types of the properties (the runtime writes and reads structs boxed)
+        GetProperties(named, out _); // the types of the properties (the runtime writes and reads structs boxed)
         Add(TypeModelKind.Boxed, name);
         return;
       }
@@ -283,8 +287,8 @@ namespace LtMsgPack.Generator
         Enqueue(named.BaseType);
 
       bool creator = HasCreator(named);
-      List<PropertyModel> properties = GetProperties(named);
-      Add(TypeModelKind.Object, name, null, creator, true, properties, named.IsAbstract ? null : GetMembers(named));
+      List<PropertyModel> properties = GetProperties(named, out bool nonPublic);
+      Add(TypeModelKind.Object, name, null, creator, true, properties, named.IsAbstract ? null : GetMembers(named), keepNonPublic: nonPublic);
     }
 
     /// <summary>
@@ -405,9 +409,10 @@ namespace LtMsgPack.Generator
       return null; // object[] and T[] are enqueued anyway
     }
 
-    private void Add(TypeModelKind kind, string name, string argument = null, bool creator = false, bool keep = false, List<PropertyModel> properties = null, List<MemberModel> members = null, string factory = null)
+    private void Add(TypeModelKind kind, string name, string argument = null, bool creator = false, bool keep = false, List<PropertyModel> properties = null, List<MemberModel> members = null, string factory = null,
+      bool keepNonPublic = false)
     {
-      _types.Add(new TypeModel(kind, name, argument, creator, keep, (properties ?? new List<PropertyModel>()).ToEquatable(), (members ?? new List<MemberModel>()).ToEquatable(), factory));
+      _types.Add(new TypeModel(kind, name, argument, creator, keep, (properties ?? new List<PropertyModel>()).ToEquatable(), (members ?? new List<MemberModel>()).ToEquatable(), factory, keepNonPublic));
     }
 
     /// <summary>
@@ -507,75 +512,178 @@ namespace LtMsgPack.Generator
     }
 
     /// <summary>
-    /// The properties the type declares that the runtime may serialize (public instance properties without parameters), the types they reach are added.
+    /// The properties the type declares that the runtime may serialize (public instance properties without parameters, and the non-public ones of <see cref="IsNonPublicCandidate"/>), the types they reach are added.
     /// </summary>
-    private List<PropertyModel> GetProperties(INamedTypeSymbol type)
+    /// <param name="nonPublic">Some of them are non-public (the trimmer keeps the type's non-public properties: the runtime finds them by reflection)</param>
+    private List<PropertyModel> GetProperties(INamedTypeSymbol type, out bool nonPublic)
     {
+      nonPublic = false;
       List<PropertyModel> properties = new List<PropertyModel>();
       foreach (ISymbol member in type.GetMembers())
       {
-        if (!(member is IPropertySymbol property) || property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public
+        if (!(member is IPropertySymbol property) || property.IsStatic || property.IsIndexer || (property.DeclaredAccessibility != Accessibility.Public && !IsNonPublicCandidate(property, _nonPublic))
           || property.ReturnsByRef || property.ReturnsByRefReadonly || property.Type.IsRefLikeType || property.Type.TypeKind == TypeKind.Pointer
           || property.Type.TypeKind == TypeKind.FunctionPointer || IsObsoleteError(property) || !IsAccessible(property.Type))
           continue;
 
+        nonPublic |= property.DeclaredAccessibility != Accessibility.Public;
         Enqueue(property.Type);
         RecordPolymorphic(type, property);
         if (type.TypeKind != TypeKind.Class)
           continue;
 
-        bool canGet = property.GetMethod != null && IsAccessible(property.GetMethod) && !IsObsoleteError(property.GetMethod);
-        bool canSet = property.SetMethod != null && !property.SetMethod.IsInitOnly && IsAccessible(property.SetMethod) && !IsObsoleteError(property.SetMethod);
+        bool canGet = CanGet(type, property, out bool unsafeGet);
+        bool canSet = CanSet(type, property, out bool unsafeSet);
         if (property.SetMethod != null && !canSet)
           _diagnostics.Add(DiagnosticInfo.Create(Diagnostics.PropertyByReflection.Id, property.Locations.FirstOrDefault(), type.ToDisplayString(), property.Name,
             property.SetMethod.IsInitOnly ? "init-only" : "not accessible to the generated code"));
         if (!canGet && !canSet)
           continue;
 
-        properties.Add(new PropertyModel(property.Name, Escape(property.Name), property.Type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), canGet, canSet));
+        properties.Add(new PropertyModel(property.Name, Escape(property.Name), property.Type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), canGet, canSet, unsafeGet, unsafeSet));
       }
       return properties;
     }
 
     /// <summary>
+    /// The generated code can call the getter: it is accessible, or an UnsafeAccessor can call it (<paramref name="viaAccessor"/>, see <see cref="ViaAccessor"/>).
+    /// </summary>
+    private bool CanGet(INamedTypeSymbol declaring, IPropertySymbol property, out bool viaAccessor)
+    {
+      viaAccessor = false;
+      IMethodSymbol get = property.GetMethod;
+      if (get is null || IsObsoleteError(get))
+        return false;
+      if (IsAccessible(get))
+        return true;
+      return viaAccessor = ViaAccessor(declaring, property);
+    }
+
+    /// <summary>
+    /// The generated code can call the setter (not an init-only one): it is accessible, or an UnsafeAccessor can call it (<paramref name="viaAccessor"/>, see <see cref="ViaAccessor"/>).
+    /// </summary>
+    private bool CanSet(INamedTypeSymbol declaring, IPropertySymbol property, out bool viaAccessor)
+    {
+      viaAccessor = false;
+      IMethodSymbol set = property.SetMethod;
+      if (set is null || set.IsInitOnly || IsObsoleteError(set))
+        return false;
+      if (IsAccessible(set))
+        return true;
+      return viaAccessor = ViaAccessor(declaring, property);
+    }
+
+    /// <summary>
+    /// A non-public accessor the generated code calls through an UnsafeAccessor (.NET 8): only of a property the runtime may serialize with its non-public accessors
+    /// (<see cref="GenerateOptions.NonPublic"/>: all, or the ones with an opt-in attribute), declared by a class that is not generic (UnsafeAccessor supports generics from .NET 9),
+    /// not virtual (UnsafeAccessor would call this declaration, the runtime calls the override). Otherwise the runtime uses reflection.
+    /// </summary>
+    private bool ViaAccessor(INamedTypeSymbol declaring, IPropertySymbol property)
+    {
+      if (!_unsafeAccessors || declaring.TypeKind != TypeKind.Class || property.IsVirtual || property.IsOverride || property.IsAbstract || !IsAccessible(declaring))
+        return false;
+      for (INamedTypeSymbol t = declaring; t != null; t = t.ContainingType)
+        if (t.IsGenericType)
+          return false;
+      return _nonPublic == LtMsgPackGenerator.NonPublicAll || (_nonPublic == LtMsgPackGenerator.NonPublicAttributed && OptsIn(property));
+    }
+
+    /// <summary>
+    /// A non-public property the runtime serializes with FilterNonSettable's NonPublicProperties (FullPropertyInfo.NonPublicCandidates): an instance property without parameters,
+    /// not an explicit interface implementation, not generated by the compiler (a record's EqualityContract), with <paramref name="nonPublic"/> Attributed only with an opt-in attribute.
+    /// </summary>
+    internal static bool IsNonPublicCandidate(IPropertySymbol property, int nonPublic)
+    {
+      if (nonPublic == LtMsgPackGenerator.NonPublicNone || property.DeclaredAccessibility == Accessibility.Public || property.IsStatic || property.IsIndexer
+        || property.ExplicitInterfaceImplementations.Length > 0 || property.IsImplicitlyDeclared)
+        return false;
+      return nonPublic == LtMsgPackGenerator.NonPublicAll || OptsIn(property);
+    }
+
+    /// <summary>
+    /// An attribute that opts the property in (as LsMsgPack.Core's IncludeAttributes decides): [JsonInclude], Json.NET's [JsonProperty], [DataMember], [Key] (MessagePack-CSharp, Nerdbank.MessagePack),
+    /// [PropertyShape] (not with Ignore = true), any other attribute with "Include" in its name.
+    /// </summary>
+    internal static bool OptsIn(IPropertySymbol property)
+    {
+      foreach (AttributeData attribute in property.GetAttributes())
+      {
+        INamedTypeSymbol type = attribute.AttributeClass;
+        if (type is null)
+          continue;
+        switch (type.ToDisplayString())
+        {
+          case "System.Text.Json.Serialization.JsonIncludeAttribute":
+          case "Newtonsoft.Json.JsonPropertyAttribute":
+          case "System.Runtime.Serialization.DataMemberAttribute":
+          case "MessagePack.KeyAttribute":
+          case "Nerdbank.MessagePack.KeyAttribute":
+            return true;
+          case "PolyType.PropertyShapeAttribute":
+            bool ignored = false;
+            foreach (KeyValuePair<string, TypedConstant> argument in attribute.NamedArguments)
+              ignored |= argument.Key == "Ignore" && argument.Value.Value is bool ignore && ignore;
+            if (!ignored)
+              return true;
+            break;
+          default:
+            if (type.Name.IndexOf("Include", System.StringComparison.Ordinal) >= 0)
+              return true;
+            break;
+        }
+      }
+      return false;
+    }
+
+    /// <summary>
     /// The properties the runtime sees on the class (FullPropertyInfo.GetProperties: public instance properties without parameters, not hidden by a property of the same name
-    /// in a derived class), in the order Type.GetProperties() returns them as far as the generator can tell (the class's own first, then those of its base classes, each in declaration order).
+    /// in a derived class), in the order Type.GetProperties() returns them as far as the generator can tell (the class's own first, then those of its base classes, each in declaration order),
+    /// then the non-public ones of <see cref="IsNonPublicCandidate"/> in the same order (never kept by the default static filters).
     /// </summary>
     private List<MemberModel> GetMembers(INamedTypeSymbol type)
     {
       List<MemberModel> members = new List<MemberModel>();
       HashSet<string> names = new HashSet<string>();
-      for (INamedTypeSymbol t = type; t != null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+      for (int pass = 0; pass < 2; pass++)
       {
-        foreach (ISymbol member in t.GetMembers())
+        bool publicPass = pass == 0;
+        if (!publicPass && _nonPublic == LtMsgPackGenerator.NonPublicNone)
+          break;
+        for (INamedTypeSymbol t = type; t != null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
         {
-          if (!(member is IPropertySymbol property) || property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public)
+          if (!publicPass && IsFramework(t)) // the runtime leaves out the framework's non-public properties
             continue;
-          if (!names.Add(property.Name)) // hidden by (or overridden in) a derived class
-            continue;
-          if (property.ReturnsByRef || property.ReturnsByRefReadonly || property.Type.IsRefLikeType || property.Type.TypeKind == TypeKind.Pointer
-            || property.Type.TypeKind == TypeKind.FunctionPointer || IsObsoleteError(property) || !IsAccessible(property.Type))
-            continue;
-
-          // [DefaultValue]: the runtime's filter compares the value with the attribute's (boxed), the generated writer leaves it to the runtime
-          bool hasDefaultValue = HasAttribute(property, "System.ComponentModel.DefaultValueAttribute");
-          bool canGet = property.GetMethod != null && IsAccessible(property.GetMethod) && !IsObsoleteError(property.GetMethod) && !hasDefaultValue;
-          bool canSet = property.SetMethod != null && !property.SetMethod.IsInitOnly && IsAccessible(property.SetMethod) && !IsObsoleteError(property.SetMethod);
-          bool unrolled = KeptByDefault(t, property) && !HasIgnoreAttribute(property); // FilterNonSettable, FilterIgnoredAttribute
-
-          ITypeSymbol valueType = property.Type;
-          bool nullable = false;
-          if (valueType is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+          foreach (ISymbol member in t.GetMembers())
           {
-            valueType = named.TypeArguments[0];
-            nullable = true;
+            if (!(member is IPropertySymbol property) || property.IsStatic || property.IsIndexer
+              || (publicPass ? property.DeclaredAccessibility != Accessibility.Public : !IsNonPublicCandidate(property, _nonPublic)))
+              continue;
+            if (!names.Add(property.Name)) // hidden by (or overridden in) a derived class
+              continue;
+            if (property.ReturnsByRef || property.ReturnsByRefReadonly || property.Type.IsRefLikeType || property.Type.TypeKind == TypeKind.Pointer
+              || property.Type.TypeKind == TypeKind.FunctionPointer || IsObsoleteError(property) || !IsAccessible(property.Type))
+              continue;
+
+            // [DefaultValue]: the runtime's filter compares the value with the attribute's (boxed), the generated writer leaves it to the runtime
+            bool hasDefaultValue = HasAttribute(property, "System.ComponentModel.DefaultValueAttribute");
+            bool canGet = CanGet(t, property, out bool unsafeGet) && !hasDefaultValue;
+            bool canSet = CanSet(t, property, out bool unsafeSet);
+            bool unrolled = publicPass && KeptByDefault(t, property) && !HasIgnoreAttribute(property); // FilterNonSettable, FilterIgnoredAttribute
+
+            ITypeSymbol valueType = property.Type;
+            bool nullable = false;
+            if (valueType is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+            {
+              valueType = named.TypeArguments[0];
+              nullable = true;
+            }
+            string kind = KindOf(valueType, out string underlying);
+            if (kind == "None")
+              nullable = false;
+            members.Add(new MemberModel(t.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), property.Name, Escape(property.Name),
+              property.Type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), kind, nullable,
+              valueType.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), underlying, canGet, canSet, unrolled, hasDefaultValue, canGet && unsafeGet, unsafeSet));
           }
-          string kind = KindOf(valueType, out string underlying);
-          if (kind == "None")
-            nullable = false;
-          members.Add(new MemberModel(t.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), property.Name, Escape(property.Name),
-            property.Type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), kind, nullable,
-            valueType.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), underlying, canGet, canSet, unrolled, hasDefaultValue));
         }
       }
       return members;

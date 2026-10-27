@@ -353,6 +353,75 @@ namespace LsMsgPackUnitTests
       }
     }
 
+    public class GcPrivateBase
+    {
+      [System.Text.Json.Serialization.JsonInclude]
+      private int BaseNumber { get; set; }
+
+      public int GetBaseNumber() { return BaseNumber; }
+      public void SetBaseNumber(int value) { BaseNumber = value; }
+    }
+
+    public class GcPrivate : GcPrivateBase
+    {
+      public string Name { get; set; }
+
+      [System.Text.Json.Serialization.JsonInclude]
+      private string Secret { get; set; }
+
+      [System.Text.Json.Serialization.JsonInclude]
+      public Guid Token { get; private set; }
+
+      [System.Runtime.Serialization.DataMember]
+      protected decimal? Amount { get; set; }
+
+      private int Unmarked { get; set; } // NonPublicProperties.All (as the test assembly's context is generated)
+
+      public static GcPrivate Sample()
+      {
+        GcPrivate value = new GcPrivate() { Name = "n", Secret = "s", Token = new Guid("11111111-2222-3333-4444-555555555555"), Amount = 2.5m, Unmarked = 7 };
+        value.SetBaseNumber(3);
+        return value;
+      }
+
+      public string Values() { return string.Join("|", Name, Secret, Token, Amount, Unmarked, GetBaseNumber()); }
+    }
+
+    [TestMethod]
+    public void NonPublicProperties_TheGeneratedCodeCallsTheirAccessors()
+    {
+      foreach (LsMsgPack.TypeResolving.Filters.NonPublicProperties nonPublic in new[] { LsMsgPack.TypeResolving.Filters.NonPublicProperties.Attributed, LsMsgPack.TypeResolving.Filters.NonPublicProperties.All })
+      {
+        LtMsgPackOptions options = new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false };
+        options.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All, nonPublic),
+          new LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute(), new LsMsgPack.TypeResolving.Filters.FilterStatic() };
+        LtMsgPackOptions runtime = options.Clone();
+        runtime.Contexts = null;
+
+        LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+        byte[] data = serializer.Serialize(GcPrivate.Sample());
+        CollectionAssert.AreEqual(new LtMsgPackSerializer(runtime).Serialize(GcPrivate.Sample()), data, nonPublic.ToString());
+        string expected = nonPublic == LsMsgPack.TypeResolving.Filters.NonPublicProperties.All ? "n|s|11111111-2222-3333-4444-555555555555|2.5|7|3" : "n|s|11111111-2222-3333-4444-555555555555|2.5|0|3";
+        Assert.AreEqual(expected, serializer.Deserialize<GcPrivate>(data).Values(), nonPublic.ToString());
+
+        LtMsgPack.Generated.GeneratedWritePlan plan = (LtMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcPrivate), false);
+        Assert.IsNotNull(plan, "the generated writer is used");
+        object code = Inner(serializer).GetType().GetMethod("GeneratedCode", Internal).Invoke(Inner(serializer), new object[] { typeof(GcPrivate) });
+        Array members = (Array)code.GetType().GetField("Members", Internal | BindingFlags.Public).GetValue(code);
+        for (int t = 0; t < plan.Ids.Length; t++)
+        {
+          Assert.IsGreaterThanOrEqualTo(0, plan.Ids[t], "every property is a generated member");
+          object member = members.GetValue(plan.Ids[t]);
+          Assert.IsTrue((bool)member.GetType().GetField("CanWrite", Internal | BindingFlags.Public).GetValue(member), "the generated code reads the non-public getters (UnsafeAccessor)");
+        }
+
+        object inner = Inner(serializer);
+        object readPlan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { typeof(GcPrivate) });
+        foreach (LtMsgPack.Reading.PropReader reader in (LtMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
+          Assert.IsGreaterThanOrEqualTo(0, reader.GeneratedId, ((FullPropertyInfo)typeof(LtMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader)).PropertyInfo.Name);
+      }
+    }
+
     [TestMethod]
     public void OptionsTheGeneratedCodeDoesNotFit_AreLeftToTheRuntime()
     {

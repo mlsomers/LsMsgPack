@@ -1,6 +1,7 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
+using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.TypeResolving.Names;
 using LtMsgPack;
@@ -373,6 +374,37 @@ namespace LsMsgPackUnitTests
       LtMsgPackOptions ltOptions = new LtMsgPackOptions() { SchemaVersion = SchemaVersion.Described };
       Configure(ltOptions, endian, compact, mode, layout);
       CompareCorpus(ls, ltOptions);
+    }
+
+    private static IEnumerable<object[]> NonPublicSettings()
+    {
+      foreach (NonPublicProperties nonPublic in new[] { NonPublicProperties.Attributed, NonPublicProperties.All })
+        foreach (SchemaMode mode in Enum.GetValues(typeof(SchemaMode)))
+          foreach (ObjectLayout layout in Enum.GetValues(typeof(ObjectLayout)))
+            yield return new object[] { nonPublic, mode, layout };
+    }
+
+    /// <summary>
+    /// Non-public properties (FilterNonSettable's NonPublicProperties): the corpus, and a class with non-public properties of several kinds (also in its base class).
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(NonPublicSettings))]
+    public void SameBytesAndValuesNonPublic(NonPublicProperties nonPublic, SchemaMode mode, ObjectLayout layout)
+    {
+      IMsgPackPropertyIncludeStatically[] filters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, nonPublic), new FilterIgnoredAttribute(), new FilterStatic() };
+      MsgPackSettings ls = new MsgPackSettings() { StaticFilters = filters };
+      Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
+      LtMsgPackOptions ltOptions = new LtMsgPackOptions() { StaticFilters = filters };
+      Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
+      CompareCorpus(ls, ltOptions);
+
+      List<string> differences = new List<string>();
+      foreach ((string which, LtMsgPackSerializer lt) in LtAndGenerated(ltOptions))
+      {
+        Compare(which + " account", SerializingNonPublicProperties.NppAccount.Sample(), typeof(SerializingNonPublicProperties.NppAccount), ls, lt, differences);
+        Compare(which + " private", GeneratedCodeTests.GcPrivate.Sample(), typeof(GeneratedCodeTests.GcPrivate), ls, lt, differences);
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences));
     }
 
     /// <summary>

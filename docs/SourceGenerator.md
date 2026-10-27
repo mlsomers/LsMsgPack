@@ -54,6 +54,16 @@ These go into one generated context per assembly: `GeneratedMsgPackContext` in t
 
 A marker only selects the classes. Which properties are written, and under which ids, is still decided by the options: `[IgnoreDataMember]` and `[JsonIgnore]` through the default static filters, `[DataMember(Order = n)]` with `PropertyOrder.Explicit`. The generated code follows whatever the options decide.
 
+### Non-public properties
+
+The runtime serializes [non-public properties](schema.md#non-public-properties) when `FilterNonSettable` is given a `NonPublicProperties`. The generator covers the ones with an opt-in attribute (`[JsonInclude]`, `[DataMember]`...) by default, `All` covers every non-public property (which only adds code: the options still decide what is serialized):
+
+```xml
+<LtMsgPackNonPublicProperties>All</LtMsgPackNonPublicProperties> <!-- None, Attributed (the default) or All -->
+```
+
+or `[assembly: LtMsgPackGenerate(NonPublicProperties = NonPublicProperties.All)]`. The generated code calls the getters and setters it can't access through `[UnsafeAccessor]` (.NET 8 and later), not for generic or virtual properties. Without it (.NET Standard, .NET Framework) the runtime uses reflection for them (info `LTMP004` for the setters). For trimming and NativeAOT, the classes with such properties keep their non-public properties (`DynamicDependency`).
+
 ## Using it
 
 Three ways, and they can be combined:
@@ -90,7 +100,7 @@ The runtime checks once per class and serializer whether the generated code fits
 - Properties with `[DefaultValue]`, nested objects and collections (written and read by the runtime, which then uses the generated code of their class).
 - Values in another format than expected (an `int` written as a string, a number out of range): the runtime converts them, or throws, exactly as without the generator.
 - Collecting `ReadDifferences` and `ReadErrors` other than `FailFast`.
-- Properties the generated code can't reach: `init`-only and non-public setters (set by reflection, reported as info `LTMP004`), private types, structs (written and read boxed).
+- Properties the generated code can't reach: `init`-only setters, non-public accessors without `UnsafeAccessor` (before .NET 8, of generic classes, virtual properties) or that `NonPublicProperties` doesn't cover (set by reflection, reported as info `LTMP004`), private types, structs (written and read boxed).
 - A class that changed since its code was generated (a model in another assembly that was updated on its own): a property is only used when its declaring type, name and type still match. New properties are done by reflection.
 
 ## Versions
@@ -128,7 +138,7 @@ The libraries (LsMsgPack.Core and LtMsgPack, with a `net8.0` build marked `IsAot
 
 What the generated code does for a trimmed or NativeAOT app:
 
-- It keeps the properties and constructors of your classes (`DynamicDependency`, .NET 5 and later) and creates the generic handlers and readers for them.
+- It keeps the properties and constructors of your classes (`DynamicDependency`, .NET 5 and later; also the non-public properties of the classes that have some it covers) and creates the generic handlers and readers for them.
 - For the collections it meets, it also describes what the runtime makes for them: the array of their elements, the class created for an interface (`List<T>` for `IList<T>`, `HashSet<T>` for `ISet<T>`, `ImmutableHashSet<T>` for `IImmutableSet<T>`...). For immutable and frozen collections it writes the call of their factory (`ImmutableArray.CreateRange<T>`, `FrozenSet.ToFrozenSet<T>`...), which NativeAOT can't instantiate at runtime for value types.
 - A serializer created with a context registers it for the process (unless `UseRegisteredContexts = false`), as the module initializer does: LsMsgPack.Core creates collections and objects with the registered code.
 

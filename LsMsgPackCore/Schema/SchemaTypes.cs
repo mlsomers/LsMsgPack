@@ -1,4 +1,5 @@
 ﻿using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Filters;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -172,6 +173,7 @@ namespace LsMsgPack
     {
       HashSet<Type> visited = new HashSet<Type>();
       Stack<Type> todo = new Stack<Type>();
+      NonPublicProperties nonPublic = FullPropertyInfo.NonPublicOf(_settings);
       todo.Push(root);
       while (todo.Count > 0)
       {
@@ -197,6 +199,9 @@ namespace LsMsgPack
         PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
         for (int t = props.Length - 1; t >= 0; t--)
           todo.Push(props[t].PropertyType);
+        List<PropertyInfo> nonPublicProps = FullPropertyInfo.NonPublicCandidates(type, nonPublic);
+        for (int t = nonPublicProps.Count - 1; t >= 0; t--)
+          todo.Push(nonPublicProps[t].PropertyType);
       }
     }
   }
