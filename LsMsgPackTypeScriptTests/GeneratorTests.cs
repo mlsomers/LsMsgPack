@@ -100,7 +100,7 @@ namespace LsMsgPackTypeScriptTests
       StringAssert.Contains(order, "  Pair: { Key: string | null; Value: number } = { Key: null, Value: 0 };");
       StringAssert.Contains(order, "  Data: Uint8Array | null = null;");
       StringAssert.Contains(order, "  Anything: unknown = null;");
-      Assert.DoesNotContain("ReadOnly", order, "not serialized");
+      StringAssert.Contains(order, "  ReadOnly: number = 7;"); // a computed property is written (GetOnlyProperties.Computed)
       StringAssert.Contains(ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder").Models, "TsAddress"), "  City: string | null = 'Utrecht';");
     }
 

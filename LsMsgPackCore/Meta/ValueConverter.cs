@@ -336,6 +336,8 @@ namespace LsMsgPack.Meta
         if (propVals.TryGetValue(prop.PropertyId, out object propval))
         {
           set++;
+          if (prop.IsComputed) // written only
+            continue;
           if (differences is null)
             Assign(prop, instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
           else
@@ -365,6 +367,8 @@ namespace LsMsgPack.Meta
         if (prop.FormerId is null || !ReadsFormerId(prop, propVals, out object propval))
           continue;
         set++;
+        if (prop.IsComputed)
+          continue;
         if (differences is null)
           Assign(prop, instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
         else
@@ -392,7 +396,7 @@ namespace LsMsgPack.Meta
       foreach (KeyValuePair<object, object> entry in propVals)
       {
         FullPropertyInfo prop = MatchIgnoringCase(entry.Key, props, propVals);
-        if (prop is null)
+        if (prop is null || prop.IsComputed)
           continue;
         if (differences is null)
           Assign(prop, instance, ConvertDeserializeValue(entry.Value, prop.PropertyInfo.PropertyType, settings, prop));
@@ -589,6 +593,8 @@ namespace LsMsgPack.Meta
             differences.UnknownProperty(result, NameOf(t, def));
           continue;
         }
+        if (prop.IsComputed) // written only
+          continue;
         if (items[t] is null)
           Assign(prop, result, prop.NilValue(settings));
         else if (differences is null)

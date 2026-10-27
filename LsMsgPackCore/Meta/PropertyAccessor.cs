@@ -35,6 +35,12 @@ namespace LsMsgPack.Meta
     private int _getCalls;
     private int _setCalls;
 
+    /// <summary>
+    /// A property without a setter whose value reading skips (a computed property, see <see cref="TypeResolving.Filters.GetOnlyProperties.Computed"/>):
+    /// not of an anonymous type (its field is set), not taken by a constructor (see <see cref="ObjectConstructor"/>) and not a collection that can be filled (see <see cref="GetOnlyCollection"/>).
+    /// </summary>
+    internal readonly bool Computed;
+
     private PropertyAccessor(PropertyInfo property)
     {
       _property = property;
@@ -44,8 +50,27 @@ namespace LsMsgPack.Meta
         _getter = generated.BoxedGetter;
         _setter = generated.BoxedSetter(property);
       }
-      else if (property.GetSetMethod(true) is null && SerializationRules.IsAnonymous(property.DeclaringType))
-        _setter = AnonymousSetter(property);
+      if (property.GetSetMethod(true) is null)
+      {
+        if (SerializationRules.IsAnonymous(property.DeclaringType))
+          _setter = AnonymousSetter(property);
+        else if (GetOnlyCollection.IsFillable(property.PropertyType))
+          _setter = Fill;
+        else
+          Computed = !ObjectConstructor.Sets(property); // the constructor's values are collected for it (ObjectConstructor.Arguments), never set
+      }
+    }
+
+    /// <summary>
+    /// The setter of a collection property without one: fills the collection the getter returns. A nil (null) leaves it as the constructor made it, so does a getter returning null.
+    /// </summary>
+    private void Fill(object instance, object value)
+    {
+      if (value is null)
+        return;
+      object target = GetValue(instance);
+      if (target != null && !ReferenceEquals(target, value))
+        GetOnlyCollection.Fill(target, value);
     }
 
     /// <summary>
@@ -84,6 +109,8 @@ namespace LsMsgPack.Meta
 
     public void SetValue(object instance, object value)
     {
+      if (Computed) // the value is written only
+        return;
       try
       {
         Action<object, object> setter = _setter;

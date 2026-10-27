@@ -34,6 +34,7 @@ namespace LsMsgPackUnitTests
     public class XlGeneric<T> { public T Value { get; set; } public int Count { get; set; } = 1; }
     public class XlMoney { public XlMoney(decimal amount, string currency) { Amount = amount; Currency = currency; } public decimal Amount { get; } public string Currency { get; } public string Tag { get; set; } }
     public readonly struct XlPoint { public XlPoint(int x, int y) { X = x; Y = y; } public int X { get; } public int Y { get; } }
+    public class XlCart { public List<XlShapeBase> Lines { get; } = new List<XlShapeBase>(); public int Count { get { return Lines.Count; } } public Dictionary<string, int> Totals { get; } = new Dictionary<string, int>(); public string Name { get; set; } }
 
     public class XlNested
     {
@@ -260,6 +261,14 @@ namespace LsMsgPackUnitTests
       values.Add(new XlGeneric<object> { Value = new XlMoney(0m, null) });
       values.Add(new List<XlMoney> { new XlMoney(1m, "USD"), null });
       values.Add(new XlGeneric<XlPoint?> { Value = new XlPoint(1, -2) });
+
+      // Properties without a setter (GetOnlyProperties): computed ones are written and skipped, get-only collections filled
+      XlCart cart = new XlCart { Name = "cart" };
+      cart.Lines.Add(new XlCircle { Name = "c", Radius = 1 });
+      cart.Lines.Add(new XlSquare { Name = "s", Side = 2 });
+      cart.Totals.Add("a", 3);
+      values.Add(cart);
+      values.Add(new XlGeneric<object> { Value = new XlCart() });
       return values;
     }
 

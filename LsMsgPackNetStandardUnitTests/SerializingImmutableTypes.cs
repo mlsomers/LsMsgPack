@@ -25,7 +25,7 @@ namespace LsMsgPackUnitTests
 
       public decimal Amount { get; }
       public string Currency { get; }
-      public string Text { get { return $"{Amount} {Currency}"; } } // not taken by the constructor: not written
+      public string Text { get { return $"{Amount} {Currency}"; } } // not taken by the constructor: computed (written, skipped when read)
     }
 
     public class ImmOrder
@@ -103,7 +103,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// Several public constructors, none marked: as before (the properties are not written).
+    /// Several public constructors, none marked: no constructor is called, the properties are computed ones (written, not read).
     /// </summary>
     public class ImmUnmarked
     {
@@ -259,7 +259,7 @@ namespace LsMsgPackUnitTests
     public void SeveralConstructors_NotChosen()
     {
       ImmUnmarked read = RoundTrip(new ImmUnmarked("c", 3), Settings(true, ObjectLayout.Array));
-      Assert.IsNull(read.Code, "as before: no constructor is chosen, the properties are not written");
+      Assert.IsNull(read.Code, "as before: no constructor is chosen, the properties are not read");
       Assert.AreEqual(0, read.Count);
     }
 

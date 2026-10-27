@@ -347,7 +347,8 @@ namespace LsMsgPackUnitTests
       foreach (LtMsgPack.Reading.PropReader reader in (LtMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
       {
         string name = ((FullPropertyInfo)typeof(LtMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader)).PropertyInfo.Name;
-        bool runtime = name == nameof(GcAllKinds.InitOnly) || name == nameof(GcAllKinds.Offset) || name == nameof(GcAllKinds.Bytes) || name == nameof(GcAllKinds.Child) || name == nameof(GcAllKinds.Numbers);
+        bool runtime = name == nameof(GcAllKinds.InitOnly) || name == nameof(GcAllKinds.Offset) || name == nameof(GcAllKinds.Bytes) || name == nameof(GcAllKinds.Child) || name == nameof(GcAllKinds.Numbers)
+          || name == nameof(GcAllKinds.ReadOnly); // computed: written by the generated code, skipped by the runtime
         Assert.AreEqual(runtime, reader.GeneratedId < 0, name);
       }
     }

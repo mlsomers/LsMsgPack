@@ -250,7 +250,16 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
+    /// The property has no setter and reading skips its value (see <see cref="PropertyAccessor.Computed"/>).
+    /// </summary>
+    internal bool IsComputed
+    {
+      get { return (_accessor ?? (_accessor = PropertyAccessor.Get(PropertyInfo))).Computed; }
+    }
+
+    /// <summary>
     /// Sets the value of the property, by a compiled delegate once the property is used often (see <see cref="PropertyAccessor"/>).
+    /// A collection property without a setter is filled, a computed property is not set.
     /// </summary>
     internal void SetValue(object instance, object value)
     {

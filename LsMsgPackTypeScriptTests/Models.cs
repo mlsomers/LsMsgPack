@@ -78,7 +78,7 @@ namespace LsMsgPackTypeScriptTests
     public KeyValuePair<string, int> Pair { get; set; }
     public byte[] Data { get; set; }
     public object Anything { get; set; }
-    public int ReadOnly { get { return 7; } } // not serialized: no setter
+    public int ReadOnly { get { return 7; } } // computed: written, not read (GetOnlyProperties.Computed)
   }
 
   /// <summary>
