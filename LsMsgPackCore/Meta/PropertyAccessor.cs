@@ -44,6 +44,22 @@ namespace LsMsgPack.Meta
         _getter = generated.BoxedGetter;
         _setter = generated.BoxedSetter(property);
       }
+      else if (property.GetSetMethod(true) is null && SerializationRules.IsAnonymous(property.DeclaringType))
+        _setter = AnonymousSetter(property);
+    }
+
+    /// <summary>
+    /// The properties of an anonymous type have no setters (they are serialized all the same, see FilterNonSettable): its fields are set as the constructor sets them,
+    /// "&lt;Name&gt;i__Field" in C#, "$Name" for a Key property in Visual Basic. Null when there is no such field (reflection then throws as for any property without a setter).
+    /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
+    private static Action<object, object> AnonymousSetter(PropertyInfo property)
+    {
+      const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+      FieldInfo field = property.DeclaringType.GetField(string.Concat("<", property.Name, ">i__Field"), flags) ?? property.DeclaringType.GetField("$" + property.Name, flags);
+      if (field is null || field.FieldType != property.PropertyType)
+        return null;
+      return (instance, value) => field.SetValue(instance, value);
     }
 
     public object GetValue(object instance)

@@ -31,6 +31,7 @@ namespace LsMsgPackUnitTests
     public abstract class XlShapeBase : IXlShape { public string Name { get; set; } public int? Sides { get; set; } }
     public class XlCircle : XlShapeBase { public double Radius { get; set; } }
     public class XlSquare : XlShapeBase { public float Side { get; set; } [DefaultValue(7)] public int Standard { get; set; } = 7; }
+    public class XlGeneric<T> { public T Value { get; set; } public int Count { get; set; } = 1; }
 
     public class XlNested
     {
@@ -237,6 +238,20 @@ namespace LsMsgPackUnitTests
       values.Add(new int[,] { { 1, 2 }, { 3, 4 } }); // [2, 2, [1, 2, 3, 4]]
       values.Add(new object[] { new string[2, 1, 1], System.Collections.Immutable.ImmutableArray.Create(1), System.Collections.Immutable.ImmutableDictionary.CreateRange(new[] { new KeyValuePair<string, object>("k", 'c') }), new BitArray(3) });
       values.Add(new XlCircle { Name = "root", Radius = 1 });
+
+      // Anonymous types: in the schema where declared, maps of names below another one and where declared as object (SerializationRules.WritesByNames)
+      values.Add(new
+      {
+        Id = 7, Name = "anon", When = new DateTime(2026, 10, 27, 1, 2, 3, DateTimeKind.Utc), Empty = (string)null, Zero = 0,
+        Inner = new { A = 1, B = new[] { new { C = "c" }, null } },
+        Items = new List<object> { new { D = 2.5m }, 3, new XlCircle { Name = "c" } },
+        Page = new XlGeneric<object> { Value = new { E = 'e' } }
+      });
+      values.Add(new[] { 1, 2 }.Select(i => new { Id = i, Name = "n" + i }));
+      values.Add(new[] { 1, 2 }.Select(i => new { Id = i }).ToList());
+      values.Add(new XlGeneric<object> { Value = new { Id = 1, Kids = new[] { new { Id = 2 } } } });
+      values.Add(new XlGeneric<XlGeneric<object>> { Value = new XlGeneric<object> { Value = 5 } });
+      values.Add(new XlNested { Name = "holder", Anything = new { Id = 1, Shape = new XlSquare { Name = "sq" } }, Objs = new List<object> { new { X = 1 }, new[] { new { Y = "y" } }.ToList() } });
       return values;
     }
 

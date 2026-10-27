@@ -222,6 +222,45 @@ namespace LtMsgPack.Writing
   }
 
   /// <summary>
+  /// An object with an anonymous type written as a map of its property names and values, without a type id and not in the schema, whatever the layout (LsMsgPack: SerializeByNames, see SerializationRules.WritesByNames).
+  /// <para>Custom property id resolvers are asked once per type (FullPropertyInfo.GetNamedProps), as in names mode.</para>
+  /// </summary>
+  internal sealed class NamesPlan
+  {
+    private readonly FullPropertyInfo[] _infos;
+    private readonly PropWriter[] _props;
+    private readonly byte[][] _keys;
+
+    internal NamesPlan(Serializer serializer, Type type)
+    {
+      _infos = FullPropertyInfo.GetNamedProps(type, serializer.Options);
+      _props = new PropWriter[_infos.Length];
+      _keys = new byte[_infos.Length][];
+      for (int t = 0; t < _infos.Length; t++)
+      {
+        _props[t] = PropWriter.Create(serializer, _infos[t]);
+        _keys[t] = serializer.EncodeKey(_infos[t].PropertyId);
+      }
+    }
+
+    internal void Write(WriteContext c, object value)
+    {
+      bool byNames = c.ByNames;
+      c.ByNames = true; // the values below it are written by names as far as they have anonymous types
+      PropWriter[] props = _props;
+      int at = c.W.ReserveMapHeader(props.Length);
+      int count = 0;
+      c.EnterContainer();
+      for (int t = 0; t < props.Length; t++)
+        if (props[t].Write(c, value, _keys[t], _infos[t]))
+          count++;
+      c.LeaveContainer();
+      c.W.PatchMapHeader(at, props.Length, count);
+      c.ByNames = byNames;
+    }
+  }
+
+  /// <summary>
   /// Which dynamic filters apply (LsMsgPack: MsgPackSettings.DynamicFilters).
   /// </summary>
   internal enum FilterMode

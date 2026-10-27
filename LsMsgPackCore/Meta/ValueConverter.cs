@@ -232,14 +232,35 @@ namespace LsMsgPack.Meta
         throw ReadDifferences.NotConverted(settings, new Exception(
           $"Cannot create an instance of an interface or abstract type:\r\n  {tType.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers."));
 
-      if (propVals.Count > (hasTypeId ? 1 : 0) && SerializationRules.GetIndexedSchema(settings)?.SkipIfNoEntry(tType, settings, prop) == true)
+      IndexedSchemaTypeResolver schema = SerializationRules.GetIndexedSchema(settings);
+      bool byNames = schema != null && HasOnlyNames(map);
+      if (!byNames && propVals.Count > (hasTypeId ? 1 : 0) && schema?.SkipIfNoEntry(tType, settings, prop) == true)
         return null;
-      FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
+      FullPropertyInfo[] props = byNames ? FullPropertyInfo.GetNamedProps(tType, settings) : FullPropertyInfo.GetSerializedProps(tType, settings);
       if (props.Length == 0) // a refused type has no settable properties, before it is created
         SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
       result = Instances.CreateObject(tType, settings);
       SetProperties(result, tType, props, propVals, settings);
       return result;
+    }
+
+    /// <summary>
+    /// With the indexed schema, a map whose keys (other than the type id) are all names is an object written by names (an object with an anonymous type, see SerializationRules.WritesByNames),
+    /// or data of released versions whose property id resolvers gave every property a string id (see FullPropertyInfo.SchemaName): its keys are matched by name, the class needs no entry.
+    /// The keys of other objects are indexes.
+    /// </summary>
+    private static bool HasOnlyNames(KeyValuePair<object, object>[] map)
+    {
+      bool names = false;
+      for (int t = map.Length - 1; t >= 0; t--)
+      {
+        object key = map[t].Key;
+        if (!(key is string name))
+          return false;
+        if (name.Length > 0)
+          names = true;
+      }
+      return names;
     }
 
     /// <summary>

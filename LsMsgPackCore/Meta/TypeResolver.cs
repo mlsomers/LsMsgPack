@@ -35,7 +35,7 @@ namespace LsMsgPack.Meta
       Type[] args = type.GenericTypeArguments;
 
       if (args.Length == 0)
-        return fullname ? type.FullName : type.Name;
+        return AnonymousName(type, fullname ? type.FullName : type.Name);
 
       if (IsNestedInGeneric(type))
         return NestedInGenericName(type, args, fullname);
@@ -47,9 +47,22 @@ namespace LsMsgPack.Meta
         names[t] = GetTypeName(args[t], fullname);
 
       string typeName = fullname ? type.FullName : type.Name;
-      typeName = typeName.Substring(0, typeName.IndexOf('`'));
+      typeName = AnonymousName(type, typeName.Substring(0, typeName.IndexOf('`')));
 
       return $"{typeName}<{string.Join(", ", names)}>";
+    }
+
+    /// <summary>
+    /// The name of an anonymous type without the prefix of the compiler ("&lt;&gt;f__AnonymousType0&lt;Int32, String&gt;" is "AnonymousType0&lt;Int32, String&gt;"):
+    /// a name that starts with '&lt;' is not split into its generic arguments, so a released reader refused it (with the ',' of its arguments) and the schema it is in.
+    /// No reader resolves it either way (the type is internal to the writer's assembly), see SerializationRules.HasAnonymousType.
+    /// </summary>
+    private static string AnonymousName(Type type, string name)
+    {
+      if (!SerializationRules.IsAnonymous(type))
+        return name;
+      int start = name.IndexOf("AnonymousType", StringComparison.Ordinal);
+      return start > 0 ? name.Substring(start) : name;
     }
 
     private static bool IsNestedInGeneric(Type type)

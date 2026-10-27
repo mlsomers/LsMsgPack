@@ -475,9 +475,10 @@ namespace ObjectDebugger
 
       /// <summary>
       /// A place where values of different kinds were found (e.g. an integer and a string): only object (or an interface both implement) holds both.
-      /// <para>Only for the properties of objects with a type id and the values of a dictionary with string keys (with the schema the keys of objects are indexes).
+      /// <para>Only for the properties of objects with a type id and the values of a dictionary with string keys that schema version 2 declares as one.
       /// An inferred type may be wrong (and the inference rules out types whose values differ in kind), without the schema objects of different types share paths,
-      /// and an array is also a tuple, a KeyValuePair or a DateTimeOffset (values of different kinds).</para>
+      /// and an array is also a tuple, a KeyValuePair or a DateTimeOffset (values of different kinds). A map with string keys in a payload with the schema
+      /// is also an object written by names (an object with an anonymous type, e.g. new { Id = 1, Name = "x" } in a property declared as object), whose properties are declared as their own types.</para>
       /// </summary>
       private void CheckKind(PrimitiveObject obj)
       {
@@ -485,7 +486,7 @@ namespace ObjectDebugger
         if (parent is null)
           return;
         bool typed = parent.Kind == ObjectKind.Object && parent.TypeIdItemRef != null && !parent.TypeIsGuess;
-        bool dictionary = parent.Kind == ObjectKind.Dictionary && _schema != null && obj.FirstItemRef is MpString;
+        bool dictionary = parent.Kind == ObjectKind.Dictionary && _schema != null && obj.FirstItemRef is MpString && parent.DeclaredType?.WithoutNullable.Kind == "dict";
         if (!typed && !dictionary)
           return;
 

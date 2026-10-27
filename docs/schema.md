@@ -9,6 +9,7 @@ LsMsgPack serializes .NET objects the same way the XML and JSON serializers do: 
 - [Polymorphic class-hierarchy support](#polymorphic-class-hierarchy-support)
 - [Type resolvers](#type-resolvers)
 - [Property names and filters](#property-names-and-filters)
+- [Anonymous types](#anonymous-types)
 - [Choosing your settings](#choosing-your-settings)
 
 The examples below all serialize this small object model:
@@ -294,7 +295,7 @@ Property names and filters
 These settings also affect the size and the contract of the data:
 
 - **Property names**: by default, the .NET property name is used. Add an `AttributePropertyNameResolver` to `MsgPackSettings.PropertyNameResolvers` to use the name from `[JsonPropertyName]` (System.Text.Json), `[JsonProperty]` (Json.NET), `[XmlAttribute]`, `[XmlElement]`, `[XmlArray]` or `[DataMember]` (only in a `[DataContract]` type, as DataContractSerializer reads it), in that order; an attribute without a name keeps the .NET name, as those serializers do. Or from a custom attribute of your own (`new AttributePropertyNameResolver(typeof(MyNameAttribute), nameof(MyNameAttribute.Name))`), which comes first. With the indexed schema, these names are the names in the schema and the keys are their indexes, as for the other properties (so short attribute names make the schema smaller, and readers without the attributes find the properties by these names); any string id a property id resolver gives is used this way, other ids (numbers) are written as the keys. Versions until October 2026 wrote the .NET names in the schema and these names as the keys (the array layout matched by the .NET names): that data is still read, readers of those versions read the new data only without the resolver (by the new names). Released versions until October 2026 only read `[XmlAttribute]` and `[XmlElement]` (and threw for those without a name): the data they wrote has the .NET name (or its index in the schema) for the properties named by the other attributes, and is still read into them (when the map does not have the new name and the old one means no other property).
-- **Static filters** (`StaticFilters`) decide once per type which properties are serialized. By default, properties without a public setter (`FilterNonSettable`) are skipped. So are properties with an "ignore" attribute of another serializer (`FilterIgnoredAttribute`): `[XmlIgnore]`, `[JsonIgnore]` (System.Text.Json and Json.NET), `[IgnoreDataMember]`, `[IgnoreMember]` (MessagePack-CSharp), `[PropertyShape(Ignore = true)]` (Nerdbank.MessagePack) and any other attribute with "Ignore" in its name. And static properties are skipped (`FilterStatic`, see [Security](security.md#what-else-to-keep-in-mind)). Keep `FilterStatic` in the list if you set your own static filters.
+- **Static filters** (`StaticFilters`) decide once per type which properties are serialized. By default, properties without a public setter (`FilterNonSettable`) are skipped, except those of [anonymous types](#anonymous-types). So are properties with an "ignore" attribute of another serializer (`FilterIgnoredAttribute`): `[XmlIgnore]`, `[JsonIgnore]` (System.Text.Json and Json.NET), `[IgnoreDataMember]`, `[IgnoreMember]` (MessagePack-CSharp), `[PropertyShape(Ignore = true)]` (Nerdbank.MessagePack) and any other attribute with "Ignore" in its name. And static properties are skipped (`FilterStatic`, see [Security](security.md#what-else-to-keep-in-mind)). Keep `FilterStatic` in the list if you set your own static filters.
 - **Dynamic filters** (`DynamicFilters`) decide per value. By default, `FilterDefaultValues` omits properties that are `null`, their type's default value, or the value of their `[DefaultValue]` attribute. An empty string is written, as the JSON serializers do (`new FilterDefaultValues(omitEmptyStrings: true)` omits it too, it is then read back as the value the constructor sets, often `null`). Use `FilterNullValues` instead to omit only `null` values, or use no dynamic filters to write every property.
 - **Collections**: `[SerializeEnumerable]` on a collection class or property sets the element type, and controls whether the collection's own properties and/or its elements are serialized.
 
@@ -320,6 +321,29 @@ FilterIgnoredAttribute declaredOnly = new FilterIgnoredAttribute(IgnoreAttribute
 ```
 
 The attributes are recognized by their names, LsMsgPack does not reference the libraries that define them. System.Text.Json's `[JsonIgnore]` only leaves a property out with `Condition = JsonIgnoreCondition.Always` (its default): `Never`, `WhenWritingNull` and `WhenWritingDefault` keep it (the latter two leave out values, which is up to the dynamic filters). The filters are the same for reading and writing. `MsgPackSettings.Default_StaticFilters` holds the defaults of new settings.
+
+Anonymous types
+---------------
+
+An anonymous object (`return Ok(new { Id = 1, Name = "x" });`) is written with its properties, although they have no setters, and read into any class with the same property names (ignoring case with `PropertyNameCaseInsensitive`), as JSON reads it. Until October 2026 it was written without them (an empty map or array), so a reader got the constructor's values.
+
+No reader has the class (the compiler makes it, internal to the writer's assembly), so it never gets a type id. How it's written depends on where it is:
+
+- **Where its type is declared**: the root (`Ok(new { ... })`, `Serialize(new { ... })`) and the elements of a root collection (`Ok(items.Select(i => new { i.Id }))`). It's written like any class, in the layout of the settings. With the indexed schema it gets an entry named without the compiler's prefix (`AnonymousType0<Int32, String>`, not `<>f__AnonymousType0<Int32, String>`), and the reader pairs its class with the root entry (see [reading into another class](#the-indexed-schema)).
+- **Everywhere else**: a property or element declared as `object` (`new ApiResult { Data = new { ... } }`), an anonymous object inside another one or inside an object of a generic class of one (`Page<T>` with an anonymous `T`), and the elements of a collection of them assigned to `object`. Here it's written as a map of its property names and values, not in the schema and with any layout. A reader without the class can't pair those with its classes through the schema, so the names do it. A reader of `object` gets the names: `{"Id": 1, "Name": "x"}`.
+
+```
+return Ok(new { Total = 5, Customer = new { Id = 2, Name = "c" } });
+
+{"AnonymousType1<Int32, AnonymousType0<Int32, String>>": ["Total", "Customer"]}
+[5, {"Id": 2, "Name": "c"}]
+```
+
+With the schema, the keys of other objects are indexes. So a map whose keys are all strings is read by name, whatever class it's read into, and that class needs no entry. The dynamic filters leave out values as in any map. Property id resolvers give the names, as without the schema.
+
+Reading into an anonymous type (`Deserialize(bytes, template.GetType())`) sets its fields as its constructor does. It needs `ObjectCreation.ConstructorOrUninitialized` (the default) or `Uninitialized`, because an anonymous type has no parameterless constructor.
+
+Released readers (packages until October 2026) read the root and the elements of a root collection into their classes from version 2026.10.26.1 on. Earlier versions throw "no schema entry", because they paired classes only through the writer's classes. All released versions read the maps of names as `object`, and throw "no schema entry" when they read one into a class.
 
 Choosing your settings
 ----------------------
