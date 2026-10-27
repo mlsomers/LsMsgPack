@@ -32,6 +32,8 @@ namespace LsMsgPackUnitTests
     public class XlCircle : XlShapeBase { public double Radius { get; set; } }
     public class XlSquare : XlShapeBase { public float Side { get; set; } [DefaultValue(7)] public int Standard { get; set; } = 7; }
     public class XlGeneric<T> { public T Value { get; set; } public int Count { get; set; } = 1; }
+    public class XlMoney { public XlMoney(decimal amount, string currency) { Amount = amount; Currency = currency; } public decimal Amount { get; } public string Currency { get; } public string Tag { get; set; } }
+    public readonly struct XlPoint { public XlPoint(int x, int y) { X = x; Y = y; } public int X { get; } public int Y { get; } }
 
     public class XlNested
     {
@@ -252,6 +254,12 @@ namespace LsMsgPackUnitTests
       values.Add(new XlGeneric<object> { Value = new { Id = 1, Kids = new[] { new { Id = 2 } } } });
       values.Add(new XlGeneric<XlGeneric<object>> { Value = new XlGeneric<object> { Value = 5 } });
       values.Add(new XlNested { Name = "holder", Anything = new { Id = 1, Shape = new XlSquare { Name = "sq" } }, Objs = new List<object> { new { X = 1 }, new[] { new { Y = "y" } }.ToList() } });
+
+      // Immutable classes and structs: the properties a constructor takes are written, readers call it (ObjectConstructor)
+      values.Add(new XlMoney(12.5m, "EUR") { Tag = "t" });
+      values.Add(new XlGeneric<object> { Value = new XlMoney(0m, null) });
+      values.Add(new List<XlMoney> { new XlMoney(1m, "USD"), null });
+      values.Add(new XlGeneric<XlPoint?> { Value = new XlPoint(1, -2) });
       return values;
     }
 

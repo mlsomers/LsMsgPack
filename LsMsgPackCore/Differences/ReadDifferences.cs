@@ -137,7 +137,7 @@ namespace LsMsgPack
     internal void UnknownProperty(object parent, object key)
     {
       string name = key as string ?? Convert.ToString(key, CultureInfo.InvariantCulture);
-      Add(parent.GetType(), DifferenceKind.UnknownProperty, Cut(name), -1, parent);
+      Add(ClassOf(parent), DifferenceKind.UnknownProperty, Cut(name), -1, parent);
     }
 
     /// <param name="length">The length of the name in bytes (UTF-8)</param>
@@ -145,12 +145,12 @@ namespace LsMsgPack
     {
       int max = MaxNameLength * 4; // the most bytes MaxNameLength characters take
       string name = MsgPackOptions.StringEncoding.GetString(buffer, offset, Math.Min(length, max));
-      Add(parent.GetType(), DifferenceKind.UnknownProperty, Cut(name), -1, parent);
+      Add(ClassOf(parent), DifferenceKind.UnknownProperty, Cut(name), -1, parent);
     }
 
     internal void ExtraValue(object parent, int position)
     {
-      Add(parent.GetType(), DifferenceKind.ExtraValue, null, position, parent);
+      Add(ClassOf(parent), DifferenceKind.ExtraValue, null, position, parent);
     }
 
     /// <param name="type">The class without a schema entry</param>
@@ -177,7 +177,7 @@ namespace LsMsgPack
     {
       if (ReferenceEquals(ex, _thrown) || !IsNotConverted(ex))
         return false;
-      Difference difference = Add(parent.GetType(), DifferenceKind.InvalidValue, prop?.PropertyInfo.Name, -1, parent);
+      Difference difference = Add(ClassOf(parent), DifferenceKind.InvalidValue, prop?.PropertyInfo.Name, -1, parent);
       return Continue(difference, ex);
     }
 
@@ -291,6 +291,28 @@ namespace LsMsgPack
       return false;
     }
 
+    /// <summary>
+    /// The class of an object whose values are read: an object created by a constructor taking its values is not there yet (see ObjectConstructor.Arguments).
+    /// </summary>
+    private static Type ClassOf(object parent)
+    {
+      return parent is ObjectConstructor.Arguments arguments ? arguments.Type : parent.GetType();
+    }
+
+    /// <summary>
+    /// An object created by a constructor taking its values (see ObjectConstructor.Arguments, which stood for it while its values were read) replaces it in the samples, so the report finds its path.
+    /// </summary>
+    internal void Created(object arguments, object instance)
+    {
+      for (int t = _differences.Count - 1; t >= 0; t--)
+      {
+        List<object> samples = _differences[t]._samples;
+        for (int s = samples.Count - 1; s >= 0; s--)
+          if (ReferenceEquals(samples[s], arguments))
+            samples[s] = instance;
+      }
+    }
+
     /// <returns>Null when it was not kept (<see cref="Omitted"/>)</returns>
     private Difference Add(Type type, DifferenceKind kind, string name, int position, object sample)
     {
@@ -309,7 +331,11 @@ namespace LsMsgPack
 
       difference.Count++;
       if (sample != null && difference._samples.Count < MaxSamples && (difference._samples.Count == 0 || !ReferenceEquals(difference._samples[difference._samples.Count - 1], sample)))
+      {
         difference._samples.Add(sample);
+        if (sample is ObjectConstructor.Arguments arguments)
+          arguments.Reported = true;
+      }
       return difference;
     }
 

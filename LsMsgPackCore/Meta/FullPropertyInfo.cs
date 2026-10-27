@@ -330,7 +330,7 @@ namespace LsMsgPack.Meta
     /// Public properties excluding indexers and properties hidden by a property with the same name in a derived class ("new" modifier).
     /// </summary>
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
-    private static PropertyInfo[] GetProperties(Type type)
+    internal static PropertyInfo[] GetProperties(Type type)
     {
       return PropertiesCache.GetOrAdd(type, t =>
       {

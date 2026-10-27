@@ -1,6 +1,5 @@
 ﻿using LsMsgPack.Generated;
 using System;
-using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
@@ -13,16 +12,27 @@ namespace LsMsgPack.Meta
   internal static class Instances
   {
     /// <summary>
-    /// Whether the type has a (public or non-public) parameterless constructor, without one <see cref="Activator.CreateInstance(Type, bool)"/> would throw (slow) for every instance.
-    /// </summary>
-    private static readonly ConcurrentDictionary<Type, bool> HasParameterlessConstructor = new ConcurrentDictionary<Type, bool>();
-
-    /// <summary>
     /// An object with properties, as <see cref="MsgPackOptions.ObjectCreation"/> says.
     /// </summary>
     internal static object CreateObject(Type type, MsgPackOptions settings)
     {
       return Create(type, settings?._objectCreation ?? ObjectCreation.ConstructorOrUninitialized);
+    }
+
+    /// <summary>
+    /// <see cref="CreateObject"/>, or for a type whose constructor sets properties without a public setter (<see cref="ObjectConstructor.WithValues"/>) the arguments that collect the values:
+    /// ValueConverter sets the properties on them, then creates the object (<see cref="ObjectConstructor.Arguments.Create"/>). Such a type is always created by that constructor
+    /// (also with <see cref="ObjectCreation.Uninitialized"/>, its values could not be set otherwise).
+    /// </summary>
+    internal static object CreateObjectOrArguments(Type type, MsgPackOptions settings)
+    {
+      ObjectCreation creation = settings?._objectCreation ?? ObjectCreation.ConstructorOrUninitialized;
+      ObjectConstructor constructor = ObjectConstructor.Of(type);
+      if (constructor.WithValues != null)
+        return constructor.Collect();
+      if (creation == ObjectCreation.Uninitialized)
+        return Uninitialized(type);
+      return Create(type, creation, constructor.Parameterless);
     }
 
     /// <summary>
@@ -38,23 +48,22 @@ namespace LsMsgPack.Meta
       if (creation == ObjectCreation.Uninitialized)
         return Uninitialized(type);
 
+      return Create(type, creation, ObjectConstructor.Of(type).Parameterless);
+    }
+
+    private static object Create(Type type, ObjectCreation creation, bool parameterless)
+    {
       Func<object> generated = GeneratedTypes.Find(type)?.Creator; // the constructor call of the source generator, registered for the process: also where reflection does not see the constructor (trimmed, NativeAOT)
       if (generated != null)
         return generated(); // an exception of the constructor is passed on as it is
 
-      if (HasConstructor(type))
+      if (parameterless)
         return Construct(type);
 
       if (creation == ObjectCreation.Constructor)
         throw NoConstructor(type);
 
       return Uninitialized(type);
-    }
-
-    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
-    internal static bool HasConstructor(Type type)
-    {
-      return HasParameterlessConstructor.GetOrAdd(type, t => t.IsValueType || t.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null);
     }
 
     /// <summary>
