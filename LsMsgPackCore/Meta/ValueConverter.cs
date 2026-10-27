@@ -216,7 +216,7 @@ namespace LsMsgPack.Meta
           : ConvertDeserializeValue(content, tType, settings, null);
 
         int reservedKeys = hasTypeId ? 2 : 1;
-        if (propVals.Count > reservedKeys && !(result is null)) // properties serialized along with the content (see SerializeEnumerableAttribute.SerializeProperties)
+        if (propVals.Count > reservedKeys && !(result is null) && SetsContentProperties(result.GetType(), settings, prop)) // properties serialized along with the content (see SerializeEnumerableAttribute.SerializeProperties)
           SetProperties(result, result.GetType(), propVals, settings);
 
         return result;
@@ -240,6 +240,22 @@ namespace LsMsgPack.Meta
       result = Instances.CreateObject(tType, settings);
       SetProperties(result, tType, props, propVals, settings);
       return result;
+    }
+
+    /// <summary>
+    /// The properties written along with the content of a collection. With the indexed schema their keys are indexes into the entry of the writer's class, so a class without an entry
+    /// (e.g. a list read from a collection with properties of a class the reader does not have) cannot match them: it ignores them when it does not serialize properties itself,
+    /// otherwise it is reported or throws as an object without an entry (the content is kept).
+    /// </summary>
+    private static bool SetsContentProperties(Type type, MsgPackOptions settings, FullPropertyInfo prop)
+    {
+      IndexedSchemaTypeResolver schema = SerializationRules.GetIndexedSchema(settings);
+      if (schema is null || !schema.HasNoEntry(type, settings))
+        return true;
+      SerializeEnumerableAttribute att = SerializationRules.GetEnumerableAttribute(type, prop);
+      if (att is null || !att.SerializeProperties)
+        return false;
+      return !schema.SkipIfNoEntry(type, settings, prop);
     }
 
     /// <summary>

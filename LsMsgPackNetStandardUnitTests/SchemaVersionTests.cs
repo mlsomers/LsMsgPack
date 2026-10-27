@@ -1,7 +1,9 @@
 ﻿using LsMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using LsMsgPack.TypeResolving.Attributes;
 using Newtonsoft.Json;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
@@ -52,6 +54,16 @@ namespace LsMsgPackUnitTests
       public object Anything { get; set; }
     }
 
+    [SerializeEnumerable(SerializeElements = false, SerializeProperties = true)]
+    public class SvPage : IEnumerable<SvLine>
+    {
+      public int Total { get; set; }
+      public List<SvLine> Items { get; set; }
+
+      public IEnumerator<SvLine> GetEnumerator() { return Items.GetEnumerator(); }
+      IEnumerator IEnumerable.GetEnumerator() { return GetEnumerator(); }
+    }
+
     public class SvTiny
     {
       public int A { get; set; }
@@ -97,6 +109,21 @@ namespace LsMsgPackUnitTests
       byte[] bytes = Serializer.Serialize(new SvTiny() { A = 1, B = "x" }, Described());
       string schema = "82 A6 53 76 54 69 6E 79 93 92 A1 41 A3 69 6E 74 92 A1 42 A6 73 74 72 69 6E 67 93 A1 43 A3 69 6E 74 03 A0 91 92 A1 40 00";
       string body = "93 01 A1 78 C0"; // C is 3, its default: left out
+      Assert.AreEqual(schema + " " + body, Hex(bytes));
+    }
+
+    /// <summary>
+    /// A collection written by its properties (not its elements) is an object of its entry, which has no <c>"@"</c>:
+    /// <c>{ "SvPage": [["Total", "int"], ["Items", ["list", 1]]], "SvLine": [["Qty", "int"], ["Text", "string"]], "": [["@", 0]] }</c>.
+    /// </summary>
+    [TestMethod]
+    public void Described_CollectionWrittenByItsProperties()
+    {
+      SvPage page = new SvPage() { Total = 1, Items = new List<SvLine>() { new SvLine() { Qty = 2, Text = "x" } } };
+      byte[] bytes = Serializer.Serialize(page, Described());
+      string schema = "83 A6 53 76 50 61 67 65 92 92 A5 54 6F 74 61 6C A3 69 6E 74 92 A5 49 74 65 6D 73 92 A4 6C 69 73 74 01"
+        + " A6 53 76 4C 69 6E 65 92 92 A3 51 74 79 A3 69 6E 74 92 A4 54 65 78 74 A6 73 74 72 69 6E 67 A0 91 92 A1 40 00";
+      string body = "82 00 01 01 91 92 02 A1 78";
       Assert.AreEqual(schema + " " + body, Hex(bytes));
     }
 

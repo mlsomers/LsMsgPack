@@ -151,6 +151,7 @@ var settings = new MsgPackSettings { SchemaVersion = SchemaVersion.Described }; 
 - Each property is `[name, type]`, or `[name, type, default]` for a property with `[DefaultValue]` that the writer leaves out (`FilterDefaultValues`). The default is encoded as the body would encode it.
 - An entry that isn't an object (a collection or a value that got a type id, e.g. a `List<int>` in a property declared as `object`) starts with `["@", type]`: the type of the content of `{ "": typeId, "@": content }`. It isn't a property: property ids are the positions of the other items.
 - The last entry has the key `""` (no type has an empty name) and holds `[["@", type]]`: the declared type of the root. Type ids never refer to it.
+- A collection that `[SerializeEnumerable]` writes with its properties (`SerializeProperties = true` or `SerializeElements = false`) is a map like an object: it is described as its entry (an index, not `["list", T]`), and its entry has the `["@", ["list", T]]` item only when the elements are written too.
 
 Types:
 

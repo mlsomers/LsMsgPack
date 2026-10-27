@@ -272,7 +272,7 @@ namespace LsMsgPack.TypeResolving.Types
       Type reader = ObjectTypeOf(root, 0);
       if (reader is null || ByTypeId.Count == 0 || HasOwnEntry(reader))
         return aliases;
-      ComplexTypeDef start = RootDef();
+      ComplexTypeDef start = HeldBy(RootDef(), root, reader);
       if (start is null)
         return aliases;
 
@@ -309,7 +309,7 @@ namespace LsMsgPack.TypeResolving.Types
           if (readProp.GetIndexParameters().Length > 0)
             continue;
           Type readValue = ObjectTypeOf(readProp.PropertyType, 0);
-          ComplexTypeDef next = readValue is null ? null : ValueDef(def, readProp.Name, ignoreCase);
+          ComplexTypeDef next = readValue is null ? null : HeldBy(ValueDef(def, readProp.Name, ignoreCase), readProp.PropertyType, readValue);
           if (next != null)
             pairs.Enqueue(new KeyValuePair<Type, ComplexTypeDef>(readValue, next));
         }
@@ -335,6 +335,17 @@ namespace LsMsgPack.TypeResolving.Types
       if (RootEntry >= 0)
         return RootEntry < ByTypeId.Count ? ByTypeId[RootEntry] : null;
       return first.Props.Count > 0 ? first : null;
+    }
+
+    /// <summary>
+    /// A collection of the reader (<paramref name="objectType"/> is its element) read from an entry of the writer's collection with properties (version 2: <c>["@", ["list", k]]</c> and properties,
+    /// see SerializeEnumerableAttribute): its elements are objects of the entry of the content. Otherwise the entry itself.
+    /// </summary>
+    private ComplexTypeDef HeldBy(ComplexTypeDef def, Type declared, Type objectType)
+    {
+      if (def is null || def.ContentEntry < 0 || def.ContentEntry >= ByTypeId.Count || objectType == (Nullable.GetUnderlyingType(declared) ?? declared))
+        return def;
+      return ByTypeId[def.ContentEntry];
     }
 
     /// <summary>
@@ -440,7 +451,7 @@ namespace LsMsgPack.TypeResolving.Types
       throw error;
     }
 
-    private bool HasNoEntry(Type type, MsgPackOptions settings)
+    internal bool HasNoEntry(Type type, MsgPackOptions settings)
     {
       if (TryGetDef(type, out ComplexTypeDef _))
         return false;

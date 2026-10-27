@@ -1,8 +1,10 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Interfaces;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -43,6 +45,34 @@ namespace LsMsgPackUnitTests
     {
       public AddressDto Address { get; set; }
       public object Extra { get; set; }
+    }
+
+    /// <summary>
+    /// A collection written by its properties, not as its elements: a map like an object.
+    /// </summary>
+    [SerializeEnumerable(SerializeElements = false, SerializeProperties = true)]
+    public class AddressPageDto : IEnumerable<AddressDto>
+    {
+      public int Total { get; set; }
+      public List<AddressDto> Items { get; set; }
+
+      public IEnumerator<AddressDto> GetEnumerator() { return Items.GetEnumerator(); }
+      IEnumerator IEnumerable.GetEnumerator() { return GetEnumerator(); }
+    }
+
+    public class AddressBookDto
+    {
+      public string Owner { get; set; }
+      public AddressPageDto Page { get; set; }
+    }
+
+    /// <summary>
+    /// A collection written with its elements and its properties: <c>{ "@": elements, ...properties }</c>.
+    /// </summary>
+    [SerializeEnumerable(SerializeProperties = true)]
+    public class TaggedLinesDto : List<LineDto>
+    {
+      public string Tag { get; set; }
     }
 
     /// <summary>
@@ -94,6 +124,18 @@ namespace LsMsgPackUnitTests
     {
       public AddressEntity Address { get; set; }
       public AddressEntity Extra { get; set; }
+    }
+
+    public class PageEntity<T>
+    {
+      public int Total { get; set; }
+      public List<T> Items { get; set; }
+    }
+
+    public class AddressBookEntity
+    {
+      public string Owner { get; set; }
+      public PageEntity<AddressEntity> Page { get; set; }
     }
 
     /// <summary>
@@ -232,6 +274,60 @@ namespace LsMsgPackUnitTests
       List<OtherClassesReader.CustomerEntity> read = Serializer.Deserialize<List<OtherClassesReader.CustomerEntity>>(Serializer.Serialize(written, settings[0]), settings[1]);
       AssertCustomer(1, read[0]);
       AssertCustomer(2, read[1]);
+    }
+
+    private static OtherClassesWriter.AddressPageDto AddressPage()
+    {
+      return new OtherClassesWriter.AddressPageDto()
+      {
+        Total = 7,
+        Items = new List<OtherClassesWriter.AddressDto>() { new OtherClassesWriter.AddressDto() { Street = "Main street", Zip = "1234 AB" }, new OtherClassesWriter.AddressDto() { Street = "Side street" } }
+      };
+    }
+
+    private static void AssertAddressPage(OtherClassesReader.PageEntity<OtherClassesReader.AddressEntity> read)
+    {
+      Assert.AreEqual(7, read.Total);
+      Assert.AreEqual(2, read.Items.Count);
+      Assert.AreEqual("Main street", read.Items[0].Street);
+      Assert.AreEqual("1234 AB", read.Items[0].Zip);
+      Assert.AreEqual("Side street", read.Items[1].Street);
+    }
+
+    /// <summary>
+    /// A collection written by its properties (<c>SerializeElements = false</c>) is an object of its entry in schema version 2 (not a list of its elements), as the root and as a property.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map, "inline")]
+    [DataRow(ObjectLayout.Array, "inline")]
+    [DataRow(ObjectLayout.Map, "store")]
+    [DataRow(ObjectLayout.Array, "reference")]
+    public void CollectionWrittenByItsPropertiesTheReaderDoesNotHave(ObjectLayout layout, string schema)
+    {
+      MsgPackSettings[] settings = WithoutWriterClasses(layout, schema, SchemaVersion.Described);
+      for (int call = 0; call < 2; call++)
+        AssertAddressPage(Serializer.Deserialize<OtherClassesReader.PageEntity<OtherClassesReader.AddressEntity>>(Serializer.Serialize(AddressPage(), settings[0]), settings[1]));
+
+      OtherClassesWriter.AddressBookDto book = new OtherClassesWriter.AddressBookDto() { Owner = "Ann", Page = AddressPage() };
+      OtherClassesReader.AddressBookEntity read = Serializer.Deserialize<OtherClassesReader.AddressBookEntity>(Serializer.Serialize(book, settings[0]), settings[1]);
+      Assert.AreEqual("Ann", read.Owner);
+      AssertAddressPage(read.Page);
+    }
+
+    /// <summary>
+    /// A collection written with its elements and its properties, read into a list: the elements are objects of the entry of its content.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map)]
+    [DataRow(ObjectLayout.Array)]
+    public void CollectionWithPropertiesReadAsAList(ObjectLayout layout)
+    {
+      MsgPackSettings[] settings = WithoutWriterClasses(layout, "inline", SchemaVersion.Described);
+      OtherClassesWriter.TaggedLinesDto written = new OtherClassesWriter.TaggedLinesDto() { Tag = "x" };
+      written.Add(new OtherClassesWriter.LineDto() { Product = "Apples", Quantity = 3 });
+      List<OtherClassesReader.LineEntity> read = Serializer.Deserialize<List<OtherClassesReader.LineEntity>>(Serializer.Serialize(written, settings[0]), settings[1]);
+      Assert.AreEqual("Apples", read.Single().Product);
+      Assert.AreEqual(3, read.Single().Quantity);
     }
 
     /// <summary>
