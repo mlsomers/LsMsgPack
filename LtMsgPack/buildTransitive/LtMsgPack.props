@@ -1,11 +1,13 @@
 <Project>
   <!-- The MSBuild properties LtMsgPack's source generator reads (see docs/SourceGenerator.md), e.g.
        <LtMsgPackGenerate>Serializable;DataContract;JsonSerializable</LtMsgPackGenerate> (or AllTypes),
-       <LtMsgPackContextName>MyApp.MsgPackContext</LtMsgPackContextName>, <LtMsgPackAutoRegister>false</LtMsgPackAutoRegister> -->
+       <LtMsgPackContextName>MyApp.MsgPackContext</LtMsgPackContextName>, <LtMsgPackAutoRegister>false</LtMsgPackAutoRegister>,
+       <LtMsgPackNonPublicProperties>All</LtMsgPackNonPublicProperties> (None, Attributed: the default) -->
   <ItemGroup>
     <CompilerVisibleProperty Include="LtMsgPackGenerate" />
     <CompilerVisibleProperty Include="LtMsgPackContextName" />
     <CompilerVisibleProperty Include="LtMsgPackAutoRegister" />
+    <CompilerVisibleProperty Include="LtMsgPackNonPublicProperties" />
     <CompilerVisibleProperty Include="RootNamespace" />
     <!-- LTMP010 (types only known at runtime) is reported for projects that are trimmed or compiled ahead of time -->
     <CompilerVisibleProperty Include="PublishTrimmed" />

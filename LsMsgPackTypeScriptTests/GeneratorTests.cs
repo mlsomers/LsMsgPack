@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPackTypeScript;
 using LtMsgPack.Http;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -180,6 +180,9 @@ namespace LsMsgPackTypeScriptTests
       Result result = Run("--solution", project);
       StringAssert.Contains(result.Output, "LsMsgPackTypeScriptTests.TsOrder", "LtMsgPackSerializer.Default.Serialize(order) in TsUses");
       StringAssert.Contains(result.Models, "export class TsOrder {");
+      StringAssert.Contains(result.Models, "export class TsReply {", "MsgPackResults.MsgPack(new TsReply()) of a minimal API");
+      StringAssert.Contains(result.Models, "export class TsRequest {", "MsgPackBody<TsRequest> of a minimal API");
+      StringAssert.Contains(result.Schemas, "TsReply", "written: a schema");
     }
 
     [TestMethod]

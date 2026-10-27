@@ -18,6 +18,8 @@
     <ProjectReference Include="..\LsMsgPackTypeScript\LsMsgPackTypeScript.csproj" />
     <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
     <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" />
+    <!-- A minimal API among the uses of the solution option -->
+    <ProjectReference Include="..\LsMsgPackFormatters\LsMsgPackFormatters.csproj" />
   </ItemGroup>
 
 </Project>

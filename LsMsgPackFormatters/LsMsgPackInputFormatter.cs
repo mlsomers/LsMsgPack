@@ -2,17 +2,10 @@
 using LtMsgPack.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Formatters;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading.Tasks;
-#if NETCOREAPP3_0_OR_GREATER
-using System.Buffers;
-using System.IO.Pipelines;
-using System.Runtime.InteropServices;
-#endif
 
 namespace LsMsgPackFormatters
 {
@@ -47,37 +40,9 @@ namespace LsMsgPackFormatters
     public override async Task<InputFormatterResult> ReadRequestBodyAsync(InputFormatterContext context)
     {
 #if NETCOREAPP3_0_OR_GREATER
-      // Buffer the body asynchronously in the pipe of the request, the deserializer reads synchronously which ASP.NET Core does not allow on the request stream
-      PipeReader reader = context.HttpContext.Request.BodyReader;
-      ReadResult read = await reader.ReadAsync(context.HttpContext.RequestAborted);
-      while (!read.IsCompleted && !read.IsCanceled)
-      {
-        reader.AdvanceTo(read.Buffer.Start, read.Buffer.End); // nothing consumed yet, wait for the rest
-        read = await reader.ReadAsync(context.HttpContext.RequestAborted);
-      }
-
-      ReadOnlySequence<byte> body = read.Buffer;
-      byte[] rented = null;
-      try
-      {
-        if (body.Length == 0)
-          return context.TreatEmptyInputAsDefaultValue ? InputFormatterResult.Success(GetDefaultValueForType(context.ModelType)) : InputFormatterResult.NoValue();
-
-        // Read in place when the body is in one buffer (LtMsgPack copies what it keeps), otherwise from a pooled copy
-        if (!body.IsSingleSegment || !MemoryMarshal.TryGetArray(body.First, out ArraySegment<byte> data))
-        {
-          rented = ArrayPool<byte>.Shared.Rent(checked((int)body.Length));
-          body.CopyTo(rented);
-          data = new ArraySegment<byte>(rented, 0, (int)body.Length);
-        }
-        return Deserialize(context, data.Array, data.Offset, data.Count);
-      }
-      finally
-      {
-        if (rented != null)
-          ArrayPool<byte>.Shared.Return(rented);
-        reader.AdvanceTo(body.End);
-      }
+      return await MsgPackRequest.ReadAsync(context.HttpContext, (formatter: this, context), static (s, data) => data.Count == 0
+        ? (s.context.TreatEmptyInputAsDefaultValue ? InputFormatterResult.Success(s.formatter.GetDefaultValueForType(s.context.ModelType)) : InputFormatterResult.NoValue())
+        : s.formatter.Deserialize(s.context, data.Array, data.Offset, data.Count));
 #else
       // Buffer the body asynchronously, the deserializer reads synchronously which ASP.NET Core does not allow on the request stream.
       long? contentLength = context.HttpContext.Request.ContentLength;
@@ -123,31 +88,17 @@ namespace LsMsgPackFormatters
       }
     }
 
-    /// <summary>
-    /// The differences between the body and the classes (<see cref="LtMsgPackHttpOptions.ReportDifferences"/>): in the features of the request (<see cref="ReadDifferencesExtensions.GetReadDifferences"/>)
-    /// and logged, as a warning with <see cref="LtMsgPackHttpOptions.LogDifferencesAsWarning"/>, otherwise at the Debug level (clients sending extra properties would fill the logs).
-    /// </summary>
     private void Report(InputFormatterContext context, ReadDifferences differences)
     {
-      context.HttpContext.Features.Set(differences);
-      ILogger logger = context.HttpContext.RequestServices?.GetService<ILoggerFactory>()?.CreateLogger<LsMsgPackInputFormatter>();
-      LogLevel level = Serializer.LogsDifferencesAsWarning ? LogLevel.Warning : LogLevel.Debug;
-      if (logger != null && logger.IsEnabled(level)) // the report walks the objects that were read
-      {
-        string sanitizedMethod = (context.HttpContext.Request.Method ?? string.Empty).Replace("\r", string.Empty).Replace("\n", string.Empty);
-        string sanitizedPath = context.HttpContext.Request.Path.ToString().Replace("\r", string.Empty).Replace("\n", string.Empty);
-        logger.Log(level, "The request body of {Method} {Path} did not match {Type}: {Differences}", sanitizedMethod, sanitizedPath, context.ModelType.Name, differences.GenerateReport());
-      }
+      MsgPackRequest.Report(context.HttpContext, Serializer, context.ModelType, differences, LoggerCategory);
     }
 
-    /// <returns>False (an exception filter)</returns>
     private bool ReportFailure(InputFormatterContext context, Exception ex)
     {
-      ReadDifferences differences = LtMsgPackHttpSerializer.DifferencesOf(ex);
-      if (differences != null)
-        Report(context, differences);
-      return false;
+      return MsgPackRequest.ReportFailure(context.HttpContext, Serializer, context.ModelType, ex, LoggerCategory);
     }
+
+    private static readonly string LoggerCategory = typeof(LsMsgPackInputFormatter).FullName;
 
     private static InputFormatterResult Fail(InputFormatterContext context, InputFormatterException exception)
     {

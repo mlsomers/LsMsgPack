@@ -12,7 +12,7 @@ namespace LsMsgPackFormatters
   /// <summary>
   /// Registers the formatters. Trimmed and NativeAOT apps: use the overloads taking the context of LtMsgPack's source generator (see <see cref="LtMsgPackSerializer(LtMsgPackContext, LtMsgPackOptions)"/>).
   /// </summary>
-  public static class LsMsgPackFormatter
+  public static partial class LsMsgPackFormatter
   {
     internal const string RequiresUnreferencedCodeMessage = "Without generated code the serializer reads the properties and constructors of the types by reflection, trimming may remove them. Use the overload taking the context of LtMsgPack's source generator.";
     internal const string RequiresDynamicCodeMessage = "Without generated code the serializer instantiates its generic code for the types at runtime, NativeAOT may not have it. Use the overload taking the context of LtMsgPack's source generator.";

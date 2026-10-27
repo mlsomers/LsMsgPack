@@ -28,16 +28,24 @@ namespace LtMsgPack.Generator
     internal const int IncludeDataContract = 4;
     internal const int IncludeJsonSerializable = 8;
 
+    // LsMsgPack.TypeResolving.Filters.NonPublicProperties
+    internal const int NonPublicNone = 0;
+    internal const int NonPublicAttributed = 1;
+    internal const int NonPublicAll = 2;
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-      IncrementalValuesProvider<ContextModel> declared = context.SyntaxProvider.ForAttributeWithMetadataName(SerializableAttribute,
-        (node, _) => node is ClassDeclarationSyntax,
-        (attributed, cancel) => DeclaredContext(attributed, cancel));
-
       IncrementalValueProvider<GenerateOptions> options = context.CompilationProvider
         .Combine(context.AnalyzerConfigOptionsProvider)
         .Combine(context.ParseOptionsProvider)
         .Select((input, _) => ReadOptions(input.Left.Left, input.Left.Right, input.Right));
+
+      // The walk needs the options (which non-public properties are described): the context classes are combined with them
+      IncrementalValuesProvider<ContextModel> declared = context.SyntaxProvider.ForAttributeWithMetadataName(SerializableAttribute,
+        (node, _) => node is ClassDeclarationSyntax,
+        (attributed, _) => attributed)
+        .Combine(options)
+        .Select((input, cancel) => DeclaredContext(input.Left, input.Right, cancel));
 
       IncrementalValueProvider<ContextModel> assembly = context.CompilationProvider
         .Combine(options)
@@ -58,6 +66,9 @@ namespace LtMsgPack.Generator
       string contextName = global.TryGetValue("build_property.LtMsgPackContextName", out string name) && !string.IsNullOrWhiteSpace(name) ? name.Trim() : null;
       bool autoRegister = !(global.TryGetValue("build_property.LtMsgPackAutoRegister", out string register) && string.Equals(register?.Trim(), "false", StringComparison.OrdinalIgnoreCase));
       string rootNamespace = global.TryGetValue("build_property.RootNamespace", out string root) && !string.IsNullOrWhiteSpace(root) ? root.Trim() : compilation.AssemblyName;
+      int nonPublic = NonPublicAttributed;
+      if (global.TryGetValue("build_property.LtMsgPackNonPublicProperties", out string nonPublicText) && !string.IsNullOrWhiteSpace(nonPublicText))
+        nonPublic = ParseNonPublic(nonPublicText, nonPublic);
 
       foreach (AttributeData attribute in compilation.Assembly.GetAttributes()) // the assembly attribute wins
       {
@@ -70,17 +81,20 @@ namespace LtMsgPack.Generator
             case "Include": include = argument.Value.Value is int flags ? flags : include; break;
             case "ContextName": contextName = argument.Value.Value as string ?? contextName; break;
             case "AutoRegister": autoRegister = argument.Value.Value is bool on ? on : autoRegister; break;
+            case "NonPublicProperties": nonPublic = argument.Value.Value is int value && value >= NonPublicNone && value <= NonPublicAll ? value : nonPublic; break;
           }
         }
       }
 
       INamedTypeSymbol initializer = compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.ModuleInitializerAttribute");
       INamedTypeSymbol dependency = compilation.GetTypeByMetadataName("System.Diagnostics.CodeAnalysis.DynamicDependencyAttribute");
+      INamedTypeSymbol unsafeAccessor = compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.UnsafeAccessorAttribute");
       bool csharp9 = parse is CSharpParseOptions csharp && csharp.LanguageVersion >= LanguageVersion.CSharp9;
       bool trimmed = IsTrue(global, "PublishTrimmed") || IsTrue(global, "PublishAot") || IsTrue(global, "IsAotCompatible") || IsTrue(global, "IsTrimmable");
       return new GenerateOptions(include, contextName, autoRegister, rootNamespace, csharp9,
         initializer != null && compilation.IsSymbolAccessibleWithin(initializer, compilation.Assembly),
-        dependency != null && compilation.IsSymbolAccessibleWithin(dependency, compilation.Assembly), trimmed);
+        dependency != null && compilation.IsSymbolAccessibleWithin(dependency, compilation.Assembly), trimmed, nonPublic,
+        unsafeAccessor != null && compilation.IsSymbolAccessibleWithin(unsafeAccessor, compilation.Assembly));
     }
 
     private static bool IsTrue(AnalyzerConfigOptions global, string property)
@@ -111,11 +125,27 @@ namespace LtMsgPack.Generator
       return include;
     }
 
+    /// <summary>
+    /// "None", "Attributed" or "All" (ignoring case), <paramref name="fallback"/> for anything else.
+    /// </summary>
+    internal static int ParseNonPublic(string text, int fallback)
+    {
+      switch (text.Trim().ToLowerInvariant())
+      {
+        case "none":
+        case "false": return NonPublicNone;
+        case "attributed": return NonPublicAttributed;
+        case "all":
+        case "true": return NonPublicAll;
+        default: return fallback;
+      }
+    }
+
     #endregion
 
     #region Contexts declared by the user
 
-    private static ContextModel DeclaredContext(GeneratorAttributeSyntaxContext attributed, CancellationToken cancel)
+    private static ContextModel DeclaredContext(GeneratorAttributeSyntaxContext attributed, GenerateOptions options, CancellationToken cancel)
     {
       INamedTypeSymbol symbol = (INamedTypeSymbol)attributed.TargetSymbol;
       Compilation compilation = attributed.SemanticModel.Compilation;
@@ -165,7 +195,7 @@ namespace LtMsgPack.Generator
       List<TypeModel> types = new List<TypeModel>();
       if (valid)
       {
-        TypeWalker walker = new TypeWalker(compilation, symbol, display, diagnostics);
+        TypeWalker walker = new TypeWalker(compilation, symbol, display, diagnostics, options);
         foreach (AttributeData attribute in symbol.GetAttributes())
         {
           cancel.ThrowIfCancellationRequested();
@@ -246,7 +276,7 @@ namespace LtMsgPack.Generator
       INamedTypeSymbol exception = compilation.GetTypeByMetadataName("System.Exception");
       INamedTypeSymbol attributeType = compilation.GetTypeByMetadataName("System.Attribute");
       INamedTypeSymbol jsonContext = compilation.GetTypeByMetadataName("System.Text.Json.Serialization.JsonSerializerContext");
-      TypeWalker walker = new TypeWalker(compilation, compilation.Assembly, fullName, diagnostics);
+      TypeWalker walker = new TypeWalker(compilation, compilation.Assembly, fullName, diagnostics, options);
       foreach (INamedTypeSymbol type in AllTypes(compilation.Assembly.GlobalNamespace))
       {
         cancel.ThrowIfCancellationRequested();
@@ -264,7 +294,7 @@ namespace LtMsgPack.Generator
 
         bool root = false;
         if ((options.Include & IncludeAllTypes) != 0)
-          root = HasProperties(type);
+          root = HasProperties(type, options.NonPublic);
         if ((options.Include & IncludeSerializable) != 0 && (type.IsSerializable || HasAttribute(type, "System.SerializableAttribute")))
           root = true;
         if ((options.Include & IncludeDataContract) != 0 && HasAttribute(type, "System.Runtime.Serialization.DataContractAttribute"))
@@ -313,11 +343,15 @@ namespace LtMsgPack.Generator
       return false;
     }
 
-    private static bool HasProperties(INamedTypeSymbol type)
+    /// <summary>
+    /// Public instance properties, or non-public ones the runtime may serialize (<see cref="TypeWalker.IsNonPublicCandidate"/>).
+    /// </summary>
+    private static bool HasProperties(INamedTypeSymbol type, int nonPublic)
     {
       for (INamedTypeSymbol t = type; t != null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
         foreach (ISymbol member in t.GetMembers())
-          if (member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer && property.DeclaredAccessibility == Accessibility.Public)
+          if (member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer
+            && (property.DeclaredAccessibility == Accessibility.Public || TypeWalker.IsNonPublicCandidate(property, nonPublic)))
             return true;
       return false;
     }

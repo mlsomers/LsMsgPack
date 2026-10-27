@@ -63,6 +63,22 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal object[] Interfaces { get { return Look().Interfaces; } }
 
+    private volatile int _optsIn; // 0: not decided yet, 1: no, 2: yes
+
+    /// <summary>
+    /// The property has an attribute that opts it in for another serializer (see <see cref="TypeResolving.Filters.NonPublicProperties.Attributed"/>).
+    /// </summary>
+    internal bool OptsIn
+    {
+      get
+      {
+        int optsIn = _optsIn;
+        if (optsIn == 0)
+          _optsIn = optsIn = TypeResolving.Filters.IncludeAttributes.Any(ByName.Values) ? 2 : 1; // the same for every thread that computes it
+        return optsIn == 2;
+      }
+    }
+
     private volatile NilValues _nil;
 
     /// <summary>

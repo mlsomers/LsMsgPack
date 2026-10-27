@@ -1,6 +1,6 @@
 # LsMsgPack.AspNetCore
 
-MsgPack input and output formatters for ASP.NET Core MVC / Web API controllers. Controllers receive and return MsgPack the same way they handle JSON, without any changes. Serializing is done by [LtMsgPack](https://www.nuget.org/packages/LtMsgPack), which reads and writes several times faster than System.Text.Json.
+MsgPack input and output formatters for ASP.NET Core MVC / Web API controllers, and results and bodies for minimal APIs. Controllers receive and return MsgPack the same way they handle JSON, without any changes. Serializing is done by [LtMsgPack](https://www.nuget.org/packages/LtMsgPack), which reads and writes several times faster than System.Text.Json.
 
 Targets ASP.NET Core 2.x (netstandard2.0, also on .NET Framework) and ASP.NET Core 3.0 and up (net8.0).
 
@@ -44,6 +44,20 @@ if (order.Address == null)
     // Don't do this if your schema should not be public knowledge!
     HttpContext.GetReadDifferences());
 ```
+
+## Minimal APIs
+
+For minimal APIs (ASP.NET Core 8 and up), register the serializer and use `MsgPackResults.MsgPack(value)` (or `Results.Extensions.MsgPack(value)`) and `MsgPackBody<T>`:
+
+```csharp
+using LsMsgPackFormatters;
+
+builder.Services.AddLsMsgPack();
+
+app.MapPost("/api/orders", (MsgPackBody<Order> order) => MsgPackResults.MsgPack(orders.Add(order.Value)));
+```
+
+They behave like a controller with the formatters: MsgPack when the client asks for it (`Accept`, `Content-Type`), JSON otherwise. See [Minimal APIs](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#minimal-apis).
 
 On the client side, use [LsMsgPack.AspNet.WebApi](https://www.nuget.org/packages/LsMsgPack.AspNet.WebApi) with `HttpClient`, or any MsgPack library for the plain media types.
 

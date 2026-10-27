@@ -168,6 +168,7 @@ What else to keep in mind
 -------------------------
 
 - **Your own setters run with the sender's values.** Allowing a type means its constructor and setters may run with any values. Validate in setters that do more than store a value, or validate the object after deserializing.
+- **Non-public properties** are not set by default. With `NonPublicProperties.All` (see [Non-public properties](schema.md#non-public-properties)) the data can set every property of the classes it's read into, also the private ones a class keeps to itself; `NonPublicProperties.Attributed` only sets the ones you marked (`[JsonInclude]`, `[DataMember]`...).
 - **Types without a parameterless constructor** are created without running a constructor, by default without their finalizer. See [How objects are created](#how-objects-are-created).
 - **Static properties** are left out by `FilterStatic`, one of the default `StaticFilters`, so the data can't change state that the whole application shares. If you replace the static filters, keep `FilterStatic` in the list. Without it, settable public static properties are written with every instance and set again when reading.
 - **Deep nesting**: both serializers refuse data with arrays and maps nested deeper than `MsgPackOptions.MaxDepth` (256 by default) and throw a `MsgPackException`. Without a limit, a few kilobytes of nested arrays exhaust the stack, and a stack overflow ends the process. Writing stops at the same depth, so an object graph with a cycle throws instead of overflowing the stack.

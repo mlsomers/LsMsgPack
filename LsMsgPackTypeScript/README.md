@@ -11,6 +11,6 @@ dotnet tool install -g LsMsgPack.TypeScript
 lsmsgpack-ts --assembly Shop.Api/bin/Release/net8.0/Shop.Api.dll --solution Shop.sln --out web/src/api/models.ts
 ```
 
-The roots (the types the server responds with) come from `--root <type>`, `[LtMsgPackSerializable(typeof(T))]` in the assemblies, or `--solution`, which finds them as LsMsgPack's analyzers do (controller actions, calls of the serializers). `--options <Type.Member>` takes the server's `LtMsgPackHttpOptions` from a static member, so the models and schemas follow its filters, property order and type names.
+The roots (the types the server responds with) come from `--root <type>`, `[LtMsgPackSerializable(typeof(T))]` in the assemblies, or `--solution`, which finds them as LsMsgPack's analyzers do (controller actions, minimal API results and bodies, calls of the serializers). `--options <Type.Member>` takes the server's `LtMsgPackHttpOptions` from a static member, so the models and schemas follow its filters, property order and type names.
 
 Documentation: [docs/TypeScriptModels.md](https://github.com/mlsomers/LsMsgPack/blob/master/docs/TypeScriptModels.md). The server's side: complete schemas in [docs/WebFormatters.md](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#complete-schemas).

@@ -234,6 +234,139 @@ namespace M
       Assert.AreEqual(2, result.GeneratorDiagnostics.Count(d => d.Id == "LTMP004"), "Init and PrivateSet are set by reflection");
     }
 
+    private const string PrivateModel = @"
+using LtMsgPack;
+using System.Runtime.Serialization;
+namespace M
+{
+  [System.AttributeUsage(System.AttributeTargets.Property)]
+  public sealed class MyIncludeAttribute : System.Attribute { }
+
+  public class Base
+  {
+    [DataMember] private int BaseNumber { get; set; }
+  }
+
+  public class Plain
+  {
+    public int Number { get; set; }
+  }
+
+  public class Account : Base
+  {
+    public string Name { get; set; }
+    public Plain Other { get; set; }
+    [DataMember] private string Secret { get; set; }
+    [MyInclude] protected int Pin { get; set; }
+    [DataMember] public string Owner { get; private set; }
+    [DataMember] internal string Note { get; set; }
+    [DataMember] protected virtual int Virtual { get; set; }
+    private string Unmarked { get; set; }
+    public string PrivateSet { get; private set; }
+  }
+
+  public class Page<T>
+  {
+    [DataMember] private T Item { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(Account))]
+  [LtMsgPackSerializable(typeof(Page<int>))]
+  public partial class Context : LtMsgPackContext { }
+}";
+
+    [TestMethod]
+    public void NonPublic_Attributed_ThroughUnsafeAccessors()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(PrivateModel);
+      result.AssertCompiles();
+      Assert.IsEmpty(result.CompileProblems, string.Join("\n", result.CompileProblems.Select(p => p.ToString())) + "\n" + result.AllGenerated);
+      string code = result.AllGenerated;
+      foreach (string accessor in new[] { "get_Secret", "set_Secret", "get_Pin", "set_Pin", "set_Owner", "get_BaseNumber", "set_BaseNumber" })
+        Assert.Contains("UnsafeAccessorKind.Method, Name = \"" + accessor + "\")]", code);
+      Assert.Contains("private static extern string LtMsgPackGet", code);
+      Assert.Contains("(global::M.Base o, int value);", code, "the accessor of a base class's property takes the base class");
+      Assert.Contains("Property<global::M.Account, string>(\"Note\", o => o.Note, (o, v) => o.Note = v)", code, "internal: accessible to the generated code");
+      Assert.Contains("Property<global::M.Account, string>(\"Owner\", o => o.Owner, (o, v) => LtMsgPackSet", code);
+      Assert.DoesNotContain("get_Virtual", code, "virtual: the runtime calls the override");
+      Assert.DoesNotContain("get_Item", code, "generic classes need .NET 9");
+      Assert.DoesNotContain("Unmarked", code, "not attributed");
+      Assert.DoesNotContain("set_PrivateSet", code, "not attributed");
+      Assert.Contains("NonPublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::M.Account))", code);
+      Assert.Contains("DynamicallyAccessedMemberTypes.PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::M.Plain))", code,
+        "a type without non-public properties keeps its public ones only");
+      Assert.IsTrue(result.GeneratorDiagnostics.Any(d => d.Id == "LTMP004" && d.GetMessage().Contains("Page<int>.Item")), "set by reflection");
+      Assert.IsFalse(result.GeneratorDiagnostics.Any(d => d.Id == "LTMP004" && d.GetMessage().Contains("Secret")));
+    }
+
+    [TestMethod]
+    public void NonPublic_All_ByMsBuildProperty()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(PrivateModel, msbuild: new Dictionary<string, string>() { { "LtMsgPackNonPublicProperties", "All" } });
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      foreach (string accessor in new[] { "get_Unmarked", "set_Unmarked", "set_PrivateSet", "get_Secret" })
+        Assert.Contains("Name = \"" + accessor + "\")]", code);
+    }
+
+    [TestMethod]
+    public void NonPublic_None_ByTheAssemblyAttribute()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(PrivateModel.Replace("namespace M", "[assembly: LtMsgPack.LtMsgPackGenerate(NonPublicProperties = LsMsgPack.TypeResolving.Filters.NonPublicProperties.None)]\nnamespace M"),
+        msbuild: new Dictionary<string, string>() { { "LtMsgPackNonPublicProperties", "All" } });
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.DoesNotContain("UnsafeAccessor", code);
+      Assert.DoesNotContain("Secret", code);
+      Assert.DoesNotContain("NonPublicProperties", code);
+    }
+
+    [TestMethod]
+    public void NonPublic_NetStandard20_LeftToReflection()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(PrivateModel.Replace("public class Page<T>", "public class Page<T> where T : struct"), LanguageVersion.CSharp7_3, netStandard20: true);
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.DoesNotContain("UnsafeAccessor", code);
+      Assert.Contains("Property<global::M.Account, string>(\"Note\", o => o.Note, (o, v) => o.Note = v)", code);
+      Assert.DoesNotContain("\"Secret\", o", code, "the runtime reads it by reflection");
+      Assert.IsTrue(result.GeneratorDiagnostics.Any(d => d.Id == "LTMP004" && d.GetMessage().Contains("Secret")));
+    }
+
+    [TestMethod]
+    public void NonPublic_RecordsAndExplicitImplementations_Never()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(@"
+using LtMsgPack;
+namespace M
+{
+  public interface IFace { int Face { get; set; } }
+
+  public record Rec(string Name) : IFace
+  {
+    private int Hidden { get; set; }
+    int IFace.Face { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(Rec))]
+  public partial class Context : LtMsgPackContext { }
+}", msbuild: new Dictionary<string, string>() { { "LtMsgPackNonPublicProperties", "All" } });
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.Contains("Name = \"get_Hidden\")]", code);
+      Assert.DoesNotContain("EqualityContract", code);
+      Assert.DoesNotContain("Face", code);
+    }
+
+    [TestMethod]
+    public void ParseNonPublic()
+    {
+      Assert.AreEqual(0, LtMsgPackGenerator.ParseNonPublic(" none ", 1));
+      Assert.AreEqual(1, LtMsgPackGenerator.ParseNonPublic("Attributed", 0));
+      Assert.AreEqual(2, LtMsgPackGenerator.ParseNonPublic("ALL", 1));
+      Assert.AreEqual(1, LtMsgPackGenerator.ParseNonPublic("nonsense", 1));
+    }
+
     [TestMethod]
     public void Creator_OnlyWithAnAccessibleParameterlessConstructor()
     {

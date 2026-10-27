@@ -1,6 +1,5 @@
 ﻿using LsMsgPack;
 using LtMsgPack.Http;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using System;
 using System.Diagnostics.CodeAnalysis;
@@ -37,43 +36,9 @@ namespace LsMsgPackFormatters
         SupportedMediaTypes.Add(MsgPackMediaTypes.All[t]);
     }
 
-    public override async Task WriteResponseBodyAsync(OutputFormatterWriteContext context)
+    public override Task WriteResponseBodyAsync(OutputFormatterWriteContext context)
     {
-      string mediaType = context.ContentType.Value;
-      bool lsMsgPack = MsgPackMediaTypes.IsLsMsgPack(mediaType);
-      bool negotiated = Serializer.NegotiatesSchemas && lsMsgPack;
-      bool describes = Serializer.DescribesSchemas && lsMsgPack;
-      HttpRequest request = context.HttpContext.Request;
-      string clientSchemas = negotiated ? request.Headers[LtMsgPackHttpSerializer.SchemasHeader].ToString() : null;
-      bool described = describes && MsgPackMediaTypes.AcceptsDescribedSchema(request.Headers["Accept"].ToString());
-
-      // Serialize to a buffer and write it asynchronously, ASP.NET Core does not allow synchronous writes to the response stream.
-      MsgPackPayload payload = Serializer.Serialize(context.Object, context.ObjectType, mediaType, clientSchemas, described);
-
-      HttpResponse response = context.HttpContext.Response;
-      if (negotiated || describes)
-        response.Headers.Append("Vary", Vary(negotiated, describes)); // version 2 of the schema depends on the Accept header
-      if (negotiated && !(payload.SchemaId is null))
-        response.Headers[LtMsgPackHttpSerializer.SchemaHeader] = payload.SchemaId;
-      response.ContentLength = payload.Length;
-#if NETCOREAPP3_0_OR_GREATER
-      System.IO.Pipelines.PipeWriter writer = response.BodyWriter; // copied into the buffers of the response, one flush
-      if (payload.Schema.Count > 0)
-        System.Buffers.BuffersExtensions.Write(writer, new ReadOnlySpan<byte>(payload.Schema.Array, payload.Schema.Offset, payload.Schema.Count));
-      System.Buffers.BuffersExtensions.Write(writer, new ReadOnlySpan<byte>(payload.Body.Array, payload.Body.Offset, payload.Body.Count));
-      await writer.FlushAsync(context.HttpContext.RequestAborted);
-#else
-      await payload.WriteToAsync(response.Body, context.HttpContext.RequestAborted);
-#endif
-    }
-
-    private const string VarySchemasAndAccept = LtMsgPackHttpSerializer.SchemasHeader + ", Accept";
-
-    private static string Vary(bool negotiated, bool describes)
-    {
-      if (!negotiated)
-        return "Accept";
-      return describes ? VarySchemasAndAccept : LtMsgPackHttpSerializer.SchemasHeader;
+      return MsgPackResponse.WriteAsync(context.HttpContext, Serializer, context.Object, context.ObjectType, context.ContentType.Value, false);
     }
   }
 }

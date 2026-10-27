@@ -25,7 +25,7 @@ Which classes (at least one of):
   --request <type>       A type the server reads (a request body): a model, no schema. Repeatable.
                          [LtMsgPackSerializable(typeof(T))] in the assemblies are roots as well.
   --solution <sln|csproj>  Finds the roots as LsMsgPack's analyzers do: the results and parameters of controller actions,
-                         the types handed to the serializers. Build it first: the types are taken from the assemblies.
+                         the results and bodies of minimal APIs, the types handed to the serializers. Build it first: the types are taken from the assemblies.
   --all-types            Every public class, struct and enum of the assemblies (models only).
 
 Output:

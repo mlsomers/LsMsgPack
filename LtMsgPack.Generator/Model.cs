@@ -134,7 +134,9 @@ namespace LtMsgPack.Generator
     string Access, // the name in member access (escaped when it is a keyword)
     string TypeName, // fully qualified
     bool CanGet,
-    bool CanSet);
+    bool CanSet,
+    bool UnsafeGet = false, // CanGet through an UnsafeAccessor (a non-public getter)
+    bool UnsafeSet = false);
 
   /// <summary>
   /// A member of the generated writer and reader of a class: the properties the runtime may serialize, inherited ones too (LtMsgPack.Generated.GeneratedMember).
@@ -151,7 +153,9 @@ namespace LtMsgPack.Generator
     bool CanGet, // the generated code writes it (its getter is accessible, no [DefaultValue])
     bool CanSet,
     bool Unrolled, // kept by the default static filters (the unrolled writer)
-    bool HasDefaultValue); // [DefaultValue]: a nil in the array layout may be its value (PropReader.ReadNil), otherwise it is default(T)
+    bool HasDefaultValue, // [DefaultValue]: a nil in the array layout may be its value (PropReader.ReadNil), otherwise it is default(T)
+    bool UnsafeGet = false, // CanGet through an UnsafeAccessor (a non-public getter)
+    bool UnsafeSet = false);
 
   internal sealed record TypeModel(
     TypeModelKind Kind,
@@ -161,7 +165,8 @@ namespace LtMsgPack.Generator
     bool KeepMetadata, // its properties and constructors are kept by the trimmer (DynamicDependency)
     EquatableArray<PropertyModel> Properties,
     EquatableArray<MemberModel> Members, // the generated writer and reader (concrete classes), empty when there is none
-    string Factory = null); // Collection: the static method that creates the immutable or frozen collection from its elements (with its type arguments), null for others
+    string Factory = null, // Collection: the static method that creates the immutable or frozen collection from its elements (with its type arguments), null for others
+    bool KeepNonPublic = false); // KeepMetadata also keeps its non-public properties (it declares some the runtime may serialize)
 
   /// <summary>
   /// A context class: one written by the user (with LtMsgPackSerializable attributes), or the one of the assembly (LtMsgPackGenerate, MSBuild properties).
@@ -187,5 +192,7 @@ namespace LtMsgPack.Generator
     bool ModuleInitializers, // C# 9 or later
     bool HasModuleInitializerAttribute,
     bool HasDynamicDependency,
-    bool Trimmed); // PublishTrimmed, PublishAot, IsAotCompatible or IsTrimmable: LTMP010 is reported
+    bool Trimmed, // PublishTrimmed, PublishAot, IsAotCompatible or IsTrimmable: LTMP010 is reported
+    int NonPublic, // LsMsgPack.TypeResolving.Filters.NonPublicProperties: the non-public properties described (the runtime decides which it serializes)
+    bool UnsafeAccessors); // UnsafeAccessorAttribute (.NET 8): non-public accessors are called through it
 }

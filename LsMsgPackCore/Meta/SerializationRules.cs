@@ -225,7 +225,7 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal static void BindReaderTypes(Type root, MsgPackOptions schemaSettings)
     {
-      GetIndexedSchema(schemaSettings)?.BindReaderTypes(root, schemaSettings._propertyNameCaseInsensitive);
+      GetIndexedSchema(schemaSettings)?.BindReaderTypes(root, schemaSettings._propertyNameCaseInsensitive, FullPropertyInfo.NonPublicOf(schemaSettings));
     }
 
     internal static bool UsesIndexedSchema(MsgPackOptions settings)
