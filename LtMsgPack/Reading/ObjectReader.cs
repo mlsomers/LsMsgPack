@@ -115,6 +115,8 @@ namespace LtMsgPack.Reading
           prop.Read(c, result);
       }
       c.Depth = depth;
+      if (plan.WithValues != null) // the values were collected for the constructor
+        result = plan.WithValues.Create(result);
       return (T)result;
     }
 
@@ -150,6 +152,8 @@ namespace LtMsgPack.Reading
         }
       }
       c.Depth = depth;
+      if (plan.WithValues != null) // the values were collected for the constructor
+        result = plan.WithValues.Create(result);
       return (T)result;
     }
 
@@ -163,6 +167,7 @@ namespace LtMsgPack.Reading
 
     /// <summary>
     /// <see cref="Read"/> collecting the differences (<see cref="ReadContext.Differences"/>): a copy, so the usual way has no checks for them. Keep the two the same.
+    /// Objects created by the constructor that takes their values (<see cref="ReadPlan.WithValues"/>) are read by LsMsgPack.Core, which reports their class (ObjectConstructor.Arguments).
     /// </summary>
     private T ReadReporting(ReadContext c, int start, FullPropertyInfo assignedTo)
     {
@@ -170,7 +175,7 @@ namespace LtMsgPack.Reading
       if (count < 0)
       {
         int items = c.R.TryReadArrayHeader(); // ObjectLayout.Array
-        if (items < 0 || Plan is null)
+        if (items < 0 || Plan is null || Plan.WithValues != null)
           return Slow(c, start, assignedTo);
         return ReadPositionalReporting(c, Plan, items, start, assignedTo);
       }
@@ -183,7 +188,7 @@ namespace LtMsgPack.Reading
         if (type is null)
           return Slow(c, start, assignedTo); // also a name that is not found: LsMsgPack.Core reports it
         plan = type == typeof(T) ? Plan : _serializer.GetReadPlan(type);
-        if (plan is null || !typeof(T).IsAssignableFrom(type)) // LsMsgPack's way refuses a type that is not assignable
+        if (plan is null || plan.WithValues != null || !typeof(T).IsAssignableFrom(type)) // LsMsgPack's way refuses a type that is not assignable
           return Slow(c, start, assignedTo);
         if (type != typeof(T) && _serializer.Options._typeGuard != null) // the type guard, before the instance is created (see docs/security.md)
           TypeResolver.ThrowIfNotAllowed(type, typeof(T), assignedTo, _serializer.Options, type);
@@ -201,7 +206,7 @@ namespace LtMsgPack.Reading
       else
       {
         plan = Plan;
-        if (plan is null) // abstract or not an object with properties
+        if (plan is null || plan.WithValues != null) // abstract or not an object with properties
           return Slow(c, start, assignedTo);
       }
 
@@ -384,6 +389,12 @@ namespace LtMsgPack.Reading
     private readonly Func<object> _create;
 
     /// <summary>
+    /// The type is created by the constructor that takes its values (see <see cref="ObjectConstructor"/>), null otherwise: <see cref="Create"/> returns the values it collects
+    /// (the <see cref="Props"/> read into them), <see cref="ConstructorPlan.Create"/> the object.
+    /// </summary>
+    internal readonly ConstructorPlan WithValues;
+
+    /// <summary>
     /// The binding to the schema read last (see <see cref="BoundSchema.Binding"/>): a payload usually has the same schema as the previous one.
     /// </summary>
     internal volatile BoundSchema.Cached LastBinding;
@@ -420,8 +431,14 @@ namespace LtMsgPack.Reading
       _caseInsensitive = serializer.Options._propertyNameCaseInsensitive;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
       Props = new PropReader[infos.Length];
-      for (int t = 0; t < infos.Length; t++)
-        Props[t] = PropReader.Create(serializer, infos[t]);
+      ObjectConstructor constructor = ObjectConstructor.Of(type);
+      if (constructor.CreatesWith(serializer.Options._objectCreation))
+        WithValues = new ConstructorPlan(serializer, constructor, infos, Props);
+      else
+      {
+        for (int t = 0; t < infos.Length; t++)
+          Props[t] = PropReader.Create(serializer, infos[t]);
+      }
       if (_caseInsensitive)
       {
         _ambiguous = new bool[Props.Length];
@@ -432,6 +449,11 @@ namespace LtMsgPack.Reading
           for (int u = Props.Length - 1; u >= 0; u--)
             _ambiguous[t] |= u != t && string.Equals(Props[t].Name, Props[u].Name, StringComparison.OrdinalIgnoreCase);
         }
+      }
+      if (WithValues != null)
+      {
+        _create = WithValues.Collect;
+        return; // the code of the source generator sets the properties of an object, which is created after them
       }
       _create = Creator(type, serializer.Options._objectCreation, generated);
 
@@ -696,6 +718,14 @@ namespace LtMsgPack.Reading
     /// </summary>
     public abstract void ReadNil(object target);
 
+    /// <summary>
+    /// Sets a value that was read before the object was created (see <see cref="ConstructorPlan"/>).
+    /// </summary>
+    internal virtual void SetBoxed(object target, object value)
+    {
+      Info.SetValue(target, value);
+    }
+
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
@@ -761,6 +791,11 @@ namespace LtMsgPack.Reading
     {
       _set((TTarget)target, _nil);
     }
+
+    internal override void SetBoxed(object target, object value)
+    {
+      _set((TTarget)target, value is null ? default(TValue) : (TValue)value);
+    }
   }
 
   /// <summary>
@@ -804,6 +839,209 @@ namespace LtMsgPack.Reading
 
     public override void ReadNil(object target)
     {
+    }
+  }
+
+  /// <summary>
+  /// An object created by the constructor that takes its values (<see cref="ObjectConstructor.WithValues"/>, as LsMsgPack.Core's ObjectConstructor.Arguments): the properties are read
+  /// by <see cref="ArgumentReader"/>s into <see cref="ConstructorValues"/>. The constructor is called as soon as the values of all parameters whose properties are read are there
+  /// (the properties the data has after them are set directly, without boxing), otherwise when the object ends (<see cref="Create"/>): parameters the data does not have get
+  /// the value the writer leaves out. Then the properties no parameter takes that were read before are set.
+  /// </summary>
+  internal sealed class ConstructorPlan
+  {
+    /// <summary>
+    /// A property no parameter takes that was not read: left as the constructor made it.
+    /// </summary>
+    internal static readonly object NotRead = new object();
+
+    private readonly ObjectConstructor _constructor;
+
+    /// <summary>
+    /// The values before any is read: a parameter whose property is read gets the value the writer leaves out (FullPropertyInfo.NilValue, as a nil sets it), the others their default value
+    /// (see ObjectConstructor.Arguments.Create); the other properties <see cref="NotRead"/>.
+    /// </summary>
+    private readonly object[] _initial;
+
+    /// <summary>
+    /// The setters of the properties no parameter takes, by their position in the values after the parameters.
+    /// </summary>
+    private readonly PropReader[] _setters;
+
+    /// <summary>
+    /// A bit per parameter whose property is read (see <see cref="ArgumentReader.Bit"/>): the constructor is called when they are all cleared.
+    /// </summary>
+    private readonly ulong _awaited;
+
+    /// <param name="props">Gets the reader of each property</param>
+    internal ConstructorPlan(Serializer serializer, ObjectConstructor constructor, FullPropertyInfo[] infos, PropReader[] props)
+    {
+      _constructor = constructor;
+      int parameters = constructor.ParameterCount;
+      List<object> initial = new List<object>(parameters + infos.Length);
+      for (int t = 0; t < parameters; t++)
+        initial.Add(constructor.DefaultOf(t));
+      List<PropReader> setters = new List<PropReader>();
+      for (int t = 0; t < infos.Length; t++)
+      {
+        FullPropertyInfo info = infos[t];
+        if (info.IsComputed) // written only
+        {
+          props[t] = new ComputedPropReader(info);
+          continue;
+        }
+        object nil = info.NilValue(serializer.Options);
+        if (constructor.TryGetParameter(info.PropertyInfo.Name, out int index))
+        {
+          initial[index] = nil;
+          ArgumentReader parameter = new ArgumentReader(serializer, this, info, index, nil, null);
+          _awaited |= parameter.Bit;
+          props[t] = parameter;
+        }
+        else
+        {
+          PropReader setter = PropReader.Create(serializer, info);
+          props[t] = new ArgumentReader(serializer, this, info, initial.Count, nil, setter);
+          initial.Add(NotRead);
+          setters.Add(setter);
+        }
+      }
+      _initial = initial.ToArray();
+      _setters = setters.ToArray();
+    }
+
+    /// <summary>
+    /// What the values of an object are read into.
+    /// </summary>
+    internal object Collect()
+    {
+      object[] values = new object[_initial.Length];
+      Array.Copy(_initial, values, values.Length); // a third of Clone's time (52 ns for 5 values on .NET 8)
+      return new ConstructorValues(values, _awaited);
+    }
+
+    /// <summary>
+    /// The object, once its values are read: created now when the values of some parameters were not there.
+    /// </summary>
+    /// <param name="collected">From <see cref="Collect"/>, with the values read</param>
+    internal object Create(object collected)
+    {
+      ConstructorValues values = (ConstructorValues)collected;
+      return values.Created ?? Construct(values);
+    }
+
+    /// <summary>
+    /// Calls the constructor (an exception of it is passed on as it is), then sets the other properties that were read.
+    /// </summary>
+    internal object Construct(ConstructorValues collected)
+    {
+      object[] values = collected.Values;
+      object result = _constructor.Invoke(values);
+      int parameters = values.Length - _setters.Length;
+      for (int t = parameters; t < values.Length; t++)
+        if (!ReferenceEquals(values[t], NotRead))
+          _setters[t - parameters].SetBoxed(result, values[t]);
+      collected.Created = result;
+      return result;
+    }
+  }
+
+  /// <summary>
+  /// The values of an object read for its constructor (see <see cref="ConstructorPlan"/>), and the object once it is created.
+  /// </summary>
+  internal sealed class ConstructorValues
+  {
+    /// <summary>
+    /// The parameters, then the properties no parameter takes (<see cref="ConstructorPlan.NotRead"/> until read).
+    /// </summary>
+    internal readonly object[] Values;
+
+    /// <summary>
+    /// The bits of the parameters whose values are still to be read.
+    /// </summary>
+    internal ulong Awaited;
+
+    /// <summary>
+    /// The object, null until the constructor is called.
+    /// </summary>
+    internal object Created;
+
+    internal ConstructorValues(object[] values, ulong awaited)
+    {
+      Values = values;
+      Awaited = awaited;
+    }
+  }
+
+  /// <summary>
+  /// Reads the value of a property for an object created by its constructor (see <see cref="ConstructorPlan"/>): into the collected values, or, for a property no parameter takes,
+  /// into the object once it is created.
+  /// </summary>
+  internal sealed class ArgumentReader : PropReader
+  {
+    private readonly Serializer _serializer;
+    private readonly ConstructorPlan _plan;
+    private readonly int _index;
+    private readonly object _nil;
+
+    /// <summary>
+    /// The reader setting the property, null for a parameter.
+    /// </summary>
+    private readonly PropReader _setter;
+
+    /// <summary>
+    /// The bit of a parameter in <see cref="ConstructorValues.Awaited"/>: parameters after the 63rd share the last one, which is never cleared (the constructor is called at the end).
+    /// </summary>
+    internal readonly ulong Bit;
+
+    private ValueReader _reader;
+
+    /// <param name="index">The position of the value in the collected values</param>
+    /// <param name="nil">The value of a nil (FullPropertyInfo.NilValue)</param>
+    /// <param name="setter">The reader setting the property when no parameter takes it, otherwise null</param>
+    internal ArgumentReader(Serializer serializer, ConstructorPlan plan, FullPropertyInfo info, int index, object nil, PropReader setter) : base(info)
+    {
+      _serializer = serializer;
+      _plan = plan;
+      _index = index;
+      _nil = nil;
+      _setter = setter;
+      if (setter is null)
+        Bit = 1UL << Math.Min(index, 63);
+    }
+
+    public override void Read(ReadContext c, object target)
+    {
+      ConstructorValues values = (ConstructorValues)target;
+      if (values.Created != null)
+      {
+        if (_setter is null)
+          c.R.Skip(c.Depth); // a parameter again (a duplicate key): the first value is kept
+        else
+          _setter.Read(c, values.Created);
+        return;
+      }
+      ValueReader reader = _reader ?? (_reader = _serializer.Reader(Info.PropertyInfo.PropertyType));
+      values.Values[_index] = reader.ReadBoxed(c, Info);
+      Received(values);
+    }
+
+    public override void ReadNil(object target)
+    {
+      ConstructorValues values = (ConstructorValues)target;
+      if (values.Created != null)
+      {
+        _setter?.ReadNil(values.Created);
+        return;
+      }
+      values.Values[_index] = _nil;
+      Received(values);
+    }
+
+    private void Received(ConstructorValues values)
+    {
+      if (_setter is null && Bit != 1UL << 63 && (values.Awaited &= ~Bit) == 0)
+        _plan.Construct(values); // the properties after it are set directly
     }
   }
 

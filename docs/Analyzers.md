@@ -1,4 +1,4 @@
-# Analyzers
+﻿# Analyzers
 
 The `LsMsgPack.Core` package includes analyzers, so every project that references `LsMsgPack`, `LtMsgPack` or one of the web formatter packages gets them. They warn about these things in the classes you serialize:
 
@@ -59,9 +59,9 @@ public int Retries { get; set; } = 3;   // a map leaves out 0, a reader gets 3
 
 `[DefaultValue(3)]` makes the writer leave out 3 instead, and write 0. Until October 2026 a nil also kept what the constructor set, so this happened in the array layout too. Version 2 of the schema (`SchemaVersion.Described`) also tells the default to readers without the classes, e.g. JavaScript.
 
-What the constructor sets is the property's initializer, the initializer of the field its getter returns, or the last assignment to either in the body of the parameterless constructor. Only constant values count: there is nothing to check for `= DateTime.Now`, `= Guid.NewGuid()` or `= new List<int>()`. An empty string isn't flagged (`= ""` is the usual way to avoid `null`, and reading `null` back as `""` is what such code wants).
+What the constructor sets is the property's initializer, the initializer of the field its getter returns, or the last assignment to either in the body of the constructor a reader calls: the parameterless one, or the one that takes the values of properties ([immutable classes and constructors with parameters](schema.md#immutable-classes)). Only constant values count: there is nothing to check for `= DateTime.Now`, `= Guid.NewGuid()` or `= new List<int>()`. An empty string isn't flagged (`= ""` is the usual way to avoid `null`, and reading `null` back as `""` is what such code wants).
 
-A class without a parameterless constructor (or a struct without an explicit one) is created without running a constructor (`ObjectCreation.ConstructorOrUninitialized`). A left-out property then keeps the type's default, as the writer assumes, so these rules don't apply to it.
+A property that a parameter of that constructor takes isn't checked: a reader passes the value the writer left out. A class without a parameterless constructor and without one that takes the values of its properties (or a struct without an explicit parameterless one) is created without running a constructor (`ObjectCreation.ConstructorOrUninitialized`). A left-out property then keeps the type's default, as the writer assumes, so these rules don't apply to it.
 
 ### LSMP001: Initialized property without [DefaultValue]
 
