@@ -69,17 +69,39 @@ namespace LsMsgPack.Meta
     {
       if (settings._differences is null || value is null || Fits(prop.PropertyInfo.PropertyType, value))
       {
-        prop.SetValue(instance, value);
+        Assign(prop, instance, value);
         return;
       }
       try
       {
-        prop.SetValue(instance, value); // may still widen (e.g. an int into a long)
+        Assign(prop, instance, value); // may still widen (e.g. an int into a long)
       }
       catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex))
       {
         throw;
       }
+    }
+
+    /// <summary>
+    /// Sets the value of a property, or collects it for the constructor of an object that is created after its values are read (see <see cref="Instances.CreateObjectOrArguments"/>).
+    /// </summary>
+    private static void Assign(FullPropertyInfo prop, object instance, object value)
+    {
+      if (instance is ObjectConstructor.Arguments arguments)
+        arguments.Set(prop, value);
+      else
+        prop.SetValue(instance, value);
+    }
+
+    /// <returns>The object: created by its constructor when <paramref name="instance"/> collected its values (see <see cref="Assign"/>)</returns>
+    private static object Created(object instance, FullPropertyInfo[] props, MsgPackOptions settings)
+    {
+      if (!(instance is ObjectConstructor.Arguments arguments))
+        return instance;
+      object result = arguments.Create(props, settings);
+      if (arguments.Reported)
+        settings._differences?.Created(arguments, result);
+      return result;
     }
 
     private static bool Fits(Type propertyType, object value)
@@ -207,6 +229,7 @@ namespace LsMsgPack.Meta
       {
         return null;
       }
+      tType = Nullable.GetUnderlyingType(tType) ?? tType; // a struct assigned to a nullable (as ConvertArray reads it; until October 2026 a struct? in the map layout threw "no settable properties")
 
       object result;
       if (propVals.TryGetValue(MsgPackOptions.ContentKey, out object content))
@@ -232,14 +255,35 @@ namespace LsMsgPack.Meta
         throw ReadDifferences.NotConverted(settings, new Exception(
           $"Cannot create an instance of an interface or abstract type:\r\n  {tType.FullName}\r\nEither use MsgPackSettings.AddTypeIdOptions when serializing (easiest but adds payload) or add a custom IMsgPackTypeResolver to MsgPackSettings._typeResolvers."));
 
-      if (propVals.Count > (hasTypeId ? 1 : 0) && SerializationRules.GetIndexedSchema(settings)?.SkipIfNoEntry(tType, settings, prop) == true)
+      IndexedSchemaTypeResolver schema = SerializationRules.GetIndexedSchema(settings);
+      bool byNames = schema != null && HasOnlyNames(map);
+      if (!byNames && propVals.Count > (hasTypeId ? 1 : 0) && schema?.SkipIfNoEntry(tType, settings, prop) == true)
         return null;
-      FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
+      FullPropertyInfo[] props = byNames ? FullPropertyInfo.GetNamedProps(tType, settings) : FullPropertyInfo.GetSerializedProps(tType, settings);
       if (props.Length == 0) // a refused type has no settable properties, before it is created
         SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
-      result = Instances.CreateObject(tType, settings);
+      result = Instances.CreateObjectOrArguments(tType, settings);
       SetProperties(result, tType, props, propVals, settings);
-      return result;
+      return Created(result, props, settings);
+    }
+
+    /// <summary>
+    /// With the indexed schema, a map whose keys (other than the type id) are all names is an object written by names (an object with an anonymous type, see SerializationRules.WritesByNames),
+    /// or data of released versions whose property id resolvers gave every property a string id (see FullPropertyInfo.SchemaName): its keys are matched by name, the class needs no entry.
+    /// The keys of other objects are indexes.
+    /// </summary>
+    private static bool HasOnlyNames(KeyValuePair<object, object>[] map)
+    {
+      bool names = false;
+      for (int t = map.Length - 1; t >= 0; t--)
+      {
+        object key = map[t].Key;
+        if (!(key is string name))
+          return false;
+        if (name.Length > 0)
+          names = true;
+      }
+      return names;
     }
 
     /// <summary>
@@ -292,8 +336,10 @@ namespace LsMsgPack.Meta
         if (propVals.TryGetValue(prop.PropertyId, out object propval))
         {
           set++;
+          if (prop.IsComputed) // written only
+            continue;
           if (differences is null)
-            prop.SetValue(instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
+            Assign(prop, instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
           else
             ReadProperty(prop, instance, propval, settings, differences);
         }
@@ -321,8 +367,10 @@ namespace LsMsgPack.Meta
         if (prop.FormerId is null || !ReadsFormerId(prop, propVals, out object propval))
           continue;
         set++;
+        if (prop.IsComputed)
+          continue;
         if (differences is null)
-          prop.SetValue(instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
+          Assign(prop, instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
         else
           ReadProperty(prop, instance, propval, settings, differences);
       }
@@ -348,10 +396,10 @@ namespace LsMsgPack.Meta
       foreach (KeyValuePair<object, object> entry in propVals)
       {
         FullPropertyInfo prop = MatchIgnoringCase(entry.Key, props, propVals);
-        if (prop is null)
+        if (prop is null || prop.IsComputed)
           continue;
         if (differences is null)
-          prop.SetValue(instance, ConvertDeserializeValue(entry.Value, prop.PropertyInfo.PropertyType, settings, prop));
+          Assign(prop, instance, ConvertDeserializeValue(entry.Value, prop.PropertyInfo.PropertyType, settings, prop));
         else
           ReadProperty(prop, instance, entry.Value, settings, differences);
       }
@@ -532,7 +580,7 @@ namespace LsMsgPack.Meta
     private static object ConvertPositional(object[] items, Type type, FullPropertyInfo[] props, MsgPackOptions settings)
     {
       FullPropertyInfo[] byPosition = PropertiesByPosition(type, props, settings, out ComplexTypeDef def);
-      object result = Instances.CreateObject(type, settings);
+      object result = Instances.CreateObjectOrArguments(type, settings);
       ReadDifferences differences = settings._differences;
       differences?.Push(result);
       int count = Math.Min(items.Length, byPosition.Length);
@@ -545,10 +593,12 @@ namespace LsMsgPack.Meta
             differences.UnknownProperty(result, NameOf(t, def));
           continue;
         }
+        if (prop.IsComputed) // written only
+          continue;
         if (items[t] is null)
-          prop.SetValue(result, prop.NilValue(settings));
+          Assign(prop, result, prop.NilValue(settings));
         else if (differences is null)
-          prop.SetValue(result, ConvertDeserializeValue(items[t], prop.PropertyInfo.PropertyType, settings, prop));
+          Assign(prop, result, ConvertDeserializeValue(items[t], prop.PropertyInfo.PropertyType, settings, prop));
         else
           ReadProperty(prop, result, items[t], settings, differences);
       }
@@ -559,7 +609,7 @@ namespace LsMsgPack.Meta
           if (items[t] != null)
             differences.ExtraValue(result, t);
       }
-      return result;
+      return Created(result, props, settings);
     }
 
     /// <summary>

@@ -250,7 +250,16 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
+    /// The property has no setter and reading skips its value (see <see cref="PropertyAccessor.Computed"/>).
+    /// </summary>
+    internal bool IsComputed
+    {
+      get { return (_accessor ?? (_accessor = PropertyAccessor.Get(PropertyInfo))).Computed; }
+    }
+
+    /// <summary>
     /// Sets the value of the property, by a compiled delegate once the property is used often (see <see cref="PropertyAccessor"/>).
+    /// A collection property without a setter is filled, a computed property is not set.
     /// </summary>
     internal void SetValue(object instance, object value)
     {
@@ -330,7 +339,7 @@ namespace LsMsgPack.Meta
     /// Public properties excluding indexers and properties hidden by a property with the same name in a derived class ("new" modifier).
     /// </summary>
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
-    private static PropertyInfo[] GetProperties(Type type)
+    internal static PropertyInfo[] GetProperties(Type type)
     {
       return PropertiesCache.GetOrAdd(type, t =>
       {
@@ -645,6 +654,35 @@ namespace LsMsgPack.Meta
       if (sessionCache != null)
         sessionCache[type] = result;
       return result;
+    }
+
+    /// <summary>
+    /// The properties of an object written as a map of names (an object with an anonymous type, see SerializationRules.WritesByNames), their <see cref="PropertyId"/> is the name:
+    /// the string id a property id resolver other than the indexed schema gives (as <see cref="SchemaNameOf"/>), otherwise the .NET name. The indexed schema is not asked, the type gets no entry.
+    /// <para>Without such resolvers the instances the static filters kept for all settings (not changed by sessions), otherwise new instances on every call (as custom resolvers are asked without the schema).</para>
+    /// </summary>
+    internal static FullPropertyInfo[] GetNamedProps(Type type, MsgPackOptions settings)
+    {
+      ConcurrentDictionary<Type, FullPropertyInfo[]> shared = GetSharedPropsCaches(settings).StaticPerOrder[(int)settings._propertyOrder];
+      if (!shared.TryGetValue(type, out FullPropertyInfo[] kept))
+        kept = shared.GetOrAdd(type, FilterStatically(type, settings));
+
+      IMsgPackPropertyIdResolver[] resolvers = settings._propertyNameResolvers;
+      bool named = false;
+      for (int t = resolvers.Length - 1; t >= 0 && !named; t--)
+        named = !(resolvers[t] is IndexedSchemaTypeResolver);
+      if (!named)
+        return kept;
+
+      FullPropertyInfo[] props = new FullPropertyInfo[kept.Length];
+      for (int t = 0; t < kept.Length; t++)
+      {
+        FullPropertyInfo prop = new FullPropertyInfo(kept[t]);
+        prop.PropertyId = SchemaNameOf(prop, settings);
+        props[t] = prop;
+      }
+      ThrowIfIdsNotUnique(type, props);
+      return props;
     }
 
     private static FullPropertyInfo[] FilterStatically(Type type, MsgPackOptions settings)

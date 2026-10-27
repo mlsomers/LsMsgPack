@@ -13,6 +13,7 @@ namespace LsMsgPack
   /// or when a value of it gets a type id (a class deriving from the declared one). The types of its properties, the elements of collections, the keys and values of dictionaries, pairs, tuples and nullables are followed,
   /// and after a class or interface that is not sealed, the classes deriving from it in the assemblies the root reaches (by full name: the order does not depend on the metadata).</para>
   /// <para>The same types and settings give the same list in any process, so the same schema id. Also used by the TypeScript generator, which writes the schemas the server will write.</para>
+  /// <para>Objects with anonymous types below another one are written by names, without an entry (see SerializationRules.WritesByNames): the walk follows them without adding them.</para>
   /// </summary>
   internal sealed class SchemaTypes
   {
@@ -20,6 +21,7 @@ namespace LsMsgPack
     private readonly List<Type> _entries = new List<Type>();
     private readonly HashSet<Type> _withEntry = new HashSet<Type>();
     private readonly HashSet<Type> _visited = new HashSet<Type>();
+    private readonly HashSet<Type> _visitedByNames = new HashSet<Type>(); // below an object with an anonymous type
     private readonly List<Assembly> _assemblies = new List<Assembly>();
     private readonly Dictionary<Type, List<Type>> _derived = new Dictionary<Type, List<Type>>();
     private List<Type> _candidates;
@@ -37,42 +39,43 @@ namespace LsMsgPack
     {
       SchemaTypes walk = new SchemaTypes(settings);
       walk.FindAssemblies(root);
-      walk.Visit(root, false, 0);
+      walk.Visit(root, false, 0, false);
       return walk._entries;
     }
 
-    private void Visit(Type type, bool hasTypeId, int depth)
+    /// <param name="byNames">Below an object with an anonymous type (see SerializationRules.EntersByNames)</param>
+    private void Visit(Type type, bool hasTypeId, int depth, bool byNames)
     {
       if (type is null || type.IsGenericParameter || type.ContainsGenericParameters || type.IsPointer || type.IsByRef || depth > _settings._maxDepth)
         return;
       type = Nullable.GetUnderlyingType(type) ?? type;
       if (type.IsArray)
       {
-        Visit(type.GetElementType(), false, depth + 1);
+        Visit(type.GetElementType(), false, depth + 1, byNames);
         return;
       }
       if (type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(object) || type == typeof(decimal))
         return;
       if (FrameworkTypeInfo.IsKeyValuePair(type) || FrameworkTypeInfo.IsTuple(type))
       {
-        if (_visited.Add(type))
-          VisitAll(type.GetGenericArguments(), depth);
+        if (Visited(type, byNames))
+          VisitAll(type.GetGenericArguments(), depth, byNames);
         return;
       }
       if (_settings.HasCustomExtension(type) || FrameworkTypeInfo.GetPlainForm(type) != PlainForm.None)
         return;
       if (typeof(IEnumerable).IsAssignableFrom(type))
       {
-        if (!_visited.Add(type))
+        if (!Visited(type, byNames))
           return;
         CollectionInfo info = CollectionInfo.Get(type);
         if (info.IsDictionary || !(info.PairKey is null))
         {
-          Visit(info.PairKey?.PropertyType ?? info.KeyType, false, depth + 1);
-          Visit(info.PairValue?.PropertyType ?? info.ValueType, false, depth + 1);
+          Visit(info.PairKey?.PropertyType ?? info.KeyType, false, depth + 1, byNames);
+          Visit(info.PairValue?.PropertyType ?? info.ValueType, false, depth + 1, byNames);
         }
         else
-          Visit(info.ElementType, false, depth + 1); // the properties of a collection are only written when asked for (SerializeEnumerableAttribute), they are added when they are
+          Visit(info.ElementType, false, depth + 1, byNames); // the properties of a collection are only written when asked for (SerializeEnumerableAttribute), they are added when they are
         return;
       }
       if (!DescribedSchema.IsObject(type, _settings))
@@ -80,27 +83,34 @@ namespace LsMsgPack
 
       bool concrete = !type.IsAbstract && !type.IsInterface;
       FullPropertyInfo[] props = concrete ? FullPropertyInfo.GetStaticallyIncludedProps(type, _settings) : null;
-      if (concrete && (hasTypeId || props.Length > 0) && _withEntry.Add(type))
+      bool anonymous = SerializationRules.HasAnonymousType(type);
+      if (concrete && (hasTypeId || props.Length > 0) && !(byNames && anonymous) && _withEntry.Add(type))
         _entries.Add(type);
-      if (!_visited.Add(type))
+      if (!Visited(type, byNames))
         return;
 
       if (concrete)
         for (int t = 0; t < props.Length; t++)
-          Visit(props[t].PropertyInfo.PropertyType, false, depth + 1);
+          Visit(props[t].PropertyInfo.PropertyType, false, depth + 1, byNames || anonymous);
 
       if (!type.IsSealed && !type.IsValueType && !TypeResolver.IsFrameworkAssembly(type.Assembly))
       {
         List<Type> derived = Derived(type);
         for (int t = 0; t < derived.Count; t++)
-          Visit(derived[t], true, depth + 1);
+          Visit(derived[t], true, depth + 1, byNames);
       }
     }
 
-    private void VisitAll(Type[] types, int depth)
+    private void VisitAll(Type[] types, int depth, bool byNames)
     {
       for (int t = 0; t < types.Length; t++)
-        Visit(types[t], false, depth + 1);
+        Visit(types[t], false, depth + 1, byNames);
+    }
+
+    /// <returns>False when the type was visited already (in the same context: below an object with an anonymous type its objects with anonymous types get no entries)</returns>
+    private bool Visited(Type type, bool byNames)
+    {
+      return (byNames ? _visitedByNames : _visited).Add(type);
     }
 
     /// <summary>

@@ -35,6 +35,12 @@ namespace LsMsgPack.Meta
     private int _getCalls;
     private int _setCalls;
 
+    /// <summary>
+    /// A property without a setter whose value reading skips (a computed property, see <see cref="TypeResolving.Filters.GetOnlyProperties.Computed"/>):
+    /// not of an anonymous type (its field is set), not taken by a constructor (see <see cref="ObjectConstructor"/>) and not a collection that can be filled (see <see cref="GetOnlyCollection"/>).
+    /// </summary>
+    internal readonly bool Computed;
+
     private PropertyAccessor(PropertyInfo property)
     {
       _property = property;
@@ -44,6 +50,41 @@ namespace LsMsgPack.Meta
         _getter = generated.BoxedGetter;
         _setter = generated.BoxedSetter(property);
       }
+      if (property.GetSetMethod(true) is null)
+      {
+        if (SerializationRules.IsAnonymous(property.DeclaringType))
+          _setter = AnonymousSetter(property);
+        else if (GetOnlyCollection.IsFillable(property.PropertyType))
+          _setter = Fill;
+        else
+          Computed = !ObjectConstructor.Sets(property); // the constructor's values are collected for it (ObjectConstructor.Arguments), never set
+      }
+    }
+
+    /// <summary>
+    /// The setter of a collection property without one: fills the collection the getter returns. A nil (null) leaves it as the constructor made it, so does a getter returning null.
+    /// </summary>
+    private void Fill(object instance, object value)
+    {
+      if (value is null)
+        return;
+      object target = GetValue(instance);
+      if (target != null && !ReferenceEquals(target, value))
+        GetOnlyCollection.Fill(target, value);
+    }
+
+    /// <summary>
+    /// The properties of an anonymous type have no setters (they are serialized all the same, see FilterNonSettable): its fields are set as the constructor sets them,
+    /// "&lt;Name&gt;i__Field" in C#, "$Name" for a Key property in Visual Basic. Null when there is no such field (reflection then throws as for any property without a setter).
+    /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
+    private static Action<object, object> AnonymousSetter(PropertyInfo property)
+    {
+      const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+      FieldInfo field = property.DeclaringType.GetField(string.Concat("<", property.Name, ">i__Field"), flags) ?? property.DeclaringType.GetField("$" + property.Name, flags);
+      if (field is null || field.FieldType != property.PropertyType)
+        return null;
+      return (instance, value) => field.SetValue(instance, value);
     }
 
     public object GetValue(object instance)
@@ -68,6 +109,8 @@ namespace LsMsgPack.Meta
 
     public void SetValue(object instance, object value)
     {
+      if (Computed) // the value is written only
+        return;
       try
       {
         Action<object, object> setter = _setter;

@@ -312,9 +312,26 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void DictionaryOfObjects_HoldingDifferentKinds_IsASecurityVulnerability()
     {
+      // Schema version 2 declares the place a dictionary: in version 1 a map with string keys is also an object written by names (an anonymous type)
       VtBag bag = new VtBag() { Values = new Dictionary<string, object>() { { "a", 1 }, { "b", "two" }, { "c", 3.5 } } };
-      List<ValidationItem> issues = Validate(MsgPackSerializer.Serialize(bag, Settings(true)));
+      MsgPackSettings settings = Settings(true);
+      settings.SchemaVersion = SchemaVersion.Described;
+      List<ValidationItem> issues = Validate(MsgPackSerializer.Serialize(bag, settings));
       Assert.AreEqual(1, Of(issues, ValidationSeverity.SecurityVulnerability).Count, Describe(issues));
+    }
+
+    [TestMethod]
+    public void AnonymousObjectInObjectProperty_DifferentKinds_NotReported()
+    {
+      // Written as a map of its names (no type id): its properties are declared as their own types, the data picks no types
+      VtHolder holder = new VtHolder() { Name = "a", Anything = new { Id = 1, Name = "x", When = new DateTime(2026, 10, 27, 0, 0, 0, DateTimeKind.Utc) } };
+      foreach (SchemaVersion version in new[] { SchemaVersion.Names, SchemaVersion.Described })
+      {
+        MsgPackSettings settings = Settings(true);
+        settings.SchemaVersion = version;
+        List<ValidationItem> issues = Validate(MsgPackSerializer.Serialize(holder, settings));
+        Assert.AreEqual(0, Of(issues, ValidationSeverity.SecurityVulnerability).Count, $"{version}:{Environment.NewLine}{Describe(issues)}");
+      }
     }
 
     [TestMethod]

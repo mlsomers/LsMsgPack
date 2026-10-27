@@ -13,11 +13,12 @@ namespace LsMsgPack
 
     public static MsgPackItem SerializeObject(object item, MsgPackSettings settings, FullPropertyInfo assignedTo = null)
     {
-      return SerializeObject(item, settings, assignedTo, 0);
+      return SerializeObject(item, settings, assignedTo, 0, false);
     }
 
     /// <param name="depth">The nesting level of the object (0 for the root): objects and collections at <see cref="MsgPackOptions.MaxDepth"/> are refused (a cycle would otherwise end in a stack overflow)</param>
-    private static MsgPackItem SerializeObject(object item, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth)
+    /// <param name="byNames">Below an object with an anonymous type, or a value with one that is not written as its declared type: objects with anonymous types are written by names (see SerializationRules.WritesByNames)</param>
+    private static MsgPackItem SerializeObject(object item, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
     {
       if (ReferenceEquals(item, null))
         return new MpNull(settings);
@@ -32,10 +33,11 @@ namespace LsMsgPack
       // Strings, byte[] and Guid (MpBin) are enumerable but not treated as a collection
       if (packed != null && (packed is MpArray || packed is MpMap) && item is IEnumerable) // objects have no packed item: no interface check for them
       {
+        bool elementsByNames = SerializationRules.EntersByNames(tType, assignedTo, byNames, false);
         if (tType.IsArray && tType.GetArrayRank() > 1)
-          return SerializeMultidimensional((Array)item, tType, settings, assignedTo, depth);
+          return SerializeMultidimensional((Array)item, tType, settings, assignedTo, depth, elementsByNames);
         ThrowIfTooDeep(depth, settings);
-        return SerializeCollection(item, packed, tType, settings, assignedTo, depth);
+        return SerializeCollection(item, packed, tType, settings, assignedTo, depth, elementsByNames);
       }
 
       if (packed != null)
@@ -54,18 +56,21 @@ namespace LsMsgPack
       }
 
       if (FrameworkTypeInfo.IsKeyValuePair(tType))
-        return SerializePair(item, tType, settings, assignedTo, depth);
+        return SerializePair(item, tType, settings, assignedTo, depth, SerializationRules.EntersByNames(tType, assignedTo, byNames, false));
 
       if (FrameworkTypeInfo.IsTuple(tType))
-        return SerializeTuple(item, tType, settings, assignedTo, depth);
+        return SerializeTuple(item, tType, settings, assignedTo, depth, SerializationRules.EntersByNames(tType, assignedTo, byNames, false));
 
       // Any complex object with properties
       ThrowIfTooDeep(depth, settings);
+      if (SerializationRules.WritesByNames(tType, assignedTo, byNames))
+        return SerializeByNames(item, tType, settings, depth);
       FullPropertyInfo[] props = FullPropertyInfo.GetSerializedProps(tType, settings);
       if (props.Length == 0) // a refused type has no settable properties (the check is cached per type, the properties are)
         SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
+      byNames = SerializationRules.EntersByNames(tType, assignedTo, byNames, true);
       if (settings._objectLayout == ObjectLayout.Array)
-        return SerializeAsArray(item, tType, props, settings, assignedTo, depth);
+        return SerializeAsArray(item, tType, props, settings, assignedTo, depth, byNames);
 
       KeyValuePair<object, object>[] propVals = new KeyValuePair<object, object>[props.Length + 1];
       int count = 0;
@@ -75,15 +80,27 @@ namespace LsMsgPack
       else
         SerializationRules.ThrowIfUnresolvableWithSchema(tType, assignedTo, settings);
 
-      count = AddProperties(item, props, propVals, count, settings, depth);
+      count = AddProperties(item, props, propVals, count, settings, depth, byNames);
 
+      return ToMap(propVals, count, settings);
+    }
+
+    /// <summary>
+    /// An object with an anonymous type where its type is not declared or below another one (see SerializationRules.WritesByNames): a map of its property names and values, without a type id and not in the schema,
+    /// whatever the <see cref="ObjectLayout"/> (the dynamic filters leave values out as in a map). Its values are written by names as far as they have anonymous types.
+    /// </summary>
+    private static MsgPackItem SerializeByNames(object item, Type tType, MsgPackSettings settings, int depth)
+    {
+      FullPropertyInfo[] props = FullPropertyInfo.GetNamedProps(tType, settings);
+      KeyValuePair<object, object>[] propVals = new KeyValuePair<object, object>[props.Length];
+      int count = AddProperties(item, props, propVals, 0, settings, depth, true);
       return ToMap(propVals, count, settings);
     }
 
     /// <summary>
     /// A KeyValuePair is an array [key, value] (as MessagePack-CSharp writes it), its Key and Value have no setters. Wrapped like a collection when it needs a type id: the key and value come first (they may add types to the schema).
     /// </summary>
-    private static MsgPackItem SerializePair(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth)
+    private static MsgPackItem SerializePair(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
     {
       ThrowIfTooDeep(depth, settings);
       FrameworkTypeInfo.PairInfo pair = FrameworkTypeInfo.GetPair(tType);
@@ -91,8 +108,8 @@ namespace LsMsgPack
       {
         Value = new MsgPackItem[]
         {
-          SerializeObject(pair.Key.GetValue(item), settings, pair.KeyInfo, depth + 1),
-          SerializeObject(pair.Value.GetValue(item), settings, pair.ValueInfo, depth + 1)
+          SerializeObject(pair.Key.GetValue(item), settings, pair.KeyInfo, depth + 1, byNames),
+          SerializeObject(pair.Value.GetValue(item), settings, pair.ValueInfo, depth + 1, byNames)
         }
       };
       if (!SerializationRules.NeedsTypeId(tType, assignedTo, settings))
@@ -108,13 +125,13 @@ namespace LsMsgPack
     /// <summary>
     /// A tuple is an array of its items (as MessagePack-CSharp and Nerdbank.MessagePack write it), wrapped like a pair when it needs a type id.
     /// </summary>
-    private static MsgPackItem SerializeTuple(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth)
+    private static MsgPackItem SerializeTuple(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
     {
       ThrowIfTooDeep(depth, settings);
       FrameworkTypeInfo.TupleInfo tuple = FrameworkTypeInfo.GetTuple(tType);
       MsgPackItem[] items = new MsgPackItem[tuple.Items.Length];
       for (int t = 0; t < items.Length; t++)
-        items[t] = SerializeObject(tuple.GetItem(item, t), settings, tuple.Items[t], depth + 1);
+        items[t] = SerializeObject(tuple.GetItem(item, t), settings, tuple.Items[t], depth + 1, byNames);
       MpArray array = new MpArray(settings) { Value = items };
       if (!SerializationRules.NeedsTypeId(tType, assignedTo, settings))
         return array;
@@ -129,7 +146,7 @@ namespace LsMsgPack
     /// <summary>
     /// A multidimensional array is [length0, length1, ..., [items]] (as MessagePack-CSharp writes it), wrapped like a collection when it needs a type id.
     /// </summary>
-    private static MsgPackItem SerializeMultidimensional(Array array, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth)
+    private static MsgPackItem SerializeMultidimensional(Array array, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
     {
       ThrowIfTooDeep(depth, settings);
       int rank = array.Rank;
@@ -140,7 +157,7 @@ namespace LsMsgPack
       MsgPackItem[] elements = new MsgPackItem[array.Length];
       int at = 0;
       foreach (object element in array) // the last dimension changes first
-        elements[at++] = SerializeObject(element, settings, elementInfo, depth + 1);
+        elements[at++] = SerializeObject(element, settings, elementInfo, depth + 1, byNames);
       items[rank] = new MpArray(settings) { Value = elements };
       MpArray result = new MpArray(settings) { Value = items };
       if (!SerializationRules.NeedsTypeId(tType, assignedTo, settings))
@@ -163,7 +180,7 @@ namespace LsMsgPack
     /// <see cref="ObjectLayout.Array"/>: the values in the order of the properties (nil when the dynamic filters leave one out), wrapped in a map when a type id is needed: { "": typeId, "@": [values] }.
     /// <para>The ids are resolved before the type id and the values (GetSerializedProps), as for a map, so the indexed schema lists the types in the same order.</para>
     /// </summary>
-    private static MsgPackItem SerializeAsArray(object item, Type tType, FullPropertyInfo[] props, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth)
+    private static MsgPackItem SerializeAsArray(object item, Type tType, FullPropertyInfo[] props, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
     {
       object typeId = null;
       bool addTypeId = SerializationRules.NeedsTypeId(tType, assignedTo, settings);
@@ -182,7 +199,7 @@ namespace LsMsgPack
           values[t] = new MpNull(settings);
         else
         {
-          values[t] = SerializeObject(value, settings, prop, depth + 1);
+          values[t] = SerializeObject(value, settings, prop, depth + 1, byNames);
           count = t + 1;
         }
       }
@@ -213,14 +230,14 @@ namespace LsMsgPack
     /// The elements are serialized as an array (or a map for dictionaries).
     /// <para>Only when a type identifier or properties (see <see cref="SerializeEnumerableAttribute.SerializeProperties"/>) are needed, they are wrapped in a map: { "": typeId, "@": elements, ...properties }</para>
     /// </summary>
-    private static MsgPackItem SerializeCollection(object item, MsgPackItem packed, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth)
+    private static MsgPackItem SerializeCollection(object item, MsgPackItem packed, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
     {
       SerializeEnumerableAttribute handleItems = SerializationRules.GetEnumerableAttribute(tType, assignedTo);
       bool serializeElements = handleItems?.SerializeElements ?? true;
       bool serializeProperties = handleItems?.SerializeProperties ?? false;
       bool addTypeId = SerializationRules.NeedsTypeId(tType, assignedTo, settings);
 
-      MsgPackItem elements = serializeElements ? SerializeElements(packed, tType, handleItems?.ElementType, settings, depth) : null;
+      MsgPackItem elements = serializeElements ? SerializeElements(packed, tType, handleItems?.ElementType, settings, depth, byNames) : null;
       if (!addTypeId && !serializeProperties && elements != null) // no need to wrap the elements in a map
         return elements;
 
@@ -236,7 +253,7 @@ namespace LsMsgPack
       if (elements != null)
         propVals[count++] = new KeyValuePair<object, object>(ContentKey, elements);
 
-      count = AddProperties(item, props, propVals, count, settings, depth);
+      count = AddProperties(item, props, propVals, count, settings, depth, byNames);
 
       return ToMap(propVals, count, settings);
     }
@@ -254,7 +271,7 @@ namespace LsMsgPack
     /// <summary>
     /// Serialize the elements knowing the type they will be assigned to, so type identifiers are only added when the element type is ambiguous.
     /// </summary>
-    private static MsgPackItem SerializeElements(MsgPackItem packed, Type tType, Type elementType, MsgPackSettings settings, int depth)
+    private static MsgPackItem SerializeElements(MsgPackItem packed, Type tType, Type elementType, MsgPackSettings settings, int depth, bool byNames)
     {
       CollectionInfo info = CollectionInfo.Get(tType);
 
@@ -266,7 +283,7 @@ namespace LsMsgPack
 
         KeyValuePair<object, object>[] packedPairs = new KeyValuePair<object, object>[pairs.Length];
         for (int t = 0; t < pairs.Length; t++)
-          packedPairs[t] = new KeyValuePair<object, object>(SerializeObject(pairs[t].Key, settings, keyInfo, depth + 1), SerializeObject(pairs[t].Value, settings, valueInfo, depth + 1));
+          packedPairs[t] = new KeyValuePair<object, object>(SerializeObject(pairs[t].Key, settings, keyInfo, depth + 1, byNames), SerializeObject(pairs[t].Value, settings, valueInfo, depth + 1, byNames));
 
         return new MpMap(packedPairs, settings);
       }
@@ -275,13 +292,13 @@ namespace LsMsgPack
       FullPropertyInfo elementInfo = new FullPropertyInfo(elementType ?? info.ElementType);
       MsgPackItem[] packedItems = new MsgPackItem[items.Length];
       for (int t = 0; t < packedItems.Length; t++)
-        packedItems[t] = SerializeObject(items.GetValue(t), settings, elementInfo, depth + 1);
+        packedItems[t] = SerializeObject(items.GetValue(t), settings, elementInfo, depth + 1, byNames);
 
       return new MpArray(settings) { Value = packedItems };
     }
 
     /// <returns>The number of entries in <paramref name="propVals"/></returns>
-    private static int AddProperties(object item, FullPropertyInfo[] props, KeyValuePair<object, object>[] propVals, int count, MsgPackSettings settings, int depth)
+    private static int AddProperties(object item, FullPropertyInfo[] props, KeyValuePair<object, object>[] propVals, int count, MsgPackSettings settings, int depth, bool byNames)
     {
       for (int t = 0; t < props.Length; t++)
       {
@@ -300,7 +317,7 @@ namespace LsMsgPack
           propVals[count++] = new KeyValuePair<object, object>(prop.PropertyId, value);
           continue;
         }
-        propVals[count++] = new KeyValuePair<object, object>(prop.PropertyId, SerializeObject(value, settings, prop, depth + 1));
+        propVals[count++] = new KeyValuePair<object, object>(prop.PropertyId, SerializeObject(value, settings, prop, depth + 1, byNames));
       }
       return count;
     }

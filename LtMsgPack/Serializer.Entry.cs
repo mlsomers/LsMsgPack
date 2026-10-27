@@ -71,6 +71,7 @@ namespace LtMsgPack
         WriteContext c = state.Context;
         c.Root = value;
         c.Depth = 0;
+        c.ByNames = false;
         c.W = state.Body;
         c.W.Reset(Options);
         FullPropertyInfo root = RootInfo(assignedTo);
@@ -112,6 +113,7 @@ namespace LtMsgPack
           store.RunWriter(assignedTo, Options, (s, sessionSettings) =>
           {
             c.Depth = 0;
+            c.ByNames = false;
             c.W.Reset(Options);
             c.Mode = IdMode.Session;
             c.IdSettings = sessionSettings;

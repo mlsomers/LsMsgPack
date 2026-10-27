@@ -33,6 +33,7 @@ namespace LtMsgPack
     private readonly ConcurrentDictionary<Type, WriteTypeInfo> _typeInfos = new ConcurrentDictionary<Type, WriteTypeInfo>();
     private readonly ConcurrentDictionary<Type, ObjectPlan> _namePlans = new ConcurrentDictionary<Type, ObjectPlan>();
     private readonly ConcurrentDictionary<Type, ObjectPlan> _schemaPlans = new ConcurrentDictionary<Type, ObjectPlan>();
+    private readonly ConcurrentDictionary<Type, NamesPlan> _byNamesPlans = new ConcurrentDictionary<Type, NamesPlan>();
     private readonly ConcurrentDictionary<Type, SchemaTypeInfo> _schemaInfos = new ConcurrentDictionary<Type, SchemaTypeInfo>();
     private readonly ConcurrentDictionary<Type, object> _nameTypeIds = new ConcurrentDictionary<Type, object>();
     private readonly ConditionalWeakTable<FullPropertyInfo[], byte[][]> _sessionKeys = new ConditionalWeakTable<FullPropertyInfo[], byte[][]>();
@@ -90,6 +91,8 @@ namespace LtMsgPack
       }
 
       WriteTypeInfo info = GetTypeInfo(type);
+      if (info.HasAnonymousType) // WriteBoxed decides how it is written (SerializationRules.WritesByNames)
+        return Boxed(type);
       switch (info.Kind)
       {
         case TypeKind.Bool: return new BoolHandler();
@@ -162,6 +165,13 @@ namespace LtMsgPack
       if (plans.TryGetValue(type, out ObjectPlan plan))
         return plan;
       return plans.GetOrAdd(type, t => new ObjectPlan(this, t, names));
+    }
+
+    private NamesPlan ByNamesPlan(Type type)
+    {
+      if (_byNamesPlans.TryGetValue(type, out NamesPlan plan))
+        return plan;
+      return _byNamesPlans.GetOrAdd(type, t => new NamesPlan(this, t));
     }
 
     internal SchemaTypeInfo GetSchemaInfo(Type type)
@@ -246,6 +256,34 @@ namespace LtMsgPack
 
       Type type = value.GetType();
       WriteTypeInfo info = GetTypeInfo(type);
+      if (info.HasAnonymousType)
+      {
+        WriteWithAnonymousType(c, value, type, info, assignedTo);
+        return;
+      }
+      WriteBoxed(c, value, type, info, assignedTo);
+    }
+
+    /// <summary>
+    /// A value with an anonymous type (LsMsgPack: SerializeObject with its byNames parameter): an object of such a type by names where SerializationRules.WritesByNames says so,
+    /// otherwise as any value, with the values below it in the names context where SerializationRules.EntersByNames says so (never a type id, see SerializationRules.NeedsTypeId).
+    /// </summary>
+    private void WriteWithAnonymousType(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
+    {
+      bool byNames = c.ByNames;
+      bool isObject = info.Kind == TypeKind.Complex;
+      if (isObject && SerializationRules.WritesByNames(type, assignedTo, byNames))
+      {
+        ByNamesPlan(type).Write(c, value);
+        return;
+      }
+      c.ByNames = SerializationRules.EntersByNames(type, assignedTo, byNames, isObject);
+      WriteBoxed(c, value, type, info, assignedTo);
+      c.ByNames = byNames;
+    }
+
+    private void WriteBoxed(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
+    {
       switch (info.Kind)
       {
         case TypeKind.Map:
@@ -647,12 +685,18 @@ namespace LtMsgPack
     internal readonly PropertyInfo PairValue;
     internal readonly PlainForm PlainForm;
 
+    /// <summary>
+    /// The type is anonymous, or has an anonymous type as a generic argument or element (see SerializationRules.HasAnonymousType): written through <see cref="Serializer.WriteBoxed(WriteContext, object, FullPropertyInfo)"/>.
+    /// </summary>
+    internal readonly bool HasAnonymousType;
+
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(KeyValuePair<,>))]
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.KeptMembers)]
     internal WriteTypeInfo(Type type, LtMsgPackOptions options)
     {
       Type = type;
       Kind = TypeKinds.Classify(type, options._extensions, out Extension);
+      HasAnonymousType = SerializationRules.HasAnonymousType(type);
       if (Kind == TypeKind.Plain)
         PlainForm = FrameworkTypeInfo.GetPlainForm(type);
       if (Kind == TypeKind.Guid && options._guidFormat == GuidFormat.String)

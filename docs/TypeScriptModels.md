@@ -76,7 +76,7 @@ export const models = defineModels({ int64: 'number', dates: 'date', decimal: 'n
 ] });
 ```
 
-- **Properties**: the ones the server writes (its static filters: settable, not ignored, not static), with the .NET names.
+- **Properties**: the ones the server writes (its static filters: settable or taken by a constructor, not ignored, not static), with the .NET names.
 - **Types**: as the client reads them, the same rules as System.Text.Json except dates (`Date`) and bytes (`Uint8Array`): see the [client's table of values](TypeScriptClient.md#values). Reference types are `| null`. With nullable reference types enabled in the .NET project, the annotations decide (`string?` or `string`); without them a property can be null, the elements of a collection and values of a dictionary are taken as not null.
 - **Initial values**: what the constructor sets (the class is created as the serializer creates it: its parameterless constructor, otherwise uninitialized), as TypeScript. Nested objects are `new X()` with the values that differ from what `X` sets. A value the constructor sets differently each time gets the default of its type, with a warning.
 - **`$type`**: the type name the server writes as the type id (the short name, or the full name with `AddTypeIdOption.FullName`). It is not a field: `defineModels` puts it on the prototype, so it costs nothing per object and `JSON.stringify` leaves it out. A base class declares the names of its classes, so `switch (animal.$type)` narrows.

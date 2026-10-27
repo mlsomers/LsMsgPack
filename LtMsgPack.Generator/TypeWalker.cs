@@ -561,7 +561,7 @@ namespace LtMsgPack.Generator
           bool hasDefaultValue = HasAttribute(property, "System.ComponentModel.DefaultValueAttribute");
           bool canGet = property.GetMethod != null && IsAccessible(property.GetMethod) && !IsObsoleteError(property.GetMethod) && !hasDefaultValue;
           bool canSet = property.SetMethod != null && !property.SetMethod.IsInitOnly && IsAccessible(property.SetMethod) && !IsObsoleteError(property.SetMethod);
-          bool unrolled = property.SetMethod != null && property.SetMethod.DeclaredAccessibility == Accessibility.Public && !HasIgnoreAttribute(property); // FilterNonSettable, FilterIgnoredAttribute
+          bool unrolled = KeptByDefault(t, property) && !HasIgnoreAttribute(property); // FilterNonSettable, FilterIgnoredAttribute
 
           ITypeSymbol valueType = property.Type;
           bool nullable = false;
@@ -634,6 +634,21 @@ namespace LtMsgPack.Generator
         case SpecialType.System_UInt64: return "ulong";
         default: return null;
       }
+    }
+
+    /// <summary>
+    /// The default FilterNonSettable keeps the property: a public setter, or no setter (computed properties and get-only collections, GetOnlyProperties.All) on a type that is not the framework's
+    /// (TypeResolver.IsFrameworkAssembly). Not predicted: a non-public setter a constructor takes (immutable classes). A wrong guess only costs the unrolled writer.
+    /// </summary>
+    private static bool KeptByDefault(INamedTypeSymbol declaring, IPropertySymbol property)
+    {
+      if (property.SetMethod != null)
+        return property.SetMethod.DeclaredAccessibility == Accessibility.Public;
+      if (property.GetMethod is null || property.GetMethod.DeclaredAccessibility != Accessibility.Public)
+        return false;
+      string assembly = declaring.ContainingAssembly?.Name ?? string.Empty;
+      return !(assembly == "mscorlib" || assembly == "netstandard" || assembly == "System" || assembly == "System.Private.CoreLib"
+        || assembly.StartsWith("System.", System.StringComparison.Ordinal) || assembly.StartsWith("Microsoft.", System.StringComparison.Ordinal));
     }
 
     /// <summary>

@@ -52,6 +52,11 @@ namespace LtMsgPack.Writing
     /// </summary>
     internal MsgPackOptions IdSettings;
     internal int Depth;
+
+    /// <summary>
+    /// Below an object with an anonymous type, or a value with one that is not written as its declared type: objects with anonymous types are written by names (LsMsgPack: the byNames parameter of SerializeObject, see SerializationRules.WritesByNames).
+    /// </summary>
+    internal bool ByNames;
     private List<MsgPackWriter> _spareWriters;
 
     internal WriteContext(Serializer serializer)

@@ -403,6 +403,26 @@ public class OrdersController : ControllerBase
       AssertDiagnostics(Analyze(source, formatters: true), "LSMP001 Copies", "LSMP001 Quantity", "LSMP001 Version", "LSMP001 Code", "LSMP001 Level");
     }
 
+    /// <summary>
+    /// The properties of anonymous types are serialized (written only): the classes they hold are followed, the anonymous types themselves have nothing to fix.
+    /// </summary>
+    [TestMethod]
+    public void Controllers_AnonymousResults()
+    {
+      string source = Usings + @"
+using System.Linq;
+using Microsoft.AspNetCore.Mvc;
+public class Order { public int Copies { get; set; } = 1; }
+public class Line { public int Quantity { get; set; } = 1; }
+public class OrdersController : ControllerBase
+{
+  public IActionResult Get() => Ok(new { Id = 1, Order = new Order(), Lines = new List<Line>(), Nested = new { Total = 2 } });
+  public IActionResult List() => Ok(new List<int>().Select(i => new { Id = i }));
+}
+";
+      AssertDiagnostics(Analyze(source, formatters: true), "LSMP001 Copies", "LSMP001 Quantity");
+    }
+
     #endregion
 
     #region LSMP008: classes of other projects

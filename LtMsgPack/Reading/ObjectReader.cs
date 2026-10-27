@@ -699,6 +699,9 @@ namespace LtMsgPack.Reading
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
+      if (info.IsComputed) // written only (a collection without a setter is filled by its accessor, see BoxedPropReader)
+        return new ComputedPropReader(info);
+
       PropertyInfo property = info.PropertyInfo;
       PropReader generated = serializer.GeneratedProperty(property)?.CreateReader(serializer, info); // the setter of the source generator
       if (generated != null)
@@ -782,6 +785,25 @@ namespace LtMsgPack.Reading
     public override void ReadNil(object target)
     {
       Info.SetValue(target, Info.NilValue(_serializer.Options));
+    }
+  }
+
+  /// <summary>
+  /// A property without a setter whose value is skipped (FullPropertyInfo.IsComputed, see GetOnlyProperties.Computed).
+  /// </summary>
+  internal sealed class ComputedPropReader : PropReader
+  {
+    public ComputedPropReader(FullPropertyInfo info) : base(info)
+    {
+    }
+
+    public override void Read(ReadContext c, object target)
+    {
+      c.R.Skip(c.Depth);
+    }
+
+    public override void ReadNil(object target)
+    {
     }
   }
 

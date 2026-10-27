@@ -80,7 +80,7 @@ namespace LsMsgPack.Analyzers
       IPropertySymbol property = (IPropertySymbol)context.Symbol;
       if (property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public || property.GetMethod is null
         || property.SetMethod is null || property.SetMethod.DeclaredAccessibility != Accessibility.Public || property.IsImplicitlyDeclared)
-        return; // what FilterNonSettable and FilterStatic leave out
+        return; // what FilterNonSettable and FilterStatic leave out, and properties without a setter (GetOnlyProperties: written, but never set from the data)
       if (!models.Get(context.CancellationToken).Contains(property.ContainingType) || IsIgnored(property))
         return;
 

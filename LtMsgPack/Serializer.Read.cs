@@ -194,6 +194,9 @@ namespace LtMsgPack
       if (type.IsAbstract || type.IsInterface || type.IsValueType || type.ContainsGenericParameters || GetTypeInfo(type).Kind != TypeKind.Complex)
         return null;
 
+      if (ObjectConstructor.Of(type).WithValues != null) // created after its values are read, by the constructor that takes them: LsMsgPack.Core's way (ValueConverter)
+        return null;
+
       // The properties LsMsgPack sets: names mode FullPropertyInfo.GetSerializedProps (their ids are the names without custom resolvers), the schema binds the same ones by name
       return _readPlans.GetOrAdd(type, t => new ReadPlan(this, t, FullPropertyInfo.GetSerializedProps(t, Options), Generated(t)?.Creator));
     }
