@@ -7,8 +7,8 @@ using System.Threading;
 namespace LsMsgPack.Analyzers
 {
   /// <summary>
-  /// What the constructor sets a property to: its initializer, the initializer of the field its getter returns, or the last assignment of either in the body of the parameterless constructor
-  /// (a reader gives a left out property this value).
+  /// What the constructor sets a property to: its initializer, the initializer of the field its getter returns, or the last assignment of either in the body of the constructor
+  /// a reader calls (the parameterless one, or the one taking the values of properties: <see cref="ValuesConstructor"/>); a reader gives a left out property this value.
   /// </summary>
   internal readonly struct InitialValue
   {
@@ -52,7 +52,8 @@ namespace LsMsgPack.Analyzers
       CanAdd = canAdd;
     }
 
-    public static InitialValue Find(IPropertySymbol property, Compilation compilation, CancellationToken cancellation)
+    /// <param name="withValues">The constructor a reader calls with the values of properties (<see cref="ValuesConstructor.Of"/>), null when it calls the parameterless one</param>
+    public static InitialValue Find(IPropertySymbol property, Compilation compilation, CancellationToken cancellation, IMethodSymbol withValues = null)
     {
       if (property.DeclaringSyntaxReferences.Length != 1 || !(property.DeclaringSyntaxReferences[0].GetSyntax(cancellation) is PropertyDeclarationSyntax declaration))
         return default(InitialValue);
@@ -65,8 +66,8 @@ namespace LsMsgPack.Analyzers
       if (value is null && field != null)
         value = FieldInitializer(field, cancellation);
 
-      // The body of the parameterless constructor runs after the initializers: its last assignment wins
-      ExpressionSyntax assigned = ConstructorAssignment(property, field, model, cancellation);
+      // The body of the constructor runs after the initializers: its last assignment wins
+      ExpressionSyntax assigned = ConstructorAssignment(property, field, model, cancellation, withValues);
       if (assigned != null)
       {
         value = assigned;
@@ -137,14 +138,15 @@ namespace LsMsgPack.Analyzers
     }
 
     /// <summary>
-    /// The last statement of the parameterless constructor's body that assigns the property or its field (<c>X = 3;</c>, <c>this.X = 3;</c>, <c>_x = 3;</c>), null when there is none.
+    /// The last statement of the constructor's body that assigns the property or its field (<c>X = 3;</c>, <c>this.X = 3;</c>, <c>_x = 3;</c>), null when there is none.
     /// </summary>
-    private static ExpressionSyntax ConstructorAssignment(IPropertySymbol property, IFieldSymbol field, SemanticModel model, CancellationToken cancellation)
+    /// <param name="withValues">The constructor taking the values of properties, null for the parameterless one</param>
+    private static ExpressionSyntax ConstructorAssignment(IPropertySymbol property, IFieldSymbol field, SemanticModel model, CancellationToken cancellation, IMethodSymbol withValues)
     {
       ExpressionSyntax found = null;
       foreach (IMethodSymbol constructor in property.ContainingType.InstanceConstructors)
       {
-        if (constructor.Parameters.Length != 0 || constructor.DeclaringSyntaxReferences.Length != 1)
+        if ((withValues is null ? constructor.Parameters.Length != 0 : !SymbolEqualityComparer.Default.Equals(constructor, withValues)) || constructor.DeclaringSyntaxReferences.Length != 1)
           continue;
         if (!(constructor.DeclaringSyntaxReferences[0].GetSyntax(cancellation) is ConstructorDeclarationSyntax syntax) || syntax.Body is null)
           continue;

@@ -116,6 +116,24 @@ public static class Use { public static void Write(Point p, Size s) { MsgPackSer
 ");
     }
 
+    [TestMethod]
+    public void MissingDefaultValue_ConstructorTakingValues()
+    {
+      // Created by the constructor that takes the values (as System.Text.Json): its parameters get the value the writer leaves out, the other properties keep what it and the initializers set
+      AssertDiagnostics(Usings + @"
+public class Owner
+{
+  public Owner(string name, int size = 2) { Name = name; Size = size; Mode = 3; }
+  public string Name { get; set; } = ""n"";
+  public int Size { get; set; }
+  public int Mode { get; set; }
+  public int Level { get; set; } = 2;
+}
+public record Item(string Name, int Count = 4) { public int Level { get; set; } = 2; }
+public static class Use { public static void Write(Owner o, Item i) { MsgPackSerializer.Serialize(o); MsgPackSerializer.Serialize(i); } }
+", "LSMP001 Mode", "LSMP001 Level", "LSMP001 Level");
+    }
+
     #endregion
 
     #region Which types
