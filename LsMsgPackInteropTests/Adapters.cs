@@ -63,7 +63,7 @@ namespace LsMsgPackInteropTests
     private static readonly JsonSerializerSettings Utc = new JsonSerializerSettings() { DateTimeZoneHandling = DateTimeZoneHandling.Utc };
 
     /// <summary>
-    /// Compares as JSON with the dates in UTC: MsgPack timestamps do not keep the DateTimeKind (LsMsgPack returns local time, the others UTC).
+    /// Compares as JSON with the dates in UTC: MsgPack timestamps do not keep the DateTimeKind (LsMsgPack returns the Kind of ReadDateTimeKind, UTC by default like the others).
     /// </summary>
     public static void AssertEqual(object expected, object actual, string message = "")
     {

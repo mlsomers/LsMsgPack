@@ -538,7 +538,7 @@ namespace LtMsgPack.IO
     /// </summary>
     public void DateTime(DateTime value)
     {
-      DateTime utc = value.ToUniversalTime(); // Unspecified is taken as local time, as MpDateTime does
+      DateTime utc = value.ToUniversalTime(); // Unspecified is taken as local time, as MpDateTime does (the handlers make it UTC first when UnspecifiedDateTimeKind says so)
       long seconds = utc.Ticks / TimeSpan.TicksPerSecond - Zero.Ticks / TimeSpan.TicksPerSecond; // rounded down, also before 1970
       long fraction = utc.Ticks % TimeSpan.TicksPerSecond;
       Ensure(15);

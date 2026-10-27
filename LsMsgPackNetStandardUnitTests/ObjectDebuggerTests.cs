@@ -774,6 +774,9 @@ namespace LsMsgPackUnitTests
       Assert.IsTrue(Find("42").Any(item => item is MpInt && Convert.ToInt32(item.Value) == 42));
       Assert.HasCount(1, Find("0.75")); // a decimal (extension type 1, not registered by the explorers)
       Assert.HasCount(1, Find("2026-10-01 12:00:00Z")); // the timestamp, to the second
+      Assert.HasCount(1, Find("2026-10-01 12:00")); // without an offset: the clock time as shown (UTC, the default ReadDateTimeKind)
+      Assert.HasCount(1, Find("2026-10-01 14:00:00+02:00")); // the same moment
+      Assert.IsEmpty(Find("2026-10-01 11:00"));
       Assert.IsEmpty(Find("true"));
 
       // Stopped: the matches found so far are kept

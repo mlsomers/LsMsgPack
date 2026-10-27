@@ -181,7 +181,7 @@ namespace LtMsgPack.Writing
     internal override bool IncludeByDefault(DateTime value, FullPropertyInfo info) { return value.Ticks != 0; } // DateTime.Equals ignores the Kind
 
     /// <summary>
-    /// The writer takes Unspecified as local time, unless it should be UTC (<see cref="LtMsgPackOptions.UnspecifiedDateTimeKind"/>).
+    /// Unspecified is the clock time in UTC (<see cref="LtMsgPackOptions.UnspecifiedDateTimeKind"/>, the default), otherwise the writer takes it as local time.
     /// </summary>
     internal static DateTime Utc(DateTime value, bool unspecifiedIsUtc)
     {

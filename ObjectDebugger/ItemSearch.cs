@@ -69,7 +69,7 @@ namespace ObjectDebugger
       // Only text with a separator, numbers like 2026 are not dates
       if (trimmed.IndexOfAny(new[] { '-', '/', '.', ':', ' ' }) > 0 || trimmed.Length == 8 && _numbers.Count > 0)
       {
-        DateTimeStyles styles = DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeLocal;
+        DateTimeStyles styles = DateTimeStyles.AllowWhiteSpaces; // Unspecified unless the text has an offset
         DateTime date;
         CultureInfo[] dateCultures = { CultureInfo.CurrentCulture, CultureInfo.InvariantCulture };
         for (int t = 0; t < dateCultures.Length; t++)
@@ -159,11 +159,13 @@ namespace ObjectDebugger
 
     private void AddDate(DateTime date)
     {
-      // Timestamps are read as local time
-      if (date.Kind == DateTimeKind.Utc)
-        date = date.ToLocalTime();
-      if (!_dates.Contains(date))
-        _dates.Add(date);
+      // A text with an offset is a moment (Local or Utc), one without the clock time as shown (Unspecified)
+      if (date.Kind != DateTimeKind.Unspecified)
+        date = date.ToUniversalTime();
+      for (int t = _dates.Count - 1; t >= 0; t--)
+        if (_dates[t].Ticks == date.Ticks && _dates[t].Kind == date.Kind)
+          return;
+      _dates.Add(date);
     }
 
     /// <summary>
@@ -231,11 +233,17 @@ namespace ObjectDebugger
       return false;
     }
 
+    /// <param name="value">A timestamp with the Kind of the settings' ReadDateTimeKind (Unspecified is the UTC clock time)</param>
     private bool IsDateMatch(DateTime value)
     {
+      long utcTicks = value.Kind == DateTimeKind.Unspecified ? value.Ticks : value.ToUniversalTime().Ticks;
       for (int t = _dates.Count - 1; t >= 0; t--)
-        if (value.Ticks / _datePrecision == _dates[t].Ticks / _datePrecision)
+      {
+        DateTime date = _dates[t];
+        long ticks = date.Kind == DateTimeKind.Unspecified ? value.Ticks : utcTicks;
+        if (ticks / _datePrecision == date.Ticks / _datePrecision)
           return true;
+      }
       return false;
     }
 
