@@ -44,8 +44,19 @@ namespace LsMsgPackFormattersTests
       endpoints.MapPost("/min/optional", (MsgPackBody<Order>? order) => order is null ? "none" : order.Value.Customer);
       endpoints.MapPost("/min/differences", (MsgPackBody<Order> order, HttpContext context) => context.GetReadDifferences()?.GenerateReport() ?? "none");
       endpoints.MapPost("/min/double", (MsgPackBody<int> value) => MsgPackResults.MsgPack(value.Value * 2L));
+      endpoints.MapGet("/min/orders", () => MsgPackResults.MsgPack(new List<Order> { SampleOrder, SampleOrder }));
+      endpoints.MapGet("/min/orders-async", () => MsgPackResults.MsgPack(OrdersAsync()));
     }
 #nullable restore
+
+    private static async IAsyncEnumerable<Order> OrdersAsync()
+    {
+      for (int i = 0; i < 2; i++)
+      {
+        await Task.Yield();
+        yield return SampleOrder;
+      }
+    }
 
     /// <param name="kestrel">On a socket: how the server answers exceptions (TestServer passes them to the client)</param>
     private static async Task<(IHost host, HttpClient client)> StartAsync(Action<IServiceCollection> services = null, bool kestrel = false)
@@ -208,6 +219,32 @@ namespace LsMsgPackFormattersTests
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
         Assert.That(MsgPackSerializer.Deserialize<long>(await response.Content.ReadAsByteArrayAsync(), Plain), Is.EqualTo(42));
+      }
+    }
+
+    /// <summary>
+    /// An IAsyncEnumerable&lt;T&gt; is written as a List&lt;T&gt; (it was written as the compiler's iterator class); JSON streams it as before.
+    /// </summary>
+    [TestCase(MsgPackMediaTypes.MsgPack)]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack)]
+    [TestCase("application/x-lsmsgpack; schema=described, application/x-lsmsgpack")]
+    [TestCase("application/json")]
+    public async Task AsyncEnumerableIsWrittenAsAList(string accept)
+    {
+      (IHost host, HttpClient client) = await StartAsync();
+      using (host)
+      {
+        HttpResponseMessage response = await client.SendAsync(Request(HttpMethod.Get, "/min/orders-async", accept));
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
+        byte[] body = await response.Content.ReadAsByteArrayAsync();
+        byte[] list = await (await client.SendAsync(Request(HttpMethod.Get, "/min/orders", accept))).Content.ReadAsByteArrayAsync();
+
+        Assert.That(body, Is.EqualTo(list), "The same bytes as a List<Order>");
+        List<Order> orders = accept == "application/json"
+          ? JsonSerializer.Deserialize<List<Order>>(body, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+          : MsgPackSerializer.Deserialize<List<Order>>(body, accept == MsgPackMediaTypes.MsgPack ? Plain : new MsgPackSettings());
+        Assert.That(orders, Has.Count.EqualTo(2));
+        AssertSampleOrder(orders[1]);
       }
     }
 

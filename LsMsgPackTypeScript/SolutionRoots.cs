@@ -1,4 +1,4 @@
-using LsMsgPack.Analyzers;
+﻿using LsMsgPack.Analyzers;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
@@ -76,7 +76,7 @@ namespace LsMsgPackTypeScript
             continue; // does not reference LsMsgPack
           foreach (SerializedUse use in ModelTypes.FindUses(compilation, known, CancellationToken.None))
           {
-            ITypeSymbol symbol = use.Reads ? use.Type : Unwrap(use.Type);
+            ITypeSymbol symbol = use.Reads ? use.Type : Unwrap(use.Type, compilation);
             if (symbol is null || HasAnonymousType(symbol, 0))
               continue; // Ok(new { ... }): no class to generate (and written without properties)
             Type type = ToType(symbol);
@@ -97,8 +97,9 @@ namespace LsMsgPackTypeScript
 
     /// <summary>
     /// What a result holds: <c>Task&lt;ActionResult&lt;T&gt;&gt;</c> is T; results without a declared value (<c>IActionResult</c>) have none.
+    /// An <c>IAsyncEnumerable&lt;T&gt;</c> is a <c>List&lt;T&gt;</c>: the formatters write it as one, so the schema has that root.
     /// </summary>
-    private static ITypeSymbol Unwrap(ITypeSymbol type)
+    private static ITypeSymbol Unwrap(ITypeSymbol type, Compilation compilation)
     {
       for (int t = 0; t < 8 && type is INamedTypeSymbol named && named.IsGenericType && named.TypeArguments.Length == 1; t++)
       {
@@ -107,6 +108,13 @@ namespace LsMsgPackTypeScript
           type = named.TypeArguments[0];
         else
           break;
+      }
+      if (type is INamedTypeSymbol async && async.IsGenericType
+        && SymbolEqualityComparer.Default.Equals(async.ConstructedFrom, compilation.GetTypeByMetadataName("System.Collections.Generic.IAsyncEnumerable`1")))
+      {
+        INamedTypeSymbol list = compilation.GetTypeByMetadataName("System.Collections.Generic.List`1");
+        if (list != null)
+          type = list.Construct(async.TypeArguments[0]);
       }
       string display = type.ToDisplayString();
       if (display.StartsWith("Microsoft.AspNetCore.", StringComparison.Ordinal) || display.StartsWith("System.Web.", StringComparison.Ordinal) || display == "System.Threading.Tasks.Task"

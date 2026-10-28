@@ -109,6 +109,7 @@ Notes:
 - An empty body binds as `null` (or the type's default value) when empty bodies are allowed, like the JSON formatter does.
 - Request bodies are buffered (on .NET 8 read in place from the request pipe) and responses are written asynchronously, so no `AllowSynchronousIO` is needed.
 - With `application/x-lsmsgpack`, a response whose runtime type differs from the action's declared return type gets a type id on the root. The client can then deserialize it as the declared base type or interface.
+- An action returning an `IAsyncEnumerable<T>` (ASP.NET Core 3.0 and up) is answered with a `List<T>`: the formatter reads the items to the end and writes the same bytes as an action returning `List<T>`, so clients read it as a `List<T>` or `T[]`. A MsgPack array starts with its length, so it can't be streamed the way System.Text.Json streams it. The same goes for `Ok(items)` and `MsgPackResults.MsgPack(items)`. A value that is also an `IEnumerable<T>` (an EF Core query) is still enumerated synchronously unless the action declares it as `IAsyncEnumerable<T>`. In NativeAOT apps the items must be of a reference type: return a `List<T>` or an array of value types.
 
 ### Minimal APIs
 
@@ -140,6 +141,7 @@ app.MapGet("/api/invoices/{id}", Results<MsgPackResult<Invoice>, NotFound> (int 
 - **The body** is read with LtMsgPack when the `Content-Type` is one of the MsgPack media types, and as JSON for a JSON `Content-Type`. An empty body, nil or JSON `null` is no value: a `MsgPackBody<Order>?` parameter (or one with a default value) is then `null`, and ASP.NET Core answers `400 Bad Request` for a required one. In a project without nullable annotations, ASP.NET Core takes every reference type parameter as optional. A body that can't be read throws a `BadHttpRequestException` with `400`, another `Content-Type` one with `415 Unsupported Media Type`: Kestrel answers with that status code (an exception handler of your own can read it from the exception).
 - `ReportDifferences` works as with the input formatter: `HttpContext.GetReadDifferences()` and the log (category `LsMsgPackFormatters.MsgPackBody`).
 - Both add their media types to the endpoint's metadata (`Produces` and `Accepts`), so OpenAPI lists them.
+- An `IAsyncEnumerable<T>` is written as a `List<T>`, as with the output formatter.
 - Trimmed and NativeAOT apps: pass the context of the [source generator](SourceGenerator.md) to `AddLsMsgPack`, the overload without one is marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`. The JSON path uses the type info of the JSON options, as `Results.Json` does.
 
 ASP.NET Web API 2
