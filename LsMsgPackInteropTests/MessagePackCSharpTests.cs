@@ -250,16 +250,25 @@ namespace LsMsgPackInteropTests
     }
 
     /// <summary>
-    /// LsMsgPack treats DateTimeKind.Unspecified as local time (like DateTime.ToUniversalTime), MessagePack-CSharp as UTC.
-    /// The same value is a different moment unless the machine's time zone is UTC.
+    /// LsMsgPack treats DateTimeKind.Unspecified as UTC by default (since October 2026), as MessagePack-CSharp does: the same bytes, and both read the clock time back as UTC.
+    /// With UnspecifiedDateTimeKind = Local (the default before) as local time, like DateTime.ToUniversalTime: a different moment unless the machine's time zone is UTC.
     /// </summary>
     [TestMethod]
-    public void DateTimeUnspecified_LocalInLsMsgPack_UtcInMessagePackCSharp()
+    public void DateTimeUnspecified_UtcAsMessagePackCSharp()
     {
       DateTime unspecified = new DateTime(2026, 3, 1, 10, 0, 0, DateTimeKind.Unspecified);
 
-      CollectionAssert.AreEqual(MessagePackSerializer.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Local), Standard), Serializer.Serialize(unspecified, Named));
-      CollectionAssert.AreEqual(MessagePackSerializer.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), Standard), MessagePackSerializer.Serialize(unspecified, Standard));
+      byte[] ls = Serializer.Serialize(unspecified, Named);
+      CollectionAssert.AreEqual(MessagePackSerializer.Serialize(unspecified, Standard), ls);
+      CollectionAssert.AreEqual(MessagePackSerializer.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc), Standard), ls);
+      DateTime read = Serializer.Deserialize<DateTime>(ls, Named);
+      Assert.AreEqual(unspecified, read, "the clock time");
+      Assert.AreEqual(DateTimeKind.Utc, read.Kind);
+      Assert.AreEqual(read, MessagePackSerializer.Deserialize<DateTime>(ls, Standard));
+
+      MsgPackSettings local = Named.Clone();
+      local.UnspecifiedDateTimeKind = DateTimeKind.Local;
+      CollectionAssert.AreEqual(MessagePackSerializer.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Local), Standard), Serializer.Serialize(unspecified, local));
     }
 
     /// <summary>

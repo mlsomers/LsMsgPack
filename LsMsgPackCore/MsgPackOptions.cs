@@ -165,16 +165,16 @@ namespace LsMsgPack
     public static ReadErrorHandling Default_ReadErrors { get; set; } = ReadErrorHandling.FailFast;
 
     /// <summary>
-    /// The <see cref="UnspecifiedDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Local"/> by default).
+    /// The <see cref="UnspecifiedDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Utc"/> by default, <see cref="System.DateTimeKind.Local"/> until October 2026).
     /// </summary>
     [IgnoreDataMember]
-    public static DateTimeKind Default_UnspecifiedDateTimeKind { get; set; } = DateTimeKind.Local;
+    public static DateTimeKind Default_UnspecifiedDateTimeKind { get; set; } = DateTimeKind.Utc;
 
     /// <summary>
-    /// The <see cref="ReadDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Local"/> by default).
+    /// The <see cref="ReadDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Utc"/> by default, <see cref="System.DateTimeKind.Local"/> until October 2026).
     /// </summary>
     [IgnoreDataMember]
-    public static DateTimeKind Default_ReadDateTimeKind { get; set; } = DateTimeKind.Local;
+    public static DateTimeKind Default_ReadDateTimeKind { get; set; } = DateTimeKind.Utc;
 
     /// <summary>
     /// The <see cref="DateTimeOffsetFormat"/> of new settings (<see cref="LsMsgPack.DateTimeOffsetFormat.TimestampAndOffset"/> by default).
@@ -564,13 +564,14 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// What a DateTime of <see cref="System.DateTimeKind.Unspecified"/> is taken to be when it is written as a timestamp (a moment in UTC): <see cref="System.DateTimeKind.Local"/> (the default)
-    /// or <see cref="System.DateTimeKind.Utc"/> (as MessagePack-CSharp; with <see cref="ReadDateTimeKind"/> = Unspecified the clock time comes back unchanged in any time zone).
+    /// What a DateTime of <see cref="System.DateTimeKind.Unspecified"/> is taken to be when it is written as a timestamp (a moment in UTC): <see cref="System.DateTimeKind.Utc"/> (the default,
+    /// the clock time is written as it is, as JSON writes it without an offset and MessagePack-CSharp takes it; it reads back as the same clock time in any time zone)
+    /// or <see cref="System.DateTimeKind.Local"/> (like <see cref="DateTime.ToUniversalTime"/>, the default until October 2026: the clock time then depends on the time zones of the writer and the reader).
     /// </summary>
     [Category("Dates")]
     [DisplayName("Unspecified DateTime Kind")]
-    [Description("What a DateTime of Kind Unspecified is taken to be when it is written as a timestamp (a moment in UTC): Local (default) or Utc (the clock time is written as it is).")]
-    [DefaultValue(DateTimeKind.Local)]
+    [Description("What a DateTime of Kind Unspecified is taken to be when it is written as a timestamp (a moment in UTC): Utc (default, the clock time is written as it is) or Local (converted from local time).")]
+    [DefaultValue(DateTimeKind.Utc)]
     public DateTimeKind UnspecifiedDateTimeKind
     {
       get { return _unspecifiedIsUtc ? DateTimeKind.Utc : DateTimeKind.Local; }
@@ -578,14 +579,15 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// The Kind of the DateTime values read from timestamps (which hold a moment in UTC, not the Kind): <see cref="System.DateTimeKind.Local"/> (the default, converted to local time),
-    /// <see cref="System.DateTimeKind.Utc"/>, or <see cref="System.DateTimeKind.Unspecified"/> (the UTC clock time, for values written as Unspecified with <see cref="UnspecifiedDateTimeKind"/> = Utc).
+    /// The Kind of the DateTime values read from timestamps (which hold a moment in UTC, not the Kind): <see cref="System.DateTimeKind.Utc"/> (the default: UTC and Unspecified values
+    /// keep their clock time, as JSON reads them, Local values come back as the same moment in UTC), <see cref="System.DateTimeKind.Local"/> (converted to local time, the default until October 2026),
+    /// or <see cref="System.DateTimeKind.Unspecified"/> (the UTC clock time, for values written as Unspecified with <see cref="UnspecifiedDateTimeKind"/> = Utc).
     /// <para>A DateTimeOffset read from a timestamp has the local offset with Local, offset zero otherwise (the same moment).</para>
     /// </summary>
     [Category("Dates")]
     [DisplayName("Read DateTime Kind")]
-    [Description("The Kind of the DateTime values read from timestamps: Local (default, converted to local time), Utc, or Unspecified (the UTC clock time, for values written as Unspecified with Unspecified DateTime Kind = Utc).")]
-    [DefaultValue(DateTimeKind.Local)]
+    [Description("The Kind of the DateTime values read from timestamps: Utc (default), Local (converted to local time), or Unspecified (the UTC clock time, for values written as Unspecified with Unspecified DateTime Kind = Utc).")]
+    [DefaultValue(DateTimeKind.Utc)]
     public DateTimeKind ReadDateTimeKind
     {
       get { return _readDateTimeKind; }

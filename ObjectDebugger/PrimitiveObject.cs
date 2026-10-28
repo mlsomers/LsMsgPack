@@ -53,7 +53,7 @@ namespace ObjectDebugger
     public ValueKind ValueKind { get; set; }
 
     /// <summary>
-    /// The unpacked value of a leaf: integers have the smallest type that holds them (not the type they were written from), a timestamp is local time, an extension without a registered type is the <see cref="MpExt"/> itself.
+    /// The unpacked value of a leaf: integers have the smallest type that holds them (not the type they were written from), a timestamp a DateTime of the settings' ReadDateTimeKind (UTC by default), an extension without a registered type is the <see cref="MpExt"/> itself.
     /// </summary>
     public object Value { get; set; }
 

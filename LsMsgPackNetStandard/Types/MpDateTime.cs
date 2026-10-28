@@ -18,7 +18,7 @@ namespace LsMsgPack
     private DateTime value; // UTC
 
     /// <summary>
-    /// The DateTime with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (local time by default). A DateTime of Kind Unspecified is set as <see cref="MsgPackOptions.UnspecifiedDateTimeKind"/> says.
+    /// The DateTime with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (UTC by default). A DateTime of Kind Unspecified is set as <see cref="MsgPackOptions.UnspecifiedDateTimeKind"/> says.
     /// </summary>
     public override object Value
     {

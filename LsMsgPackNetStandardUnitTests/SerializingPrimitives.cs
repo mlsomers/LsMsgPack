@@ -125,6 +125,33 @@ namespace LsMsgPackUnitTests
       CollectionAssert.AreEqual(Serializer.Serialize(DateTime.SpecifyKind(noon, DateTimeKind.Utc), withoutSchema), Serializer.Serialize(noon, withoutSchema), "written as the same clock time in UTC");
     }
 
+    /// <summary>
+    /// The defaults (since October 2026) keep the clock time of Utc and Unspecified values in any time zone, as System.Text.Json does (the Kind becomes Utc: a timestamp does not keep it),
+    /// and a Local value is the same moment in UTC. Before, an Unspecified midnight written in New York was read as 06:00 in Amsterdam.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void DefaultsKeepTheClockTimeAsJson(bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      Assert.AreEqual(DateTimeKind.Utc, settings.UnspecifiedDateTimeKind);
+      Assert.AreEqual(DateTimeKind.Utc, settings.ReadDateTimeKind);
+
+      DateTime midnight = new DateTime(2026, 10, 28, 0, 0, 0, DateTimeKind.Unspecified);
+      DateTime utc = new DateTime(2026, 10, 28, 12, 0, 0, DateTimeKind.Utc);
+      DateTime local = new DateTime(2026, 10, 28, 12, 0, 0, DateTimeKind.Local);
+      foreach (DateTime value in new[] { midnight, utc, local })
+      {
+        PrimitivesWithDates back = Serializer.Deserialize<PrimitivesWithDates>(Serializer.Serialize(new PrimitivesWithDates() { When = value, Boxed = value }, settings), settings);
+        DateTime expected = value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : value;
+        Assert.AreEqual(expected, back.When, value.Kind.ToString());
+        Assert.AreEqual(DateTimeKind.Utc, back.When.Kind);
+        Assert.AreEqual(expected, (DateTime)back.Boxed, value.Kind.ToString());
+        Assert.AreEqual(DateTimeKind.Utc, ((DateTime)back.Boxed).Kind);
+      }
+    }
+
     [TestMethod]
     [DataRow(DateTimeKind.Local)]
     [DataRow(DateTimeKind.Utc)]

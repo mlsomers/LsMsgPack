@@ -383,7 +383,7 @@ namespace LtMsgPack.IO
     private static readonly DateTime Zero = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
 
     /// <summary>
-    /// A timestamp (extension type -1), returned with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (local time by default) like MpDateTime.Value.
+    /// A timestamp (extension type -1), returned with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (UTC by default) like MpDateTime.Value.
     /// </summary>
     public bool TryReadDateTime(out DateTime value)
     {

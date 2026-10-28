@@ -117,7 +117,7 @@ namespace LsMsgPackInteropTests
     }
 
     /// <summary>
-    /// MessagePack-CSharp takes DateTimeKind.Unspecified as UTC, so does the preset (LsMsgPack takes it as local time).
+    /// MessagePack-CSharp takes DateTimeKind.Unspecified as UTC, so does the preset (also the default since October 2026).
     /// </summary>
     [TestMethod]
     public void MessagePackCSharp_UnspecifiedIsUtc()
