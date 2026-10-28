@@ -13,3 +13,4 @@ LSMP005 | LsMsgPack.Security | Warning | Data is read into any type it picks
 LSMP006 | LsMsgPack.Defaults | Warning | Null is read back as the initial value
 LSMP007 | LsMsgPack.Reading | Warning | Objects are read without their property names
 LSMP008 | LsMsgPack.Coverage | Warning | Serialized class of another project is not checked
+LSMP009 | LsMsgPack.Support | Warning | JSON document type is not serialized

@@ -11,6 +11,7 @@ namespace LsMsgPack.Analyzers
     private const string SecurityCategory = "LsMsgPack.Security";
     private const string ReadingCategory = "LsMsgPack.Reading";
     private const string CoverageCategory = "LsMsgPack.Coverage";
+    private const string SupportCategory = "LsMsgPack.Support";
     private const string DocsUrl = "https://github.com/mlsomers/LsMsgPack/blob/master/docs/Analyzers.md#";
 
     /// <summary>
@@ -72,5 +73,13 @@ namespace LsMsgPack.Analyzers
       CoverageCategory, DiagnosticSeverity.Warning, true,
       "The rules need the source of a class (its initializers and constructor). A class of a referenced project is only checked when that project asks for it; a project with LsMsgPackAnalyze=AllTypes marks its assembly ([assembly: AssemblyMetadata(\"LsMsgPackAnalyze\", \"AllTypes\")]), which stops this warning. Classes of NuGet packages are not reported.",
       DocsUrl + "lsmp008-serialized-class-of-another-project-is-not-checked");
+
+    public static readonly DiagnosticDescriptor JsonDocument = new DiagnosticDescriptor("LSMP009", "JSON document type is not serialized",
+      "{0}: the serializers do not write or read {1}, a JSON document type. Hold the JSON as a string, or its values in a class of your own.",
+      SupportCategory, DiagnosticSeverity.Warning, true,
+      "System.Text.Json's JsonElement, JsonDocument and JsonNode (JsonObject, JsonArray, JsonValue) have no settable state: the serializers refuse them with a MsgPackException "
+      + "(in an ASP.NET Core response a 500, as a request body a 400). Json.NET's JToken types (JObject, JArray, JValue...) are written as their own properties and read back empty or with an exception. "
+      + "A string with the JSON text, or a class with the values, works both ways.",
+      DocsUrl + "lsmp009-json-document-type-is-not-serialized");
   }
 }
