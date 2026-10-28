@@ -4,6 +4,7 @@ using LsMsgPack.TypeResolving.Interfaces;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Text.Json.Serialization;
@@ -82,7 +83,7 @@ namespace LsMsgPackUnitTests
       /// </summary>
       public string Secrets()
       {
-        return string.Join("|", GetBaseSecret(), Pin, Note, Balance, Owner, Token, Ignored, Unmarked, ((INppFace)this).Face);
+        return string.Join("|", GetBaseSecret(), Pin, Note, Balance.ToString(CultureInfo.InvariantCulture), Owner, Token, Ignored, Unmarked, ((INppFace)this).Face);
       }
     }
 

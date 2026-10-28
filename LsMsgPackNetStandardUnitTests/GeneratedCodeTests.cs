@@ -7,6 +7,7 @@ using LtMsgPack.Generated;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Reflection;
 
@@ -384,7 +385,7 @@ namespace LsMsgPackUnitTests
         return value;
       }
 
-      public string Values() { return string.Join("|", Name, Secret, Token, Amount, Unmarked, GetBaseNumber()); }
+      public string Values() { return string.Join("|", Name, Secret, Token, Amount?.ToString(CultureInfo.InvariantCulture), Unmarked, GetBaseNumber()); }
     }
 
     [TestMethod]

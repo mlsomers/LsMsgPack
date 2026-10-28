@@ -154,7 +154,7 @@ namespace LsMsgPackUnitTests
 
     private static string Text(ImmMoney money)
     {
-      return money is null ? "null" : $"{money.Amount} {money.Currency ?? "null"}";
+      return money is null ? "null" : FormattableString.Invariant($"{money.Amount} {money.Currency ?? "null"}");
     }
 
     private T RoundTrip<T>(T value, MsgPackSettings settings)
