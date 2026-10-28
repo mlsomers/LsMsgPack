@@ -368,6 +368,106 @@ public static class Use
 
     #endregion
 
+    #region LSMP009: JSON document types
+
+    private const string JsonUsings = Usings + "using System.Text.Json;\nusing System.Text.Json.Nodes;\n";
+
+    [TestMethod]
+    public void JsonDocumentProperties()
+    {
+      ImmutableArray<Diagnostic> diagnostics = Analyze(JsonUsings + @"
+public class Envelope
+{
+  public string Type { get; set; }
+  public JsonElement Payload { get; set; }
+  public JsonElement? Optional { get; set; }
+  public JsonDocument Document { get; set; }
+  public JsonNode Node { get; set; }
+  public JsonObject Object { get; set; }
+  public List<JsonElement> Items { get; set; }
+  public Dictionary<string, JsonNode> Extra { get; set; }
+  public JsonArray[] Arrays { get; set; }
+  public JsonElement Computed => Payload;
+  [System.Text.Json.Serialization.JsonIgnore] public JsonElement Ignored { get; set; }
+  public JsonElement Private { get; private set; }
+  public string Json { get; set; }
+}
+public static class Use { public static Envelope Read(byte[] b) => MsgPackSerializer.Deserialize<Envelope>(b); }
+");
+      AssertDiagnostics(diagnostics, "LSMP009 Payload", "LSMP009 Optional", "LSMP009 Document", "LSMP009 Node", "LSMP009 Object", "LSMP009 Items", "LSMP009 Extra", "LSMP009 Arrays", "LSMP009 Computed");
+      Assert.AreEqual("'Envelope.Payload' is declared as JsonElement: the serializers do not write or read JsonElement, a JSON document type. Hold the JSON as a string, or its values in a class of your own.",
+        diagnostics[0].GetMessage());
+      StringAssert.StartsWith(diagnostics[6].GetMessage(), "'Envelope.Extra' is declared as Dictionary<string, JsonNode>: the serializers do not write or read JsonNode");
+    }
+
+    [TestMethod]
+    public void JsonDocumentCalls()
+    {
+      ImmutableArray<Diagnostic> diagnostics = Analyze(JsonUsings + @"
+public static class Use
+{
+  public static void Calls(byte[] b, JsonDocument document)
+  {
+    MsgPackSerializer.Deserialize<JsonElement>(b);
+    new LtMsgPackSerializer().Deserialize<List<JsonNode>>(b);
+    MsgPackSerializer.Serialize<JsonDocument>(document);
+    MsgPackSerializer.Deserialize<List<string>>(b);
+  }
+}
+");
+      AssertDiagnostics(diagnostics, "LSMP009 JsonElement", "LSMP009 List<JsonNode>", "LSMP009 JsonDocument");
+      StringAssert.StartsWith(diagnostics[0].GetMessage(), "MsgPackSerializer.Deserialize reads JsonElement: the serializers do not write or read JsonElement");
+      StringAssert.StartsWith(diagnostics[2].GetMessage(), "MsgPackSerializer.Serialize writes JsonDocument: the serializers do not write or read JsonDocument");
+    }
+
+    [TestMethod]
+    public void JsonDocumentActions()
+    {
+      ImmutableArray<Diagnostic> diagnostics = Analyze(JsonUsings + @"
+using Microsoft.AspNetCore.Mvc;
+public class HooksController : ControllerBase
+{
+  public string Receive([FromBody] JsonElement body) => body.ToString();
+  public ActionResult<JsonObject> Get() => new JsonObject();
+  public IActionResult Raw() => Ok(JsonDocument.Parse(""{}"").RootElement);
+}
+", formatters: true);
+      AssertDiagnostics(diagnostics, "LSMP009 body", "LSMP009 Get", "LSMP009 JsonDocument.Parse(\"{}\").RootElement");
+      StringAssert.StartsWith(diagnostics[0].GetMessage(), "The action HooksController.Receive reads JsonElement: the serializers do not write or read JsonElement");
+      StringAssert.StartsWith(diagnostics[1].GetMessage(), "The action HooksController.Get writes ActionResult<JsonObject>: the serializers do not write or read JsonObject");
+    }
+
+    /// <summary>
+    /// Json.NET's tokens are not refused by the serializers: they are written as their own properties and read back empty (or throw).
+    /// </summary>
+    [TestMethod]
+    public void JsonDocumentProperties_JsonNet()
+    {
+      MetadataReference jsonNet = Compile("Newtonsoft.Json", @"
+namespace Newtonsoft.Json.Linq
+{
+  public abstract class JToken { }
+  public abstract class JContainer : JToken { }
+  public class JObject : JContainer { }
+  public class JArray : JContainer { }
+  public class JValue : JToken { }
+}
+", "/home/me/.nuget/packages/newtonsoft.json/13.0.3/lib/netstandard2.0/Newtonsoft.Json.dll");
+      ImmutableArray<Diagnostic> diagnostics = Analyze(Usings + @"
+using Newtonsoft.Json.Linq;
+public class Hook
+{
+  public JObject Body { get; set; }
+  public JToken Token { get; set; }
+  public List<JValue> Values { get; set; }
+}
+public static class Use { public static Hook Read(byte[] b) => MsgPackSerializer.Deserialize<Hook>(b); }
+", other: jsonNet);
+      AssertDiagnostics(diagnostics, "LSMP009 Body", "LSMP009 Token", "LSMP009 Values");
+    }
+
+    #endregion
+
     #region Controllers
 
     private const string Controller = Usings + @"

@@ -13,7 +13,8 @@ namespace LsMsgPack.Analyzers
 {
   /// <summary>
   /// The properties of the serialized types (<see cref="ModelTypes"/>): default values that are lost (LSMP001-003, LSMP006) and places where the data picks the type (LSMP004),
-  /// the calls and actions that read into such a place (LSMP005) or into a place without property names (LSMP007), and classes of other projects that are not checked (LSMP008). See docs/Analyzers.md.
+  /// the calls and actions that read into such a place (LSMP005) or into a place without property names (LSMP007), classes of other projects that are not checked (LSMP008)
+  /// and JSON document types (LSMP009). See docs/Analyzers.md.
   /// <para>Reported from symbol and operation actions (not at the end of the compilation), so the IDE shows them while typing and offers the code fixes.</para>
   /// </summary>
   [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -21,7 +22,7 @@ namespace LsMsgPack.Analyzers
   {
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
       ImmutableArray.Create(Rules.MissingDefaultValue, Rules.DefaultValueDiffers, Rules.DefaultValueType, Rules.OpenProperty, Rules.OpenRead,
-        Rules.NullReadAsInitial, Rules.UntypedRead, Rules.UncheckedModel);
+        Rules.NullReadAsInitial, Rules.UntypedRead, Rules.UncheckedModel, Rules.JsonDocument);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -80,13 +81,18 @@ namespace LsMsgPack.Analyzers
     private static void AnalyzeProperty(SymbolAnalysisContext context, KnownSymbols known, Models models, OtherAssemblies others)
     {
       IPropertySymbol property = (IPropertySymbol)context.Symbol;
-      if (property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public || property.GetMethod is null
-        || property.SetMethod is null || property.SetMethod.DeclaredAccessibility != Accessibility.Public || property.IsImplicitlyDeclared)
-        return; // what FilterNonSettable and FilterStatic leave out, and properties without a setter (GetOnlyProperties: written, but never set from the data)
+      if (property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public || property.GetMethod is null || property.IsImplicitlyDeclared
+        || (property.SetMethod != null && property.SetMethod.DeclaredAccessibility != Accessibility.Public))
+        return; // what FilterNonSettable and FilterStatic leave out
       if (!models.Get(context.CancellationToken).Contains(property.ContainingType) || IsIgnored(property))
         return;
 
       string name = string.Concat(property.ContainingType.Name, ".", property.Name);
+      ITypeSymbol json = JsonPart(property.Type);
+      if (json != null)
+        context.ReportDiagnostic(Diagnostic.Create(Rules.JsonDocument, property.Locations[0], string.Concat("'", name, "' is declared as ", Display(property.Type)), Display(json)));
+      if (property.SetMethod is null)
+        return; // without a setter (GetOnlyProperties): written, but never set from the data
       ITypeSymbol open = OpenPart(property.Type);
       if (open != null)
         context.ReportDiagnostic(Diagnostic.Create(Rules.OpenProperty, property.Locations[0], name, Display(property.Type), Display(open)));
@@ -452,6 +458,9 @@ namespace LsMsgPack.Analyzers
         INamedTypeSymbol other = others.FindUnchecked(use.Type);
         if (other != null)
           report(Diagnostic.Create(Rules.UncheckedModel, use.Location, Display(other), other.ContainingAssembly.Name));
+        ITypeSymbol json = JsonPart(use.Type);
+        if (json != null)
+          report(Diagnostic.Create(Rules.JsonDocument, use.Location, string.Concat(use.What, use.Reads ? " reads " : " writes ", Display(use.Type)), Display(json)));
         if (!use.Reads)
           continue;
         ITypeSymbol open = OpenPart(use.Type);
@@ -539,12 +548,12 @@ namespace LsMsgPack.Analyzers
     }
 
     /// <summary>
-    /// The serializers refuse Type and MemberInfo whatever the data says.
+    /// The serializers refuse Type and MemberInfo whatever the data says, and JSON document types (JsonNode, LSMP009).
     /// </summary>
     private static bool IsRefusedAnyway(INamedTypeSymbol type)
     {
       string name = type.ToDisplayString();
-      return name == "System.Type" || name.StartsWith("System.Reflection.", StringComparison.Ordinal);
+      return name == "System.Type" || name.StartsWith("System.Reflection.", StringComparison.Ordinal) || IsJsonDocument(type);
     }
 
     /// <summary>
@@ -572,11 +581,61 @@ namespace LsMsgPack.Analyzers
       return enumerable;
     }
 
+    #endregion
+
+    #region JSON document types
+
+    /// <summary>
+    /// The JSON document type in a declared type (LSMP009), also as the element or generic argument of the type: System.Text.Json's JsonElement, JsonDocument and JsonNode,
+    /// Json.NET's JToken, and the classes deriving from them. Null when there is none.
+    /// <para>System.Text.Json's are framework types without settable state (refused by SerializationRules.ThrowIfUnsupportedFrameworkType),
+    /// Json.NET's are written as their own properties (Type, Parent, First...) and read back empty or with an exception.</para>
+    /// </summary>
+    internal static ITypeSymbol JsonPart(ITypeSymbol type)
+    {
+      return JsonPart(type, 0);
+    }
+
+    private static ITypeSymbol JsonPart(ITypeSymbol type, int depth)
+    {
+      if (type is null || depth > 16)
+        return null;
+      if (type is IArrayTypeSymbol array)
+        return JsonPart(array.ElementType, depth + 1);
+      if (!(type is INamedTypeSymbol named) || named.TypeKind == TypeKind.Error)
+        return null;
+      if (IsJsonDocument(named))
+        return named;
+      foreach (ITypeSymbol argument in named.TypeArguments)
+      {
+        ITypeSymbol json = JsonPart(argument, depth + 1);
+        if (json != null)
+          return json;
+      }
+      return null;
+    }
+
+    private static bool IsJsonDocument(INamedTypeSymbol type)
+    {
+      for (INamedTypeSymbol b = type; b != null; b = b.BaseType)
+      {
+        switch (b.ToDisplayString())
+        {
+          case "System.Text.Json.JsonElement":
+          case "System.Text.Json.JsonDocument":
+          case "System.Text.Json.Nodes.JsonNode":
+          case "Newtonsoft.Json.Linq.JToken":
+            return true;
+        }
+      }
+      return false;
+    }
+
+    #endregion
+
     private static string Display(ITypeSymbol type)
     {
       return type.ToDisplayString(SymbolDisplayFormat.CSharpShortErrorMessageFormat);
     }
-
-    #endregion
   }
 }

@@ -6,6 +6,7 @@ The `LsMsgPack.Core` package includes analyzers, so every project that reference
 - **Places where the data picks the type** that a reader creates (LSMP004, LSMP005), see [security.md](security.md).
 - **Reads without property names**: `object` and `Dictionary<string, object>` (LSMP007).
 - **Classes of other projects** that no analyzer checked (LSMP008).
+- **JSON document types** (`JsonElement`, `JsonNode`, Json.NET's `JObject`...), which the serializers don't write or read (LSMP009).
 
 The warnings show while you type in Visual Studio, VS Code (C# Dev Kit) and Rider, and in the build output.
 
@@ -154,3 +155,21 @@ The rules need the source of a class (its initializers and constructor), so a cl
 - the framework's classes (namespaces `System` and `Microsoft`);
 - classes without public settable properties;
 - assemblies marked as checked (`LsMsgPackAnalyze` = `AllTypes`, see above).
+
+## JSON document types
+
+### LSMP009: JSON document type is not serialized
+
+```csharp
+public JsonElement Payload { get; set; }                                     // LSMP009: a 500 when the response is written
+public List<JsonNode> Items { get; set; }                                    // LSMP009
+public JObject Body { get; set; }                                            // LSMP009 (Json.NET)
+public IActionResult Receive([FromBody] JsonElement body) => ...;            // LSMP009: 400
+MsgPackSerializer.Deserialize<JsonElement>(bytes);                           // LSMP009
+```
+
+MsgPack has no form for a JSON document. System.Text.Json's `JsonElement`, `JsonDocument` and `JsonNode` (`JsonObject`, `JsonArray`, `JsonValue`) have no settable state, so the serializers refuse them with a `MsgPackException`: a web formatter answers 500 for a response and 400 for a request body. Json.NET's `JToken` types (`JObject`, `JArray`, `JValue`...) aren't refused, but they are written as their own properties and read back empty or with an exception.
+
+Hold the JSON text in a `string` (`element.GetRawText()`, `JsonDocument.Parse(text)`), or the values in a class of your own. An endpoint that passes JSON through (a webhook) can also stay on JSON: the formatters only answer MsgPack to clients that ask for it.
+
+It is reported for the properties of serialized classes (also get-only ones, which are written), and for the types that calls and actions read or write, also as an element or generic argument (`List<JsonElement>`, `ActionResult<JsonObject>`). `JsonNode` isn't reported as LSMP004.
