@@ -164,4 +164,4 @@ The invoice model of the benchmarks (100 invoices × 20 rounds, the fastest roun
 | LtMsgPack, default options | 183 ms (3.0x) | 235 ms (3.5x) | 78 ms (2.8x) | 69 ms (3.1x) |
 | the same with the generated code | 92 ms (5.8x) | 196 ms (4.2x) | 10.5 ms (20x) | 24 ms (8.7x) |
 
-Reading gains less than writing: decoding strings and converting timestamps to local time take most of the time, the same with or without generated code.
+Reading gains less than writing: decoding strings and converting timestamps to local time (the default `ReadDateTimeKind` when this was measured, now UTC) take most of the time, the same with or without generated code.

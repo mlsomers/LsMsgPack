@@ -1,4 +1,4 @@
-# Security: type injection
+﻿# Security: type injection
 
 LsMsgPack and LtMsgPack support polymorphic object models out of the box: when a value's type differs from its declared type, a type id is written, and when reading, that type id picks the class to create (see [Schema, type ids and polymorphic class hierarchies](schema.md)). This document explains what that means when you read data from a source you don't trust, what the serializers do to protect you, and what you should do yourself.
 
@@ -149,6 +149,8 @@ How objects are created
 | `Constructor` | The parameterless one (public or not), its exceptions are passed on | `MsgPackException` |
 | `ConstructorOrUninitialized` (**default**) | The parameterless one, its exceptions are passed on | Created uninitialized |
 | `Uninitialized` | Never | Created uninitialized |
+
+A class created by the constructor that takes the values of its properties ([immutable classes](schema.md#immutable-classes), a record with positional parameters, a class whose only public constructor takes its properties) is created by that constructor with `Constructor` and `ConstructorOrUninitialized`. With `Uninitialized` too, when the constructor sets a property without a public setter.
 
 The finalizer of an object created uninitialized is always suppressed (`GC.SuppressFinalize`).
 

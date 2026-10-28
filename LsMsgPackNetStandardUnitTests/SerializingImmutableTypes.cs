@@ -9,7 +9,7 @@ namespace LsMsgPackUnitTests
 {
   /// <summary>
   /// Immutable classes and structs: properties without a public setter that a constructor takes (<c>Money(decimal amount, string currency)</c>) are written, and read by calling that constructor,
-  /// as System.Text.Json does (they used to be left out, the object arrived empty). LtMsgPack reads them as LsMsgPack.Core does (no read plan).
+  /// as System.Text.Json does (they used to be left out, the object arrived empty). Also classes whose only constructor takes settable properties (they used to be created uninitialized).
   /// </summary>
   public abstract class SerializingImmutableTypes
   {
@@ -138,7 +138,59 @@ namespace LsMsgPackUnitTests
       public int Scale { get; }
     }
 
-    public record ImmRecord(int Id, string Name); // init setters: created and set as before
+    public record ImmRecord(int Id, string Name); // init setters: read by the constructor as System.Text.Json does (until October 2026 created uninitialized and set)
+
+    /// <summary>
+    /// Only a constructor taking a settable property, which initializes a field: called with the value (until October 2026 created uninitialized, the list was null).
+    /// </summary>
+    public class ImmOwner
+    {
+      private readonly List<string> _items;
+
+      public ImmOwner(string name)
+      {
+        Name = name;
+        _items = new List<string>() { "created" };
+      }
+
+      public string Name { get; set; }
+      public int Level { get; set; } = 5;
+
+      public int Count() { return _items.Count; }
+    }
+
+    /// <summary>
+    /// The property the constructor takes comes after the others: their values are read before the object exists (LtMsgPack collects them), then set.
+    /// </summary>
+    public class ImmLateName
+    {
+      public ImmLateName(string name) { Name = name; }
+
+      public int Count { get; set; }
+      public decimal Price { get; set; }
+      public DateTime When { get; set; }
+      public string Name { get; }
+    }
+
+    /// <summary>
+    /// A struct whose constructor takes settable properties: created by its default constructor as System.Text.Json does, the constructor is not called.
+    /// </summary>
+    public struct ImmSettablePoint
+    {
+      private readonly bool _constructed;
+
+      public ImmSettablePoint(int x, int y)
+      {
+        X = x;
+        Y = y;
+        _constructed = true;
+      }
+
+      public int X { get; set; }
+      public int Y { get; set; }
+
+      public bool Constructed() { return _constructed; }
+    }
 
     private static MsgPackSettings Settings(bool schema, ObjectLayout layout, bool trim = false)
     {
@@ -264,10 +316,55 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    public void Record_StillSetByInit()
+    [DynamicData(nameof(AllSettings))]
+    public void Record_ReadByConstructor(bool schema, ObjectLayout layout)
     {
-      ImmRecord read = RoundTrip(new ImmRecord(1, "r"), Settings(true, ObjectLayout.Array));
+      ImmRecord read = RoundTrip(new ImmRecord(1, "r"), Settings(schema, layout));
       Assert.AreEqual(new ImmRecord(1, "r"), read);
+      Assert.AreEqual(new ImmRecord(0, null), RoundTrip(new ImmRecord(0, null), Settings(schema, layout, trim: true)));
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(AllSettings))]
+    public void SettableProperties_ConstructorCalled(bool schema, ObjectLayout layout)
+    {
+      ImmOwner read = RoundTrip(new ImmOwner("o") { Level = 7 }, Settings(schema, layout));
+      Assert.AreEqual("o", read.Name);
+      Assert.AreEqual(7, read.Level);
+      Assert.AreEqual(1, read.Count(), "the constructor initialized the field");
+
+      read = RoundTrip(new List<ImmOwner>() { new ImmOwner("a") { Level = 0 }, new ImmOwner(null) }, Settings(schema, layout))[0];
+      Assert.AreEqual("a", read.Name);
+      Assert.AreEqual(layout == ObjectLayout.Array ? 0 : 5, read.Level, "the nil of the array is set after the constructor, a value left out of a map keeps the initializer's (as with a parameterless constructor, LSMP001)");
+      Assert.AreEqual(1, read.Count());
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(AllSettings))]
+    public void ParameterAfterOtherProperties_ValuesSetAfterTheConstructor(bool schema, ObjectLayout layout)
+    {
+      DateTime when = new DateTime(2026, 10, 28, 12, 0, 0, DateTimeKind.Utc);
+      List<ImmLateName> read = RoundTrip(new List<ImmLateName>()
+      {
+        new ImmLateName("late") { Count = 3, Price = 1.25m, When = when },
+        new ImmLateName(null) { Count = 4 }, // the name left out: the constructor is called at the end of the object
+      }, Settings(schema, layout, trim: true));
+      Assert.AreEqual("late", read[0].Name);
+      Assert.AreEqual(3, read[0].Count);
+      Assert.AreEqual(1.25m, read[0].Price);
+      Assert.AreEqual(when, read[0].When.ToUniversalTime());
+      Assert.IsNull(read[1].Name);
+      Assert.AreEqual(4, read[1].Count);
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(AllSettings))]
+    public void StructWithSettableProperties_DefaultConstructor(bool schema, ObjectLayout layout)
+    {
+      ImmSettablePoint read = RoundTrip(new ImmSettablePoint(2, 3), Settings(schema, layout));
+      Assert.AreEqual(2, read.X);
+      Assert.AreEqual(3, read.Y);
+      Assert.IsFalse(read.Constructed(), "as System.Text.Json: a struct is created by its default constructor unless one is marked");
     }
 
     [TestMethod]

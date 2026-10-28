@@ -84,6 +84,26 @@ namespace LtMsgPackAotSmokeTest
     public List<KeyValuePair<string, double>> Weights { get; set; }
   }
 
+  /// <summary>
+  /// Created by the constructor that takes the values (LsMsgPack.Core ObjectConstructor, ConstructorInvoker): a get-only property and a settable one it does not take.
+  /// </summary>
+  public class Payment
+  {
+    private readonly List<string> _log = new List<string>();
+
+    public Payment(decimal amount)
+    {
+      Amount = amount;
+      _log.Add("paid");
+    }
+
+    public decimal Amount { get; }
+    public string Note { get; set; }
+    public int Logged { get { return _log.Count; } } // computed: written, skipped when read
+  }
+
+  public record Signature(string By, DateTime At);
+
   public class Invoice
   {
     public Guid Id { get; set; }
@@ -103,6 +123,8 @@ namespace LtMsgPackAotSmokeTest
     public decimal Total { get; set; }
     public bool Urgent { get; set; }
     public Extras Extras { get; set; }
+    public Payment Payment { get; set; }
+    public Signature Signed { get; set; }
   }
 
   /// <summary>
@@ -270,6 +292,8 @@ namespace LtMsgPackAotSmokeTest
         Shapes = new List<Shape>() { new Square() { Label = "s", Side = 2 }, new Circle() { Radius = 0.25 } },
         Total = 252.47m,
         Urgent = true,
+        Payment = new Payment(100.5m) { Note = "first" },
+        Signed = new Signature("Clerk", new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc)),
         Extras = new Extras()
         {
           Day = new DateOnly(2026, 10, 13),
@@ -306,7 +330,9 @@ namespace LtMsgPackAotSmokeTest
         .Append(Dump(o.Customer)).Append(';').Append(o.Lines is null ? "null" : string.Join(",", o.Lines.Select(Dump))).Append(';')
         .Append(o.Extra is null ? "null" : string.Join(",", o.Extra.Select(Dump))).Append(';').Append(o.Reference?.ToString() ?? "null").Append(';')
         .Append(o.Numbers is null ? "null" : string.Join(",", o.Numbers)).Append(';').Append(Dump(o.Stamp)).Append(';')
-        .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent).Append(';').Append(Dump(o.Extras));
+        .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent).Append(';').Append(Dump(o.Extras)).Append(';')
+        .Append(o.Payment is null ? "null" : $"[{o.Payment.Amount.ToString(CultureInfo.InvariantCulture)} {o.Payment.Note ?? "null"} {o.Payment.Logged}]").Append(';')
+        .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]");
       return text.ToString();
     }
 

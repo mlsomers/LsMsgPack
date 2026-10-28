@@ -348,7 +348,7 @@ Released readers (packages until October 2026) read the root and the elements of
 Immutable classes
 -----------------
 
-A class or struct whose properties are set by its constructor (get-only, or with a private setter) is written with those properties, and read by calling that constructor, as System.Text.Json does:
+A class or struct whose properties are set by its constructor (get-only, or with a private setter) is written with those properties, and read by calling that constructor, as System.Text.Json does. So is a class whose only constructor takes the values of its properties (a record with positional parameters, or `Owner(string name)` with a settable `Name`):
 
 ```csharp
 public class Money
@@ -359,13 +359,13 @@ public class Money
 }
 ```
 
-Until October 2026 these properties were left out, so a `Money` arrived as `Amount = 0, Currency = null`.
+Until October 2026 these properties were left out, so a `Money` arrived as `Amount = 0, Currency = null`. And a class like `Owner(string name)` with a settable `Name` was created without running a constructor, so the fields it initializes stayed `null`.
 
 - **The constructor**: the one with `[JsonConstructor]` (System.Text.Json or Json.NET) or `[SerializationConstructor]` (MessagePack-CSharp). Without one, it's the only public constructor, if the type has no public parameterless constructor. With several public constructors and none marked, no constructor is called: the properties without a setter are [computed properties](#computed-and-get-only-properties) (written, not read), those with a private setter are left out.
-- **Parameters and properties**: a parameter takes the property with the same name (ignoring case, the exact name first) and the same type. The constructor is used only when it takes a property without a public setter. Classes whose properties all have public setters are created and set as before, and so are records with positional parameters (their properties have `init` setters).
-- **Reading**: the values are read first, then the constructor is called, then the properties it does not take are set. A property the data does not have (left out as a default value, or after the end of a trimmed array) passes the value the writer leaves out: its type's default, or its `[DefaultValue]` (as a nil sets it), not the parameter's default. A parameter that takes no property gets its default value. An exception of the constructor is passed on as it is.
-- Such a type is always created by its constructor, also with `ObjectCreation.Uninitialized`: its values can't be set otherwise.
-- LtMsgPack reads these types the way LsMsgPack does: they are left out of its fast readers, and the code of the source generator writes them but doesn't read them.
+- **Parameters and properties**: a parameter takes the property with the same name (ignoring case, the exact name first) and the same type. The constructor is used when it takes a property without a public setter, and for a class (or a marked constructor) when each of its parameters takes a property or has a default value. A constructor with a parameter for something else (a service, a value no property holds) isn't called: such a class is created without a constructor, as before. A struct whose properties all have setters is created by its default constructor, as System.Text.Json does.
+- **Reading**: the values are read first, then the constructor is called, then the properties it does not take are set (LtMsgPack calls the constructor as soon as the values of its parameters are read, and sets the properties after them directly). A property the data does not have (left out as a default value, or after the end of a trimmed array) passes the value the writer leaves out: its type's default, or its `[DefaultValue]` (as a nil sets it), not the parameter's default. A parameter that takes no property gets its default value. An exception of the constructor is passed on as it is.
+- A constructor that takes a property without a public setter is called also with `ObjectCreation.Uninitialized`: the values can't be set otherwise. Other classes are created uninitialized with that setting.
+- The code of the source generator writes these types but doesn't read them: LtMsgPack's runtime readers do.
 - Not for framework types (refused, or written as their plain value), collections, or anonymous types (whose fields are set).
 
 Released readers (packages until October 2026) don't have the properties without a public setter. With the indexed schema or the map layout, they skip them and read the other properties as before. In the array layout without the schema, the positions of the other properties shift. In the array layout, LsMsgPack (not LtMsgPack) throws when it reads an object whose properties are *all* left out by it (a `Money` written as `[12.5, "EUR"]`).

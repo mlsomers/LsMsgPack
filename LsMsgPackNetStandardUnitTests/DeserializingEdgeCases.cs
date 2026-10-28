@@ -267,7 +267,7 @@ namespace LsMsgPackUnitTests
         Short = -3,
         NullableBool = true,
         NullableLong = 5,
-        Date = new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Local) // DateTime is returned in local time
+        Date = new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc) // DateTime is returned in UTC (ReadDateTimeKind)
       }, Settings(option));
     }
 

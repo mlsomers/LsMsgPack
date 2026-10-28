@@ -9,16 +9,15 @@ using System.Threading;
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// No parameterless constructor, counts its constructions and finalizations.
+  /// No parameterless constructor and none that takes its values (its parameter takes no property), counts its constructions and finalizations.
   /// </summary>
   public class CreationProbe
   {
     public static int Constructed;
     public static int Finalized;
 
-    public CreationProbe(string name)
+    public CreationProbe(object owner)
     {
-      Name = name;
       Constructed++;
     }
 
@@ -26,6 +25,33 @@ namespace LsMsgPackUnitTests
     public string Initialized { get; set; } = "initial";
 
     ~CreationProbe()
+    {
+      Interlocked.Increment(ref Finalized);
+    }
+  }
+
+  /// <summary>
+  /// Only a constructor taking the value of a settable property: called with it, as System.Text.Json does (until October 2026 created uninitialized, its fields were not initialized).
+  /// </summary>
+  public class CreationProbeTakesName
+  {
+    public static int Constructed;
+    public static int Finalized;
+    private readonly List<string> _log = new List<string>();
+
+    public CreationProbeTakesName(string name)
+    {
+      Name = name;
+      _log.Add("constructed with " + name);
+      Constructed++;
+    }
+
+    public string Name { get; set; }
+    public string Initialized { get; set; } = "initial";
+
+    public IReadOnlyList<string> Log() { return _log; }
+
+    ~CreationProbeTakesName()
     {
       Interlocked.Increment(ref Finalized);
     }
@@ -89,6 +115,7 @@ namespace LsMsgPackUnitTests
     {
       CollectGarbage(); // finalize what earlier tests left behind
       CreationProbe.Constructed = CreationProbe.Finalized = 0;
+      CreationProbeTakesName.Constructed = CreationProbeTakesName.Finalized = 0;
       CreationProbeDefault.Constructed = CreationProbeDefault.Finalized = 0;
     }
 
@@ -136,6 +163,31 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(0, CreationProbe.Constructed);
       CollectGarbage();
       Assert.AreEqual(0, CreationProbe.Finalized);
+    }
+
+    [TestMethod]
+    [DataRow(ObjectCreation.Constructor)]
+    [DataRow(ObjectCreation.ConstructorOrUninitialized)]
+    public void ConstructorTakingValues_Called(ObjectCreation creation)
+    {
+      Assert.AreEqual(("x", "initial"), Read<CreationProbeTakesName>(creation));
+      Assert.AreEqual(1, CreationProbeTakesName.Constructed);
+      Assert.AreEqual("constructed with x", ReadLog(creation), "the fields are initialized, the constructor gets the value");
+      CollectGarbage();
+      Assert.AreEqual(2, CreationProbeTakesName.Finalized, "a constructed object keeps its finalizer");
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private string ReadLog(ObjectCreation creation)
+    {
+      return string.Join(", ", Serializer.Deserialize<CreationProbeTakesName>(NameOnly, Settings(creation)).Log());
+    }
+
+    [TestMethod]
+    public void ConstructorTakingValues_NotWithUninitialized()
+    {
+      Assert.AreEqual(("x", (string)null), Read<CreationProbeTakesName>(ObjectCreation.Uninitialized), "the values can be set without it");
+      Assert.AreEqual(0, CreationProbeTakesName.Constructed);
     }
 
     [TestMethod]

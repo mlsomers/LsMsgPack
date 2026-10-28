@@ -157,12 +157,15 @@ namespace LsMsgPack.Analyzers
 
     private static void CheckDefaults(SymbolAnalysisContext context, IPropertySymbol property, string name, KnownSymbols known)
     {
-      if (!IsConstructed(property.ContainingType))
+      IMethodSymbol withValues = ValuesConstructor.Of(property.ContainingType);
+      if (withValues is null && !IsConstructed(property.ContainingType))
         return; // created without a constructor (ObjectCreation.ConstructorOrUninitialized): a left out property keeps the type's default, as the writer assumes
+      if (withValues != null && ValuesConstructor.Takes(withValues, property))
+        return; // the constructor gets the value the writer leaves out
       Compilation compilation = context.Compilation;
       ITypeSymbol type = property.Type;
       ITypeSymbol underlying = UnderlyingType(type);
-      InitialValue initial = InitialValue.Find(property, compilation, context.CancellationToken);
+      InitialValue initial = InitialValue.Find(property, compilation, context.CancellationToken, withValues);
       Location location = property.Locations[0];
 
       AttributeData defaultValue = null;

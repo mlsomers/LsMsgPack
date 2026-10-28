@@ -194,9 +194,9 @@ namespace LsMsgPackUnitTests
     public void UnspecifiedAsUtc()
     {
       DateTime unspecified = new DateTime(2026, 9, 29, 12, 0, 0, DateTimeKind.Unspecified);
-      LtMsgPackSerializer utc = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, UnspecifiedDateTimeKind = DateTimeKind.Utc });
-      CollectionAssert.AreEqual(Names.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc)), utc.Serialize(unspecified));
-      CollectionAssert.AreEqual(Names.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Local)), Names.Serialize(unspecified), "the default: local time, as LsMsgPack");
+      LtMsgPackSerializer local = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, UnspecifiedDateTimeKind = DateTimeKind.Local });
+      CollectionAssert.AreEqual(Names.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc)), Names.Serialize(unspecified), "the default: the clock time in UTC, as LsMsgPack");
+      CollectionAssert.AreEqual(Names.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Local)), local.Serialize(unspecified));
     }
 
     [TestMethod]
