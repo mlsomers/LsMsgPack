@@ -43,6 +43,12 @@ namespace LtMsgPack.Reading
     /// </summary>
     internal bool Unusual;
 
+    /// <summary>
+    /// The root type of the previous call on this thread and its reader (the context is reused, see Serializer.RentContext): calls usually read the same root type.
+    /// </summary>
+    internal Type RootType;
+    internal ValueReader RootReader;
+
     internal ReadContext(Serializer serializer)
     {
       Serializer = serializer;

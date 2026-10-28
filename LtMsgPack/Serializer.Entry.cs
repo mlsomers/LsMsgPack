@@ -37,7 +37,7 @@ namespace LtMsgPack
       if (!ReferenceEquals(state.Owner, this))
       {
         state.Owner = this;
-        state.Context = new WriteContext(this);
+        state.Context = new WriteContext(this) { Inline = state.Inline };
       }
       return state;
     }
@@ -72,14 +72,18 @@ namespace LtMsgPack
         c.Root = value;
         c.Depth = 0;
         c.ByNames = false;
-        c.W = state.Body;
+        if (!ReferenceEquals(c.W, state.Body)) // the fields of the context mostly keep their values: a comparison is cheaper than storing a reference (a write barrier)
+          c.W = state.Body;
         c.W.Reset(Options);
-        FullPropertyInfo root = RootInfo(assignedTo);
+        FullPropertyInfo root = c.RootInfo;
+        if (root is null || root.AssignedToType != assignedTo) // calls on a thread usually write the same root type: no lookup (the hash of a Type is a call into the runtime)
+          c.RootInfo = root = RootInfo(assignedTo);
 
         if (!Options._useInexedSchema || isNull) // null is serialized without a schema
         {
           c.Mode = IdMode.Names;
-          c.IdSettings = Options;
+          if (!ReferenceEquals(c.IdSettings, Options))
+            c.IdSettings = Options;
           write(c, root);
           Output(null, 0, c.W, target, out result);
           return;
@@ -130,9 +134,9 @@ namespace LtMsgPack
         {
           // The schema of this call is built while writing (the same order as LsMsgPack's session)
           c.Mode = IdMode.Inline;
-          c.Inline = state.Inline;
           c.Inline.Clear();
-          c.IdSettings = Options;
+          if (!ReferenceEquals(c.IdSettings, Options))
+            c.IdSettings = Options;
           write(c, root);
           if (Options._schemaVersion == SchemaVersion.Described)
             schema.Raw(_described.Get(c.Inline, assignedTo, Options));

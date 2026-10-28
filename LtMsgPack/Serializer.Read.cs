@@ -251,18 +251,59 @@ namespace LtMsgPack
         _cachedRoot = type;
       }
 
-      ReadContext c = new ReadContext(this) { R = new MsgPackReader(buffer, offset, end, Options), Differences = differences, Unusual = SlowObjects || differences != null };
-      object result;
-      if (!Options._useInexedSchema)
+      ReadContext c = RentContext(buffer, offset, end);
+      try
       {
-        c.SlowSettings = differences is null ? Options : Options.WithDifferences(differences);
-        result = ReadRoot(c, type);
-      }
-      else
-        result = DeserializeWithSchema(c, type);
+        if (differences != null) // the fields of a reused context mostly keep their values: a comparison is cheaper than storing a reference (a write barrier)
+          c.Differences = differences;
+        c.Unusual = SlowObjects || differences != null;
+        object result;
+        if (!Options._useInexedSchema)
+        {
+          MsgPackOptions slowSettings = differences is null ? Options : Options.WithDifferences(differences);
+          if (!ReferenceEquals(c.SlowSettings, slowSettings))
+            c.SlowSettings = slowSettings;
+          result = ReadRoot(c, type);
+        }
+        else
+          result = DeserializeWithSchema(c, type);
 
-      consumed = c.R.Pos;
-      return result;
+        consumed = c.R.Pos;
+        return result;
+      }
+      finally
+      {
+        ReturnContext(c);
+      }
+    }
+
+    [ThreadStatic]
+    private static ReadContext _threadContext;
+
+    /// <summary>
+    /// The context and reader of the calls on one thread, reused (taken while a call runs, so a nested call gets its own): two allocations less per call.
+    /// </summary>
+    private ReadContext RentContext(byte[] buffer, int offset, int end)
+    {
+      ReadContext c = _threadContext;
+      if (c is null || !ReferenceEquals(c.Serializer, this))
+        return new ReadContext(this) { R = new MsgPackReader(buffer, offset, end, Options) };
+      _threadContext = null;
+      c.R.Reset(buffer, offset, end);
+      c.Depth = 0;
+      c.Schema = false;
+      return c;
+    }
+
+    private static void ReturnContext(ReadContext c)
+    {
+      c.R.Reset(null, 0, 0); // the data is not kept alive
+      if (c.Differences != null)
+      {
+        c.Differences = null;
+        c.SlowSettings = null; // has the differences
+      }
+      _threadContext = c; // Bound and SlowSettings are kept: usually the next call has the same
     }
 
     private object DeserializeWithSchema(ReadContext c, Type type)
@@ -365,8 +406,10 @@ namespace LtMsgPack
       c.R.Pos = bodyStart;
       c.Depth = 0;
       c.Schema = true;
-      c.SlowSettings = sessionSettings;
-      c.Bound = bound;
+      if (!ReferenceEquals(c.SlowSettings, sessionSettings))
+        c.SlowSettings = sessionSettings;
+      if (!ReferenceEquals(c.Bound, bound))
+        c.Bound = bound;
       if (c.Differences != null)
       {
         c.Differences.Reset(); // the body is read again when the shared session has to grow
@@ -379,7 +422,12 @@ namespace LtMsgPack
     {
       try
       {
-        return Reader(type).ReadBoxed(c, null);
+        if (c.RootType != type) // calls on a thread usually read the same root type: no lookup (the hash of a Type is a call into the runtime)
+        {
+          c.RootReader = Reader(type);
+          c.RootType = type;
+        }
+        return c.RootReader.ReadBoxed(c, null);
       }
       catch (RootValue unconverted)
       {

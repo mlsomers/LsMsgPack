@@ -16,9 +16,9 @@ namespace LtMsgPack.IO
   [EditorBrowsable(EditorBrowsableState.Never)]
   public sealed class MsgPackReader
   {
-    public readonly byte[] Buf;
+    public byte[] Buf; // not readonly: the reader of a thread is reused (Reset)
     public int Pos;
-    public readonly int End;
+    public int End;
     private readonly bool _littleEndian;
     private readonly int _maxDepth;
     private readonly LtExtension[] _extensions;
@@ -33,6 +33,16 @@ namespace LtMsgPack.IO
       _maxDepth = options._maxDepth;
       _extensions = options._extensions;
       _dateTimeKind = options._readDateTimeKind;
+    }
+
+    /// <summary>
+    /// The reader reads other data (the options stay the same).
+    /// </summary>
+    internal void Reset(byte[] buffer, int offset, int end)
+    {
+      Buf = buffer;
+      Pos = offset;
+      End = end;
     }
 
     internal int MaxDepth { get { return _maxDepth; } }

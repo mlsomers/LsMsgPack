@@ -157,7 +157,7 @@ namespace LtMsgPack
 
     // The writers of the root value (in WriteContext.Root), without a closure per call
 
-    private static readonly Action<Writing.WriteContext, LsMsgPack.Meta.FullPropertyInfo> BoxedWriter = (c, root) => c.Serializer.WriteBoxed(c, c.Root, root);
+    private static readonly Action<Writing.WriteContext, LsMsgPack.Meta.FullPropertyInfo> BoxedWriter = (c, root) => c.Serializer.WriteRoot(c, root);
 
     private static class TypedWriter<T>
     {
@@ -167,7 +167,12 @@ namespace LtMsgPack
         if (value == null)
           c.W.Nil();
         else
-          c.Serializer.Handler<T>(null).Write(c, (T)value, root);
+        {
+          Writing.ValueHandler<T> handler = c.RootHandler as Writing.ValueHandler<T>; // the one of the previous call on this thread (usually the same root type)
+          if (handler is null)
+            c.RootHandler = handler = c.Serializer.Handler<T>(null);
+          handler.Write(c, (T)value, root);
+        }
       };
     }
 
