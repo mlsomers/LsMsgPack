@@ -44,6 +44,14 @@ namespace LtMsgPack.Writing
     /// The value of the Serialize call.
     /// </summary>
     internal object Root;
+
+    /// <summary>
+    /// What the previous call on this thread looked up for its root (calls usually write the same root type), the context belongs to one serializer:
+    /// the info of the declared type, the handler of the typed writer (a ValueHandler&lt;T&gt;, see LtMsgPackSerializer.TypedWriter) and the type of the boxed one (Serializer.WriteRoot).
+    /// </summary>
+    internal FullPropertyInfo RootInfo;
+    internal object RootHandler;
+    internal WriteTypeInfo RootTypeInfo;
     internal IdMode Mode;
     internal InlineSchema Inline;
 
@@ -190,26 +198,36 @@ namespace LtMsgPack.Writing
   /// </summary>
   internal sealed class InlineSchema
   {
-    private readonly List<SchemaTypeInfo> _types = new List<SchemaTypeInfo>(8);
-    private readonly List<List<string>> _collectionProps = new List<List<string>>(8); // collections get their properties when they are resolved (ComplexTypeDef.AddProp)
+    // Arrays with a count rather than lists: Clear runs once per call, List.Clear calls Array.Clear
+    private SchemaTypeInfo[] _types = new SchemaTypeInfo[8];
+    private List<string>[] _collectionProps = new List<string>[8]; // collections get their properties when they are resolved (ComplexTypeDef.AddProp)
+    private int _count;
 
     internal void Clear()
     {
-      _types.Clear();
-      _collectionProps.Clear();
+      for (int t = _count - 1; t >= 0; t--)
+        _collectionProps[t] = null; // the types are kept by the plans anyway
+      _count = 0;
     }
 
     /// <returns>The type id: the position of the type in the schema</returns>
     internal int Register(SchemaTypeInfo info)
     {
-      List<SchemaTypeInfo> types = _types;
-      for (int t = 0; t < types.Count; t++) // a handful of types, a scan is faster than hashing
+      SchemaTypeInfo[] types = _types;
+      int count = _count;
+      for (int t = 0; t < count; t++) // a handful of types, a scan is faster than hashing
         if (ReferenceEquals(types[t], info))
           return t;
 
-      types.Add(info);
-      _collectionProps.Add(info.IsCollection ? new List<string>() : null);
-      return types.Count - 1;
+      if (count == types.Length)
+      {
+        Array.Resize(ref _types, count * 2);
+        Array.Resize(ref _collectionProps, count * 2);
+      }
+      _types[count] = info;
+      _collectionProps[count] = info.IsCollection ? new List<string>() : null;
+      _count = count + 1;
+      return count;
     }
 
     /// <summary>
@@ -217,7 +235,7 @@ namespace LtMsgPack.Writing
     /// </summary>
     internal void PropertiesResolved(SchemaTypeInfo info)
     {
-      int count = _types.Count;
+      int count = _count;
       int id = Register(info);
       if (!info.IsCollection)
         return;
@@ -237,8 +255,8 @@ namespace LtMsgPack.Writing
     /// </summary>
     internal void WriteTo(MsgPackWriter writer)
     {
-      writer.MapHeader(_types.Count);
-      for (int t = 0; t < _types.Count; t++)
+      writer.MapHeader(_count);
+      for (int t = 0; t < _count; t++)
       {
         SchemaTypeInfo info = _types[t];
         if (!info.IsCollection)
@@ -248,7 +266,7 @@ namespace LtMsgPack.Writing
         }
 
         WriteName(writer, info.Name);
-        IList<string> props = info.IsCollection ? (IList<string>)_collectionProps[t] : info.PropertyNames;
+        List<string> props = _collectionProps[t];
         writer.ArrayHeader(props.Count);
         for (int p = 0; p < props.Count; p++)
           WriteName(writer, props[p]);
@@ -260,8 +278,8 @@ namespace LtMsgPack.Writing
     /// </summary>
     internal List<ComplexTypeDef> ToDefs()
     {
-      List<ComplexTypeDef> defs = new List<ComplexTypeDef>(_types.Count);
-      for (int t = 0; t < _types.Count; t++)
+      List<ComplexTypeDef> defs = new List<ComplexTypeDef>(_count);
+      for (int t = 0; t < _count; t++)
       {
         SchemaTypeInfo info = _types[t];
         List<string> props = info.IsCollection ? _collectionProps[t] : new List<string>(info.PropertyNames);
@@ -275,7 +293,7 @@ namespace LtMsgPack.Writing
     /// </summary>
     internal bool SameAs(SchemaTypeInfo[] types, string[][] collectionProps)
     {
-      if (types.Length != _types.Count)
+      if (types.Length != _count)
         return false;
       for (int t = 0; t < types.Length; t++)
       {
@@ -296,12 +314,14 @@ namespace LtMsgPack.Writing
 
     internal SchemaTypeInfo[] Types()
     {
-      return _types.ToArray();
+      SchemaTypeInfo[] types = new SchemaTypeInfo[_count];
+      Array.Copy(_types, types, _count);
+      return types;
     }
 
     internal string[][] CollectionProps()
     {
-      string[][] props = new string[_collectionProps.Count][];
+      string[][] props = new string[_count][];
       for (int t = 0; t < props.Length; t++)
         props[t] = _collectionProps[t]?.ToArray();
       return props;
@@ -311,8 +331,8 @@ namespace LtMsgPack.Writing
     {
       unchecked
       {
-        int hash = _types.Count;
-        for (int t = 0; t < _types.Count; t++)
+        int hash = _count;
+        for (int t = 0; t < _count; t++)
           hash = hash * 31 + RuntimeHelpers.GetHashCode(_types[t]);
         return hash;
       }

@@ -167,6 +167,22 @@ namespace LtMsgPack
       return plans.GetOrAdd(type, t => new ObjectPlan(this, t, names));
     }
 
+    /// <summary>
+    /// <see cref="Plan"/> kept on the info of the type (boxed values, e.g. of polymorphic properties, look the info up anyway).
+    /// </summary>
+    private ObjectPlan PlanOf(WriteTypeInfo info, bool names)
+    {
+      ObjectPlan plan = names ? info.NamesPlan : info.SchemaPlan;
+      if (plan != null)
+        return plan;
+      plan = Plan(info.Type, names);
+      if (names)
+        info.NamesPlan = plan;
+      else
+        info.SchemaPlan = plan;
+      return plan;
+    }
+
     private NamesPlan ByNamesPlan(Type type)
     {
       if (_byNamesPlans.TryGetValue(type, out NamesPlan plan))
@@ -255,7 +271,30 @@ namespace LtMsgPack
       }
 
       Type type = value.GetType();
-      WriteTypeInfo info = GetTypeInfo(type);
+      WriteBoxedAs(c, value, type, GetTypeInfo(type), assignedTo);
+    }
+
+    /// <summary>
+    /// The root value (<see cref="WriteContext.Root"/>) of an untyped Serialize call, as <see cref="WriteBoxed(WriteContext, object, FullPropertyInfo)"/>.
+    /// </summary>
+    internal void WriteRoot(WriteContext c, FullPropertyInfo root)
+    {
+      object value = c.Root;
+      if (value is null)
+      {
+        c.W.Nil();
+        return;
+      }
+
+      Type type = value.GetType();
+      WriteTypeInfo info = c.RootTypeInfo;
+      if (info is null || info.Type != type) // calls on a thread usually write the same root type: no lookup
+        c.RootTypeInfo = info = GetTypeInfo(type);
+      WriteBoxedAs(c, value, type, info, root);
+    }
+
+    private void WriteBoxedAs(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
+    {
       if (info.HasAnonymousType)
       {
         WriteWithAnonymousType(c, value, type, info, assignedTo);
@@ -292,7 +331,7 @@ namespace LtMsgPack
           return;
 
         case TypeKind.Complex:
-          Plan(type, c.Mode == IdMode.Names).Write(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options), assignedTo);
+          PlanOf(info, c.Mode == IdMode.Names).Write(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options), assignedTo);
           return;
 
         case TypeKind.Pair:
@@ -689,6 +728,12 @@ namespace LtMsgPack
     /// The type is anonymous, or has an anonymous type as a generic argument or element (see SerializationRules.HasAnonymousType): written through <see cref="Serializer.WriteBoxed(WriteContext, object, FullPropertyInfo)"/>.
     /// </summary>
     internal readonly bool HasAnonymousType;
+
+    /// <summary>
+    /// The plans of an object (<see cref="TypeKind.Complex"/>), set when first used (see Serializer.PlanOf): the infos belong to one serializer.
+    /// </summary>
+    internal ObjectPlan NamesPlan;
+    internal ObjectPlan SchemaPlan;
 
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(KeyValuePair<,>))]
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.KeptMembers)]
