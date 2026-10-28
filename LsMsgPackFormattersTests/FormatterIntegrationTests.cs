@@ -111,6 +111,39 @@ namespace LsMsgPackFormattersTests
 
     [HttpGet("receipt")]
     public Receipt GetReceipt() => new Receipt { Id = FormatterIntegrationTests.ReceiptId, Total = 12.50m };
+
+    [HttpGet("orders")]
+    public List<Order> GetOrders() => Enumerable.Range(1, 3).Select(MakeOrder).ToList();
+
+    [HttpGet("orders-async")]
+    public IAsyncEnumerable<Order> GetOrdersAsync() => OrdersAsync();
+
+    [HttpGet("orders-ok")]
+    public IActionResult GetOrdersOk() => Ok(OrdersAsync()); // declared type object: the formatter gets the iterator's class
+
+    [HttpGet("numbers")]
+    public List<int> GetNumbers() => new List<int> { 1, 2, 3 };
+
+    [HttpGet("numbers-async")]
+    public async IAsyncEnumerable<int> GetNumbersAsync()
+    {
+      for (int i = 1; i <= 3; i++)
+      {
+        await Task.Yield();
+        yield return i;
+      }
+    }
+
+    private static Order MakeOrder(int id) => new Order { Id = id, Customer = "c" + id, Amounts = new[] { id * 1.5 } };
+
+    private static async IAsyncEnumerable<Order> OrdersAsync()
+    {
+      for (int i = 1; i <= 3; i++)
+      {
+        await Task.Yield();
+        yield return MakeOrder(i);
+      }
+    }
   }
 
   [TestFixture]
@@ -310,6 +343,51 @@ namespace LsMsgPackFormattersTests
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
         Assert.That(MsgPackSerializer.Deserialize<long>(await response.Content.ReadAsByteArrayAsync(), Plain), Is.EqualTo(42));
+      }
+    }
+
+    private static async Task<byte[]> GetAsync(HttpClient client, string path, string accept)
+    {
+      HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, path);
+      request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(accept));
+      HttpResponseMessage response = await client.SendAsync(request);
+      Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
+      return await response.Content.ReadAsByteArrayAsync();
+    }
+
+    /// <summary>
+    /// MVC passes an IAsyncEnumerable&lt;T&gt; to the formatter as it is: it is written as a List&lt;T&gt; (plain MsgPack wrote an empty map, x-lsmsgpack the type id of the compiler's iterator class).
+    /// </summary>
+    [TestCase(MsgPackMediaTypes.MsgPack, "/test/orders-async")]
+    [TestCase(MsgPackMediaTypes.MsgPack, "/test/orders-ok")]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack, "/test/orders-async")]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack, "/test/orders-ok")]
+    public async Task AsyncEnumerableIsWrittenAsAList(string mediaType, string path)
+    {
+      MsgPackSettings settings = MsgPackMediaTypes.IsLsMsgPack(mediaType) ? new MsgPackSettings() : Plain;
+      (IHost host, HttpClient client) = await StartAsync();
+      using (host)
+      {
+        byte[] body = await GetAsync(client, path, mediaType);
+
+        Assert.That(body, Is.EqualTo(await GetAsync(client, "/test/orders", mediaType)), "The same bytes as a List<Order>");
+        List<Order> orders = MsgPackSerializer.Deserialize<List<Order>>(body, settings);
+        Assert.That(orders.Select(o => o.Customer), Is.EqualTo(new[] { "c1", "c2", "c3" }));
+        Assert.That(orders[2].Amounts, Is.EqualTo(new[] { 4.5 }));
+      }
+    }
+
+    [TestCase(MsgPackMediaTypes.MsgPack)]
+    [TestCase(MsgPackMediaTypes.XLsMsgPack)]
+    public async Task AsyncEnumerableOfValueTypes(string mediaType)
+    {
+      (IHost host, HttpClient client) = await StartAsync();
+      using (host)
+      {
+        byte[] body = await GetAsync(client, "/test/numbers-async", mediaType);
+
+        Assert.That(body, Is.EqualTo(await GetAsync(client, "/test/numbers", mediaType)), "The same bytes as a List<int>");
+        Assert.That(MsgPackSerializer.Deserialize<int[]>(body, MsgPackMediaTypes.IsLsMsgPack(mediaType) ? new MsgPackSettings() : Plain), Is.EqualTo(new[] { 1, 2, 3 }));
       }
     }
 

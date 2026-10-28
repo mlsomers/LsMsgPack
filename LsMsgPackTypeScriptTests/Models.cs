@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Routing;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Threading.Tasks;
 
 namespace LsMsgPackTypeScriptTests
 {
@@ -119,6 +120,11 @@ namespace LsMsgPackTypeScriptTests
     public int Count { get; set; }
   }
 
+  public class TsLine
+  {
+    public decimal Amount { get; set; }
+  }
+
   /// <summary>
   /// Uses the analyzers find (the roots of --solution).
   /// </summary>
@@ -135,6 +141,13 @@ namespace LsMsgPackTypeScriptTests
     internal static void Map(IEndpointRouteBuilder endpoints)
     {
       endpoints.MapPost("/reply", (MsgPackBody<TsRequest> request) => MsgPackResults.MsgPack(new TsReply()));
+      endpoints.MapGet("/lines", () => MsgPackResults.MsgPack(Lines()));
+    }
+
+    private static async IAsyncEnumerable<TsLine> Lines()
+    {
+      await Task.Yield();
+      yield return new TsLine();
     }
   }
 }

@@ -3,6 +3,7 @@ using LsMsgPackTypeScript;
 using LtMsgPack.Http;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -183,6 +184,8 @@ namespace LsMsgPackTypeScriptTests
       StringAssert.Contains(result.Models, "export class TsReply {", "MsgPackResults.MsgPack(new TsReply()) of a minimal API");
       StringAssert.Contains(result.Models, "export class TsRequest {", "MsgPackBody<TsRequest> of a minimal API");
       StringAssert.Contains(result.Schemas, "TsReply", "written: a schema");
+      StringAssert.Contains(result.Schemas, "System.Collections.Generic.List<LsMsgPackTypeScriptTests.TsLine>", "IAsyncEnumerable<TsLine>: the formatters write a List<TsLine>");
+      StringAssert.Contains(result.Schemas, new LtMsgPackHttpSerializer().PrepareSchema(typeof(List<TsLine>), true).ToString());
     }
 
     [TestMethod]
