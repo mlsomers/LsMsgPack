@@ -239,7 +239,14 @@ async function copyConfiguration(extensionPath: string): Promise<void> {
   const server = args.length > 0 ? { command, args } : { command };
   const json = JSON.stringify({ mcpServers: { lsmsgpack: server } }, null, 2);
   const visualStudio = JSON.stringify({ servers: { lsmsgpack: { type: 'stdio', ...server } } }, null, 2);
-  const quote = (text: string): string => (/[\s"']/.test(text) ? `"${text.replace(/"/g, '\\"')}"` : text);
+  // Windows paths cannot contain double quotes. POSIX shells take everything between single quotes literally (backslashes and $ too),
+  // a single quote ends the quoted text, is written quoted by double quotes and the quoting starts again.
+  const quote = (text: string): string => {
+    if (process.platform === 'win32') {
+      return /[\s'&()^]/.test(text) ? `"${text}"` : text;
+    }
+    return /[^\w@%+=:,./-]/.test(text) ? `'${text.replace(/'/g, `'"'"'`)}'` : text;
+  };
   const commandLine = [command, ...args].map(quote).join(' ');
   const choices: (vscode.QuickPickItem & { text: string })[] = [
     { label: 'Claude Code', description: 'claude mcp add (run it in a terminal)', text: `claude mcp add lsmsgpack -- ${commandLine}` },
