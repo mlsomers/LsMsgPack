@@ -58,7 +58,7 @@ So in a map, when the constructor sets something other than what was left out, t
 public int Retries { get; set; } = 3;   // a map leaves out 0, a reader gets 3
 ```
 
-`[DefaultValue(3)]` makes the writer leave out 3 instead, and write 0. Until October 2026 a nil also kept what the constructor set, so this happened in the array layout too. Version 2 of the schema (`SchemaVersion.Described`) also tells the default to readers without the classes, e.g. JavaScript.
+`[DefaultValue(3)]` makes the writer leave out 3 instead, and write 0. Version 2 of the schema (`SchemaVersion.Described`) also tells the default to readers without the classes, e.g. JavaScript.
 
 What the constructor sets is the property's initializer, the initializer of the field its getter returns, or the last assignment to either in the body of the constructor a reader calls: the parameterless one, or the one that takes the values of properties ([immutable classes and constructors with parameters](schema.md#immutable-classes)). Only constant values count: there is nothing to check for `= DateTime.Now`, `= Guid.NewGuid()` or `= new List<int>()`. An empty string isn't flagged (`= ""` is the usual way to avoid `null`, and reading `null` back as `""` is what such code wants).
 

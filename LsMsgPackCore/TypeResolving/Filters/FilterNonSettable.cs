@@ -23,7 +23,7 @@ namespace LsMsgPack.TypeResolving.Filters
         /// </summary>
         public FilterNonSettable(bool onlyPublic = true) : this(GetOnlyProperties.All, onlyPublic) { }
 
-        /// <param name="getOnlyProperties">The properties without a setter that are kept (<see cref="GetOnlyProperties.None"/>: none, as versions until October 2026 did)</param>
+        /// <param name="getOnlyProperties">The properties without a setter that are kept (<see cref="GetOnlyProperties.None"/>: none)</param>
         /// <param name="onlyPublic">Leaves out the properties with a setter that is not public (except those a constructor takes)</param>
         public FilterNonSettable(GetOnlyProperties getOnlyProperties, bool onlyPublic = true)
         {
@@ -31,7 +31,7 @@ namespace LsMsgPack.TypeResolving.Filters
             _getOnly = getOnlyProperties;
         }
 
-        /// <param name="getOnlyProperties">The properties without a setter that are kept (<see cref="GetOnlyProperties.None"/>: none, as versions until October 2026 did)</param>
+        /// <param name="getOnlyProperties">The properties without a setter that are kept (<see cref="GetOnlyProperties.None"/>: none)</param>
         /// <param name="nonPublicProperties">The non-public properties that are serialized, and the properties whose non-public setters are used (the others need a public setter)</param>
         public FilterNonSettable(GetOnlyProperties getOnlyProperties, NonPublicProperties nonPublicProperties) : this(getOnlyProperties)
         {
@@ -105,7 +105,7 @@ namespace LsMsgPack.TypeResolving.Filters
     public enum GetOnlyProperties
     {
         /// <summary>
-        /// Left out, as versions until October 2026 did.
+        /// Left out.
         /// </summary>
         None = 0,
 

@@ -294,7 +294,7 @@ Property names and filters
 
 These settings also affect the size and the contract of the data:
 
-- **Property names**: by default, the .NET property name is used. Add an `AttributePropertyNameResolver` to `MsgPackSettings.PropertyNameResolvers` to use the name from `[JsonPropertyName]` (System.Text.Json), `[JsonProperty]` (Json.NET), `[XmlAttribute]`, `[XmlElement]`, `[XmlArray]` or `[DataMember]` (only in a `[DataContract]` type, as DataContractSerializer reads it), in that order; an attribute without a name keeps the .NET name, as those serializers do. Or from a custom attribute of your own (`new AttributePropertyNameResolver(typeof(MyNameAttribute), nameof(MyNameAttribute.Name))`), which comes first. With the indexed schema, these names are the names in the schema and the keys are their indexes, as for the other properties (so short attribute names make the schema smaller, and readers without the attributes find the properties by these names); any string id a property id resolver gives is used this way, other ids (numbers) are written as the keys. Versions until October 2026 wrote the .NET names in the schema and these names as the keys (the array layout matched by the .NET names): that data is still read, readers of those versions read the new data only without the resolver (by the new names). Released versions until October 2026 only read `[XmlAttribute]` and `[XmlElement]` (and threw for those without a name): the data they wrote has the .NET name (or its index in the schema) for the properties named by the other attributes, and is still read into them (when the map does not have the new name and the old one means no other property).
+- **Property names**: by default, the .NET property name is used. Add an `AttributePropertyNameResolver` to `MsgPackSettings.PropertyNameResolvers` to use the name from `[JsonPropertyName]` (System.Text.Json), `[JsonProperty]` (Json.NET), `[XmlAttribute]`, `[XmlElement]`, `[XmlArray]` or `[DataMember]` (only in a `[DataContract]` type, as DataContractSerializer reads it), in that order; an attribute without a name keeps the .NET name, as those serializers do. Or from a custom attribute of your own (`new AttributePropertyNameResolver(typeof(MyNameAttribute), nameof(MyNameAttribute.Name))`), which comes first. With the indexed schema, these names are the names in the schema and the keys are their indexes, as for the other properties (so short attribute names make the schema smaller, and readers without the attributes find the properties by these names); any string id a property id resolver gives is used this way, other ids (numbers) are written as the keys.
 - **Static filters** (`StaticFilters`) decide once per type which properties are serialized. By default, properties with a setter that is not public (`FilterNonSettable`) are skipped, except those a constructor takes ([immutable classes](#immutable-classes)). Properties without any setter are written: those of [anonymous types](#anonymous-types), those a constructor takes, and [computed properties and get-only collections](#computed-and-get-only-properties) (`GetOnlyProperties`). Non-public properties are left out unless you opt in ([non-public properties](#non-public-properties), `NonPublicProperties`). So are properties with an "ignore" attribute of another serializer (`FilterIgnoredAttribute`): `[XmlIgnore]`, `[JsonIgnore]` (System.Text.Json and Json.NET), `[IgnoreDataMember]`, `[IgnoreMember]` (MessagePack-CSharp), `[PropertyShape(Ignore = true)]` (Nerdbank.MessagePack) and any other attribute with "Ignore" in its name. And static properties are skipped (`FilterStatic`, see [Security](security.md#what-else-to-keep-in-mind)). Keep `FilterStatic` in the list if you set your own static filters.
 - **Dynamic filters** (`DynamicFilters`) decide per value. By default, `FilterDefaultValues` omits properties that are `null`, their type's default value, or the value of their `[DefaultValue]` attribute. An empty string is written, as the JSON serializers do (`new FilterDefaultValues(omitEmptyStrings: true)` omits it too, it is then read back as the value the constructor sets, often `null`). Use `FilterNullValues` instead to omit only `null` values, or use no dynamic filters to write every property.
 - **Collections**: `[SerializeEnumerable]` on a collection class or property sets the element type, and controls whether the collection's own properties and/or its elements are serialized.
@@ -325,7 +325,7 @@ The attributes are recognized by their names, LsMsgPack does not reference the l
 Anonymous types
 ---------------
 
-An anonymous object (`return Ok(new { Id = 1, Name = "x" });`) is written with its properties, although they have no setters, and read into any class with the same property names (ignoring case with `PropertyNameCaseInsensitive`), as JSON reads it. Until October 2026 it was written without them (an empty map or array), so a reader got the constructor's values.
+An anonymous object (`return Ok(new { Id = 1, Name = "x" });`) is written with its properties, although they have no setters, and read into any class with the same property names (ignoring case with `PropertyNameCaseInsensitive`), as JSON reads it.
 
 No reader has the class (the compiler makes it, internal to the writer's assembly), so it never gets a type id. How it's written depends on where it is:
 
@@ -343,8 +343,6 @@ With the schema, the keys of other objects are indexes. So a map whose keys are 
 
 Reading into an anonymous type (`Deserialize(bytes, template.GetType())`) sets its fields as its constructor does. It needs `ObjectCreation.ConstructorOrUninitialized` (the default) or `Uninitialized`, because an anonymous type has no parameterless constructor.
 
-Released readers (packages until October 2026) read the root and the elements of a root collection into their classes from version 2026.10.26.1 on. Earlier versions throw "no schema entry", because they paired classes only through the writer's classes. All released versions read the maps of names as `object`, and throw "no schema entry" when they read one into a class.
-
 Immutable classes
 -----------------
 
@@ -359,16 +357,12 @@ public class Money
 }
 ```
 
-Until October 2026 these properties were left out, so a `Money` arrived as `Amount = 0, Currency = null`. And a class like `Owner(string name)` with a settable `Name` was created without running a constructor, so the fields it initializes stayed `null`.
-
 - **The constructor**: the one with `[JsonConstructor]` (System.Text.Json or Json.NET) or `[SerializationConstructor]` (MessagePack-CSharp). Without one, it's the only public constructor, if the type has no public parameterless constructor. With several public constructors and none marked, no constructor is called: the properties without a setter are [computed properties](#computed-and-get-only-properties) (written, not read), those with a private setter are left out.
-- **Parameters and properties**: a parameter takes the property with the same name (ignoring case, the exact name first) and the same type. The constructor is used when it takes a property without a public setter, and for a class (or a marked constructor) when each of its parameters takes a property or has a default value. A constructor with a parameter for something else (a service, a value no property holds) isn't called: such a class is created without a constructor, as before. A struct whose properties all have setters is created by its default constructor, as System.Text.Json does.
+- **Parameters and properties**: a parameter takes the property with the same name (ignoring case, the exact name first) and the same type. The constructor is used when it takes a property without a public setter, and for a class (or a marked constructor) when each of its parameters takes a property or has a default value. A constructor with a parameter for something else (a service, a value no property holds) isn't called: such a class is created without a constructor. A struct whose properties all have setters is created by its default constructor, as System.Text.Json does.
 - **Reading**: the values are read first, then the constructor is called, then the properties it does not take are set (LtMsgPack calls the constructor as soon as the values of its parameters are read, and sets the properties after them directly). A property the data does not have (left out as a default value, or after the end of a trimmed array) passes the value the writer leaves out: its type's default, or its `[DefaultValue]` (as a nil sets it), not the parameter's default. A parameter that takes no property gets its default value. An exception of the constructor is passed on as it is.
 - A constructor that takes a property without a public setter is called also with `ObjectCreation.Uninitialized`: the values can't be set otherwise. Other classes are created uninitialized with that setting.
 - The code of the source generator writes these types but doesn't read them: LtMsgPack's runtime readers do.
 - Not for framework types (refused, or written as their plain value), collections, or anonymous types (whose fields are set).
-
-Released readers (packages until October 2026) don't have the properties without a public setter. With the indexed schema or the map layout, they skip them and read the other properties as before. In the array layout without the schema, the positions of the other properties shift. In the array layout, LsMsgPack (not LtMsgPack) throws when it reads an object whose properties are *all* left out by it (a `Money` written as `[12.5, "EUR"]`).
 
 Computed and get-only properties
 --------------------------------
@@ -384,23 +378,21 @@ public class Cart
 }
 ```
 
-Until October 2026 these properties were left out: a `Cart` arrived with only its `Customer`.
-
 - **Get-only collections**: a property whose type is a collection or dictionary with Add (`List<T>`, `ICollection<T>`, `HashSet<T>`, `Dictionary<K, V>`, `IDictionary<K, V>`..., not an array). Reading clears the collection the getter returns and adds the items read, so the items its constructor adds are not doubled (Json.NET adds to them). A dictionary keeps its comparer. A read-only or fixed size collection (an array behind `IList<T>`, `ReadOnlyCollection<T>`), a getter returning null, or a nil in the data leave the property as the constructor made it.
-- **Computed properties**: any other property without a setter. Its value is skipped when read (also by the source generator's code), and not reported as a [difference](ReadDifferences.md). The getter runs for every object that is written, so it must not throw (a cycle throws as with the JSON serializers). A computed property of a type the serializers never write is left out: `Type`, `MemberInfo` (and their subclasses), delegates, and arrays of them (`public Type ItemType => typeof(T);`). System.Text.Json throws on a `Type`, Json.NET writes its assembly-qualified name. Until October 29, 2026 these threw for every object of the class. A `Type` with a setter is still refused (the data would pick the type, see [security](security.md)).
-- Not: properties with a private setter (left out, unless a constructor takes them), static properties, properties declared by framework types (`Exception.Message`, `List<T>.Count`: framework types without settable properties are refused or written as their plain value, as before), properties of anonymous types and those a constructor takes (always written, see above).
-- **The option**: `FilterNonSettable` takes a `GetOnlyProperties` (`All` by default; `Collections`, `Computed`, or `None` for the output of versions until October 2026):
+- **Computed properties**: any other property without a setter. Its value is skipped when read (also by the source generator's code), and not reported as a [difference](ReadDifferences.md). The getter runs for every object that is written, so it must not throw (a cycle throws as with the JSON serializers). A computed property of a type the serializers never write is left out: `Type`, `MemberInfo` (and their subclasses), delegates, and arrays of them (`public Type ItemType => typeof(T);`). System.Text.Json throws on a `Type`, Json.NET writes its assembly-qualified name. A `Type` with a setter is still refused (the data would pick the type, see [security](security.md)).
+- Not: properties with a private setter (left out, unless a constructor takes them), static properties, properties declared by framework types (`Exception.Message`, `List<T>.Count`: framework types without settable properties are refused or written as their plain value), properties of anonymous types and those a constructor takes (always written, see above).
+- **The option**: `FilterNonSettable` takes a `GetOnlyProperties` (`All` by default; `Collections`, `Computed`, or `None` to leave them out):
 
 ```csharp
 settings.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.Collections), new FilterIgnoredAttribute(), new FilterStatic() };
 ```
 
-Released readers (packages until October 2026) don't have these properties. With the indexed schema or the map layout, they skip them and read the other properties as before. In the array layout, LsMsgPack throws when it reads an object of a class whose properties are *all* left out by it (`public class Stats { public int Count => 5; }` written as `[5]`), also with the schema. In the array layout without the schema, the positions shift both ways: released readers can't read the new data of a class with such properties, and new readers can't read what released versions wrote of such a class unless they use `GetOnlyProperties.None` (as for any change of a class's properties without the schema).
+Readers need the same setting. A reader with another one skips these properties with the indexed schema or the map layout; in the array layout without the schema the positions differ, as for any change of a class's properties.
 
 Non-public properties
 ---------------------
 
-By default only public properties are serialized, and only with a public setter (or none, see above). `FilterNonSettable` can also take the non-public ones (since October 2026, off by default):
+By default only public properties are serialized, and only with a public setter (or none, see above). `FilterNonSettable` can also take the non-public ones (off by default):
 
 ```csharp
 public class Account
@@ -415,7 +407,7 @@ public class Account
 settings.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.Attributed), new FilterIgnoredAttribute(), new FilterStatic() };
 ```
 
-- **`NonPublicProperties.None`** (the default): only public properties, as before.
+- **`NonPublicProperties.None`** (the default): only public properties.
 - **`NonPublicProperties.Attributed`**: also the properties with an attribute that opts them in for another serializer, and their non-public setters: `[JsonInclude]` (System.Text.Json), `[JsonProperty]` (Json.NET), `[DataMember]` (DataContractSerializer), `[Key]` (MessagePack-CSharp, Nerdbank.MessagePack), `[PropertyShape]` (Nerdbank.MessagePack, not with `Ignore = true`), and any other attribute with "Include" in its name, so you can make your own (`[MsgPackInclude]`). Like the ignore attributes, they are recognized by their names: LsMsgPack doesn't reference those libraries. A property with an opt-in and an ignore attribute is left out (`FilterIgnoredAttribute`).
 - **`NonPublicProperties.All`**: every non-public instance property (private, protected, internal), and every non-public setter.
 - Private properties of base classes are included too (they are found per class). The non-public properties come after the public ones (`PropertyOrder.Reflection`; the other orders sort them with the others).
@@ -424,7 +416,7 @@ settings.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNon
 - Both serializers read the same properties with the same settings, and the [source generator](SourceGenerator.md) covers them (`UnsafeAccessor` on .NET 8 and later). Which properties are serialized is decided once per type and filter array, as for the other static filters: no cost per object.
 - **Security**: with `All`, the data can set any property of the classes it's read into, including state the class keeps to itself. Use it for classes made for serialization. `Attributed` only sets what you marked.
 
-Readers need the same setting. A reader without it (also a released one) skips these properties with the indexed schema or the map layout; in the array layout without the schema the positions differ, as for any change of a class's properties.
+Readers need the same setting. A reader without it skips these properties with the indexed schema or the map layout; in the array layout without the schema the positions differ, as for any change of a class's properties.
 
 Choosing your settings
 ----------------------
