@@ -35,6 +35,7 @@ bash LtMsgPackAotSmokeTest/run.sh                       # NativeAOT with the gen
 - `MicroFramework/` has its own old copies of the sources, it does not link the library files.
 - The version comes from `CommonAssemblyInfo.cs` (read by `Packaging.props`).
 - Each packable project has a `README.md` next to its project file, packed by `Packaging.props` as the package's page on nuget.org: absolute links (nuget.org can't follow relative ones), no mermaid. Keep their examples in sync with `docs/` when the public API changes.
+- `docs/Wizard/` is a decision tree for beginners (questions `Files*.md`/`Network*.md`, setups `Setup-*.md`, `Extras.md`): its setups repeat packages, settings and code of the other docs, so update them too when those change.
 
 ## Language and targets
 
