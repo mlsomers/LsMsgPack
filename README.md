@@ -6,6 +6,8 @@ http://www.infotopie.nl/open-source/msgpack-explorer
 
 [![.NET](https://github.com/mlsomers/LsMsgPack/actions/workflows/dotnet.yml/badge.svg)](https://github.com/mlsomers/LsMsgPack/actions/workflows/dotnet.yml)
 
+**Not sure where to start?** The [setup wizard](docs/Wizard/README.md) asks a few questions (files or network, who reads the data, JavaScript or not) and ends with the packages, settings and code for your case.
+
 ASP.NET Integration
 -------------------
 
