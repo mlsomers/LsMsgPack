@@ -520,6 +520,22 @@ namespace LsMsgPackUnitTests
 
     public class CaseWrittenUnicode { public string größe { get; set; } }
 
+    /// <summary>
+    /// The names of JsonNamingPolicy.CamelCase (the TypeScript client), not in the order of CamelRead.
+    /// </summary>
+    public class CamelWritten
+    {
+      public string ioStream { get; set; }
+      public string invoiceDate { get; set; }
+      public string id { get; set; }
+      public string urlValue { get; set; }
+      public string x { get; set; }
+      public string already { get; set; }
+      public string urlvalue2 { get; set; }
+      public int left { get; set; }
+      public string last { get; set; }
+    }
+
     public class CaseWrittenOuter
     {
       public CaseWritten child { get; set; }
@@ -534,6 +550,19 @@ namespace LsMsgPackUnitTests
     }
 
     public class CaseReadUnicode { public string Größe { get; set; } }
+
+    public class CamelRead
+    {
+      public string InvoiceDate { get; set; }
+      public string URLValue { get; set; }
+      public string IOStream { get; set; }
+      public string ID { get; set; }
+      public string X { get; set; }
+      public string already { get; set; }
+      public string URLValue2 { get; set; }
+      public int Left { get; set; } = 7;
+      public string Last { get; set; }
+    }
 
     public class CaseRead
     {
@@ -566,6 +595,30 @@ namespace LsMsgPackUnitTests
 
       byte[] unicode = Serializer.Serialize(new CaseWrittenUnicode() { größe = "XL" }, settings);
       Assert.AreEqual(caseInsensitive ? "XL" : null, Serializer.Deserialize<CaseReadUnicode>(unicode, settings).Größe, "names that are not ASCII");
+    }
+
+    /// <summary>
+    /// PropertyNameCaseInsensitive with the keys of JsonNamingPolicy.CamelCase (LtMsgPack compares them as bytes) in another order than the reader's properties,
+    /// one that is no camelCase name (urlvalue2) and a left out default value (left).
+    /// </summary>
+    [TestMethod]
+    public void PropertyNameCaseInsensitiveCamelCase()
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = true };
+      CamelWritten written = new CamelWritten() { ioStream = "s", invoiceDate = "d", id = "i", urlValue = "u", x = "x", already = "a", urlvalue2 = "u2", last = "l" };
+      for (int t = 0; t < 2; t++) // the second time with the plan made
+      {
+        CamelRead read = Serializer.Deserialize<CamelRead>(Serializer.Serialize(written, settings), settings);
+        Assert.AreEqual("s", read.IOStream);
+        Assert.AreEqual("d", read.InvoiceDate);
+        Assert.AreEqual("i", read.ID);
+        Assert.AreEqual("u", read.URLValue);
+        Assert.AreEqual("x", read.X);
+        Assert.AreEqual("a", read.already);
+        Assert.AreEqual("u2", read.URLValue2);
+        Assert.AreEqual(7, read.Left);
+        Assert.AreEqual("l", read.Last);
+      }
     }
 
     /// <summary>

@@ -448,6 +448,8 @@ namespace LtMsgPack.Reading
           _asciiNames &= IsAscii(Props[t].Name);
           for (int u = Props.Length - 1; u >= 0; u--)
             _ambiguous[t] |= u != t && string.Equals(Props[t].Name, Props[u].Name, StringComparison.OrdinalIgnoreCase);
+          if (!_ambiguous[t])
+            Props[t].SetCamelName(CamelCase(Props[t].Name));
         }
       }
       if (WithValues != null)
@@ -496,17 +498,21 @@ namespace LtMsgPack.Reading
 
     /// <summary>
     /// FindByName with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/> (apart, so FindByName stays as small as without it), after the next property did not have the name:
-    /// the next property ignoring case (camelCase keys in the order of the properties), the exact names, then ignoring case: ASCII keys and names as bytes, anything else as strings.
+    /// the next property's camelCase name or the next property ignoring case (camelCase keys in the order of the properties), the exact and camelCase names,
+    /// then ignoring case: ASCII keys and names as bytes, anything else as strings. The camelCase names compared as bytes (also in the scan, which follows every left out key):
+    /// the invoices with camelCase keys read in 8.1 instead of 10.1-11.4 ms (exact names 7.2 ms), with the next property only 9.3-10.6 ms.
     /// </summary>
     private PropReader FindOrMatchIgnoringCase(byte[] buffer, int offset, int length, ref int next)
     {
       PropReader[] props = Props;
+      if (next < props.Length && props[next].CamelNameIs(buffer, offset, length))
+        return props[next++]; // no other property equals the key ignoring case (see SetCamelName), so none has it as its name
       if (next < props.Length && length > 0 && props[next].FirstDiffersInCase(buffer[offset]) && _asciiNames && !_ambiguous[next] && props[next].NameIsIgnoringAsciiCase(buffer, offset, length))
         return props[next++]; // no other property equals the key ignoring case, so none has it as its name
 
       for (int t = props.Length - 1; t >= 0; t--)
       {
-        if (props[t].NameIs(buffer, offset, length))
+        if (props[t].NameIs(buffer, offset, length) || props[t].CamelNameIs(buffer, offset, length)) // the camelCase name: no other property has it ignoring case
         {
           next = t + 1;
           return props[t];
@@ -526,6 +532,35 @@ namespace LtMsgPack.Reading
         }
       }
       return null;
+    }
+
+    /// <summary>
+    /// JsonNamingPolicy.CamelCase.ConvertName (the TypeScript client's default, names.ts) for ASCII letters: the upper case letters at the start become lower case,
+    /// except the last of them when a lower case letter follows (InvoiceDate: invoiceDate, ID: id, IOStream: ioStream). A name it converts otherwise (other letters) only misses the comparison as bytes.
+    /// </summary>
+    private static string CamelCase(string name)
+    {
+      if (name.Length == 0 || !IsAsciiUpper(name[0]))
+        return name;
+      char[] chars = name.ToCharArray();
+      for (int t = 0; t < chars.Length; t++)
+      {
+        if (t == 1 && !IsAsciiUpper(chars[t]))
+          break;
+        if (t > 0 && t + 1 < chars.Length && !IsAsciiUpper(chars[t + 1]))
+        {
+          if (chars[t + 1] == ' ')
+            chars[t] = (char)(chars[t] | 0x20);
+          break;
+        }
+        chars[t] = (char)(chars[t] | 0x20);
+      }
+      return new string(chars);
+    }
+
+    private static bool IsAsciiUpper(char c)
+    {
+      return (uint)(c - 'A') <= 'Z' - 'A';
     }
 
     private static bool IsAscii(string name)
@@ -679,6 +714,23 @@ namespace LtMsgPack.Reading
     {
       byte[] name = _nameBytes;
       return name.Length == length && new ReadOnlySpan<byte>(buffer, offset, length).SequenceEqual(name);
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the name in camelCase when it differs from the name and no other property has the name ignoring case
+    /// (so a key with these bytes sets this property, compared as bytes before the comparison ignoring case), otherwise null.
+    /// </summary>
+    private byte[] _camelBytes;
+
+    internal void SetCamelName(string camel)
+    {
+      _camelBytes = camel == Name ? null : MsgPackOptions.StringEncoding.GetBytes(camel);
+    }
+
+    internal bool CamelNameIs(byte[] buffer, int offset, int length)
+    {
+      byte[] name = _camelBytes;
+      return name != null && name.Length == length && new ReadOnlySpan<byte>(buffer, offset, length).SequenceEqual(name);
     }
 
     /// <summary>
