@@ -83,6 +83,8 @@ namespace LsMsgPack.TypeResolving.Filters
         /// <summary>
         /// A property without a setter (not a private one, except with <paramref name="nonPublic"/>), not static, of the user's (properties declared by framework types, e.g. <c>Exception.Message</c> or <c>List&lt;T&gt;.Count</c>, stay out:
         /// framework types without settable properties are refused or written as their plain value, see SerializationRules.ThrowIfUnsupportedFrameworkType).
+        /// Not of a type that is never written (<c>public Type ItemType =&gt; typeof(T);</c>, MemberInfo, delegates: SerializationRules.IsNeverWritten), which would make every object of the class throw
+        /// (Json.NET writes a Type's name, System.Text.Json throws).
         /// </summary>
         /// <param name="nonPublic">A non-public getter counts too</param>
         private bool KeepsGetOnly(PropertyInfo property, bool nonPublic)
@@ -91,7 +93,7 @@ namespace LsMsgPack.TypeResolving.Filters
             if (_getOnly == GetOnlyProperties.None || getter is null || getter.IsStatic || TypeResolver.IsFrameworkAssembly(property.DeclaringType.Assembly))
                 return false;
             GetOnlyProperties kind = GetOnlyCollection.IsFillable(property.PropertyType) ? GetOnlyProperties.Collections : GetOnlyProperties.Computed;
-            return (_getOnly & kind) != 0;
+            return (_getOnly & kind) != 0 && (kind == GetOnlyProperties.Collections || !SerializationRules.IsNeverWritten(property.PropertyType));
         }
     }
 
@@ -115,6 +117,7 @@ namespace LsMsgPack.TypeResolving.Filters
 
         /// <summary>
         /// Any other property without a setter (<c>public decimal Total =&gt; Lines.Sum(l =&gt; l.Amount);</c>): written for readers without the class (JavaScript, other languages, DTOs with setters), skipped when read.
+        /// Except those of a type the serializers never write (<c>Type</c>, <c>MemberInfo</c>, delegates, arrays of them): left out.
         /// </summary>
         Computed = 2,
 

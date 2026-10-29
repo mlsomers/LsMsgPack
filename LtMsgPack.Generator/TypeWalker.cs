@@ -746,17 +746,36 @@ namespace LtMsgPack.Generator
 
     /// <summary>
     /// The default FilterNonSettable keeps the property: a public setter, or no setter (computed properties and get-only collections, GetOnlyProperties.All) on a type that is not the framework's
-    /// (TypeResolver.IsFrameworkAssembly). Not predicted: a non-public setter a constructor takes (immutable classes). A wrong guess only costs the unrolled writer.
+    /// (TypeResolver.IsFrameworkAssembly) and not of a type that is never written (SerializationRules.IsNeverWritten). Not predicted: a non-public setter a constructor takes (immutable classes).
+    /// A wrong guess only costs the unrolled writer.
     /// </summary>
     private static bool KeptByDefault(INamedTypeSymbol declaring, IPropertySymbol property)
     {
       if (property.SetMethod != null)
         return property.SetMethod.DeclaredAccessibility == Accessibility.Public;
-      if (property.GetMethod is null || property.GetMethod.DeclaredAccessibility != Accessibility.Public)
+      if (property.GetMethod is null || property.GetMethod.DeclaredAccessibility != Accessibility.Public || IsNeverWritten(property.Type))
         return false;
       string assembly = declaring.ContainingAssembly?.Name ?? string.Empty;
       return !(assembly == "mscorlib" || assembly == "netstandard" || assembly == "System" || assembly == "System.Private.CoreLib"
         || assembly.StartsWith("System.", System.StringComparison.Ordinal) || assembly.StartsWith("Microsoft.", System.StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// SerializationRules.IsNeverWritten: System.Type, MemberInfo (and the classes deriving from them) and delegates, also as the elements of an array.
+    /// </summary>
+    private static bool IsNeverWritten(ITypeSymbol type)
+    {
+      while (type is IArrayTypeSymbol array)
+        type = array.ElementType;
+      if (type.TypeKind == TypeKind.Delegate)
+        return true;
+      for (ITypeSymbol t = type; t != null; t = t.BaseType)
+      {
+        string name = t.ToDisplayString();
+        if (name == "System.Type" || name == "System.Reflection.MemberInfo")
+          return true;
+      }
+      return false;
     }
 
     /// <summary>

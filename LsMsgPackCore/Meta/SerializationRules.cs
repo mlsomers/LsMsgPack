@@ -183,6 +183,17 @@ namespace LsMsgPack.Meta
         throw new MsgPackException(reason);
     }
 
+    /// <summary>
+    /// A type whose values are never written (<see cref="UnsupportedReason"/> refuses them): Type and MemberInfo (the data would pick the type) and delegates (code, no settable state), also as the elements of an array.
+    /// FilterNonSettable leaves out the computed properties of these types (<c>public Type ItemType =&gt; typeof(T);</c>): they are never read, and writing them would throw for every object of the class.
+    /// </summary>
+    internal static bool IsNeverWritten(Type type)
+    {
+      while (type.IsArray)
+        type = type.GetElementType();
+      return typeof(Type).IsAssignableFrom(type) || typeof(MemberInfo).IsAssignableFrom(type) || typeof(Delegate).IsAssignableFrom(type);
+    }
+
     /// <returns>Why the type is refused, null when it is not</returns>
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
     private static string UnsupportedReason(Type type)
