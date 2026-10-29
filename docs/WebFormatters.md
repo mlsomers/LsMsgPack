@@ -196,6 +196,7 @@ Order result = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[
 
 Notes:
 - `formatter.CreateHandler()` enables [schema references](#schema-references-applicationx-lsmsgpack) for the responses. It's optional: without it (or with `new HttpClient()`), every response carries its schema inline. Use `formatter.CreateHandler(inner)` to chain another handler.
+- With `IHttpClientFactory`, which sets the inner handler itself and refuses a handler that has one, add `formatter.CreateDelegatingHandler()` (`CreateDelegatingHandler(true)` for version 2 of the schema): `services.AddHttpClient("api").AddHttpMessageHandler(() => formatter.CreateDelegatingHandler());`. Keep the formatter as a singleton: the handlers the factory creates (one per handler lifetime) share its schemas.
 - `formatter.CreateHandler(true)` (`LsMsgPackSchemaHandler.RequestDescribedSchemas`) also asks for [version 2 of the schema](#schema-version-2-for-clients-without-the-classes), for a client whose classes differ from the server's (other names or namespaces, e.g. an SDK with its own models): the reader then pairs its classes with the server's by the declared types (see [schema.md](schema.md)).
 - Without an explicit media type, `ObjectContent` uses the formatter's first media type, `application/msgpack` (plain MsgPack).
 - Set the `Accept` header, or the server will probably answer with JSON.
@@ -353,6 +354,7 @@ On the client (HttpClient, the Web API package), this takes one line:
 ```csharp
 LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter();
 HttpClient client = new HttpClient(formatter.CreateHandler()); // formatter.CreateHandler(inner) to chain another handler
+// or with IHttpClientFactory: services.AddHttpClient("api").AddHttpMessageHandler(() => formatter.CreateDelegatingHandler());
 ```
 
 Without the handler (or from any other client), nothing changes: the responses carry their schema inline, as plain `application/x-lsmsgpack`.

@@ -84,6 +84,17 @@ namespace LsMsgPackWebApiFormatters
     }
 
     /// <summary>
+    /// <see cref="CreateHandler(HttpMessageHandler)"/> without an inner handler, for IHttpClientFactory (which sets it, and refuses handlers that have one):
+    /// <c>services.AddHttpClient("api").AddHttpMessageHandler(() => formatter.CreateDelegatingHandler())</c>.
+    /// The factory creates a handler per handler lifetime, they share this formatter's schemas.
+    /// </summary>
+    /// <param name="requestDescribedSchemas">Ask for version 2 of the schema (<see cref="LsMsgPackSchemaHandler.RequestDescribedSchemas"/>)</param>
+    public LsMsgPackSchemaHandler CreateDelegatingHandler(bool requestDescribedSchemas = false)
+    {
+      return new LsMsgPackSchemaHandler(Serializer) { RequestDescribedSchemas = requestDescribedSchemas };
+    }
+
+    /// <summary>
     /// Server side (Web API content negotiation): an instance that knows which schemas the client holds, and whether it asks for version 2 of the schema.
     /// </summary>
     public override MediaTypeFormatter GetPerRequestFormatterInstance(Type type, HttpRequestMessage request, MediaTypeHeaderValue mediaType)

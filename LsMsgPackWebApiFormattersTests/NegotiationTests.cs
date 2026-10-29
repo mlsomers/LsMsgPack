@@ -47,6 +47,11 @@ namespace LsMsgPackWebApiFormattersTests
 
     public Recorder(HttpMessageHandler inner) : base(inner) { }
 
+    /// <summary>
+    /// For IHttpClientFactory, which sets the inner handler.
+    /// </summary>
+    public Recorder() { }
+
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
       SchemasHeaders.Add(request.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemasHeader, out IEnumerable<string> values) ? string.Join(",", values) : null);
@@ -121,6 +126,43 @@ namespace LsMsgPackWebApiFormattersTests
           Assert.That(recorder.Responses[1].Length, Is.LessThan(recorder.Responses[0].Length));
         }
       }
+    }
+
+    /// <summary>
+    /// IHttpClientFactory refuses handlers that have an inner handler: CreateDelegatingHandler has none, the factory sets it.
+    /// </summary>
+    [Test]
+    public async Task HttpClientFactoryUsesTheHandler()
+    {
+      using (IHost host = await StartAspNetCore())
+      {
+        LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter();
+        Recorder recorder = new Recorder(); // the factory builds the handlers once within the handler lifetime
+        ServiceCollection services = new ServiceCollection();
+        services.AddHttpClient("api", client => client.BaseAddress = new Uri("http://localhost/"))
+          .ConfigurePrimaryHttpMessageHandler(() => host.GetTestServer().CreateHandler())
+          .AddHttpMessageHandler(() => formatter.CreateDelegatingHandler())
+          .AddHttpMessageHandler(() => recorder);
+        using (ServiceProvider provider = services.BuildServiceProvider())
+        {
+          IHttpClientFactory factory = provider.GetRequiredService<IHttpClientFactory>();
+          for (int t = 0; t < 3; t++)
+          {
+            using (HttpClient client = factory.CreateClient("api"))
+              Assert.That((await GetOrder(client, formatter)).Customer, Is.EqualTo(SampleOrder.Customer));
+          }
+
+          Assert.That(recorder.SchemasHeaders[0], Is.Null);
+          Assert.That(recorder.SchemasHeaders[1], Has.Length.EqualTo(32));
+          Assert.That(IsReference(recorder.Responses[0]), Is.False);
+          Assert.That(IsReference(recorder.Responses[1]), Is.True);
+          Assert.That(IsReference(recorder.Responses[2]), Is.True);
+        }
+      }
+
+      LsMsgPackSchemaHandler described = new LsMsgPackMediaTypeFormatter().CreateDelegatingHandler(true);
+      Assert.That(described.InnerHandler, Is.Null);
+      Assert.That(described.RequestDescribedSchemas, Is.True);
     }
 
     /// <summary>
