@@ -14,7 +14,7 @@ namespace LsMsgPack.TypeResolving.Filters
     public enum NonPublicProperties
     {
         /// <summary>
-        /// None (the default, as versions until October 2026): only public properties, with a public setter (or none, see <see cref="GetOnlyProperties"/>).
+        /// None (the default): only public properties, with a public setter (or none, see <see cref="GetOnlyProperties"/>).
         /// </summary>
         None = 0,
 

@@ -60,6 +60,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LtMsgPack", "LtMsgPack\LtMs
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documentation", "Documentation", "{864B66E3-CB20-4FC7-AFD4-A9FCB0302FE4}"
 	ProjectSection(SolutionItems) = preProject
+		docs\Analyzers.md = docs\Analyzers.md
 		docs\Architecture.md = docs\Architecture.md
 		docs\ClientApps.md = docs\ClientApps.md
 		docs\Compatibility.md = docs\Compatibility.md
@@ -67,6 +68,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documentation", "Documentat
 		docs\ReadDifferences.md = docs\ReadDifferences.md
 		docs\schema.md = docs\schema.md
 		docs\security.md = docs\security.md
+		docs\SourceGenerator.md = docs\SourceGenerator.md
+		docs\TypeScriptClient.md = docs\TypeScriptClient.md
+		docs\TypeScriptModels.md = docs\TypeScriptModels.md
 		docs\WebFormatters.md = docs\WebFormatters.md
 	EndProjectSection
 EndProject
@@ -79,7 +83,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "VsCode", "VsCode", "{8ED1C6
 		LsMsgPackVsCode\package-lock.json = LsMsgPackVsCode\package-lock.json
 		LsMsgPackVsCode\package.json = LsMsgPackVsCode\package.json
 		LsMsgPackVsCode\README.md = LsMsgPackVsCode\README.md
-		LsMsgPackVsCode\Server\Screenshot.png = LsMsgPackVsCode\Server\Screenshot.png
+		LsMsgPackVsCode\Screenshot.png = LsMsgPackVsCode\Screenshot.png
 		LsMsgPackVsCode\tsconfig.json = LsMsgPackVsCode\tsconfig.json
 	EndProjectSection
 EndProject

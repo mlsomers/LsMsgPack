@@ -344,48 +344,9 @@ namespace LsMsgPack.Meta
             ReadProperty(prop, instance, propval, settings, differences);
         }
       }
-      if (set < propVals.Count) // keys that are not property ids (or the reserved ones)
-      {
-        if (settings._formerIds)
-          set += SetFormerIds(instance, props, propVals, settings, differences);
-        if (settings._propertyNameCaseInsensitive && set < propVals.Count)
-          SetIgnoringCase(instance, props, propVals, settings, differences);
-      }
+      if (settings._propertyNameCaseInsensitive && set < propVals.Count) // keys that are not property ids (or the reserved ones)
+        SetIgnoringCase(instance, props, propVals, settings, differences);
       differences?.Pop();
-    }
-
-    /// <summary>
-    /// Data written by released versions with another id for a property (<see cref="FullPropertyInfo.FormerId"/>): the key of the former id sets the property when the map does not have its id.
-    /// </summary>
-    /// <returns>The number of properties set</returns>
-    private static int SetFormerIds(object instance, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings, ReadDifferences differences)
-    {
-      int set = 0;
-      for (int t = props.Length - 1; t >= 0; t--)
-      {
-        FullPropertyInfo prop = props[t];
-        if (prop.FormerId is null || !ReadsFormerId(prop, propVals, out object propval))
-          continue;
-        set++;
-        if (prop.IsComputed)
-          continue;
-        if (differences is null)
-          Assign(prop, instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
-        else
-          ReadProperty(prop, instance, propval, settings, differences);
-      }
-      return set;
-    }
-
-    /// <returns>True when the map has the former id of the property and not its id (former ids are unambiguous, see FullPropertyInfo.KeepUnambiguousFormerIds)</returns>
-    private static bool ReadsFormerId(FullPropertyInfo prop, Dictionary<object, object> propVals, out object propval)
-    {
-      if (propVals.ContainsKey(prop.PropertyId))
-      {
-        propval = null;
-        return false;
-      }
-      return propVals.TryGetValue(prop.FormerId, out propval);
     }
 
     /// <summary>
@@ -429,11 +390,7 @@ namespace LsMsgPack.Meta
     {
       HashSet<object> known = new HashSet<object>(MapConversionEqualityComparer.Instance);
       for (int t = 0; t < props.Length; t++)
-      {
         known.Add(props[t].PropertyId);
-        if (props[t].FormerId != null && ReadsFormerId(props[t], propVals, out object _))
-          known.Add(props[t].FormerId);
-      }
 
       List<object> unknown = null;
       foreach (object key in propVals.Keys)

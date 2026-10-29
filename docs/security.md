@@ -52,7 +52,7 @@ If your own type resolver writes and reads names like these, it still can: custo
 
 ### Only the framework's public types
 
-A name in the data never resolves to an internal or private type of the framework (the core library, `System.*` and `Microsoft.*` assemblies). Those types share short names with public ones: the short name `Complex` used to resolve to an internal struct of `System.Private.CoreLib` instead of `System.Numerics.Complex`. The types of your own assemblies are found whether they're public or not.
+A name in the data never resolves to an internal or private type of the framework (the core library, `System.*` and `Microsoft.*` assemblies). Those types share short names with public ones: the short name `Complex` would otherwise resolve to an internal struct of `System.Private.CoreLib` instead of `System.Numerics.Complex`. The types of your own assemblies are found whether they're public or not.
 
 `System.Type` (and other reflection types) are never written or read: a `Type` in the data would be a type picked by the data. Serializing one throws a `MsgPackException`; write its name and resolve it in your application against the types you expect.
 

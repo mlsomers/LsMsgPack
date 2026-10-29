@@ -433,7 +433,7 @@ namespace LsMsgPackUnitTests
       [Newtonsoft.Json.JsonProperty("newton")] public int B { get; set; }
       [Newtonsoft.Json.JsonProperty(Order = 1)] public string Unnamed { get; set; } // no name: the .NET name
       public string Plain { get; set; }
-      [System.Text.Json.Serialization.JsonPropertyName("json")][XmlElement("xml")] public string Both { get; set; } // the released versions wrote the XML name
+      [System.Text.Json.Serialization.JsonPropertyName("json")][XmlElement("xml")] public string Both { get; set; } // the JSON name comes first
       [XmlArray("items")] public List<int> Items { get; set; }
       public ContractNamed Contract { get; set; }
       public NotAContract Loose { get; set; }
@@ -478,19 +478,6 @@ namespace LsMsgPackUnitTests
       public string P { get; set; }
     }
 
-    /// <summary>
-    /// What AttributePropertyNameResolver did until October 2026: it did not find the attributes of the JSON serializers.
-    /// </summary>
-    private class ReleasedAttributeNames : IMsgPackPropertyIdResolver
-    {
-      public object GetId(FullPropertyInfo assignedTo, MsgPackOptions settings)
-      {
-        if (assignedTo.CustomAttributes.TryGetValue(nameof(XmlElementAttribute), out object element))
-          return ((XmlElementAttribute)element).ElementName;
-        return null;
-      }
-    }
-
     private static JsonNamed NewJsonNamed()
     {
       return new JsonNamed
@@ -516,17 +503,17 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(8, read.Child.B);
     }
 
-    private static MsgPackSettings JsonNamedSettings(bool schema, ObjectLayout layout, bool resolver, bool released = false)
+    private static MsgPackSettings JsonNamedSettings(bool schema, ObjectLayout layout, bool resolver)
     {
       MsgPackSettings settings = new MsgPackSettings { UseInexedSchema = schema, ObjectLayout = layout };
       if (resolver)
-        settings.PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { released ? (IMsgPackPropertyIdResolver)new ReleasedAttributeNames() : new AttributePropertyNameResolver() };
+        settings.PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new AttributePropertyNameResolver() };
       return settings;
     }
 
     /// <summary>
-    /// AttributePropertyNameResolver writes the names of [JsonPropertyName] (System.Text.Json) and [JsonProperty] (Json.NET), it used to look them up by the wrong key, and of [XmlArray] and [DataMember] (in a [DataContract]), which it did not read.
-    /// With the indexed schema these names are the names in the schema (since October 2026), so readers without the resolver read them too.
+    /// AttributePropertyNameResolver writes the names of [JsonPropertyName] (System.Text.Json), [JsonProperty] (Json.NET), [XmlArray] and [DataMember] (in a [DataContract]).
+    /// With the indexed schema these names are the names in the schema, so readers without the resolver read them too.
     /// </summary>
     [TestMethod]
     [DataRow(false, ObjectLayout.Map)]
@@ -553,27 +540,10 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// Data written by the versions that ignored the JSON attributes, [XmlArray] and [DataMember] (the .NET names) is still read into the renamed properties.
+    /// What 2026.10.24.1 wrote with AttributePropertyNameResolver and the indexed schema (MsgPackSerializer.Serialize(NewJsonNamed()) with the package of nuget.org): the .NET names in the schema, the attributes' names as the keys
+    /// (BindOlderNames, the array layout by the position of the .NET name).
     /// </summary>
     [TestMethod]
-    [DataRow(ObjectLayout.Map)]
-    [DataRow(ObjectLayout.Array)]
-    public void AttributeNamesReadDataWithDotNetNames(ObjectLayout layout)
-    {
-      byte[] old = Serializer.Serialize(NewJsonNamed(), JsonNamedSettings(false, layout, true, true)); // as the resolver wrote them before
-
-      AssertJsonNamed(Serializer.Deserialize<JsonNamed>(old, JsonNamedSettings(false, layout, true)));
-
-      Serializer.Deserialize<JsonNamed>(old, JsonNamedSettings(false, layout, true), out ReadDifferences differences);
-      Assert.IsNull(differences, differences?.ToString());
-    }
-
-    /// <summary>
-    /// What the released versions wrote with AttributePropertyNameResolver and the indexed schema (MsgPackSerializer.Serialize(NewJsonNamed()) with the packages of nuget.org): the schema has the .NET names,
-    /// 2026.10.22.1 did not find the JSON attributes (their schema indexes, the XML name as the key), 2026.10.24.1 wrote their names as the keys. The array layout is the same in both.
-    /// </summary>
-    [TestMethod]
-    [DataRow("2026.10.22.1", ObjectLayout.Map, "g6lKc29uTmFtZWSZoUGhQqdVbm5hbWVkpVBsYWlupEJvdGilSXRlbXOoQ29udHJhY3SlTG9vc2WlQ2hpbGStQ29udHJhY3ROYW1lZJOhRKFFoUasTm90QUNvbnRyYWN0kaFQiQChYQEHAqF1A6Fwo3htbKFiBZIBAgaDAKFkAaFlAqFmB4EAoWwIggCiY2EBCA==")]
     [DataRow("2026.10.24.1", ObjectLayout.Map, "g6lKc29uTmFtZWSZoUGhQqdVbm5hbWVkpVBsYWlupEJvdGilSXRlbXOoQ29udHJhY3SlTG9vc2WlQ2hpbGStQ29udHJhY3ROYW1lZJOhRKFFoUasTm90QUNvbnRyYWN0kaFQiadyZW5hbWVkoWGmbmV3dG9uBwKhdQOhcKRqc29uoWKlaXRlbXOSAQIGg6JkbaFkAaFlAqFmB4EAoWwIgqdyZW5hbWVkomNhpm5ld3Rvbgg=")]
     [DataRow("2026.10.24.1", ObjectLayout.Array, "g6lKc29uTmFtZWSZoUGhQqdVbm5hbWVkpVBsYWlupEJvdGilSXRlbXOoQ29udHJhY3SlTG9vc2WlQ2hpbGStQ29udHJhY3ROYW1lZJOhRKFFoUasTm90QUNvbnRyYWN0kaFQmaFhB6F1oXChYpIBApOhZKFloWaRoWyZomNhCMDAwMDAwMA=")]
     public void AttributeNamesReadReleasedSchemas(string version, ObjectLayout layout, string written)
@@ -685,24 +655,6 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual("a", written.Attribute);
       Assert.AreEqual("t", written.Typed);
       Assert.AreEqual("n", written.named);
-    }
-
-    public class JsonNamedOldAndNew
-    {
-      public string A { get; set; }
-      public string renamed { get; set; }
-    }
-
-    /// <summary>
-    /// The former id (the .NET name) only counts when the map does not have the property's id.
-    /// </summary>
-    [TestMethod]
-    public void AttributeNamesPreferTheNewName()
-    {
-      MsgPackSettings settings = JsonNamedSettings(false, ObjectLayout.Map, false);
-      byte[] bytes = Serializer.Serialize(new JsonNamedOldAndNew { A = "old", renamed = "new" }, settings);
-
-      Assert.AreEqual("new", Serializer.Deserialize<JsonNamed>(bytes, JsonNamedSettings(false, ObjectLayout.Map, true)).A);
     }
 
     private class NumberedPets : IMsgPackTypeResolver
