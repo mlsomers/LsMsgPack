@@ -165,13 +165,13 @@ namespace LsMsgPack
     public static ReadErrorHandling Default_ReadErrors { get; set; } = ReadErrorHandling.FailFast;
 
     /// <summary>
-    /// The <see cref="UnspecifiedDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Utc"/> by default, <see cref="System.DateTimeKind.Local"/> until October 2026).
+    /// The <see cref="UnspecifiedDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Utc"/> by default).
     /// </summary>
     [IgnoreDataMember]
     public static DateTimeKind Default_UnspecifiedDateTimeKind { get; set; } = DateTimeKind.Utc;
 
     /// <summary>
-    /// The <see cref="ReadDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Utc"/> by default, <see cref="System.DateTimeKind.Local"/> until October 2026).
+    /// The <see cref="ReadDateTimeKind"/> of new settings (<see cref="System.DateTimeKind.Utc"/> by default).
     /// </summary>
     [IgnoreDataMember]
     public static DateTimeKind Default_ReadDateTimeKind { get; set; } = DateTimeKind.Utc;
@@ -223,11 +223,6 @@ namespace LsMsgPack
     /// <para>Copied by <see cref="Clone"/>: it belongs to the filter array, not to these settings.</para>
     /// </summary>
     internal Meta.FullPropertyInfo.SharedPropsCache _sharedPropsCache;
-
-    /// <summary>
-    /// Set when properties got a former id (FullPropertyInfo.FormerId) with these settings: only then does ValueConverter.SetProperties look for the keys of former ids. Never reset (a session or the settings of custom property id resolvers).
-    /// </summary>
-    internal bool _formerIds;
 
     /// <summary>
     /// The highest <see cref="LsMsgPack.PropertyOrder"/>, the orders are indexes of the caches in FullPropertyInfo.
@@ -483,7 +478,7 @@ namespace LsMsgPack
     /// <summary>
     /// Reading property names: a key that is not the name of a property sets the one property whose name equals it ignoring case
     /// (ordinal; none when several properties do), false by default. For writers that change the names, e.g. camelCase (the TypeScript client, JSON habits).
-    /// <para>With the indexed schema (since October 2026) the names of the schema are matched the same way, once per class and schema, and the reader's classes are paired with the writer's by these names too.</para>
+    /// <para>With the indexed schema the names of the schema are matched the same way, once per class and schema, and the reader's classes are paired with the writer's by these names too.</para>
     /// <para>The exact name is looked up first, so it only costs something for keys that are not properties. The web formatters turn it on (<c>LtMsgPackHttpOptions.PropertyNameCaseInsensitive</c>).</para>
     /// </summary>
     [Category("Control")]
@@ -566,7 +561,7 @@ namespace LsMsgPack
     /// <summary>
     /// What a DateTime of <see cref="System.DateTimeKind.Unspecified"/> is taken to be when it is written as a timestamp (a moment in UTC): <see cref="System.DateTimeKind.Utc"/> (the default,
     /// the clock time is written as it is, as JSON writes it without an offset and MessagePack-CSharp takes it; it reads back as the same clock time in any time zone)
-    /// or <see cref="System.DateTimeKind.Local"/> (like <see cref="DateTime.ToUniversalTime"/>, the default until October 2026: the clock time then depends on the time zones of the writer and the reader).
+    /// or <see cref="System.DateTimeKind.Local"/> (like <see cref="DateTime.ToUniversalTime"/>: the clock time then depends on the time zones of the writer and the reader).
     /// </summary>
     [Category("Dates")]
     [DisplayName("Unspecified DateTime Kind")]
@@ -580,7 +575,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// The Kind of the DateTime values read from timestamps (which hold a moment in UTC, not the Kind): <see cref="System.DateTimeKind.Utc"/> (the default: UTC and Unspecified values
-    /// keep their clock time, as JSON reads them, Local values come back as the same moment in UTC), <see cref="System.DateTimeKind.Local"/> (converted to local time, the default until October 2026),
+    /// keep their clock time, as JSON reads them, Local values come back as the same moment in UTC), <see cref="System.DateTimeKind.Local"/> (converted to local time),
     /// or <see cref="System.DateTimeKind.Unspecified"/> (the UTC clock time, for values written as Unspecified with <see cref="UnspecifiedDateTimeKind"/> = Utc).
     /// <para>A DateTimeOffset read from a timestamp has the local offset with Local, offset zero otherwise (the same moment).</para>
     /// </summary>

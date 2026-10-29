@@ -39,53 +39,20 @@ namespace LsMsgPack.TypeResolving.Names
         }
 
         /// <summary>
-        /// The id the released versions until October 2026 gave a property named by an attribute they did not read: they did not find the attributes of the JSON serializers (looked up by the wrong key)
-        /// and did not know [XmlArray] and [DataMember], so data they wrote has another id for it (read by <see cref="ValueConverter"/>, see <see cref="FullPropertyInfo.FormerId"/>).
-        /// </summary>
-        /// <param name="formerId">The name of [XmlAttribute] or [XmlElement], or null: the id of the next resolver, or the .NET name</param>
-        /// <returns>False when the id does not come from one of those attributes</returns>
-        internal bool TryGetFormerId(FullPropertyInfo assignedTo, out string formerId)
-        {
-            AttributeNames names = NamesOf(assignedTo);
-            formerId = names.Released;
-            if (!names.Renamed)
-                return false;
-            if (_customAttribute != null)
-            {
-                Attribute attrib = assignedTo.PropertyInfo.GetCustomAttribute(_customAttribute, true);
-                if (attrib != null && _customAttributePropertyInfo.GetValue(attrib) != null)
-                    return false;
-            }
-            return true;
-        }
-
-        /// <summary>
-        /// The names the attributes of other serializers give a property (null when none or empty: the .NET name), read once per property (static metadata, kept in its PropertyAttributeSet).
+        /// The name the attributes of other serializers give a property (null when none or empty: the .NET name), read once per property (static metadata, kept in its PropertyAttributeSet).
         /// </summary>
         internal sealed class AttributeNames
         {
-            internal static readonly AttributeNames None = new AttributeNames(null, null, false);
+            internal static readonly AttributeNames None = new AttributeNames(null);
 
             /// <summary>
             /// The id: the name of [JsonPropertyName], [JsonProperty], [XmlAttribute], [XmlElement], [XmlArray] or [DataMember] (in a [DataContract] type), the first that gives one.
             /// </summary>
             internal readonly string Name;
 
-            /// <summary>
-            /// The name of [XmlAttribute] or [XmlElement], the attributes the released versions read.
-            /// </summary>
-            internal readonly string Released;
-
-            /// <summary>
-            /// Whether <see cref="Name"/> comes from an attribute the released versions did not read (see TryGetFormerId).
-            /// </summary>
-            internal readonly bool Renamed;
-
-            internal AttributeNames(string name, string released, bool renamed)
+            internal AttributeNames(string name)
             {
                 Name = name;
-                Released = released;
-                Renamed = renamed;
             }
         }
 
@@ -101,14 +68,8 @@ namespace LsMsgPack.TypeResolving.Names
         {
             if (byName is null || byName.Count == 0)
                 return AttributeNames.None;
-            string json = JsonName(byName);
-            string xml = XmlName(byName);
-            if (json != null)
-                return new AttributeNames(json, xml, true);
-            if (xml != null)
-                return new AttributeNames(xml, xml, false);
-            string other = XmlArrayName(byName) ?? DataMemberName(byName, property);
-            return other is null ? AttributeNames.None : new AttributeNames(other, null, true);
+            string name = JsonName(byName) ?? XmlName(byName) ?? XmlArrayName(byName) ?? DataMemberName(byName, property);
+            return name is null ? AttributeNames.None : new AttributeNames(name);
         }
 
         private static string JsonName(Dictionary<string, object> byName)

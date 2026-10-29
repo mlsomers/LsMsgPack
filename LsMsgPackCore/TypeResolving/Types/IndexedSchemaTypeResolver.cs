@@ -580,16 +580,6 @@ namespace LsMsgPack.TypeResolving.Types
       return known.Ids.TryGetValue(assignedTo.PropertyInfo.Name, out id);
     }
 
-    /// <summary>
-    /// The id <see cref="IMsgPackPropertyIdResolver.GetId"/> gives the name of the property when the entry has it, null otherwise; adds no entries or names (see FullPropertyInfo.FormerId).
-    /// </summary>
-    internal object IdOfName(FullPropertyInfo assignedTo)
-    {
-      if (TryGetDef(assignedTo.PropertyInfo.ReflectedType, out ComplexTypeDef def) && def.IdByName.TryGetValue(assignedTo.PropertyInfo.Name, out int id))
-        return BoxedId(id);
-      return null;
-    }
-
     private void ResolveDeserializedTypes(MsgPackOptions settings)
     {
 
