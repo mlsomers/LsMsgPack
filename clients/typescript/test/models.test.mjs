@@ -4,7 +4,7 @@ import { after, before, test } from 'node:test';
 import { Decoder, defineModels, encode, LsMsgPackClient, MsgPackReader, SchemaStore } from '../dist/index.js';
 import { assertLikeJson, generateModels, generatorAssembly, schemaBytes, serverAssembly, startServer } from './helpers.mjs';
 
-// Models as lsmsgpack-ts writes them (compiled to JavaScript)
+// Models as lsmsgpack-ts 2026.10.22 wrote them with its default (compiled to JavaScript): the .NET names, without propertyNames in defineModels
 class Address {
   Street = null;
   City = 'Utrecht';
@@ -123,7 +123,7 @@ test('the options must be the ones the models were generated with', () => {
   assert.strictEqual(new Decoder({ models: defineModels({ dates: 'iso', classes: [] }) }).decode(payload).value, '1970-01-01T00:00:00.000Z', 'taken from the models when not given');
 });
 
-// The same models generated with --property-names camelCase
+// The same models generated with camelCase field names (the default of later versions, which always write propertyNames)
 class CamelAddress {
   street = null;
   city = 'Utrecht';
@@ -251,7 +251,7 @@ let server, generated;
 
 before(async () => {
   if (skip) return;
-  generated = await generateModels();
+  generated = await generateModels(['--property-names', 'dotnet']); // compared with the test server's JSON, which has the .NET names
   server = await startServer();
 });
 after(() => server?.stop());
@@ -287,7 +287,7 @@ test('with models the client reads what a .NET client reads (left out values, co
   assert.strictEqual(new generated.Preferences().Created.getTime(), -62135596800000);
 
   const without = await new LsMsgPackClient({ baseUrl: server.url }).get('/preferences');
-  assert.strictEqual(without.Retries, 0, 'without models: the default of the type, as JSON clients');
+  assert.strictEqual(without.retries, 0, 'without models: the default of the type, as JSON clients');
   assertLikeJson(await client.get('/kinds/values'), await json('/dotnet/values'));
   assertLikeJson(await client.get('/kinds/defaults'), await json('/dotnet/defaults'));
 });
@@ -323,8 +323,10 @@ test('request bodies with models: every kind as the server reads it', { skip }, 
   assert.deepStrictEqual(echoed.Home, { Street: null, HouseNumber: null, PostalCode: null, City: 'Utrecht', Region: null, CountryCode: null });
 });
 
-test('the generated models with camelCase field names (--property-names camelCase)', { skip }, async () => {
-  const camel = await generateModels(['--property-names', 'camelCase']);
+test('the generated models by default: camelCase field names (--property-names camelCase)', { skip }, async () => {
+  const camel = await generateModels();
+  assert.strictEqual(camel.models.propertyNames, 'camelCase');
+  assert.strictEqual(generated.models.propertyNames, 'dotnet', 'written in defineModels');
   const client = new LsMsgPackClient({ baseUrl: server.url, models: camel.models, schemas: camel.schemas });
   const first = await client.send('/kinds/values');
   assert.strictEqual(first.reference, true, 'the same schemas');
@@ -344,7 +346,7 @@ test('the generated models with camelCase field names (--property-names camelCas
 });
 
 test('the generated models with other read options', { skip }, async () => {
-  const iso = await generateModels(['--dates', 'iso', '--int64', 'bigint', '--decimal', 'string']);
+  const iso = await generateModels(['--dates', 'iso', '--int64', 'bigint', '--decimal', 'string', '--property-names', 'dotnet']);
   const client = new LsMsgPackClient({ baseUrl: server.url, models: iso.models, schemas: iso.schemas });
   const kinds = await client.get('/kinds/values');
   assert.strictEqual(kinds.Long, -9000000000n);

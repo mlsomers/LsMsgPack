@@ -28,9 +28,10 @@ namespace LsMsgPackTypeScript
     internal string Decimal = "number";
 
     /// <summary>
-    /// The field names: 'dotnet' (the names of the .NET properties) or 'camelCase' (as System.Text.Json's JsonNamingPolicy.CamelCase names them; the client's propertyNames option).
+    /// The field names: 'camelCase' (default after 2026.10.22, as System.Text.Json's JsonNamingPolicy.CamelCase names them) or 'dotnet' (the names of the .NET properties);
+    /// the client's propertyNames option.
     /// </summary>
-    internal string PropertyNames = "dotnet";
+    internal string PropertyNames = "camelCase";
 
     /// <summary>
     /// The field name of a .NET property (also of Key and Value of a KeyValuePair).

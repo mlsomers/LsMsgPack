@@ -21,7 +21,7 @@ export interface ModelsDefinition {
   int64?: 'number' | 'bigint';
   dates?: 'date' | 'iso';
   decimal?: 'number' | 'string';
-  /** The field names of the classes (default 'dotnet'). */
+  /** The field names of the classes. Left out: 'dotnet' (lsmsgpack-ts 2026.10.22 wrote it only for 'camelCase', later versions always write it). */
   propertyNames?: PropertyNames;
   classes: readonly ModelClassDefinition[];
 }

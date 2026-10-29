@@ -2,7 +2,7 @@
 
 `@lsmsgpack/client` (in [clients/typescript](../clients/typescript)) reads the `application/x-lsmsgpack` responses of the [web formatters](WebFormatters.md) into complete JavaScript objects and writes request bodies they read. It is for a web application (or Node service) that talks to its own ASP.NET backend, as a faster replacement for JSON:
 
-- **Complete objects.** Every property of the class is there, also the ones the server left out because they were `null` or a default value (`0`, `false`, `Guid.Empty`, `[DefaultValue]`...). So `invoice.Lines[3].DiscountPercentage` is `0`, not `undefined`.
+- **Complete objects.** Every property of the class is there, also the ones the server left out because they were `null` or a default value (`0`, `false`, `Guid.Empty`, `[DefaultValue]`...). So `invoice.lines[3].discountPercentage` is `0`, not `undefined`.
 - **Polymorphism without attributes.** A property declared as a base class or interface gets an object with the properties of its actual class (the formatters add a type id where the type differs from the declared one), and its class name in `$type`. Request bodies send it back as the type id, so the server creates the same classes.
 - **The schema is sent once.** The property names travel once per schema, then the server refers to it (18 bytes). With the generated schema set, not even once.
 - **Small and fast.** No dependencies. Reads as fast as `JSON.parse` of an already decoded string, writes about as fast as `JSON.stringify` (numbers below).
@@ -31,7 +31,7 @@ const api = new LsMsgPackClient({ baseUrl: 'https://example.com/' }); // keep on
 const invoice = await api.get<Invoice>('api/invoices/42');
 const saved = await api.post<Invoice>('api/invoices', invoice); // the body as application/msgpack
 
-interface Invoice { Id: string; InvoiceDate: Date; Total: number; Lines: InvoiceLine[]; /* ... */ }
+interface Invoice { id: string; invoiceDate: Date; total: number; lines: InvoiceLine[]; /* ... */ }
 ```
 
 With the generated models and schemas (see [TypeScriptModels.md](TypeScriptModels.md)):
@@ -45,13 +45,13 @@ const api = new LsMsgPackClient({ baseUrl: 'https://example.com/', models, schem
 
 const invoice = await api.get<Invoice>('api/invoices/42'); // an Invoice: invoice instanceof Invoice, the schema was held already
 const order = new Order();                                 // the values the .NET constructor sets
-order.Pet = Object.assign(new Dog(), { Name: 'Rex' });     // declared as Animal: written with the type id Dog
+order.pet = Object.assign(new Dog(), { name: 'Rex' });     // declared as Animal: written with the type id Dog
 await api.post('api/orders', order);
 ```
 
 - `get`, `post`, `put`, `patch` and `delete` return the decoded body and throw an `HttpError` (with `status` and the decoded `body`) when the status is not 2xx. `send` returns `{ value, response, schema, reference }`.
 - A body that is already text or bytes (`string`, `Uint8Array`, `Blob`, `FormData`...) is sent as it is, anything else is encoded as MsgPack with `Content-Type: application/msgpack`.
-- The property names are the names of the .NET properties (as the schema has them, e.g. `InvoiceDate`), or camelCase with `propertyNames: 'camelCase'` (below).
+- The property names are camelCase, as the JSON of ASP.NET Core has them (`invoiceDate` for `InvoiceDate`), or the names of the .NET properties with `propertyNames: 'dotnet'` (below).
 - Responses that are not MsgPack (JSON, text) are decoded as such, an empty body (`204 No Content`, a `null` result) is `undefined`.
 - Already have a `Response` (your own `fetch`, an interceptor)? `api.read(response)` decodes it and learns its schema. Your own fetch needs the headers below: `Accept` and `MsgPack-Schemas` (`api.store.advertise(origin)`).
 - `Decoder` and `encode` work without HTTP (e.g. for MsgPack from a WebSocket): `new Decoder({ models }).decode(bytes)`, `encode(value, { models })`.
@@ -66,7 +66,7 @@ new LsMsgPackClient({
   decimal: 'number',      // 'number' (default), 'string' (the text of decimal.ToString(), every digit), or a function of that text: (t) => new Decimal(t)
   int64: 'number',        // long/ulong: 'number' (default, as JSON.parse: precision is lost beyond 2^53) or 'bigint'
   dates: 'date',          // DateTime/DateTimeOffset: 'date' (default) or 'iso' (text; DateTimeOffset keeps its offset)
-  propertyNames: 'dotnet', // 'dotnet' (default, InvoiceDate) or 'camelCase' (invoiceDate), see below
+  propertyNames: 'camelCase', // 'camelCase' (default, invoiceDate) or 'dotnet' (InvoiceDate), see below
   classes: { Invoice },   // without models: create instances of your own classes for these .NET type names
   store: sharedStore,     // a SchemaStore shared by several clients of the same servers
   headers: { Authorization: 'Bearer ...' }, // added to every request
@@ -80,13 +80,15 @@ new LsMsgPackClient({
 
 The models were generated for `int64`, `dates`, `decimal` and `propertyNames` (their TypeScript types and field names depend on them): the client takes those, and throws when you pass others.
 
-### camelCase property names
+### Property names
 
-`propertyNames: 'camelCase'` gives the properties the names System.Text.Json's `JsonNamingPolicy.CamelCase` gives them, so the objects look like the JSON of an API with ASP.NET Core's defaults: `invoiceDate`, `id` for `ID`, `urlValue` for `URLValue`.
+By default (`propertyNames: 'camelCase'`) the properties have the names System.Text.Json's `JsonNamingPolicy.CamelCase` gives them, so the objects look like the JSON of an API with ASP.NET Core's defaults: `invoiceDate`, `id` for `ID`, `urlValue` for `URLValue`. Code written against that JSON keeps working. `propertyNames: 'dotnet'` keeps the names of the .NET properties (`InvoiceDate`), as the schema has them.
+
+**Changed after version 2026.10.22**, whose default was `'dotnet'`: code that reads `invoice.InvoiceDate` without models gets `undefined` now. Pass `propertyNames: 'dotnet'` to keep the .NET names. Models carry their own names: files generated by lsmsgpack-ts 2026.10.22 (without `propertyNames` in `defineModels`) are read with the .NET names as before, newer ones say which they have (see [TypeScriptModels.md](TypeScriptModels.md)). The names are converted once per schema entry, not per object: reading is as fast either way.
 
 - It applies to the properties of objects and to `Key` and `Value` of a `KeyValuePair` (`{ key, value }`). Dictionary keys and `$type` stay as they are, and so do the keys of `application/msgpack` responses (maps without a schema).
-- **Models**: generate them with `--property-names camelCase` (see [TypeScriptModels.md](TypeScriptModels.md)). Their fields are camelCase, the client reads with the same, and an instance is written with the .NET names.
-- **Other request bodies** (plain objects, a property the models don't have) are written as they are, with camelCase keys. The formatters match names ignoring case when no property has the exact name (`PropertyNameCaseInsensitive`, on by default, see [WebFormatters.md](WebFormatters.md#media-types-and-settings)).
+- **Models**: lsmsgpack-ts names the fields camelCase by default (`--property-names dotnet` for the .NET names, see [TypeScriptModels.md](TypeScriptModels.md)). The client reads with the names of the models, and an instance is written with the .NET names.
+- **Other request bodies** (plain objects, a property the models don't have) are written as they are, with camelCase keys. The formatters match names ignoring case when no property has the exact name (`PropertyNameCaseInsensitive`, on by default, see [WebFormatters.md](WebFormatters.md#media-types-and-settings)). That costs the server about 15% more to read than the .NET names (100 invoices: 1.25 ms against 1.08 ms, October 2026), so post instances of the models when that matters (the writer cannot rename the keys of plain objects: it does not know which ones are dictionaries).
 - Two properties that differ only in case (`Id` and `ID`) have the same camelCase name. The generator refuses them, System.Text.Json does too, and the server sets neither for a key `id`.
 
 ### The models
@@ -103,7 +105,7 @@ An object that came with a type id has the name of its .NET class in `$type`, it
 
 ```ts
 const zoo = await api.get<Zoo>('api/zoo');
-zoo.Animals.push({ $type: 'Cat', Name: 'Kit', Indoor: true });
+zoo.animals.push({ $type: 'Cat', name: 'Kit', indoor: true });
 await api.post('api/zoo', zoo); // the server creates a Cat
 ```
 
@@ -167,7 +169,7 @@ Without them it still works, the client just gets every schema inline (it cannot
 | `Nullable<T>` | as `T` | `null` |
 | lists, arrays, sets | arrays | `null` |
 | dictionaries | objects (keys as text, like JSON) | `null` |
-| `KeyValuePair<K, V>` | `{ Key, Value }` (`{ key, value }` with camelCase) | `{ Key: default, Value: default }` |
+| `KeyValuePair<K, V>` | `{ key, value }` (`{ Key, Value }` with `propertyNames: 'dotnet'`) | `{ key: default, value: default }` |
 | tuples | arrays | `null` |
 | `object`, interfaces | what the value is (an object of its class with a type id, its name in `$type`) | `null` |
 

@@ -1,7 +1,7 @@
 // Property names as System.Text.Json's JsonNamingPolicy.CamelCase writes them (the propertyNames option, docs/TypeScriptClient.md).
 // lsmsgpack-ts names the fields of the models with JsonNamingPolicy.CamelCase itself: keep the two the same.
 
-/** The names of the properties of .NET classes in JavaScript: 'dotnet' (as they are, e.g. InvoiceDate) or 'camelCase' (invoiceDate). Never dictionary keys or $type. */
+/** The names of the properties of .NET classes in JavaScript: 'camelCase' (invoiceDate, the client's default) or 'dotnet' (as they are, e.g. InvoiceDate). Never dictionary keys or $type. */
 export type PropertyNames = 'dotnet' | 'camelCase';
 
 const upper = /^\p{Lu}$/u;
