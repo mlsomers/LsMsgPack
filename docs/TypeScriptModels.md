@@ -93,7 +93,7 @@ export const schemas: Readonly<Record<string, string>> = {
 };
 ```
 
-The schemas (version 2, as the client asks for them) of the response types, base64. The client registers them and lists their ids in `MsgPack-Schemas`, so the server refers to them from the first response on.
+The schemas (version 2, as the client asks for them) of the response types, base64. The client registers them and lists their ids in `MsgPack-Schemas`, so the server refers to them from the first response on. A page served by another origin than the API's then needs CORS to allow that request header, see [TypeScriptClient.md](TypeScriptClient.md#the-server).
 
 This works because the server makes **complete schemas** (`LtMsgPackHttpOptions.CompleteSchemas`, on by default, see [WebFormatters.md](WebFormatters.md#complete-schemas)): the schema of a response type has every class its values can hold, in a fixed order, so its id depends on the classes and the options only, not on the data. `lsmsgpack-ts` makes them with the same code (`LtMsgPackHttpSerializer.PrepareSchema`).
 

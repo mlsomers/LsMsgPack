@@ -139,12 +139,20 @@ Nothing to change: the [ASP.NET Core, Web API and MVC 5 formatters](WebFormatter
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
   .WithOrigins("https://app.example.com")
   .WithHeaders("Content-Type", "MsgPack-Schemas")   // and your other headers (Authorization...)
-  .WithExposedHeaders("MsgPack-Schema")));
+  .WithExposedHeaders("MsgPack-Schema")
+  .SetPreflightMaxAge(TimeSpan.FromHours(2))));     // see below
 // ...
 app.UseCors();
 ```
 
-Without them it still works, the client just gets every schema inline (it cannot read the id of a schema, so it does not keep it). The `Accept` header needs no CORS setting.
+What happens without them depends on the generated schema set (`schemas` or `store.preload`):
+
+- **Without the schema set** it still works: the client cannot read `MsgPack-Schema`, so it keeps no schema, never sends `MsgPack-Schemas` and gets every schema inline.
+- **With the schema set** the client sends `MsgPack-Schemas` on every request from the first one on, GETs too. A policy that does not allow that header (`WithHeaders(...)` without it) makes the browser refuse **every request** (the preflight fails, `fetch` throws a `TypeError`). `AllowAnyHeader()` allows it. Without the exposed header the server still refers to the preloaded schemas, so the responses can be read; only schemas outside the set come inline every time.
+
+A request with `MsgPack-Schemas` is not a "simple" request, so the browser sends a preflight (`OPTIONS`) before it, GETs included. It keeps the answer for `Access-Control-Max-Age` seconds, 5 when the server does not send it: set `SetPreflightMaxAge` (browsers cap it, Chromium at 2 hours). A POST with a MsgPack body has the preflight anyway (its `Content-Type` is not one a form can send). If the preflights cost more than the schemas, pass `negotiateSchemas: false`: GETs are simple again and every response carries its schema inline.
+
+The `Accept` header needs no CORS setting.
 
 ## Values
 
