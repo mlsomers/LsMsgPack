@@ -37,8 +37,8 @@ How the client reads (the types depend on it, the client checks it):
   --int64 number|bigint  long and ulong (default number).
   --dates date|iso       DateTime and DateTimeOffset (default date).
   --decimal number|string  decimal (default number).
-  --property-names dotnet|camelCase  The field names: the .NET names (default) or camelCase, as System.Text.Json's
-                         JsonNamingPolicy.CamelCase writes them (the server reads request bodies ignoring case).
+  --property-names camelCase|dotnet  The field names: camelCase (default), as System.Text.Json's JsonNamingPolicy.CamelCase
+                         writes them (the server reads request bodies ignoring case), or the .NET names.
 
 The server's formatters:
   --options <Type.Member>  A static property, field or method of the assemblies returning the LtMsgPackHttpOptions

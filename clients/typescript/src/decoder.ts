@@ -24,8 +24,9 @@ export interface DecodeOptions extends ReaderOptions {
   /** Classes to create for schema entries (by the type name of the writer), e.g. { Invoice: Invoice }. A property the class does not initialize gets the default. The models come first. */
   classes?: Record<string, new () => object>;
   /**
-   * The names of the properties of the objects: 'dotnet' (default, the names of the .NET properties: InvoiceDate) or 'camelCase' (invoiceDate, as System.Text.Json's
-   * JsonNamingPolicy.CamelCase names them; also key and value of a KeyValuePair). Never dictionary keys or $type. Models generated with it read with it.
+   * The names of the properties of the objects: 'camelCase' (default, invoiceDate, as System.Text.Json's JsonNamingPolicy.CamelCase names them, the JSON of ASP.NET Core;
+   * also key and value of a KeyValuePair) or 'dotnet' (the names of the .NET properties: InvoiceDate, the default of version 2026.10.22). Never dictionary keys or $type.
+   * The models give theirs (the names of their fields) when it is left out.
    */
   propertyNames?: PropertyNames;
   /** The data starts with the indexed schema (default true, as the formatters write application/x-lsmsgpack). False: the body only (UseInexedSchema off). */
@@ -752,7 +753,7 @@ export class Decoder {
       dates: options.dates ?? models?.dates ?? 'date',
       models,
       classes: options.classes,
-      propertyNames: options.propertyNames ?? models?.propertyNames ?? 'dotnet',
+      propertyNames: options.propertyNames ?? models?.propertyNames ?? 'camelCase',
       generateCode: options.generateCode ?? true,
     };
     if (models !== undefined) checkModelOptions(models, this.options);

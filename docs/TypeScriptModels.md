@@ -36,7 +36,7 @@ Options:
 | `--out <file.ts>` | The models. |
 | `--schemas <file.ts>` | The schema set, by default next to `--out` with `.schemas.ts`. `--no-schemas`: none. |
 | `--int64 number\|bigint`, `--dates date\|iso`, `--decimal number\|string` | How the client reads `long`, `DateTime`/`DateTimeOffset` and `decimal` (the TypeScript types depend on it). The client checks that it reads with the same options. |
-| `--property-names dotnet\|camelCase` | The field names: the names of the .NET properties (default) or camelCase as System.Text.Json's `JsonNamingPolicy.CamelCase` writes them (`invoiceDate`, `id` for `ID`; also `key`/`value` of a `KeyValuePair`). The client reads with the same (its `propertyNames` option) and writes request bodies with the .NET names. Two properties of a class with the same camelCase name (`Id` and `ID`) are refused. |
+| `--property-names camelCase\|dotnet` | The field names: camelCase as System.Text.Json's `JsonNamingPolicy.CamelCase` writes them (default: `invoiceDate`, `id` for `ID`; also `key`/`value` of a `KeyValuePair`), or the names of the .NET properties (the default of version 2026.10.22). `defineModels` gets `propertyNames` (always written since; a file without it has the .NET names), the client reads with the same and writes request bodies with the .NET names. Two properties of a class with the same camelCase name (`Id` and `ID`) are refused. |
 | `--options <Type.Member>` | A static property, field or method of the assemblies that returns the server's `LtMsgPackHttpOptions` (or the `LtMsgPackOptions` of `application/x-lsmsgpack`). The static filters, `PropertyOrder` and `AddTypeIdOptions` decide which properties the models have and what the schemas are. Default: the defaults of the formatters. |
 | `--import <module>` | Where the models import `defineModels` from (default `@lsmsgpack/client`). |
 
@@ -52,31 +52,31 @@ export type InvoiceStatus = (typeof InvoiceStatus)[keyof typeof InvoiceStatus];
 /** .NET Shop.Invoice */
 export class Invoice {
   declare readonly $type: 'Invoice';
-  Id: string = '00000000-0000-0000-0000-000000000000';
-  Due: Date = new Date(-62135596800000);
-  Retries: number = 3;                                    // public int Retries { get; set; } = 3;
-  Status: InvoiceStatus = InvoiceStatus.Draft;
-  Lines: InvoiceLine[] | null = null;
-  Home: Address | null = Object.assign(new Address(), { City: 'Utrecht' });
+  id: string = '00000000-0000-0000-0000-000000000000';
+  due: Date = new Date(-62135596800000);
+  retries: number = 3;                                    // public int Retries { get; set; } = 3;
+  status: InvoiceStatus = InvoiceStatus.Draft;
+  lines: InvoiceLine[] | null = null;
+  home: Address | null = Object.assign(new Address(), { city: 'Utrecht' });
 }
 
 export abstract class Animal {
   declare readonly $type: 'Cat' | 'Dog';
-  Name: string | null = null;
+  name: string | null = null;
 }
 
 export class Dog extends Animal {
   declare readonly $type: 'Dog';
-  Barks: number = 0;
+  barks: number = 0;
 }
 
-export const models = defineModels({ int64: 'number', dates: 'date', decimal: 'number', classes: [
+export const models = defineModels({ int64: 'number', dates: 'date', decimal: 'number', propertyNames: 'camelCase', classes: [
   [Invoice, 'Invoice', [['Id', 'guid'], ['Due', 'datetime'], /* ... */]],
   /* ... */
 ] });
 ```
 
-- **Properties**: the ones the server writes (its static filters: settable or taken by a constructor, not ignored, not static), with the .NET names.
+- **Properties**: the ones the server writes (its static filters: settable or taken by a constructor, not ignored, not static), camelCase by default (`--property-names`); `defineModels` has the .NET names.
 - **Types**: as the client reads them, the same rules as System.Text.Json except dates (`Date`) and bytes (`Uint8Array`): see the [client's table of values](TypeScriptClient.md#values). Reference types are `| null`. With nullable reference types enabled in the .NET project, the annotations decide (`string?` or `string`); without them a property can be null, the elements of a collection and values of a dictionary are taken as not null.
 - **Initial values**: what the constructor sets (the class is created as the serializer creates it: its parameterless constructor, otherwise uninitialized), as TypeScript. Nested objects are `new X()` with the values that differ from what `X` sets. A value the constructor sets differently each time gets the default of its type, with a warning.
 - **`$type`**: the type name the server writes as the type id (the short name, or the full name with `AddTypeIdOption.FullName`). It is not a field: `defineModels` puts it on the prototype, so it costs nothing per object and `JSON.stringify` leaves it out. A base class declares the names of its classes, so `switch (animal.$type)` narrows.

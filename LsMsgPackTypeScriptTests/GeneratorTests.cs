@@ -60,26 +60,29 @@ namespace LsMsgPackTypeScriptTests
     }
 
     [TestMethod]
-    public void CamelCaseFieldNames()
+    public void CamelCaseFieldNamesByDefault()
     {
-      string models = Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--property-names", "camelCase").Models;
+      string models = Run("--root", "LsMsgPackTypeScriptTests.TsOrder").Models;
       string order = ClassOf(models, "TsOrder");
       StringAssert.Contains(order, "  retries: number = 3;");
       StringAssert.Contains(order, "  address: TsAddress | null = Object.assign(new TsAddress(), { street: 'Main' });");
       StringAssert.Contains(order, "  pair: { key: string | null; value: number } = { key: null, value: 0 };");
       StringAssert.Contains(models, "  propertyNames: 'camelCase',\n");
       StringAssert.Contains(models, "['Retries', 'int']", "defineModels has the .NET names (the keys the client writes)");
-      Assert.IsFalse(Run("--root", "LsMsgPackTypeScriptTests.TsOrder").Models.Contains("propertyNames"), "the default is not written");
+      StringAssert.Contains(models, ", propertyNames: 'camelCase' (the client checks them).\n");
+      string dotnet = Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--property-names", "dotnet").Models;
+      StringAssert.Contains(dotnet, "  propertyNames: 'dotnet',\n", "always written: defineModels and released clients read a file without it as 'dotnet'");
+      StringAssert.Contains(ClassOf(dotnet, "TsOrder"), "  Retries: number = 3;");
 
       StringWriter output = new StringWriter(), errors = new StringWriter();
-      UsageException ex = Assert.ThrowsExactly<UsageException>(() => Program.Run(new[] { "--assembly", Assembly, "--out", Path.Combine(_folder, "clash.ts"), "--root", "LsMsgPackTypeScriptTests.TsClash", "--property-names", "camelCase" }, output, errors));
+      UsageException ex = Assert.ThrowsExactly<UsageException>(() => Program.Run(new[] { "--assembly", Assembly, "--out", Path.Combine(_folder, "clash.ts"), "--root", "LsMsgPackTypeScriptTests.TsClash" }, output, errors));
       StringAssert.Contains(ex.Message, "the same field name id");
     }
 
     [TestMethod]
     public void FieldsHaveTheConstructorValues()
     {
-      string order = ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder").Models, "TsOrder");
+      string order = ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--property-names", "dotnet").Models, "TsOrder");
       StringAssert.Contains(order, "  Id: string = '00000000-0000-0000-0000-000000000000';");
       StringAssert.Contains(order, "  Retries: number = 3;");
       StringAssert.Contains(order, "  Big: number = 1152921504606846976;");
@@ -102,13 +105,13 @@ namespace LsMsgPackTypeScriptTests
       StringAssert.Contains(order, "  Data: Uint8Array | null = null;");
       StringAssert.Contains(order, "  Anything: unknown = null;");
       StringAssert.Contains(order, "  ReadOnly: number = 7;"); // a computed property is written (GetOnlyProperties.Computed)
-      StringAssert.Contains(ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder").Models, "TsAddress"), "  City: string | null = 'Utrecht';");
+      StringAssert.Contains(ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--property-names", "dotnet").Models, "TsAddress"), "  City: string | null = 'Utrecht';");
     }
 
     [TestMethod]
     public void OptionsChangeTheTypes()
     {
-      string order = ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--int64", "bigint", "--dates", "iso", "--decimal", "string").Models, "TsOrder");
+      string order = ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--int64", "bigint", "--dates", "iso", "--decimal", "string", "--property-names", "dotnet").Models, "TsOrder");
       StringAssert.Contains(order, "  Big: bigint = 1152921504606846976n;");
       StringAssert.Contains(order, "  Price: string = '1.50';");
       StringAssert.Contains(order, "  Due: string = '2026-10-20T12:00:00.000Z';");
@@ -123,7 +126,7 @@ namespace LsMsgPackTypeScriptTests
     [TestMethod]
     public void HierarchiesAndInterfaces()
     {
-      string models = Run("--root", "LsMsgPackTypeScriptTests.TsOrder").Models;
+      string models = Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--property-names", "dotnet").Models;
       StringAssert.Contains(models, "export abstract class TsAnimal {\n  declare readonly $type: 'TsDog' | 'TsPuppy';\n  Name: string | null = null;\n}");
       StringAssert.Contains(models, "export class TsDog extends TsAnimal {\n  declare readonly $type: 'TsDog' | 'TsPuppy';\n  Barks: number = 0;\n}");
       StringAssert.Contains(models, "export class TsPuppy extends TsDog {\n  declare readonly $type: 'TsPuppy';\n  override Name: string | null = 'Puppy';\n}");
