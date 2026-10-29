@@ -11,13 +11,23 @@ namespace LsMsgPackWebApiFormatters
   /// <summary>
   /// Client side schema negotiation for application/x-lsmsgpack (see <see cref="LtMsgPackHttpSerializer"/>): tells the server which schemas the client holds (request header MsgPack-Schemas),
   /// so it can refer to them instead of sending them, and registers the schemas the server sends inline (response header MsgPack-Schema).
-  /// <para>Create it with <see cref="LsMsgPackMediaTypeFormatter.CreateHandler"/>, so it shares the formatter's schema store: <c>new HttpClient(formatter.CreateHandler())</c>.</para>
+  /// <para>Create it with <see cref="LsMsgPackMediaTypeFormatter.CreateHandler(HttpMessageHandler)"/>, so it shares the formatter's schema store: <c>new HttpClient(formatter.CreateHandler())</c>.
+  /// With IHttpClientFactory, which sets the inner handler itself: <c>services.AddHttpClient("api").AddHttpMessageHandler(() => formatter.CreateDelegatingHandler())</c>
+  /// (<see cref="LsMsgPackMediaTypeFormatter.CreateDelegatingHandler"/>).</para>
   /// </summary>
   public class LsMsgPackSchemaHandler : DelegatingHandler
   {
     private readonly LtMsgPackHttpSerializer _serializer;
 
     public LsMsgPackSchemaHandler(LtMsgPackHttpSerializer serializer, HttpMessageHandler innerHandler) : base(innerHandler)
+    {
+      _serializer = serializer ?? throw new System.ArgumentNullException(nameof(serializer));
+    }
+
+    /// <summary>
+    /// Without an inner handler, for a pipeline that sets <see cref="DelegatingHandler.InnerHandler"/> itself (IHttpClientFactory refuses handlers that have one).
+    /// </summary>
+    public LsMsgPackSchemaHandler(LtMsgPackHttpSerializer serializer)
     {
       _serializer = serializer ?? throw new System.ArgumentNullException(nameof(serializer));
     }
