@@ -73,6 +73,30 @@ namespace LsMsgPackUnitTests
       public int Length { get { return Name?.Length ?? 0; } }
     }
 
+    /// <summary>
+    /// Computed properties of types that are never written (a Type, MemberInfo, a delegate, an array of them): left out, the others written.
+    /// </summary>
+    public class GopTyped<T>
+    {
+      public int Id { get; set; } = 1;
+      public Type ItemType { get { return typeof(T); } }
+      public System.Reflection.PropertyInfo Property { get { return typeof(GopTyped<T>).GetProperty(nameof(Id)); } }
+      public Func<int> Next { get { return () => Id + 1; } }
+      public Type[] Arguments { get { return typeof(GopTyped<T>).GetGenericArguments(); } }
+      public int Twice { get { return Id * 2; } }
+    }
+
+    public class GopTypedDto
+    {
+      public int Id { get; set; }
+      public int Twice { get; set; }
+    }
+
+    public class GopSettableType
+    {
+      public Type ItemType { get; set; } = typeof(int);
+    }
+
     public struct GopSize
     {
       public int Width { get; set; }
@@ -259,6 +283,27 @@ namespace LsMsgPackUnitTests
       dto = Serializer.Deserialize<GopCartDto>(bytes, Settings(schema, layout));
       Assert.IsNull(dto.Lines);
       Assert.AreEqual(7m, dto.Total);
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(AllSettings))]
+    public void Computed_TypesNeverWrittenAreLeftOut(bool schema, ObjectLayout layout)
+    {
+      GopTyped<int> value = new GopTyped<int>() { Id = 3 };
+      byte[] bytes = Serializer.Serialize(value, Settings(schema, layout));
+      if (!schema)
+        CollectionAssert.AreEqual(Serializer.Serialize(new GopTypedDto() { Id = 3, Twice = 6 }, Settings(schema, layout)), bytes, "only Id and Twice");
+      GopTypedDto dto = Serializer.Deserialize<GopTypedDto>(bytes, Settings(schema, layout));
+      Assert.AreEqual(3, dto.Id);
+      Assert.AreEqual(6, dto.Twice);
+      Assert.AreEqual(3, Serializer.Deserialize<GopTyped<int>>(bytes, Settings(schema, layout)).Id);
+    }
+
+    [TestMethod]
+    [DynamicData(nameof(AllSettings))]
+    public void SettableType_StillRefused(bool schema, ObjectLayout layout)
+    {
+      Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new GopSettableType(), Settings(schema, layout)), "a Type with a setter would be read from the data");
     }
 
     [TestMethod]

@@ -354,6 +354,25 @@ namespace LsMsgPackUnitTests
       }
     }
 
+    public class GcComputedType
+    {
+      public int Id { get; set; } = 3;
+      public Type ItemType { get { return typeof(int); } }
+      public Func<int> Next { get { return () => Id + 1; } }
+      public int Twice { get { return Id * 2; } }
+    }
+
+    [TestMethod]
+    public void ComputedTypes_LeftOutAsPredicted()
+    {
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false });
+      Assert.AreEqual(3, serializer.Deserialize<GcComputedType>(serializer.Serialize(new GcComputedType())).Id);
+
+      object generated = WritePlan(serializer, typeof(GcComputedType), true);
+      Assert.IsNotNull(generated, "the generated writer is used");
+      Assert.IsTrue((bool)generated.GetType().GetField("Unrolled", Internal).GetValue(generated), "the generator predicts that the Type and the delegate are left out");
+    }
+
     public class GcPrivateBase
     {
       [System.Text.Json.Serialization.JsonInclude]
