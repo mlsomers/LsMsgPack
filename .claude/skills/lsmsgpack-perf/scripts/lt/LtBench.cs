@@ -1,4 +1,4 @@
-// A/B benchmark of LtMsgPack (and the HTTP serializer of the formatters) on the invoice model, System.Text.Json as the baseline.
+﻿// A/B benchmark of LtMsgPack (and the HTTP serializer of the formatters) on the invoice model, System.Text.Json as the baseline.
 // Usage: <exe> table [seconds]                    all candidates, fastest write/read (20 rounds x 100 invoices), relative to System.Text.Json
 //        <exe> write|read|both <candidate> <seconds>   one candidate in a loop (for perf), prints the fastest
 //        <exe> small <seconds>                    per call cost of a single Address / tiny object
@@ -259,6 +259,30 @@ public static class Bench
     };
   }
 
+  /// <summary>
+  /// Plain MsgPack with camelCase keys (what the TypeScript client sends by default) read by the HTTP serializer (PropertyNameCaseInsensitive).
+  /// allKeys: also the default values (the client writes plain objects as they are), otherwise they are left out.
+  /// </summary>
+  static Candidate HttpCamelCase(string name, bool allKeys)
+  {
+    LtMsgPackOptions options = new LtMsgPackOptions
+    {
+      UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameResolvers = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIdResolver[] { new CamelCaseNames() }
+    };
+    if (allKeys)
+      options.DynamicFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeDynamically[0];
+    LtMsgPackSerializer camel = new LtMsgPackSerializer(options);
+    Candidate plain = Http(name, "application/msgpack", false);
+    plain.Ser = i => camel.Serialize(i);
+    plain.SerSmall = a => camel.Serialize(a);
+    return plain;
+  }
+
+  sealed class CamelCaseNames : LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIdResolver
+  {
+    public object GetId(LsMsgPack.Meta.FullPropertyInfo assignedTo, MsgPackOptions settings) => JsonNamingPolicy.CamelCase.ConvertName(assignedTo.PropertyInfo.Name);
+  }
+
   static List<Candidate> Candidates()
   {
     JsonSerializerOptions stj = new JsonSerializerOptions();
@@ -277,6 +301,8 @@ public static class Bench
       Http("http-lsmsgpack", "application/x-lsmsgpack", false),
       Http("http-lsmsgpack-ref", "application/x-lsmsgpack", true),
       Http("http-plain", "application/msgpack", false),
+      HttpCamelCase("http-plain-camel", false),
+      HttpCamelCase("http-plain-camel-all", true),
       LtReport("lt-report-default", new LtMsgPackOptions()),
       LtReport("lt-report-map-indexed", new LtMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map }),
       LtReport("lt-report-map-reference", new LtMsgPackOptions { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map }),
