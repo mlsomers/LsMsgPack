@@ -62,6 +62,11 @@ namespace LtMsgPack
       _serializer = new Serializer(copy);
     }
 
+    /// <summary>
+    /// The implementation, for the stream writer and reader.
+    /// </summary>
+    internal Serializer Implementation { get { return _serializer; } }
+
     private static LtMsgPackContext NotNull(LtMsgPackContext context)
     {
       if (context is null)
@@ -157,9 +162,9 @@ namespace LtMsgPack
 
     // The writers of the root value (in WriteContext.Root), without a closure per call
 
-    private static readonly Action<Writing.WriteContext, LsMsgPack.Meta.FullPropertyInfo> BoxedWriter = (c, root) => c.Serializer.WriteRoot(c, root);
+    internal static readonly Action<Writing.WriteContext, LsMsgPack.Meta.FullPropertyInfo> BoxedWriter = (c, root) => c.Serializer.WriteRoot(c, root);
 
-    private static class TypedWriter<T>
+    internal static class TypedWriter<T>
     {
       internal static readonly Action<Writing.WriteContext, LsMsgPack.Meta.FullPropertyInfo> Write = (c, root) =>
       {

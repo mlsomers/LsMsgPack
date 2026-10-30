@@ -500,7 +500,7 @@ namespace LtMsgPack.IO
           return ReadPlainExtension();
       }
 
-      throw new MsgPackException("The specification specifically states that the value 0xC1 should never be used.", Pos - 1, MsgPackTypeId.NeverUsed);
+      throw Streaming.Escape.NotSupported(Pos - 1);
     }
 
     private string ReadStringBody(long length)
@@ -594,7 +594,7 @@ namespace LtMsgPack.IO
         case 0xC8: Advance(1L + U16()); return;
         case 0xC9: Advance(1L + U32()); return;
       }
-      throw new MsgPackException("The specification specifically states that the value 0xC1 should never be used.", Pos - 1, MsgPackTypeId.NeverUsed);
+      throw Streaming.Escape.NotSupported(Pos - 1);
     }
 
     private void Advance(long count)

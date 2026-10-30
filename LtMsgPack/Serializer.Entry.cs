@@ -61,7 +61,8 @@ namespace LtMsgPack
     /// </summary>
     /// <param name="value">The value, written by <paramref name="write"/> (it is <see cref="WriteContext.Root"/>)</param>
     /// <param name="write">Writes the value (typed or boxed), may run twice with a schema reference (when the cached schema grows)</param>
-    internal void Serialize(Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, Stream target, out byte[] result)
+    /// <param name="sink">Gets the payload instead of <paramref name="target"/> or <paramref name="result"/> (the stream writer)</param>
+    internal void Serialize(Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, Stream target, out byte[] result, IPayloadSink sink = null)
     {
       result = null;
       bool isNull = value is null;
@@ -85,7 +86,7 @@ namespace LtMsgPack
           if (!ReferenceEquals(c.IdSettings, Options))
             c.IdSettings = Options;
           write(c, root);
-          Output(null, 0, c.W, target, out result);
+          Output(null, 0, false, c.W, target, sink, out result);
           return;
         }
 
@@ -105,7 +106,7 @@ namespace LtMsgPack
               c.Mode = IdMode.Session;
               c.IdSettings = WriterShared(current).Settings(Options);
               write(c, root);
-              Output(current.Reference, current.Reference.Length, c.W, target, out result);
+              Output(current.Reference, current.Reference.Length, true, c.W, target, sink, out result);
               return;
             }
             catch (SchemaGrowthException) // something the session does not have yet, RunWriter grows it
@@ -124,7 +125,7 @@ namespace LtMsgPack
             write(c, root);
             return true;
           }, out session);
-          Output(session.Reference, session.Reference.Length, c.W, target, out result);
+          Output(session.Reference, session.Reference.Length, true, c.W, target, sink, out result);
           return;
         }
 
@@ -153,7 +154,7 @@ namespace LtMsgPack
           write(c, root);
           schema.Raw(resolver.Pack(Options, assignedTo, Options));
         }
-        Output(schema.Buf, schema.Pos, c.W, target, out result);
+        Output(schema.Buf, schema.Pos, false, c.W, target, sink, out result);
       }
       finally
       {
@@ -208,8 +209,16 @@ namespace LtMsgPack
       return state;
     }
 
-    private static void Output(byte[] head, int headLength, MsgPackWriter body, Stream target, out byte[] result)
+    /// <param name="reference">The head is a reference to a schema of the store (<see cref="SchemaStore.ReferenceLength"/> bytes)</param>
+    private static void Output(byte[] head, int headLength, bool reference, MsgPackWriter body, Stream target, IPayloadSink sink, out byte[] result)
     {
+      if (sink != null)
+      {
+        result = null;
+        sink.Write(head, headLength, reference, body);
+        return;
+      }
+
       if (target != null)
       {
         result = null;
@@ -224,5 +233,13 @@ namespace LtMsgPack
         Buffer.BlockCopy(head, 0, result, 0, headLength);
       Buffer.BlockCopy(body.Buf, 0, result, headLength, body.Pos);
     }
+  }
+
+  /// <summary>
+  /// Takes the payload of a Serialize call: the head (the schema, a reference to it, or nothing) and the body (<see cref="Streaming.MsgPackStreamWriter"/>).
+  /// </summary>
+  internal interface IPayloadSink
+  {
+    void Write(byte[] head, int headLength, bool reference, MsgPackWriter body);
   }
 }

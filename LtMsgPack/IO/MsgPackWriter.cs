@@ -79,6 +79,13 @@ namespace LtMsgPack.IO
       }
     }
 
+    internal void Raw(ReadOnlySpan<byte> bytes)
+    {
+      Ensure(bytes.Length);
+      bytes.CopyTo(new Span<byte>(Buf, Pos, bytes.Length));
+      Pos += bytes.Length;
+    }
+
     internal byte[] ToArray()
     {
       byte[] result = new byte[Pos];
@@ -403,6 +410,41 @@ namespace LtMsgPack.IO
     {
       chars = (chars | chars >> 8) & 0x0000FFFF0000FFFFUL;
       return (uint)(chars | chars >> 16);
+    }
+
+    /// <summary>
+    /// The header of a str of <paramref name="byteCount"/> bytes, the bytes should follow.
+    /// </summary>
+    internal void StrHeader(int byteCount)
+    {
+      Ensure(5);
+      StringHeader(byteCount);
+    }
+
+    /// <summary>
+    /// A str of the chars (in <see cref="MsgPackOptions.StringEncoding"/>), e.g. a chunk of a str of unknown length.
+    /// </summary>
+    /// <param name="scratch">For the .NET Standard 2.0 build, which cannot encode a span: grown when too small</param>
+    /// <returns>The number of bytes of the str (without its header)</returns>
+    internal int String(ReadOnlySpan<char> chars, ref char[] scratch)
+    {
+      Encoding encoding = MsgPackOptions.StringEncoding;
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      int byteCount = encoding.GetByteCount(chars);
+      Ensure(byteCount + 5);
+      StringHeader(byteCount);
+      Pos += encoding.GetBytes(chars, new Span<byte>(Buf, Pos, byteCount));
+      return byteCount;
+#else
+      if (scratch is null || scratch.Length < chars.Length)
+        scratch = new char[Math.Max(chars.Length, 256)];
+      chars.CopyTo(scratch);
+      int byteCount = encoding.GetByteCount(scratch, 0, chars.Length);
+      Ensure(byteCount + 5);
+      StringHeader(byteCount);
+      Pos += encoding.GetBytes(scratch, 0, chars.Length, Buf, Pos);
+      return byteCount;
+#endif
     }
 
     private static int StringHeaderSize(int byteCount)

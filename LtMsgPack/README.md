@@ -22,6 +22,8 @@ Order copy = serializer.Deserialize<Order>(data);
 
 There are also overloads that write to and read from a `Stream`.
 
+To write and read many values one after another (database rows, several result sets or tables in one file), including arrays and maps whose length isn't known when they start, use `MsgPackStreamWriter` and `MsgPackStreamReader` (namespace `LtMsgPack.Streaming`). See [streaming](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Streaming.md).
+
 ## Settings
 
 Pass an `LtMsgPackOptions` to the constructor (the options are copied):
@@ -71,6 +73,7 @@ options.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(IShape));
 - [Wire formats, the indexed schema and polymorphism](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md)
 - [Compatibility with other MsgPack libraries](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Compatibility.md)
 - [Security](https://github.com/mlsomers/LsMsgPack/blob/master/docs/security.md)
+- [Streaming](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Streaming.md): `MsgPackStreamWriter` and `MsgPackStreamReader`, values one after another, arrays and maps of unknown length, positions for an index
 - [Reporting differences](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ReadDifferences.md): what didn't match between the data and your classes (`serializer.Deserialize<T>(data, out ReadDifferences differences)`)
 - ASP.NET formatters built on LtMsgPack: [LsMsgPack.AspNetCore](https://www.nuget.org/packages/LsMsgPack.AspNetCore), [LsMsgPack.AspNet.WebApi](https://www.nuget.org/packages/LsMsgPack.AspNet.WebApi), [LsMsgPack.AspNet.Mvc](https://www.nuget.org/packages/LsMsgPack.AspNet.Mvc)
 - Source, issues and MsgPack Explorer (a tool to look inside MsgPack data): [github.com/mlsomers/LsMsgPack](https://github.com/mlsomers/LsMsgPack)
