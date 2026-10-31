@@ -3,7 +3,7 @@
   "name": "io.github.mlsomers/lsmsgpack",
   "title": "MsgPack (LsMsgPack)",
   "description": "Decodes MsgPack (LsMsgPack schemas, type ids) as text and reads it from variables while debugging.",
-  "version": "2026.10.22.1",
+  "version": "2026.10.29.1",
   "websiteUrl": "https://github.com/mlsomers/LsMsgPack/blob/master/docs/Mcp.md",
   "repository": {
     "url": "https://github.com/mlsomers/LsMsgPack",
@@ -25,7 +25,7 @@
       "registryType": "nuget",
       "registryBaseUrl": "https://api.nuget.org/v3/index.json",
       "identifier": "LsMsgPack.Mcp",
-      "version": "2026.10.22.1",
+      "version": "2026.10.29.1",
       "transport": {
         "type": "stdio"
       }
