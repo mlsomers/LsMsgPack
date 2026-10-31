@@ -1,5 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Meta;
+using LsMsgPack.Streaming;
 using LtMsgPack.IO;
 using LtMsgPack.Writing;
 using System;
@@ -14,7 +15,9 @@ namespace LtMsgPack.Streaming
   /// and whole objects with their schema (<see cref="WriteObject{T}(T)"/>), or one schema for a whole root value (<see cref="WriteHead{TRoot}"/>) whose objects are then written without it.
   /// The values between which <see cref="Depth"/> is 0 are the root values of the stream, e.g. one per result set or table.
   /// <para>Values are written into a buffer that goes to the stream once it holds <see cref="FlushThreshold"/> bytes, at <see cref="Flush"/> and at <see cref="Dispose"/>.
-  /// <see cref="Position"/> is where the next value starts, e.g. to keep an index of the root values.</para>
+  /// <see cref="Position"/> is where the next value starts.</para>
+  /// <para>With <see cref="MsgPackStreamIndexOptions"/> the writer keeps an index of the root values (each one an entry: a value, an array or map, an object, a head with its body), with hashes, points into large arrays and checkpoints,
+  /// and writes it at the end of the stream (<see cref="MsgPackStreamIndex"/>), so a reader can go to an entry directly (<see cref="MsgPackStreamReader.ReadIndexes"/>).</para>
   /// <para>Arrays, maps, str and bin of unknown length use the escape byte 0xC1 as proposed in msgpack/msgpack#347 (not in the MsgPack specification yet):
   /// only <see cref="MsgPackStreamReader"/> reads them, other readers (also the serializers of this library) refuse the data. Without them the output is plain MsgPack.</para>
   /// <para>Not thread-safe.</para>
@@ -47,6 +50,8 @@ namespace LtMsgPack.Streaming
     private bool _disposed;
     private HeadState _headState;
     private Serializer.WriterHead _head; // null without the indexed schema
+    private readonly IndexState _ix; // null without an index
+    private bool _faulted; // writing to the stream failed: Dispose writes no index after it
 
     /// <summary>
     /// A writer with the default options of <see cref="LtMsgPackSerializer.Default"/>, objects with their schema (<see cref="MsgPackStreamSchemas.PerObject"/>). The stream is closed by <see cref="Dispose"/>.
@@ -58,8 +63,9 @@ namespace LtMsgPack.Streaming
     /// <param name="serializer">Writes the objects, and its options decide the formats of the values (integers, byte order, Guids, decimals, DateTimes)</param>
     /// <param name="schemas">Where the schemas of the objects go</param>
     /// <param name="leaveOpen">Do not close the stream in <see cref="Dispose"/></param>
-    /// <exception cref="ArgumentException"><see cref="MsgPackStreamSchemas.PerStream"/> or <see cref="MsgPackStreamSchemas.External"/> without a serializer that writes schema references</exception>
-    public MsgPackStreamWriter(Stream target, LtMsgPackSerializer serializer, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, bool leaveOpen = false)
+    /// <param name="index">Keep an index of the root values and write it at the end of the stream (and at checkpoints), null: none</param>
+    /// <exception cref="ArgumentException"><see cref="MsgPackStreamSchemas.PerStream"/> or <see cref="MsgPackStreamSchemas.External"/> without a serializer that writes schema references, or metadata in <paramref name="index"/> that is not plain values</exception>
+    public MsgPackStreamWriter(Stream target, LtMsgPackSerializer serializer, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, bool leaveOpen = false, MsgPackStreamIndexOptions index = null)
     {
       if (target is null)
         throw new ArgumentNullException(nameof(target));
@@ -92,13 +98,63 @@ namespace LtMsgPack.Streaming
       _guid = _serializer.Handler<Guid>(null);
       _decimal = _serializer.Handler<decimal>(null);
       _dateTime = _serializer.Handler<DateTime>(null);
+      if (index != null)
+      {
+        _ix = new IndexState(index);
+        _flushed = index.StartPosition;
+      }
+    }
+
+    /// <summary>
+    /// A writer that appends to a stream (that seeks, reads and writes), e.g. a file opened with FileMode.OpenOrCreate: after its last index, which the new index points to (<see cref="MsgPackStreamIndex.PreviousTail"/>),
+    /// so a reader finds the entries of both parts. An empty stream gets an index of its own. The stream is not changed until the writer writes.
+    /// <para>A stream without an index is searched backwards completely for one first (to tell it from a stream that was not finished): it gets an index of the appended entries only.</para>
+    /// </summary>
+    /// <param name="index">The options of the index (copied: <see cref="MsgPackStreamIndexOptions.StartPosition"/> and <see cref="MsgPackStreamIndexOptions.PreviousTail"/> are set from the stream), null: the defaults</param>
+    /// <exception cref="InvalidOperationException">The stream continues after its last index (the writer stopped without finishing it: cut it off after that tail first),
+    /// or its last index says it was interrupted in the middle of a root value</exception>
+    public static MsgPackStreamWriter Append(Stream stream, LtMsgPackSerializer serializer, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, MsgPackStreamIndexOptions index = null, bool leaveOpen = false)
+    {
+      if (stream is null)
+        throw new ArgumentNullException(nameof(stream));
+      if (serializer is null)
+        throw new ArgumentNullException(nameof(serializer));
+      if (!stream.CanSeek || !stream.CanRead || !stream.CanWrite)
+        throw new ArgumentException("Appending needs a stream that seeks, reads and writes.", nameof(stream));
+
+      MsgPackStreamIndexOptions options = new MsgPackStreamIndexOptions();
+      if (index != null)
+      {
+        options.Hasher = index.Hasher;
+        options.Observer = index.Observer;
+        options.CheckpointInterval = index.CheckpointInterval;
+        options.PointInterval = index.PointInterval;
+        options.Writer = index.Writer;
+        options.Metadata = index.Metadata;
+      }
+
+      long length = stream.Length;
+      List<MsgPackStreamIndex> indexes = IndexFormat.ReadAll(stream, true, out long lastTail, out bool endsWithTail, out long delta);
+      if (indexes.Count == 0)
+        options.StartPosition = length;
+      else
+      {
+        if (!endsWithTail)
+          throw new InvalidOperationException($"The stream continues after its last index (its tail at {lastTail}): the writer stopped without finishing it. Cut it off after that tail (at {lastTail + MsgPackStreamIndex.TailLength}) to append to it; the data after it is not indexed.");
+        if (indexes[indexes.Count - 1].Status == MsgPackStreamIndexStatus.Interrupted)
+          throw new InvalidOperationException("The stream was interrupted in the middle of a root value (its last index says so): values appended to it would be read as part of that value.");
+        options.StartPosition = length - delta; // as the writer before counted
+        options.PreviousTail = lastTail - delta;
+      }
+      stream.Position = length;
+      return new MsgPackStreamWriter(stream, serializer, schemas, leaveOpen, options);
     }
 
     #region State
 
     /// <summary>
-    /// The number of bytes written (to the stream and in the buffer) since the writer was created: where the next value starts, relative to where the writer started.
-    /// <para>Read it after a root value (<see cref="Depth"/> 0) for an index of the values of the stream.</para>
+    /// The number of bytes written (to the stream and in the buffer) since the writer was created: where the next value starts, relative to where the writer started
+    /// (plus <see cref="MsgPackStreamIndexOptions.StartPosition"/> when it appends).
     /// </summary>
     public long Position { get { return _flushed + _w.Pos; } }
 
@@ -560,11 +616,12 @@ namespace LtMsgPack.Streaming
     /// <param name="head">The head whose schema the value is written with, null for a whole payload (or without the indexed schema)</param>
     private bool ObjectValue(out Serializer.WriterHead head)
     {
+      ThrowIfDisposed();
       bool body = _depth == 0 ? _headState == HeadState.AwaitingBody : _headState == HeadState.InBody;
       head = body ? _head : null;
-      Value();
       if (!body && _depth > 0 && _options._useInexedSchema)
         throw new InvalidOperationException($"With the indexed schema an object is two values (its schema or a reference to it, then the object): {nameof(WriteObject)} writes it as a root value of the stream ({nameof(Depth)} 0). To write objects in an array or map, write the schema once before it with {nameof(WriteHead)}, or use a serializer without the indexed schema.");
+      Value();
       return body;
     }
 
@@ -610,9 +667,13 @@ namespace LtMsgPack.Streaming
       if (_options._useInexedSchema)
       {
         Serializer.WriterHead head = _serializer.PrepareHead(root);
+        if (_ix != null && _ix.Entry == null)
+          StartEntry(); // the head and its body are one entry
         WriteSchema(head.Id, head.Session.Reference, head.Store);
         _head = head;
       }
+      else if (_ix != null && _ix.Entry == null)
+        StartEntry();
       _headState = HeadState.AwaitingBody;
       Flushed();
     }
@@ -645,10 +706,250 @@ namespace LtMsgPack.Streaming
           schema = null;
       }
 
+      if (first && _ix != null && _schemas != MsgPackStreamSchemas.PerObject) // with PerObject every entry has its schemas inline
+      {
+        IndexFormat.WriteSchemaLocation(_ix.Schemas, id, schema is null ? (long?)null : Position, schema is null ? 0 : schema.Length);
+        _ix.SchemaCount++;
+      }
+
       if (schema is null)
         _w.Raw(reference, 0, SchemaStore.ReferenceLength);
       else
         _w.Raw(schema, 0, schema.Length);
+    }
+
+    #endregion
+
+    #region Index
+
+    /// <summary>
+    /// The index entry of the next root value (with <see cref="MsgPackStreamIndexOptions"/>), to name it and add to it (<see cref="MsgPackStreamEntry.Modified"/>, <see cref="MsgPackStreamEntry.Metadata"/>...) before or while it is written;
+    /// the writer fills in where it is. A root value without it gets an entry without a name.
+    /// </summary>
+    /// <param name="identifier">A string or an integer, null for none</param>
+    /// <param name="contentType">What the entry holds (a MIME type, the name of the root type), null for none</param>
+    /// <exception cref="InvalidOperationException">The writer keeps no index, or not before a root value (<see cref="Depth"/> 0, not between a head and its body)</exception>
+    /// <exception cref="ArgumentException">The identifier is neither a string nor an integer</exception>
+    public MsgPackStreamEntry BeginEntry(object identifier = null, string contentType = null)
+    {
+      ThrowIfDisposed();
+      if (_ix is null)
+        throw new InvalidOperationException($"The writer keeps no index: create it with {nameof(MsgPackStreamIndexOptions)}.");
+      if (_ix.Entry != null)
+        throw new InvalidOperationException($"An entry begins before a root value ({nameof(Depth)} 0), not in one (nor between a head and its body).");
+      IndexFormat.WriteIdentifier(IndexFormat.NewWriter(32), identifier); // checks it
+      _ix.Next = new MsgPackStreamEntry { Identifier = identifier, ContentType = contentType };
+      return _ix.Next;
+    }
+
+    /// <summary>
+    /// Adds a point to the sparse index of the current entry (<see cref="MsgPackStreamEntry.Points"/>): where the next element of its array starts, e.g. where the <paramref name="key"/> the elements are ordered by changes
+    /// (besides the points of <see cref="MsgPackStreamIndexOptions.PointInterval"/>).
+    /// </summary>
+    /// <param name="key">A plain value the elements are ordered by (a timestamp, an id), null for none</param>
+    /// <exception cref="InvalidOperationException">The writer keeps no index, or not between the elements of a root array (<see cref="Depth"/> 1, also the body of a head)</exception>
+    public void AddPoint(object key = null)
+    {
+      ThrowIfDisposed();
+      if (_ix is null)
+        throw new InvalidOperationException($"The writer keeps no index: create it with {nameof(MsgPackStreamIndexOptions)}.");
+      if (_depth != 1 || !_ix.RootArray || _ix.Entry is null)
+        throw new InvalidOperationException($"A point is added between the elements of an array that is a root value ({nameof(Depth)} 1), before the element it points to.");
+      if (key != null)
+        IndexFormat.WritePlain(IndexFormat.NewWriter(32), key, 1); // checks it
+      _ix.AddPoint(_ix.Elements, Position, key);
+    }
+
+    private void StartEntry()
+    {
+      IndexState ix = _ix;
+      MsgPackStreamEntry entry = ix.Next ?? new MsgPackStreamEntry();
+      ix.Next = null;
+      entry.Offset = Position;
+      ix.Entry = entry;
+      ix.FeedFrom = _w.Pos;
+      ix.Elements = 0;
+      ix.RootArray = false;
+    }
+
+    /// <summary>
+    /// An element of the entry's array was written (its start is <see cref="IndexState.ElementStart"/>).
+    /// </summary>
+    private void CountElement()
+    {
+      IndexState ix = _ix;
+      long element = ix.Elements++;
+      if (ix.PointInterval > 0 && element % ix.PointInterval == 0)
+        ix.AddPoint(element, ix.ElementStart, null);
+    }
+
+    /// <summary>
+    /// The root value of the entry is complete (or the writer is disposed in the middle of it): its length, hash and points, the observer's sidecar after it, encoded into the entries of the next index.
+    /// </summary>
+    private void EndEntry(bool incomplete)
+    {
+      IndexState ix = _ix;
+      MsgPackStreamEntry entry = ix.Entry;
+      ix.Entry = null; // the sidecar and an index written below are no part of the entry
+      ix.Feed(_w.Buf, ix.FeedFrom, _w.Pos);
+      entry.Length = Position - entry.Offset;
+      if (ix.Hasher != null)
+      {
+        byte[] hash = new byte[ix.Hasher.HashLength];
+        int length = ix.Hasher.GetHashAndReset(hash);
+        if (length != hash.Length)
+          Array.Resize(ref hash, length);
+        entry.Hash = hash;
+      }
+      if (ix.RootArray)
+      {
+        entry.ElementCount = ix.Elements;
+        List<MsgPackStreamIndexPoint> points = entry.Points;
+        while (points != null && points.Count > 0 && points[points.Count - 1].Element >= ix.Elements) // added before an element that did not come
+          points.RemoveAt(points.Count - 1);
+      }
+      entry.Incomplete = incomplete;
+
+      if (!incomplete && ix.Observer != null)
+      {
+        ReadOnlyMemory<byte> sidecar = ix.Observer.EntryEnded(entry);
+        if (!sidecar.IsEmpty)
+        {
+          _w.ExtHeader(MsgPackStreamIndex.SidecarExtensionType, sidecar.Length);
+          entry.SidecarOffset = Position;
+          entry.SidecarLength = sidecar.Length;
+          _w.Raw(sidecar.Span);
+        }
+      }
+
+      try
+      {
+        IndexFormat.WriteEntry(ix.Entries, entry);
+      }
+      catch (ArgumentException) when (incomplete) // Dispose still writes the index: the entry without its metadata
+      {
+        entry.Metadata = null;
+        IndexFormat.WriteEntry(ix.Entries, entry);
+      }
+      ix.EntryCount++;
+
+      if (!incomplete && ix.CheckpointInterval > 0 && ix.EntryCount >= ix.CheckpointInterval)
+      {
+        WriteIndex(MsgPackStreamIndexStatus.Checkpoint);
+        FlushBuffer(); // a checkpoint is only worth something on the disk
+        _faulted = true;
+        _target.Flush();
+        _faulted = false;
+      }
+    }
+
+    /// <summary>
+    /// The index of the entries since the last one, then its tail (<see cref="MsgPackStreamIndex"/>), between root values.
+    /// </summary>
+    private void WriteIndex(MsgPackStreamIndexStatus status)
+    {
+      IndexState ix = _ix;
+      MsgPackWriter content = ix.Content;
+      content.Reset(IndexFormat.Options);
+      IndexFormat.WriteIndex(content, status, ix.Writer, ix.PreviousTail, ix.Hasher?.Algorithm, ix.SchemaCount, ix.Schemas, ix.EntryCount, ix.Entries, ix.Metadata);
+
+      long offset = Position;
+      int start = _w.Pos;
+      _w.ExtHeader(MsgPackStreamIndex.IndexExtensionType, content.Pos); // in the stream's byte order, for the readers that skip it (the reader of the index measures it by the tail)
+      _w.Raw(content.Buf, 0, content.Pos);
+      int length = _w.Pos - start;
+      uint crc = Crc32.Compute(new ReadOnlySpan<byte>(_w.Buf, start, length));
+      ix.PreviousTail = Position;
+      IndexFormat.WriteTail(_w, offset, length, crc);
+
+      ix.Entries.Reset(IndexFormat.Options);
+      ix.EntryCount = 0;
+      ix.Schemas.Reset(IndexFormat.Options);
+      ix.SchemaCount = 0;
+      if (content.Buf.Length > 1024 * 1024)
+        ix.Content = IndexFormat.NewWriter(4096);
+    }
+
+    /// <summary>
+    /// What the writer keeps for the index: the options, the entries and schemas since the last index (encoded), the open entry.
+    /// </summary>
+    private sealed class IndexState
+    {
+      internal readonly IMsgPackStreamHasher Hasher;
+      internal readonly IMsgPackStreamObserver Observer;
+      internal readonly int CheckpointInterval;
+      internal readonly long PointInterval;
+      internal readonly string Writer;
+      internal readonly byte[] Metadata; // encoded, in every index
+      internal long? PreviousTail;
+
+      internal readonly MsgPackWriter Entries = IndexFormat.NewWriter(4096);
+      internal int EntryCount;
+      internal readonly MsgPackWriter Schemas = IndexFormat.NewWriter(256);
+      internal int SchemaCount;
+      internal MsgPackWriter Content = IndexFormat.NewWriter(4096);
+
+      internal MsgPackStreamEntry Next; // of BeginEntry, for the next root value
+      internal MsgPackStreamEntry Entry; // open: its root value is being written
+      internal int FeedFrom; // the entry's bytes in the writer's buffer from here are not passed to the hasher and observer yet
+      internal bool RootArray; // the entry's root value is an array
+      internal long Elements; // the elements of that array written so far
+      internal long ElementStart; // where the element being written starts
+
+      internal IndexState(MsgPackStreamIndexOptions options)
+      {
+        if (options.CheckpointInterval < 0)
+          throw new ArgumentOutOfRangeException(nameof(options), $"{nameof(MsgPackStreamIndexOptions.CheckpointInterval)} cannot be negative.");
+        if (options.PointInterval < 0)
+          throw new ArgumentOutOfRangeException(nameof(options), $"{nameof(MsgPackStreamIndexOptions.PointInterval)} cannot be negative.");
+        if (options.StartPosition < 0)
+          throw new ArgumentOutOfRangeException(nameof(options), $"{nameof(MsgPackStreamIndexOptions.StartPosition)} cannot be negative.");
+        if (options.PreviousTail.HasValue && (options.PreviousTail.Value < 0 || options.PreviousTail.Value > options.StartPosition - MsgPackStreamIndex.TailLength))
+          throw new ArgumentOutOfRangeException(nameof(options), $"{nameof(MsgPackStreamIndexOptions.PreviousTail)} is before {nameof(MsgPackStreamIndexOptions.StartPosition)}.");
+
+        Hasher = options.Hasher;
+        Observer = options.Observer;
+        CheckpointInterval = options.CheckpointInterval;
+        PointInterval = options.PointInterval;
+        Writer = options.Writer;
+        PreviousTail = options.PreviousTail;
+        if (options.Metadata != null)
+        {
+          MsgPackWriter metadata = IndexFormat.NewWriter(256);
+          IndexFormat.WriteMetadata(metadata, options.Metadata); // throws now for values that are not plain, not when the index is written
+          Metadata = metadata.ToArray();
+        }
+      }
+
+      /// <summary>
+      /// The bytes of the open entry from <paramref name="from"/> to <paramref name="to"/> in the writer's buffer, to the hasher and the observer.
+      /// </summary>
+      internal void Feed(byte[] buffer, int from, int to)
+      {
+        if (to <= from)
+          return;
+        ReadOnlySpan<byte> bytes = new ReadOnlySpan<byte>(buffer, from, to - from);
+        if (Hasher != null)
+          Hasher.Append(bytes);
+        if (Observer != null)
+          Observer.Append(bytes);
+      }
+
+      /// <summary>
+      /// A point at <paramref name="element"/>, which starts at <paramref name="position"/>; a second one at the same element replaces it (keeping a key).
+      /// </summary>
+      internal void AddPoint(long element, long position, object key)
+      {
+        List<MsgPackStreamIndexPoint> points = Entry.Points;
+        if (points is null)
+          Entry.Points = points = new List<MsgPackStreamIndexPoint>();
+        long offset = position - Entry.Offset;
+        int last = points.Count - 1;
+        if (last >= 0 && points[last].Element == element)
+          points[last] = new MsgPackStreamIndexPoint(element, offset, key ?? points[last].Key);
+        else
+          points.Add(new MsgPackStreamIndexPoint(element, offset, key));
+      }
     }
 
     #endregion
@@ -670,6 +971,8 @@ namespace LtMsgPack.Streaming
       {
         if (_headState == HeadState.AwaitingBody)
           _headState = HeadState.InBody;
+        if (_ix != null && _ix.Entry == null)
+          StartEntry();
         return;
       }
 
@@ -680,6 +983,8 @@ namespace LtMsgPack.Streaming
         throw new InvalidOperationException($"A bin of unknown length holds only its chunks: bins ({nameof(WriteBinary)}), then {nameof(WriteEnd)}.");
       if (frame.Unknown && frame.Count >= (frame.Kind == FrameKind.Map ? 2 * MaxUnknownCount : MaxUnknownCount))
         throw new InvalidOperationException($"{(frame.Kind == FrameKind.Map ? "A map" : "An array")} of unknown length holds at most {MaxUnknownCount} {(frame.Kind == FrameKind.Map ? "entries" : "elements")}.");
+      if (_depth == 1 && _ix != null)
+        _ix.ElementStart = Position;
     }
 
     /// <summary>
@@ -689,6 +994,8 @@ namespace LtMsgPack.Streaming
     {
       if (_depth == 0)
         return;
+      if (_depth == 1 && _ix != null && _ix.RootArray)
+        CountElement();
       if (_frames[_depth - 1].Unknown)
         _frames[_depth - 1].Count++;
       else
@@ -713,6 +1020,8 @@ namespace LtMsgPack.Streaming
         _headState = HeadState.None;
         _head = null;
       }
+      if (_depth == 0 && _ix != null && _ix.Entry != null && _headState == HeadState.None)
+        EndEntry(false);
       Flushed();
     }
 
@@ -738,6 +1047,8 @@ namespace LtMsgPack.Streaming
 
     private void Push(FrameKind kind, bool unknown, long count)
     {
+      if (_depth == 0 && _ix != null)
+        _ix.RootArray = kind == FrameKind.Array;
       if (_depth == _frames.Length)
         Array.Resize(ref _frames, _frames.Length * 2);
       _frames[_depth++] = new Frame { Kind = kind, Unknown = unknown, Count = count };
@@ -768,7 +1079,14 @@ namespace LtMsgPack.Streaming
     {
       if (_w.Pos == 0)
         return;
+      if (_ix != null && _ix.Entry != null)
+      {
+        _ix.Feed(_w.Buf, _ix.FeedFrom, _w.Pos);
+        _ix.FeedFrom = 0;
+      }
+      _faulted = true;
       _target.Write(_w.Buf, 0, _w.Pos);
+      _faulted = false;
       _flushed += _w.Pos;
       _w.Pos = 0;
       if (_w.Buf.Length > 1024 * 1024) // do not keep the buffer of a huge value alive
@@ -782,11 +1100,15 @@ namespace LtMsgPack.Streaming
     {
       ThrowIfDisposed();
       FlushBuffer();
+      _faulted = true;
       _target.Flush();
+      _faulted = false;
     }
 
     /// <summary>
     /// Writes the buffer to the stream and closes it (unless the writer was created with leaveOpen). Arrays and maps that are still open are not ended: a reader finds the data cut off.
+    /// <para>With an index, the index is written first: <see cref="MsgPackStreamIndexStatus.Complete"/> between root values; in the middle of one (an exception left arrays or maps open, or a head without its body)
+    /// <see cref="MsgPackStreamIndexStatus.Interrupted"/>, with that entry <see cref="MsgPackStreamEntry.Incomplete"/>. Not after writing to the stream failed.</para>
     /// </summary>
     public void Dispose()
     {
@@ -795,6 +1117,18 @@ namespace LtMsgPack.Streaming
       _disposed = true;
       try
       {
+        if (_ix != null && !_faulted)
+        {
+          MsgPackStreamIndexStatus status = MsgPackStreamIndexStatus.Complete;
+          if (_ix.Entry != null && _depth == 0 && _headState == HeadState.None && Position == _ix.Entry.Offset)
+            _ix.Entry = null; // a root value that was refused (nothing written)
+          if (_ix.Entry != null)
+          {
+            EndEntry(true);
+            status = MsgPackStreamIndexStatus.Interrupted;
+          }
+          WriteIndex(status);
+        }
         FlushBuffer();
         _target.Flush();
       }

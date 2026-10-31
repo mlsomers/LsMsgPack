@@ -11,7 +11,8 @@ namespace LsMsgPack.Streaming
   public interface IMsgPackStreamHasher
   {
     /// <summary>
-    /// The name written in the index (<see cref="MsgPackStreamIndex.HashAlgorithm"/>), e.g. "crc32", "xxh3-64", "sha256", by which a reader picks its hasher.
+    /// The name written in the index (<see cref="MsgPackStreamIndex.HashAlgorithm"/>), by which a reader picks its hasher.
+    /// Use the names of the multicodec table (github.com/multiformats/multicodec, e.g. "sha2-256", "blake3"): with the code of that name and the hash, a multihash can be made without a table of our own.
     /// </summary>
     string Algorithm { get; }
 

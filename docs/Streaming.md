@@ -5,7 +5,8 @@
 - **Values**: integers, floats, strings, bins, timestamps, Guids, decimals, extensions, and arrays and maps of a known length.
 - **Values of unknown length**: arrays, maps, str and bin that are written before their length is known (see [the format](#the-format)).
 - **Objects**: whole objects, written and read by the `LtMsgPackSerializer`, with their schema. Or the schema once for a whole root value, e.g. a table of objects of unknown length (see [one schema for a root value](#one-schema-for-a-root-value)).
-- **Positions**: the writer reports the position after each value, so an index of the values can be kept, or appended to the stream.
+- **Positions**: the writer reports the position after each value.
+- **An index** (optional): the writer lists the root values with their positions, hashes and points into large arrays, and writes the list at the end of the stream. A reader of a file goes to any table or row directly (see [the index](#the-index)).
 
 Both are synchronous and not thread-safe.
 
@@ -159,6 +160,76 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 - **The same bytes as `Serialize`**: with arrays and maps of known length the head and body are what `Serialize<TRoot>` writes for the whole value with `CompleteSchemas`. `Deserialize<TRoot>` reads them, and so does `ReadObject<TRoot>()` with lengths unknown too. The other way around, `ReadHead<TRoot>()` reads any payload of `Serialize<TRoot>` in parts.
 - **Objects written by hand**: when the root type is a class (not a collection), its values are written as the layout says. With `ObjectLayout.Array` (the default) that's an array of the values in `PropertyOrder`. With `ObjectLayout.Map` the keys are indexes into the schema, which the writer has no help for. Prefer collections as root types, and `WriteObject` for the objects.
 - **Without the indexed schema** the head writes and reads nothing, and the body is written and read as without it.
+
+## The index
+
+With `MsgPackStreamIndexOptions` the writer keeps an index of the stream and writes it at the end. Every root value is an **entry**: a value, an array or map, an object with its schema, or a head with its body (a table). A reader of a stream that seeks (a file, a memory stream; over HTTP with range requests) reads the index and goes to an entry, or to a row of a table, without reading what comes before it.
+
+```csharp
+MsgPackStreamIndexOptions index = new MsgPackStreamIndexOptions
+{
+  PointInterval = 1000,        // a point every 1000 rows of a table
+  CheckpointInterval = 10,     // an index every 10 entries, flushed: a crash keeps the entries before it
+  Hasher = new Sha256Hasher()  // optional, see below
+};
+using (MsgPackStreamWriter writer = new MsgPackStreamWriter(file, serializer, MsgPackStreamSchemas.PerStream, false, index))
+{
+  foreach (Table table in tables)
+  {
+    writer.BeginEntry(table.Name, "application/x-rows");   // optional: names the next root value
+    writer.WriteHead<List<Row>>();
+    writer.WriteArrayStart();
+    foreach (Row row in table.Rows)
+      writer.WriteObject(row);
+    writer.WriteEnd();
+  }
+}   // Dispose writes the index
+
+using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
+{
+  IReadOnlyList<MsgPackStreamIndex> indexes = reader.ReadIndexes();
+  MsgPackStreamEntry orders = indexes.SelectMany(i => i.Entries).Last(e => (string)e.Identifier == "orders");
+  reader.Seek(orders);
+  reader.ReadHead<List<Row>>();
+  reader.Read();                         // ArrayStart
+  reader.SeekElement(orders, 123456);    // from the point before it
+  Row row = reader.ReadObject<Row>();
+}
+```
+
+**Entries** (`MsgPackStreamEntry`): the writer fills in `Offset` and `Length` (the bytes of the root value, its schema or head included), `ElementCount` for an array, `Points`, `Hash`. `BeginEntry(identifier, contentType)` names the next root value and returns its entry, to which `Modified` and `Metadata` can be added. The identifier is a string or an integer and doesn't have to be unique (when several entries have the same one, the last one is the current one). Metadata holds plain values: null, bool, integers, floats, strings, `byte[]`, `DateTime`, and lists and dictionaries of them. Stream-wide metadata goes in `MsgPackStreamIndexOptions.Metadata`.
+
+**Points** (the sparse index of a large array): `PointInterval` adds one every so many elements of an entry that is an array (also the body of a head), and `AddPoint(key)` adds one before the next element, e.g. where the timestamp the rows are ordered by changes. The reader goes there with `Seek(entry, point)`, or to any element with `SeekElement(entry, n)`: to the point before it, then it passes the elements in between. Both work from inside the entry's array (after `Seek(entry)`, its head and its `ArrayStart`), so the reader knows the array and the schema of its objects.
+
+**Schemas**: with `PerStream` an entry may refer to a schema written in an earlier entry, with `External` to a schema in the store. The index lists the schemas and where their inline copy is, and `ReadIndexes` registers those in the serializer's `SchemaStore`, so an entry can be read after `Seek`. With `PerObject` every entry has its schemas.
+
+**Hashes and observers**: an `IMsgPackStreamHasher` hashes the bytes of every entry (`MsgPackStreamEntry.Hash`, the algorithm in `MsgPackStreamIndex.HashAlgorithm`). The writer feeds it from its buffer when it flushes and at the end of the entry: no extra flushes, no wrapping stream. Use the names of the [multicodec table](https://github.com/multiformats/multicodec) as `Algorithm` ("sha2-256", "blake3"...): with the code of the name and the hash, anyone can make a multihash. An adapter for `IncrementalHash` or System.IO.Hashing is a few lines:
+
+```csharp
+sealed class Sha256Hasher : IMsgPackStreamHasher
+{
+  private readonly IncrementalHash _hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+  public string Algorithm => "sha2-256";
+  public int HashLength => 32;
+  public void Append(ReadOnlySpan<byte> data) => _hash.AppendData(data);
+  public int GetHashAndReset(Span<byte> destination) => _hash.GetHashAndReset(destination);
+}
+```
+
+An `IMsgPackStreamObserver` gets the same bytes, and at the end of every entry the entry itself, to add to it (metadata, a content type). It may return bytes to write after the entry (a sidecar: a signature, a thumbnail): they are wrapped in an extension value that readers skip, and the entry gets their `SidecarOffset` and `SidecarLength`. Both are called on the writer's thread and the writer waits for them: keep them fast.
+
+**Checkpoints and interruptions**: with `CheckpointInterval` the writer writes an index (`MsgPackStreamIndexStatus.Checkpoint`) after every so many entries and flushes the stream, and keeps only the entries since then in memory. Each index lists the entries since the one before it and points to it, so `ReadIndexes` returns them all, the first one first. After a crash the stream ends after the last checkpoint: `ReadIndexes(searchBackwards: true)` finds it (this reads a stream without an index completely, from the end). `Dispose` writes the last index: `Complete` between root values; `Interrupted` in the middle of one (an exception left an array open, or a head without its body), with that entry `Incomplete`. Its arrays and maps stay open: a reader that reads the stream value by value fails there, one that seeks reads the entries before it. When writing to the stream failed, `Dispose` writes no index.
+
+**Appending**: `MsgPackStreamWriter.Append(stream, serializer, ...)` continues a stream (that seeks, reads and writes) after its last index. The new index points to the old one, so a reader finds the entries of both parts. It refuses a stream that continues after its last index (a crash: cut it off after that tail first) or whose last index is `Interrupted`. A stream without an index gets an index of the appended entries.
+
+**Readers that don't seek** read the stream value by value as before: `MsgPackStreamReader` skips the index, its tail and the sidecars between the root values (extension types 3 and 4 at depth 0 are reserved for this in a stream). Other MsgPack readers see them as an extension value and an array of four values after each index.
+
+**The layout** (a feature of this library, not of the MsgPack specification; the class `MsgPackStreamIndex` documents the positions of every field):
+
+- The index is an extension value of type 3, whose data is one MsgPack array: version, status, writer, the previous index's tail, hash algorithm, schemas, entries, metadata. Each entry is an array too (offset, length, identifier, content type, modified, hash, element count, points, sidecar, metadata, incomplete), trailing nils left out, so fields can be added at the end. The content is always in the byte order of the specification, whatever `EndianAction` says.
+- After it comes the tail, 25 bytes: `94 cf <offset of the index> ce <its length> ce <CRC-32 of the index> a4 "LSIX"`, big-endian. A reader reads the last 25 bytes of the stream and knows where the index is. The CRC-32 tells a tail apart from data that looks like one, and a damaged index from a valid one: a damaged index is not used.
+- Offsets count from where the writer started. When the stream is moved (embedded in a file after other data), the reader takes the difference between where the tail is and where the index says it is, and moves every offset by it.
+- The reader checks every index it reads before it uses it: offsets inside the stream and before the index, points inside their entry and in order, a version it knows. An index that matches its CRC-32 but isn't valid throws a `MsgPackException`.
 
 ## The format
 

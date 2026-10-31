@@ -4,9 +4,10 @@ using System.Collections.Generic;
 namespace LsMsgPack.Streaming
 {
   /// <summary>
-  /// One entry of a <see cref="MsgPackStreamIndex"/>: a range of root values of the stream (one object with its schema or schema reference, an array of unknown length of rows...).
+  /// One entry of a <see cref="MsgPackStreamIndex"/>: a root value of the stream (a value, an array or map, an object with its schema or schema reference, a head with its body: e.g. a table).
   /// <para>Written as an array (trailing nils left out): 0 <see cref="Offset"/>, 1 <see cref="Length"/>, 2 <see cref="Identifier"/>, 3 <see cref="ContentType"/>, 4 <see cref="Modified"/>,
-  /// 5 <see cref="Hash"/>, 6 <see cref="ElementCount"/>, 7 <see cref="Points"/> (each <c>[element, offset, key]</c>), 8 <see cref="SidecarOffset"/>, 9 <see cref="SidecarLength"/>, 10 <see cref="Metadata"/>.</para>
+  /// 5 <see cref="Hash"/>, 6 <see cref="ElementCount"/>, 7 <see cref="Points"/> (each <c>[element, offset, key]</c>), 8 <see cref="SidecarOffset"/>, 9 <see cref="SidecarLength"/>, 10 <see cref="Metadata"/>,
+  /// 11 <see cref="Incomplete"/> (true, or left out).</para>
   /// </summary>
   public sealed class MsgPackStreamEntry
   {
@@ -16,7 +17,7 @@ namespace LsMsgPack.Streaming
     public long Offset { get; set; }
 
     /// <summary>
-    /// The length in bytes of the entry's root values (an inline schema of the entry included), so a reader can fetch exactly these bytes (a range request, a memory mapped view) and a hash covers them.
+    /// The length in bytes of the entry (an inline schema or head of the entry included), so a reader can fetch exactly these bytes (a range request, a memory mapped view) and a hash covers them.
     /// </summary>
     public long Length { get; set; }
 
@@ -42,7 +43,7 @@ namespace LsMsgPack.Streaming
     public byte[] Hash { get; set; }
 
     /// <summary>
-    /// When the entry is one array (of known or unknown length): its number of elements, null otherwise.
+    /// When the entry is an array (of known or unknown length, also the body of a head): its number of elements, null otherwise.
     /// </summary>
     public long? ElementCount { get; set; }
 
@@ -67,5 +68,10 @@ namespace LsMsgPack.Streaming
     /// plain values (null, bool, integers, floats, strings, byte[], DateTime, and arrays and maps of them). Null: none.
     /// </summary>
     public Dictionary<string, object> Metadata { get; set; }
+
+    /// <summary>
+    /// The writer was disposed in the middle of this entry (<see cref="MsgPackStreamIndexStatus.Interrupted"/>): <see cref="Length"/> and <see cref="Hash"/> cover what was written, its arrays and maps are not closed.
+    /// </summary>
+    public bool Incomplete { get; set; }
   }
 }

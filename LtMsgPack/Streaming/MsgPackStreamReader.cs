@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Streaming;
 using LtMsgPack.IO;
 using System;
 using System.Collections.Generic;
@@ -12,6 +13,8 @@ namespace LtMsgPack.Streaming
   /// (the escape sequences of msgpack/msgpack#347, see <see cref="MsgPackStreamWriter"/>). The stream does not have to seek: it is read in blocks into a buffer.
   /// <para>The buffer holds the current token and grows only as far as the data that arrives (a header claiming more than the stream holds costs no more than the stream holds).
   /// A value that is read whole (<see cref="ReadObject{T}"/>, <see cref="GetValue"/>, <see cref="GetString"/>...) is buffered whole.</para>
+  /// <para>The index of a stream (<see cref="MsgPackStreamIndex"/>: extension values of types 3 and 4 between the root values, and the tails after them) is skipped. When the stream seeks,
+  /// <see cref="ReadIndexes"/> reads it and <see cref="Seek(MsgPackStreamEntry)"/> / <see cref="SeekElement"/> go to an entry or an element of its array.</para>
   /// <para>Not thread-safe.</para>
   /// </summary>
   public sealed class MsgPackStreamReader : IDisposable
@@ -21,6 +24,7 @@ namespace LtMsgPack.Streaming
     private const long MaxUnknownCount = uint.MaxValue;
 
     private readonly Stream _source;
+    private readonly long _origin; // where the reader started in a stream that seeks (positions are relative to it), 0 otherwise
     private readonly bool _leaveOpen;
     private readonly Serializer _serializer;
     private readonly LtMsgPackOptions _options;
@@ -83,6 +87,7 @@ namespace LtMsgPack.Streaming
         throw new ArgumentException("The stream cannot be read.", nameof(source));
 
       _source = source;
+      _origin = source.CanSeek ? source.Position : 0;
       _leaveOpen = leaveOpen;
       _serializer = serializer.Implementation;
       _options = _serializer.Options;
@@ -181,7 +186,14 @@ namespace LtMsgPack.Streaming
           return false;
         int next = _payloadPending ? (int)_length : 0; // after the data of the current token
         if (_depth == 0)
-          return !TryEnsure(next + 1);
+        {
+          if (!_payloadPending && _mark < 0)
+          {
+            SkipStreamValues();
+            return !TryEnsure(1);
+          }
+          return !TryEnsure(PastStreamValues(next) + 1);
+        }
         return TryEnsure(next + 2) && _buf[_pos + next] == Escape.Byte && _buf[_pos + next + 1] == Escape.End;
       }
     }
@@ -229,6 +241,11 @@ namespace LtMsgPack.Streaming
         return true;
       }
 
+      if (_depth == 0 && _mark < 0)
+      {
+        SkipStreamValues();
+        _tokenStart = _pos;
+      }
       if (!TryEnsure(1))
       {
         if (_depth > 0)
@@ -662,6 +679,8 @@ namespace LtMsgPack.Streaming
         if (AtEnd)
           throw new InvalidOperationException($"The {(frame.Kind == FrameKind.Map ? "map" : "array")} has no more values.");
       }
+      else
+        SkipStreamValues();
       if (!TryEnsure(1))
         throw EndOfData();
 
@@ -731,6 +750,7 @@ namespace LtMsgPack.Streaming
       _headRoot = root;
       if (_options._useInexedSchema)
       {
+        SkipStreamValues();
         if (!TryEnsure(1))
           throw EndOfData();
         _mark = _pos;
@@ -778,28 +798,276 @@ namespace LtMsgPack.Streaming
     /// </summary>
     private void Register(int start, int end)
     {
+      Register(_buf, start, end - start);
+    }
+
+    private void Register(byte[] data, int start, int count)
+    {
       SchemaStore store = _options._schemaStore;
       if (store is null)
         return;
-      int count = end - start;
       for (int t = _registered.Count - 1; t >= 0; t--)
       {
         byte[] known = _registered[t];
-        if (new ReadOnlySpan<byte>(_buf, start, count).SequenceEqual(new ReadOnlySpan<byte>(known)))
+        if (new ReadOnlySpan<byte>(data, start, count).SequenceEqual(new ReadOnlySpan<byte>(known)))
           return;
       }
 
       try
       {
-        store.RegisterInline(_buf, start, count, _options);
+        store.RegisterInline(data, start, count, _options);
       }
       catch (MsgPackException) // the store is full: the object can be read (its schema is inline), only later references to it cannot
       {
         return;
       }
       byte[] copy = new byte[count];
-      Buffer.BlockCopy(_buf, start, copy, 0, count);
+      Buffer.BlockCopy(data, start, copy, 0, count);
       _registered.Add(copy);
+    }
+
+    #endregion
+
+    #region Index
+
+    /// <summary>
+    /// The indexes of the stream (<see cref="MsgPackStreamIndex"/>), the first one first: each lists the entries since the one before it (checkpoints, appended parts), so together they list all entries.
+    /// The offsets in them are positions in the stream (moved along when the stream was moved since it was written). Empty when the stream has no index.
+    /// The schemas whose inline copy the indexes locate are registered in the serializer's <see cref="SchemaStore"/>, so entries that refer to them can be read after <see cref="Seek(MsgPackStreamEntry)"/>.
+    /// The reader stays where it was. Needs a stream that seeks.
+    /// </summary>
+    /// <param name="searchBackwards">When the stream does not end with a tail (a writer that stopped after a checkpoint, a crash): search backwards for the last one.
+    /// This reads a stream without an index completely, from the end.</param>
+    /// <exception cref="MsgPackException">An index matches its CRC-32 but is not valid (offsets outside of the stream, points out of order, a newer version...)</exception>
+    public IReadOnlyList<MsgPackStreamIndex> ReadIndexes(bool searchBackwards = false)
+    {
+      ThrowIfDisposed();
+      ThrowIfNotSeekable();
+      long resume = _source.Position; // the buffer holds the data up to here
+      try
+      {
+        List<MsgPackStreamIndex> indexes = IndexFormat.ReadAll(_source, searchBackwards, out long lastTail, out bool endsWithTail, out long delta);
+        if (_options._schemaStore != null)
+        {
+          for (int i = 0; i < indexes.Count; i++)
+          {
+            List<MsgPackStreamSchemaLocation> schemas = indexes[i].Schemas;
+            for (int t = 0; t < schemas.Count; t++)
+            {
+              if (!schemas[t].Offset.HasValue)
+                continue; // External: the store has it, or not
+              byte[] schema = new byte[schemas[t].Length];
+              _source.Position = schemas[t].Offset.Value;
+              if (!ReadExactly(schema))
+                throw new MsgPackException($"The schema at {schemas[t].Offset.Value} that the index locates is cut off.", schemas[t].Offset.Value);
+              Register(schema, 0, schema.Length);
+            }
+          }
+        }
+        return indexes;
+      }
+      finally
+      {
+        _source.Position = resume;
+      }
+    }
+
+    /// <summary>
+    /// Goes to an entry of the index (<see cref="ReadIndexes"/>): the next token is the start of its root value (or its head: then read it with <see cref="ReadHead{TRoot}"/>). Needs a stream that seeks.
+    /// </summary>
+    public void Seek(MsgPackStreamEntry entry)
+    {
+      if (entry is null)
+        throw new ArgumentNullException(nameof(entry));
+      ThrowIfDisposed();
+      ThrowIfNotSeekable();
+      MoveTo(entry.Offset);
+      _depth = 0;
+      _headState = HeadState.None;
+      _head = null;
+    }
+
+    /// <summary>
+    /// Goes to a point of an entry's sparse index (<see cref="MsgPackStreamEntry.Points"/>): the next value is the element it points to.
+    /// The reader must be in the array of that entry (<see cref="Depth"/> 1: after its ArrayStart, and its head when it has one), so it knows the array and the schema of its objects.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The reader is not in a root array, or the entry is no array</exception>
+    public void Seek(MsgPackStreamEntry entry, MsgPackStreamIndexPoint point)
+    {
+      if (entry is null)
+        throw new ArgumentNullException(nameof(entry));
+      ThrowIfDisposed();
+      ThrowIfNotSeekable();
+      if (_depth != 1 || _frames[0].Kind != FrameKind.Array)
+        throw new InvalidOperationException($"A point is in the array of an entry: read the entry's ArrayStart first (after {nameof(Seek)}(entry), and its head when it has one).");
+      if (!entry.ElementCount.HasValue)
+        throw new InvalidOperationException("The entry is no array, it has no points.");
+      if (point.Element < 0 || point.Element >= entry.ElementCount.Value || point.Offset < 0 || point.Offset >= entry.Length)
+        throw new ArgumentOutOfRangeException(nameof(point), "The point is not in the entry.");
+
+      MoveTo(entry.Offset + point.Offset);
+      if (_frames[0].Unknown)
+        _frames[0].Count = point.Element; // the elements read
+      else
+        _frames[0].Count = entry.ElementCount.Value - point.Element; // the elements still to come
+      _frames[0].CountIndex = -1;
+    }
+
+    /// <summary>
+    /// Goes to an element of the array of an entry: to the last point before it (<see cref="Seek(MsgPackStreamEntry, MsgPackStreamIndexPoint)"/>), or from where the reader is when that is closer, then passes the elements up to it.
+    /// The next value is the element. The reader must be in the array of that entry, as for <see cref="Seek(MsgPackStreamEntry, MsgPackStreamIndexPoint)"/>.
+    /// </summary>
+    /// <param name="element">The number of the element (0 for the first)</param>
+    public void SeekElement(MsgPackStreamEntry entry, long element)
+    {
+      if (entry is null)
+        throw new ArgumentNullException(nameof(entry));
+      ThrowIfDisposed();
+      if (_depth != 1 || _frames[0].Kind != FrameKind.Array)
+        throw new InvalidOperationException($"An element is in the array of an entry: read the entry's ArrayStart first (after {nameof(Seek)}(entry), and its head when it has one).");
+      if (!entry.ElementCount.HasValue)
+        throw new InvalidOperationException("The entry is no array.");
+      if (element < 0 || element >= entry.ElementCount.Value)
+        throw new ArgumentOutOfRangeException(nameof(element));
+      PassPayload();
+
+      long current = _frames[0].Unknown ? _frames[0].Count : entry.ElementCount.Value - _frames[0].Count; // the next element
+      List<MsgPackStreamIndexPoint> points = entry.Points;
+      int best = -1;
+      if (points != null)
+      {
+        int low = 0, high = points.Count - 1;
+        while (low <= high) // the last point at or before the element
+        {
+          int middle = (low + high) >> 1;
+          if (points[middle].Element <= element) { best = middle; low = middle + 1; }
+          else high = middle - 1;
+        }
+      }
+
+      if (best >= 0 && (current > element || points[best].Element > current))
+      {
+        Seek(entry, points[best]);
+        current = points[best].Element;
+      }
+      else if (current > element)
+        throw new InvalidOperationException($"The element {element} is before the reader (at {current}) and before the first point of the entry: {nameof(Seek)} to the entry again to read it.");
+
+      for (; current < element; current++)
+      {
+        if (!Read())
+          throw EndOfData();
+        Skip();
+      }
+      PassPayload(); // the data of the last element passed
+      _token = MsgPackTokenType.None;
+      _length = 0;
+    }
+
+    /// <summary>
+    /// Continues at <paramref name="position"/> in the stream: drops the buffer and the current token, keeps the open arrays and maps.
+    /// </summary>
+    private void MoveTo(long position)
+    {
+      _source.Position = position;
+      _base = position - _origin;
+      _pos = 0;
+      _end = 0;
+      _tokenStart = 0;
+      _eof = false;
+      _payloadPending = false;
+      _mark = -1;
+      _token = MsgPackTokenType.None;
+      _length = 0;
+      _isKey = false;
+    }
+
+    private void ThrowIfNotSeekable()
+    {
+      if (!_source.CanSeek)
+        throw new NotSupportedException("The index is read from a stream that seeks (a file, a memory stream; over HTTP: download the entries with range requests).");
+    }
+
+    private bool ReadExactly(byte[] buffer)
+    {
+      int done = 0;
+      while (done < buffer.Length)
+      {
+        int read = _source.Read(buffer, done, buffer.Length - done);
+        if (read <= 0)
+          return false;
+        done += read;
+      }
+      return true;
+    }
+
+    /// <summary>
+    /// Passes the values of the index between root values: indexes (extension type 3) with their tails, and sidecars (type 4). Only at <see cref="Depth"/> 0 and without a mark.
+    /// </summary>
+    private void SkipStreamValues()
+    {
+      while (TryEnsure(1))
+      {
+        int header = IndexFormat.ExtensionHeaderLength(_buf[_pos]);
+        if (header == 0 || !TryEnsure(header))
+          return;
+        sbyte type = unchecked((sbyte)_buf[_pos + header - 1]);
+        if (type != MsgPackStreamIndex.IndexExtensionType && type != MsgPackStreamIndex.SidecarExtensionType)
+          return;
+
+        _tokenStart = _pos;
+        _length = ExtensionLength(_pos, header);
+        _pos += header;
+        _payloadPending = _length > 0;
+        PassPayload();
+        _length = 0;
+        if (type == MsgPackStreamIndex.IndexExtensionType)
+        {
+          if (!TryEnsure(MsgPackStreamIndex.TailLength) || !IndexFormat.TryParseTail(_buf, _pos, out IndexFormat.Tail unused))
+            throw new MsgPackException("An index (extension type 3) of the stream is not followed by its tail.", _base + _pos);
+          _pos += MsgPackStreamIndex.TailLength;
+        }
+        _tokenStart = _pos;
+      }
+    }
+
+    /// <summary>
+    /// <see cref="SkipStreamValues"/> without moving: the offset (from <see cref="_pos"/>) after the values of the index at <paramref name="at"/>, buffering them.
+    /// </summary>
+    private int PastStreamValues(int at)
+    {
+      while (TryEnsure(at + 1))
+      {
+        int header = IndexFormat.ExtensionHeaderLength(_buf[_pos + at]);
+        if (header == 0 || !TryEnsure(at + header))
+          break;
+        sbyte type = unchecked((sbyte)_buf[_pos + at + header - 1]);
+        if (type != MsgPackStreamIndex.IndexExtensionType && type != MsgPackStreamIndex.SidecarExtensionType)
+          break;
+        long size = header + ExtensionLength(_pos + at, header) + (type == MsgPackStreamIndex.IndexExtensionType ? MsgPackStreamIndex.TailLength : 0);
+        if (size > MaxBufferLength - 2L - at)
+          break;
+        at += (int)size;
+      }
+      return at;
+    }
+
+    /// <summary>
+    /// The length of the data of the extension value whose header (of <paramref name="header"/> bytes) is buffered at <paramref name="at"/>, in the stream's byte order.
+    /// </summary>
+    private long ExtensionLength(int at, int header)
+    {
+      switch (_buf[at])
+      {
+        case 0xD4: return 1;
+        case 0xD5: return 2;
+        case 0xD6: return 4;
+        case 0xD7: return 8;
+        case 0xD8: return 16;
+        case 0xC7: return _buf[at + 1];
+        case 0xC8: return U16(at + 1);
+        default: return U32(at + 1);
+      }
     }
 
     #endregion
