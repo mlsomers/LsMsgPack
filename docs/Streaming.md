@@ -4,7 +4,7 @@
 
 - **Values**: integers, floats, strings, bins, timestamps, Guids, decimals, extensions, and arrays and maps of a known length.
 - **Values of unknown length**: arrays, maps, str and bin that are written before their length is known (see [the format](#the-format)).
-- **Objects**: whole objects, written and read by the `LtMsgPackSerializer`, with their schema.
+- **Objects**: whole objects, written and read by the `LtMsgPackSerializer`, with their schema. Or the schema once for a whole root value, e.g. a table of objects of unknown length (see [one schema for a root value](#one-schema-for-a-root-value)).
 - **Positions**: the writer reports the position after each value, so an index of the values can be kept, or appended to the stream.
 
 Both are synchronous and not thread-safe.
@@ -48,6 +48,7 @@ What the writer offers:
   - `WriteArrayStart()` and `WriteMapStart()` are followed by any number of values, then `WriteEnd()`.
   - `WriteStringStart()` is followed by chunks (`Write(string)` or `WriteStringChunk(chars)`), then `WriteEnd()`. A chunk never splits a character: a high surrogate at the end of a chunk is written with the next one. That makes it suitable for the buffers of `IDataRecord.GetChars`.
   - `WriteBinaryStart()` is followed by chunks (`WriteBinary(...)`), then `WriteEnd()`. Use it for the buffers of `IDataRecord.GetBytes`.
+- **Objects**: `WriteObject(value)` (see [objects and their schema](#objects-and-their-schema)), and `WriteHead<TRoot>()` for one schema before a root value (see [one schema for a root value](#one-schema-for-a-root-value)).
 - **Checks**: the writer refuses what the format doesn't allow, with an `InvalidOperationException`:
   - an end where it doesn't belong (nothing open, an array of known length that still needs elements, a map after a key);
   - a value inside a str or bin of unknown length that isn't a chunk of it;
@@ -95,7 +96,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 - At a `StringStart`, `BinaryStart`, `ArrayStart` or `MapStart`, `GetString()`, `GetBytes()` and `GetValue()` read the whole value. The reader is then at its end.
 - `Skip()` passes the current array, map, str or bin without buffering it.
 
-**Objects.** `ReadObject<T>()` reads the next value as `LtMsgPackSerializer.Deserialize<T>` does, with its schema. Values of unknown length inside it are read too: the reader replaces them by ones of known length before the serializer reads them.
+**Objects.** `ReadObject<T>()` reads the next value as `LtMsgPackSerializer.Deserialize<T>` does, with its schema. Values of unknown length inside it are read too: the reader replaces them by ones of known length before the serializer reads them. `ReadHead<TRoot>()` reads a schema written by `WriteHead<TRoot>()` (see [one schema for a root value](#one-schema-for-a-root-value)).
 
 **The buffer.** The reader reads the stream in blocks into a buffer, so the stream doesn't have to seek (network streams work). Values that are read whole are buffered whole: objects, `GetValue`, `GetString`... The buffer only grows as far as the data that arrives, so a header that claims more than the stream holds costs no more memory than the stream holds.
 
@@ -109,7 +110,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 
 ## Objects and their schema
 
-With the indexed schema (`UseInexedSchema`, the default) an object is written as its schema, then the object. That's two MsgPack values, so `WriteObject` and `ReadObject` only take root values of the stream (`Depth` 0). Without the indexed schema an object is one value: it can also be an element of an array, e.g. of an array of unknown length:
+With the indexed schema (`UseInexedSchema`, the default) an object is written as its schema, then the object. That's two MsgPack values, so on their own `WriteObject` and `ReadObject` only take root values of the stream (`Depth` 0). For objects in an array or map, write their schema once before it: see [one schema for a root value](#one-schema-for-a-root-value). Without the indexed schema an object is one value: it can also be an element of an array, e.g. of an array of unknown length:
 
 ```csharp
 LtMsgPackSerializer plain = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false });
@@ -126,6 +127,38 @@ The third parameter of the writer, `MsgPackStreamSchemas`, says where the schema
 | `External` | references only | a serializer whose `SchemaStore` holds the schemas. `writer.ReferencedSchemas` lists their ids: `store.GetSchema(id)` to keep them apart, or to append them to the stream |
 
 `PerStream` and `External` need a serializer that writes schema references: `WriteSchemaReference = true` and a `SchemaStore` in its options. See [schema.md](schema.md) for the schema itself.
+
+## One schema for a root value
+
+`Serialize(list)` writes a `List<Row>` as one schema followed by the array of rows, and each row is only its values. The stream writer can write the same while the rows arrive: `WriteHead<TRoot>()` writes the schema of a root type, and the next root value is its body. In the body, `WriteObject(row)` writes only the values of the row, at any depth.
+
+```csharp
+using (MsgPackStreamWriter writer = new MsgPackStreamWriter(file, serializer))
+{
+  writer.WriteHead<List<Row>>();   // the schema, once
+  writer.WriteArrayStart();        // the body: an array of unknown length
+  while (rows.Read())
+    writer.WriteObject(ToRow(rows));
+  writer.WriteEnd();               // the end of the body (and of the head)
+}
+
+using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
+{
+  reader.ReadHead<List<Row>>();
+  reader.Read();                   // ArrayStart
+  while (!reader.AtEnd)
+    Process(reader.ReadObject<Row>());
+  reader.Read();                   // ArrayEnd
+}
+```
+
+- **The body** is the root value after the head. It can be anything the root type holds: arrays and maps of known or unknown length, values, and `WriteObject` for the objects in it, e.g. `WriteHead<Dictionary<string, List<Row>>>()` for several tables by name. The head ends with its body. The next root value needs a head of its own, or is a whole object again.
+- **Declared types**: the type argument of `WriteObject<T>` is the type of the place in the root type (the element type of the list, the type of the property). It decides whether a type id is written, as in `Serialize<T>`. Write rows of a list of `Shape` with `WriteObject<Shape>(circle)`, so that their type ids are written. The writer doesn't check this against the root type.
+- **The schema is complete**: the head always has the complete schema of the root type (`CompleteSchemas`, whatever the options say), because the rows come after it. It has the classes of the root type, of its properties and elements, and the classes deriving from them in the assemblies it reaches. A value that needs another class (one declared as `object`, or a class of an assembly the root type doesn't reach) is refused with an `InvalidOperationException`, and nothing is written for it.
+- **Where the schema goes** follows `MsgPackStreamSchemas`: inline (`PerObject`, and the first time with `PerStream`) or a reference. Without a `SchemaStore` the writer's serializer keeps the schemas of the heads in a store of its own.
+- **The same bytes as `Serialize`**: with arrays and maps of known length the head and body are what `Serialize<TRoot>` writes for the whole value with `CompleteSchemas`. `Deserialize<TRoot>` reads them, and so does `ReadObject<TRoot>()` with lengths unknown too. The other way around, `ReadHead<TRoot>()` reads any payload of `Serialize<TRoot>` in parts.
+- **Objects written by hand**: when the root type is a class (not a collection), its values are written as the layout says. With `ObjectLayout.Array` (the default) that's an array of the values in `PropertyOrder`. With `ObjectLayout.Map` the keys are indexes into the schema, which the writer has no help for. Prefer collections as root types, and `WriteObject` for the objects.
+- **Without the indexed schema** the head writes and reads nothing, and the body is written and read as without it.
 
 ## The format
 

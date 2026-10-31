@@ -736,7 +736,7 @@ namespace LsMsgPackUnitTests
       using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer, MsgPackStreamSchemas.PerObject, true))
       {
         writer.WriteArrayStart();
-        Assert.ThrowsExactly<InvalidOperationException>(() => writer.WriteObject(Order(1)));
+        Assert.ThrowsExactly<InvalidOperationException>(() => writer.WriteObject(Order(1))); // without a head
         writer.WriteEnd();
       }
 
@@ -752,6 +752,429 @@ namespace LsMsgPackUnitTests
     {
       Assert.ThrowsExactly<ArgumentException>(() => new MsgPackStreamWriter(new MemoryStream(), new LtMsgPackSerializer(new LtMsgPackOptions()), MsgPackStreamSchemas.PerStream));
       Assert.ThrowsExactly<ArgumentException>(() => new MsgPackStreamWriter(new MemoryStream(), Plain(), MsgPackStreamSchemas.External));
+    }
+
+    #endregion
+
+    #region Heads: one schema for a whole root value
+
+    public class SwReport
+    {
+      public string Title { get; set; }
+      public List<SwOrder> Orders { get; set; } = new List<SwOrder>();
+      public int Total { get; set; }
+    }
+
+    public class SwBag
+    {
+      public string Name { get; set; }
+      public object Content { get; set; }
+    }
+
+    private static LtMsgPackSerializer Complete(SchemaStore store, SchemaVersion version = SchemaVersion.Names)
+    {
+      return new LtMsgPackSerializer(new LtMsgPackOptions { WriteSchemaReference = true, SchemaStore = store, CompleteSchemas = true, SchemaVersion = version });
+    }
+
+    private static List<SwOrder> Orders(int count)
+    {
+      List<SwOrder> orders = new List<SwOrder>();
+      for (int n = 1; n <= count; n++)
+        orders.Add(Order(n));
+      return orders;
+    }
+
+    /// <summary>
+    /// A head and an array of known length: the payload of Serialize (with the complete schema), the schema inline or a reference.
+    /// </summary>
+    [TestMethod]
+    public void HeadAndArrayOfKnownLengthAreTheSerializedList()
+    {
+      List<SwOrder> orders = Orders(3);
+      foreach (MsgPackStreamSchemas mode in new[] { MsgPackStreamSchemas.PerObject, MsgPackStreamSchemas.PerStream, MsgPackStreamSchemas.External })
+      {
+        SchemaStore store = new SchemaStore();
+        LtMsgPackSerializer serializer = Complete(store);
+        byte[] bytes = Write(w =>
+        {
+          w.WriteHead<List<SwOrder>>();
+          w.WriteArrayHeader(orders.Count);
+          foreach (SwOrder order in orders)
+            w.WriteObject(order);
+          Assert.AreEqual(0, w.Depth);
+        }, serializer, mode);
+
+        byte[] expected = mode == MsgPackStreamSchemas.External
+          ? serializer.Serialize(orders)
+          : Write(w => w.WriteObject(orders), serializer, mode); // the schema inline in place of the reference
+        Assert.AreEqual(Hex(expected), Hex(bytes), mode.ToString());
+
+        LtMsgPackSerializer reading = new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = store });
+        List<SwOrder> read = reading.Deserialize<List<SwOrder>>(bytes);
+        for (int t = 0; t < orders.Count; t++)
+          AreEqual(orders[t], read[t]);
+      }
+    }
+
+    [TestMethod]
+    public void HeadWithoutAStoreWritesTheCompleteSchemaInline()
+    {
+      List<SwOrder> orders = Orders(2);
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions()); // no store, no complete schemas: the head makes them
+      byte[] bytes = Write(w =>
+      {
+        w.WriteHead<List<SwOrder>>();
+        w.WriteArrayHeader(orders.Count);
+        foreach (SwOrder order in orders)
+          w.WriteObject(order);
+      }, serializer);
+
+      Assert.AreEqual(Hex(Write(w => w.WriteObject(orders), Complete(new SchemaStore()))), Hex(bytes));
+      List<SwOrder> read = serializer.Deserialize<List<SwOrder>>(bytes);
+      AreEqual(orders[1], read[1]);
+    }
+
+    [TestMethod]
+    public void HeadAndArrayOfUnknownLength()
+    {
+      List<SwOrder> orders = Orders(4);
+      foreach (MsgPackStreamSchemas mode in new[] { MsgPackStreamSchemas.PerObject, MsgPackStreamSchemas.PerStream, MsgPackStreamSchemas.External })
+      {
+        SchemaStore store = new SchemaStore();
+        byte[] bytes = Write(w =>
+        {
+          w.WriteHead<List<SwOrder>>();
+          w.WriteArrayStart();
+          foreach (SwOrder order in orders)
+            w.WriteObject(order);
+          w.WriteObject<SwOrder>(null);
+          w.WriteEnd();
+        }, Complete(store), mode);
+
+        LtMsgPackSerializer reading = new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = mode == MsgPackStreamSchemas.External ? store : new SchemaStore() });
+        using (MsgPackStreamReader reader = Reader(bytes, reading)) // row by row
+        {
+          reader.ReadHead<List<SwOrder>>();
+          Assert.IsTrue(reader.Read());
+          Assert.AreEqual(MsgPackTokenType.ArrayStart, reader.TokenType);
+          Assert.AreEqual(-1, reader.Length);
+          int n = 0;
+          while (!reader.AtEnd)
+          {
+            SwOrder order = reader.ReadObject<SwOrder>();
+            if (n < orders.Count)
+              AreEqual(orders[n], order);
+            else
+              Assert.IsNull(order);
+            n++;
+          }
+          Assert.AreEqual(orders.Count + 1, n);
+          Assert.IsTrue(reader.Read());
+          Assert.AreEqual(MsgPackTokenType.ArrayEnd, reader.TokenType);
+          Assert.IsFalse(reader.Read());
+        }
+
+        using (MsgPackStreamReader reader = Reader(bytes, reading)) // whole
+        {
+          List<SwOrder> read = reader.ReadObject<List<SwOrder>>();
+          Assert.HasCount(orders.Count + 1, read);
+          AreEqual(orders[3], read[3]);
+          Assert.IsNull(read[4]);
+        }
+      }
+    }
+
+    [TestMethod]
+    public void HeadForAMapOfTables()
+    {
+      Dictionary<string, List<SwOrder>> tables = new Dictionary<string, List<SwOrder>> { { "first", Orders(2) }, { "second", Orders(3) } };
+      SchemaStore store = new SchemaStore();
+      LtMsgPackSerializer serializer = Complete(store);
+      byte[] known = Write(w =>
+      {
+        w.WriteHead<Dictionary<string, List<SwOrder>>>();
+        w.WriteMapHeader(tables.Count);
+        foreach (KeyValuePair<string, List<SwOrder>> table in tables)
+        {
+          w.Write(table.Key);
+          w.WriteArrayHeader(table.Value.Count);
+          foreach (SwOrder order in table.Value)
+            w.WriteObject(order);
+        }
+      }, serializer, MsgPackStreamSchemas.External);
+      Assert.AreEqual(Hex(serializer.Serialize(tables)), Hex(known));
+
+      byte[] unknown = Write(w =>
+      {
+        w.WriteHead<Dictionary<string, List<SwOrder>>>();
+        w.WriteMapStart();
+        foreach (KeyValuePair<string, List<SwOrder>> table in tables)
+        {
+          w.Write(table.Key);
+          w.WriteArrayStart();
+          foreach (SwOrder order in table.Value)
+            w.WriteObject(order);
+          w.WriteEnd();
+        }
+        w.WriteEnd();
+      }, serializer);
+
+      using (MsgPackStreamReader reader = Reader(unknown, new LtMsgPackSerializer(new LtMsgPackOptions())))
+      {
+        reader.ReadHead<Dictionary<string, List<SwOrder>>>();
+        reader.Read(); // MapStart
+        while (!reader.AtEnd)
+        {
+          reader.Read();
+          string name = reader.GetString();
+          reader.Read(); // ArrayStart
+          int n = 0;
+          while (!reader.AtEnd)
+            AreEqual(tables[name][n++], reader.ReadObject<SwOrder>());
+          Assert.HasCount(n, tables[name]);
+          reader.Read(); // ArrayEnd
+        }
+        reader.Read();
+        Assert.AreEqual(MsgPackTokenType.MapEnd, reader.TokenType);
+        Assert.AreEqual(0, reader.Depth);
+      }
+    }
+
+    [TestMethod]
+    public void HeadForAnObjectWrittenByHand()
+    {
+      SwReport report = new SwReport { Title = "October", Orders = Orders(3), Total = 3 };
+      SchemaStore store = new SchemaStore();
+      LtMsgPackSerializer serializer = Complete(store);
+      byte[] bytes = Write(w =>
+      {
+        w.WriteHead<SwReport>();
+        w.WriteArrayHeader(3); // the array layout: the values in the order of the properties
+        w.Write(report.Title);
+        w.WriteArrayHeader(report.Orders.Count);
+        foreach (SwOrder order in report.Orders)
+          w.WriteObject(order);
+        w.Write(report.Total);
+      }, serializer, MsgPackStreamSchemas.External);
+      Assert.AreEqual(Hex(serializer.Serialize(report)), Hex(bytes));
+
+      using (MsgPackStreamReader reader = Reader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = store })))
+      {
+        reader.ReadHead<SwReport>();
+        reader.Read(); // ArrayStart
+        reader.Read();
+        Assert.AreEqual("October", reader.GetString());
+        reader.Read(); // ArrayStart of the orders
+        int n = 0;
+        while (!reader.AtEnd)
+          AreEqual(report.Orders[n++], reader.ReadObject<SwOrder>());
+        reader.Read(); // ArrayEnd
+        reader.Read();
+        Assert.AreEqual(3L, reader.GetInt64());
+        reader.Read();
+        Assert.AreEqual(MsgPackTokenType.ArrayEnd, reader.TokenType);
+      }
+    }
+
+    [TestMethod]
+    public void HeadWithDerivedClasses()
+    {
+      List<SwShape> shapes = new List<SwShape> { new SwCircle { Name = "c", Radius = 1 }, new SwSquare { Name = "s", Side = 2 }, new SwShape { Name = "plain" }, new SwCircle { Name = "d", Radius = 3 } };
+      SchemaStore store = new SchemaStore();
+      LtMsgPackSerializer serializer = Complete(store);
+      byte[] bytes = Write(w =>
+      {
+        w.WriteHead<List<SwShape>>();
+        w.WriteArrayHeader(shapes.Count);
+        foreach (SwShape shape in shapes)
+          w.WriteObject(shape); // declared as SwShape: type ids for the derived ones
+      }, serializer, MsgPackStreamSchemas.External);
+      Assert.AreEqual(Hex(serializer.Serialize(shapes)), Hex(bytes));
+
+      using (MsgPackStreamReader reader = Reader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = store })))
+      {
+        reader.ReadHead<List<SwShape>>();
+        reader.Read();
+        for (int t = 0; t < shapes.Count; t++)
+        {
+          SwShape shape = reader.ReadObject<SwShape>();
+          Assert.AreEqual(shapes[t].GetType(), shape.GetType());
+          Assert.AreEqual(shapes[t].Name, shape.Name);
+        }
+        Assert.IsTrue(reader.AtEnd);
+      }
+    }
+
+    [TestMethod]
+    public void HeadWithTheDescribedSchema()
+    {
+      List<SwOrder> orders = Orders(3);
+      LtMsgPackSerializer serializer = Complete(new SchemaStore(), SchemaVersion.Described);
+      byte[] known = Write(w =>
+      {
+        w.WriteHead<List<SwOrder>>();
+        w.WriteArrayHeader(orders.Count);
+        foreach (SwOrder order in orders)
+          w.WriteObject(order);
+      }, serializer);
+      Assert.AreEqual(Hex(Write(w => w.WriteObject(orders), serializer)), Hex(known));
+
+      byte[] unknown = Write(w =>
+      {
+        w.WriteHead<List<SwOrder>>();
+        w.WriteArrayStart();
+        foreach (SwOrder order in orders)
+          w.WriteObject(order);
+        w.WriteEnd();
+      }, serializer);
+      using (MsgPackStreamReader reader = Reader(unknown, new LtMsgPackSerializer(new LtMsgPackOptions())))
+      {
+        reader.ReadHead<List<SwOrder>>();
+        reader.Read();
+        int n = 0;
+        while (!reader.AtEnd)
+          AreEqual(orders[n++], reader.ReadObject<SwOrder>());
+        Assert.AreEqual(orders.Count, n);
+      }
+    }
+
+    [TestMethod]
+    public void PerStreamWritesTheSchemaOfAHeadOnce()
+    {
+      LtMsgPackSerializer serializer = WithReferences(new SchemaStore());
+      List<long> positions = new List<long> { 0 };
+      MsgPackStreamWriter used = null;
+      byte[] bytes = Write(w =>
+      {
+        used = w;
+        for (int part = 0; part < 2; part++)
+        {
+          w.WriteHead<List<SwOrder>>();
+          w.WriteArrayStart();
+          for (int n = 1; n <= 3; n++)
+            w.WriteObject(Order(n));
+          w.WriteEnd();
+          positions.Add(w.Position);
+        }
+        w.WriteObject(Order(5)); // a whole payload again, after the bodies
+      }, serializer, MsgPackStreamSchemas.PerStream);
+
+      Assert.IsTrue(SchemaBytes.IsMap(bytes[0]), "the first head has the schema");
+      Assert.AreEqual(0xD8, bytes[positions[1]], "the second head refers to it");
+      Assert.HasCount(1, used.ReferencedSchemas); // the schema of List<SwOrder> has the same entries as the one of SwOrder (version 1 does not name the root)
+      Assert.AreEqual(0xD8, bytes[positions[2]], "the whole object refers to it too");
+
+      using (MsgPackStreamReader reader = Reader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = new SchemaStore() })))
+      {
+        for (int part = 0; part < 2; part++)
+        {
+          reader.ReadHead<List<SwOrder>>();
+          reader.Read();
+          int n = 0;
+          while (!reader.AtEnd)
+            AreEqual(Order(++n), reader.ReadObject<SwOrder>());
+          Assert.AreEqual(3, n);
+          reader.Read();
+          Assert.AreEqual(positions[part + 1], reader.Position);
+        }
+        AreEqual(Order(5), reader.ReadObject<SwOrder>());
+        Assert.IsTrue(reader.AtEnd);
+      }
+    }
+
+    [TestMethod]
+    public void HeadWithoutTheIndexedSchemaWritesNothing()
+    {
+      LtMsgPackSerializer serializer = Plain();
+      byte[] withHead = Write(w =>
+      {
+        w.WriteHead<List<SwOrder>>();
+        w.WriteArrayStart();
+        w.WriteObject(Order(1));
+        w.WriteObject(Order(2));
+        w.WriteEnd();
+      }, serializer);
+      byte[] without = Write(w =>
+      {
+        w.WriteArrayStart();
+        w.WriteObject(Order(1));
+        w.WriteObject(Order(2));
+        w.WriteEnd();
+      }, serializer);
+      Assert.AreEqual(Hex(without), Hex(withHead));
+
+      using (MsgPackStreamReader reader = Reader(withHead, serializer))
+      {
+        reader.ReadHead<List<SwOrder>>();
+        reader.Read();
+        AreEqual(Order(1), reader.ReadObject<SwOrder>());
+        AreEqual(Order(2), reader.ReadObject<SwOrder>());
+        Assert.IsTrue(reader.AtEnd);
+      }
+    }
+
+    [TestMethod]
+    public void HeadRefusesAValueItsSchemaDoesNotHave()
+    {
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+      byte[] bytes = Write(w =>
+      {
+        w.WriteHead<List<SwBag>>();
+        w.WriteArrayStart();
+        w.WriteObject(new SwBag { Name = "text", Content = "a string" });
+        long before = w.Position;
+        InvalidOperationException refused = Assert.ThrowsExactly<InvalidOperationException>(() => w.WriteObject(new SwBag { Name = "order", Content = Order(1) })); // SwOrder is not in the schema of List<SwBag>
+        Assert.Contains("schema written in the head", refused.Message);
+        Assert.AreEqual(before, w.Position, "nothing written");
+        w.WriteObject(new SwBag { Name = "number", Content = 5 });
+        w.WriteEnd();
+        Assert.AreEqual(0, w.Depth);
+      }, serializer);
+
+      using (MsgPackStreamReader reader = Reader(bytes, serializer))
+      {
+        reader.ReadHead<List<SwBag>>();
+        reader.Read();
+        Assert.AreEqual("a string", reader.ReadObject<SwBag>().Content);
+        Assert.AreEqual("number", reader.ReadObject<SwBag>().Name);
+        Assert.IsTrue(reader.AtEnd);
+      }
+    }
+
+    [TestMethod]
+    public void HeadsOnlyBeforeARootValue()
+    {
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+      MemoryStream ms = new MemoryStream();
+      using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer, MsgPackStreamSchemas.PerObject, true))
+      {
+        writer.WriteArrayStart();
+        Assert.ThrowsExactly<InvalidOperationException>(() => writer.WriteHead<List<SwOrder>>());
+        writer.WriteEnd();
+
+        writer.WriteHead<List<SwOrder>>();
+        Assert.ThrowsExactly<InvalidOperationException>(() => writer.WriteHead<List<SwOrder>>()); // the first one waits for its body
+        writer.WriteArrayHeader(0); // the body: done
+        writer.WriteHead<SwOrder>();
+        writer.WriteObject(Order(2)); // a body that is one object
+        writer.WriteObject(Order(3)); // no head: a whole payload
+      }
+
+      using (MsgPackStreamReader reader = Reader(ms.ToArray(), serializer))
+      {
+        reader.Read();
+        Assert.ThrowsExactly<InvalidOperationException>(() => reader.ReadHead<List<SwOrder>>());
+        reader.Read();
+        reader.ReadHead<List<SwOrder>>();
+        Assert.ThrowsExactly<InvalidOperationException>(() => reader.ReadHead<List<SwOrder>>());
+        reader.Read();
+        Assert.AreEqual(0L, reader.Length);
+        reader.Read(); // its ArrayEnd
+        reader.ReadHead<SwOrder>();
+        AreEqual(Order(2), reader.ReadObject<SwOrder>());
+        AreEqual(Order(3), reader.ReadObject<SwOrder>());
+        Assert.IsTrue(reader.AtEnd);
+      }
     }
 
     #endregion

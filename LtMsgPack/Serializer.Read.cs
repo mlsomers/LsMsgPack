@@ -308,22 +308,34 @@ namespace LtMsgPack
 
     private object DeserializeWithSchema(ReadContext c, Type type)
     {
-
       MsgPackReader r = c.R;
+      if (!ReadSchema(r, out SchemaStore.Entry schema, out MsgPackOptions lengthSettings, out SchemaStore.SessionState state, out byte[] raw))
+        return null; // null is serialized without a schema
+      return ReadWithSchema(c, type, type, r.Pos, schema, lengthSettings, state, raw);
+    }
+
+    /// <summary>
+    /// Reads the schema at the start of a payload (inline or a reference) and finds it in the store.
+    /// </summary>
+    /// <param name="schema">null when it is not cached (the store is full, or does not cache inline schemas): then <paramref name="raw"/> has its bytes</param>
+    /// <param name="state">The reader sessions of the schema when it was the one read last, otherwise null</param>
+    /// <returns>false for nil (null is serialized without a schema), the reader is then after it</returns>
+    private bool ReadSchema(MsgPackReader r, out SchemaStore.Entry schema, out MsgPackOptions lengthSettings, out SchemaStore.SessionState state, out byte[] raw)
+    {
       if (r.Pos >= r.End)
         throw MsgPackReader.EndOfData();
 
+      state = null;
+      raw = null;
       int first = r.Buf[r.Pos];
-      if (first == 0xC0) // null is serialized without a schema
+      if (first == 0xC0)
       {
         r.Pos++;
-        return null;
+        schema = null;
+        lengthSettings = null;
+        return false;
       }
 
-      SchemaStore.Entry schema;
-      MsgPackOptions lengthSettings;
-      SchemaStore.SessionState state = null;
-      byte[] raw = null;
       SchemaHit last = _lastSchema;
       if (last != null && StartsWith(r, last.Bytes)) // a MsgPack value ends where its bytes end, so a payload starting with the bytes of the schema (or reference) starts with that schema
       {
@@ -364,18 +376,27 @@ namespace LtMsgPack
       }
       else
         throw NotASchema(first);
+      return true;
+    }
 
-      int bodyStart = r.Pos;
+    /// <summary>
+    /// Reads the body (from <paramref name="bodyStart"/>) with the schema <see cref="ReadSchema"/> found.
+    /// </summary>
+    /// <param name="root">The root type of the payload, which pairs the reader's classes with the schema's (<see cref="SerializationRules.BindReaderTypes"/>)</param>
+    /// <param name="type">The type of the value that is read: <paramref name="root"/>, or a part of its body (<see cref="Streaming.MsgPackStreamReader.ReadHead{TRoot}"/>)</param>
+    private object ReadWithSchema(ReadContext c, Type root, Type type, int bodyStart, SchemaStore.Entry schema, MsgPackOptions lengthSettings, SchemaStore.SessionState state, byte[] raw)
+    {
       if (schema is null) // not cached (the store is full, or does not cache inline schemas): a session for this call
       {
         SchemaSession session = new SchemaSession(IndexedSchemaTypeResolver.FromBytes(raw, Options, Options), Options);
-        return ReadBody(c, type, bodyStart, session, session.Apply(Options), false);
+        return ReadBody(c, root, type, bodyStart, session, session.Apply(Options), false);
       }
 
       if (state is null)
       {
         state = schema.GetReader(Options);
-        _lastSchema = new SchemaHit(raw, schema, lengthSettings, state); // the store keeps its entries
+        if (raw != null)
+          _lastSchema = new SchemaHit(raw, schema, lengthSettings, state); // the store keeps its entries
       }
 
       // The published session, shared with other calls (as Entry.RunReader, without its allocations)
@@ -385,24 +406,24 @@ namespace LtMsgPack
         SessionShared reading = Shared(current);
         try
         {
-          return ReadBody(c, type, bodyStart, reading.Bound, reading.Settings(Options));
+          return ReadBody(c, root, type, bodyStart, reading.Bound, reading.Settings(Options));
         }
         catch (SchemaGrowthException) // something the session does not have yet, RunReader grows it
         {
         }
       }
 
-      return schema.RunReader(Options, lengthSettings, (session, sessionSettings) => ReadBody(c, type, bodyStart, session, sessionSettings, true));
+      return schema.RunReader(Options, lengthSettings, (session, sessionSettings) => ReadBody(c, root, type, bodyStart, session, sessionSettings, true));
     }
 
-    private object ReadBody(ReadContext c, Type type, int bodyStart, SchemaSession session, MsgPackOptions sessionSettings, bool shared)
+    private object ReadBody(ReadContext c, Type root, Type type, int bodyStart, SchemaSession session, MsgPackOptions sessionSettings, bool shared)
     {
-      return ReadBody(c, type, bodyStart, BoundFor(session, shared && session.IsFrozen), sessionSettings);
+      return ReadBody(c, root, type, bodyStart, BoundFor(session, shared && session.IsFrozen), sessionSettings);
     }
 
-    private object ReadBody(ReadContext c, Type type, int bodyStart, BoundSchema bound, MsgPackOptions sessionSettings)
+    private object ReadBody(ReadContext c, Type root, Type type, int bodyStart, BoundSchema bound, MsgPackOptions sessionSettings)
     {
-      SerializationRules.BindReaderTypes(type, sessionSettings); // once per root type and schema
+      SerializationRules.BindReaderTypes(root, sessionSettings); // once per root type and schema
       c.R.Pos = bodyStart;
       c.Depth = 0;
       c.Schema = true;
@@ -417,6 +438,98 @@ namespace LtMsgPack
       }
       return ReadRoot(c, type);
     }
+
+    #endregion
+
+    #region Schema heads (the stream reader)
+
+    /// <summary>
+    /// A schema read on its own, for the body that follows it in a stream (<see cref="Streaming.MsgPackStreamReader.ReadHead{TRoot}"/>): read in parts, each with this schema.
+    /// </summary>
+    internal sealed class SchemaHead
+    {
+      internal readonly SchemaStore.Entry Schema;
+      internal readonly MsgPackOptions LengthSettings;
+      internal readonly SchemaStore.SessionState State;
+      internal readonly byte[] Raw;
+
+      internal SchemaHead(SchemaStore.Entry schema, MsgPackOptions lengthSettings, SchemaStore.SessionState state, byte[] raw)
+      {
+        Schema = schema;
+        LengthSettings = lengthSettings;
+        State = state;
+        Raw = raw;
+      }
+    }
+
+    /// <summary>
+    /// Reads the schema (inline or a reference) that starts at <paramref name="offset"/>.
+    /// </summary>
+    /// <param name="end">Where the schema ends</param>
+    internal SchemaHead ReadHead(byte[] buffer, int offset, int end)
+    {
+      ReadContext c = RentContext(buffer, offset, end);
+      try
+      {
+        MsgPackReader r = c.R;
+        if (!ReadSchema(r, out SchemaStore.Entry schema, out MsgPackOptions lengthSettings, out SchemaStore.SessionState state, out byte[] raw))
+          throw NotASchema(0xC0);
+        if (r.Pos != end)
+          throw new MsgPackException("The schema is followed by more data.", r.Pos, MsgPackTypeId.NeverUsed);
+        if (schema != null && state is null)
+          state = schema.GetReader(Options);
+        return new SchemaHead(schema, lengthSettings, state, raw);
+      }
+      finally
+      {
+        ReturnContext(c);
+      }
+    }
+
+    /// <summary>
+    /// Reads one value of the body of a schema head, as <see cref="Deserialize"/> reads a payload of <paramref name="root"/> with that schema.
+    /// </summary>
+    /// <param name="root">The root type of the head</param>
+    /// <param name="type">The declared type of the value</param>
+    internal object DeserializeBody(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null)
+    {
+      if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
+      {
+        ReadDifferences found = new ReadDifferences(Options);
+        int used = 0;
+        object read = ReadDifferences.Collect(found, () => DeserializeBody(head, root, type, buffer, offset, end, out used, found));
+        consumed = used;
+        return read;
+      }
+
+      if (root != _cachedRoot)
+      {
+        TypeResolver.CacheAssembly(root.Assembly, root.Name);
+        TypeResolver.CacheReachableAssemblies(root);
+        _cachedRoot = root;
+      }
+      if (type != root)
+        TypeResolver.CacheAssembly(type.Assembly, type.Name);
+
+      ReadContext c = RentContext(buffer, offset, end);
+      try
+      {
+        if (differences != null)
+          c.Differences = differences;
+        c.Unusual = SlowObjects || differences != null;
+        object result = ReadWithSchema(c, root, type, offset, head.Schema, head.LengthSettings, head.State, head.Raw);
+        consumed = c.R.Pos;
+        return result;
+      }
+      finally
+      {
+        ReturnContext(c);
+      }
+    }
+
+    #endregion
+
+    #region Helpers
 
     private object ReadRoot(ReadContext c, Type type)
     {

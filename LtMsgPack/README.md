@@ -22,7 +22,7 @@ Order copy = serializer.Deserialize<Order>(data);
 
 There are also overloads that write to and read from a `Stream`.
 
-To write and read many values one after another (database rows, several result sets or tables in one file), including arrays and maps whose length isn't known when they start, use `MsgPackStreamWriter` and `MsgPackStreamReader` (namespace `LtMsgPack.Streaming`). See [streaming](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Streaming.md).
+To write and read many values one after another (database rows, several result sets or tables in one file), including arrays and maps whose length isn't known when they start and tables of objects with their schema written once, use `MsgPackStreamWriter` and `MsgPackStreamReader` (namespace `LtMsgPack.Streaming`). See [streaming](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Streaming.md).
 
 ## Settings
 

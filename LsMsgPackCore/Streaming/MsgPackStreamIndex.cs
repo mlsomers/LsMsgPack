@@ -6,9 +6,12 @@ namespace LsMsgPack.Streaming
   /// The index at the end of a stream: where its entries (ranges of root values) and the schemas they refer to are, so a reader can go to one without reading what comes before it.
   /// <para>Layout at the end of the stream (every part a MsgPack value, so any reader can read or skip the stream value by value):</para>
   /// <list type="number">
-  /// <item>the index: an extension value of type <see cref="IndexExtensionType"/> whose data is one MsgPack array (positions below; trailing nils are left out, so fields can be added at the end);</item>
-  /// <item>the tail: a fixext 16 of type <see cref="TailExtensionType"/>, always the last <see cref="TailLength"/> bytes: the offset of the index (uint64, big-endian, where its extension value starts), its length in bytes (uint32, the whole extension value) and <see cref="Magic"/>.
-  /// Fixed length and without DynamicallyCompact, because MsgPack cannot be read backwards: a reader reads the last <see cref="TailLength"/> bytes (an HTTP range request "bytes=-18" works too) and knows where the index is.</item>
+  /// <item>the index: an extension value of type <see cref="IndexExtensionType"/> whose data is one MsgPack array (positions below; trailing nils are left out, so fields can be added at the end).
+  /// The extension marks it as no data: a reader that cannot seek meets it while reading the root values (it would read the array into the next object by position), and skips it by its length without parsing the entries;</item>
+  /// <item>the tail: the array <c>[offset of the index, its length in bytes, <see cref="Magic"/>]</c> written with fixed types, always the last <see cref="TailLength"/> bytes:
+  /// <c>93 cf &lt;uint64&gt; ce &lt;uint32&gt; a4 "LSIX"</c> (the offset is where the index's extension value starts, the length is the whole extension value).
+  /// Fixed length and without DynamicallyCompact, because MsgPack cannot be read backwards: a reader reads the last <see cref="TailLength"/> bytes (an HTTP range request "bytes=-20" works too) and knows where the index is.
+  /// It needs no extension of its own: the value after the index is the tail.</item>
   /// </list>
   /// <para>Index array: 0 <see cref="Version"/>, 1 <see cref="Writer"/>, 2 <see cref="PreviousIndex"/>, 3 <see cref="HashAlgorithm"/>,
   /// 4 <see cref="Schemas"/> (each <c>[id (bin 16), offset or nil, length]</c>), 5 <see cref="Entries"/> (see <see cref="MsgPackStreamEntry"/>), 6 <see cref="Metadata"/>.</para>
@@ -28,24 +31,19 @@ namespace LsMsgPack.Streaming
     public const sbyte IndexExtensionType = 3;
 
     /// <summary>
-    /// The extension type of the tail, the last <see cref="TailLength"/> bytes of a stream with an index.
+    /// The extension type that wraps the bytes an <see cref="IMsgPackStreamObserver"/> returns for an entry (written right after the entry), so readers skip them (they need not be MsgPack: a signature, parity).
     /// </summary>
-    public const sbyte TailExtensionType = 4;
+    public const sbyte SidecarExtensionType = 4;
 
     /// <summary>
-    /// The extension type that wraps the bytes an <see cref="IMsgPackStreamObserver"/> returns for an entry (written right after the entry), so readers skip them.
+    /// The length of the tail: the fixarray header (1), the index offset as uint64 (9), the index length as uint32 (5) and <see cref="Magic"/> as fixstr (5).
     /// </summary>
-    public const sbyte SidecarExtensionType = 5;
+    public const int TailLength = 20;
 
     /// <summary>
-    /// The length of the tail: fixext 16 (2 bytes header) with the index offset (8), the index length (4) and <see cref="Magic"/> (4).
+    /// The last element of the tail, the last 4 bytes of a stream with an index: tells a tail apart from other data that ends in an array of the same shape.
     /// </summary>
-    public const int TailLength = 18;
-
-    /// <summary>
-    /// The last 4 bytes of a stream with an index ("LSIX"): tells a tail apart from other data that happens to be a fixext 16 of the same type.
-    /// </summary>
-    public const uint Magic = 0x4C534958;
+    public const string Magic = "LSIX";
 
     /// <summary>
     /// The version of the layout the index was written in (<see cref="CurrentVersion"/>). A reader refuses versions it does not know, fields added at the end do not raise it.

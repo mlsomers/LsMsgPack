@@ -163,6 +163,123 @@ namespace LtMsgPack
       }
     }
 
+    #region Schema heads (the stream writer)
+
+    private MsgPackOptions _completeOptions; // the options with CompleteSchemas, for the heads
+    private SchemaStore _headStore; // the schemas of the heads, when the options have no store
+
+    /// <summary>
+    /// A schema written on its own, for the body that follows it in a stream (<see cref="Streaming.MsgPackStreamWriter.WriteHead{TRoot}"/>): written in parts, each with this schema.
+    /// </summary>
+    internal sealed class WriterHead
+    {
+      internal readonly SchemaStore Store;
+      internal readonly Type Root;
+
+      /// <summary>
+      /// The options with <see cref="MsgPackOptions.CompleteSchemas"/>.
+      /// </summary>
+      internal readonly MsgPackOptions Settings;
+      internal readonly SchemaId Id;
+
+      /// <summary>
+      /// Frozen, the schema of <see cref="Id"/>: replaced by a copy with more cache entries (never more schema).
+      /// </summary>
+      internal SchemaSession Session;
+
+      internal WriterHead(SchemaStore store, Type root, MsgPackOptions settings, SchemaSession session)
+      {
+        Store = store;
+        Root = root;
+        Settings = settings;
+        Session = session;
+        Id = session.Id;
+      }
+    }
+
+    /// <summary>
+    /// The head of a root type: the complete schema of the root type (<see cref="MsgPackOptions.CompleteSchemas"/>, whatever the options say), published in the options' store or a store of this serializer
+    /// (<see cref="SchemaStore.GetInlineSchema"/> has it), so the body after the head has every class it can hold.
+    /// </summary>
+    internal WriterHead PrepareHead(Type root)
+    {
+      SchemaStore store = Options._schemaStore;
+      if (store is null)
+      {
+        store = _headStore;
+        if (store is null)
+          _headStore = store = new SchemaStore();
+      }
+
+      MsgPackOptions settings = Options;
+      if (!settings._completeSchemas)
+      {
+        settings = _completeOptions;
+        if (settings is null)
+        {
+          settings = Options.CloneOptions(); // shares the arrays, so the session key is the same every time
+          settings._completeSchemas = true;
+          _completeOptions = settings;
+        }
+      }
+
+      store.PrepareWriter(root, settings);
+      return new WriterHead(store, root, settings, store.GetWriter(root, settings).Current); // the prepared session, or a grown one of the same root type
+    }
+
+    /// <summary>
+    /// Writes a value of the body of a schema head, as <see cref="Serialize"/> writes the body of a payload with that schema.
+    /// </summary>
+    /// <param name="assignedTo">The declared type of the value (a type id is added when the value's type differs)</param>
+    /// <param name="depth">The nesting of the value in the stream (for <see cref="MsgPackOptions.MaxDepth"/>)</param>
+    /// <exception cref="InvalidOperationException">The value needs a class or property the schema of the head does not have, nothing was written</exception>
+    internal void SerializeBody(WriterHead head, Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, int depth, IPayloadSink sink)
+    {
+      WriteState state = RentState();
+      try
+      {
+        WriteContext c = state.Context;
+        c.Root = value;
+        FullPropertyInfo root = c.RootInfo;
+        if (root is null || root.AssignedToType != assignedTo)
+          c.RootInfo = root = RootInfo(assignedTo);
+        try
+        {
+          WriteBody(c, state, depth, WriterShared(head.Session).Settings(Options), write, root);
+        }
+        catch (SchemaGrowthException) // the frozen session needs more: cache entries (the first value of a class), or classes the head does not have
+        {
+          SchemaSession grown = head.Session.Thaw(head.Settings);
+          WriteBody(c, state, depth, grown.Apply(head.Settings), write, root);
+          byte[] schema = grown.Resolver.Pack(SchemaBytes.Canonical, head.Root, head.Settings); // as SchemaStore.PublishWriter
+          if (SchemaId.Compute(schema, head.Settings._schemaVersion) != head.Id)
+            throw new InvalidOperationException($"The {(value is null ? "value" : value.GetType().Name)} declared as {assignedTo.Name} needs a class the schema written in the head does not have: a value declared as object, or a class of an assembly that {head.Root.Name} does not reach (see {nameof(MsgPackOptions.CompleteSchemas)}). Nothing was written for it.");
+          grown.Freeze();
+          head.Session = grown;
+        }
+        sink.Write(null, 0, false, c.W);
+      }
+      finally
+      {
+        state.Context.Root = null;
+        ReturnState(state);
+      }
+    }
+
+    private static void WriteBody(WriteContext c, WriteState state, int depth, MsgPackOptions sessionSettings, Action<WriteContext, FullPropertyInfo> write, FullPropertyInfo root)
+    {
+      c.Depth = depth;
+      c.ByNames = false;
+      if (!ReferenceEquals(c.W, state.Body))
+        c.W = state.Body;
+      c.W.Reset(c.Serializer.Options);
+      c.Mode = IdMode.Session;
+      c.IdSettings = sessionSettings;
+      write(c, root);
+    }
+
+    #endregion
+
     /// <summary>
     /// The writer sessions of the root type read last: (store, root type) to SessionState, which SchemaStore.GetWriter finds by a key of the settings, which do not change.
     /// </summary>

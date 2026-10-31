@@ -11,7 +11,8 @@ namespace LtMsgPack.Streaming
 {
   /// <summary>
   /// Writes MsgPack values one after another to a stream: values, arrays and maps of a known length, arrays, maps, str and bin of unknown length (written before their length is known, see docs/Streaming.md),
-  /// and whole objects with their schema (<see cref="WriteObject{T}(T)"/>). The values between which <see cref="Depth"/> is 0 are the root values of the stream, e.g. one per result set or table.
+  /// and whole objects with their schema (<see cref="WriteObject{T}(T)"/>), or one schema for a whole root value (<see cref="WriteHead{TRoot}"/>) whose objects are then written without it.
+  /// The values between which <see cref="Depth"/> is 0 are the root values of the stream, e.g. one per result set or table.
   /// <para>Values are written into a buffer that goes to the stream once it holds <see cref="FlushThreshold"/> bytes, at <see cref="Flush"/> and at <see cref="Dispose"/>.
   /// <see cref="Position"/> is where the next value starts, e.g. to keep an index of the root values.</para>
   /// <para>Arrays, maps, str and bin of unknown length use the escape byte 0xC1 as proposed in msgpack/msgpack#347 (not in the MsgPack specification yet):
@@ -44,6 +45,8 @@ namespace LtMsgPack.Streaming
     private char _pendingHigh; // a high surrogate at the end of a chunk, written with the next one (a chunk holds whole UTF-8 sequences)
     private char[] _scratch;
     private bool _disposed;
+    private HeadState _headState;
+    private Serializer.WriterHead _head; // null without the indexed schema
 
     /// <summary>
     /// A writer with the default options of <see cref="LtMsgPackSerializer.Default"/>, objects with their schema (<see cref="MsgPackStreamSchemas.PerObject"/>). The stream is closed by <see cref="Dispose"/>.
@@ -147,6 +150,21 @@ namespace LtMsgPack.Streaming
     }
 
     private const long MaxUnknownCount = uint.MaxValue; // the limits of the specification also apply to values of unknown length
+
+    private enum HeadState : byte
+    {
+      None,
+
+      /// <summary>
+      /// A head was written, the next root value is its body.
+      /// </summary>
+      AwaitingBody,
+
+      /// <summary>
+      /// The body of the head is being written (an array or map that is still open).
+      /// </summary>
+      InBody
+    }
 
     #endregion
 
@@ -489,14 +507,27 @@ namespace LtMsgPack.Streaming
 
     /// <summary>
     /// Writes the value as <see cref="LtMsgPackSerializer.Serialize{T}(T)"/> does, with its schema as <see cref="Schemas"/> says.
-    /// <para>With the indexed schema the object is two values (its schema or a reference to it, then the object), so it is only written as a root value of the stream (<see cref="Depth"/> 0).
-    /// Without it, anywhere (one value).</para>
+    /// <para>With the indexed schema the object is two values (its schema or a reference to it, then the object), so it is only written as a root value of the stream (<see cref="Depth"/> 0),
+    /// unless it is part of the body of a head (<see cref="WriteHead{TRoot}"/>): then only the value is written, with the schema of the head, at any depth. Without the indexed schema, anywhere (one value).</para>
     /// </summary>
+    /// <typeparam name="T">The declared type of the value: a type id is added when the value's type differs. In the body of a head, the type of the place in the root type (e.g. the element type of the list).</typeparam>
     /// <returns>The <see cref="Position"/> after the object</returns>
+    /// <exception cref="InvalidOperationException">In the body of a head: the value needs a class that the schema of the head does not have (nothing is written)</exception>
     public long WriteObject<T>(T value)
     {
-      ObjectValue();
-      _serializer.Serialize(typeof(T), value, LtMsgPackSerializer.TypedWriter<T>.Write, null, out byte[] unused, this);
+      bool body = ObjectValue(out Serializer.WriterHead head);
+      try
+      {
+        if (head != null)
+          _serializer.SerializeBody(head, typeof(T), value, LtMsgPackSerializer.TypedWriter<T>.Write, _depth, this);
+        else
+          _serializer.Serialize(typeof(T), value, LtMsgPackSerializer.TypedWriter<T>.Write, null, out byte[] unused, this);
+      }
+      catch
+      {
+        Unwritten(body);
+        throw;
+      }
       Wrote();
       return Position;
     }
@@ -507,45 +538,117 @@ namespace LtMsgPack.Streaming
     /// <param name="declaredType">The type the value is declared as (a type id is added when the value's type differs), null: the type of the value</param>
     public long WriteObject(object value, Type declaredType)
     {
-      ObjectValue();
-      _serializer.Serialize(declaredType ?? value?.GetType() ?? typeof(object), value, LtMsgPackSerializer.BoxedWriter, null, out byte[] unused, this);
+      bool body = ObjectValue(out Serializer.WriterHead head);
+      Type assignedTo = declaredType ?? value?.GetType() ?? typeof(object);
+      try
+      {
+        if (head != null)
+          _serializer.SerializeBody(head, assignedTo, value, LtMsgPackSerializer.BoxedWriter, _depth, this);
+        else
+          _serializer.Serialize(assignedTo, value, LtMsgPackSerializer.BoxedWriter, null, out byte[] unused, this);
+      }
+      catch
+      {
+        Unwritten(body);
+        throw;
+      }
       Wrote();
       return Position;
     }
 
-    private void ObjectValue()
+    /// <returns>The value is (part of) the body of a head</returns>
+    /// <param name="head">The head whose schema the value is written with, null for a whole payload (or without the indexed schema)</param>
+    private bool ObjectValue(out Serializer.WriterHead head)
     {
+      bool body = _depth == 0 ? _headState == HeadState.AwaitingBody : _headState == HeadState.InBody;
+      head = body ? _head : null;
       Value();
-      if (_depth > 0 && _options._useInexedSchema)
-        throw new InvalidOperationException($"With the indexed schema an object is two values (its schema or a reference to it, then the object): {nameof(WriteObject)} writes it as a root value of the stream ({nameof(Depth)} 0). In an array or map, write the values themselves, or use a serializer without the indexed schema.");
+      if (!body && _depth > 0 && _options._useInexedSchema)
+        throw new InvalidOperationException($"With the indexed schema an object is two values (its schema or a reference to it, then the object): {nameof(WriteObject)} writes it as a root value of the stream ({nameof(Depth)} 0). To write objects in an array or map, write the schema once before it with {nameof(WriteHead)}, or use a serializer without the indexed schema.");
+      return body;
+    }
+
+    /// <summary>
+    /// The root value of the body was not written after all: the head still waits for it.
+    /// </summary>
+    private void Unwritten(bool body)
+    {
+      if (body && _depth == 0)
+        _headState = HeadState.AwaitingBody;
+    }
+
+    /// <summary>
+    /// Writes the schema of the root type, for the root value that follows it (its body): the objects in the body are then written without their schema (<see cref="WriteObject{T}(T)"/>, at any depth), as <see cref="LtMsgPackSerializer.Serialize{T}(T)"/> writes them in a value of <typeparamref name="TRoot"/>.
+    /// E.g. <c>WriteHead&lt;List&lt;Row&gt;&gt;()</c>, <see cref="WriteArrayStart"/>, a <see cref="WriteObject{T}(T)"/> per row, <see cref="WriteEnd"/>: the schema once for all rows.
+    /// With arrays and maps of a known length the stream holds what <see cref="LtMsgPackSerializer.Serialize{T}(T)"/> writes for the whole value (with <see cref="MsgPackOptions.CompleteSchemas"/>).
+    /// <para>The schema is complete (<see cref="MsgPackOptions.CompleteSchemas"/>, whatever the options say): it has the classes of the root type, of its properties, elements and their derived classes in the assemblies it reaches.
+    /// A value in the body that needs another class (declared as object, or of an assembly the root type does not reach) is refused.</para>
+    /// <para>The schema goes where <see cref="Schemas"/> says: inline (<see cref="MsgPackStreamSchemas.PerObject"/>, and the first time with <see cref="MsgPackStreamSchemas.PerStream"/>) or a reference.
+    /// Without the indexed schema nothing is written, the body is written as without a head.</para>
+    /// </summary>
+    /// <typeparam name="TRoot">The declared type of the root value that follows, as the type argument of <see cref="LtMsgPackSerializer.Serialize{T}(T)"/></typeparam>
+    /// <exception cref="InvalidOperationException">Not at <see cref="Depth"/> 0, or the head written before still waits for its body</exception>
+    public void WriteHead<TRoot>()
+    {
+      WriteHead(typeof(TRoot));
+    }
+
+    /// <summary>
+    /// <see cref="WriteHead{TRoot}"/> for a type known at runtime.
+    /// </summary>
+    public void WriteHead(Type root)
+    {
+      if (root is null)
+        throw new ArgumentNullException(nameof(root));
+      ThrowIfDisposed();
+      if (_depth > 0)
+        throw new InvalidOperationException($"A head is written before a root value of the stream ({nameof(Depth)} 0).");
+      if (_headState == HeadState.AwaitingBody)
+        throw new InvalidOperationException("The head written before still waits for its body (the next root value).");
+
+      _head = null;
+      if (_options._useInexedSchema)
+      {
+        Serializer.WriterHead head = _serializer.PrepareHead(root);
+        WriteSchema(head.Id, head.Session.Reference, head.Store);
+        _head = head;
+      }
+      _headState = HeadState.AwaitingBody;
+      Flushed();
     }
 
     void IPayloadSink.Write(byte[] head, int headLength, bool reference, MsgPackWriter body)
     {
       if (reference)
-      {
-        SchemaId id = new SchemaId(head, 2);
-        bool first = _known.Add(id);
-        if (first)
-          _referenced.Add(id);
-
-        byte[] schema = null;
-        if (_schemas != MsgPackStreamSchemas.External)
-        {
-          schema = _options._schemaStore.GetInlineSchema(id, _options); // the store has every schema it wrote
-          if (_schemas == MsgPackStreamSchemas.PerStream && !first && schema.Length > SchemaStore.ReferenceLength) // a small schema is written anyway: it is shorter than the reference
-            schema = null;
-        }
-
-        if (schema is null)
-          _w.Raw(head, 0, headLength);
-        else
-          _w.Raw(schema, 0, schema.Length);
-      }
+        WriteSchema(new SchemaId(head, 2), head, _options._schemaStore);
       else if (headLength > 0)
         _w.Raw(head, 0, headLength);
 
       _w.Raw(body.Buf, 0, body.Pos);
+    }
+
+    /// <summary>
+    /// The schema of an object or a head, as <see cref="Schemas"/> says: inline or the reference.
+    /// </summary>
+    /// <param name="store">Has the schema</param>
+    private void WriteSchema(SchemaId id, byte[] reference, SchemaStore store)
+    {
+      bool first = _known.Add(id);
+      if (first && _options._writeSchemaReference && ReferenceEquals(store, _options._schemaStore))
+        _referenced.Add(id);
+
+      byte[] schema = null;
+      if (_schemas != MsgPackStreamSchemas.External)
+      {
+        schema = store.GetInlineSchema(id, _options); // the store has every schema it wrote
+        if (_schemas == MsgPackStreamSchemas.PerStream && !first && schema.Length > SchemaStore.ReferenceLength) // a small schema is written anyway: it is shorter than the reference
+          schema = null;
+      }
+
+      if (schema is null)
+        _w.Raw(reference, 0, SchemaStore.ReferenceLength);
+      else
+        _w.Raw(schema, 0, schema.Length);
     }
 
     #endregion
@@ -564,7 +667,11 @@ namespace LtMsgPack.Streaming
     {
       ThrowIfDisposed();
       if (_depth == 0)
+      {
+        if (_headState == HeadState.AwaitingBody)
+          _headState = HeadState.InBody;
         return;
+      }
 
       Frame frame = _frames[_depth - 1];
       if (frame.Kind == FrameKind.String)
@@ -601,6 +708,11 @@ namespace LtMsgPack.Streaming
     {
       while (_depth > 0 && !_frames[_depth - 1].Unknown && _frames[_depth - 1].Count == 0)
         _depth--;
+      if (_depth == 0 && _headState == HeadState.InBody) // the body of the head is complete
+      {
+        _headState = HeadState.None;
+        _head = null;
+      }
       Flushed();
     }
 

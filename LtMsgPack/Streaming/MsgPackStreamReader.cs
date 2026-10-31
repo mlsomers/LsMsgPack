@@ -8,7 +8,7 @@ using System.IO;
 namespace LtMsgPack.Streaming
 {
   /// <summary>
-  /// Reads MsgPack values one after another from a stream, as tokens (<see cref="Read"/>) or whole objects with their schema (<see cref="ReadObject{T}"/>), also arrays, maps, str and bin of unknown length
+  /// Reads MsgPack values one after another from a stream, as tokens (<see cref="Read"/>) or whole objects with their schema (<see cref="ReadObject{T}"/>, or one schema for a whole root value: <see cref="ReadHead{TRoot}"/>), also arrays, maps, str and bin of unknown length
   /// (the escape sequences of msgpack/msgpack#347, see <see cref="MsgPackStreamWriter"/>). The stream does not have to seek: it is read in blocks into a buffer.
   /// <para>The buffer holds the current token and grows only as far as the data that arrives (a header claiming more than the stream holds costs no more than the stream holds).
   /// A value that is read whole (<see cref="ReadObject{T}"/>, <see cref="GetValue"/>, <see cref="GetString"/>...) is buffered whole.</para>
@@ -58,6 +58,10 @@ namespace LtMsgPack.Streaming
     private int _depth;
 
     private readonly List<byte[]> _registered = new List<byte[]>(); // the inline schemas registered in the store (PerStream: later objects refer to them)
+
+    private HeadState _headState;
+    private Serializer.SchemaHead _head; // null without the indexed schema
+    private Type _headRoot;
 
     /// <summary>
     /// A reader with the default options of <see cref="LtMsgPackSerializer.Default"/>. The stream is closed by <see cref="Dispose"/>.
@@ -110,6 +114,21 @@ namespace LtMsgPack.Streaming
       /// Where its count goes in _counts (read whole since the mark), -1 for none.
       /// </summary>
       internal int CountIndex;
+    }
+
+    private enum HeadState : byte
+    {
+      None,
+
+      /// <summary>
+      /// A head was read, the next root value is its body.
+      /// </summary>
+      AwaitingBody,
+
+      /// <summary>
+      /// In the body of the head (an array or map that is still open).
+      /// </summary>
+      InBody
     }
 
     #region State
@@ -177,6 +196,25 @@ namespace LtMsgPack.Streaming
     /// <returns>false at the end of the stream between root values</returns>
     /// <exception cref="MsgPackException">The data is not valid (also an escape sequence where it does not belong), or the stream ends inside a value</exception>
     public bool Read()
+    {
+      if (_headState == HeadState.None)
+        return ReadToken();
+
+      int depth = _depth;
+      bool read = ReadToken();
+      if (_headState == HeadState.AwaitingBody)
+      {
+        if (read && depth == 0)
+          _headState = _depth > 0 ? HeadState.InBody : HeadState.None; // the body starts (a scalar is all of it)
+      }
+      else if (_depth == 0)
+        _headState = HeadState.None; // the end of the body
+      if (_headState == HeadState.None)
+        _head = null;
+      return read;
+    }
+
+    private bool ReadToken()
     {
       ThrowIfDisposed();
       PassPayload();
@@ -589,9 +627,11 @@ namespace LtMsgPack.Streaming
 
     /// <summary>
     /// Reads the next value as <see cref="LtMsgPackSerializer.Deserialize{T}(byte[])"/> does, with its schema (inline or a reference, see <see cref="MsgPackStreamSchemas"/>).
-    /// <para>With the indexed schema an object is two values (its schema or a reference to it, then the object), so it is only read as a root value of the stream (<see cref="Depth"/> 0).
-    /// Without it, anywhere (e.g. the elements of an array). Arrays, maps, str and bin of unknown length in it are read too.</para>
+    /// <para>With the indexed schema an object is two values (its schema or a reference to it, then the object), so it is only read as a root value of the stream (<see cref="Depth"/> 0),
+    /// unless it is part of the body of a head (<see cref="ReadHead{TRoot}"/>): then only the value is read, with the schema of the head, at any depth. Without the indexed schema, anywhere (e.g. the elements of an array).
+    /// Arrays, maps, str and bin of unknown length in it are read too.</para>
     /// </summary>
+    /// <typeparam name="T">The type to read the value as. In the body of a head, the type of the place in the root type (e.g. the element type of the list).</typeparam>
     /// <exception cref="MsgPackException">The stream ends (see <see cref="AtEnd"/>), or the data is not valid</exception>
     public T ReadObject<T>()
     {
@@ -609,13 +649,16 @@ namespace LtMsgPack.Streaming
       ThrowIfDisposed();
       PassPayload();
       bool withSchema = _options._useInexedSchema;
+      bool body = _depth == 0 ? _headState == HeadState.AwaitingBody : _headState == HeadState.InBody;
+      Serializer.SchemaHead head = body ? _head : null;
+      Type root = _headRoot;
       if (_depth > 0)
       {
         Frame frame = _frames[_depth - 1];
         if (frame.Kind == FrameKind.String || frame.Kind == FrameKind.Binary)
           throw new InvalidOperationException($"A str or bin of unknown length holds only its chunks, not objects.");
-        if (withSchema)
-          throw new InvalidOperationException($"With the indexed schema an object is two values (its schema or a reference to it, then the object): {nameof(ReadObject)} reads it as a root value of the stream ({nameof(Depth)} 0). In an array or map, read the values themselves, or use a serializer without the indexed schema.");
+        if (withSchema && !body)
+          throw new InvalidOperationException($"With the indexed schema an object is two values (its schema or a reference to it, then the object): {nameof(ReadObject)} reads it as a root value of the stream ({nameof(Depth)} 0). Objects in an array or map are read with the schema before it ({nameof(ReadHead)}), or with a serializer without the indexed schema.");
         if (AtEnd)
           throw new InvalidOperationException($"The {(frame.Kind == FrameKind.Map ? "map" : "array")} has no more values.");
       }
@@ -628,7 +671,7 @@ namespace LtMsgPack.Streaming
       _counts.Clear();
       try
       {
-        bool schema = withSchema && _buf[_pos] != 0xC0; // null is written without a schema
+        bool schema = withSchema && head is null && _buf[_pos] != 0xC0; // null is written without a schema
         PassValue(depth);
         PassPayload();
         int schemaEnd = _pos;
@@ -646,12 +689,71 @@ namespace LtMsgPack.Streaming
         Plain(_mark, _pos, out byte[] data, out int offset, out int end);
         _token = MsgPackTokenType.None;
         _length = 0;
+        if (head != null)
+          return _serializer.DeserializeBody(head, root, type, data, offset, end, out int used);
         return _serializer.Deserialize(type, data, offset, end, out int consumed);
       }
       finally
       {
         _mark = -1;
       }
+    }
+
+    /// <summary>
+    /// Reads the schema that <see cref="MsgPackStreamWriter.WriteHead{TRoot}"/> wrote (inline or a reference) for the root value that follows it (its body):
+    /// the objects in the body are then read without their schema (<see cref="ReadObject{T}"/>, at any depth), as <see cref="LtMsgPackSerializer.Deserialize{T}(byte[])"/> reads them in a value of <typeparamref name="TRoot"/>.
+    /// E.g. <c>ReadHead&lt;List&lt;Row&gt;&gt;()</c>, <see cref="Read"/> (the ArrayStart), a <see cref="ReadObject{T}"/> per row until <see cref="AtEnd"/>, <see cref="Read"/> (the ArrayEnd).
+    /// <para>Any payload of <see cref="LtMsgPackSerializer.Serialize{T}(T)"/> can be read so too. Without the indexed schema nothing is read, the body is read as without a head.</para>
+    /// </summary>
+    /// <typeparam name="TRoot">The type of the root value that follows (pairs the classes of the schema with the reader's, as <see cref="LtMsgPackSerializer.Deserialize{T}(byte[])"/>)</typeparam>
+    /// <exception cref="InvalidOperationException">Not at <see cref="Depth"/> 0, or the head read before still waits for its body</exception>
+    /// <exception cref="MsgPackException">The next value is not a schema (or a reference to one), or the stream ends</exception>
+    public void ReadHead<TRoot>()
+    {
+      ReadHead(typeof(TRoot));
+    }
+
+    /// <summary>
+    /// <see cref="ReadHead{TRoot}"/> for a type known at runtime.
+    /// </summary>
+    public void ReadHead(Type root)
+    {
+      if (root is null)
+        throw new ArgumentNullException(nameof(root));
+      ThrowIfDisposed();
+      PassPayload();
+      if (_depth > 0)
+        throw new InvalidOperationException($"A head is read before a root value of the stream ({nameof(Depth)} 0).");
+      if (_headState == HeadState.AwaitingBody)
+        throw new InvalidOperationException("The head read before still waits for its body (the next root value).");
+
+      _head = null;
+      _headRoot = root;
+      if (_options._useInexedSchema)
+      {
+        if (!TryEnsure(1))
+          throw EndOfData();
+        _mark = _pos;
+        _escaped = false;
+        _counts.Clear();
+        try
+        {
+          PassValue(0);
+          PassPayload();
+          if (_escaped)
+            throw new MsgPackException("A schema cannot have values of unknown length.", _base + _mark);
+          if (SchemaBytes.IsMap(_buf[_mark]))
+            Register(_mark, _pos);
+          _head = _serializer.ReadHead(_buf, _mark, _pos);
+          _token = MsgPackTokenType.None;
+          _length = 0;
+        }
+        finally
+        {
+          _mark = -1;
+        }
+      }
+      _headState = HeadState.AwaitingBody;
     }
 
     /// <summary>
