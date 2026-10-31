@@ -82,6 +82,18 @@ export class SchemaStore {
     return true;
   }
 
+  /**
+   * Holds a schema found in data that is not a response of a server, e.g. inline in a stream (MsgPackStreamReader): later references to it can then be read.
+   * Not advertised to any server. The id is the hash of the bytes, so a schema cannot pass for another one.
+   * @returns true when the store holds it (false: full)
+   */
+  register(schema: Schema): boolean {
+    if (this.schemas.has(schema.id)) return true;
+    if (this.schemas.size >= this.maxSchemas) return false;
+    this.schemas.set(schema.id, schema);
+    return true;
+  }
+
   /** Remembers that the server of the origin uses the schema (most recent first). */
   touch(origin: string, id: string): void {
     id = id.toLowerCase();

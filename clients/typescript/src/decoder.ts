@@ -3,7 +3,7 @@
 // keep what the class sets (plain objects: the default).
 // An object that came with a type id gets its type name as the property $type (as System.Text.Json names it): the encoder writes it back as the type id.
 
-import { MissingSchemaError, MsgPackError } from './errors.js';
+import { EndOfDataError, MissingSchemaError, MsgPackError } from './errors.js';
 import { MsgPackExtension, MsgPackReader, ReaderOptions } from './reader.js';
 import type { ModelSet } from './models.js';
 import { nameFunction, PropertyNames } from './names.js';
@@ -348,6 +348,15 @@ class Plans {
     if (entry.content !== undefined) plan.content = this.compile(entry.content);
     plan.prepare(this.options.generateCode);
     return plan;
+  }
+
+  private readonly compiled = new WeakMap<TypeExpr, Read>();
+
+  /** compile, once per type expression (the stream reader asks per value). */
+  readOf(type: TypeExpr): Read {
+    let read = this.compiled.get(type);
+    if (read === undefined) this.compiled.set(type, (read = this.compile(type)));
+    return read;
   }
 
   /** A read function for values of the type (each handles nil and values wrapped with a type id). */
@@ -768,25 +777,43 @@ export class Decoder {
    */
   decode(bytes: Uint8Array, lookup?: (id: string) => Schema | undefined, inline?: (schemaBytes: Uint8Array) => Schema): Decoded {
     if (bytes.length === 0) return { value: undefined, reference: false };
-    if (!this.indexedSchema || bytes[0] === 0xc0) // null is written without a schema
-      return { value: this.read(bytes, null, 0), reference: false };
+    const decoded = this.decodeAt(bytes, 0, bytes.length, lookup, inline);
+    if (decoded.end !== bytes.length) throw new MsgPackError('Data after the value.', decoded.end);
+    return { value: decoded.value, schema: decoded.schema, reference: decoded.reference };
+  }
 
-    if (bytes[0] === 0xd8 && bytes[1] === 2) { // a reference: fixext 16 of type 2 with the id
-      if (bytes.length < 18) throw new MsgPackError('Unexpected end of data.', bytes.length);
-      const id = toHex(bytes, 2, 18);
-      const schema = lookup?.(id);
-      if (schema === undefined) throw new MissingSchemaError(id);
-      return { value: this.read(bytes, schema, 18), schema, reference: true };
+  /**
+   * decode for the payload that starts at `start` in bytes[0, end) (internal: the stream reader): returns where it ends instead of refusing data after it.
+   * @param type the declared type of the body (default: the root of the schema)
+   * @internal
+   */
+  decodeAt(bytes: Uint8Array, start: number, end: number, lookup?: (id: string) => Schema | undefined, inline?: (schemaBytes: Uint8Array) => Schema, type?: TypeExpr): Decoded & { end: number } {
+    if (end > bytes.length) end = bytes.length;
+    if (start >= end) throw new EndOfDataError(start);
+    const data = end === bytes.length ? bytes : bytes.subarray(0, end);
+    const b = data[start];
+    if (!this.indexedSchema || b === 0xc0) { // null is written without a schema
+      const read = this.readValue(data, start, end, null);
+      return { value: read.value, reference: false, end: read.end };
     }
 
-    const b = bytes[0];
+    if (b === 0xd8 && data[start + 1] === 2) { // a reference: fixext 16 of type 2 with the id
+      if (end - start < 18) throw new EndOfDataError(end);
+      const id = toHex(data, start + 2, start + 18);
+      const schema = lookup?.(id);
+      if (schema === undefined) throw new MissingSchemaError(id);
+      const read = this.readValue(data, start + 18, end, schema, type);
+      return { value: read.value, schema, reference: true, end: read.end };
+    }
+
     if (!((b >= 0x80 && b <= 0x8f) || b === 0xde || b === 0xdf))
-      throw new MsgPackError(`The data does not start with a schema (0x${b.toString(16)}), set indexedSchema to false for data without it.`, 0);
-    const skip = new MsgPackReader(bytes, { decimal: 'raw' });
+      throw new MsgPackError(`The data does not start with a schema (0x${b.toString(16)}), set indexedSchema to false for data without it.`, start);
+    const skip = new MsgPackReader(data, { decimal: 'raw' }, start);
     skip.skip();
-    const schemaBytes = bytes.subarray(0, skip.pos);
-    const schema = inline ? inline(schemaBytes) : new Schema(schemaBytes);
-    return { value: this.read(bytes, schema, skip.pos), schema, reference: false };
+    const schemaBytes = data.subarray(start, skip.pos);
+    const schema = inline ? inline(schemaBytes) : new Schema(schemaBytes.slice());
+    const read = this.readValue(data, skip.pos, end, schema, type);
+    return { value: read.value, schema, reference: false, end: read.end };
   }
 
   /** Plain MsgPack (application/msgpack): any value, maps as objects. */
@@ -800,6 +827,34 @@ export class Decoder {
     const value = reader.readRoot();
     if (reader.pos !== bytes.length) throw new MsgPackError('Data after the value.', reader.pos);
     return value;
+  }
+
+  /**
+   * One value at `start` in bytes[0, end) (internal: the stream reader): with the plans of the schema as the declared type says (undefined: the root of the schema,
+   * dynamic without one; values with a type id become their entry's objects), or plain (schema null). Returns where it ends.
+   * @internal
+   */
+  readValue(bytes: Uint8Array, start: number, end: number, schema: Schema | null, type?: TypeExpr): { value: unknown; end: number } {
+    const data = end >= bytes.length ? bytes : bytes.subarray(0, end);
+    const plans = schema === null ? null : this.plansOf(schema);
+    const reader = new SchemaReader(data, this.readerOptions, plans, start);
+    const value = plans === null ? reader.value() : type === undefined ? reader.readRoot() : plans.readOf(type)(reader);
+    return { value, end: reader.pos };
+  }
+
+  /** The data starts with the indexed schema (internal: the stream reader). @internal */
+  get usesIndexedSchema(): boolean {
+    return this.indexedSchema;
+  }
+
+  /** The models (internal: the stream reader's declared types). @internal */
+  get models(): ModelSet | undefined {
+    return this.options.models;
+  }
+
+  /** The model of a class (internal: the stream reader's declared types). @internal */
+  modelOf(ctor: Function): string | undefined {
+    return this.options.models?.byConstructor(ctor)?.typeName;
   }
 
   private plansOf(schema: Schema): Plans {

@@ -231,6 +231,20 @@ An `IMsgPackStreamObserver` gets the same bytes, and at the end of every entry t
 - Offsets count from where the writer started. When the stream is moved (embedded in a file after other data), the reader takes the difference between where the tail is and where the index says it is, and moves every offset by it.
 - The reader checks every index it reads before it uses it: offsets inside the stream and before the index, points inside their entry and in order, a version it knows. An index that matches its CRC-32 but isn't valid throws a `MsgPackException`.
 
+## JavaScript and TypeScript
+
+The TypeScript client (`@lsmsgpack/client`) has a `MsgPackStreamReader` and a `MsgPackStreamWriter` for these streams, in browsers and Node: tokens, values of unknown length, objects with their schema (also `PerStream`), heads, and the index (with a `Blob`, a file or HTTP range requests). See [TypeScriptClient.md](TypeScriptClient.md#streams).
+
+```ts
+const reader = await api.stream('exports/rows.msgpack');
+await reader.readHead();
+for await (const row of reader.elements()) process(row);
+```
+
+- **Write the described schema** for JavaScript readers: `SchemaVersion = SchemaVersion.Described` in the options of the writer's serializer. The reader then knows the type of every place in a body (the rows of a `List<Row>` are objects), and the defaults of the values the writer left out. With the plain schema it needs the type of the rows from the code (`elements(Row)` with the generated models, or `elements('Row')`).
+- **Range requests** for the index: serve the file as it is (a static file), or with `File(bytes or stream, contentType, enableRangeProcessing: true)`.
+- **The other way around**, the TypeScript writer writes plain MsgPack (objects as maps of their names, without a schema): read its streams with a serializer without the indexed schema (`UseInexedSchema = false`, and `PropertyNameCaseInsensitive = true` for camelCase names). Its index is read by `ReadIndexes` as any other.
+
 ## The format
 
 MsgPack stores the length of an array, map, str or bin before its content. The values of unknown length use the escape sequences proposed in [msgpack/msgpack#347](https://github.com/msgpack/msgpack/pull/347), which is not part of the specification yet: the format may still change there. The byte `0xC1`, unused by the specification, is always followed by one code byte:
@@ -250,4 +264,4 @@ MsgPack stores the length of an array, map, str or bin before its content. The v
 "abc" in two chunks:                              c1 a0  a2 61 62  a1 63  c1 c0
 ```
 
-Only `MsgPackStreamReader` reads these. The serializers (LsMsgPack, LtMsgPack), the explorers, the TypeScript client and other MsgPack libraries refuse the data at the first `0xC1`. So write values of unknown length only for readers known to support them. Without them, the output of the writer is plain MsgPack that any reader reads value by value.
+Only `MsgPackStreamReader` (and the stream reader of the TypeScript client) reads these. The serializers (LsMsgPack, LtMsgPack), the explorers, the decoder of the TypeScript client and other MsgPack libraries refuse the data at the first `0xC1`. So write values of unknown length only for readers known to support them. Without them, the output of the writer is plain MsgPack that any reader reads value by value.

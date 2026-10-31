@@ -33,7 +33,8 @@ export function encode(value: unknown, options: EncodeOptions = {}): Uint8Array 
   return writer.result();
 }
 
-class Writer {
+/** The encoder (internal: also used by the stream writer and the index, not exported by index.ts). */
+export class Writer {
   private buf = new Uint8Array(256);
   private view = new DataView(this.buf.buffer);
   private pos = 0;
@@ -46,6 +47,32 @@ class Writer {
 
   result(): Uint8Array {
     return this.buf.slice(0, this.pos);
+  }
+
+  /** The number of bytes written. */
+  get length(): number {
+    return this.pos;
+  }
+
+  /** The bytes written so far, without a copy (valid until the next write). */
+  bytesView(from = 0, to = this.pos): Uint8Array {
+    return this.buf.subarray(from, to);
+  }
+
+  /** Drops what was written after `length` bytes. */
+  truncate(length: number): void {
+    this.pos = length;
+  }
+
+  /** The bytes written so far (a copy), then starts again (a buffer grown beyond 1 MiB for a huge value is not kept). */
+  take(): Uint8Array {
+    const result = this.buf.slice(0, this.pos);
+    this.pos = 0;
+    if (this.buf.length > 1024 * 1024) {
+      this.buf = new Uint8Array(16 * 1024);
+      this.view = new DataView(this.buf.buffer);
+    }
+    return result;
   }
 
   private ensure(count: number): void {
@@ -61,7 +88,7 @@ class Writer {
     this.view = new DataView(grown.buffer);
   }
 
-  private u8(b: number): void {
+  u8(b: number): void {
     this.ensure(1);
     this.buf[this.pos++] = b;
   }
@@ -444,7 +471,7 @@ class Writer {
     this.pos = start + size + n;
   }
 
-  private raw(bytes: Uint8Array): void {
+  raw(bytes: Uint8Array): void {
     this.ensure(bytes.length);
     this.buf.set(bytes, this.pos);
     this.pos += bytes.length;

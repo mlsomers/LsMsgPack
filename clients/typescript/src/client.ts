@@ -6,6 +6,8 @@ import { HttpError, MissingSchemaError } from './errors.js';
 import { Schema } from './schema.js';
 import { SchemaStore } from './store.js';
 import type { ModelSet } from './models.js';
+import { MsgPackStreamReader } from './stream-reader.js';
+import { httpSource } from './stream-sources.js';
 import { encode } from './writer.js';
 
 export const MediaTypes = {
@@ -105,11 +107,50 @@ export class LsMsgPackClient {
    * A GET or HEAD whose response refers to a schema the store no longer holds is repeated once without advertising schemas.
    */
   async send<T = unknown>(url: string | URL, init: RequestOptions = {}): Promise<MsgPackResponse<T>> {
+    const { target, request, advertised } = this.prepare(url, init, this.described ? DescribedAccept : MediaTypes.XLsMsgPack);
+    let result: MsgPackResponse<T>;
+    try {
+      result = await this.read<T>(await this.fetchFn(target, request), target.origin);
+    } catch (e) {
+      const method = (init.method ?? 'GET').toUpperCase();
+      if (!(e instanceof MissingSchemaError) || advertised === undefined || (method !== 'GET' && method !== 'HEAD')) throw e;
+      (request.headers as Headers).delete(SchemasHeader); // repeating a GET is safe: the server sends the schema inline
+      result = await this.read<T>(await this.fetchFn(target, request), target.origin);
+    }
+    if (!result.response.ok) throw new HttpError(result.response.status, result.response.statusText, result.value, result.response);
+    return result;
+  }
+
+  /**
+   * Sends a request and reads the response body as a stream of MsgPack values (docs/Streaming.md: values of unknown length, heads, objects with their schemas),
+   * with the client's decoder and store. Throws an HttpError for a status outside 200-299 (with the decoded body). Close the reader when you stop early.
+   */
+  async stream(url: string | URL, init: RequestOptions = {}): Promise<MsgPackStreamReader> {
+    const { target, request } = this.prepare(url, init, `${MediaTypes.XLsMsgPack}, ${MediaTypes.MsgPack}; q=0.9, */*; q=0.8`, false);
+    const response = await this.fetchFn(target, request);
+    if (!response.ok) {
+      const failed = await this.read(response, target.origin);
+      throw new HttpError(response.status, response.statusText, failed.value, response);
+    }
+    return new MsgPackStreamReader(response, { decoder: this.decoder, store: this.store });
+  }
+
+  /**
+   * A reader of the stream at the url that reads with HTTP range requests (the server must answer them, e.g. a static file or File(..., enableRangeProcessing: true)):
+   * readIndexes, then seek to an entry or element, without downloading what comes before it. With the client's fetch, headers, decoder and store.
+   */
+  openSeekable(url: string | URL, headers?: HeadersInit): MsgPackStreamReader {
+    const merged = new Headers(this.headers);
+    new Headers(headers).forEach((value, name) => merged.set(name, value));
+    return new MsgPackStreamReader(httpSource(this.resolve(url), { fetch: this.fetchFn, headers: merged }), { decoder: this.decoder, store: this.store });
+  }
+
+  private prepare(url: string | URL, init: RequestOptions, accept: string, negotiate = this.negotiate): { target: URL; request: RequestInit; advertised?: string } {
     const target = this.resolve(url);
     const headers = new Headers(this.headers);
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
-    if (!headers.has('Accept')) headers.set('Accept', this.described ? DescribedAccept : MediaTypes.XLsMsgPack);
-    const advertised = this.negotiate && !headers.has(SchemasHeader) ? this.store.advertise(target.origin) : undefined;
+    if (!headers.has('Accept')) headers.set('Accept', accept);
+    const advertised = negotiate && !headers.has(SchemasHeader) ? this.store.advertise(target.origin) : undefined;
     if (advertised !== undefined) headers.set(SchemasHeader, advertised);
 
     let body: BodyInit | null | undefined;
@@ -118,19 +159,7 @@ export class LsMsgPackClient {
       body = encode(init.body, { models: this.models, generateCode: this.generateCode }) as unknown as BodyInit;
       if (!headers.has('Content-Type')) headers.set('Content-Type', MediaTypes.MsgPack);
     }
-
-    const request = { ...init, headers, body };
-    let result: MsgPackResponse<T>;
-    try {
-      result = await this.read<T>(await this.fetchFn(target, request), target.origin);
-    } catch (e) {
-      const method = (init.method ?? 'GET').toUpperCase();
-      if (!(e instanceof MissingSchemaError) || advertised === undefined || (method !== 'GET' && method !== 'HEAD')) throw e;
-      headers.delete(SchemasHeader); // repeating a GET is safe: the server sends the schema inline
-      result = await this.read<T>(await this.fetchFn(target, request), target.origin);
-    }
-    if (!result.response.ok) throw new HttpError(result.response.status, result.response.statusText, result.value, result.response);
-    return result;
+    return { target, request: { ...init, headers, body }, advertised };
   }
 
   /** Decodes a response (e.g. of your own fetch): MsgPack by its Content-Type, JSON, otherwise text. Learns the schema of an application/x-lsmsgpack body. */

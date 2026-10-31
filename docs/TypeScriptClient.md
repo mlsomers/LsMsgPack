@@ -127,6 +127,66 @@ const api = new LsMsgPackClient({ baseUrl, store });
 
 `import` computes the ids from the bytes again (they are hashes of the content), so a stored schema cannot pass for another one. A server that no longer has a schema (restarted, another instance) sends it inline, nothing breaks. The generated schema set needs no storage: it is in the code.
 
+## Streams
+
+`MsgPackStreamReader` and `MsgPackStreamWriter` read and write the streams of LtMsgPack's stream writer and reader (see [Streaming.md](Streaming.md)): values one after another, arrays, maps, str and bin of unknown length, a table as one schema (a head) followed by its rows, and an index at the end of the stream. Use them for data too large to hold at once: the rows are read as they arrive.
+
+```ts
+import { LsMsgPackClient } from '@lsmsgpack/client';
+
+const api = new LsMsgPackClient({ baseUrl: 'https://example.com/' });
+const reader = await api.stream('exports/orders.msgpack'); // the response body, read as it arrives
+await reader.readHead();                                    // the schema of the table
+for await (const order of reader.elements<Order>()) show(order); // the rows of an array of unknown length
+```
+
+- **Sources**: `api.stream(url)` reads a response body (`HttpError` for a status outside 200-299). `new MsgPackStreamReader(source, options)` reads a `ReadableStream`, a `Response`, an (async) iterable of `Uint8Array` chunks (e.g. a Node stream), bytes, or a `Blob` or `File`. The options are the decoder's (`models`, `propertyNames`, `decimal`...), or a `decoder` and a `store`.
+- **Objects**: `readObject()` reads the next value whole. With the indexed schema (the default) an object is its schema or a reference to it followed by the object, so outside a head it reads a root value of the stream. An inline schema goes into the store (`store.register`), so the objects after it that refer to it are read too. `values()` reads the root values until the stream ends.
+- **A head and its body**: `readHead()` reads the schema that the .NET `WriteHead<TRoot>()` wrote. The next root value is its body, and `readObject()` and `elements()` read the objects in it at any depth, without a schema each.
+- **Declared types**: with the described schema (`SchemaVersion.Described` in the writer's options) the reader knows the type of every place in the body: the rows of a `List<Order>` are `Order` objects without a type argument. With the plain schema, pass the type: `elements(Order)` (a class of the models) or `elements('Order')` (the type name of the schema entry). Without one, values are read as they are (arrays of values; values with a type id still become objects of their class). Write streams for JavaScript readers with the described schema.
+- **Tokens**: `read()` moves to the next token: `tokenType` (`'arrayStart'`, `'integer'`, `'stringStart'`...), `length` (-1 for an unknown length), `depth`, `isKey`, `position`. Then `getValue()` (the whole value at a start token), `getString()`, `getBytes()`, `getDate()`, `getExtension()`, `getInteger()`, `getNumber()`, `getBigInt()`, `getBoolean()`, `skip()`, and `atEnd()` for loops over an array of unknown length.
+- **Errors**: data that is not valid throws a `MsgPackError` with its position in the stream, with the same checks as the .NET reader (misplaced end sequences, a str of unknown length with other chunks than strings, nesting deeper than `maxDepth`, data that ends inside a value).
+- **Memory**: one buffer holds the token being read, or the value being read whole. It grows only as far as data arrives and drops what was read when it needs room.
+
+**The index.** With a source that reads at any position, the reader goes to an entry or a row without reading what comes before it: bytes, a `Blob` or `File`, `fileSource(handle)` for a file opened with Node's `fs/promises`, or HTTP range requests (`api.openSeekable(url)`, or `httpSource(url, { fetch, headers })`; the server must answer `Range` requests: a static file, or ASP.NET Core's `File(..., enableRangeProcessing: true)`).
+
+```ts
+const reader = api.openSeekable('exports/orders.msgpack');
+const indexes = await reader.readIndexes();               // from the end of the stream: a few small requests
+const orders = indexes.flatMap((i) => i.entries).filter((e) => e.identifier === 'orders').pop()!; // the last one is the current one
+await reader.seek(orders);
+await reader.readHead();
+await reader.read();                                       // the arrayStart of the rows
+await reader.seekElement(orders, 123456);                  // from the point before it
+const order = await reader.readObject<Order>();
+```
+
+`readIndexes({ searchBackwards: true })` finds the last checkpoint of a stream whose writer stopped. A reader that reads the stream from the start skips the index.
+
+**Writing.**
+
+```ts
+import { MsgPackStreamWriter } from '@lsmsgpack/client';
+
+const writer = new MsgPackStreamWriter(writable, { models, index: { pointInterval: 1000 } }); // a WritableStream, or (chunk) => ...
+writer.beginEntry('orders');
+writer.writeArrayStart();
+for await (const order of orders) {
+  writer.write(order);   // as encode writes it: plain MsgPack, names, $type as the type id
+  await writer.ready;    // the sink took the chunks so far
+}
+writer.writeEnd();
+await writer.close();    // writes the index and closes the sink
+```
+
+- `write(value)` writes any value as `encode` does. `writeArrayHeader(n)` and `writeMapHeader(n)` start ones of known length. `writeArrayStart()`, `writeMapStart()`, `writeStringStart()` and `writeBinaryStart()` start ones of unknown length, `writeEnd()` ends them. In a str or bin of unknown length, `write` takes its chunks (a chunk never splits a character). Also `writeBinary`, `writeExtension`, `writeRaw`, `depth` and `position`.
+- The writer refuses what the format does not allow, with the same checks as the .NET writer.
+- The buffer goes to the sink at `flushThreshold` bytes (64 KiB). Await `ready` now and then so the chunks do not pile up while the sink is slow.
+- With `index` it writes the index (entries, `pointInterval`, `checkpointInterval`, `metadata`, a `hasher`, an `observer`, `beginEntry`, `addPoint`), as the .NET writer does.
+- Objects are written as plain MsgPack, like request bodies: maps of names, without a schema or a head. A .NET reader reads them with a serializer without the indexed schema (`UseInexedSchema = false`, `PropertyNameCaseInsensitive = true` for camelCase names).
+
+Not supported: writing heads or the indexed schema, a byte order other than the specification's (`EndianAction`), and appending to a stream.
+
 ## The server
 
 Nothing to change: the [ASP.NET Core, Web API and MVC 5 formatters](WebFormatters.md) support it (`LtMsgPackHttpOptions.DescribeSchemas`, `CompleteSchemas` and, for camelCase request bodies, `PropertyNameCaseInsensitive`, on by default).
