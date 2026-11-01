@@ -8,9 +8,14 @@
     <PackageProjectUrl>https://github.com/mlsomers/LsMsgPack</PackageProjectUrl>
     <RepositoryUrl>https://github.com/mlsomers/LsMsgPack</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>msgpack;messagepack;serializer;serialization</PackageTags>
+    <PackageTags>msgpack;messagepack;serializer;serialization;binary;dotnet</PackageTags>
     <!-- Each packable project has its own README.md (shown on nuget.org: absolute links only, no mermaid) -->
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- The pdb goes inside the dll, so debuggers step into the sources (Source Link, added by the SDK) without a symbol server
+         and without a .snupkg to upload next to each package -->
+    <DebugType>embedded</DebugType>
+    <!-- Deterministic paths (/_/...) in the Release builds that get packed: no local folders in the pdb, reproducible packages -->
+    <ContinuousIntegrationBuild Condition="'$(Configuration)' == 'Release' or '$(Configuration)' == 'ReleaseKeepTrack'">true</ContinuousIntegrationBuild>
 
     <!-- Version, company, copyright and product come from CommonAssemblyInfo.cs -->
     <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
