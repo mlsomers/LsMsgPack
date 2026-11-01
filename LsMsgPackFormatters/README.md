@@ -45,6 +45,13 @@ if (order.Address == null)
     HttpContext.GetReadDifferences());
 ```
 
+With response compression, add the MsgPack media types: the default list (`ResponseCompressionDefaults.MimeTypes`) has JSON but no MsgPack, so MsgPack would be sent uncompressed and several times larger than gzipped JSON. See [Response compression](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#response-compression).
+
+```csharp
+builder.Services.AddResponseCompression(o =>
+  o.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(MsgPackMediaTypes.All));
+```
+
 ## Minimal APIs
 
 For minimal APIs (ASP.NET Core 8 and up), register the serializer and use `MsgPackResults.MsgPack(value)` (or `Results.Extensions.MsgPack(value)`) and `MsgPackBody<T>`:

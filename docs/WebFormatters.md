@@ -178,6 +178,27 @@ public IActionResult Export() => new MsgPackStreamResult(async (writer, cancella
 - After the callback, the writer is disposed asynchronously, which writes the index and the rest of the buffer. The same rules for exceptions apply.
 - Await `FlushIfFullAsync` (or `WriteObjectAsync`) after each value or row, so the buffer goes out at `FlushThreshold` and the action waits while the client is slow. Await `FlushAsync` to send what's there now.
 
+### Response compression
+
+The response compression middleware only compresses the media types in `ResponseCompressionOptions.MimeTypes`, and its default list (`ResponseCompressionDefaults.MimeTypes`) has JSON but no MsgPack. Add them, or an API that compresses its JSON sends MsgPack uncompressed, which makes the responses several times larger on the wire. In the [measurement](TypeScriptClient.md#performance), 100 invoices take 42.1 KB as gzipped JSON, 300.6 KB as uncompressed `application/msgpack` and 166.9 KB as uncompressed `application/x-lsmsgpack` (38.0 KB gzipped):
+
+```csharp
+using System.Linq;
+using LsMsgPack;
+using Microsoft.AspNetCore.ResponseCompression;
+
+builder.Services.AddResponseCompression(o =>
+{
+  o.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(MsgPackMediaTypes.All);
+});
+// ...
+app.UseResponseCompression(); // before the endpoints
+```
+
+- Parameters of the `Content-Type` (`schema=described`, `stream=unknown-length`) don't matter: the middleware compares the media type without them.
+- Over HTTPS the middleware only compresses with `EnableForHttps = true`, which is off by default because of BREACH (secrets in a compressed response together with text an attacker can choose). This applies to JSON as well.
+- IIS (`dynamicTypes`), nginx (`gzip_types`) and most CDNs also have lists of the types they compress: add the MsgPack media types there too.
+
 ASP.NET Web API 2
 -----------------
 
@@ -234,6 +255,7 @@ Notes:
 - `formatter.CreateHandler(true)` (`LsMsgPackSchemaHandler.RequestDescribedSchemas`) also asks for [version 2 of the schema](#schema-version-2-for-clients-without-the-classes), for a client whose classes differ from the server's (other names or namespaces, e.g. an SDK with its own models): the reader then pairs its classes with the server's by the declared types (see [schema.md](schema.md)).
 - Without an explicit media type, `ObjectContent` uses the formatter's first media type, `application/msgpack` (plain MsgPack).
 - Set the `Accept` header, or the server will probably answer with JSON.
+- `HttpClientHandler` doesn't ask for [compressed responses](#response-compression) by default, and the handler `CreateHandler()` makes doesn't either. Pass one that does: `formatter.CreateHandler(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate })` (`DecompressionMethods.All` on .NET Core 3.0 and up, which adds Brotli). With `IHttpClientFactory`, set it in `ConfigurePrimaryHttpMessageHandler`.
 - On the client side, a response that can't be deserialized throws from `ReadAsAsync` instead of being logged.
 - Use the same `XLsMsgPack` options on the client and the server for `application/x-lsmsgpack` (at least the same `UseInexedSchema`).
 
