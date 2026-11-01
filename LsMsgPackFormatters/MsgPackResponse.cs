@@ -10,6 +10,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using LtMsgPack.Streaming;
 #endif
 using System.Threading.Tasks;
 
@@ -36,8 +37,16 @@ namespace LsMsgPackFormatters
       {
         AsyncBuffer buffer = Buffer(element);
         declaredType = buffer.ListType;
+        varyAccept |= serializer.WritesStreams; // streamed or not by the Accept header
         if (!(value is null))
+        {
+          if (buffer.Stream != null && serializer.WritesStreams && MsgPackMediaTypes.AcceptsStream(request.Headers.Accept.ToString(), mediaType))
+          {
+            await StreamAsync(context, serializer, value, buffer, mediaType, clientSchemas, described, negotiated);
+            return;
+          }
           value = await buffer.Read(value, context.RequestAborted);
+        }
       }
 #endif
 
@@ -66,10 +75,78 @@ namespace LsMsgPackFormatters
     private static readonly MethodInfo BufferMethod = typeof(MsgPackResponse).GetMethod(nameof(BufferAsync), BindingFlags.NonPublic | BindingFlags.Static);
     private static readonly ConcurrentDictionary<Type, AsyncBuffer> Buffers = new ConcurrentDictionary<Type, AsyncBuffer>();
 
+    private static readonly MethodInfo StreamMethod = typeof(MsgPackResponse).GetMethod(nameof(StreamItemsAsync), BindingFlags.NonPublic | BindingFlags.Static);
+
     private sealed class AsyncBuffer
     {
       internal Type ListType;
       internal Func<object, CancellationToken, Task<object>> Read;
+
+      /// <summary>
+      /// Writes the items as they come, null for pairs: a <c>List&lt;KeyValuePair&lt;K, V&gt;&gt;</c> is a map.
+      /// </summary>
+      internal Func<object, MsgPackStreamWriter, CancellationToken, Task> Stream;
+    }
+
+    /// <summary>
+    /// Writes an <c>IAsyncEnumerable&lt;T&gt;</c> as a stream (the client asked for it, <see cref="MsgPackMediaTypes.AcceptsStream"/>): the head of <c>List&lt;T&gt;</c> (its schema), then an array of unknown length with the items as they come.
+    /// With known lengths this would be the payload of the <c>List&lt;T&gt;</c>. The Content-Type gets <see cref="MsgPackMediaTypes.StreamParameter"/>, the response has no Content-Length.
+    /// <para>The head and items go out when the next item is not there yet (after the first one: an exception before it still gets an error response), and every <see cref="MsgPackStreamWriter.FlushThreshold"/> bytes.
+    /// An exception after that aborts the response: the array has no end, so the client finds the data cut off.</para>
+    /// </summary>
+    private static async Task StreamAsync(HttpContext context, LtMsgPackHttpSerializer serializer, object value, AsyncBuffer buffer, string mediaType, string clientSchemas, bool described, bool negotiated)
+    {
+      MsgPackStreamHead head = serializer.PrepareStreamHead(buffer.ListType, mediaType, clientSchemas, described);
+      HttpResponse response = context.Response;
+      response.ContentType = string.Concat(mediaType, "; ", MsgPackMediaTypes.StreamParameter);
+      response.Headers.Append("Vary", Vary(negotiated, true));
+      if (!(head.SchemaId is null))
+        response.Headers[LtMsgPackHttpSerializer.SchemaHeader] = head.SchemaId;
+      response.ContentLength = null;
+
+      CancellationToken cancellationToken = context.RequestAborted;
+      MsgPackStreamWriter writer = head.CreateWriter(response.Body, true); // asynchronous: nothing goes to the response before an async call
+      writer.WriteArrayStart();
+      await buffer.Stream(value, writer, cancellationToken);
+      writer.WriteEnd();
+      await writer.DisposeAsync(); // not after an exception: what was buffered is dropped, so an exception before the first item still gets an error response
+    }
+
+    private static async Task StreamItemsAsync<T>(object value, MsgPackStreamWriter writer, CancellationToken cancellationToken)
+    {
+      bool any = false;
+      IAsyncEnumerator<T> items = ((IAsyncEnumerable<T>)value).GetAsyncEnumerator(cancellationToken);
+      try
+      {
+        while (true)
+        {
+          ValueTask<bool> next = items.MoveNextAsync();
+          if (any && !next.IsCompleted) // the source makes us wait: send what is there meanwhile
+          {
+            try
+            {
+              await writer.FlushAsync(cancellationToken);
+            }
+            catch
+            {
+              try
+              {
+                await next; // the enumerator is disposed after its move
+              }
+              catch { }
+              throw;
+            }
+          }
+          if (!await next)
+            break;
+          await writer.WriteObjectAsync(items.Current, cancellationToken); // the buffer goes out at FlushThreshold
+          any = true;
+        }
+      }
+      finally
+      {
+        await items.DisposeAsync();
+      }
     }
 
     /// <summary>
@@ -100,7 +177,7 @@ namespace LsMsgPackFormatters
       return !(type is null) && type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IAsyncEnumerable<>) ? type.GetGenericArguments()[0] : null;
     }
 
-    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Without dynamic code only items of a value type fail, with the NotSupportedException thrown here: List<T> and BufferAsync<T> are shared by reference types.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Without dynamic code only items of a value type fail, with the NotSupportedException thrown here: List<T>, BufferAsync<T> and StreamItemsAsync<T> are shared by reference types.")]
     private static AsyncBuffer Buffer(Type element)
     {
       if (!RuntimeFeature.IsDynamicCodeSupported && element.IsValueType)
@@ -108,7 +185,8 @@ namespace LsMsgPackFormatters
       return Buffers.GetOrAdd(element, e => new AsyncBuffer
       {
         ListType = typeof(List<>).MakeGenericType(e),
-        Read = BufferMethod.MakeGenericMethod(e).CreateDelegate<Func<object, CancellationToken, Task<object>>>()
+        Read = BufferMethod.MakeGenericMethod(e).CreateDelegate<Func<object, CancellationToken, Task<object>>>(),
+        Stream = e.IsGenericType && e.GetGenericTypeDefinition() == typeof(KeyValuePair<,>) ? null : StreamMethod.MakeGenericMethod(e).CreateDelegate<Func<object, MsgPackStreamWriter, CancellationToken, Task>>()
       });
     }
 

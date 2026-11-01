@@ -1,4 +1,4 @@
-export { LsMsgPackClient, MediaTypes, SchemasHeader, SchemaHeader, DescribedAccept } from './client.js';
+export { LsMsgPackClient, MediaTypes, SchemasHeader, SchemaHeader, DescribedAccept, StreamParameter } from './client.js';
 export type { ClientOptions, RequestOptions, MsgPackResponse } from './client.js';
 export { Decoder, TypeProperty } from './decoder.js';
 export type { DecodeOptions, Decoded } from './decoder.js';

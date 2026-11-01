@@ -8,7 +8,7 @@
 - **Positions**: the writer reports the position after each value.
 - **An index** (optional): the writer lists the root values with their positions, hashes and points into large arrays, and writes the list at the end of the stream. A reader of a file goes to any table or row directly (see [the index](#the-index)).
 
-Both are synchronous and not thread-safe.
+Neither is thread-safe. The reader is synchronous. The writer is synchronous by default, or [asynchronous](#asynchronous-writing) for streams that must not be written synchronously (an ASP.NET Core response, see [streaming responses](WebFormatters.md#streaming-responses)).
 
 ## Writing
 
@@ -62,6 +62,25 @@ What the writer offers:
   - Values go into a buffer, which is written to the stream once it holds `FlushThreshold` bytes (64 KiB; 0: after every value).
   - `Flush()` writes the buffer and flushes the stream.
   - `Dispose()` does the same and closes the stream, unless the writer was created with `leaveOpen: true`. It doesn't end values that are still open, so a reader finds such data cut off.
+
+### Asynchronous writing
+
+Created with `asynchronous: true`, the writer never writes to the stream synchronously. It suits an ASP.NET Core response (which refuses synchronous writes), a network stream, or a file opened for asynchronous I/O. Values are still written into the buffer by the same methods. The buffer goes to the stream only in the async methods:
+
+```csharp
+await using MsgPackStreamWriter writer = new MsgPackStreamWriter(stream, serializer, asynchronous: true);
+writer.WriteHead<List<Row>>();
+writer.WriteArrayStart();
+await foreach (Row row in rows)
+  await writer.WriteObjectAsync(row);   // WriteObject, then FlushIfFullAsync
+writer.WriteEnd();
+// DisposeAsync: the index (if any), the rest of the buffer, then flushes the stream
+```
+
+- `FlushIfFullAsync()` writes the buffer once it holds `FlushThreshold` bytes, without flushing the stream. A checkpoint of the index that's waiting is flushed too. Call it after each value or row: until then the buffer keeps growing. `WriteObjectAsync` calls it after the object.
+- `FlushAsync()` writes the buffer and flushes the stream, for example before waiting a while for more data. The synchronous writer has it too.
+- `DisposeAsync()` writes the index and the rest of the buffer, then flushes and closes the stream. It's for both kinds of writers (`IAsyncDisposable` on .NET Standard 2.1 and .NET 8).
+- `Flush()` throws, and `Dispose()` writes nothing: it only closes the stream. What's still in the buffer is dropped, without an index. An exception that skips `DisposeAsync` (with `using`) therefore leaves the data cut off, and an HTTP response is aborted instead of completed with what was buffered.
 
 ## Reading
 

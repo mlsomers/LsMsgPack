@@ -36,6 +36,18 @@ test('a table: a head with the described schema and an array of unknown length',
   assert.strictEqual(await reader.read(), false, 'the index is skipped');
 });
 
+test('an IAsyncEnumerable of an action, streamed by the output formatter', { skip }, async () => {
+  const client = new LsMsgPackClient({ ...dotnet, baseUrl: server.url });
+  const reader = await client.stream('/stream/async/invoices?count=40');
+  await reader.readHead();
+  assert.ok(await reader.read());
+  assert.strictEqual(reader.tokenType, 'arrayStart');
+  assert.strictEqual(reader.length, -1, 'an array of unknown length');
+  const invoices = await collect(reader.elements());
+  assertLikeJson(invoices, await json('/expected/invoices?count=40'));
+  assert.strictEqual(await reader.read(), false, 'one root value');
+});
+
 test('a table with the plain schema, read with the models', { skip: skip || (generatorAssembly ? false : 'lsmsgpack-ts is not built') }, async () => {
   const { models, Invoice } = await generateModels();
   const client = new LsMsgPackClient({ models, baseUrl: server.url });

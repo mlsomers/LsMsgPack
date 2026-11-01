@@ -1,8 +1,10 @@
 ﻿using LsMsgPack;
+using LtMsgPack.Streaming;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.IO;
 using System.Text;
 
 namespace LtMsgPack.Http
@@ -40,6 +42,7 @@ namespace LtMsgPack.Http
     private readonly SchemaStore _store;
     private readonly bool _negotiate;
     private readonly int _maxAdvertised;
+    private readonly bool _writeStreams;
     private readonly bool _reportDifferences;
     private readonly bool _logDifferencesAsWarning;
     private readonly ConcurrentDictionary<SchemaId, string> _hexIds = new ConcurrentDictionary<SchemaId, string>();
@@ -97,6 +100,7 @@ namespace LtMsgPack.Http
         _described = new LtMsgPackSerializer(described, context);
       }
       _maxAdvertised = Math.Max(0, options.MaxAdvertisedSchemas);
+      _writeStreams = options.WriteStreams;
       _reportDifferences = options.ReportDifferences;
       _logDifferencesAsWarning = options.ReportDifferences && options.LogDifferencesAsWarning;
     }
@@ -147,6 +151,14 @@ namespace LtMsgPack.Http
     public bool DescribesSchemas
     {
       get { return !(_described is null); }
+    }
+
+    /// <summary>
+    /// Responses of an <c>IAsyncEnumerable&lt;T&gt;</c> are written as a stream when the client asks for it (<see cref="LtMsgPackHttpOptions.WriteStreams"/>).
+    /// </summary>
+    public bool WritesStreams
+    {
+      get { return _writeStreams; }
     }
 
     /// <summary>
@@ -217,6 +229,52 @@ namespace LtMsgPack.Http
     public MsgPackPayload Serialize(object value, Type declaredType, string mediaType)
     {
       return Serialize(value, declaredType, mediaType, null);
+    }
+
+    /// <summary>
+    /// Prepares a response body that is a stream (docs/Streaming.md) of one root value with a head: the schema of <paramref name="rootType"/> once (with application/x-lsmsgpack and the indexed schema; a reference when
+    /// the client holds it, as <see cref="Serialize(object, Type, string, string, bool)"/> decides), then the value, whose objects are written without it at any depth, e.g. the items of a list of unknown length
+    /// (<see cref="MsgPackStreamWriter.WriteArrayStart"/>, <see cref="MsgPackStreamWriter.WriteObject{T}(T)"/> per item, <see cref="MsgPackStreamWriter.WriteEnd"/>).
+    /// Set the response headers (<see cref="MsgPackStreamHead.SchemaId"/>), then write the body with <see cref="MsgPackStreamHead.CreateWriter"/>.
+    /// </summary>
+    /// <param name="rootType">The declared type of the root value (e.g. <c>List&lt;T&gt;</c> for the items of an <c>IAsyncEnumerable&lt;T&gt;</c>)</param>
+    /// <param name="mediaType">The Content-Type of the response</param>
+    /// <param name="clientSchemas">The request header <see cref="SchemasHeader"/> (null when there is none)</param>
+    /// <param name="describedSchema">The client asked for version 2 of the schema, ignored unless <see cref="DescribesSchemas"/></param>
+    public MsgPackStreamHead PrepareStreamHead(Type rootType, string mediaType, string clientSchemas, bool describedSchema)
+    {
+      if (rootType is null)
+        throw new ArgumentNullException(nameof(rootType));
+      if (!MsgPackMediaTypes.IsLsMsgPack(mediaType))
+        return new MsgPackStreamHead(_plain, rootType, null, MsgPackStreamSchemas.PerObject, null, false);
+
+      LtMsgPackSerializer serializer = describedSchema && !(_described is null) ? _described : _lsMsgPack;
+      if (!serializer.Implementation.Options._useInexedSchema)
+        return new MsgPackStreamHead(serializer, rootType, null, MsgPackStreamSchemas.PerObject, null, false);
+
+      Serializer.WriterHead head = serializer.Implementation.PrepareHead(rootType); // the id written is the one named in the header
+      if (!_negotiate)
+        return new MsgPackStreamHead(serializer, rootType, head, MsgPackStreamSchemas.PerObject, null, false);
+
+      string hex = Hex(head.Id);
+      bool reference = _store.GetInlineSchema(head.Id, _lsOptions).Length > SchemaStore.ReferenceLength && Holds(clientSchemas, hex);
+      return new MsgPackStreamHead(serializer, rootType, head, reference ? MsgPackStreamSchemas.External : MsgPackStreamSchemas.PerObject, hex, reference);
+    }
+
+    /// <summary>
+    /// A writer of a response body that is a stream (docs/Streaming.md), with the serializer of the media type: application/x-lsmsgpack with schema references writes each schema inline the first time
+    /// and refers to it after that (<see cref="MsgPackStreamSchemas.PerStream"/>), otherwise every object has its schema (<see cref="MsgPackStreamSchemas.PerObject"/>). The stream is left open.
+    /// </summary>
+    /// <param name="body">The response body</param>
+    /// <param name="mediaType">The Content-Type of the response</param>
+    /// <param name="index">Keep an index of the root values and write it at the end (see <see cref="MsgPackStreamIndexOptions"/>), null: none</param>
+    /// <param name="asynchronous">The writer writes to the body only in its async methods (ASP.NET Core does not allow synchronous writes to a response)</param>
+    public MsgPackStreamWriter CreateStreamWriter(Stream body, string mediaType, MsgPackStreamIndexOptions index = null, bool asynchronous = true)
+    {
+      LtMsgPackSerializer serializer = For(mediaType);
+      LtMsgPackOptions options = serializer.Implementation.Options;
+      bool references = options._useInexedSchema && options._writeSchemaReference && !(options._schemaStore is null);
+      return new MsgPackStreamWriter(body, serializer, references ? MsgPackStreamSchemas.PerStream : MsgPackStreamSchemas.PerObject, true, index, asynchronous);
     }
 
     private static MsgPackPayload Whole(byte[] data)

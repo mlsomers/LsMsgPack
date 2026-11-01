@@ -13,7 +13,7 @@ namespace LsMsgPackFormatters
   /// </summary>
   public class LsMsgPackOutputFormatter : OutputFormatter
   {
-    private readonly LtMsgPackHttpSerializer Serializer;
+    internal readonly LtMsgPackHttpSerializer Serializer;
 
 #if NET8_0_OR_GREATER
     [RequiresUnreferencedCode(LsMsgPackFormatter.RequiresUnreferencedCodeMessage)]

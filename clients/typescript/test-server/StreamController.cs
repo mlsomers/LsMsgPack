@@ -88,6 +88,21 @@ namespace LsMsgPackTsTestServer
     }
 
     /// <summary>
+    /// The invoices of /expected/invoices as an IAsyncEnumerable: the output formatter streams them (a head, then an array of unknown length) for a client that asks for it
+    /// (Accept with stream=unknown-length, as client.stream sends), otherwise it writes a List&lt;Invoice&gt;.
+    /// </summary>
+    [HttpGet("async/invoices")]
+    public async IAsyncEnumerable<Invoice> AsyncInvoices([FromQuery] int count = 10)
+    {
+      Invoice[] invoices = Data.Invoices(count);
+      for (int t = 0; t < invoices.Length; t++)
+      {
+        await Task.Yield();
+        yield return invoices[t];
+      }
+    }
+
+    /// <summary>
     /// Reads a stream of the TypeScript writer with MsgPackStreamReader (plain MsgPack: no indexed schema, names ignoring case): an array of invoices, then a str,
     /// and answers what it read, with the entries of its index.
     /// </summary>

@@ -21,6 +21,9 @@ export const SchemasHeader = 'MsgPack-Schemas';
 /** Response header: the id of the schema of the body. */
 export const SchemaHeader = 'MsgPack-Schema';
 
+/** The parameter of a MsgPack media type in an Accept header that says the client reads streams: the ASP.NET Core formatters then stream an IAsyncEnumerable (a head, then an array of unknown length). */
+export const StreamParameter = 'stream=unknown-length';
+
 /** The Accept header of the client: the described schema, and application/x-lsmsgpack for servers (and content negotiation) that do not know the parameter. */
 export const DescribedAccept = `${MediaTypes.XLsMsgPack}; schema=described, ${MediaTypes.XLsMsgPack}; q=0.9`;
 
@@ -126,7 +129,10 @@ export class LsMsgPackClient {
    * with the client's decoder and store. Throws an HttpError for a status outside 200-299 (with the decoded body). Close the reader when you stop early.
    */
   async stream(url: string | URL, init: RequestOptions = {}): Promise<MsgPackStreamReader> {
-    const { target, request } = this.prepare(url, init, `${MediaTypes.XLsMsgPack}, ${MediaTypes.MsgPack}; q=0.9, */*; q=0.8`, false);
+    // Without */*: ASP.NET Core MVC answers an Accept with */* with its first formatter (JSON). The ranges without parameters are the ones MVC's negotiation matches.
+    const ls = this.described ? `${MediaTypes.XLsMsgPack}; schema=described; ${StreamParameter}` : `${MediaTypes.XLsMsgPack}; ${StreamParameter}`;
+    const accept = `${ls}, ${MediaTypes.XLsMsgPack}; q=0.9, ${MediaTypes.MsgPack}; ${StreamParameter}; q=0.8, ${MediaTypes.MsgPack}; q=0.7`;
+    const { target, request } = this.prepare(url, init, accept, false);
     const response = await this.fetchFn(target, request);
     if (!response.ok) {
       const failed = await this.read(response, target.origin);

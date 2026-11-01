@@ -7,6 +7,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LtMsgPack.Streaming
 {
@@ -23,6 +25,9 @@ namespace LtMsgPack.Streaming
   /// <para>Not thread-safe.</para>
   /// </summary>
   public sealed class MsgPackStreamWriter : IDisposable, IPayloadSink
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+    , IAsyncDisposable
+#endif
   {
     private const int InitialCapacity = 16 * 1024;
 
@@ -52,6 +57,8 @@ namespace LtMsgPack.Streaming
     private Serializer.WriterHead _head; // null without the indexed schema
     private readonly IndexState _ix; // null without an index
     private bool _faulted; // writing to the stream failed: Dispose writes no index after it
+    private readonly bool _asynchronous; // the stream is only written by the async methods
+    private bool _checkpoint; // asynchronous: a checkpoint waits for the next FlushIfFullAsync to reach the disk
 
     /// <summary>
     /// A writer with the default options of <see cref="LtMsgPackSerializer.Default"/>, objects with their schema (<see cref="MsgPackStreamSchemas.PerObject"/>). The stream is closed by <see cref="Dispose"/>.
@@ -64,8 +71,11 @@ namespace LtMsgPack.Streaming
     /// <param name="schemas">Where the schemas of the objects go</param>
     /// <param name="leaveOpen">Do not close the stream in <see cref="Dispose"/></param>
     /// <param name="index">Keep an index of the root values and write it at the end of the stream (and at checkpoints), null: none</param>
+    /// <param name="asynchronous">Write to the stream only in the async methods (<see cref="FlushIfFullAsync"/>, <see cref="WriteObjectAsync{T}(T, CancellationToken)"/>, <see cref="FlushAsync"/>, <see cref="DisposeAsync"/>), never synchronously,
+    /// e.g. for an ASP.NET Core response, a network stream, or a file opened for asynchronous I/O. The buffer then grows past <see cref="FlushThreshold"/> until one of them is called, <see cref="Flush"/> throws,
+    /// and <see cref="Dispose"/> only closes the stream (see there).</param>
     /// <exception cref="ArgumentException"><see cref="MsgPackStreamSchemas.PerStream"/> or <see cref="MsgPackStreamSchemas.External"/> without a serializer that writes schema references, or metadata in <paramref name="index"/> that is not plain values</exception>
-    public MsgPackStreamWriter(Stream target, LtMsgPackSerializer serializer, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, bool leaveOpen = false, MsgPackStreamIndexOptions index = null)
+    public MsgPackStreamWriter(Stream target, LtMsgPackSerializer serializer, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, bool leaveOpen = false, MsgPackStreamIndexOptions index = null, bool asynchronous = false)
     {
       if (target is null)
         throw new ArgumentNullException(nameof(target));
@@ -91,6 +101,7 @@ namespace LtMsgPack.Streaming
 
       _target = target;
       _leaveOpen = leaveOpen;
+      _asynchronous = asynchronous;
       _schemas = schemas;
       _w = new MsgPackWriter(InitialCapacity);
       _w.Reset(_options);
@@ -173,7 +184,9 @@ namespace LtMsgPack.Streaming
 
     /// <summary>
     /// The buffer goes to the stream when a value makes it this long (64 KiB by default). 0: after every value. Values stay whole in the buffer while they are written (a long string, an object).
+    /// An asynchronous writer passes it at the next <see cref="FlushIfFullAsync"/> (or <see cref="WriteObjectAsync{T}(T, CancellationToken)"/>).
     /// </summary>
+
     public int FlushThreshold
     {
       get { return _flushThreshold; }
@@ -184,6 +197,11 @@ namespace LtMsgPack.Streaming
         _flushThreshold = value;
       }
     }
+
+    /// <summary>
+    /// The writer writes to the stream only in its async methods (created with asynchronous).
+    /// </summary>
+    public bool IsAsynchronous { get { return _asynchronous; } }
 
     private enum FrameKind : byte
     {
@@ -612,6 +630,28 @@ namespace LtMsgPack.Streaming
       return Position;
     }
 
+    /// <summary>
+    /// <see cref="WriteObject{T}(T)"/>, then <see cref="FlushIfFullAsync"/>.
+    /// </summary>
+    /// <returns>The <see cref="Position"/> after the object</returns>
+    public async Task<long> WriteObjectAsync<T>(T value, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      long position = WriteObject(value);
+      await FlushIfFullAsync(cancellationToken).ConfigureAwait(false);
+      return position;
+    }
+
+    /// <summary>
+    /// <see cref="WriteObject(object, Type)"/>, then <see cref="FlushIfFullAsync"/>.
+    /// </summary>
+    /// <returns>The <see cref="Position"/> after the object</returns>
+    public async Task<long> WriteObjectAsync(object value, Type declaredType, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      long position = WriteObject(value, declaredType);
+      await FlushIfFullAsync(cancellationToken).ConfigureAwait(false);
+      return position;
+    }
+
     /// <returns>The value is (part of) the body of a head</returns>
     /// <param name="head">The head whose schema the value is written with, null for a whole payload (or without the indexed schema)</param>
     private bool ObjectValue(out Serializer.WriterHead head)
@@ -657,6 +697,12 @@ namespace LtMsgPack.Streaming
     {
       if (root is null)
         throw new ArgumentNullException(nameof(root));
+      WriteHead(root, null);
+    }
+
+    /// <param name="prepared">The head of <paramref name="root"/> prepared by the caller (whose id it already named, the HTTP serializer's response header), null: prepared here</param>
+    internal void WriteHead(Type root, Serializer.WriterHead prepared)
+    {
       ThrowIfDisposed();
       if (_depth > 0)
         throw new InvalidOperationException($"A head is written before a root value of the stream ({nameof(Depth)} 0).");
@@ -666,7 +712,7 @@ namespace LtMsgPack.Streaming
       _head = null;
       if (_options._useInexedSchema)
       {
-        Serializer.WriterHead head = _serializer.PrepareHead(root);
+        Serializer.WriterHead head = prepared ?? _serializer.PrepareHead(root);
         if (_ix != null && _ix.Entry == null)
           StartEntry(); // the head and its body are one entry
         WriteSchema(head.Id, head.Session.Reference, head.Store);
@@ -836,10 +882,15 @@ namespace LtMsgPack.Streaming
       if (!incomplete && ix.CheckpointInterval > 0 && ix.EntryCount >= ix.CheckpointInterval)
       {
         WriteIndex(MsgPackStreamIndexStatus.Checkpoint);
-        FlushBuffer(); // a checkpoint is only worth something on the disk
-        _faulted = true;
-        _target.Flush();
-        _faulted = false;
+        if (_asynchronous)
+          _checkpoint = true; // FlushIfFullAsync flushes it
+        else
+        {
+          FlushBuffer(); // a checkpoint is only worth something on the disk
+          _faulted = true;
+          _target.Flush();
+          _faulted = false;
+        }
       }
     }
 
@@ -1027,7 +1078,7 @@ namespace LtMsgPack.Streaming
 
     private void Flushed()
     {
-      if (_w.Pos >= _flushThreshold)
+      if (_w.Pos >= _flushThreshold && !_asynchronous)
         FlushBuffer();
     }
 
@@ -1079,14 +1130,30 @@ namespace LtMsgPack.Streaming
     {
       if (_w.Pos == 0)
         return;
+      FeedIndex();
+      _faulted = true;
+      _target.Write(_w.Buf, 0, _w.Pos);
+      _faulted = false;
+      Emptied();
+    }
+
+    /// <summary>
+    /// The bytes of the buffer go to the stream: the hasher and observer of the open entry get the ones they did not get yet.
+    /// </summary>
+    private void FeedIndex()
+    {
       if (_ix != null && _ix.Entry != null)
       {
         _ix.Feed(_w.Buf, _ix.FeedFrom, _w.Pos);
         _ix.FeedFrom = 0;
       }
-      _faulted = true;
-      _target.Write(_w.Buf, 0, _w.Pos);
-      _faulted = false;
+    }
+
+    /// <summary>
+    /// The buffer was written to the stream.
+    /// </summary>
+    private void Emptied()
+    {
       _flushed += _w.Pos;
       _w.Pos = 0;
       if (_w.Buf.Length > 1024 * 1024) // do not keep the buffer of a huge value alive
@@ -1096,9 +1163,12 @@ namespace LtMsgPack.Streaming
     /// <summary>
     /// Writes the buffer to the stream and flushes the stream.
     /// </summary>
+    /// <exception cref="InvalidOperationException">The writer is asynchronous: use <see cref="FlushAsync"/></exception>
     public void Flush()
     {
       ThrowIfDisposed();
+      if (_asynchronous)
+        throw new InvalidOperationException($"The writer was created asynchronous: it writes to the stream only in its async methods, use {nameof(FlushAsync)}.");
       FlushBuffer();
       _faulted = true;
       _target.Flush();
@@ -1106,9 +1176,54 @@ namespace LtMsgPack.Streaming
     }
 
     /// <summary>
+    /// Writes the buffer to the stream and flushes the stream asynchronously (<see cref="Stream.WriteAsync(byte[], int, int, CancellationToken)"/>, <see cref="Stream.FlushAsync(CancellationToken)"/>),
+    /// e.g. when the rows of a query stop coming for a while, so the reader gets what is there. With an asynchronous writer nothing is written synchronously (see the constructor's asynchronous);
+    /// a synchronous one still writes the buffer synchronously whenever it reaches <see cref="FlushThreshold"/>.
+    /// <para>A cancelled or failed write leaves the stream as it is: the writer then writes no index.</para>
+    /// </summary>
+    public Task FlushAsync(CancellationToken cancellationToken = default(CancellationToken))
+    {
+      ThrowIfDisposed();
+      return OutputAsync(true, cancellationToken);
+    }
+
+    /// <summary>
+    /// Writes the buffer to the stream asynchronously when it holds <see cref="FlushThreshold"/> bytes (the stream is not flushed), and flushes a checkpoint of the index that waits (<see cref="MsgPackStreamIndexOptions.CheckpointInterval"/>).
+    /// Call it after each value (or row) of an asynchronous writer: until then the buffer keeps growing. Does nothing otherwise, and for a synchronous writer (it already wrote the buffer).
+    /// </summary>
+    public Task FlushIfFullAsync(CancellationToken cancellationToken = default(CancellationToken))
+    {
+      ThrowIfDisposed();
+      if (_checkpoint)
+        return OutputAsync(true, cancellationToken);
+      if (_w.Pos < _flushThreshold || _w.Pos == 0)
+        return Task.CompletedTask;
+      return OutputAsync(false, cancellationToken);
+    }
+
+    private async Task OutputAsync(bool flush, CancellationToken cancellationToken)
+    {
+      _faulted = true;
+      if (_w.Pos > 0)
+      {
+        FeedIndex();
+        await _target.WriteAsync(_w.Buf, 0, _w.Pos, cancellationToken).ConfigureAwait(false);
+        Emptied();
+      }
+      if (flush)
+      {
+        await _target.FlushAsync(cancellationToken).ConfigureAwait(false);
+        _checkpoint = false;
+      }
+      _faulted = false;
+    }
+
+    /// <summary>
     /// Writes the buffer to the stream and closes it (unless the writer was created with leaveOpen). Arrays and maps that are still open are not ended: a reader finds the data cut off.
     /// <para>With an index, the index is written first: <see cref="MsgPackStreamIndexStatus.Complete"/> between root values; in the middle of one (an exception left arrays or maps open, or a head without its body)
     /// <see cref="MsgPackStreamIndexStatus.Interrupted"/>, with that entry <see cref="MsgPackStreamEntry.Incomplete"/>. Not after writing to the stream failed.</para>
+    /// <para>An asynchronous writer writes nothing here (the stream may not allow it): what is still in the buffer is dropped, without an index, and the stream is closed.
+    /// End it with <see cref="DisposeAsync"/>; <c>using</c> then only matters when an exception skipped that (e.g. an HTTP response that is aborted, not completed with what was buffered).</para>
     /// </summary>
     public void Dispose()
     {
@@ -1117,26 +1232,66 @@ namespace LtMsgPack.Streaming
       _disposed = true;
       try
       {
-        if (_ix != null && !_faulted)
+        if (!_asynchronous)
         {
-          MsgPackStreamIndexStatus status = MsgPackStreamIndexStatus.Complete;
-          if (_ix.Entry != null && _depth == 0 && _headState == HeadState.None && Position == _ix.Entry.Offset)
-            _ix.Entry = null; // a root value that was refused (nothing written)
-          if (_ix.Entry != null)
-          {
-            EndEntry(true);
-            status = MsgPackStreamIndexStatus.Interrupted;
-          }
-          WriteIndex(status);
+          WriteLastIndex();
+          FlushBuffer();
+          _target.Flush();
         }
-        FlushBuffer();
-        _target.Flush();
       }
       finally
       {
         if (!_leaveOpen)
           _target.Dispose();
       }
+    }
+
+    /// <summary>
+    /// <see cref="Dispose"/> asynchronously, for both kinds of writers: writes the index (with an index), then the buffer, flushes the stream and closes it (unless the writer was created with leaveOpen).
+    /// </summary>
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+    public async ValueTask DisposeAsync()
+#else
+    public async Task DisposeAsync()
+#endif
+    {
+      if (_disposed)
+        return;
+      _disposed = true;
+      try
+      {
+        WriteLastIndex();
+        await OutputAsync(true, CancellationToken.None).ConfigureAwait(false);
+      }
+      finally
+      {
+        if (!_leaveOpen)
+        {
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+          await _target.DisposeAsync().ConfigureAwait(false);
+#else
+          _target.Dispose();
+#endif
+        }
+      }
+    }
+
+    /// <summary>
+    /// The index at the end of the stream, into the buffer: <see cref="MsgPackStreamIndexStatus.Complete"/>, or <see cref="MsgPackStreamIndexStatus.Interrupted"/> in the middle of a root value.
+    /// </summary>
+    private void WriteLastIndex()
+    {
+      if (_ix is null || _faulted)
+        return;
+      MsgPackStreamIndexStatus status = MsgPackStreamIndexStatus.Complete;
+      if (_ix.Entry != null && _depth == 0 && _headState == HeadState.None && Position == _ix.Entry.Offset)
+        _ix.Entry = null; // a root value that was refused (nothing written)
+      if (_ix.Entry != null)
+      {
+        EndEntry(true);
+        status = MsgPackStreamIndexStatus.Interrupted;
+      }
+      WriteIndex(status);
     }
 
     #endregion

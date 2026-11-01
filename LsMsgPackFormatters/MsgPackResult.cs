@@ -1,6 +1,7 @@
 ﻿#if NET8_0_OR_GREATER
 using LsMsgPack;
 using LtMsgPack.Http;
+using LtMsgPack.Streaming;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
@@ -8,6 +9,7 @@ using System;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace LsMsgPackFormatters
@@ -103,6 +105,17 @@ namespace LsMsgPackFormatters
     {
       return new MsgPackResult<T>(value, statusCode);
     }
+
+    /// <summary>
+    /// A response body that is a stream, written by <paramref name="write"/> while it is sent (see <see cref="MsgPackStreamResult"/>).
+    /// </summary>
+    /// <param name="write">Writes the body with an asynchronous writer; await <see cref="MsgPackStreamWriter.FlushIfFullAsync"/> after each value or row (the token is <c>HttpContext.RequestAborted</c>)</param>
+    /// <param name="index">Keep an index of the root values and write it at the end of the body, null: none</param>
+    /// <param name="statusCode">null: 200</param>
+    public static MsgPackStreamResult Stream(Func<MsgPackStreamWriter, CancellationToken, Task> write, MsgPackStreamIndexOptions index = null, int? statusCode = null)
+    {
+      return new MsgPackStreamResult(write, index, statusCode);
+    }
   }
 
   /// <summary>
@@ -121,6 +134,20 @@ namespace LsMsgPackFormatters
       if (resultExtensions is null)
         throw new ArgumentNullException(nameof(resultExtensions));
       return new MsgPackResult<T>(value, statusCode);
+    }
+
+    /// <summary>
+    /// <c>Results.Extensions.MsgPackStream(write)</c>, the same as <see cref="MsgPackResults.Stream"/>.
+    /// </summary>
+    /// <param name="resultExtensions"><c>Results.Extensions</c></param>
+    /// <param name="write">Writes the body with an asynchronous writer; await <see cref="MsgPackStreamWriter.FlushIfFullAsync"/> after each value or row (the token is <c>HttpContext.RequestAborted</c>)</param>
+    /// <param name="index">Keep an index of the root values and write it at the end of the body, null: none</param>
+    /// <param name="statusCode">null: 200</param>
+    public static MsgPackStreamResult MsgPackStream(this IResultExtensions resultExtensions, Func<MsgPackStreamWriter, CancellationToken, Task> write, MsgPackStreamIndexOptions index = null, int? statusCode = null)
+    {
+      if (resultExtensions is null)
+        throw new ArgumentNullException(nameof(resultExtensions));
+      return new MsgPackStreamResult(write, index, statusCode);
     }
   }
 }

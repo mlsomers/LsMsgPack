@@ -109,7 +109,7 @@ Notes:
 - An empty body binds as `null` (or the type's default value) when empty bodies are allowed, like the JSON formatter does.
 - Request bodies are buffered (on .NET 8 read in place from the request pipe) and responses are written asynchronously, so no `AllowSynchronousIO` is needed.
 - With `application/x-lsmsgpack`, a response whose runtime type differs from the action's declared return type gets a type id on the root. The client can then deserialize it as the declared base type or interface.
-- An action returning an `IAsyncEnumerable<T>` (ASP.NET Core 3.0 and up) is answered with a `List<T>`: the formatter reads the items to the end and writes the same bytes as an action returning `List<T>`, so clients read it as a `List<T>` or `T[]`. A MsgPack array starts with its length, so it can't be streamed the way System.Text.Json streams it. The same goes for `Ok(items)` and `MsgPackResults.MsgPack(items)`. A value that is also an `IEnumerable<T>` (an EF Core query) is still enumerated synchronously unless the action declares it as `IAsyncEnumerable<T>`. In NativeAOT apps the items must be of a reference type: return a `List<T>` or an array of value types.
+- An action returning an `IAsyncEnumerable<T>` (ASP.NET Core 3.0 and up) is answered with a `List<T>`: the formatter reads the items to the end and writes the same bytes as an action returning `List<T>`, so clients read it as a `List<T>` or `T[]`. The same goes for `Ok(items)` and `MsgPackResults.MsgPack(items)`. A client that reads streams can get the items as they come instead (see [streaming responses](#streaming-responses)). A value that is also an `IEnumerable<T>` (an EF Core query) is still enumerated synchronously unless the action declares it as `IAsyncEnumerable<T>`. In NativeAOT apps the items must be of a reference type: return a `List<T>` or an array of value types.
 
 ### Minimal APIs
 
@@ -141,8 +141,42 @@ app.MapGet("/api/invoices/{id}", Results<MsgPackResult<Invoice>, NotFound> (int 
 - **The body** is read with LtMsgPack when the `Content-Type` is one of the MsgPack media types, and as JSON for a JSON `Content-Type`. An empty body, nil or JSON `null` is no value: a `MsgPackBody<Order>?` parameter (or one with a default value) is then `null`, and ASP.NET Core answers `400 Bad Request` for a required one. In a project without nullable annotations, ASP.NET Core takes every reference type parameter as optional. A body that can't be read throws a `BadHttpRequestException` with `400`, another `Content-Type` one with `415 Unsupported Media Type`: Kestrel answers with that status code (an exception handler of your own can read it from the exception).
 - `ReportDifferences` works as with the input formatter: `HttpContext.GetReadDifferences()` and the log (category `LsMsgPackFormatters.MsgPackBody`).
 - Both add their media types to the endpoint's metadata (`Produces` and `Accepts`), so OpenAPI lists them.
-- An `IAsyncEnumerable<T>` is written as a `List<T>`, as with the output formatter.
+- An `IAsyncEnumerable<T>` is written as a `List<T>`, or streamed when the client asks for it, as with the output formatter.
 - Trimmed and NativeAOT apps: pass the context of the [source generator](SourceGenerator.md) to `AddLsMsgPack`, the overload without one is marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`. The JSON path uses the type info of the JSON options, as `Results.Json` does.
+
+### Streaming responses
+
+ASP.NET Core on .NET 8 and up. A MsgPack array starts with its length, so a list whose items are still coming can only be sent as an array of unknown length, a [stream](Streaming.md). Readers of a single payload (the serializers, other MsgPack libraries) refuse that, so the client has to ask for it:
+
+```
+Accept: application/x-lsmsgpack; stream=unknown-length, application/x-lsmsgpack; q=0.9
+```
+
+The parameter (`MsgPackMediaTypes.StreamParameter`) works on any of the three media types, and `schema=described` can be added to the first range. The second range is needed because MVC's negotiation only matches a media type without parameters. The TypeScript client's `stream(url)` sends such a header.
+
+- **`IAsyncEnumerable<T>`** (an action, `Ok(items)`, `MsgPackResults.MsgPack(items)`) is then written as a head (the schema of `List<T>`, once) followed by an array of unknown length, with each item written as it comes. With known lengths this would be the payload of the `List<T>`. The schema is negotiated as for other responses (`MsgPack-Schema`, a reference when the client holds it). A `List<KeyValuePair<K, V>>` is a map, so pairs aren't streamed. Other clients get the `List<T>` as before. The response varies with the `Accept` header, and `LtMsgPackHttpOptions.WriteStreams = false` turns streaming off.
+- **When items go out**: what's written is sent whenever the source makes the formatter wait for the next item, and every `FlushThreshold` bytes (64 KiB). Nothing is sent before the first item, so an exception before it still gets an error response. An exception after it aborts the response: the array has no end, and the client finds the data cut off.
+- **The response** has `stream=unknown-length` in its `Content-Type` and no `Content-Length`. Read it with `MsgPackStreamReader` (`ReadHead<List<T>>()`, then the array) or the TypeScript client's `stream(url)` (`readHead()`, `elements()`).
+
+**Writing a stream yourself**: return a `MsgPackStreamResult` from an action (or `MsgPackResults.Stream(...)` / `Results.Extensions.MsgPackStream(...)` from an endpoint). It gives you an [asynchronous](Streaming.md#asynchronous-writing) `MsgPackStreamWriter` on the response, with the serializer of the media type:
+
+```csharp
+[HttpGet("export")]
+public IActionResult Export() => new MsgPackStreamResult(async (writer, cancellationToken) =>
+{
+  writer.BeginEntry("orders");
+  writer.WriteHead<List<Order>>();
+  writer.WriteArrayStart();
+  await foreach (Order order in db.Orders.AsAsyncEnumerable().WithCancellation(cancellationToken))
+    await writer.WriteObjectAsync(order, cancellationToken);
+  writer.WriteEnd();
+}, new MsgPackStreamIndexOptions()); // optional: an index at the end
+```
+
+- The media type is the MsgPack one the `Accept` header asks for, and `application/x-lsmsgpack` when it asks for none (there's no JSON). The `Content-Type` has `stream=unknown-length`.
+- With `application/x-lsmsgpack` and schema negotiation, each schema is inline the first time and referred to after that (`MsgPackStreamSchemas.PerStream`).
+- After the callback, the writer is disposed asynchronously, which writes the index and the rest of the buffer. The same rules for exceptions apply.
+- Await `FlushIfFullAsync` (or `WriteObjectAsync`) after each value or row, so the buffer goes out at `FlushThreshold` and the action waits while the client is slow. Await `FlushAsync` to send what's there now.
 
 ASP.NET Web API 2
 -----------------
