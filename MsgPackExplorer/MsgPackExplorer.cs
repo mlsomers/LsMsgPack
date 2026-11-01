@@ -183,7 +183,8 @@ namespace MsgPackExplorer
                         DynamicallyCompact = false,
                         PreservePackages = true,
                         ContinueProcessingOnBreakingError = _continueOnError,
-                        EndianAction = _endianHandling
+                        EndianAction = _endianHandling,
+                        ReadStreams = true // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
                     };
 
                     MpRoot root = MsgPackItem.UnpackMultiple(data, settings);
@@ -378,14 +379,22 @@ namespace MsgPackExplorer
             item.Tag = meta;
             previousMeta = meta;
 
+            MsgPackVarLen varLen = item as MsgPackVarLen;
+            bool unknownLength = varLen != null && varLen.LengthUnknown;
             if (!ReferenceEquals(item, null) && !(item is MpError && !ReferenceEquals(((MpError)item).PartialItem, null)) && !(item is MpRoot) && byteOffset < hex.Length)
             {
                 sb.Append("\\cf1 "); // red
                 sb.Append(hex[byteOffset]).Append(' ');
                 byteOffset++;
+                if (unknownLength && byteOffset < hex.Length)
+                {
+                    // The escape sequence of a value of unknown length: 0xC1 and its code
+                    sb.Append(hex[byteOffset]).Append(' ');
+                    byteOffset++;
+                }
             }
 
-            if (item is MsgPackVarLen)
+            if (varLen != null && !unknownLength)
             {
                 int lengthBytes = 0;
                 switch (item.TypeId)
@@ -421,7 +430,26 @@ namespace MsgPackExplorer
                 byteOffset = AddParts(hex, node.Nodes[t], byteOffset, sb, ref previousMeta);
             }
 
-            ValidateItem(meta);
+            if (unknownLength)
+            {
+                // Its end, 0xC1 0xC0 (not when an error cut it off), after the bytes of its last item
+                long end = item.StoredOffset + item.StoredLength;
+                if (item.StoredLength >= 4 && end <= hex.Length && end - 2 >= byteOffset && data[end - 2] == 0xC1 && data[end - 1] == 0xC0)
+                {
+                    while (byteOffset < end - 2)
+                    {
+                        sb.Append(hex[byteOffset]).Append(' ');
+                        byteOffset++;
+                    }
+                    sb.Append("\\cf1 ").Append(hex[byteOffset]).Append(' ').Append(hex[byteOffset + 1]).Append(' ').Append("\\cf0 ");
+                    byteOffset += 2;
+                }
+            }
+
+            // A chunk (the only child of a str or bin) has the size the writer chose, the tail of a stream index has fixed types (found from the end of the stream)
+            TreeNode parentNode = node.Parent;
+            if (!(parentNode != null && (parentNode.Tag is MpStreamTail || parentNode.Tag is MpString || parentNode.Tag is MpBin)))
+                ValidateItem(meta);
 
             meta.Length = (byteOffset - (int)item.StoredOffset);
             return byteOffset;
@@ -441,7 +469,8 @@ namespace MsgPackExplorer
 
         long _nodeCount = 0;
 
-        private void Traverse(TreeNode node, MsgPackItem item)
+        /// <param name="index">The index of a stream whose content this is (names its fields), null elsewhere</param>
+        private void Traverse(TreeNode node, MsgPackItem item, MpStreamIndex index = null)
         {
             _nodeCount++;
             if (_nodeCount > _displayLimit)
@@ -451,8 +480,36 @@ namespace MsgPackExplorer
             if (typ == typeof(MpBool)) return;
             if (typ == typeof(MpInt)) return;
             if (typ == typeof(MpFloat)) return;
+            MsgPackItem[] chunks = typ == typeof(MpBin) ? ((MpBin)item).Chunks : typ == typeof(MpString) ? ((MpString)item).Chunks : null;
+            if (chunks != null)
+            {
+                // A str or bin of unknown length: its chunks
+                for (int t = 0; t < chunks.Length; t++)
+                {
+                    _nodeCount++;
+                    if (_nodeCount > _displayLimit)
+                        return;
+                    TreeNode child = GetTreeNodeFor(chunks[t]);
+                    child.Text = "chunk: " + child.Text;
+                    node.Nodes.Add(child);
+                }
+                return;
+            }
             if (typ == typeof(MpBin)) return;
             if (typ == typeof(MpString)) return;
+            if (typ == typeof(MpStreamIndex))
+            {
+                // The data of the index of a stream is one MsgPack array: its fields by name
+                MpStreamIndex streamIndex = (MpStreamIndex)item;
+                if (!ReferenceEquals(streamIndex.Content, null))
+                {
+                    TreeNode child = GetTreeNodeFor(streamIndex.Content);
+                    child.Text = "content: " + child.Text;
+                    node.Nodes.Add(child);
+                    Traverse(child, streamIndex.Content, streamIndex);
+                }
+                return;
+            }
             if (typ == typeof(MpRoot))
             {
                 MpRoot root = (MpRoot)item;
@@ -466,7 +523,7 @@ namespace MsgPackExplorer
                         return;
                 }
             }
-            if (typ == typeof(MpArray))
+            if (typ == typeof(MpArray) || typ == typeof(MpStreamTail))
             {
                 MpArray arr = (MpArray)item;
                 MsgPackItem[] children = arr.PackedValues;
@@ -475,8 +532,11 @@ namespace MsgPackExplorer
                     if (ReferenceEquals(children[t], null))
                         break; // the slots after an error were not read (the header claims them): they showed as NULL items, as if the data had them
                     TreeNode child = GetTreeNodeFor(children[t]);
+                    string field = ReferenceEquals(index, null) ? null : index.NameOf(children[t]);
+                    if (field != null)
+                        child.Text = string.Concat(field, ": ", child.Text);
                     node.Nodes.Add(child);
-                    Traverse(child, children[t]);
+                    Traverse(child, children[t], index);
                     if (_nodeCount > _displayLimit)
                         return;
                 }
@@ -492,13 +552,13 @@ namespace MsgPackExplorer
                     TreeNode child = GetTreeNodeFor(children[t].Key);
                     child.StateImageIndex = 8; // Key
                     node.Nodes.Add(child);
-                    Traverse(child, children[t].Key);
+                    Traverse(child, children[t].Key, index);
                     if (_nodeCount > _displayLimit)
                         return;
                     TreeNode childVal = GetTreeNodeFor(children[t].Value);
                     childVal.StateImageIndex = 9; // Value
                     child.Nodes.Add(childVal);
-                    Traverse(childVal, children[t].Value);
+                    Traverse(childVal, children[t].Value, index);
                     if (_nodeCount > _displayLimit)
                         return;
                 }
@@ -527,9 +587,9 @@ namespace MsgPackExplorer
             if (typ == typeof(MpFloat)) return 3;
             if (typ == typeof(MpBin)) return 4;
             if (typ == typeof(MpString)) return 5;
-            if (typ == typeof(MpArray)) return 6;
+            if (typ == typeof(MpArray) || typ == typeof(MpStreamTail)) return 6;
             if (typ == typeof(MpMap)) return 7;
-            if (typ == typeof(MpExt)) return 10;
+            if (typ == typeof(MpExt) || typ == typeof(MpStreamIndex) || typ == typeof(MpStreamSidecar)) return 10;
             if (typ == typeof(MpError)) return 11;
             if (typ == typeof(MpRoot)) return 12;
             return -1;

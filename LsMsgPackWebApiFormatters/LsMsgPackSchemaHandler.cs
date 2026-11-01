@@ -55,8 +55,8 @@ namespace LsMsgPackWebApiFormatters
       HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
       HttpContent content = response.Content;
-      if (_serializer.NegotiatesSchemas && !(content is null) && MsgPackMediaTypes.IsLsMsgPack(content.Headers.ContentType?.MediaType))
-      {
+      if (_serializer.NegotiatesSchemas && !(content is null) && MsgPackMediaTypes.IsLsMsgPack(content.Headers.ContentType?.MediaType) && !MsgPackMediaTypes.IsStream(content.Headers.ContentType.ToString()))
+      { // a stream is read as it arrives, the schema of its head is learned by its reader (LtMsgPackHttpSerializer.CreateStreamReader)
         await content.LoadIntoBufferAsync().ConfigureAwait(false); // also runs a formatter that sets the header while writing (Web API in memory)
         string schemaId = HeaderValue(response, LtMsgPackHttpSerializer.SchemaHeader);
         if (!(schemaId is null))
@@ -89,18 +89,27 @@ namespace LsMsgPackWebApiFormatters
         }
       }
       if (!(plain is null))
-        accept.Add(Described(plain.Quality));
+        accept.Add(Described(plain));
     }
 
-    private static MediaTypeWithQualityHeaderValue Described(double? quality)
+    /// <param name="like">The range whose parameters (e.g. <see cref="MsgPackMediaTypes.StreamParameter"/>) and quality it gets, null: none</param>
+    private static MediaTypeWithQualityHeaderValue Described(MediaTypeWithQualityHeaderValue like)
     {
       MediaTypeWithQualityHeaderValue described = new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack);
       described.Parameters.Add(new NameValueHeaderValue("schema", "described"));
-      described.Quality = quality;
+      if (!(like is null))
+      {
+        foreach (NameValueHeaderValue parameter in like.Parameters)
+        {
+          if (!string.Equals(parameter.Name, "q", System.StringComparison.OrdinalIgnoreCase))
+            described.Parameters.Add(new NameValueHeaderValue(parameter.Name, parameter.Value));
+        }
+        described.Quality = like.Quality;
+      }
       return described;
     }
 
-    private static string HeaderValue(HttpResponseMessage response, string name)
+    internal static string HeaderValue(HttpResponseMessage response, string name)
     {
       IEnumerable<string> values;
       if (response.Headers.TryGetValues(name, out values) || response.Content.Headers.TryGetValues(name, out values))

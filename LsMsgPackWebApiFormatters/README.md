@@ -42,6 +42,15 @@ response.EnsureSuccessStatusCode();
 Order saved = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
 ```
 
+Lists that the server streams (an ASP.NET Core action returning an `IAsyncEnumerable<T>`) are read as they arrive (.NET Standard 2.1: .NET Core 3.0 and up, MAUI...), and a server that doesn't stream sends the whole list, read the same way:
+
+```csharp
+await foreach (Order order in client.GetFromMsgPackAsAsyncEnumerable<Order>("api/orders/export", formatter))
+  Show(order);
+```
+
+`client.GetMsgPackStreamAsync(url, formatter)` returns a `MsgPackStreamReader` for anything else in a stream, and `MsgPackStreamContent` sends a request body that is a stream ([details](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#streams-with-httpclient)).
+
 With `IHttpClientFactory`, add the handler without an inner handler (the factory sets it): `services.AddHttpClient("api").AddHttpMessageHandler(() => formatter.CreateDelegatingHandler());`, with the formatter as a singleton.
 
 When your classes differ from the server's (other names or namespaces, e.g. an SDK with its own models), create the handler with `formatter.CreateHandler(true)`: it asks for the described schema, by which the reader pairs your classes with the server's ([details](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#schema-version-2-for-clients-without-the-classes)).

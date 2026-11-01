@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Streams of LtMsgPack's `MsgPackStreamWriter` (and the TypeScript client's): arrays, maps, str and bin of unknown length (the `0xC1` escape sequences of msgpack/msgpack#347; the escape and end bytes red in the hex view, the chunks of a str or bin in the tree), the stream's index with its fields by name, its tail (CRC-32 checked) and sidecars, payloads named after their entries in the objects pane, and schemas written once per stream found by the references to them.
+
 ## 2026.10.22
 
 - First version: the MsgPack Explorer of the Visual Studio visualizer for VS Code. Item tree, hex view, properties, objects (indexed schema), search, display limit, endianness and ignore errors (without it the reading stops at the first error).

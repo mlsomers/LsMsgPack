@@ -83,6 +83,11 @@ export class ModelSet {
     return this.names.get(typeName);
   }
 
+  /** The model of a generated class. */
+  byConstructor(ctor: Function): ModelClass | undefined {
+    return this.ctors.get(ctor);
+  }
+
   /** The model of an instance (its constructor), for writing. */
   of(value: object): ModelClass | undefined {
     return this.ctors.get(value.constructor);

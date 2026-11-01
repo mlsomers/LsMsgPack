@@ -298,6 +298,9 @@ button:focus-visible,
 .badge.ext { background: #8a3a3a; }
 .badge.error { background: #c42b1c; }
 .badge.root { background: #444; }
+.badge.index { background: #8a5a1a; }
+.badge.tail { background: #6a5a3a; }
+.badge.sidecar { background: #5a6a3a; }
 .badge.other { background: #555; }
 .badge.limit { background: transparent; color: var(--vscode-descriptionForeground); }
 

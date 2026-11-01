@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Streaming;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -30,6 +31,12 @@ namespace ObjectDebugger
     /// <param name="schemaStore">Holds the schemas the data may refer to (<c>WriteSchemaReference</c>), optional</param>
     public void Reconstruct(MsgPackItem item, SchemaStore schemaStore = null)
     {
+      Reconstruct(item, schemaStore, null);
+    }
+
+    /// <param name="data">The bytes <paramref name="item"/> was read from (KEEPTRACK): a schema written inline is then also found by the references to it later in the data (a stream written with <c>MsgPackStreamSchemas.PerStream</c>)</param>
+    public void Reconstruct(MsgPackItem item, SchemaStore schemaStore, byte[] data)
+    {
       Members.Clear();
       Warnings.Clear();
       Schema = null;
@@ -56,9 +63,11 @@ namespace ObjectDebugger
       else
         items.Add(item);
 
-      List<Payload> payloads = SplitPayloads(items, schemaStore);
+      List<Payload> payloads = SplitPayloads(items, schemaStore, data);
+      Dictionary<long, MsgPackStreamEntry> entries = EntriesByOffset(items);
       if (payloads.Count == 1)
       {
+        Entry = EntryOf(payloads[0], entries);
         Reconstruct(payloads[0]);
         return;
       }
@@ -66,10 +75,72 @@ namespace ObjectDebugger
       Kind = ObjectKind.Sequence;
       for (int t = 0; t < payloads.Count; t++)
       {
-        RootObject payload = new RootObject() { Name = string.Concat("[", t.ToString(), "]"), Parent = this };
+        RootObject payload = new RootObject() { Name = string.Concat("[", t.ToString(), "]"), Parent = this, Entry = EntryOf(payloads[t], entries) };
         Members.Add(payload);
         payload.Reconstruct(payloads[t]);
       }
+    }
+
+    /// <summary>
+    /// The entry of the index of a stream that starts where this payload starts (its schema or head included), null when the data has no index.
+    /// </summary>
+    public MsgPackStreamEntry Entry { get; set; }
+
+    /// <summary>
+    /// <see cref="Entry"/> as the explorers show it (see <see cref="DescribeEntry"/>), null without one.
+    /// </summary>
+    public string EntryText
+    {
+      get { return Entry is null ? null : DescribeEntry(Entry); }
+    }
+
+    /// <summary>
+    /// <c>entry "orders"</c> for a string identifier, <c>entry 7</c> for an integer, <c>entry</c> without one.
+    /// </summary>
+    public static string DescribeEntry(MsgPackStreamEntry entry)
+    {
+      if (entry.Identifier is null)
+        return "entry";
+      if (entry.Identifier is string text)
+        return string.Concat("entry \"", text, "\"");
+      return string.Concat("entry ", Convert.ToString(entry.Identifier, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// The entries of the valid indexes of a stream (<see cref="MpStreamIndex"/>) by their offset, null without them.
+    /// </summary>
+    private static Dictionary<long, MsgPackStreamEntry> EntriesByOffset(List<MsgPackItem> items)
+    {
+      Dictionary<long, MsgPackStreamEntry> entries = null;
+      for (int t = 0; t < items.Count; t++)
+      {
+        MpStreamIndex index = items[t] as MpStreamIndex;
+        if (index?.Index is null)
+          continue;
+        if (entries is null)
+          entries = new Dictionary<long, MsgPackStreamEntry>();
+        for (int e = 0; e < index.Index.Entries.Count; e++)
+          entries[index.Index.Entries[e].Offset] = index.Index.Entries[e];
+      }
+      return entries;
+    }
+
+    private static MsgPackStreamEntry EntryOf(Payload payload, Dictionary<long, MsgPackStreamEntry> entries)
+    {
+#if KEEPTRACK
+      MsgPackStreamEntry entry;
+      if (entries != null && entries.TryGetValue((payload.SchemaItem ?? payload.Body).StoredOffset, out entry))
+        return entry;
+#endif
+      return null;
+    }
+
+    /// <summary>
+    /// The index of a stream, its tail and sidecars are no data (<see cref="MsgPackSettings.ReadStreams"/>).
+    /// </summary>
+    internal static bool IsStreamPart(MsgPackItem item)
+    {
+      return item is MpStreamIndex || item is MpStreamTail || item is MpStreamSidecar;
     }
 
     private void Reconstruct(Payload payload)
@@ -170,7 +241,7 @@ namespace ObjectDebugger
       if (!(item is MpRoot root))
         return found;
 
-      List<Payload> payloads = SplitPayloads(new List<MsgPackItem>(root), null);
+      List<Payload> payloads = SplitPayloads(new List<MsgPackItem>(root), null, null);
       for (int t = 0; t < payloads.Count; t++)
         if (payloads[t].SchemaItem != null)
           found.Add(payloads[t].SchemaItem);
@@ -188,20 +259,31 @@ namespace ObjectDebugger
     /// <summary>
     /// A schema (or a reference to it) is followed by its body. Without a schema each item is a payload of its own.
     /// </summary>
-    private static List<Payload> SplitPayloads(List<MsgPackItem> items, SchemaStore schemaStore)
+    /// <param name="data">The bytes of the items: the schemas written inline are kept in a store of this call, for the references to them later in the data (a stream)</param>
+    private static List<Payload> SplitPayloads(List<MsgPackItem> items, SchemaStore schemaStore, byte[] data)
     {
       List<Payload> payloads = new List<Payload>();
+      SchemaStore inline = null;
       int t = 0;
       while (t < items.Count)
       {
+        if (IsStreamPart(items[t]))
+        {
+          t++;
+          continue;
+        }
         Payload payload = new Payload() { Body = items[t] };
         // Only a map (the schema) or an extension (a reference) can start a payload with a schema
-        if (t + 1 < items.Count && (items[t] is MpMap || items[t] is MpExt))
+        if (t + 1 < items.Count && (items[t] is MpMap || items[t] is MpExt) && !IsStreamPart(items[t + 1]))
         {
           Node first = Node.FromItem(items[t]);
           SchemaInfo schema = ReadInlineSchema(first);
-          if (schema is null)
-            schema = ReadSchemaReference(first, schemaStore, out payload.Error);
+          if (schema != null && data != null)
+            schema.Id = KeepInline(ref inline, items[t], data);
+          if (schema is null && inline != null)
+            schema = ReadSchemaReference(first, inline, out payload.Error, false);
+          if (schema is null || !schema.IsAvailable)
+            schema = ReadSchemaReference(first, schemaStore, out payload.Error) ?? schema;
 
           if (schema != null)
           {
@@ -216,6 +298,33 @@ namespace ObjectDebugger
         t++;
       }
       return payloads;
+    }
+
+    /// <summary>
+    /// Registers the bytes of a schema written inline (its id is computed from them), so a reference to it later in the data finds it.
+    /// </summary>
+    /// <returns>The id of the schema, null when it was not registered</returns>
+    private static string KeepInline(ref SchemaStore inline, MsgPackItem item, byte[] data)
+    {
+#if KEEPTRACK
+      if (item.StoredOffset < 0 || item.StoredLength <= 0 || item.StoredOffset + item.StoredLength > data.Length)
+        return null;
+      if (item.Settings != null && item.Settings.EndianAction != EndianAction.SwapIfCurrentSystemIsLittleEndian)
+        return null; // the store keeps schemas in the byte order of the specification
+      byte[] bytes = new byte[item.StoredLength];
+      Array.Copy(data, item.StoredOffset, bytes, 0, bytes.Length);
+      try
+      {
+        if (inline is null)
+          inline = new SchemaStore();
+        return inline.Register(bytes).ToString();
+      }
+      catch (MsgPackException)
+      {
+        // not a schema after all (the store reads it more strictly), or the store is full
+      }
+#endif
+      return null;
     }
 
     /// <summary>
@@ -345,6 +454,18 @@ namespace ObjectDebugger
     /// </summary>
     /// <returns>Null when the node is not a schema reference</returns>
     private static SchemaInfo ReadSchemaReference(Node node, SchemaStore schemaStore, out string error)
+    {
+      return ReadSchemaReference(node, schemaStore, out error, true);
+    }
+
+    /// <param name="always">Return the reference also when the store does not have it (false: null then)</param>
+    private static SchemaInfo ReadSchemaReference(Node node, SchemaStore schemaStore, out string error, bool always)
+    {
+      SchemaInfo schema = ReadReference(node, schemaStore, out error);
+      return always || (schema != null && schema.IsAvailable) ? schema : null;
+    }
+
+    private static SchemaInfo ReadReference(Node node, SchemaStore schemaStore, out string error)
     {
       error = null;
       MpExt ext = node.Value as MpExt;

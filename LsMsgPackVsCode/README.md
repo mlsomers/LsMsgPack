@@ -42,6 +42,10 @@ AI agents can read MsgPack while you debug, through the MCP server that comes wi
 
 The agent asks where the program is paused (`msgpack_debug_status`), which variables hold bytes (`msgpack_debug_locals`), and reads one (`msgpack_debug_read`), the same values as **View as MsgPack**. It only reads variable and member paths (`buffer`, `this._payload`, `items[2].Data`), unless `lsmsgpack.mcp.allowAnyExpression` allows any expression. A stream that cannot seek is only read after you confirm. A notification shows what is being read, and you can cancel it.
 
+## Streams
+
+Streams written by LtMsgPack's `MsgPackStreamWriter` (or the TypeScript client) are shown as such: arrays, maps, strings and bin of unknown length (the escape sequences `C1 90` ... `C1 C0` in red in the hex view, the chunks of a string in the tree), the index of the stream with its entries and fields (**idx**), its tail (**tail**, the CRC-32 is checked) and sidecars. In the objects pane the payloads are named after their entries.
+
 ## Files and text
 
 - `.msgpack`, `.MsgPack` and `.mpk` files open in the explorer (**Reopen Editor With...** switches to the text or hex editor). Other files: **MsgPack: Open File...**. The view follows changes of the file.

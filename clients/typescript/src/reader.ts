@@ -1,7 +1,7 @@
 // A MsgPack reader for all formats of the specification, with LsMsgPack's extensions (timestamps -1, decimal 1, big integers -2).
 // The schema-aware reader (decoder.ts) derives from it: array() and map() are the places it hooks into.
 
-import { MsgPackError } from './errors.js';
+import { EndOfDataError, EscapeError, MsgPackError } from './errors.js';
 import { DecimalMode, decodeDecimal } from './values.js';
 
 /** An extension type the reader does not know (as LtMsgPack's MsgPackExtension). */
@@ -46,7 +46,7 @@ export class MsgPackReader {
   }
 
   protected endOfData(): MsgPackError {
-    return new MsgPackError('Unexpected end of data.', this.pos);
+    return new EndOfDataError(this.pos);
   }
 
   /** Throws when fewer than count bytes are left (checked before anything is allocated for a length read from the data). */
@@ -152,6 +152,7 @@ export class MsgPackReader {
       case 0xde: return this.map(this.u16());
       case 0xdf: return this.map(this.u32());
     }
+    if (b === 0xc1) throw new EscapeError(this.pos - 1);
     throw new MsgPackError(`0x${b.toString(16)} is not a MsgPack type.`, this.pos - 1);
   }
 

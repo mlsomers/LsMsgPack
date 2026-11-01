@@ -43,6 +43,25 @@ namespace LsMsgPack
 
     internal ICustomExt[] _customExtentionTypes = Default_CustomExtentionTypes;
 
+    internal bool _readStreams;
+
+    /// <summary>
+    /// Read what the stream writers of LtMsgPack and the TypeScript client write (docs/Streaming.md): arrays, maps, str and bin of unknown length (the escape sequences of 0xC1 proposed in msgpack/msgpack#347),
+    /// and at the root the index of a stream (<see cref="MpStreamIndex"/>), its tail (<see cref="MpStreamTail"/>) and sidecars (<see cref="MpStreamSidecar"/>). Off by default: 0xC1 is then an error, as the specification says.
+    /// <para>The explorers turn it on. Writing is unchanged (lengths are always known).</para>
+    /// </summary>
+#if KEEPTRACK
+    [Category("Control")]
+    [DisplayName("Read Streams")]
+    [Description("Read arrays, maps, str and bin of unknown length (0xC1 escape sequences, msgpack/msgpack#347) and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them.")]
+    [DefaultValue(false)]
+#endif
+    public bool ReadStreams
+    {
+      get { return _readStreams; }
+      set { _readStreams = value; }
+    }
+
 #if KEEPTRACK
 
     /// <summary>

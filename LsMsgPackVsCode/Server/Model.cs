@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace LsMsgPackInspector
 {
@@ -62,12 +62,12 @@ namespace LsMsgPackInspector
     public string Text { get; set; }
 
     /// <summary>
-    /// The icon: nil, bool, int, float, bin, str, array, map, ext, error, root or other.
+    /// The icon: nil, bool, int, float, bin, str, array, map, ext, error, root, index (of a stream), tail (of its index), sidecar or other.
     /// </summary>
     public string Kind { get; set; }
 
     /// <summary>
-    /// "key" or "value" for the items of a map entry.
+    /// "key" or "value" for the items of a map entry, "chunk" for the chunks of a str or bin of unknown length, "content" for the array of the index of a stream and the names of its fields below it.
     /// </summary>
     public string Role { get; set; }
 
@@ -78,10 +78,15 @@ namespace LsMsgPackInspector
     public long Length { get; set; }
 
     /// <summary>
-    /// The number of bytes of the type (1, shown in red, 0 for the root and errors with a partial item) and of the length that follows (shown in blue).
+    /// The number of bytes of the type (1, shown in red, 0 for the root and errors with a partial item; 2 for the escape sequence of a value of unknown length) and of the length that follows (shown in blue).
     /// </summary>
     public int TypeBytes { get; set; }
     public int LengthBytes { get; set; }
+
+    /// <summary>
+    /// The bytes that end the item (shown in red): 2 for the end of a value of unknown length (0xC1 0xC0), 0 for others.
+    /// </summary>
+    public int EndBytes { get; set; }
 
     /// <summary>
     /// A breaking error came before this item (gray in the tree).

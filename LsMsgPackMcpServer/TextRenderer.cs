@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Streaming;
 using ObjectDebugger;
 using System;
 using System.Collections.Generic;
@@ -135,6 +136,7 @@ namespace LsMsgPackMcp
         return;
 
       sb.Append("Structure: ").Append(DescribeStructure(doc)).Append('\n');
+      WriteStreamIndexes(sb, doc);
       long end = doc.Root.Offset + doc.Root.Length;
       if (end < doc.Data.Length)
       {
@@ -173,14 +175,79 @@ namespace LsMsgPackMcp
             sb.Append("Warning: ").Append(warning).Append('\n');
     }
 
+    /// <summary>
+    /// The schemas of the payloads, each once (the payloads of a stream refer to the schema written before them).
+    /// </summary>
     private static IEnumerable<SchemaInfo> Schemas(RootObject objects)
     {
+      HashSet<string> ids = new HashSet<string>(StringComparer.Ordinal);
       if (objects.Schema != null)
+      {
+        if (objects.Schema.Id != null)
+          ids.Add(objects.Schema.Id);
         yield return objects.Schema;
+      }
       if (objects.Kind == ObjectKind.Sequence)
         foreach (PrimitiveObject member in objects.Members)
-          if (member is RootObject payload && payload.Schema != null)
+          if (member is RootObject payload && payload.Schema != null && (payload.Schema.Id is null || ids.Add(payload.Schema.Id)))
             yield return payload.Schema;
+    }
+
+    private const int MaxEntries = 50;
+
+    /// <summary>
+    /// The indexes of a stream (MsgPackStreamIndexOptions) and their entries.
+    /// </summary>
+    private static void WriteStreamIndexes(StringBuilder sb, PayloadDocument doc)
+    {
+      int listed = 0;
+      foreach (MpStreamIndex index in doc.StreamIndexes)
+      {
+        sb.Append("Stream index at ").Append(Hex(index.StoredOffset)).Append(": ");
+        if (index.Index is null)
+        {
+          sb.Append("not valid: ").Append(index.IndexError).Append('\n');
+          continue;
+        }
+        MsgPackStreamIndex ix = index.Index;
+        sb.Append(ix.Status.ToString());
+        if (ix.Writer != null)
+          sb.Append(", written by ").Append(ix.Writer);
+        sb.Append(", ").Append(index.Tail is null ? "no tail follows it" : index.Tail.CrcMatches ? "CRC-32 matches" : "CRC-32 does NOT match (readers that seek do not use it)");
+        if (index.Delta != 0)
+          sb.Append(", the stream was moved by ").Append(index.Delta.ToString(CultureInfo.InvariantCulture)).Append(" bytes since it was written (the offsets below are moved too)");
+        if (ix.PreviousTail.HasValue)
+          sb.Append(", the index before it ends at ").Append(Hex(ix.PreviousTail.Value + MsgPackStreamIndex.TailLength));
+        if (ix.HashAlgorithm != null)
+          sb.Append(", hashes ").Append(ix.HashAlgorithm);
+        sb.Append(", ").Append(Count(ix.Entries.Count, "entry", "entries"));
+        if (ix.Schemas.Count > 0)
+          sb.Append(", ").Append(Count(ix.Schemas.Count, "schema", "schemas"));
+        sb.Append(ix.Entries.Count > 0 ? ":" : ".").Append('\n');
+        foreach (MsgPackStreamEntry entry in ix.Entries)
+        {
+          if (listed++ >= MaxEntries)
+            continue;
+          sb.Append("  ").Append(RootObject.DescribeEntry(entry)).Append(" at ").Append(Hex(entry.Offset)).Append(" (").Append(Count(entry.Length, "byte", "bytes")).Append(")");
+          if (entry.ContentType != null)
+            sb.Append(", ").Append(entry.ContentType);
+          if (entry.ElementCount.HasValue)
+            sb.Append(", ").Append(Count(entry.ElementCount.Value, "element", "elements"));
+          if (entry.Points != null && entry.Points.Count > 0)
+            sb.Append(", ").Append(Count(entry.Points.Count, "point", "points"));
+          if (entry.Modified.HasValue)
+            sb.Append(", modified ").Append(entry.Modified.Value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture));
+          if (entry.SidecarOffset.HasValue)
+            sb.Append(", sidecar at ").Append(Hex(entry.SidecarOffset.Value)).Append(" (").Append(Count(entry.SidecarLength, "byte", "bytes")).Append(")");
+          if (entry.Metadata != null && entry.Metadata.Count > 0)
+            sb.Append(", metadata: ").Append(string.Join(", ", entry.Metadata.Keys));
+          if (entry.Incomplete)
+            sb.Append(", INCOMPLETE");
+          sb.Append('\n');
+        }
+      }
+      if (listed > MaxEntries)
+        sb.Append("  ... ").Append((listed - MaxEntries).ToString(CultureInfo.InvariantCulture)).Append(" more entries (msgpack_decode with view items and path or from/to shows the index's content).").Append('\n');
     }
 
     private static string DescribeStructure(PayloadDocument doc)
@@ -215,7 +282,37 @@ namespace LsMsgPackMcp
       }
       if (objects != null && objects.Kind != ObjectKind.Sequence && objects.Schema is null && LooksLikeArrayLayout(objects))
         parts.Add("objects may be written as arrays of their values (ObjectLayout.Array): without a schema the property names are not in the data");
+      string stream = DescribeStream(doc);
+      if (stream != null)
+        parts.Insert(0, stream);
       return string.Join("; ", parts);
+    }
+
+    /// <summary>
+    /// What makes the data a stream (values of unknown length, an index), null when it is none.
+    /// </summary>
+    private static string DescribeStream(PayloadDocument doc)
+    {
+      int unknown = 0;
+      foreach (ItemNode node in doc.Items)
+        if (node.Item is MsgPackVarLen v && v.LengthUnknown)
+          unknown++;
+      int indexes = 0;
+      int entries = 0;
+      foreach (MpStreamIndex index in doc.StreamIndexes)
+      {
+        indexes++;
+        if (index.Index != null)
+          entries += index.Index.Entries.Count;
+      }
+      if (unknown == 0 && indexes == 0)
+        return null;
+      List<string> parts = new List<string>();
+      if (unknown > 0)
+        parts.Add(string.Concat(Count(unknown, "value", "values"), " of unknown length (0xC1 escape sequences, msgpack/msgpack#347)"));
+      if (indexes > 0)
+        parts.Add(string.Concat(indexes == 1 ? "an index of " : string.Concat(indexes.ToString(CultureInfo.InvariantCulture), " indexes of "), Count(entries, "entry", "entries")));
+      return string.Concat("a stream (as MsgPackStreamWriter writes it) with ", string.Join(" and ", parts));
     }
 
     private static bool LooksLikeArrayLayout(RootObject objects)
@@ -302,7 +399,7 @@ namespace LsMsgPackMcp
     /// </summary>
     private static string UnreadError(PayloadDocument doc, MsgPackItem item)
     {
-      return string.Concat(ErrorMessage(doc.ErrorAround(item)), " (", MsgPackItem.GetOfficialTypeName(doc.Encoding(item)), " at ", Hex(item.StoredOffset), ")");
+      return string.Concat(ErrorMessage(doc.ErrorAround(item)), " (", TypeName(doc, item), " at ", Hex(item.StoredOffset), ")");
     }
 
     private static bool ReadAfter(PrimitiveObject obj, long firstError)
@@ -367,6 +464,8 @@ namespace LsMsgPackMcp
           notes.Add(string.Concat("left out: ", obj.DefaultText));
       }
 
+      if (obj is RootObject payload && payload.Entry != null)
+        notes.Insert(0, payload.EntryText);
       if (error == NestedError)
         notes.Add("error inside"); // the error itself is marked where it is: "ERROR:" on every level above it read as many errors
       else if (error != null)
@@ -657,6 +756,10 @@ namespace LsMsgPackMcp
       if (item is MpRoot root)
         return string.Concat("root, ", Count(root.Count, "item", "items"), " that follow each other");
 
+      if (item is MpStreamTail tail)
+        return string.Concat("tail of the stream index (fixarray, 4 items): the index at ", Hex(tail.IndexOffset), " as the writer counted, ", Count(tail.IndexLength, "byte", "bytes"),
+          ", CRC-32 0x", tail.Crc.ToString("X8", CultureInfo.InvariantCulture), tail.CrcMatches ? " matches" : " does NOT match");
+
       string type = TypeName(doc, item);
       long claimed = doc.ClaimedLength(item);
       // The slots of a container cut off by an error that were not read are null
@@ -687,6 +790,18 @@ namespace LsMsgPackMcp
       if (item is MpExt ext)
       {
         string head = string.Concat(type, ", type ", ext.TypeSpecifier.ToString(CultureInfo.InvariantCulture));
+        if (item is MpStreamIndex index)
+        {
+          if (index.Index is null)
+            return string.Concat(head, " (stream index, not valid): ", index.IndexError);
+          return string.Concat(head, " (stream index): ", index.Index.Status.ToString(), ", ", Count(index.Index.Entries.Count, "entry", "entries"), ", ",
+            index.Tail is null ? "no tail follows it" : index.Tail.CrcMatches ? "CRC-32 matches" : "CRC-32 does NOT match");
+        }
+        if (item is MpStreamSidecar)
+        {
+          byte[] data = ext.Value as byte[] ?? new byte[0];
+          return string.Concat(head, " (stream sidecar), ", Count(data.Length, "byte", "bytes"), ": ", HexString(data, options.MaxBytes, " "));
+        }
         if (item.GetType() == typeof(MpExt))
         {
           byte[] bytes = ext.Value as byte[] ?? new byte[0];
@@ -712,6 +827,13 @@ namespace LsMsgPackMcp
         return "nil";
       if (item is MpRoot)
         return "root";
+      if (item is MsgPackVarLen v && v.LengthUnknown)
+      {
+        if (item is MpArray) return "array of unknown length (C1 90 ... C1 C0)";
+        if (item is MpMap) return "map of unknown length (C1 80 ... C1 C0)";
+        if (item is MpString) return string.Concat("str of unknown length in ", Count(((MpString)item).Chunks.Length, "chunk", "chunks"), " (C1 A0 ... C1 C0)");
+        if (item is MpBin) return string.Concat("bin of unknown length in ", Count(((MpBin)item).Chunks.Length, "chunk", "chunks"), " (C1 C4 ... C1 C0)");
+      }
       return MsgPackItem.GetOfficialTypeName(doc.Encoding(item));
     }
 
@@ -839,7 +961,7 @@ namespace LsMsgPackMcp
 
       byte b = doc.Data[offset];
       sb.Append("Offset ").Append(Hex(offset)).Append(" (").Append(offset.ToString(CultureInfo.InvariantCulture)).Append(") of ").Append(Count(doc.Data.Length, "byte", "bytes"))
-        .Append(": 0x").Append(b.ToString("X2", CultureInfo.InvariantCulture)).Append(", as a type byte: ").Append(DescribeTypeByte(b)).Append(".").Append('\n');
+        .Append(": 0x").Append(b.ToString("X2", CultureInfo.InvariantCulture)).Append(", as a type byte: ").Append(DescribeTypeByte(b, offset + 1 < doc.Data.Length ? doc.Data[offset + 1] : -1)).Append(".").Append('\n');
 
       ItemNode node = doc.FindItemAt(offset);
       if (node is null)
@@ -915,6 +1037,8 @@ namespace LsMsgPackMcp
       if (item is null || item is MpError || offset >= data.Length)
         return 0;
       byte b = data[offset];
+      if (b == 0xc1)
+        return 2; // an escape sequence: 0xC1 and its code, the content follows (up to C1 C0)
       if (b <= 0x7f || b >= 0xe0 || b == 0xc0 || b == 0xc2 || b == 0xc3)
         return 0; // the value is in the type byte
       if (b >= 0x80 && b <= 0xbf)
@@ -935,8 +1059,11 @@ namespace LsMsgPackMcp
     /// <summary>
     /// What a byte means when an item starts there.
     /// </summary>
-    internal static string DescribeTypeByte(byte b)
+    /// <param name="next">The byte after it (the code of an escape sequence), -1 at the end of the data</param>
+    internal static string DescribeTypeByte(byte b, int next = -1)
     {
+      if (b == 0xc1)
+        return DescribeEscape(next);
       if (b <= 0x7f) return string.Concat("positive fixint ", b.ToString(CultureInfo.InvariantCulture));
       if (b <= 0x8f) return string.Concat("fixmap of ", Count(b & 0x0f, "entry", "entries"));
       if (b <= 0x9f) return string.Concat("fixarray of ", Count(b & 0x0f, "item", "items"));
@@ -976,6 +1103,24 @@ namespace LsMsgPackMcp
         case 0xdd: return "array 32 (4 byte count follows)";
         case 0xde: return "map 16 (2 byte count follows)";
         default: return "map 32 (4 byte count follows)";
+      }
+    }
+
+    /// <summary>
+    /// 0xC1 is never used by the specification: streams use it for values of unknown length (the escape sequences proposed in msgpack/msgpack#347), followed by a code byte.
+    /// </summary>
+    private static string DescribeEscape(int code)
+    {
+      const string Escape = "0xC1, never used by the specification; streams start an escape sequence with it (msgpack/msgpack#347)";
+      switch (code)
+      {
+        case 0x90: return string.Concat(Escape, ": C1 90 starts an array of unknown length (ended by C1 C0)");
+        case 0x80: return string.Concat(Escape, ": C1 80 starts a map of unknown length (ended by C1 C0)");
+        case 0xa0: return string.Concat(Escape, ": C1 A0 starts a str of unknown length, str chunks follow (ended by C1 C0)");
+        case 0xc4: return string.Concat(Escape, ": C1 C4 starts a bin of unknown length, bin chunks follow (ended by C1 C0)");
+        case 0xc0: return string.Concat(Escape, ": C1 C0 ends the innermost value of unknown length");
+        case -1: return string.Concat(Escape, ", but the data ends after it");
+        default: return string.Concat(Escape, ": C1 ", code.ToString("X2", CultureInfo.InvariantCulture), " is reserved, an error");
       }
     }
 

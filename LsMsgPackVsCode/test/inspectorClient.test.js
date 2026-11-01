@@ -71,6 +71,39 @@ test('load, search, settings and errors', { skip }, async () => {
     const map = await client.load('m', Buffer.from([0x84, 0x01, 0x02, 0xc1, 0x03, 0x04, 0x05, 0x06, 0x07]).toString('base64'), settings);
     assert.ok(!map.items.some((item) => item.text === 'NULL'), JSON.stringify(map.items.map((item) => item.text)));
 
+    // A stream (LtMsgPack's MsgPackStreamWriter): values of unknown length (0xC1 escapes), then its index (ext 3) and the tail
+    const body = Buffer.from('92c1a0a26162a163c1c0c19001c1c0', 'hex'); // ["abc" in 2 chunks, [1] of unknown length]
+    // [version 1, status Complete, writer, previous tail, hash algorithm: nil, no schemas, entries: [[offset 0, length]]]
+    const content = Buffer.from([0x97, 0x01, 0x00, 0xc0, 0xc0, 0xc0, 0x90, 0x91, 0x92, 0x00, body.length]);
+    const index = Buffer.concat([Buffer.from([0xc7, content.length, 0x03]), content]);
+    const tail = Buffer.alloc(25);
+    tail[0] = 0x94; tail[1] = 0xcf; tail.writeBigUInt64BE(BigInt(body.length), 2);
+    tail[10] = 0xce; tail.writeUInt32BE(index.length, 11);
+    tail[15] = 0xce; tail.writeUInt32BE(crc32(index), 16);
+    tail[20] = 0xa4; tail.write('LSIX', 21, 'ascii');
+    const stream = await client.load('st', Buffer.concat([body, index, tail]).toString('base64'), Object.assign({}, settings, { objects: 'show' }));
+    const str = stream.items.find((item) => item.kind === 'str' && item.role !== 'chunk');
+    assert.strictEqual(str.offset, 1);
+    assert.strictEqual(str.typeBytes, 2); // C1 A0
+    assert.strictEqual(str.lengthBytes, 0);
+    assert.strictEqual(str.endBytes, 2); // C1 C0
+    assert.match(str.text, /unknown length in 2 chunks/);
+    assert.deepStrictEqual(stream.items.filter((item) => item.role === 'chunk').map((item) => [item.offset, item.length]), [[3, 3], [6, 2]]);
+    const array = stream.items.find((item) => item.kind === 'array' && item.offset === 10);
+    assert.strictEqual(array.typeBytes, 2);
+    assert.strictEqual(array.endBytes, 2);
+    assert.ok(array.props.some((p) => p.name === 'Unknown length' && p.value === 'True'), JSON.stringify(array.props));
+    const indexItem = stream.items.find((item) => item.kind === 'index');
+    assert.strictEqual(indexItem.offset, body.length);
+    assert.match(indexItem.text, /Stream index \(Complete\) of 1 entries, CRC-32 matches/);
+    assert.ok(stream.items.some((item) => item.role === 'content' && item.parent === indexItem.id));
+    assert.ok(stream.items.some((item) => item.role === 'entries'));
+    assert.strictEqual(stream.items.find((item) => item.kind === 'tail').offset, body.length + index.length);
+    assert.ok(!stream.issues.some((issue) => issue.severity === 'Error' || issue.severity === 'ReadAbortError'), JSON.stringify(stream.issues));
+    assert.ok(!stream.issues.some((issue) => /smaller container/.test(issue.message)), 'the tail has fixed types');
+    assert.strictEqual(stream.objects.nodes[0].kind, 'root');
+    assert.match(stream.objects.nodes[0].text, /^Root : entry : /); // the payload of the only entry (without an identifier); the index is no data
+
     await assert.rejects(client.search('unknown', 'x', false), /Unknown document/);
     await client.close('a');
     await assert.rejects(client.load('a', undefined, settings), /Unknown document/);
@@ -98,3 +131,15 @@ test('a missing dotnet is reported', async () => {
   await assert.rejects(client.version(), /needs the .NET runtime/);
   client.dispose();
 });
+
+/** CRC-32 (IEEE), as the tail of a stream index has it. */
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const b of bytes) {
+    crc ^= b;
+    for (let k = 0; k < 8; k++) {
+      crc = crc & 1 ? 0xedb88320 ^ (crc >>> 1) : crc >>> 1;
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}

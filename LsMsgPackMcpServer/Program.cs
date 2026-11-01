@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -17,7 +17,7 @@ namespace LsMsgPackMcp
 @"lsmsgpack-mcp: MsgPack for AI agents (and people in a terminal).
 
   lsmsgpack-mcp [mcp]                       Runs the MCP server over stdin/stdout (what MCP clients start).
-  lsmsgpack-mcp decode <file|-> [options]   Decodes a file (- reads the bytes from stdin).
+  lsmsgpack-mcp decode <file|-> [options]   Decodes a file (- reads the bytes from stdin), also a stream with values of unknown length and an index.
   lsmsgpack-mcp decode --data <text>        Decodes bytes written as hex, base64 or byte values.
   lsmsgpack-mcp explain <file> <offset>     What the byte at the offset is (items, object, bytes around it).
   lsmsgpack-mcp search <file> <text>        The items holding the text or the value.

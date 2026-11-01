@@ -1,4 +1,4 @@
-export { LsMsgPackClient, MediaTypes, SchemasHeader, SchemaHeader, DescribedAccept } from './client.js';
+export { LsMsgPackClient, MediaTypes, SchemasHeader, SchemaHeader, DescribedAccept, StreamParameter } from './client.js';
 export type { ClientOptions, RequestOptions, MsgPackResponse } from './client.js';
 export { Decoder, TypeProperty } from './decoder.js';
 export type { DecodeOptions, Decoded } from './decoder.js';
@@ -17,3 +17,11 @@ export { guidString, guidBytes } from './values.js';
 export { camelCase } from './names.js';
 export type { PropertyNames } from './names.js';
 export type { DecimalMode } from './values.js';
+export { MsgPackStreamReader } from './stream-reader.js';
+export type { StreamReaderOptions, StreamTokenType, StreamType } from './stream-reader.js';
+export { MsgPackStreamWriter } from './stream-writer.js';
+export type { StreamWriterOptions, StreamIndexOptions, StreamHasher, StreamObserver, StreamSink } from './stream-writer.js';
+export { bytesSource, blobSource, fileSource, httpSource } from './stream-sources.js';
+export type { RandomAccessSource, SequentialSource, StreamSource, FileHandleLike, HttpSourceOptions } from './stream-sources.js';
+export { StreamIndexStatus } from './stream-index.js';
+export type { StreamIndex, StreamEntry, StreamIndexPoint, StreamSchemaLocation } from './stream-index.js';

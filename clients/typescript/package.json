@@ -23,7 +23,8 @@
   "scripts": {
     "build": "tsc -p ./",
     "test": "npm run build && node --test \"test/*.test.mjs\"",
-    "bench": "npm run build && node bench/bench.mjs"
+    "bench": "npm run build && node bench/bench.mjs",
+    "bench:stream": "npm run build && node bench/stream.mjs"
   },
   "devDependencies": {
     "@msgpack/msgpack": "3.1.2",

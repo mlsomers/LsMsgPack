@@ -5,6 +5,7 @@ using LsMsgPack.Types.Extensions;
 using System.Runtime;
 using System;
 using LsMsgPack.Meta;
+using LsMsgPack.Streaming;
 
 
 #if KEEPTRACK
@@ -125,6 +126,7 @@ namespace LsMsgPack {
 
     public override MsgPackItem Read(MsgPackTypeId typeId, Stream data) {
       this.typeId = typeId;
+      long start = _settings._readStreams && data.CanSeek ? data.Position - 1 : 0; // only for the index of a stream
       long len;
       switch(typeId) {
         case MsgPackTypeId.MpFExt1 : len = 1; break;
@@ -154,6 +156,14 @@ namespace LsMsgPack {
           if (typeSpecifier == ext.TypeSpecifier)
             return ext.Create(_settings, this, null);
         }
+      }
+
+      // The types a stream reserves for root values (after the custom extensions: a registered one wins)
+      if (_settings._readStreams && _depth == 0) {
+        if (typeSpecifier == MsgPackStreamIndex.IndexExtensionType)
+          return new MpStreamIndex(this, data, start, data.CanSeek ? data.Position - value.Length : 0);
+        if (typeSpecifier == MsgPackStreamIndex.SidecarExtensionType)
+          return new MpStreamSidecar(this);
       }
 
       return this;

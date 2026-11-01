@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPackMcp;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
@@ -41,6 +41,12 @@ namespace LsMsgPackMcpServerTests
       Write(dir, "invoice-reference-missing", reference, new RenderOptions());
       Write(dir, "invoice-reference-found", reference, new RenderOptions(), store);
       Write(dir, "number", MsgPackSerializer.Serialize(42), new RenderOptions());
+      byte[] stream = Payloads.Stream();
+      Write(dir, "stream", stream, new RenderOptions() { Issues = IssueLevel.All });
+      Write(dir, "stream-items", stream, new RenderOptions() { View = DecodeView.Items });
+      PayloadDocument streamDoc = new PayloadDocument(stream, "stream", new DecodeOptions());
+      File.WriteAllText(Path.Combine(dir, "explain-stream.txt"), TextRenderer.ExplainOffset(streamDoc, Array.IndexOf(stream, (byte)0xC1), new RenderOptions()));
+      File.WriteAllText(Path.Combine(dir, "search-stream.txt"), TextRenderer.Search(streamDoc, "invoice 2", false, new RenderOptions()));
       System.Collections.Generic.List<McpInvoice> many = new System.Collections.Generic.List<McpInvoice>();
       for (int t = 0; t < 20000; t++)
         many.Add(Payloads.Invoice());

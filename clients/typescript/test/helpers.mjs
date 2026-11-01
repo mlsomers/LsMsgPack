@@ -1,7 +1,7 @@
 // Shared by the tests: the test server (test-server/, built with dotnet), and comparing decoded values with System.Text.Json of the same .NET values.
 import assert from 'node:assert';
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -29,8 +29,13 @@ const roots = ['Invoice[]', 'Invoice', 'Kinds', 'Zoo', 'List<LsMsgPackTsTestServ
 let generations = 0;
 
 export async function generateModels(extraArgs = []) {
-  const folder = `${here}generated/${generations++}/`; // a module is imported once per URL
-  if (generations === 1) rmSync(`${here}generated/`, { recursive: true, force: true });
+  // a folder per process (node --test runs the test files in parallel processes) and per call (a module is imported once per URL);
+  // the folders of earlier runs are removed, the ones of other processes of this run are left alone
+  const folder = `${here}generated/p${process.pid}-${generations++}/`;
+  if (generations === 1) {
+    for (const name of existsSync(`${here}generated/`) ? readdirSync(`${here}generated/`) : [])
+      if (Date.now() - statSync(`${here}generated/${name}`).mtimeMs > 10 * 60 * 1000) rmSync(`${here}generated/${name}`, { recursive: true, force: true });
+  }
   const args = [generatorAssembly, '--assembly', serverAssembly, '--out', `${folder}models.ts`, '--import', '../../../dist/index.js', ...extraArgs];
   for (const root of roots) args.push('--root', root.includes('.') ? root : `LsMsgPackTsTestServer.${root}`);
   execFileSync(process.env.DOTNET || 'dotnet', args, { stdio: ['ignore', 'ignore', 'pipe'] });

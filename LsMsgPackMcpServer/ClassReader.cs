@@ -169,7 +169,8 @@ namespace LsMsgPackMcp
         UseInexedSchema = indexed,
         EndianAction = (EndianAction)Enum.Parse(typeof(EndianAction), options["--endian"]),
         ReadErrors = ReadErrorHandling.ReportAndContinue,
-        ContinueProcessingOnBreakingError = false
+        ContinueProcessingOnBreakingError = false,
+        ReadStreams = true // arrays and maps of unknown length (a stream)
       };
       if (options.TryGetValue("--schemas", out string schemas))
       {
