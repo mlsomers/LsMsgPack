@@ -46,6 +46,7 @@ graph BT
   AspNetCore["LsMsgPack.AspNetCore"]
   WebApi["LsMsgPack.AspNet.WebApi"]
   Mvc["LsMsgPack.AspNet.Mvc"]
+  Data["LtMsgPack.Data<br/><i>ADO.NET data readers</i>"]
   Mem(["System.Memory"])
   Unsafe(["System.Runtime.CompilerServices.Unsafe"])
   AspNetCoreFx(["Microsoft.AspNetCore.Mvc.Core 2.x /<br/>Microsoft.AspNetCore.App"])
@@ -57,6 +58,7 @@ graph BT
   AspNetCore --> Lt
   WebApi --> Lt
   Mvc --> Lt
+  Data --> Lt
   Core -.-> Mem
   Ls -.-> Mem
   Lt -.-> Mem
@@ -66,7 +68,9 @@ graph BT
   Mvc -.-> AspNetMvc
 ```
 
-Solid arrows are the packages of this repository, dotted ones external dependencies. The web formatters depend on LtMsgPack only, so add `LsMsgPack` yourself when you want to inspect data. Both serializers share `LsMsgPack.Core` and its namespaces (`LsMsgPack.*`), so attributes, type resolvers and filters work with either.
+Solid arrows are the packages of this repository, dotted ones external dependencies. The web formatters depend on LtMsgPack only, so add `LsMsgPack` yourself when you want to inspect data. Both serializers share `LsMsgPack.Core` and its namespaces (`LsMsgPack.*`), so attributes, type resolvers and filters work with either. `LtMsgPack.Data` writes the rows of ADO.NET data readers as MsgPack and reads dumps back as a `DbDataReader`, see [docs/DataReader.md](docs/DataReader.md).
+
+Not in the diagram, because they aren't referenced by your code: the .NET tools `LsMsgPack.Mcp` ([`lsmsgpack-mcp`](#ai-agents-mcp), MsgPack for AI agents) and `LsMsgPack.TypeScript` ([`lsmsgpack-ts`](#typescript), TypeScript models for the web formatters), which bring their own copies of the libraries, and the npm package [`@lsmsgpack/client`](#typescript).
 
 Compatibility with other implementations
 ----------------------------------------
