@@ -170,7 +170,8 @@ namespace LtMsgPack.Data
     /// <summary>
     /// Writes the current row into <c>c.W</c> (ObjectPlan.Write of an object without a type id).
     /// </summary>
-    internal void WriteRow(WriteContext c, IDataRecord record)
+    /// <param name="check">IsDBNull on every column (see <see cref="NullChecks"/>)</param>
+    internal void WriteRow(WriteContext c, IDataRecord record, bool check)
     {
       MsgPackWriter w = c.W;
       ColumnWriter[] columns = _columns;
@@ -179,7 +180,7 @@ namespace LtMsgPack.Data
         int at = w.ReserveMapHeader(columns.Length);
         int written = 0;
         for (int t = 0; t < columns.Length; t++)
-          if (columns[t].Write(c, record, _keys[t]))
+          if (columns[t].Write(c, record, _keys[t], check))
             written++;
         w.PatchMapHeader(at, columns.Length, written);
         return;
@@ -189,7 +190,7 @@ namespace LtMsgPack.Data
       {
         w.ArrayHeader(columns.Length);
         for (int t = 0; t < columns.Length; t++)
-          if (!columns[t].Write(c, record, null))
+          if (!columns[t].Write(c, record, null, check))
             w.Nil();
         return;
       }
@@ -201,7 +202,7 @@ namespace LtMsgPack.Data
       for (int t = 0; t < columns.Length; t++)
       {
         int start = w.Pos;
-        if (!columns[t].Write(c, record, null))
+        if (!columns[t].Write(c, record, null, check))
           w.Nil();
         if (w.Pos != start + 1 || w.Buf[start] != 0xC0)
         {

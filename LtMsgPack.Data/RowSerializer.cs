@@ -32,11 +32,14 @@ namespace LtMsgPack.Data
         DataCache cache = DataCache.Of(serializer);
         RowPlan plan = null;
         int count = 0;
+        bool check = true;
         while (reader.Read())
         {
           if (plan is null) // the columns are decided by the first row (a provider may give the field types of the current row)
             plan = cache.Plan(serializer, reader, typeName);
-          plan.WriteRow(c, reader);
+          else if (count == NullChecks.CheckedRows)
+            check = !NullChecks.CanSkip(reader);
+          plan.WriteRow(c, reader, check);
           count++;
         }
 

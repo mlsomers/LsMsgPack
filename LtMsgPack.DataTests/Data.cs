@@ -23,7 +23,8 @@ namespace LtMsgPack.DataTests
       };
     }
 
-    public static ColumnarReader AllTypes(List<AllTypesRow> rows)
+    /// <param name="throwsOnNull">A <see cref="ThrowingColumnarReader"/>: the typed getters throw for a NULL</param>
+    public static ColumnarReader AllTypes(List<AllTypesRow> rows, bool throwsOnNull = false)
     {
       int n = rows.Count;
       ColumnarReader.Column[] columns =
@@ -32,7 +33,7 @@ namespace LtMsgPack.DataTests
         Of(rows, r => r.Active), Of(rows, r => r.Score), Of(rows, r => r.Big), new ColumnarReader.Column<byte[]>(Map(rows, r => r.Data)), Of(rows, r => r.Small),
         Of(rows, r => r.Ratio), Of(rows, r => r.Tiny),
       };
-      return new ColumnarReader(AllTypesNames, columns, n);
+      return throwsOnNull ? new ThrowingColumnarReader(AllTypesNames, columns, n) : new ColumnarReader(AllTypesNames, columns, n);
     }
 
     private static ColumnarReader.Column<T> Of<T>(List<AllTypesRow> rows, Func<AllTypesRow, T?> get) where T : struct

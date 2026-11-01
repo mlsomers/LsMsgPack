@@ -17,6 +17,7 @@ namespace LtMsgPack.Data
     private readonly int _point = -1;
     private object _lastKey;
     private long _rows;
+    private bool _check = true;
 
     /// <param name="reader">On its first row when the result set has one (it decides the field types of some providers)</param>
     internal TableWriter(MsgPackStreamWriter writer, IDataReader reader, object identifier, string name, MsgPackTableOptions options)
@@ -57,11 +58,13 @@ namespace LtMsgPack.Data
         }
       }
 
+      if (_rows == NullChecks.CheckedRows)
+        _check = !NullChecks.CanSkip(_reader);
       MsgPackWriter w = _writer.BeginValue();
       int start = w.Pos;
       try
       {
-        _plan.WriteRow(_writer.Context, _reader);
+        _plan.WriteRow(_writer.Context, _reader, _check);
       }
       catch
       {

@@ -446,7 +446,7 @@ namespace LsMsgPackUnitTests
     public async Task ErrorsAreTheSynchronousOnes()
     {
       foreach (string hex in new[] { "c1 91", "c1 ff", "c1 90 01 c1", "c1 c0", "92 01 c1 c0", "c1 80 a1 61 c1 c0", "c1 a0 01 c1 c0", "c1 c4 a1 61 c1 c0", "c1 a0 c1 90 c1 c0 c1 c0",
-        "c1 90 c1 90 c1 90 c1 c0 c1 c0 c1 c0", "c1 90 01", "db ff ff ff f0 61 62 63", "dd ff ff ff ff 01", "c1 90 dd ff ff ff ff 01 02 c6 10 00 00 00 01 02 03", "c7 05 03 01", "d8 01 02", "c7 05 05 01", "c1", "92 d4 01" })
+        "c1 90 c1 90 c1 90 c1 c0 c1 c0 c1 c0", "c1 90 01", "db ff ff ff f0 61 62 63", "dd ff ff ff ff 01", "c1 90 dd ff ff ff ff 01 02 c6 10 00 00 00 01 02 03", "c7 05 03 01", "d8 01 02", "c7 05 05 01", "c1", "92 d4 01", "91 91 91 01", "92 01", "82 a1 61 91 91 01" })
       {
         LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, MaxDepth = 2 });
 

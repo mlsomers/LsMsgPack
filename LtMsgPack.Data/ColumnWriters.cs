@@ -22,8 +22,22 @@ namespace LtMsgPack.Data
     }
 
     /// <param name="key">The encoded property id, null for the array layout (only the value)</param>
+    /// <param name="check">IsDBNull before the getter, false: only for a column that had a NULL (see <see cref="NullChecks"/>)</param>
     /// <returns>false when the filters left the value out (nothing was written)</returns>
-    internal abstract bool Write(WriteContext c, IDataRecord record, byte[] key);
+    internal abstract bool Write(WriteContext c, IDataRecord record, byte[] key, bool check);
+
+    /// <summary>
+    /// A NULL: the default value of a reference type or Nullable&lt;T&gt;, left out by the default filter.
+    /// </summary>
+    protected static bool WriteNull(WriteContext c, byte[] key, bool noFilters)
+    {
+      if (!noFilters)
+        return false;
+      if (key != null)
+        c.W.Raw(key);
+      c.W.Nil();
+      return true;
+    }
 
     /// <param name="type">The field type of the column (<see cref="IDataRecord.GetFieldType"/>)</param>
     internal static ColumnWriter Create(Serializer serializer, Type type, int ordinal, bool dbReader)
@@ -41,14 +55,14 @@ namespace LtMsgPack.Data
       if (type == typeof(DateTime)) return new ColumnWriter<DateTime>(serializer, ordinal, (r, i) => r.GetDateTime(i));
       if (type == typeof(Guid)) return new ColumnWriter<Guid>(serializer, ordinal, (r, i) => r.GetGuid(i));
       if (type == typeof(char)) return new ColumnWriter<char>(serializer, ordinal, (r, i) => r.GetChar(i));
-      if (type == typeof(byte[])) return new ColumnWriter<byte[]>(serializer, ordinal, (r, i) => (byte[])r.GetValue(i));
+      if (type == typeof(byte[])) return new BoxedColumnWriter<byte[]>(serializer, ordinal);
       if (dbReader && type != typeof(object))
       {
         ColumnWriter typed = CreateFieldValue(serializer, type, ordinal);
         if (typed != null)
           return typed;
       }
-      return new ColumnWriter<object>(serializer, ordinal, (r, i) => r.GetValue(i));
+      return new BoxedColumnWriter<object>(serializer, ordinal);
     }
 
     /// <summary>
@@ -87,6 +101,11 @@ namespace LtMsgPack.Data
     private readonly FullPropertyInfo _info;
     private readonly bool _noFilters;
 
+    /// <summary>
+    /// The column had a NULL (in any call with this plan): it is checked on every row. Only ever set to true (by any thread).
+    /// </summary>
+    private bool _hadNull;
+
     internal ColumnWriter(Serializer serializer, int ordinal, Func<IDataRecord, int, T> get) : base(ordinal)
     {
       _get = get;
@@ -95,26 +114,79 @@ namespace LtMsgPack.Data
       _noFilters = serializer.Filters == FilterMode.None;
     }
 
-    internal override bool Write(WriteContext c, IDataRecord record, byte[] key)
+    internal override bool Write(WriteContext c, IDataRecord record, byte[] key, bool check)
     {
       int ordinal = Ordinal;
-      if (record.IsDBNull(ordinal)) // null: the default value of a reference type or Nullable<T>
+      if (!check && !_hadNull)
+        return WriteUnchecked(c, record, key, ordinal);
+      if (record.IsDBNull(ordinal))
       {
-        if (!_noFilters)
-          return false;
-        if (key != null)
-          c.W.Raw(key);
-        c.W.Nil();
-        return true;
+        if (!_hadNull)
+          FirstNull(record, ordinal);
+        return WriteNull(c, key, _noFilters);
       }
+      return WriteValue(c, _get(record, ordinal), key);
+    }
 
-      T value = _get(record, ordinal);
+    private bool WriteValue(WriteContext c, T value, byte[] key)
+    {
+      if (value == null) // a reader that gives null for a NULL (not a value type)
+        return WriteNull(c, key, _noFilters);
       if (key != null)
         c.W.Raw(key);
-      if (value == null)
-        c.W.Nil();
-      else
-        _handler.Write(c, value, _info);
+      _handler.Write(c, value, _info);
+      return true;
+    }
+
+    private void FirstNull(IDataRecord record, int ordinal)
+    {
+      _hadNull = true;
+      NullChecks.Learn(record, ordinal, _get);
+    }
+
+    /// <summary>
+    /// The getter without IsDBNull (apart from Write: a method with a try block is not inlined, and the checked path stays as it was).
+    /// </summary>
+    private bool WriteUnchecked(WriteContext c, IDataRecord record, byte[] key, int ordinal)
+    {
+      T value;
+      try
+      {
+        value = _get(record, ordinal);
+      }
+      catch (Exception) when (record.IsDBNull(ordinal)) // a NULL after all
+      {
+        _hadNull = true;
+        return WriteNull(c, key, _noFilters);
+      }
+      return WriteValue(c, value, key);
+    }
+  }
+
+  /// <summary>
+  /// A column read with <see cref="IDataRecord.GetValue"/> (object, byte[]): DBNull is the NULL, no IsDBNull needed.
+  /// </summary>
+  internal sealed class BoxedColumnWriter<T> : ColumnWriter where T : class
+  {
+    private readonly ValueHandler<T> _handler;
+    private readonly FullPropertyInfo _info;
+    private readonly bool _noFilters;
+
+    internal BoxedColumnWriter(Serializer serializer, int ordinal) : base(ordinal)
+    {
+      _handler = serializer.Handler<T>(null);
+      _info = new FullPropertyInfo(typeof(T));
+      _noFilters = serializer.Filters == FilterMode.None;
+    }
+
+    internal override bool Write(WriteContext c, IDataRecord record, byte[] key, bool check)
+    {
+      object value = record.GetValue(Ordinal);
+      if (value is null || value is DBNull)
+        return WriteNull(c, key, _noFilters);
+      if (key != null)
+        c.W.Raw(key);
+      _handler.Write(c, (T)value, _info);
       return true;
     }
   }

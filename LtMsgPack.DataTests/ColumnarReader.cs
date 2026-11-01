@@ -8,12 +8,14 @@ namespace LtMsgPack.DataTests
 {
   /// <summary>
   /// An in-memory DbDataReader over typed column arrays: the typed getters do not box, GetValue does (as the providers do), so the mappers' own costs show.
+  /// The typed getters give the array's value for a NULL (default or null), see <see cref="ThrowingColumnarReader"/> for one that throws as the providers do.
   /// </summary>
-  public sealed class ColumnarReader : DbDataReader
+  public class ColumnarReader : DbDataReader
   {
     private readonly string[] _names;
     private readonly Column[] _columns;
     private readonly int _rows;
+    private readonly bool _throwsOnNull;
     private int _row = -1;
 
     public abstract class Column
@@ -39,11 +41,14 @@ namespace LtMsgPack.DataTests
       internal override bool IsNull(int row) { return (Nulls != null && Nulls[row]) || Values[row] == null; }
     }
 
-    public ColumnarReader(string[] names, Column[] columns, int rows)
+    public ColumnarReader(string[] names, Column[] columns, int rows) : this(names, columns, rows, false) { }
+
+    protected ColumnarReader(string[] names, Column[] columns, int rows, bool throwsOnNull)
     {
       _names = names;
       _columns = columns;
       _rows = rows;
+      _throwsOnNull = throwsOnNull;
     }
 
     public void Reset() { _row = -1; }
@@ -59,6 +64,8 @@ namespace LtMsgPack.DataTests
     {
       if (_row == FailAtRow && ordinal >= FailFromColumn)
         throw new IOException("The connection broke.");
+      if (_throwsOnNull && _columns[ordinal].IsNull(_row))
+        throw new InvalidCastException($"Column {ordinal} is NULL, check with IsDBNull first.");
       Column<T> column = _columns[ordinal] as Column<T>;
       if (column is null)
         throw new InvalidCastException($"Column {ordinal} is a {_columns[ordinal].Type.Name}, not a {typeof(T).Name}.");
@@ -103,5 +110,21 @@ namespace LtMsgPack.DataTests
     public override int RecordsAffected { get { return -1; } }
     public override bool NextResult() { return false; }
     public override IEnumerator GetEnumerator() { return new DbEnumerator(this); }
+  }
+
+  /// <summary>
+  /// A <see cref="ColumnarReader"/> whose typed getters throw for a NULL, as the providers' do (a type of its own: the add-on learns per reader type whether they throw).
+  /// </summary>
+  public sealed class ThrowingColumnarReader : ColumnarReader
+  {
+    public ThrowingColumnarReader(string[] names, Column[] columns, int rows) : base(names, columns, rows, true) { }
+
+    public int IsDBNullCalls { get; private set; }
+
+    public override bool IsDBNull(int ordinal)
+    {
+      IsDBNullCalls++;
+      return base.IsDBNull(ordinal);
+    }
   }
 }

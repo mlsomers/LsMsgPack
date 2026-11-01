@@ -688,6 +688,155 @@ namespace LsMsgPackUnitTests
         Assert.HasCount(3, reader.ReadObject<List<SwOrder>>());
     }
 
+    /// <summary>
+    /// ReadObject of a value that is all in the buffer finds its end from the headers alone: the reader is then where reading it token by token leaves it
+    /// (a MemoryStream buffers the values, the TrickleStream gives 1-3 bytes per read). The counts of arrays and maps of known length, keys, a head's body, the next root value.
+    /// </summary>
+    [TestMethod]
+    public void ObjectsFromTheBuffer_SameStateAsTokenByToken()
+    {
+      foreach (LtMsgPackSerializer serializer in new[] { new LtMsgPackSerializer(), Plain() })
+      {
+        byte[] bytes = Write(w =>
+        {
+          w.WriteHead<List<SwOrder>>();
+          w.WriteArrayHeader(3);
+          for (int n = 1; n <= 3; n++)
+            w.WriteObject(Order(n));
+          w.WriteHead<List<SwOrder>>();
+          w.WriteArrayStart();
+          w.WriteObject(Order(4));
+          w.WriteEnd();
+          w.WriteObject(Order(5)); // a root value (with the indexed schema: its schema, then the value)
+          w.WriteObject(Order(6));
+        }, serializer);
+
+        string expected = Trace(new MsgPackStreamReader(new TrickleStream(bytes), serializer), serializer);
+        Assert.AreEqual(expected, Trace(new MsgPackStreamReader(new MemoryStream(bytes), serializer), serializer));
+        StringAssert.Contains(expected, "Customer 6");
+      }
+
+      LtMsgPackSerializer plain = Plain(); // without the indexed schema objects are read anywhere: keys and values of a map
+      byte[] map = Write(w =>
+      {
+        w.WriteMapHeader(2);
+        w.Write("a");
+        w.WriteObject(Order(1));
+        w.WriteObject(Order(2)); // a key
+        w.Write(3);
+        w.WriteMapStart();
+        w.WriteObject(Order(3));
+        w.WriteObject(Order(4));
+        w.WriteEnd();
+      }, plain);
+      Assert.AreEqual(MapTrace(new MsgPackStreamReader(new TrickleStream(map), plain)), MapTrace(new MsgPackStreamReader(new MemoryStream(map), plain)));
+    }
+
+    /// <summary>
+    /// GetValue at the start of an array or map of known length that is all in the buffer: the reader is then at its end, as reading it token by token leaves it (also the end of a head's body).
+    /// </summary>
+    [TestMethod]
+    public void ValuesFromTheBuffer_SameStateAsTokenByToken()
+    {
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer();
+      byte[] bytes = Write(w =>
+      {
+        w.WriteArrayHeader(3);
+        w.Write(1);
+        w.WriteMapHeader(1);
+        w.Write("k");
+        w.WriteArrayHeader(0);
+        w.WriteArrayHeader(2);
+        w.Write("a");
+        w.Write(2);
+        w.WriteHead<List<SwOrder>>();
+        w.WriteArrayHeader(2);
+        w.WriteObject(Order(1));
+        w.WriteObject(Order(2));
+        w.WriteObject(Order(3));
+      }, serializer);
+
+      Func<MsgPackStreamReader, string> trace = reader =>
+      {
+        StringBuilder text = new StringBuilder();
+        using (reader)
+        {
+          reader.Read(); // the outer array
+          reader.Read(); // 1
+          reader.Read(); // the map
+          object value = reader.GetValue();
+          text.Append(((KeyValuePair<object, object>[])value).Length).Append(' ').Append(reader.TokenType).Append(' ').Append(reader.Depth).Append(' ').Append(reader.Position).Append(' ').Append(reader.AtEnd).Append('|');
+          reader.Read();
+          value = reader.GetValue();
+          text.Append(string.Join(",", (object[])value)).Append(' ').Append(reader.TokenType).Append(' ').Append(reader.Depth).Append(' ').Append(reader.Position).Append(' ').Append(reader.AtEnd).Append('|');
+          reader.Read();
+          text.Append(reader.TokenType).Append(' ').Append(reader.Depth).Append('|');
+          reader.ReadHead<List<SwOrder>>();
+          reader.Read();
+          value = reader.GetValue(); // the whole body
+          text.Append(((object[])value).Length).Append(' ').Append(reader.TokenType).Append(' ').Append(reader.Depth).Append(' ').Append(reader.Position).Append('|');
+          text.Append(reader.ReadObject<SwOrder>().Customer).Append(' ').Append(reader.Read());
+        }
+        return text.ToString();
+      };
+      string expected = trace(new MsgPackStreamReader(new TrickleStream(bytes), serializer));
+      Assert.AreEqual(expected, trace(new MsgPackStreamReader(new MemoryStream(bytes), serializer)));
+      StringAssert.Contains(expected, "Customer 3 False");
+    }
+
+    private static string Trace(MsgPackStreamReader reader, LtMsgPackSerializer serializer)
+    {
+      StringBuilder text = new StringBuilder();
+      using (reader)
+      {
+        for (int table = 0; table < 2; table++)
+        {
+          reader.ReadHead<List<SwOrder>>();
+          reader.Read();
+          while (!reader.AtEnd)
+            State(text, reader, reader.ReadObject<SwOrder>());
+          reader.Read();
+          text.Append(reader.TokenType).Append(' ').Append(reader.Depth).Append('|');
+        }
+        State(text, reader, reader.ReadObject<SwOrder>());
+        State(text, reader, reader.ReadObject<SwOrder>());
+        text.Append(reader.Read());
+      }
+      return text.ToString();
+    }
+
+    private static string MapTrace(MsgPackStreamReader reader)
+    {
+      StringBuilder text = new StringBuilder();
+      using (reader)
+      {
+        reader.Read();
+        State(text, reader, reader.ReadObject<string>());
+        State(text, reader, reader.ReadObject<SwOrder>());
+        State(text, reader, reader.ReadObject<SwOrder>());
+        State(text, reader, reader.ReadObject<int>());
+        reader.Read();
+        text.Append(reader.TokenType).Append(' ').Append(reader.Depth).Append('|');
+        reader.Read();
+        text.Append(reader.TokenType).Append(' ').Append(reader.IsKey).Append('|');
+        State(text, reader, reader.ReadObject<SwOrder>());
+        Assert.IsFalse(reader.AtEnd);
+        State(text, reader, reader.ReadObject<SwOrder>());
+        Assert.IsTrue(reader.AtEnd);
+        reader.Read();
+        text.Append(reader.TokenType).Append(' ').Append(reader.Depth).Append('|');
+        reader.Read();
+        text.Append(reader.TokenType).Append(' ').Append(reader.Depth).Append('|').Append(reader.Read());
+      }
+      return text.ToString();
+    }
+
+    private static void State(StringBuilder text, MsgPackStreamReader reader, object value)
+    {
+      string shown = value is SwOrder order ? order.Customer + " " + order.Lines.Count : Convert.ToString(value);
+      text.Append(shown).Append(" depth ").Append(reader.Depth).Append(" at ").Append(reader.Position).Append(" end ").Append(reader.Depth > 0 && reader.AtEnd).Append('|');
+    }
+
     [TestMethod]
     public void ObjectWrittenWithValuesOfUnknownLength()
     {
@@ -1231,6 +1380,8 @@ namespace LsMsgPackUnitTests
       Invalid("c1 c4 a1 61 c1 c0"); // only bin chunks
       Invalid("c1 a0 c1 90 c1 c0 c1 c0"); // no escapes in chunks
       Invalid("c1 90 c1 90 c1 90 c1 c0 c1 c0 c1 c0", 2); // too deep
+      Invalid("91 91 91 01", 2); // too deep, known lengths (all in the buffer)
+      Invalid("92 01"); // cut off, known lengths
       Invalid("c1 90 01"); // cut off
       Invalid("db ff ff ff f0 61 62 63"); // claims more than there is
     }

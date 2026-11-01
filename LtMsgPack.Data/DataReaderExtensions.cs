@@ -65,11 +65,14 @@ namespace LtMsgPack.Data
       Serializer implementation = serializer.Implementation;
       List<T> rows = new List<T>();
       RowMapper<T> mapper = null;
+      bool check = true;
       while (reader.Read())
       {
         if (mapper is null)
           mapper = DataCache.Of(implementation).Mapper<T>(implementation, reader);
-        rows.Add(mapper.Map(reader));
+        else if (rows.Count == NullChecks.CheckedRows)
+          check = !NullChecks.CanSkip(reader);
+        rows.Add(mapper.Map(reader, check));
       }
       return rows;
     }
@@ -86,11 +89,16 @@ namespace LtMsgPack.Data
     private static IEnumerable<T> Enumerate<T>(Serializer serializer, IDataReader reader) where T : class
     {
       RowMapper<T> mapper = null;
+      bool check = true;
+      int count = 0;
       while (reader.Read())
       {
         if (mapper is null)
           mapper = DataCache.Of(serializer).Mapper<T>(serializer, reader);
-        yield return mapper.Map(reader);
+        else if (count == NullChecks.CheckedRows)
+          check = !NullChecks.CanSkip(reader);
+        count++;
+        yield return mapper.Map(reader, check);
       }
     }
 

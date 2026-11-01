@@ -93,14 +93,15 @@ namespace LtMsgPack.Data
       return true;
     }
 
-    internal T Map(IDataRecord record)
+    /// <param name="check">IsDBNull on every column (see <see cref="NullChecks"/>)</param>
+    internal T Map(IDataRecord record, bool check)
     {
       if (_constructor != null)
         return WithValues(record);
       T target = (T)_plan.Create();
       ColumnSetter<T>[] setters = _setters;
       for (int t = 0; t < setters.Length; t++)
-        setters[t].Set(record, target);
+        setters[t].Set(record, target, check);
       return target;
     }
 
@@ -190,7 +191,8 @@ namespace LtMsgPack.Data
     /// <summary>
     /// Sets the value of the column, leaves the property as the constructor made it for a DBNull (as for a nil in the array layout).
     /// </summary>
-    internal abstract void Set(IDataRecord record, T target);
+    /// <param name="check">IsDBNull before the getter, false: only for a column that had a NULL (see <see cref="NullChecks"/>)</param>
+    internal abstract void Set(IDataRecord record, T target, bool check);
 
     /// <param name="record">On the first row: a column of another type than the property is read with the property type's getter when the provider converts its value (e.g. SQLite's GetInt32 of an INTEGER, GetDateTime of a TEXT)</param>
     internal static ColumnSetter<T> Create(Serializer serializer, FullPropertyInfo info, IDataRecord record, Type column, int ordinal)
@@ -318,17 +320,53 @@ namespace LtMsgPack.Data
     private readonly Func<IDataRecord, int, TValue> _get;
     private readonly Action<T, TValue> _set;
 
+    /// <summary>
+    /// The column had a NULL (in any call with this mapper): it is checked on every row. Only ever set to true (by any thread).
+    /// </summary>
+    private bool _hadNull;
+
     internal TypedColumnSetter(int ordinal, Func<IDataRecord, int, TValue> get, Action<T, TValue> set) : base(ordinal)
     {
       _get = get;
       _set = set;
     }
 
-    internal override void Set(IDataRecord record, T target)
+    internal override void Set(IDataRecord record, T target, bool check)
     {
       int ordinal = Ordinal;
-      if (!record.IsDBNull(ordinal))
+      if (!check && !_hadNull)
+      {
+        SetUnchecked(record, target, ordinal);
+        return;
+      }
+      if (record.IsDBNull(ordinal))
+      {
+        if (!_hadNull)
+          FirstNull(record, ordinal);
+        return;
+      }
+      _set(target, _get(record, ordinal));
+    }
+
+    private void FirstNull(IDataRecord record, int ordinal)
+    {
+      _hadNull = true;
+      NullChecks.Learn(record, ordinal, _get);
+    }
+
+    /// <summary>
+    /// The getter without IsDBNull (apart from Set: a method with a try block is not inlined, and the checked path stays as it was).
+    /// </summary>
+    private void SetUnchecked(IDataRecord record, T target, int ordinal)
+    {
+      try
+      {
         _set(target, _get(record, ordinal));
+      }
+      catch (Exception) when (record.IsDBNull(ordinal)) // a NULL after all: the property stays as it was
+      {
+        _hadNull = true;
+      }
     }
   }
 
@@ -337,17 +375,53 @@ namespace LtMsgPack.Data
     private readonly Func<IDataRecord, int, TValue> _get;
     private readonly Action<T, TValue?> _set;
 
+    /// <summary>
+    /// The column had a NULL (in any call with this mapper): it is checked on every row. Only ever set to true (by any thread).
+    /// </summary>
+    private bool _hadNull;
+
     internal NullableColumnSetter(int ordinal, Func<IDataRecord, int, TValue> get, Action<T, TValue?> set) : base(ordinal)
     {
       _get = get;
       _set = set;
     }
 
-    internal override void Set(IDataRecord record, T target)
+    internal override void Set(IDataRecord record, T target, bool check)
     {
       int ordinal = Ordinal;
-      if (!record.IsDBNull(ordinal))
+      if (!check && !_hadNull)
+      {
+        SetUnchecked(record, target, ordinal);
+        return;
+      }
+      if (record.IsDBNull(ordinal))
+      {
+        if (!_hadNull)
+          FirstNull(record, ordinal);
+        return;
+      }
+      _set(target, _get(record, ordinal));
+    }
+
+    private void FirstNull(IDataRecord record, int ordinal)
+    {
+      _hadNull = true;
+      NullChecks.Learn(record, ordinal, _get);
+    }
+
+    /// <summary>
+    /// The getter without IsDBNull (apart from Set: a method with a try block is not inlined, and the checked path stays as it was).
+    /// </summary>
+    private void SetUnchecked(IDataRecord record, T target, int ordinal)
+    {
+      try
+      {
         _set(target, _get(record, ordinal));
+      }
+      catch (Exception) when (record.IsDBNull(ordinal)) // a NULL after all: the property stays as it was
+      {
+        _hadNull = true;
+      }
     }
   }
 
@@ -367,7 +441,7 @@ namespace LtMsgPack.Data
       _options = serializer.Options;
     }
 
-    internal override void Set(IDataRecord record, T target)
+    internal override void Set(IDataRecord record, T target, bool check)
     {
       if (TryRead(record, out object value))
         Info.SetValue(target, value);

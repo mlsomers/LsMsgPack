@@ -47,6 +47,7 @@ namespace LtMsgPack.Streaming
     private int _mark = -1;
     private bool _escaped; // escape sequences since the mark
     private readonly List<long> _counts = new List<long>(); // per value of unknown length since the mark (in the order of their starts): its number of elements, entries or bytes
+    private long[] _passing; // PassBuffered: per open array or map the values still to come in the one around it
 
     private MsgPackTokenType _token;
     private int _tokenStart;
@@ -627,8 +628,11 @@ namespace LtMsgPack.Streaming
 
       try
       {
-        while (_depth >= depth)
-          Read();
+        if (!TryEndBuffered())
+        {
+          while (_depth >= depth)
+            Read();
+        }
         Plain(_mark, _pos, out byte[] data, out int offset, out int end);
         _r.Reset(data, offset, end);
         return _r.ReadPlain(0);
@@ -692,7 +696,8 @@ namespace LtMsgPack.Streaming
       try
       {
         bool schema = withSchema && head is null && _buf[_pos] != 0xC0; // null is written without a schema
-        PassValue(depth);
+        if (!TryPassBuffered())
+          PassValue(depth);
         PassPayload();
         int schemaEnd = _pos;
         bool escapedSchema = _escaped;
@@ -700,7 +705,8 @@ namespace LtMsgPack.Streaming
         {
           if (escapedSchema)
             throw new MsgPackException("A schema cannot have values of unknown length.", _base + _mark);
-          PassValue(depth);
+          if (!TryPassBuffered())
+            PassValue(depth);
         }
         PassPayload();
 
@@ -822,6 +828,127 @@ namespace LtMsgPack.Streaming
       }
       while (_depth > depth)
         Read();
+    }
+
+    /// <summary>
+    /// <see cref="PassValue"/> of a value that is all in the buffer and has no escape sequence (most objects): its end is found from the headers alone, as <see cref="Scan"/> does,
+    /// without a token at a time; the reader is then where PassValue leaves it (the value counted as an element of the open array or map, the head's body ended at depth 0).
+    /// </summary>
+    /// <returns>false: nothing was passed (the value goes on after the buffer, has escapes, is nested too deep or is not there): PassValue reads it, and refuses what is not valid</returns>
+    private bool TryPassBuffered()
+    {
+      if (_payloadPending || (_depth > 0 && !_frames[_depth - 1].Unknown && _frames[_depth - 1].Count == 0))
+        return false;
+      int end = BufferedEnd(_pos, _maxDepth - _depth, 1);
+      if (end < 0)
+        return false;
+
+      _tokenStart = _pos;
+      _length = 0;
+      _isKey = false;
+      Element();
+      _pos = end;
+      _token = MsgPackTokenType.None;
+      if (_depth == 0 && _headState != HeadState.None) // as Read: the value at depth 0 was the body of the head
+      {
+        _headState = HeadState.None;
+        _head = null;
+      }
+      return true;
+    }
+
+    /// <summary>
+    /// The rest of the array or map of known length whose start is the current token, when it is all in the buffer without escape sequences (as <see cref="TryPassBuffered"/>):
+    /// the reader is then at its end, as reading to it token by token leaves it. false: nothing was read.
+    /// </summary>
+    private bool TryEndBuffered()
+    {
+      Frame frame = _frames[_depth - 1];
+      if (frame.Unknown || (frame.Kind != FrameKind.Array && frame.Kind != FrameKind.Map))
+        return false;
+      int end = BufferedEnd(_pos, _maxDepth - _depth, frame.Count);
+      if (end < 0)
+        return false;
+
+      _pos = end;
+      _tokenStart = end;
+      _length = 0;
+      _isKey = false;
+      _depth--;
+      _token = frame.Kind == FrameKind.Map ? MsgPackTokenType.MapEnd : MsgPackTokenType.ArrayEnd;
+      if (_depth == 0 && _headState != HeadState.None) // as Read: the end of the head's body
+      {
+        _headState = HeadState.None;
+        _head = null;
+      }
+      return true;
+    }
+
+    /// <param name="values">The values from <paramref name="at"/> on to pass (1, or the rest of an array or map: keys and values)</param>
+    /// <returns>Where the values at <paramref name="at"/> end, -1 when they are not all buffered, have an escape sequence or are nested deeper than <paramref name="maxDepth"/></returns>
+    private int BufferedEnd(int at, int maxDepth, long values)
+    {
+      long[] open = _passing;
+      int depth = 0;
+      long remaining = values; // the values still to come at this depth
+      int end = _end;
+      byte[] buf = _buf;
+      byte[] kinds = ScanKinds;
+      byte[] headers = TokenLengths;
+      while (true)
+      {
+        if (remaining == 0)
+        {
+          if (depth == 0)
+            return at;
+          remaining = open[--depth];
+          continue;
+        }
+        if (at >= end)
+          return -1;
+        byte b = buf[at];
+        int token = headers[b];
+        if (end - at < token)
+          return -1;
+
+        long size; // with the data of a str, bin or extension
+        long count; // of an array or map
+        switch (kinds[b])
+        {
+          case KindFixStr: size = 1 + (b & 0x1F); break;
+          case KindStr8: size = 2 + buf[at + 1]; break;
+          case KindStr16: size = 3 + U16(at + 1); break;
+          case KindStr32: size = 5L + U32(at + 1); break;
+          case KindExt8: size = 3 + buf[at + 1]; break;
+          case KindExt16: size = 4 + U16(at + 1); break;
+          case KindExt32: size = 6L + U32(at + 1); break;
+          case KindFixArray: count = b & 0x0F; goto Container;
+          case KindFixMap: count = 2 * (b & 0x0F); goto Container;
+          case KindArray16: count = U16(at + 1); goto Container;
+          case KindArray32: count = U32(at + 1); goto Container;
+          case KindMap16: count = 2L * U16(at + 1); goto Container;
+          case KindMap32: count = 2L * U32(at + 1); goto Container;
+          case KindEscape: return -1;
+          default: size = token; break; // the whole token
+        }
+        if (size > end - at)
+          return -1;
+        at += (int)size;
+        remaining--;
+        continue;
+
+      Container:
+        if (depth >= maxDepth)
+          return -1;
+        if (open is null || depth == open.Length)
+        {
+          Array.Resize(ref _passing, depth == 0 ? 8 : depth * 2);
+          open = _passing;
+        }
+        at += token;
+        open[depth++] = remaining - 1;
+        remaining = count;
+      }
     }
 
     /// <summary>
