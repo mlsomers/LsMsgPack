@@ -1,10 +1,21 @@
 # LsMsgPack
-MsgPack serializers for .NET classes (like the xml and json serializers), with an optional indexed schema and type ids for polymorphic object models, ASP.NET formatters, and a MsgPack debugging and validation tool (MsgPack Explorer) that also works as a Fiddler plugin, a Visual Studio debugger visualizer and a VS Code extension.
-
-More info about MsgPack Explorer (and screenshots) can be found at:
-http://www.infotopie.nl/open-source/msgpack-explorer
+Fast MessagePack (MsgPack) serializer for .NET classes (like the xml and json serializers), with an optional indexed schema and type ids for polymorphic object models, ASP.NET Core / Web API / MVC formatters, a TypeScript client, and a MsgPack debugging and validation tool (MsgPack Explorer) that also works as a Fiddler plugin, a Visual Studio debugger visualizer and a VS Code extension.
 
 [![.NET](https://github.com/mlsomers/LsMsgPack/actions/workflows/dotnet.yml/badge.svg)](https://github.com/mlsomers/LsMsgPack/actions/workflows/dotnet.yml)
+
+Start here
+----------
+
+```
+dotnet add package LtMsgPack
+```
+
+```csharp
+byte[] data = LtMsgPack.LtMsgPackSerializer.Default.Serialize(order);
+Order copy = LtMsgPack.LtMsgPackSerializer.Default.Deserialize<Order>(data);
+```
+
+**LtMsgPack** is the serializer to use: about 4x as fast as System.Text.Json, with 35-47% smaller payloads. The `LsMsgPack` package (the repository's name) is the slower one that builds a tree of MsgPack items for inspecting data, see [which package](#which-package). For ASP.NET, add [a formatter](#aspnet-integration) instead, it brings LtMsgPack along.
 
 **Not sure where to start?** The [setup wizard](docs/Wizard/README.md) asks a few questions (files or network, who reads the data, JavaScript or not) and ends with the packages, settings and code for your case.
 
@@ -96,7 +107,7 @@ Data that doesn't match your classes exactly (older or newer versions, a misspel
 
 Standalone Debugger (for Windows)
 ---------------------------------
-Download the zip file from the [latest release](https://github.com/mlsomers/LsMsgPack/releases). It can open MsgPack files or read data from the clipboard. This UI is used in the Visual Studio and Fiddler integrations.
+Download the zip file from the [latest release](https://github.com/mlsomers/LsMsgPack/releases). It can open MsgPack files or read data from the clipboard. This UI is used in the Visual Studio and Fiddler integrations. More info and screenshots: [infotopie.nl/open-source/msgpack-explorer](http://www.infotopie.nl/open-source/msgpack-explorer).
 
 ![Screenshot of the debugging user interface](https://github.com/mlsomers/LsMsgPack/raw/HEAD/docs/WinformsExplorer.png "MsgPack explorer")
 
