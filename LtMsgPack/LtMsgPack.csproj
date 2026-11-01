@@ -10,7 +10,8 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <RootNamespace>LtMsgPack</RootNamespace>
     <PackageId>LtMsgPack</PackageId>
-    <Description>Fast MsgPack serializer for .NET classes, writes and reads the same data as LsMsgPack (indexed schema, schema references, type ids for polymorphic object models) without an intermediate item tree.</Description>
+    <Description>Fast MessagePack (MsgPack) serializer for .NET classes, used like the JSON serializers: 3-4x as fast as System.Text.Json with 35-47% smaller payloads. Polymorphism with type ids, an optional indexed schema, data of older and newer class versions still loads, streaming, presets for MessagePack-CSharp and Nerdbank.MessagePack, and a source generator for NativeAOT and trimming.</Description>
+    <PackageTags>$(PackageTags);binary-serialization;high-performance;polymorphism;schema;streaming;source-generator;aot</PackageTags>
   </PropertyGroup>
 
   <!-- Trimmed and NativeAOT apps get warnings where their use of the library is unsafe (the analyzers only run for .NET targets; the .NET Standard builds have the same annotations, polyfilled in Core) -->

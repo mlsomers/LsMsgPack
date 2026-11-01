@@ -7,7 +7,8 @@
     <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <PackageId>LsMsgPack.AspNet.WebApi</PackageId>
-    <Description>MsgPack MediaTypeFormatter (LtMsgPack) for ASP.NET Web API 2 and for HttpClient (ObjectContent / ReadAsAsync) on any platform (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
+    <Description>MessagePack (MsgPack) MediaTypeFormatter for ASP.NET Web API 2 and for HttpClient (ObjectContent / ReadAsAsync) on any platform, on the fast LtMsgPack serializer (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
+    <PackageTags>$(PackageTags);aspnet;webapi;asp.net-web-api;httpclient;mediatypeformatter;formatter</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

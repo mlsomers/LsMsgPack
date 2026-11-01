@@ -1,0 +1,45 @@
+# LsMsgPack
+
+> Fast MessagePack (MsgPack) serializer for .NET classes, used like the XML and JSON serializers, with an optional indexed schema and type ids for polymorphic object models, ASP.NET Core / Web API / MVC formatters, a TypeScript client, and MsgPack debugging tools (MsgPack Explorer for Windows, Fiddler, Visual Studio, VS Code, and an MCP server for AI agents). Apache-2.0, packages on nuget.org and npm.
+
+Key facts:
+
+- Use the `LtMsgPack` package to serialize: `dotnet add package LtMsgPack`, then `byte[] data = LtMsgPackSerializer.Default.Serialize(order);` and `Order copy = LtMsgPackSerializer.Default.Deserialize<Order>(data);` (namespace `LtMsgPack`). On the invoice benchmark it writes about 3-4x and reads about 4x as fast as System.Text.Json, with 35-47% smaller payloads.
+- The `LsMsgPack` package (the repository's name) writes and reads the same bytes but builds a tree of MsgPack items, for inspecting data: slower, only use it for that.
+- ASP.NET Core: `dotnet add package LsMsgPack.AspNetCore`, then `services.AddControllers().AddLsMsgPackSerializerFormatters();` (minimal APIs: `AddLsMsgPack()` and `MsgPackResults.MsgPack(value)`). Media types `application/msgpack`, `application/x-msgpack` (plain MsgPack) and `application/x-lsmsgpack` (indexed schema with type ids).
+- Polymorphism needs no attributes: a type id is written where a value's type differs from the declared type. Data written by older or newer versions of the classes still loads.
+- Presets for exchanging data with MessagePack-CSharp, Nerdbank.MessagePack and non-.NET libraries: `LtMsgPackPresets.MessagePackCSharp()`, `Nerdbank()`, `Generic()`.
+- Targets .NET Standard 2.0 and 2.1 (.NET Framework 4.6.2+, .NET, MAUI, Avalonia...) and .NET 8; a source generator covers NativeAOT, Blazor WebAssembly and trimming.
+
+## Getting started
+
+- [README](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/README.md): overview, which package to use, the NuGet packages and how they depend on each other
+- [Setup wizard](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Wizard/README.md): a few questions (files or network, who reads the data, JavaScript or not) leading to the packages, settings and code for a case
+- [LtMsgPack package](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/LtMsgPack/README.md): the fast serializer, usage, settings, presets, source generator, untrusted data
+- [Client applications](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/ClientApps.md): saving and loading files and calling web services from WinForms, WPF, MAUI and Avalonia apps
+
+## Docs
+
+- [Web formatters](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/WebFormatters.md): ASP.NET Core, Web API 2 / HttpClient and MVC 5 formatters, settings per media type, schema negotiation
+- [Schema, type ids and polymorphism](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/schema.md): how objects look on the wire, the indexed schema, type ids, what each option costs
+- [Compatibility](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Compatibility.md): settings to exchange data with MessagePack-CSharp, Nerdbank.MessagePack, Python, JavaScript and others, tested by the interop tests
+- [Source generator](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/SourceGenerator.md): compile-time plans for NativeAOT, WebAssembly AOT, iOS and trimming
+- [Streaming](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Streaming.md): MsgPackStreamWriter and MsgPackStreamReader, values of unknown length, tables with one schema, async reading
+- [Data readers](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/DataReader.md): LtMsgPack.Data, ADO.NET result sets and table dumps as MsgPack streams, dumps read back as a DbDataReader
+- [Reading differences](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/ReadDifferences.md): finding out what didn't match between the data and the classes while reading
+- [Security](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/security.md): type injection through type ids and how to restrict the types data can create
+- [Analyzers](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Analyzers.md): LSMP001-009, values lost to defaults, places where data picks the type
+- [TypeScript client](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/TypeScriptClient.md): @lsmsgpack/client reads and writes application/x-lsmsgpack in the browser or Node, complete objects, polymorphism
+- [TypeScript models](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/TypeScriptModels.md): lsmsgpack-ts generates TypeScript classes and schemas for the .NET models of a server
+
+## Tools
+
+- [MCP server](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Mcp.md): lsmsgpack-mcp (`dotnet tool install -g LsMsgPack.Mcp`) decodes MsgPack for AI agents and reads MsgPack bytes from variables of a program paused in the VS Code or Visual Studio debugger
+- [VS Code extension](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/LsMsgPackVsCode/README.md): MsgPack Explorer for VS Code, opens MsgPack files and debugger variables
+- [MsgPack Explorer](http://www.infotopie.nl/open-source/msgpack-explorer): the Windows debugger, also a Fiddler inspector and a Visual Studio debugger visualizer
+
+## Optional
+
+- [Architecture](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Architecture.md): the projects, how the serializers work, class diagrams
+- [LsMsgPack package](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/LsMsgPackNetStandard/README.md): the item-tree serializer for inspecting data
+- [npm package](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/clients/typescript/README.md): @lsmsgpack/client

@@ -7,7 +7,8 @@
     <TargetFramework>net462</TargetFramework>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <PackageId>LsMsgPack.AspNet.Mvc</PackageId>
-    <Description>MsgPack model binding (LtMsgPack) and action result for ASP.NET MVC 5 controllers on .NET Framework (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
+    <Description>MessagePack (MsgPack) model binding and action result for ASP.NET MVC 5 controllers on .NET Framework, on the fast LtMsgPack serializer (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
+    <PackageTags>$(PackageTags);aspnet;mvc;asp.net-mvc;mvc5;modelbinder</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>

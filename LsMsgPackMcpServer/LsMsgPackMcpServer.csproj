@@ -20,7 +20,7 @@
     <ToolCommandName>lsmsgpack-mcp</ToolCommandName>
     <PackageId>LsMsgPack.Mcp</PackageId>
     <Title>LsMsgPack MCP server</Title>
-    <PackageTags>msgpack;messagepack;mcp;debugger;ai</PackageTags>
+    <PackageTags>msgpack;messagepack;mcp;mcp-server;model-context-protocol;dotnet-tool;debugger;ai</PackageTags>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
