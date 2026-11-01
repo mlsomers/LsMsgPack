@@ -167,9 +167,9 @@ namespace LtMsgPack.Streaming
     }
 
     /// <summary>
-    /// The current value is buffered: all of an array, map, str or bin that starts at the current token, or the data of a str, bin or extension.
+    /// The current value is buffered: all of an array, map, str or bin that starts at the current token, or the data of a str, bin or extension (also for LtMsgPack.Data, before <see cref="GetWhole"/>).
     /// </summary>
-    private Task BufferCurrentAsync(CancellationToken cancellationToken)
+    internal Task BufferCurrentAsync(CancellationToken cancellationToken)
     {
       if (IsStart(_token))
       {

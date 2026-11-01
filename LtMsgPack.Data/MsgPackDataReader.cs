@@ -2,6 +2,7 @@
 using LsMsgPack.Meta;
 using LsMsgPack.Streaming;
 using LtMsgPack.IO;
+using LtMsgPack.Reading;
 using LtMsgPack.Streaming;
 using System;
 using System.Collections;
@@ -27,13 +28,14 @@ namespace LtMsgPack.Data
     private readonly bool _leaveOpen;
     private readonly bool _single; // opened at an index entry: that table only
     private readonly LtMsgPackOptions _options;
+    private readonly ReadContext _context; // reads the columns of a row (only leaf values: the reader and the options for the conversions)
     private MsgPackStreamEntry _entry;
     private string _tableName;
     private string[] _names = new string[0];
     private Type[] _types = new Type[0];
     private string[] _dataTypeNames = new string[0];
     private Dictionary<string, int> _ordinals;
-    private object[] _values;
+    private ColumnValue[] _columns = new ColumnValue[0];
     private bool _inTable; // the rows' array is open
     private bool _hasRows;
     private bool _onRow;
@@ -59,6 +61,7 @@ namespace LtMsgPack.Data
       _reader = reader ?? throw new ArgumentNullException(nameof(reader));
       _leaveOpen = leaveOpen;
       _options = reader.Implementation.Options;
+      _context = new ReadContext(reader.Implementation) { R = new MsgPackReader(null, 0, 0, _options), SlowSettings = _options, Depth = 1 }; // depth 1: the columns are in the row
       _entry = entry;
       _single = entry != null;
       if (!open)
@@ -98,6 +101,10 @@ namespace LtMsgPack.Data
       if (!body || (_reader.TokenType != MsgPackTokenType.ArrayStart))
         throw new MsgPackException($"A table is a head followed by an array of rows, the head is followed by {(body ? _reader.TokenType.ToString() : "the end of the stream")}.", _reader.TokenStart);
       Columns();
+      ColumnValue[] columns = new ColumnValue[_types.Length];
+      for (int t = 0; t < columns.Length; t++)
+        columns[t] = ColumnValue.Create(_reader.Implementation, _types[t]);
+      _columns = columns;
       _inTable = true;
       _onRow = false;
     }
@@ -247,6 +254,7 @@ namespace LtMsgPack.Data
       _names = new string[0];
       _types = new Type[0];
       _dataTypeNames = new string[0];
+      _columns = new ColumnValue[0];
       _ordinals = null;
       _hasRows = false;
       _tableName = null;
@@ -267,7 +275,7 @@ namespace LtMsgPack.Data
         return false;
       }
       _reader.Read();
-      SetRow(_reader.GetValue());
+      ReadRow(false);
       return true;
     }
 
@@ -282,48 +290,72 @@ namespace LtMsgPack.Data
         return false;
       }
       await _reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-      SetRow(await _reader.GetValueAsync(cancellationToken).ConfigureAwait(false));
+      if (_reader.TokenType == MsgPackTokenType.ArrayStart || _reader.TokenType == MsgPackTokenType.MapStart)
+        await _reader.BufferCurrentAsync(cancellationToken).ConfigureAwait(false);
+      ReadRow(true);
       return true;
     }
 
     /// <summary>
-    /// The values of a row (an array in the column order, or a map of positions or names), converted to the column types.
+    /// The values of the row at the current token (an array in the column order, or a map of positions or names; nil: all NULL), each read as its column's type.
     /// </summary>
-    private void SetRow(object row)
+    /// <param name="buffered">The row was buffered by the asynchronous read</param>
+    private void ReadRow(bool buffered)
     {
-      int count = _names.Length;
-      if (_values is null || _values.Length != count)
-        _values = new object[count];
-      for (int t = 0; t < count; t++)
-        _values[t] = DBNull.Value;
+      _onRow = false;
+      ColumnValue[] columns = _columns;
+      for (int t = columns.Length - 1; t >= 0; t--)
+        columns[t].IsNull = true;
 
-      if (row is object[] items)
+      MsgPackTokenType token = _reader.TokenType;
+      if (token == MsgPackTokenType.ArrayStart || token == MsgPackTokenType.MapStart)
       {
-        for (int t = Math.Min(count, items.Length) - 1; t >= 0; t--) // trimmed nils at the end stay DBNull
-          _values[t] = Converted(items[t], t);
-      }
-      else if (row is KeyValuePair<object, object>[] pairs)
-      {
-        for (int t = 0; t < pairs.Length; t++)
+        _reader.GetWhole(out byte[] data, out int offset, out int end, buffered);
+        MsgPackReader r = _context.R;
+        r.Reset(data, offset, end);
+        if (token == MsgPackTokenType.ArrayStart)
         {
-          int ordinal = pairs[t].Key is string name ? IndexOf(name) : IsInteger(pairs[t].Key) ? Convert.ToInt32(pairs[t].Key, CultureInfo.InvariantCulture) : -1;
-          if (ordinal >= 0 && ordinal < count)
-            _values[ordinal] = Converted(pairs[t].Value, ordinal);
+          int count = Math.Min(r.TryReadArrayHeader(), columns.Length); // trimmed nils at the end stay NULL, values after the last column are not read
+          for (int t = 0; t < count; t++)
+            ReadColumn(r, columns[t]);
+        }
+        else
+        {
+          int count = r.TryReadMapHeader();
+          for (int t = 0; t < count; t++)
+          {
+            int ordinal = KeyOrdinal(r);
+            if ((uint)ordinal < (uint)columns.Length)
+              ReadColumn(r, columns[ordinal]);
+            else
+              r.Skip(1);
+          }
         }
       }
-      else if (row != null)
-        throw new MsgPackException($"A row is an array or a map, not a {row.GetType().Name}.", _reader.TokenStart);
+      else if (token != MsgPackTokenType.Nil)
+        throw new MsgPackException($"A row is an array or a map, not a {token}.", _reader.TokenStart);
       _onRow = true;
     }
 
-    private object Converted(object value, int ordinal)
+    private void ReadColumn(MsgPackReader r, ColumnValue column)
     {
-      if (value is null)
-        return DBNull.Value;
-      Type type = _types[ordinal];
-      if (type == typeof(object) || type.IsInstanceOfType(value))
-        return value;
-      return ValueConverter.ConvertDeserializeValue(value, type, _options, null);
+      if (r.TryReadNil())
+        return;
+      column.Read(_context);
+      column.IsNull = false;
+    }
+
+    /// <summary>
+    /// The column of a key of a map row (a position or a name), -1 for none.
+    /// </summary>
+    private int KeyOrdinal(MsgPackReader r)
+    {
+      if (r.TryReadInt64(out long position))
+        return position >= 0 && position < _columns.Length ? (int)position : -1;
+      if (r.TryReadString(out string name))
+        return IndexOf(name);
+      r.Skip(1);
+      return -1;
     }
 
     private int IndexOf(string name)
@@ -334,21 +366,29 @@ namespace LtMsgPack.Data
       return -1;
     }
 
-    private object Value(int ordinal)
+    private ColumnValue Column(int ordinal)
     {
       if (!_onRow)
         throw new InvalidOperationException("The reader is not on a row: call Read first.");
-      if ((uint)ordinal >= (uint)_values.Length)
-        throw new IndexOutOfRangeException($"There is no column {ordinal}, the table has {_values.Length}.");
-      return _values[ordinal];
+      if ((uint)ordinal >= (uint)_columns.Length)
+        throw new IndexOutOfRangeException($"There is no column {ordinal}, the table has {_columns.Length}.");
+      return _columns[ordinal];
     }
 
     /// <summary>
-    /// The value as <typeparamref name="T"/>: the column's value, or converted as the serializer converts values.
+    /// The value as <typeparamref name="T"/>: the column's value when the column has that type, otherwise converted as the serializer converts values.
     /// </summary>
     private T As<T>(int ordinal)
     {
-      object value = Value(ordinal);
+      ColumnValue column = Column(ordinal);
+      if (column is ColumnValue<T> typed && !column.IsNull)
+        return typed.Value;
+      return Converted<T>(column, ordinal);
+    }
+
+    private T Converted<T>(ColumnValue column, int ordinal)
+    {
+      object value = Boxed(column);
       if (value is T typed)
         return typed;
       if (value is DBNull)
@@ -356,17 +396,22 @@ namespace LtMsgPack.Data
       return (T)ValueConverter.ConvertDeserializeValue(value, typeof(T), _options, null);
     }
 
-    public override object GetValue(int ordinal) { return Value(ordinal); }
+    private static object Boxed(ColumnValue column)
+    {
+      return column.IsNull ? DBNull.Value : column.Boxed() ?? DBNull.Value;
+    }
+
+    public override object GetValue(int ordinal) { return Boxed(Column(ordinal)); }
 
     public override int GetValues(object[] values)
     {
       int count = Math.Min(values.Length, _names.Length);
       for (int t = 0; t < count; t++)
-        values[t] = Value(t);
+        values[t] = Boxed(Column(t));
       return count;
     }
 
-    public override bool IsDBNull(int ordinal) { return Value(ordinal) is DBNull; }
+    public override bool IsDBNull(int ordinal) { return Column(ordinal).IsNull; }
     public override T GetFieldValue<T>(int ordinal) { return As<T>(ordinal); }
     public override bool GetBoolean(int ordinal) { return As<bool>(ordinal); }
     public override byte GetByte(int ordinal) { return As<byte>(ordinal); }

@@ -1,4 +1,5 @@
 ﻿using Dapper;
+using LsMsgPack.Streaming;
 using LtMsgPack.Data;
 using LtMsgPack.Streaming;
 using Microsoft.Data.Sqlite;
@@ -174,6 +175,47 @@ namespace LtMsgPack.DataTests
     /// <summary>
     /// The rows written while they are read (no buffering), to a stream that keeps nothing.
     /// </summary>
+    /// <summary>
+    /// A dump of the invoices (in memory, with an index) read back with <see cref="MsgPackDataReader"/>: the reader's own costs.
+    /// </summary>
+    [TestMethod]
+    public void DumpReader()
+    {
+      List<InvoiceRow> rows = Data.Invoices(RowCount);
+      LtMsgPackSerializer lt = new LtMsgPackSerializer();
+      MemoryStream dump = new MemoryStream();
+      using (MsgPackStreamWriter writer = new MsgPackStreamWriter(dump, lt, leaveOpen: true, index: new MsgPackStreamIndexOptions()))
+        writer.WriteTable(Data.InvoiceReader(rows), "Invoices");
+      byte[] bytes = dump.ToArray();
+      MsgPackStreamEntry entry;
+      using (MsgPackStreamReader reader = new MsgPackStreamReader(new MemoryStream(bytes), lt))
+        entry = reader.ReadIndexes()[0].Entries[0];
+      object[] values = new object[Data.InvoiceNames.Length];
+      Func<MsgPackDataReader> sequential = () => new MsgPackDataReader(new MsgPackStreamReader(new MemoryStream(bytes), lt));
+      Func<MsgPackDataReader> atEntry = () => new MsgPackDataReader(new MsgPackStreamReader(new MemoryStream(bytes), lt), entry);
+
+      Report("MsgPackDataReader over a dump in memory, " + RowCount + " invoice rows of 10 columns", new[]
+      {
+        new Case() { Name = "Read only, at the entry", Run = () => { using (MsgPackDataReader r = atEntry()) { int n = 0; while (r.Read()) n++; return n; } } },
+        new Case() { Name = "GetValues, sequentially", Run = () => { using (MsgPackDataReader r = sequential()) { int n = 0; while (r.Read()) n += r.GetValues(values); return n; } } },
+        new Case() { Name = "GetValues, at the entry", Run = () => { using (MsgPackDataReader r = atEntry()) { int n = 0; while (r.Read()) n += r.GetValues(values); return n; } } },
+        new Case() { Name = "typed getters, at the entry", Run = () => { using (MsgPackDataReader r = atEntry()) return HandWritten(r); } },
+        new Case() { Name = "ReadRows<T>, at the entry", Run = () => { using (MsgPackDataReader r = atEntry()) return lt.ReadRows<InvoiceRow>(r); } },
+        new Case() { Name = "ReadAsync + GetValues, entry", Run = () => ReadAllAsync(atEntry(), values).GetAwaiter().GetResult() },
+      });
+    }
+
+    private static async System.Threading.Tasks.Task<int> ReadAllAsync(MsgPackDataReader reader, object[] values)
+    {
+      using (reader)
+      {
+        int n = 0;
+        while (await reader.ReadAsync())
+          n += reader.GetValues(values);
+        return n;
+      }
+    }
+
     private static long WriteTable(LtMsgPackSerializer serializer, IDataReader reader)
     {
       using (MsgPackStreamWriter writer = new MsgPackStreamWriter(Stream.Null, serializer))

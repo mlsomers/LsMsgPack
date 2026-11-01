@@ -76,7 +76,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 - `new MsgPackDataReader(streamReader, entry)` reads the table of an index entry. It seeks there, so it needs a stream that seeks.
 - **Column names** come from the schema. `TableName` is the entry's identifier, otherwise the name of the rows in the schema (the table's name, as `WriteTable` writes it).
 - **Column types**: the exact types of the entry's metadata, when the reader was opened at an entry. Otherwise the kinds of schema version 2: `int` is an `Int32`, `long` an `Int64`, `float` a `Double`, `datetime` a `DateTime`... Otherwise (schema version 1) `object`, with the values as the serializer reads them into object. The data never picks a type: the types come from a fixed list of framework types.
-- **Values** are converted to the column type as the serializer converts values. The typed getters convert too (`GetInt32` of a `long` column).
+- **Values** are read as the column type, as the serializer reads a property of that type (the same formats and conversions), without boxing: a typed getter of the column's type returns the value as it was read, `GetValue` boxes it. A typed getter of another type converts (`GetInt32` of a `long` column).
 
 ## Rows into classes
 
@@ -143,3 +143,4 @@ Measured on an i7-7700K with .NET 8 in Release, per row, best of 5 passes (`Benc
 - **With a real provider** the provider takes most of the time, and `ReadRows`, `SerializeRows` and `WriteTable` cost about what a hand-written loop costs.
 - **NULL checks**: SQLite's `IsDBNull` is a native call of about 65 ns per column, and its typed getters check again. After the first 64 rows of a call, a column that had no NULL yet is read with its typed getter alone, when the reader's getters throw for a NULL, as the providers' getters do (SQLite, SqlClient, Npgsql...). Such an exception is checked with `IsDBNull`, so a NULL that comes later is still a NULL, also in a column the provider calls NOT NULL (the outer side of a join). That column is then checked on every row. Whether a reader type's getters throw is tried once, at the first NULL it has; a reader whose getters return a value for a NULL (0, null) is checked on every row. The provider's schema (`GetSchemaTable`'s `AllowDBNull`) is not used: on SQLite it takes about 10 ms per query, and it says NOT NULL for the outer side of a join.
 - **Values the provider converts**: on SQLite with dates and decimals stored as TEXT the provider parses the text for both: `ReadRows` 3.1 µs per row, Dapper 3.7 µs.
+- **`MsgPackDataReader`** over a dump in memory (the invoices, opened at the index entry): `Read` alone 250 ns per row, with `GetValues` 415 ns (boxed), `ReadAsync` + `GetValues` 525 ns. The typed getters cost 5-12 ns each.

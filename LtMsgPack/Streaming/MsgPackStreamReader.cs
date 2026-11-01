@@ -616,6 +616,37 @@ namespace LtMsgPack.Streaming
     /// </summary>
     private object ReadWhole()
     {
+      WholeValue(out byte[] data, out int offset, out int end);
+      _r.Reset(data, offset, end);
+      return _r.ReadPlain(0);
+    }
+
+    /// <summary>
+    /// For LtMsgPack.Data (a row read typed, column by column): the array or map that starts at the current token, framed whole: the reader is then at its end.
+    /// </summary>
+    /// <param name="data">The value without escape sequences, from <paramref name="offset"/> to <paramref name="end"/>: valid until the next read</param>
+    /// <param name="buffered">The value was buffered by <see cref="BufferCurrentAsync"/> (the asynchronous read)</param>
+    internal void GetWhole(out byte[] data, out int offset, out int end, bool buffered)
+    {
+      ThrowIfDisposed();
+      if (_token != MsgPackTokenType.ArrayStart && _token != MsgPackTokenType.MapStart)
+        throw new InvalidOperationException($"The current token is {_token}, not the start of an array or map.");
+      _noIo = buffered;
+      try
+      {
+        WholeValue(out data, out offset, out end);
+      }
+      finally
+      {
+        _noIo = false;
+      }
+    }
+
+    /// <summary>
+    /// The array, map, str or bin that starts at the current token, framed whole and without escape sequences (see <see cref="Plain"/>): the reader is then at its end.
+    /// </summary>
+    private void WholeValue(out byte[] data, out int offset, out int end)
+    {
       int depth = _depth;
       _mark = _tokenStart;
       _escaped = _frames[_depth - 1].Unknown;
@@ -633,9 +664,7 @@ namespace LtMsgPack.Streaming
           while (_depth >= depth)
             Read();
         }
-        Plain(_mark, _pos, out byte[] data, out int offset, out int end);
-        _r.Reset(data, offset, end);
-        return _r.ReadPlain(0);
+        Plain(_mark, _pos, out data, out offset, out end);
       }
       finally
       {
