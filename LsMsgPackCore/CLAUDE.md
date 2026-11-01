@@ -1,9 +1,9 @@
-# LsMsgPack.Core
+﻿# LsMsgPack.Core
 
 The part of the format and behavior both serializers share (`LsMsgPack` = `LsMsgPackNetStandard/`, `LtMsgPack`). Same namespaces as LsMsgPack (`LsMsgPack.*`).
 
 - Contents: `MsgPackMediaTypes` (`ToPlain<T>` works for both libraries' settings), `MsgPackTypes` (`CacheAssemblyTypes`, the serializers' methods of that name delegate), `MsgPackOptions` (the format settings, abstract; LsMsgPack's `MsgPackSettings` adds custom extensions, the KEEPTRACK settings and buffers; `LtMsgPackOptions` the Lt options), `MsgPackTypeId`, `MsgPackException`, `Meta/` (`FullPropertyInfo`, `PropertyAccessor`, `TypeResolver`, `CollectionInfo`, `Instances`, `ObjectConstructor`, `ByteWriter`, `NumericTypes`, `MapConversionEqualityComparer`, `SerializationRules` (writing decisions: type ids, collections), `ValueConverter` (converting unpacked values), `FrameworkTypeInfo`), `TypeResolving/` (interfaces, attributes, filters, resolvers, `IndexedSchemaTypeResolver`), `Schema/`, `Differences/`, `Streaming/` (escape codes, the stream index model), `Generated/` (the source generator's contract, see `LtMsgPack.Generator/CLAUDE.md`).
-- Core must not reference LsMsgPack: shared helpers live here and the old LsMsgPack members delegate (`MsgPackItem.SwapEndianChoice`, `MpString.DefaultEncoding` → `MsgPackOptions.StringEncoding`, `MsgPackMeta.NumericTypes`, the header writers in `ByteWriter`). Internals are visible to `LsMsgPack`, `LtMsgPack`, `LsMsgPackUnitTests` (and `LsMsgPackTs`). Resolver and filter interfaces take `MsgPackOptions`.
+- Core must not reference LsMsgPack: shared helpers live here and the old LsMsgPack members delegate (`MsgPackItem.SwapEndianChoice`, `MpString.DefaultEncoding` → `MsgPackOptions.StringEncoding`, `MsgPackMeta.NumericTypes`, the header writers in `ByteWriter`). Internals are visible to `LsMsgPack`, `LtMsgPack`, `LtMsgPack.Data` (the data reader add-on: `DescribedSchema.WriteColumns`, `SchemaStore.AddWritten`, `ValueConverter`, `ObjectConstructor`), `LsMsgPackUnitTests` (and `LsMsgPackTs`). Resolver and filter interfaces take `MsgPackOptions`.
 - Two internal virtuals of the options are used by the described schema: `HasCustomExtension` and `SerializePlainValue`.
 
 ## Trim and AOT annotations (Core and LtMsgPack)

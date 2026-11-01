@@ -55,6 +55,7 @@ namespace LtMsgPack.Streaming
     private bool _disposed;
     private HeadState _headState;
     private Serializer.WriterHead _head; // null without the indexed schema
+    private bool _schemaHead; // the head is a schema the caller made (WriteHead(byte[]...): rows of a data reader), its body has no objects of the serializer
     private readonly IndexState _ix; // null without an index
     private bool _faulted; // writing to the stream failed: Dispose writes no index after it
     private readonly bool _asynchronous; // the stream is only written by the async methods
@@ -658,6 +659,8 @@ namespace LtMsgPack.Streaming
     {
       ThrowIfDisposed();
       bool body = _depth == 0 ? _headState == HeadState.AwaitingBody : _headState == HeadState.InBody;
+      if (body && _schemaHead)
+        throw new InvalidOperationException("The body of this head has no classes (rows of a data reader): its values are written as values, not as objects.");
       head = body ? _head : null;
       if (!body && _depth > 0 && _options._useInexedSchema)
         throw new InvalidOperationException($"With the indexed schema an object is two values (its schema or a reference to it, then the object): {nameof(WriteObject)} writes it as a root value of the stream ({nameof(Depth)} 0). To write objects in an array or map, write the schema once before it with {nameof(WriteHead)}, or use a serializer without the indexed schema.");
@@ -710,6 +713,7 @@ namespace LtMsgPack.Streaming
         throw new InvalidOperationException("The head written before still waits for its body (the next root value).");
 
       _head = null;
+      _schemaHead = false;
       if (_options._useInexedSchema)
       {
         Serializer.WriterHead head = prepared ?? _serializer.PrepareHead(root);
@@ -722,6 +726,63 @@ namespace LtMsgPack.Streaming
         StartEntry();
       _headState = HeadState.AwaitingBody;
       Flushed();
+    }
+
+    /// <summary>
+    /// A head whose schema the caller made, for a body without classes (LtMsgPack.Data: the columns of a data reader), written and indexed as <see cref="WriteHead(Type)"/> writes a head.
+    /// The values of the body are written with the token methods or <see cref="BeginValue"/>, not with <see cref="WriteObject{T}(T)"/>.
+    /// </summary>
+    /// <param name="schema">In the byte order of the specification (<see cref="SchemaBytes.Canonical"/>), not copied: kept by the store</param>
+    internal void WriteHead(byte[] schema, SchemaVersion version)
+    {
+      ThrowIfDisposed();
+      if (_depth > 0)
+        throw new InvalidOperationException($"A head is written before a root value of the stream ({nameof(Depth)} 0).");
+      if (_headState == HeadState.AwaitingBody)
+        throw new InvalidOperationException("The head written before still waits for its body (the next root value).");
+
+      _head = null;
+      if (_ix != null && _ix.Entry == null)
+        StartEntry(); // the head and its body are one entry
+      if (_options._useInexedSchema)
+      {
+        SchemaStore store = _serializer.HeadStore();
+        SchemaId id = store.AddWritten(schema, version);
+        WriteSchema(id, SchemaStore.WriteReference(id), store);
+      }
+      _schemaHead = true;
+      _headState = HeadState.AwaitingBody;
+      Flushed();
+    }
+
+    /// <summary>
+    /// The writer keeps an index (<see cref="BeginEntry"/> may be called).
+    /// </summary>
+    internal bool KeepsIndex { get { return _ix != null; } }
+
+    /// <summary>
+    /// The serializer's plans and handlers (LtMsgPack.Data writes rows with them).
+    /// </summary>
+    internal Serializer Implementation { get { return _serializer; } }
+
+    /// <summary>
+    /// The context of the value handlers, writing into the buffer (<see cref="IdMode.Names"/>: the handlers of values without classes).
+    /// </summary>
+    internal WriteContext Context { get { return _c; } }
+
+    /// <summary>
+    /// Begins one value that the caller writes into the returned buffer (whole: an array of known length, e.g. a row), then <see cref="EndValue"/>; on an exception the caller sets the buffer's position back to where it was.
+    /// The checks and the index see one value, as for any other method.
+    /// </summary>
+    internal MsgPackWriter BeginValue()
+    {
+      Value();
+      return _w;
+    }
+
+    internal void EndValue()
+    {
+      Wrote();
     }
 
     void IPayloadSink.Write(byte[] head, int headLength, bool reference, MsgPackWriter body)
@@ -1070,6 +1131,7 @@ namespace LtMsgPack.Streaming
       {
         _headState = HeadState.None;
         _head = null;
+        _schemaHead = false;
       }
       if (_depth == 0 && _ix != null && _ix.Entry != null && _headState == HeadState.None)
         EndEntry(false);

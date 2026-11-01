@@ -103,6 +103,18 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// Adds a schema this process made without a writer session (the columns of a data reader: no class), as <see cref="PublishWriter"/> adds the ones of the sessions (not counted as received).
+    /// </summary>
+    /// <param name="schema">In the byte order of the specification (<see cref="SchemaBytes.Canonical"/>), not copied</param>
+    /// <returns>The id of the schema</returns>
+    internal SchemaId AddWritten(byte[] schema, SchemaVersion version)
+    {
+      SchemaId id = SchemaId.Compute(schema, version);
+      _schemas.TryAdd(id, new Entry(schema));
+      return id;
+    }
+
+    /// <summary>
     /// Writes all schemas that can be referred to (e.g. to preload the store of a reader, or to keep them between runs): a map of ids (bin) to schemas (bin).
     /// </summary>
     public void Export(Stream target)
