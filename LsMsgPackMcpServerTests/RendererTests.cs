@@ -208,8 +208,9 @@ namespace LsMsgPackMcpServerTests
 
       PayloadDocument doc = new PayloadDocument(bytes, "test", new DecodeOptions());
       string explained = TextRenderer.ExplainOffset(doc, at, new RenderOptions());
-      AssertContains(explained, "0xC1, as a type byte: never used (invalid)");
-      AssertContains(explained, "ERROR: The specification specifically states that the value 0xC1 should never be used.");
+      // The decoder reads streams: 0xC1 and the byte after it are an escape sequence (here a reserved one)
+      AssertContains(explained, "0xC1, as a type byte: 0xC1, never used by the specification; streams start an escape sequence with it (msgpack/msgpack#347)");
+      AssertContains(explained, "ERROR: The escape sequence 0xC1 0x");
       AssertContains(explained, "[C1]");
       Assert.IsFalse(text.Contains('\r') || explained.Contains('\r'), "Lines end with \\n on every OS");
     }
@@ -221,8 +222,8 @@ namespace LsMsgPackMcpServerTests
       bytes[bytes.Length / 2] = 0xC1;
       PayloadDocument doc = new PayloadDocument(bytes, "test", new DecodeOptions() { ContinueOnError = false });
       string text = TextRenderer.Render(doc, new RenderOptions());
-      // The reading stops at the error: the rest was read as items that follow the invoice, the values after Id as null
-      AssertContains(text, "Bytes 0x7C to 0xF6 were not read: the reading stopped at the first error (continueOnError is false).");
+      // The reading stops at the error (0xC1 and the code byte after it, a reserved escape sequence): the values after Id are null
+      AssertContains(text, "Bytes 0x7D to 0xF6 were not read: the reading stopped at the first error (continueOnError is false).");
       AssertContains(text, "{ // McpInvoice~, 6 not read: the reading stopped at the error\n  \"Id\": null // ERROR: ");
       AssertContains(text, "Error at 0x7B (Id): ");
       Assert.IsFalse(text.Contains("\"Customer\"", StringComparison.Ordinal), text);
@@ -403,6 +404,92 @@ namespace LsMsgPackMcpServerTests
       Assert.AreEqual("fixstr of 3 bytes", TextRenderer.DescribeTypeByte(0xA3));
       Assert.AreEqual("negative fixint -1", TextRenderer.DescribeTypeByte(0xFF));
       Assert.AreEqual("map 32 (4 byte count follows)", TextRenderer.DescribeTypeByte(0xDF));
+    }
+
+    /// <summary>
+    /// A stream of MsgPackStreamWriter: values of unknown length, the schema written once and referenced, a head with its body, the index with its entries and its tail.
+    /// </summary>
+    [TestMethod]
+    public void Stream_IndexEntriesAndValuesOfUnknownLength()
+    {
+      byte[] bytes = Payloads.Stream();
+      string text = Render(bytes, new RenderOptions() { Issues = IssueLevel.All });
+      AssertContains(text, "Structure: a stream (as MsgPackStreamWriter writes it) with 1 value of unknown length (0xC1 escape sequences, msgpack/msgpack#347) and an index of 4 entries; 4 payloads that follow each other");
+      AssertContains(text, ": Complete, written by LtMsgPack ");
+      AssertContains(text, ", CRC-32 matches, 4 entries, 2 schemas:");
+      AssertContains(text, "  entry \"invoice 2\" at 0xF5 (141 bytes), application/x-invoice\n");
+      AssertContains(text, "  entry \"lines\" at ");
+      AssertContains(text, "3 elements, 2 points");
+      Assert.AreEqual(1, Occurrences(text, "#0 McpInvoice: Id, Customer, Billing, Lines, Date, Reference, Tags"), "the schema of the invoices once: the others refer to it");
+      AssertContains(text, "{ // entry \"invoice 3\", McpInvoice~\n    \"Id\": 3,");
+      AssertContains(text, "[ // entry \"lines\", 3 items\n    { \"Product\": \"Apples\", \"Quantity\": 3, \"Price\": 1.25 }, // McpLine~, Price: decimal");
+      AssertContains(text, "{ \"Product\": \"Plums\", \"Quantity\": 7, \"Price\": 2.5 }");
+      AssertContains(text, "No errors, 1 warning or comment.");
+      AssertContains(text, "Written without its length (0xC1 escape sequences");
+      Assert.IsFalse(text.Contains("smaller container", StringComparison.Ordinal), "the tail has fixed types: " + text);
+
+      string items = Render(bytes, new RenderOptions() { View = DecodeView.Items });
+      AssertContains(items, " array of unknown length (C1 90 ... C1 C0), 3 items // [3]");
+      AssertContains(items, " ext 8, type 3 (stream index): Complete, 4 entries, CRC-32 matches\n");
+      AssertContains(items, "     content fixarray, 7 items\n");
+      AssertContains(items, "       entries fixarray, 4 items\n");
+      AssertContains(items, "           identifier fixstr \"invoice 1\"\n");
+      AssertContains(items, "               element positive fixint 2\n");
+      AssertContains(items, " tail of the stream index (fixarray, 4 items): the index at ");
+      AssertContains(items, " matches\n");
+
+      PayloadDocument doc = new PayloadDocument(bytes, "test", new DecodeOptions());
+      int escape = Array.IndexOf(bytes, (byte)0xC1);
+      string explained = TextRenderer.ExplainOffset(doc, escape, new RenderOptions());
+      AssertContains(explained, "C1 90 starts an array of unknown length (ended by C1 C0)");
+      AssertContains(explained, "Bytes of the innermost item (header | content): C1 90 | 93 A6 41 70");
+      AssertContains(explained, "Object: [3] = [ // entry \"lines\", 3 items");
+      string end = TextRenderer.ExplainOffset(doc, Array.LastIndexOf(bytes, (byte)0xC1, bytes.Length - 236), new RenderOptions());
+      AssertContains(end, "C1 C0 ends the innermost value of unknown length");
+
+      string found = TextRenderer.Search(doc, "invoice 2", false, new RenderOptions());
+      AssertContains(found, "1 item holds \"invoice 2\"");
+    }
+
+    [TestMethod]
+    public void Stream_ChunksAndADamagedIndex()
+    {
+      // "abc" in two chunks, then a bin of unknown length
+      string text = Render(new byte[] { 0x92, 0xC1, 0xA0, 0xA2, 0x61, 0x62, 0xA1, 0x63, 0xC1, 0xC0, 0xC1, 0xC4, 0xC4, 0x01, 0x07, 0xC1, 0xC0 }, new RenderOptions() { View = DecodeView.Both });
+      AssertContains(text, "[\"abc\", \"07\"]");
+      AssertContains(text, "0x0001   [0] str of unknown length in 2 chunks (C1 A0 ... C1 C0) \"abc\" // [0]\n");
+      AssertContains(text, "0x0003     chunk fixstr \"ab\"\n");
+      AssertContains(text, "0x0006     chunk fixstr \"c\"\n");
+      AssertContains(text, "0x000A   [1] bin of unknown length in 1 chunk (C1 C4 ... C1 C0), 1 byte: 07 // [1]\n");
+      AssertContains(text, "0x000C     chunk bin 8, 1 byte: 07\n");
+
+      byte[] bytes = Payloads.Stream();
+      int writer = IndexOf(bytes, System.Text.Encoding.ASCII.GetBytes("LtMsgPack"));
+      bytes[writer] = (byte)'X';
+      string damaged = Render(bytes);
+      AssertContains(damaged, "CRC-32 does NOT match (readers that seek do not use it)");
+      AssertContains(damaged, "does not match the CRC-32 in its tail");
+    }
+
+    private static int Occurrences(string text, string part)
+    {
+      int count = 0;
+      for (int at = text.IndexOf(part, StringComparison.Ordinal); at >= 0; at = text.IndexOf(part, at + part.Length, StringComparison.Ordinal))
+        count++;
+      return count;
+    }
+
+    private static int IndexOf(byte[] bytes, byte[] part)
+    {
+      for (int t = 0; t <= bytes.Length - part.Length; t++)
+      {
+        int p = 0;
+        while (p < part.Length && bytes[t + p] == part[p])
+          p++;
+        if (p == part.Length)
+          return t;
+      }
+      return -1;
     }
   }
 }

@@ -30,7 +30,8 @@ namespace LsMsgPackMcp
     public int Depth { get; set; }
 
     /// <summary>
-    /// "key" or "value" for the items of a map entry, "[n]" for the elements of an array or the items of the root, null for the root.
+    /// "key" or "value" for the items of a map entry, "[n]" for the elements of an array or the items of the root, "chunk" for the chunks of a str or bin of unknown length,
+    /// "content" for the array of the index of a stream and the names of its fields ("entries", "offset"...) below it, null for the root.
     /// </summary>
     public string Role { get; set; }
 
@@ -218,7 +219,7 @@ namespace LsMsgPackMcp
     public MsgPackTypeId Encoding(MsgPackItem item)
     {
       long offset = item.StoredOffset;
-      if (item is MpRoot || item is MpError || offset < 0 || offset >= Data.Length)
+      if (item is MpRoot || item is MpError || offset < 0 || offset >= Data.Length || item is MsgPackVarLen v && v.LengthUnknown)
         return item.TypeId;
       byte b = Data[offset];
       if (b <= 0x7f) return MsgPackTypeId.MpBytePart;
@@ -352,7 +353,8 @@ namespace LsMsgPackMcp
         DynamicallyCompact = false,
         PreservePackages = true,
         ContinueProcessingOnBreakingError = Options.ContinueOnError,
-        EndianAction = Options.Endian
+        EndianAction = Options.Endian,
+        ReadStreams = true // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
       };
       _settings = settings;
 
@@ -384,7 +386,7 @@ namespace LsMsgPackMcp
       RootObject objects = new RootObject();
       try
       {
-        objects.Reconstruct(item, Options.Schemas);
+        objects.Reconstruct(item, Options.Schemas, Data);
       }
       catch (Exception ex)
       {
@@ -421,7 +423,8 @@ namespace LsMsgPackMcp
       return node;
     }
 
-    private void Traverse(ItemNode node, List<MsgPackItem> schemaItems)
+    /// <param name="index">The index of a stream whose content this is (names its fields), null elsewhere</param>
+    private void Traverse(ItemNode node, List<MsgPackItem> schemaItems, MpStreamIndex index = null)
     {
       MsgPackItem item = node.Item;
       if (item is MpRoot root)
@@ -433,20 +436,51 @@ namespace LsMsgPackMcp
       {
         MsgPackItem[] elements = array.PackedValues;
         for (int t = 0; t < elements.Length; t++)
-          Traverse(AddNode(elements[t], node, Index(t), node.IsSchema), schemaItems);
+          Traverse(AddNode(elements[t], node, index?.NameOf(elements[t]) ?? Index(t), node.IsSchema), schemaItems, index);
       }
       else if (item is MpMap map)
       {
         KeyValuePair<MsgPackItem, MsgPackItem>[] entries = map.PackedValues;
         for (int t = 0; t < entries.Length; t++)
         {
-          Traverse(AddNode(entries[t].Key, node, "key", node.IsSchema), schemaItems);
-          Traverse(AddNode(entries[t].Value, node, "value", node.IsSchema), schemaItems);
+          Traverse(AddNode(entries[t].Key, node, "key", node.IsSchema), schemaItems, index);
+          Traverse(AddNode(entries[t].Value, node, "value", node.IsSchema), schemaItems, index);
         }
       }
       else if (item is MpError error && !(error.PartialItem is null))
       {
-        Traverse(AddNode(error.PartialItem, node, "partial", node.IsSchema), schemaItems);
+        Traverse(AddNode(error.PartialItem, node, "partial", node.IsSchema), schemaItems, index);
+      }
+      else if (item is MpStreamIndex streamIndex && !(streamIndex.Content is null))
+      {
+        Traverse(AddNode(streamIndex.Content, node, "content", false), schemaItems, streamIndex);
+      }
+      else if (Chunks(item) is MsgPackItem[] chunks)
+      {
+        for (int t = 0; t < chunks.Length; t++)
+          AddNode(chunks[t], node, "chunk", node.IsSchema);
+      }
+    }
+
+    /// <summary>
+    /// The chunks of a str or bin of unknown length, null for other items.
+    /// </summary>
+    internal static MsgPackItem[] Chunks(MsgPackItem item)
+    {
+      return item is MpString str ? str.Chunks : item is MpBin bin ? bin.Chunks : null;
+    }
+
+    /// <summary>
+    /// The indexes of a stream among the root's items.
+    /// </summary>
+    public IEnumerable<MpStreamIndex> StreamIndexes
+    {
+      get
+      {
+        if (Root?.Item is MpRoot root)
+          foreach (MsgPackItem item in root)
+            if (item is MpStreamIndex index)
+              yield return index;
       }
     }
 
@@ -458,7 +492,8 @@ namespace LsMsgPackMcp
     private void Validate(ItemNode node)
     {
       // The error says what is wrong with an item that could not be read, its value is not what the data holds (a uint 16 cut off is 0, "smaller encodings would save 2 bytes")
-      if (node.Item is null || IsUnread(node.Item))
+      // A chunk's size is the writer's choice (an empty one is no waste of a nil), the tail of a stream index has fixed types (found from the end of the stream)
+      if (node.Item is null || IsUnread(node.Item) || node.Role == "chunk" || node.Parent?.Item is MpStreamTail)
         return;
       MsgPackValidation.ValidationItem[] issues;
       try

@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using ObjectDebugger;
 using System;
 using System.Collections.Generic;
@@ -134,7 +134,8 @@ namespace LsMsgPackMcp
           Name = "msgpack_decode",
           Title = "MsgPack: decode",
           Description = "Decodes MsgPack data into JSON-like text with comments for what JSON does not tell (types from type ids or the LsMsgPack indexed schema, timestamps, decimals, bin, extensions, errors with offsets), " +
-            "or into the MsgPack items with their offsets and encodings (view \"items\"). Give data (hex, base64, a list of byte values), a file, or the id of a document decoded before (to see another view or part).",
+            "or into the MsgPack items with their offsets and encodings (view \"items\"). Also streams of LtMsgPack's MsgPackStreamWriter: values of unknown length (0xC1 escapes) and the stream's index with its entries. " +
+            "Give data (hex, base64, a list of byte values), a file, or the id of a document decoded before (to see another view or part).",
           InputSchema = Schema(new JsonObject[] {
             Prop("data", "string", "The bytes as text: hex (\"82 a4 4e 61...\", \"0x82a4...\"), base64, decimal byte values (\"130, 164, ...\") or a Python bytes literal."),
             Prop("file", "string", "A file holding the bytes (relative to the working directory of the server)."),

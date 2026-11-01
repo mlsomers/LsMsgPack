@@ -15,6 +15,12 @@ namespace LsMsgPack
             else if (item is MpError) ValidateError((MpError)item, issues);
             else if (item is MsgPackVarLen)
             {
+                if (((MsgPackVarLen)item).LengthUnknown)
+                {
+                    issues.Add(new ValidationItem(item, ValidationSeverity.Comment, 0, "Written without its length (0xC1 escape sequences, as proposed in msgpack/msgpack#347 for streams): only readers that know the proposal read it, other MsgPack readers refuse it."));
+                    if (item is MpMap) ValidateMap(item, issues, displayLimit);
+                    return issues.ToArray(); // the length bytes of the type id do not apply
+                }
                 if (ValidateVarLength((MsgPackVarLen)item, issues)) return issues.ToArray(); // no use validating child aspects
                 if (item is MpMap) ValidateMap(item, issues, displayLimit);
                 else if (item is MpExt) ValidateExt((MpExt)item, issues);
@@ -27,7 +33,9 @@ namespace LsMsgPack
         /// </summary>
         private static void ValidateExt(MpExt item, List<ValidationItem> issues)
         {
-            if (item is MpDateTime) ValidateTimestamp(item, issues);
+            if (item is MpStreamIndex) ValidateStreamIndex((MpStreamIndex)item, issues);
+            else if (item is MpStreamSidecar) return;
+            else if (item is MpDateTime) ValidateTimestamp(item, issues);
             else if (item is MpDecimal) ValidateDecimal((MpDecimal)item, issues);
             else if (item.TypeSpecifier == BigIntegerExtensionType) ValidateBigInteger(item, issues);
             else if (item.TypeSpecifier < 0)
@@ -35,6 +43,27 @@ namespace LsMsgPack
                 issues.Add(new ValidationItem(item, ValidationSeverity.Warning, 0, "Extension type ", item.TypeSpecifier,
                   " is reserved by the specification for predefined types, but no type is defined for it (-1 is the timestamp, -2 the proposed big integer). Other implementations may refuse it, use a type from 0 to 127 for your own extensions."));
             }
+        }
+
+        /// <summary>
+        /// The index of a stream (MsgPackSettings.ReadStreams): readers that seek find it through its tail and only use it when its CRC-32 matches.
+        /// </summary>
+        private static void ValidateStreamIndex(MpStreamIndex item, List<ValidationItem> issues)
+        {
+            if (item.Index is null)
+            {
+                issues.Add(new ValidationItem(item, ValidationSeverity.Error, 0, "The index of the stream is not valid: ", item.IndexError, " Readers that seek do not use it."));
+                return;
+            }
+            if (item.Tail is null)
+                issues.Add(new ValidationItem(item, ValidationSeverity.Warning, 0, "No tail follows the index of the stream (the stream was cut off after it?): readers that seek do not find it from the end of the stream."));
+            else if (!item.Tail.CrcMatches)
+                issues.Add(new ValidationItem(item, ValidationSeverity.Error, 0, "The index of the stream does not match the CRC-32 in its tail (0x", item.Tail.Crc.ToString("X8"), "): it was changed after it was written, readers that seek do not use it."));
+            if (item.Index.Status == Streaming.MsgPackStreamIndexStatus.Interrupted)
+                issues.Add(new ValidationItem(item, ValidationSeverity.Warning, 0, "The writer of the stream was interrupted in the middle of an entry (the index is Interrupted): a reader that reads the stream value by value fails there, one that seeks reads the entries before it."));
+            for (int t = 0; t < item.Index.Entries.Count; t++)
+                if (item.Index.Entries[t].Incomplete)
+                    issues.Add(new ValidationItem(item, ValidationSeverity.Warning, 0, "The entry at ", item.Index.Entries[t].Offset, " is incomplete: the writer stopped in the middle of it."));
         }
 
         /// <summary>

@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using System;
 using System.IO;
 
@@ -50,7 +50,7 @@ namespace LtMsgPack.IO
         case 0xC8: CopyBytes(source, copy, 1 + Length(source, copy, 2, littleEndian)); return c;
         case 0xC9: CopyBytes(source, copy, 1 + Length(source, copy, 4, littleEndian)); return c;
       }
-      throw Streaming.Escape.NotSupported(copy.Length - 1);
+      throw LsMsgPack.Streaming.Escape.NotSupported(copy.Length - 1);
     }
 
     private static void CopyItems(Stream source, MemoryStream copy, bool littleEndian, long count, int depth, int maxDepth)

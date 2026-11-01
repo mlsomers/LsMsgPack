@@ -241,7 +241,68 @@ namespace LsMsgPack
       return this;
     }
 
+    internal override MsgPackItem ReadUnknownLength(Stream data)
+    {
+      List<KeyValuePair<object, object>> entries = new List<KeyValuePair<object, object>>();
+#if KEEPTRACK
+      _lengthUnknown = true;
+      List<KeyValuePair<MsgPackItem, MsgPackItem>> packed = new List<KeyValuePair<MsgPackItem, MsgPackItem>>();
+      bool errorOccurred = false;
+      try
+      {
+#endif
+        while (true)
+        {
+          bool end;
+          MsgPackItem key = UnpackOrEnd(data, out end);
+          if (end)
+            break;
+          long valueStart = data.Position;
+          MsgPackItem val = UnpackOrEnd(data, out end);
+          if (end)
+          {
+            MsgPackException misplaced = Streaming.Escape.MisplacedEnd("follows a key of a map, where its value belongs", valueStart);
+#if KEEPTRACK
+            val = new MpError(_settings, valueStart, MsgPackTypeId.NeverUsed, misplaced.Message);
+            val.SetStoredRange(valueStart, 2);
+            entries.Add(new KeyValuePair<object, object>(key.UnpackedValue, null));
+            packed.Add(new KeyValuePair<MsgPackItem, MsgPackItem>(key, val));
+            return new MpError(_settings, this);
+#else
+            throw misplaced;
+#endif
+          }
+          entries.Add(new KeyValuePair<object, object>(key.UnpackedValue, val.UnpackedValue));
+#if KEEPTRACK
+          packed.Add(new KeyValuePair<MsgPackItem, MsgPackItem>(key, val));
+          if (key is MpError || val is MpError)
+          {
+            if (!_settings._continueProcessingOnBreakingError || data.Position >= data.Length)
+              return new MpError(_settings, this);
+            _settings.FileContainsErrors = true;
+            errorOccurred = true;
+          }
+#endif
+        }
+#if KEEPTRACK
+      }
+      finally
+      {
+        value = entries.ToArray();
+        packedItems = _settings._preservePackages ? packed.ToArray() : new KeyValuePair<MsgPackItem, MsgPackItem>[entries.Count];
+      }
+      if (errorOccurred) return new MpError(_settings, this);
+#else
+      value = entries.ToArray();
+#endif
+      return this;
+    }
+
     public override string ToString() {
+#if KEEPTRACK
+      if (_lengthUnknown)
+        return $"Map of unknown length (0xC1 0x80 ... 0xC1 0xC0) of {value.Length} key-value pairs.";
+#endif
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       return $"Map ({GetOfficialTypeName(TypeId)}) of {value.LongLength} key-value pairs.";
 #else

@@ -4,6 +4,9 @@ using System.IO;
 using System.Text;
 using System.Xml.Serialization;
 using LsMsgPack.Meta;
+#if KEEPTRACK
+using System.ComponentModel;
+#endif
 
 namespace LsMsgPack
 {
@@ -131,8 +134,49 @@ namespace LsMsgPack
       return this;
     }
 
+#if KEEPTRACK
+    private MsgPackItem[] chunks;
+
+    /// <summary>
+    /// The chunks of a str of unknown length (<see cref="MsgPackVarLen.LengthUnknown"/>), null otherwise.
+    /// </summary>
+    [XmlIgnore]
+    [Browsable(false)]
+    public MsgPackItem[] Chunks
+    {
+      get { return chunks; }
+    }
+#endif
+
+    internal override MsgPackItem ReadUnknownLength(Stream data)
+    {
+      MemoryStream content = new MemoryStream();
+#if KEEPTRACK
+      _lengthUnknown = true;
+      List<MsgPackItem> parts = new List<MsgPackItem>();
+#else
+      List<MsgPackItem> parts = null;
+#endif
+      try
+      {
+        ReadChunks(data, true, content, parts);
+      }
+      finally
+      {
+        StrAsBytes = content.ToArray(); // decoded at once: a chunk may end inside a character
+#if KEEPTRACK
+        chunks = parts.ToArray();
+#endif
+      }
+      return this;
+    }
+
     public override string ToString()
     {
+#if KEEPTRACK
+      if (_lengthUnknown)
+        return $"String of unknown length in {chunks.Length} chunks (0xC1 0xA0 ... 0xC1 0xC0) with the value \"{value}\"";
+#endif
       return $"String ({GetOfficialTypeName(TypeId)}) with the value \"{value}\"";
     }
   }

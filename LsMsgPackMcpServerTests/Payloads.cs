@@ -1,6 +1,10 @@
 using LsMsgPack;
+using LsMsgPack.Streaming;
+using LtMsgPack;
+using LtMsgPack.Streaming;
 using System;
 using System.Collections.Generic;
+using System.IO;
 
 namespace LsMsgPackMcpServerTests
 {
@@ -92,6 +96,33 @@ namespace LsMsgPackMcpServerTests
     {
       MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = ObjectLayout.Array, UseInexedSchema = true, SchemaStore = store, WriteSchemaReference = true };
       return MsgPackSerializer.Serialize(value, settings);
+    }
+
+    /// <summary>
+    /// A stream as LtMsgPack's MsgPackStreamWriter writes it: three invoices (each an entry, the schema inline once, then referenced), a table (a head and an array of unknown length of lines), and the index.
+    /// </summary>
+    public static byte[] Stream()
+    {
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { WriteSchemaReference = true, SchemaStore = new SchemaStore() });
+      MemoryStream ms = new MemoryStream();
+      using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer, MsgPackStreamSchemas.PerStream, true, new MsgPackStreamIndexOptions { PointInterval = 2 }))
+      {
+        for (int t = 1; t <= 3; t++)
+        {
+          McpInvoice invoice = Invoice();
+          invoice.Id = t;
+          writer.BeginEntry("invoice " + t, "application/x-invoice");
+          writer.WriteObject(invoice);
+        }
+        writer.BeginEntry("lines");
+        writer.WriteHead<List<McpLine>>();
+        writer.WriteArrayStart();
+        foreach (McpLine line in Invoice().Lines)
+          writer.WriteObject(line);
+        writer.WriteObject(new McpLine() { Product = "Plums", Quantity = 7, Price = 2.5m });
+        writer.WriteEnd();
+      }
+      return ms.ToArray();
     }
   }
 }

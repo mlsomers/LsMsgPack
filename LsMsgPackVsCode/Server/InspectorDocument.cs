@@ -81,7 +81,8 @@ namespace LsMsgPackInspector
         DynamicallyCompact = false,
         PreservePackages = true,
         ContinueProcessingOnBreakingError = settings.ContinueOnError,
-        EndianAction = settings.Endian
+        EndianAction = settings.Endian,
+        ReadStreams = true // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
       };
 
       try
@@ -172,8 +173,19 @@ namespace LsMsgPackInspector
         model.Offset = item.StoredOffset;
         model.Length = item.StoredLength;
         MpError error = item as MpError;
-        model.TypeBytes = item is MpRoot || error != null && !ReferenceEquals(error.PartialItem, null) ? 0 : 1;
-        model.LengthBytes = item is MsgPackVarLen ? GetLengthBytes(item.TypeId) : 0;
+        MsgPackVarLen varLen = item as MsgPackVarLen;
+        if (varLen != null && varLen.LengthUnknown)
+        {
+          // An escape sequence (0xC1 and its code) starts it, 0xC1 0xC0 ends it (not when an error cut it off)
+          model.TypeBytes = 2;
+          long end = item.StoredOffset + item.StoredLength;
+          model.EndBytes = item.StoredLength >= 4 && end <= _data.Length && _data[end - 2] == 0xC1 && _data[end - 1] == 0xC0 ? 2 : 0;
+        }
+        else
+        {
+          model.TypeBytes = item is MpRoot || error != null && !ReferenceEquals(error.PartialItem, null) ? 0 : 1;
+          model.LengthBytes = varLen != null ? GetLengthBytes(item.TypeId) : 0;
+        }
         model.Props = GetProperties(item);
       }
       result.Items.Add(model);
@@ -183,7 +195,8 @@ namespace LsMsgPackInspector
     /// <summary>
     /// The nodes of the explorer's tree (LsMsgPackExplorer.Traverse), up to the display limit.
     /// </summary>
-    private void Traverse(LoadResult result, int id, MsgPackItem item)
+    /// <param name="index">The index of a stream whose content this is (names its fields), null elsewhere</param>
+    private void Traverse(LoadResult result, int id, MsgPackItem item, MpStreamIndex index = null)
     {
       _nodeCount++;
       if (_nodeCount > _displayLimit)
@@ -212,8 +225,8 @@ namespace LsMsgPackInspector
         {
           if (ReferenceEquals(elements[t], null))
             break; // the slots after an error were not read (the header claims them): they showed as NULL items, as if the data had them
-          int child = AddItem(result, elements[t], id, null, schema || isTreeRoot && IsSchemaItem(elements[t]));
-          Traverse(result, child, elements[t]);
+          int child = AddItem(result, elements[t], id, index?.NameOf(elements[t]), schema || isTreeRoot && IsSchemaItem(elements[t]));
+          Traverse(result, child, elements[t], index);
           if (_nodeCount > _displayLimit)
             return;
         }
@@ -226,11 +239,11 @@ namespace LsMsgPackInspector
           if (ReferenceEquals(entries[t].Key, null))
             break; // not read, as for arrays
           int key = AddItem(result, entries[t].Key, id, "key", schema);
-          Traverse(result, key, entries[t].Key);
+          Traverse(result, key, entries[t].Key, index);
           if (_nodeCount > _displayLimit)
             return;
           int value = AddItem(result, entries[t].Value, key, "value", schema);
-          Traverse(result, value, entries[t].Value);
+          Traverse(result, value, entries[t].Value, index);
           if (_nodeCount > _displayLimit)
             return;
         }
@@ -238,8 +251,36 @@ namespace LsMsgPackInspector
       else if (item is MpError error && !ReferenceEquals(error.PartialItem, null))
       {
         int child = AddItem(result, error.PartialItem, id, null, schema);
-        Traverse(result, child, error.PartialItem);
+        Traverse(result, child, error.PartialItem, index);
       }
+      else if (item is MpStreamIndex streamIndex && !ReferenceEquals(streamIndex.Content, null))
+      {
+        // The data of the index of a stream is one MsgPack array: its fields by name
+        int child = AddItem(result, streamIndex.Content, id, "content", false);
+        Traverse(result, child, streamIndex.Content, streamIndex);
+      }
+      else if (Chunks(item) is MsgPackItem[] chunks)
+      {
+        for (int t = 0; t < chunks.Length; t++)
+        {
+          _nodeCount++;
+          if (_nodeCount > _displayLimit)
+            return;
+          AddItem(result, chunks[t], id, "chunk", schema);
+        }
+      }
+    }
+
+    /// <summary>
+    /// The chunks of a str or bin of unknown length, null for other items.
+    /// </summary>
+    private static MsgPackItem[] Chunks(MsgPackItem item)
+    {
+      MpString str = item as MpString;
+      if (str != null)
+        return str.Chunks;
+      MpBin bin = item as MpBin;
+      return bin?.Chunks;
     }
 
     private bool IsSchemaItem(MsgPackItem item)
@@ -261,6 +302,9 @@ namespace LsMsgPackInspector
     internal static string GetKind(MsgPackItem item)
     {
       if (ReferenceEquals(item, null)) return "nil";
+      if (item is MpStreamIndex) return "index";
+      if (item is MpStreamTail) return "tail";
+      if (item is MpStreamSidecar) return "sidecar";
       Type typ = item.GetType();
       if (typ == typeof(MpNull)) return "nil";
       if (typ == typeof(MpBool)) return "bool";
@@ -363,6 +407,10 @@ namespace LsMsgPackInspector
       MsgPackItem item = _items[id];
       if (ReferenceEquals(item, null))
         return;
+      // A chunk's size is the writer's choice, the tail of a stream index has fixed types (found from the end of the stream)
+      ItemModel model = result.Items[id];
+      if (model.Role == "chunk" || model.Parent >= 0 && _items[model.Parent] is MpStreamTail)
+        return;
 
       MsgPackValidation.ValidationItem[] issues = MsgPackValidation.ValidateItem(item, _displayLimit);
       for (int t = issues.Length - 1; t >= 0; t--)
@@ -415,7 +463,7 @@ namespace LsMsgPackInspector
       RootObject root = new RootObject();
       try
       {
-        root.Reconstruct(_item);
+        root.Reconstruct(_item, null, _data); // the data: schemas written once per stream are found by the references to them
       }
       catch (Exception ex)
       {
@@ -456,6 +504,9 @@ namespace LsMsgPackInspector
     {
       bool isRoot = obj is RootObject && obj.Parent is null;
       string text = obj.ToString();
+      string entry = (obj as RootObject)?.EntryText;
+      if (entry != null)
+        text = string.Concat(entry, " : ", text);
       if (isRoot)
         text = string.Concat("Root : ", text);
 

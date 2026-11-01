@@ -2,6 +2,10 @@
 using System.Collections.Generic;
 using System.IO;
 using LsMsgPack.Meta;
+#if KEEPTRACK
+using System.ComponentModel;
+using System.Xml.Serialization;
+#endif
 
 namespace LsMsgPack {
   [Serializable]
@@ -95,7 +99,43 @@ namespace LsMsgPack {
       return this;
     }
 
+#if KEEPTRACK
+    private MsgPackItem[] chunks;
+
+    /// <summary>
+    /// The chunks of a bin of unknown length (<see cref="MsgPackVarLen.LengthUnknown"/>), null otherwise.
+    /// </summary>
+    [XmlIgnore]
+    [Browsable(false)]
+    public MsgPackItem[] Chunks {
+      get { return chunks; }
+    }
+#endif
+
+    internal override MsgPackItem ReadUnknownLength(Stream data) {
+      MemoryStream content = new MemoryStream();
+#if KEEPTRACK
+      _lengthUnknown = true;
+      List<MsgPackItem> parts = new List<MsgPackItem>();
+#else
+      List<MsgPackItem> parts = null;
+#endif
+      try {
+        ReadChunks(data, false, content, parts);
+      } finally {
+        value = content.ToArray();
+#if KEEPTRACK
+        chunks = parts.ToArray();
+#endif
+      }
+      return this;
+    }
+
     public override string ToString() {
+#if KEEPTRACK
+      if(_lengthUnknown)
+        return $"Blob of unknown length in {chunks.Length} chunks (0xC1 0xC4 ... 0xC1 0xC0) of {value.Length} bytes.";
+#endif
       return $"Blob ({GetOfficialTypeName(TypeId)}) of {value.Length} bytes.";
     }
   }

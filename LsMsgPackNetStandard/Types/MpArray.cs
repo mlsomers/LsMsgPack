@@ -79,6 +79,19 @@ namespace LsMsgPack
     }
 #endif
 
+    /// <summary>
+    /// Takes the values (and the items, offsets) of an array that was read, for a derived type that recognizes it afterwards (<see cref="MpStreamTail"/>).
+    /// </summary>
+    internal void CopyFrom(MpArray read)
+    {
+      value = read.value;
+      _depth = read._depth;
+#if KEEPTRACK
+      packedItems = read.packedItems;
+      SetStoredRange(read.StoredOffset, read.StoredLength);
+#endif
+    }
+
     public override byte[] ToBytes()
     {
       ByteWriter bytes = new ByteWriter();// cannot estimate this one
@@ -166,8 +179,54 @@ namespace LsMsgPack
       return this;
     }
 
+    internal override MsgPackItem ReadUnknownLength(Stream data)
+    {
+      List<object> items = new List<object>();
+#if KEEPTRACK
+      _lengthUnknown = true;
+      List<MsgPackItem> packed = new List<MsgPackItem>();
+      bool errorOccurred = false;
+      try
+      {
+#endif
+        while (true)
+        {
+          bool end;
+          MsgPackItem item = UnpackOrEnd(data, out end);
+          if (end)
+            break;
+          items.Add(item.UnpackedValue);
+#if KEEPTRACK
+          packed.Add(item);
+          if (item is MpError)
+          {
+            if (!_settings._continueProcessingOnBreakingError || data.Position >= data.Length)
+              return new MpError(_settings, this);
+            _settings.FileContainsErrors = true;
+            errorOccurred = true;
+          }
+#endif
+        }
+#if KEEPTRACK
+      }
+      finally
+      {
+        value = items.ToArray();
+        packedItems = _settings._preservePackages ? packed.ToArray() : new MsgPackItem[items.Count];
+      }
+      if (errorOccurred) return new MpError(_settings, this);
+#else
+      value = items.ToArray();
+#endif
+      return this;
+    }
+
     public override string ToString()
     {
+#if KEEPTRACK
+      if (_lengthUnknown)
+        return $"Array of unknown length (0xC1 0x90 ... 0xC1 0xC0) of {value.Length} items.";
+#endif
       return $"Array ({GetOfficialTypeName(TypeId)}) of {value.Length} items.";
     }
   }

@@ -22,7 +22,7 @@ namespace MsgPackExplorer {
     private RootObject ReconstructObjects() {
       RootObject root = new RootObject();
       try {
-        root.Reconstruct(item);
+        root.Reconstruct(item, null, data); // the data: schemas written once per stream are found by the references to them
       } catch (Exception ex) {
         // Errors are normally kept with the value they occurred in, this keeps what was reconstructed anyway
         root.AddError(ex.Message);
@@ -92,6 +92,9 @@ namespace MsgPackExplorer {
     private TreeNode CreateObjectNode(ComplexObject obj) {
       int imgIdx = GetObjectIcon(obj);
       string text = obj.ToString();
+      string entry = obj is RootObject ? ((RootObject)obj).EntryText : null;
+      if (entry != null)
+        text = string.Concat(entry, " : ", text);
       if (obj is RootObject && obj.Parent is null)
         text = string.Concat("Root : ", text);
 

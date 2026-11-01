@@ -43,6 +43,7 @@ flowchart LR
 - **Items view**. One line per item: offset, indentation, role (`key`, `value`, `[n]`), encoding and value (`uint 16 1234`, `fixext 4, type -1 (timestamp): ...`). The object path is a comment.
 - **Limits** keep answers within the agent's context: `maxNodes` (1000), `maxString` (200 chars), 32 bytes of bin shown. `path` and `from`/`to` select a part.
 - **Errors** are listed with their offset and object path. `msgpack_explain_offset` shows the items holding a byte, the header and content bytes of its item, and a hex window around it.
+- **Streams** (written by LtMsgPack's `MsgPackStreamWriter`, see [Streaming.md](Streaming.md)) are decoded with `MsgPackSettings.ReadStreams`. The structure says "a stream", values of unknown length show as `array of unknown length (C1 90 ... C1 C0)` (a str or bin with its chunks), and `msgpack_explain_offset` names the escape sequence at a `0xC1`. The summary lists each index of the stream (status, writer, CRC-32, moved offsets) and its entries (identifier, offset, length, content type, element count, points, sidecar), and the objects view names the payloads after their entries (`// entry "orders"`). The items view shows the index's content by field name (`entries`, `offset`, `identifier`...) and its tail. A schema written once per stream (`PerStream`) is found by the references to it later in the data. A stray `0xC1` is read as an escape sequence too: its code byte belongs to the error.
 
 ## The IDE bridge protocol
 

@@ -15,7 +15,7 @@
   const LIMITS = [500, 1000, 10000, 100000, 0];
   const BADGES = {
     nil: 'nil', bool: 'bool', int: '123', float: '1.5', bin: 'bin', str: 'abc', array: '[ ]', map: '{ }',
-    entry: 'k:v', ext: 'ext', error: '!', root: 'root', other: '?'
+    entry: 'k:v', ext: 'ext', error: '!', root: 'root', index: 'idx', tail: 'tail', sidecar: 'side', other: '?'
   };
   const SEVERITY = {
     Error: ['✖', 'Error'],
@@ -373,7 +373,7 @@
 
     setData(bytes, items) {
       this.bytes = bytes;
-      // 0 data, 1 type byte, 2 length bytes, 3 not part of the data (after it, or the whole data when it could not be read)
+      // 0 data, 1 type bytes (also the escape sequences of values of unknown length: 0xC1 and its code, and the end 0xC1 0xC0), 2 length bytes, 3 not part of the data (after it, or the whole data when it could not be read)
       const classes = new Uint8Array(bytes.length);
       if (items && items.length > 0) {
         const root = items[0];
@@ -382,9 +382,17 @@
         for (const item of items) {
           let offset = item.offset;
           if (item.typeBytes > 0 && offset >= 0 && offset < bytes.length) {
-            classes[offset++] = 1;
+            for (let t = 0; t < item.typeBytes && offset < bytes.length; t++) {
+              classes[offset++] = 1;
+            }
             for (let t = 0; t < item.lengthBytes && offset < bytes.length; t++) {
               classes[offset++] = 2;
+            }
+          }
+          if (item.endBytes > 0) {
+            const end = item.offset + item.length;
+            for (let t = Math.max(0, end - item.endBytes); t < end && t < bytes.length; t++) {
+              classes[t] = 1;
             }
           }
         }

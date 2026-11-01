@@ -152,6 +152,11 @@ namespace ObjectDebugger
       MpError error = current as MpError;
       if (error != null)
         return SearchItem(error.PartialItem, matches, stop, ref visited);
+
+      // The fields of the index of a stream (identifiers, content types, metadata)
+      MpStreamIndex index = current as MpStreamIndex;
+      if (index != null)
+        return SearchItem(index.Content, matches, stop, ref visited);
 #endif
 
       return true;

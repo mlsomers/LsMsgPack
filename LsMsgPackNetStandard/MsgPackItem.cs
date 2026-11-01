@@ -78,6 +78,12 @@ namespace LsMsgPack
     {
       get { return storedLength; }
     }
+
+    internal void SetStoredRange(long offset, long length)
+    {
+      storedOffset = offset;
+      storedLength = length;
+    }
 #endif
 
     /// <summary>
@@ -474,6 +480,8 @@ namespace LsMsgPack
         try
         {
           MsgPackItem item = Unpack(stream, settings);
+          if (settings._readStreams)
+            item = RecognizeTail(item, items, stream, lastpos);
           items.Add(item);
           lastpos = stream.Position;
           // Unpack returns errors as items here instead of throwing: stop at the first one like the catch below does
@@ -494,7 +502,10 @@ namespace LsMsgPack
           }
         }
 #else
-        items.Add(Unpack(stream, settings));
+        MsgPackItem item = Unpack(stream, settings);
+        if (settings._readStreams)
+          item = RecognizeTail(item, items, stream, lastpos);
+        items.Add(item);
         lastpos = stream.Position;
 #endif
       }
@@ -511,6 +522,47 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// The value after the index of a stream is its tail (<see cref="MsgPackSettings.ReadStreams"/>): an array of 4 values with fixed types, recognized by its bytes, which also tell whether the index matches its CRC-32.
+    /// </summary>
+    private static MsgPackItem RecognizeTail(MsgPackItem item, MpRoot items, Stream stream, long start)
+    {
+      MpStreamIndex index = items.Count > 0 ? items[items.Count - 1] as MpStreamIndex : null;
+      MpArray array = item as MpArray;
+      if (index is null || array is null || !stream.CanSeek || stream.Position - start != Streaming.MsgPackStreamIndex.TailLength)
+        return item;
+
+      long end = stream.Position;
+      try
+      {
+        byte[] bytes = new byte[Streaming.MsgPackStreamIndex.TailLength];
+        stream.Position = start;
+        ReadExactly(stream, bytes, bytes.Length);
+        Streaming.IndexContent.Tail tail;
+        if (!Streaming.IndexContent.TryParseTail(bytes, 0, out tail))
+          return item;
+
+        long indexStart = start - tail.IndexLength;
+        bool crcMatches = indexStart == index.Start && tail.IndexLength <= int.MaxValue && CrcOf(stream, indexStart, (int)tail.IndexLength) == tail.Crc;
+        MpStreamTail result = new MpStreamTail(array, tail.IndexOffset, tail.IndexLength, tail.Crc, crcMatches);
+        index.SetTail(result);
+        return result;
+      }
+      finally
+      {
+        stream.Position = end;
+      }
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)] // System.Memory (spans) is only loaded when a stream has an index
+    private static uint CrcOf(Stream stream, long start, int length)
+    {
+      byte[] bytes = new byte[length];
+      stream.Position = start;
+      ReadExactly(stream, bytes, length);
+      return Streaming.Crc32.Compute(bytes);
+    }
+
+    /// <summary>
     /// Marks (in <see cref="Exception.Data"/>) the exception thrown when the data is nested deeper than <see cref="MsgPackOptions.MaxDepth"/>: the levels above pass it on as it is instead of wrapping it each.
     /// </summary>
     private const string TooDeepKey = "LsMsgPack.TooDeep";
@@ -523,6 +575,7 @@ namespace LsMsgPack
     }
 
     /// <param name="depth">The nesting level of the item (0 for the root), arrays and maps at <see cref="MsgPackOptions.MaxDepth"/> are refused: deeper nesting could exhaust the stack</param>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)] // one call per item, as before the type byte was passed on
     internal static MsgPackItem Unpack(Stream stream, MsgPackSettings settings, int depth)
     {
       int typeByte = stream.ReadByte();
@@ -531,7 +584,20 @@ namespace LsMsgPack
 #else
       if (typeByte < 0) throw new MsgPackException("Unexpected end of data.", stream.Position, MsgPackTypeId.NeverUsed);
 #endif
+      return Unpack(stream, settings, depth, typeByte, CodeNotRead);
+    }
+
+    /// <summary>
+    /// The code byte of an escape sequence (0xC1) is not read yet, see <see cref="Unpack(Stream, MsgPackSettings, int, int, int)"/>.
+    /// </summary>
+    internal const int CodeNotRead = -2;
+
+    /// <param name="typeByte">The first byte of the item, already read (the containers of unknown length read it to recognize their end)</param>
+    /// <param name="code">With <paramref name="typeByte"/> 0xC1: the code byte that follows it when already read, otherwise <see cref="CodeNotRead"/></param>
+    internal static MsgPackItem Unpack(Stream stream, MsgPackSettings settings, int depth, int typeByte, int code)
+    {
       MsgPackItem item = null;
+      bool escaped = false;
       try
       {
         MsgPackTypeId type = (MsgPackTypeId)typeByte;
@@ -575,15 +641,25 @@ namespace LsMsgPack
           case MsgPackTypeId.MpExt32: item = new MpExt(settings); break;
           case MsgPackTypeId.NeverUsed:
             {
+              if (settings._readStreams)
+              {
+                long start = stream.Position - (code < 0 ? 1 : 2); // a code at the end of the data was not read either
+                if (code == CodeNotRead) code = stream.ReadByte();
+                item = StartOfUnknownLength(settings, code);
+                if (item is null)
+                  return EscapeError(stream, settings, start, code);
+                escaped = true;
+                break;
+              }
               long pos = stream.Position - 1;
 #if KEEPTRACK
               if (settings._continueProcessingOnBreakingError) FindNextValidTypeId(stream);
-              return new MpError(settings, pos, MsgPackTypeId.NeverUsed, "The specification specifically states that the value 0xC1 should never be used.")
+              return new MpError(settings, pos, MsgPackTypeId.NeverUsed, NeverUsedMessage)
               {
                 storedLength = (stream.Position - pos)
               };
 #else
-              throw new MsgPackException("The specification specifically states that the value 0xC1 should never be used.", pos, MsgPackTypeId.NeverUsed);
+              throw new MsgPackException(NeverUsedMessage, pos, MsgPackTypeId.NeverUsed);
 #endif
             }
         }
@@ -599,13 +675,13 @@ namespace LsMsgPack
         if (!ReferenceEquals(item, null))
         {
 #if KEEPTRACK
-          item.storedOffset = stream.Position - 1;
+          item.storedOffset = stream.Position - (escaped ? 2 : 1);
 #endif
           item._settings = settings; // maybe redundent, but want to be sure
           if (depth >= settings._maxDepth && (item is MpArray || item is MpMap))
-            throw TooDeep(settings._maxDepth, stream.Position - 1, type);
+            throw TooDeep(settings._maxDepth, stream.Position - (escaped ? 2 : 1), type);
           item._depth = depth;
-          MsgPackItem ret = item.Read(type, stream);
+          MsgPackItem ret = escaped ? ((MsgPackVarLen)item).ReadUnknownLength(stream) : item.Read(type, stream);
 #if KEEPTRACK
           item.storedLength = stream.Position - item.storedOffset;
           if (!ReferenceEquals(item, ret)) ret.storedLength = item.storedLength;
@@ -646,6 +722,42 @@ namespace LsMsgPack
         throw new MsgPackException("Error while reading data.", ex, stream.Position - 1, (MsgPackTypeId)typeByte);
 #endif
       }
+    }
+
+    private const string NeverUsedMessage = "The specification specifically states that the value 0xC1 should never be used. Streams use it for values of unknown length (an escape sequence, as proposed in msgpack/msgpack#347): set MsgPackSettings.ReadStreams to read them.";
+
+    /// <summary>
+    /// The empty item an escape sequence starts (0xC1 followed by <paramref name="code"/>), to read with <see cref="MsgPackVarLen.ReadUnknownLength"/>. Null for the end code, which only a container of unknown length expects, and for the reserved codes.
+    /// </summary>
+    private static MsgPackVarLen StartOfUnknownLength(MsgPackSettings settings, int code)
+    {
+      switch (code)
+      {
+        case Streaming.Escape.ArrayStart: return new MpArray(settings);
+        case Streaming.Escape.MapStart: return new MpMap(settings);
+        case Streaming.Escape.StringStart: return new MpString(settings);
+        case Streaming.Escape.BinaryStart: return new MpBin(settings);
+        default: return null;
+      }
+    }
+
+    /// <summary>
+    /// An escape sequence that does not start a value: the end code where no value of unknown length is open, a reserved code, or the end of the data after 0xC1.
+    /// </summary>
+    private static MsgPackItem EscapeError(Stream stream, MsgPackSettings settings, long start, int code)
+    {
+      MsgPackException ex;
+      if (code < 0) ex = Streaming.Escape.AtEndOfData(start);
+      else if (code == Streaming.Escape.End) ex = Streaming.Escape.MisplacedEnd("is not inside an array, map, str or bin of unknown length", start);
+      else ex = Streaming.Escape.Reserved((byte)code, start);
+#if KEEPTRACK
+      return new MpError(settings, start, MsgPackTypeId.NeverUsed, ex.Message)
+      {
+        storedLength = (stream.Position - start)
+      };
+#else
+      throw ex;
+#endif
     }
 
 #if KEEPTRACK

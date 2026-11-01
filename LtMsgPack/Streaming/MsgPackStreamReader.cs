@@ -1008,7 +1008,7 @@ namespace LtMsgPack.Streaming
     {
       while (TryEnsure(1))
       {
-        int header = IndexFormat.ExtensionHeaderLength(_buf[_pos]);
+        int header = IndexContent.ExtensionHeaderLength(_buf[_pos]);
         if (header == 0 || !TryEnsure(header))
           return;
         sbyte type = unchecked((sbyte)_buf[_pos + header - 1]);
@@ -1023,7 +1023,7 @@ namespace LtMsgPack.Streaming
         _length = 0;
         if (type == MsgPackStreamIndex.IndexExtensionType)
         {
-          if (!TryEnsure(MsgPackStreamIndex.TailLength) || !IndexFormat.TryParseTail(_buf, _pos, out IndexFormat.Tail unused))
+          if (!TryEnsure(MsgPackStreamIndex.TailLength) || !IndexContent.TryParseTail(_buf, _pos, out IndexContent.Tail unused))
             throw new MsgPackException("An index (extension type 3) of the stream is not followed by its tail.", _base + _pos);
           _pos += MsgPackStreamIndex.TailLength;
         }
@@ -1038,7 +1038,7 @@ namespace LtMsgPack.Streaming
     {
       while (TryEnsure(at + 1))
       {
-        int header = IndexFormat.ExtensionHeaderLength(_buf[_pos + at]);
+        int header = IndexContent.ExtensionHeaderLength(_buf[_pos + at]);
         if (header == 0 || !TryEnsure(at + header))
           break;
         sbyte type = unchecked((sbyte)_buf[_pos + at + header - 1]);
