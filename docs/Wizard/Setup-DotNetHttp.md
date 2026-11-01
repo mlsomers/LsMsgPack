@@ -77,6 +77,13 @@ HttpResponseMessage response = await client.PostAsync("api/orders",
 Order saved = await response.EnsureSuccessStatusCode().Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
 ```
 
+A long list, sent while the server reads it (an action returning an `IAsyncEnumerable<Order>`, e.g. an EF Core query with `AsAsyncEnumerable()`), is read item by item as it arrives:
+
+```csharp
+await foreach (Order item in client.GetFromMsgPackAsAsyncEnumerable<Order>("api/orders/export", formatter))
+  Show(item);
+```
+
 With `IHttpClientFactory` (ASP.NET Core, a worker service, MAUI with DI):
 
 ```csharp

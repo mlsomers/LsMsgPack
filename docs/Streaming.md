@@ -8,7 +8,7 @@
 - **Positions**: the writer reports the position after each value.
 - **An index** (optional): the writer lists the root values with their positions, hashes and points into large arrays, and writes the list at the end of the stream. A reader of a file goes to any table or row directly (see [the index](#the-index)).
 
-Neither is thread-safe. The reader is synchronous. The writer is synchronous by default, or [asynchronous](#asynchronous-writing) for streams that must not be written synchronously (an ASP.NET Core response, see [streaming responses](WebFormatters.md#streaming-responses)).
+Neither is thread-safe. Both work synchronously or asynchronously, for streams that must not be read or written synchronously (an HTTP response or request, see [streaming responses](WebFormatters.md#streaming-responses)): the reader has [async methods](#asynchronous-reading), the writer is synchronous by default or [asynchronous](#asynchronous-writing).
 
 ## Writing
 
@@ -127,6 +127,26 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 - a chunk of a str or bin that isn't a str or bin;
 - nesting deeper than `MaxDepth`;
 - data that ends inside a value.
+
+### Asynchronous reading
+
+The reader's async methods read the stream with `ReadAsync`, never synchronously. Use them for an HTTP response (see [HttpClient](WebFormatters.md#streams-with-httpclient)), an ASP.NET Core request body (which refuses synchronous reads), or a network stream:
+
+```csharp
+using (MsgPackStreamReader reader = new MsgPackStreamReader(response, serializer))
+{
+  await reader.ReadHeadAsync<List<Row>>();
+  await foreach (Row row in reader.ReadElementsAsync<Row>(cancellationToken)) // the rows as they arrive
+    Process(row);
+}
+```
+
+- `ReadAsync()`, `AtEndAsync()`, `SkipAsync()`, `GetValueAsync()`, `GetStringAsync()`, `GetBytesAsync()`, `ReadObjectAsync<T>()` and `ReadHeadAsync<TRoot>()` do what the methods without `Async` do. They read ahead until the buffer holds what the step needs (a token, or a value that is read whole), then read it from the buffer, with the same checks and errors.
+- `ReadElementsAsync<T>()` (.NET Standard 2.1 and .NET 8) returns the elements of an array as an `IAsyncEnumerable<T>`, each read as `ReadObjectAsync<T>` reads it: at its `ArrayStart`, or before it (then it reads that first). The reader is at the `ArrayEnd` afterwards.
+- The values of a token (`GetInt64()`, `GetBoolean()`, `GetDouble()`...) need no reading. The data of a str, bin or extension isn't buffered by `ReadAsync` (it may be large): read it with `GetStringAsync()`, `GetBytesAsync()` or `GetValueAsync()` (an extension, a timestamp). `GetDateTime()` and `GetExtension()` would read it synchronously.
+- `AtEndAsync()` in an array of unknown length needs one byte when the next value doesn't start with `0xC1`, so a source that waits after a small element doesn't keep it waiting.
+- The index (`ReadIndexes`, `Seek`, `SeekElement`) is read synchronously: it needs a stream that seeks, e.g. a file.
+- They take a bit longer than the synchronous methods on data that is already there (a `MemoryStream`): each value is passed twice, once to know that it is buffered, once to read it.
 
 ## Objects and their schema
 

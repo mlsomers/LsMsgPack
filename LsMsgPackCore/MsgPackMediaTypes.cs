@@ -81,6 +81,14 @@ namespace LsMsgPack
       return Accepts(accept, WithoutParameters(mediaType), "stream", "unknown-length");
     }
 
+    /// <summary>
+    /// True if the Content-Type has <see cref="StreamParameter"/>: the body is a stream (docs/Streaming.md), with values of unknown length, read it with MsgPackStreamReader (LtMsgPack) as it arrives.
+    /// </summary>
+    public static bool IsStream(string contentType)
+    {
+      return Accepts(contentType, WithoutParameters(contentType), "stream", "unknown-length");
+    }
+
     private static bool Accepts(string accept, string mediaType, string parameter, string value)
     {
       if (accept is null || mediaType is null || accept.IndexOf(value, StringComparison.OrdinalIgnoreCase) < 0) // the usual case: one scan, no allocations

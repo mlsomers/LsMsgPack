@@ -6,7 +6,7 @@ Three packages let controllers receive and return MsgPack the same way they hand
 |---|---|---|---|
 | [ASP.NET Core](#aspnet-core) MVC / Web API controllers, [minimal APIs](#minimal-apis) | `LsMsgPack.AspNetCore` | ASP.NET Core 2.x (netstandard2.0, also on .NET Framework) and ASP.NET Core 3.0 and up (net8.0) | `LsMsgPackFormatters` |
 | [ASP.NET Web API 2](#aspnet-web-api-2) (`System.Web.Http`) | `LsMsgPack.AspNet.WebApi` | netstandard2.0 (Web API 2 runs on .NET Framework) | `LsMsgPackWebApiFormatters` |
-| [HttpClient](#httpclient) (`ObjectContent` / `ReadAsAsync`) | `LsMsgPack.AspNet.WebApi` | netstandard2.0, any platform | `LsMsgPackWebApiFormatters` |
+| [HttpClient](#httpclient) (`ObjectContent` / `ReadAsAsync`, [streams](#streams-with-httpclient)) | `LsMsgPack.AspNet.WebApi` | netstandard2.0 and 2.1 (`IAsyncEnumerable`), any platform | `LsMsgPackWebApiFormatters` |
 | [ASP.NET MVC 5](#aspnet-mvc-5) (`System.Web.Mvc`) | `LsMsgPack.AspNet.Mvc` | .NET Framework 4.6.2+ | `LsMsgPackMvc` |
 
 All of them depend on the `LtMsgPack` package (and through it `LsMsgPack.Core`) and speak exactly the same wire formats, so an HttpClient using the Web API formatter can talk to an ASP.NET Core server, for example.
@@ -152,11 +152,11 @@ ASP.NET Core on .NET 8 and up. A MsgPack array starts with its length, so a list
 Accept: application/x-lsmsgpack; stream=unknown-length, application/x-lsmsgpack; q=0.9
 ```
 
-The parameter (`MsgPackMediaTypes.StreamParameter`) works on any of the three media types, and `schema=described` can be added to the first range. The second range is needed because MVC's negotiation only matches a media type without parameters. The TypeScript client's `stream(url)` sends such a header.
+The parameter (`MsgPackMediaTypes.StreamParameter`) works on any of the three media types, and `schema=described` can be added to the first range. The second range is needed because MVC's negotiation only matches a media type without parameters. The .NET client's [`GetFromMsgPackAsAsyncEnumerable`](#streams-with-httpclient) and the TypeScript client's `stream(url)` send such a header.
 
 - **`IAsyncEnumerable<T>`** (an action, `Ok(items)`, `MsgPackResults.MsgPack(items)`) is then written as a head (the schema of `List<T>`, once) followed by an array of unknown length, with each item written as it comes. With known lengths this would be the payload of the `List<T>`. The schema is negotiated as for other responses (`MsgPack-Schema`, a reference when the client holds it). A `List<KeyValuePair<K, V>>` is a map, so pairs aren't streamed. Other clients get the `List<T>` as before. The response varies with the `Accept` header, and `LtMsgPackHttpOptions.WriteStreams = false` turns streaming off.
 - **When items go out**: what's written is sent whenever the source makes the formatter wait for the next item, and every `FlushThreshold` bytes (64 KiB). Nothing is sent before the first item, so an exception before it still gets an error response. An exception after it aborts the response: the array has no end, and the client finds the data cut off.
-- **The response** has `stream=unknown-length` in its `Content-Type` and no `Content-Length`. Read it with `MsgPackStreamReader` (`ReadHead<List<T>>()`, then the array) or the TypeScript client's `stream(url)` (`readHead()`, `elements()`).
+- **The response** has `stream=unknown-length` in its `Content-Type` and no `Content-Length`. Read it with HttpClient's [`GetFromMsgPackAsAsyncEnumerable<T>`](#streams-with-httpclient), with `MsgPackStreamReader` (`ReadHeadAsync<List<T>>()`, then `ReadElementsAsync<T>()`) or the TypeScript client's `stream(url)` (`readHead()`, `elements()`).
 
 **Writing a stream yourself**: return a `MsgPackStreamResult` from an action (or `MsgPackResults.Stream(...)` / `Results.Extensions.MsgPackStream(...)` from an endpoint). It gives you an [asynchronous](Streaming.md#asynchronous-writing) `MsgPackStreamWriter` on the response, with the serializer of the media type:
 
@@ -236,6 +236,52 @@ Notes:
 - Set the `Accept` header, or the server will probably answer with JSON.
 - On the client side, a response that can't be deserialized throws from `ReadAsAsync` instead of being logged.
 - Use the same `XLsMsgPack` options on the client and the server for `application/x-lsmsgpack` (at least the same `UseInexedSchema`).
+
+### Streams with HttpClient
+
+An ASP.NET Core action that returns an `IAsyncEnumerable<T>` [streams](#streaming-responses) its items when the request asks for it. The client reads them as they arrive (.NET Standard 2.1: .NET Core 3.0 and up, .NET 5 and up, MAUI...):
+
+```csharp
+await foreach (Order order in client.GetFromMsgPackAsAsyncEnumerable<Order>("api/orders/export", formatter, cancellationToken))
+  Show(order);
+```
+
+- It sends `MsgPackStreamExtensions.StreamAccept` as the `Accept` header (application/x-lsmsgpack, then application/msgpack, each with `stream=unknown-length` and without), and returns once the headers are there (`HttpCompletionOption.ResponseHeadersRead`). The request is sent when the enumeration starts.
+- A server that doesn't stream (Web API 2, MVC 5, or `WriteStreams = false`) sends the `List<T>` or `T[]` as one body: the same items, read the same way. Nil and an empty body (`204 No Content`) are no items.
+- The schema of the stream's head is learned as the schema of any response: the next requests list it in `MsgPack-Schemas`, and the server refers to it. The handler (`formatter.CreateHandler()`) passes streams through without buffering them. With `CreateHandler(true)` the stream range gets `schema=described` too.
+- A status code outside 200-299 throws an `HttpRequestException`, a response that isn't MsgPack (JSON) a `NotSupportedException`. An exception of the server's source after the first item aborts the response: the enumeration throws, after the items that arrived.
+- `response.ReadFromMsgPackAsAsyncEnumerable<T>(formatter)` reads the items of a response you sent yourself (with `HttpCompletionOption.ResponseHeadersRead`, otherwise HttpClient buffers it first).
+
+Anything else in a stream (several tables, objects of several types, an index; see [Streaming.md](Streaming.md)) is read with a `MsgPackStreamReader`, on .NET Framework too:
+
+```csharp
+using (MsgPackStreamReader reader = await client.GetMsgPackStreamAsync("api/export", formatter)) // or SendForMsgPackStreamAsync(request, formatter)
+{
+  await reader.ReadHeadAsync<List<Order>>();
+  await reader.ReadAsync();                        // ArrayStart
+  while (!await reader.AtEndAsync())
+    Show(await reader.ReadObjectAsync<Order>());
+  await reader.ReadAsync();                        // ArrayEnd
+}
+```
+
+**Request bodies that are streams**: a `MsgPackStreamContent` writes the body while it is sent (chunked, without a `Content-Length`), with an [asynchronous](Streaming.md#asynchronous-writing) `MsgPackStreamWriter`:
+
+```csharp
+await client.PostAsync("api/orders/import", MsgPackStreamContent.Create(formatter, ordersAsync));   // an IAsyncEnumerable<T>: a head and an array of unknown length
+await client.PostAsync("api/import", new MsgPackStreamContent(formatter, async writer =>
+{
+  writer.WriteHead<List<Order>>();
+  writer.WriteArrayStart();
+  foreach (Order order in orders)
+    await writer.WriteObjectAsync(order); // or FlushIfFullAsync() after each value
+  writer.WriteEnd();
+}));
+```
+
+- The `Content-Type` is the media type (application/x-lsmsgpack by default) with `stream=unknown-length`. With application/x-lsmsgpack each schema is inline the first time it is used, and referred to after that, in the same body.
+- The formatters only read bodies of a known length. The server reads such a body with `serializer.CreateStreamReader(Request.Body, Request.ContentType)` (the `LtMsgPackHttpSerializer` that `services.AddLsMsgPack()` registers) and its async methods: ASP.NET Core refuses synchronous reads.
+- On .NET Framework, set `request.Headers.TransferEncodingChunked = true`: `HttpClientHandler` buffers a body without a length to compute it otherwise.
 
 ASP.NET MVC 5
 -------------

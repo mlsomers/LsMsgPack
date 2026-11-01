@@ -15,9 +15,10 @@ namespace LtMsgPack.Streaming
   /// A value that is read whole (<see cref="ReadObject{T}"/>, <see cref="GetValue"/>, <see cref="GetString"/>...) is buffered whole.</para>
   /// <para>The index of a stream (<see cref="MsgPackStreamIndex"/>: extension values of types 3 and 4 between the root values, and the tails after them) is skipped. When the stream seeks,
   /// <see cref="ReadIndexes"/> reads it and <see cref="Seek(MsgPackStreamEntry)"/> / <see cref="SeekElement"/> go to an entry or an element of its array.</para>
+  /// <para>The async methods (<see cref="ReadAsync"/>, <see cref="ReadObjectAsync{T}"/>...) read the stream asynchronously, for streams that must not be read synchronously (an HTTP response, browsers).</para>
   /// <para>Not thread-safe.</para>
   /// </summary>
-  public sealed class MsgPackStreamReader : IDisposable
+  public sealed partial class MsgPackStreamReader : IDisposable
   {
     private const int InitialCapacity = 16 * 1024;
     private const int MaxBufferLength = 0x7FFFFFC7; // Array.MaxLength
@@ -194,7 +195,7 @@ namespace LtMsgPack.Streaming
           }
           return !TryEnsure(PastStreamValues(next) + 1);
         }
-        return TryEnsure(next + 2) && _buf[_pos + next] == Escape.Byte && _buf[_pos + next + 1] == Escape.End;
+        return TryEnsure(next + 1) && _buf[_pos + next] == Escape.Byte && TryEnsure(next + 2) && _buf[_pos + next + 1] == Escape.End; // a live stream: the next value may be one byte, then the source waits
       }
     }
 
@@ -722,7 +723,8 @@ namespace LtMsgPack.Streaming
     /// Reads the schema that <see cref="MsgPackStreamWriter.WriteHead{TRoot}"/> wrote (inline or a reference) for the root value that follows it (its body):
     /// the objects in the body are then read without their schema (<see cref="ReadObject{T}"/>, at any depth), as <see cref="LtMsgPackSerializer.Deserialize{T}(byte[])"/> reads them in a value of <typeparamref name="TRoot"/>.
     /// E.g. <c>ReadHead&lt;List&lt;Row&gt;&gt;()</c>, <see cref="Read"/> (the ArrayStart), a <see cref="ReadObject{T}"/> per row until <see cref="AtEnd"/>, <see cref="Read"/> (the ArrayEnd).
-    /// <para>Any payload of <see cref="LtMsgPackSerializer.Serialize{T}(T)"/> can be read so too. Without the indexed schema nothing is read, the body is read as without a head.</para>
+    /// <para>Any payload of <see cref="LtMsgPackSerializer.Serialize{T}(T)"/> can be read so too, also nil (null, written without a schema): it is the body, the next <see cref="Read"/> reads it.
+    /// Without the indexed schema nothing is read, the body is read as without a head.</para>
     /// </summary>
     /// <typeparam name="TRoot">The type of the root value that follows (pairs the classes of the schema with the reader's, as <see cref="LtMsgPackSerializer.Deserialize{T}(byte[])"/>)</typeparam>
     /// <exception cref="InvalidOperationException">Not at <see cref="Depth"/> 0, or the head read before still waits for its body</exception>
@@ -753,6 +755,11 @@ namespace LtMsgPack.Streaming
         SkipStreamValues();
         if (!TryEnsure(1))
           throw EndOfData();
+        if (_buf[_pos] == 0xC0) // null is written without a schema: the nil is the body
+        {
+          _headState = HeadState.AwaitingBody;
+          return;
+        }
         _mark = _pos;
         _escaped = false;
         _counts.Clear();
@@ -765,6 +772,7 @@ namespace LtMsgPack.Streaming
           if (SchemaBytes.IsMap(_buf[_mark]))
             Register(_mark, _pos);
           _head = _serializer.ReadHead(_buf, _mark, _pos);
+          HeadSchemaRead?.Invoke(_buf, _mark, _pos - _mark);
           _token = MsgPackTokenType.None;
           _length = 0;
         }
@@ -1187,6 +1195,8 @@ namespace LtMsgPack.Streaming
         return;
       }
 
+      if (_noIo)
+        throw NotBuffered();
       length -= _end - _pos;
       _base += _end;
       _pos = 0;
@@ -1241,6 +1251,8 @@ namespace LtMsgPack.Streaming
       {
         if (_eof)
           return false;
+        if (_noIo)
+          throw NotBuffered();
         if (_end == _buf.Length)
           MakeRoom();
         int read = _source.Read(_buf, _end, _buf.Length - _end);

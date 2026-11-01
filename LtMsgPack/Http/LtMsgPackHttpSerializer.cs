@@ -422,6 +422,24 @@ namespace LtMsgPack.Http
       return true;
     }
 
+    /// <summary>
+    /// A reader of a body that is a stream (docs/Streaming.md; <see cref="MsgPackMediaTypes.IsStream"/>), with the serializer of the media type. Read it with the async methods (<see cref="MsgPackStreamReader.ReadHeadAsync{TRoot}"/>, ...).
+    /// <para>Client side, with the request's uri and the response header <see cref="SchemaHeader"/>: the schema of a head is learned as <see cref="LearnSchema"/> learns the schema of a body,
+    /// so the next requests to that server advertise it. Server side (a request body): leave both null.</para>
+    /// </summary>
+    /// <param name="body">The response (or request) body</param>
+    /// <param name="mediaType">Its Content-Type</param>
+    /// <param name="requestUri">Client side: the uri of the request</param>
+    /// <param name="schemaHeader">Client side: the response header <see cref="SchemaHeader"/></param>
+    /// <param name="leaveOpen">Do not close the body when the reader is disposed</param>
+    public MsgPackStreamReader CreateStreamReader(Stream body, string mediaType, Uri requestUri = null, string schemaHeader = null, bool leaveOpen = false)
+    {
+      MsgPackStreamReader reader = new MsgPackStreamReader(body, For(mediaType), leaveOpen);
+      if (_negotiate && !(requestUri is null) && !string.IsNullOrEmpty(schemaHeader) && MsgPackMediaTypes.IsLsMsgPack(mediaType))
+        reader.HeadSchemaRead = (data, offset, count) => LearnSchema(requestUri, schemaHeader, data, offset, count, mediaType);
+      return reader;
+    }
+
     private static string Origin(Uri uri)
     {
       return uri.GetLeftPart(UriPartial.Authority);
