@@ -1,4 +1,4 @@
-# LtMsgPack
+﻿# LtMsgPack
 
 Fast MsgPack serializer for .NET classes, used like the xml and json serializers. It writes and reads your objects directly, without an intermediate item tree. On the invoices of the benchmark it writes about 3-4x and reads about 4x as fast as System.Text.Json, with 35-47% smaller payloads.
 
@@ -22,7 +22,7 @@ Order copy = serializer.Deserialize<Order>(data);
 
 There are also overloads that write to and read from a `Stream`.
 
-To write and read many values one after another (database rows, several result sets or tables in one file), including arrays and maps whose length isn't known when they start and tables of objects with their schema written once, use `MsgPackStreamWriter` and `MsgPackStreamReader` (namespace `LtMsgPack.Streaming`), synchronously or asynchronously (`ReadElementsAsync<T>()` for the rows of a table as they arrive). See [streaming](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Streaming.md).
+To write and read many values one after another (database rows, several result sets or tables in one file), including arrays and maps whose length isn't known when they start and tables of objects with their schema written once, use `MsgPackStreamWriter` and `MsgPackStreamReader` (namespace `LtMsgPack.Streaming`), synchronously or asynchronously (`ReadElementsAsync<T>()` for the rows of a table as they arrive). See [streaming](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Streaming.md). For ADO.NET data readers (result sets and table dumps without a class, dumps read back as a `DbDataReader`) there is the add-on [LtMsgPack.Data](https://www.nuget.org/packages/LtMsgPack.Data).
 
 ## Settings
 

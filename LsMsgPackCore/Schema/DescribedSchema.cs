@@ -67,6 +67,45 @@ namespace LsMsgPack
       new DescribedSchema(bytes, defs, settings, byteOrder).Write(root);
     }
 
+    /// <summary>
+    /// The schema of rows written without a class (LtMsgPack's SerializeRows of a data reader): one entry with the columns as its properties, and the root a list of it,
+    /// the same bytes as <see cref="Write(ByteWriter, List{ComplexTypeDef}, Type, MsgPackOptions, MsgPackOptions)"/> of a <c>List&lt;T&gt;</c> of a class with these properties.
+    /// </summary>
+    /// <param name="typeName">The name of the entry, null when no row was written (no entry, as for an empty list)</param>
+    /// <param name="types">The types of the columns (the data reader's field types): a value type is declared as its Nullable (a column can be DBNull, a nil is null)</param>
+    internal static void WriteColumns(ByteWriter bytes, string typeName, string[] names, Type[] types, MsgPackOptions settings, MsgPackOptions byteOrder)
+    {
+      DescribedSchema schema = new DescribedSchema(bytes, new List<ComplexTypeDef>(), settings, byteOrder);
+      bytes.WriteMapHeader(typeName is null ? 1 : 2, byteOrder);
+      if (!(typeName is null))
+      {
+        schema.WriteName(typeName);
+        bytes.WriteArrayHeader(names.Length, byteOrder);
+        for (int t = 0; t < names.Length; t++)
+        {
+          bytes.WriteArrayHeader(2, byteOrder);
+          schema.WriteName(names[t]);
+          if (types[t].IsValueType && Nullable.GetUnderlyingType(types[t]) is null)
+          {
+            bytes.WriteArrayHeader(2, byteOrder);
+            bytes.WriteString("?", byteOrder);
+          }
+          schema.WriteType(types[t]);
+        }
+      }
+
+      bytes.WriteString(RootKey, byteOrder);
+      bytes.WriteArrayHeader(1, byteOrder);
+      bytes.WriteArrayHeader(2, byteOrder);
+      bytes.WriteString(ContentName, byteOrder);
+      bytes.WriteArrayHeader(2, byteOrder);
+      bytes.WriteString("list", byteOrder);
+      if (typeName is null)
+        schema.Kind("any");
+      else
+        schema.WriteIndex(0);
+    }
+
     private void Write(Type root)
     {
       _bytes.WriteMapHeader(_defs.Count + 1, _byteOrder);

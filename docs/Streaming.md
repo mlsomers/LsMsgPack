@@ -1,6 +1,6 @@
-# Streaming: MsgPackStreamWriter and MsgPackStreamReader
+﻿# Streaming: MsgPackStreamWriter and MsgPackStreamReader
 
-`MsgPackStreamWriter` and `MsgPackStreamReader` (LtMsgPack, namespace `LtMsgPack.Streaming`) write and read MsgPack values one after another on a `Stream`. Use them when the data is too large to buffer, when it's produced while it's written (rows of a database query), or when one stream holds several parts (the result sets of a stored procedure, the tables of a backup).
+`MsgPackStreamWriter` and `MsgPackStreamReader` (LtMsgPack, namespace `LtMsgPack.Streaming`) write and read MsgPack values one after another on a `Stream`. Use them when the data is too large to buffer, when it's produced while it's written (rows of a database query), or when one stream holds several parts (the result sets of a stored procedure, the tables of a backup). For the rows of an ADO.NET data reader, the `LtMsgPack.Data` package writes and reads whole result sets with these: see [data readers](DataReader.md).
 
 - **Values**: integers, floats, strings, bins, timestamps, Guids, decimals, extensions, and arrays and maps of a known length.
 - **Values of unknown length**: arrays, maps, str and bin that are written before their length is known (see [the format](#the-format)).

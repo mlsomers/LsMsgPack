@@ -11,6 +11,7 @@ Project-specific notes live in a `CLAUDE.md` next to each project (loaded when y
 | `LsMsgPackCore/` | `LsMsgPack.Core`: options, type resolving, schema, conversions, everything without `MsgPackItem`s; shared by both serializers |
 | `LsMsgPackNetStandard/` | `LsMsgPack`: the item-tree serializer (`MsgPackItem`, `Types/`), used by the explorers |
 | `LtMsgPack/` | `LtMsgPack`: the fast serializer, same bytes without the item tree; streaming; `Http/` shared by the web formatters |
+| `LtMsgPack.Data/` | `LtMsgPack.Data`: add-on for ADO.NET data readers (result sets and table dumps as streams, `MsgPackDataReader`, the row mapper); tests in `LtMsgPack.DataTests` |
 | `LsMsgPackFormatters/`, `LsMsgPackWebApiFormatters/`, `LsMsgPackMvc/` | ASP.NET Core, Web API 2 + HttpClient, MVC 5 formatters (on LtMsgPack) |
 | `LtMsgPack.Generator/` | source generator (contexts, generated readers/writers) |
 | `LsMsgPack.Analyzers/` (+ `.CodeFixes`) | analyzers LSMP001-009, packed into LsMsgPack.Core |
@@ -30,6 +31,7 @@ dotnet test LsMsgPack.slnf --no-build -c DEBUG -m:1   # one project at a time (7
 dotnet test LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj -c Release --filter "TestCategory!=Benchmark"
 dotnet test LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj -c DebugKeepTrack --filter "TestCategory!=Benchmark"
 dotnet test LsMsgPackInteropTests/LsMsgPackInteropTests.csproj -c Release
+dotnet test LtMsgPack.DataTests -c Release --filter "TestCategory!=Benchmark"   # the data reader add-on (Dapper and SQLite as test dependencies)
 cd LsMsgPackVsCode && npm install && npm test         # after dotnet build of LsMsgPackVsCode/Server
 dotnet test LtMsgPack.GeneratorTests
 dotnet test LsMsgPack.AnalyzerTests

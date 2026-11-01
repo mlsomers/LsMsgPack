@@ -203,13 +203,7 @@ namespace LtMsgPack
     /// </summary>
     internal WriterHead PrepareHead(Type root)
     {
-      SchemaStore store = Options._schemaStore;
-      if (store is null)
-      {
-        store = _headStore;
-        if (store is null)
-          _headStore = store = new SchemaStore();
-      }
+      SchemaStore store = HeadStore();
 
       MsgPackOptions settings = Options;
       if (!settings._completeSchemas)
@@ -225,6 +219,21 @@ namespace LtMsgPack
 
       store.PrepareWriter(root, settings);
       return new WriterHead(store, root, settings, store.GetWriter(root, settings).Current); // the prepared session, or a grown one of the same root type
+    }
+
+    /// <summary>
+    /// Where the schemas of the heads are kept: the options' store, or one of this serializer.
+    /// </summary>
+    internal SchemaStore HeadStore()
+    {
+      SchemaStore store = Options._schemaStore;
+      if (store is null)
+      {
+        store = _headStore;
+        if (store is null)
+          _headStore = store = new SchemaStore();
+      }
+      return store;
     }
 
     /// <summary>

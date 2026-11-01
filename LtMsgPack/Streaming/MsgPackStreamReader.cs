@@ -785,6 +785,29 @@ namespace LtMsgPack.Streaming
     }
 
     /// <summary>
+    /// The schema of the head read last (LtMsgPack.Data reads the columns of rows from it), false without one (nil, or without the indexed schema).
+    /// </summary>
+    /// <param name="byteOrder">The byte order of the lengths in <paramref name="schema"/></param>
+    internal bool TryGetHeadSchema(out byte[] schema, out MsgPackOptions byteOrder)
+    {
+      Serializer.SchemaHead head = _head;
+      if (head is null || head.Schema is null)
+      {
+        schema = null;
+        byteOrder = null;
+        return false;
+      }
+      schema = head.Schema.Bytes;
+      byteOrder = head.LengthSettings ?? SchemaBytes.Canonical;
+      return true;
+    }
+
+    /// <summary>
+    /// The serializer of the reader (its options decide how values are read).
+    /// </summary>
+    internal Serializer Implementation { get { return _serializer; } }
+
+    /// <summary>
     /// Reads past the next value (its data stays in the buffer from the mark).
     /// </summary>
     private void PassValue(int depth)
