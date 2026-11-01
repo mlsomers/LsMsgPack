@@ -1,0 +1,23 @@
+# LsMsgPack (item-tree serializer)
+
+Assembly and package `LsMsgPack`, on top of `LsMsgPack.Core` (read `../LsMsgPackCore/CLAUDE.md` for the shared format rules). Keeps the items (`MsgPackItem`, `Types/`), the serializer, `Meta/FrameworkTypes.cs`, `MsgPackMeta`. The explorers use it with KEEPTRACK; LtMsgPack writes the same bytes faster.
+
+## How it works
+
+- **Two phases.** Writing: object → `MsgPackItem` tree (`MsgPackSerilaizer_Pack.cs`, note the typo: `SerializeObject`, `SerializeCollection`, `AddProperties`) → bytes (`MsgPackItem.WriteTo(ByteWriter)`, containers write their items into the same buffer). Reading: bytes → `MsgPackItem` tree (`MsgPackItem.Unpack`, each `Types/Mp*.Read`) → plain values (`object[]` for arrays, `KeyValuePair<object, object>[]` for maps) → objects (`MsgPackSerializer_Unpack.cs` → Core `ValueConverter`: `ConvertDeserializeValue`, `ConvertMap`, `SetProperties`).
+- **Items** (`Types/`): `MpInt` (keeps the original integer type, `DynamicallyCompact` picks the smallest encoding), `MpString`, `MpBin` (also `Guid`), `MpFloat`, `MpBool`, `MpNull`, `MpArray`, `MpMap`, `MpExt` → `MpDateTime` (type -1, timestamps) and custom extensions via `AbstractCustomExt<TSelf>` (`MpDecimal`, type 1, registered in `MsgPackSettings.CustomExtentionTypes`), `MpRoot` (several items in sequence), `MpError` (KEEPTRACK).
+- **Unknown extensions** (a type code without a registered custom extension) stay an `MpExt` in the unpacked tree (`MsgPackItem.UnpackedValue`, used by `MpArray`, `MpMap` and the serializer's root): converted to `byte[]` or kept as `MpExt` (object), anything else throws.
+- **Streams** (`MsgPackSettings.ReadStreams`, off by default, all builds; the explorers, the inspector, the MCP server and its read-as worker turn it on): `Unpack(stream, settings, depth)` reads the type byte and calls `Unpack(..., typeByte, code)` (`AggressiveInlining`: an extra call cost 1-3% on reading), whose 0xC1 case reads an escape (`StartOfUnknownLength`: `MsgPackVarLen.ReadUnknownLength`, overridden by `MpArray`/`MpMap` (children until `C1 C0` through `UnpackOrEnd`, KEEPTRACK error handling as `Read`) and `MpString`/`MpBin` (`ReadChunks`: the chunks' bytes joined, then decoded); misplaced, reserved and cut off escapes are `EscapeError`s, an `MpError` of both bytes under KEEPTRACK). KEEPTRACK only: `MsgPackVarLen.LengthUnknown`, `MpString`/`MpBin.Chunks` (items with offsets). At depth 0, after the custom extensions, `MpExt.Read` makes ext 3 an `MpStreamIndex` (its data read again from the stream in the spec's byte order into `Content`, so the items have offsets; `Index` from Core `IndexContent.Parse`, `IndexError`; KEEPTRACK `NameOf` names the fields: keep them equal to LtMsgPack's `IndexFormat` `WriteIndex`/`WriteEntry`) and ext 4 an `MpStreamSidecar`; `UnpackMultiple` (`RecognizeTail`) replaces the 25 byte array after an index by an `MpStreamTail` (CRC-32 of the index read back from the stream, `SetTail` moves the offsets by the delta). `MsgPackValidation`: index errors, CRC, a missing tail, `Interrupted`, incomplete entries, a comment per value of unknown length.
+
+## Invariants
+
+- **Leaf items write themselves** through `WriteTo` only when `GetType() == typeof(ThatType)`, because a subclass (e.g. a user's custom extension) may override `ToBytes`, which must still be used. `ToBytes` and `WriteTo` share one private writer per type, so they cannot drift apart.
+- The parameterless `MsgPackItem()` constructor allocates a new `MsgPackSettings` (50-70 ns). Use the constructors taking the settings in hot paths (see `AbstractCustomExt.CreateNew`).
+- Duplicate map keys: the first one wins (LtMsgPack: the last); properties are set last to first (LtMsgPack: in the order of the data).
+- `MsgPackValidation` validates single items (timestamps, big integers, decimals, reserved extension types); validation beyond single items is `ObjectDebugger`'s `PayloadValidation`.
+
+## Performance
+
+Speed relative to System.Text.Json (`BenchmarkInvoices`, 100 invoices × 20 rounds, Release, i7-7700K): write 0.33x (indexed) / 0.38x (reference) / 0.36x (names), read 0.40x / 0.49x / 0.41x (inline schema with a store 0.48x); array layout (the default) write 0.37x (indexed), read 0.54x. Without a `SchemaStore` each call builds its schema session: the static filter results are cached globally and copied, the ids assigned by position.
+
+Ideas not done: the remaining time is the `MsgPackItem` tree (building it, and converting it back). `ConvertMap` builds a dictionary per object to look up property ids; with the schema the keys are indexes that could address an array directly. Every value still becomes an `MsgPackItem` and then a boxed value.

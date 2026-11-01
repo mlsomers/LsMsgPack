@@ -1,0 +1,9 @@
+# MCP server
+
+net8.0, assembly `LsMsgPackMcp`, .NET tool `lsmsgpack-mcp`, docs/Mcp.md: MsgPack for AI agents. Built in the KeepTrack configurations only (references the library like the VS Code inspector, see `../LsMsgPackVsCode/CLAUDE.md`).
+
+- `McpServer` is a hand-written MCP stdio server (JSON-RPC lines; tool errors are results with `isError`), `McpTools` the tools (`msgpack_decode`, `msgpack_read_as_class`, `msgpack_explain_offset`, `msgpack_search`, `msgpack_debug_status/locals/read`, documents by id). `Program` is also a CLI running the same tools.
+- `ClassReader` (`msgpack_read_as_class`): reads into a class of the user's .dll in a child process of itself (`read-as-worker`) and returns the `ReadDifferences` report.
+- `PayloadDocument` decodes (KEEPTRACK reference, `ContinueOnError` on by default, `ReadStreams`) and `TextRenderer` writes JSON with `//` comments (objects view) or items with offsets (streams: "a stream" in the structure, the indexes and their entries in the summary (`WriteStreamIndexes`), the schemas once per id, `DescribeEscape` at a 0xC1).
+- The debugger tools talk to the IDE extensions over 127.0.0.1 with a token (`IdeBridge`: env `LSMSGPACK_IDE_PORT`/`LSMSGPACK_IDE_TOKEN`, or lock files in `~/.lsmsgpack/ide`): VS Code `src/mcpBridge.ts` + `src/mcp.ts`, Visual Studio `Package/McpBridge.cs` + `DebuggerBridgeHandler.cs` (EnvDTE, C# 7.3) + `McpOptionsPage.cs`. **Keep the three in sync when the protocol changes.** Only variable and member paths are read unless the IDE setting allows any expression.
+- Tests: `LsMsgPackMcpServerTests` (`FakeIde`, `SampleOutput` writes the output to `LSMSGPACK_MCP_SAMPLES`; references LtMsgPack to write streams, `Payloads.Stream`) and `LsMsgPackVsCode/test/mcpBridge.test.js`. Not run by `dotnet test LsMsgPack.slnf -c DEBUG`.

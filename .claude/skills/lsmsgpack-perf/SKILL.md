@@ -72,7 +72,7 @@ dotnet <work dir>/web-new/bin/Release/net8.0/web-new.dll 3                  # en
 - **Retention distorts.** Keeping thousands of results alive (e.g. collecting all trees in an array) adds gen2 GC cost that the real workload does not have. Discard results inside timing loops.
 - **Microbenchmarks** (a small console project referencing the library, `Stopwatch` over 1-3 million calls after a warm-up) are the reliable way to find out what a single piece costs. Internal members can be reached by reflection (`typeof(MsgPackSerializer).GetMethod("WithSchema", BindingFlags.NonPublic | BindingFlags.Static)`), `IndexedSchemaTypeResolver.GetComplex/Pack/Unpack` are public.
 - **One-time costs matter** for a library that is often used for small messages: check the per call overhead too (e.g. serialize an object with one int), and weigh setup costs (compiling, reflection) against the per call gain. Expression.Compile costs ~300 µs per delegate, `Delegate.CreateDelegate` ~6 µs, a reflection property get ~30-60 ns.
-- **Types in a harness** that are deserialized as elements of a collection need `MsgPackSerializer.CacheAssemblyTypes(typeof(T))`, and their short names must be unique among the cached assemblies (see CLAUDE.md).
+- **Types in a harness** that are deserialized as elements of a collection need `MsgPackSerializer.CacheAssemblyTypes(typeof(T))`, and their short names must be unique among the cached assemblies (see LsMsgPackCore/CLAUDE.md, "Type names are short").
 
 ## Profiling
 
