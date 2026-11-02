@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using System.Reflection;
 using System.Text;
 
@@ -27,7 +26,22 @@ namespace LsMsgPack.Meta
     // 3rd tier cache
     private static readonly Dictionary<string, HashSet<Type>> NameCache = new Dictionary<string, HashSet<Type>>(); // Can contain duplicate names
 
+    // LsMsgPack asks for the name of each object it writes with a type id
+    private static readonly ConcurrentDictionary<Type, string> ShortNames = new ConcurrentDictionary<Type, string>();
+    private static readonly ConcurrentDictionary<Type, string> FullNames = new ConcurrentDictionary<Type, string>();
+
     internal static string GetTypeName(Type type, bool fullname)
+    {
+      ConcurrentDictionary<Type, string> names = fullname ? FullNames : ShortNames;
+      if (!names.TryGetValue(type, out string name))
+      {
+        name = BuildTypeName(type, fullname);
+        names.TryAdd(type, name);
+      }
+      return name;
+    }
+
+    private static string BuildTypeName(Type type, bool fullname)
     {
       if (type.IsArray) // "KeyValuePair<Int32, String>[]" instead of "KeyValuePair`2[]", "Int32[,]" for two dimensions
         return $"{GetTypeName(type.GetElementType(), fullname)}[{new string(',', type.GetArrayRank() - 1)}]";
@@ -474,7 +488,7 @@ namespace LsMsgPack.Meta
       }
       if (result != null)
       {
-        if (typeName.Contains("."))
+        if (typeName.IndexOf('.') >= 0)
           FullNameCache.Add(typeName, result);
         else
           UsedNameCache.Add(typeName, result);
@@ -536,7 +550,7 @@ namespace LsMsgPack.Meta
     {
       if (choices.Count == 1)
       {
-        Type only = choices.First();
+        Type only = OnlyOne(choices);
         UsedNameCache.Add(typeName, only);
         return only;
       }
@@ -554,8 +568,21 @@ namespace LsMsgPack.Meta
       if (count == 1)
         return fitting;
 
-      throw new Exception(
-        $"Type assignment dilamma for \"{typeName}\" with the following choices:\r\n  {string.Join("\r\n  ", choices.Select(t => t.FullName))}\r\nFix this by either serializing with full name or implementing a IMsgPackTypeResolver and add it to MsgPackSettings._typeResolvers.");
+      StringBuilder message = new StringBuilder("Type assignment dilamma for \"").Append(typeName).Append("\" with the following choices:");
+      foreach (Type choice in choices)
+        message.Append("\r\n  ").Append(choice.FullName);
+      message.Append("\r\nFix this by either serializing with full name or implementing a IMsgPackTypeResolver and add it to MsgPackSettings._typeResolvers.");
+      throw new Exception(message.ToString());
+    }
+
+    /// <summary>
+    /// The type of a set with one type.
+    /// </summary>
+    private static Type OnlyOne(HashSet<Type> choices)
+    {
+      foreach (Type choice in choices)
+        return choice;
+      return null;
     }
 
     // The root types whose reachable assemblies have been cached
@@ -660,8 +687,9 @@ namespace LsMsgPack.Meta
         string name = types[t].Name;
         Type type = types[t];
         FullNameCache.TryAdd(fullName, type);
-        if (!NameCache.TryAdd(name, new HashSet<Type> { type }))
-          NameCache[name].Add(type);
+        if (!NameCache.TryGetValue(name, out HashSet<Type> sameName))
+          NameCache.Add(name, sameName = new HashSet<Type>());
+        sameName.Add(type);
 
         // check if found but don't bail out when found, once we start cahcing an assembly we'll finish the job!
         if (found == null && fullName == typeName)
@@ -673,7 +701,7 @@ namespace LsMsgPack.Meta
       // A short name only when it is the name of one type (of all cached assemblies), otherwise the callers pick one that fits (Pick)
       if (found == null && !string.IsNullOrEmpty(typeName) && NameCache.TryGetValue(typeName, out HashSet<Type> choices) && choices.Count == 1)
       {
-        found = choices.First();
+        found = OnlyOne(choices);
         UsedNameCache.TryAdd(typeName, found);
       }
       return found;

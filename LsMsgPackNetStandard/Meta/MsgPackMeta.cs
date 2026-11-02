@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 
 namespace LsMsgPack
 {
@@ -12,7 +11,7 @@ namespace LsMsgPack
     public static readonly Dictionary<string, PackDef> FromName;
 
 #if KEEPTRACK
-    private static readonly HashSet<byte> ValidPackageStartBytes;
+    private static readonly bool[] ValidPackageStartBytes = new bool[256];
 #endif
 
     public class PackDef
@@ -37,7 +36,8 @@ namespace LsMsgPack
     public static readonly MsgPackTypeId[] MapTypeFamily;
     public static readonly MsgPackTypeId[] ExtTypeFamily;
 
-    private static readonly MsgPackTypeId[][] typeFamilys;
+    // The index of the family of each type id (the families do not overlap), -1 for none
+    private static readonly sbyte[] FamilyOf = new sbyte[256];
 
     static MsgPackMeta()
     {
@@ -148,7 +148,7 @@ namespace LsMsgPack
           MsgPackTypeId.MpExt32
         };
 
-      typeFamilys = new MsgPackTypeId[][] {
+      MsgPackTypeId[][] typeFamilys = new MsgPackTypeId[][] {
         BoolTypeFamily,
         IntTypeFamily,
         FloatTypeFamily,
@@ -159,16 +159,27 @@ namespace LsMsgPack
         ExtTypeFamily
       };
 
+      for (int t = FamilyOf.Length - 1; t >= 0; t--)
+        FamilyOf[t] = -1;
+      for (int t = typeFamilys.Length - 1; t >= 0; t--)
+      {
+        MsgPackTypeId[] family = typeFamilys[t];
+        for (int f = family.Length - 1; f >= 0; f--)
+          FamilyOf[(byte)family[f]] = (sbyte)t;
+      }
+
 #if KEEPTRACK
-      ValidPackageStartBytes = new HashSet<byte>(Enum.GetValues(typeof(MsgPackTypeId)).Cast<byte>());
-      ValidPackageStartBytes.Remove((byte)MsgPackTypeId.NeverUsed);
+      MsgPackTypeId[] typeIds = (MsgPackTypeId[])Enum.GetValues(typeof(MsgPackTypeId));
+      for (int t = typeIds.Length - 1; t >= 0; t--)
+        ValidPackageStartBytes[(byte)typeIds[t]] = true;
+      ValidPackageStartBytes[(byte)MsgPackTypeId.NeverUsed] = false;
 #endif
     }
 
 #if KEEPTRACK
     public static bool IsValidPackageStartByte(byte b)
     {
-      if (ValidPackageStartBytes.Contains(b)) return true;
+      if (ValidPackageStartBytes[b]) return true;
       if ((b & 0xE0) == 0xE0 || ((b & 0x80) == 0)) return true; // int
       else if ((b & 0xA0) == 0xA0) return true; // string
       else if ((b & 0x90) == 0x90) return true; // array
@@ -181,10 +192,14 @@ namespace LsMsgPack
     {
       if (a == b) return true;
       if (a == MsgPackTypeId.MpNull || b == MsgPackTypeId.MpNull) return NullIsEqual;
-      for (int t = typeFamilys.GetLength(0) - 1; t >= 0; t--)
-      {
-        if (typeFamilys[t].Contains(a)) return typeFamilys[t].Contains(b);
-      }
+      int family = FamilyOf[(byte)a];
+      return family >= 0 && family == FamilyOf[(byte)b];
+    }
+
+    internal static bool IsOneOf(MsgPackTypeId[] typeIds, MsgPackTypeId typeId)
+    {
+      for (int t = typeIds.Length - 1; t >= 0; t--)
+        if (typeIds[t] == typeId) return true;
       return false;
     }
 
