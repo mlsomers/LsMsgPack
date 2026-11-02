@@ -10,10 +10,6 @@ namespace LsMsgPack
     public static readonly Dictionary<MsgPackTypeId, PackDef> FromTypeId;
     public static readonly Dictionary<string, PackDef> FromName;
 
-#if KEEPTRACK
-    private static readonly bool[] ValidPackageStartBytes = new bool[256];
-#endif
-
     public class PackDef
     {
       public PackDef(MsgPackTypeId typeId, string officialName, string description)
@@ -167,26 +163,7 @@ namespace LsMsgPack
         for (int f = family.Length - 1; f >= 0; f--)
           FamilyOf[(byte)family[f]] = (sbyte)t;
       }
-
-#if KEEPTRACK
-      MsgPackTypeId[] typeIds = (MsgPackTypeId[])Enum.GetValues(typeof(MsgPackTypeId));
-      for (int t = typeIds.Length - 1; t >= 0; t--)
-        ValidPackageStartBytes[(byte)typeIds[t]] = true;
-      ValidPackageStartBytes[(byte)MsgPackTypeId.NeverUsed] = false;
-#endif
     }
-
-#if KEEPTRACK
-    public static bool IsValidPackageStartByte(byte b)
-    {
-      if (ValidPackageStartBytes[b]) return true;
-      if ((b & 0xE0) == 0xE0 || ((b & 0x80) == 0)) return true; // int
-      else if ((b & 0xA0) == 0xA0) return true; // string
-      else if ((b & 0x90) == 0x90) return true; // array
-      else if ((b & 0x80) == 0x80) return true; // map
-      return false;
-    }
-#endif
 
     public static bool AreInSameFamily(MsgPackTypeId a, MsgPackTypeId b, bool NullIsEqual = true)
     {
