@@ -6,9 +6,9 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using System.Reflection;
 using System.Runtime.Serialization;
+using System.Text;
 using System.Xml.Serialization;
 
 namespace LsMsgPack.TypeResolving.Types
@@ -320,7 +320,12 @@ namespace LsMsgPack.TypeResolving.Types
       foreach (KeyValuePair<Type, List<ComplexTypeDef>> conflict in conflicts)
       {
         aliases.Remove(conflict.Key);
-        ambiguous.Add(conflict.Key, conflict.Value.Where(d => d.Type != null).Select(d => d.Type).ToArray());
+        List<ComplexTypeDef> writers = conflict.Value;
+        List<Type> types = new List<Type>(writers.Count);
+        for (int t = 0; t < writers.Count; t++)
+          if (writers[t].Type != null)
+            types.Add(writers[t].Type);
+        ambiguous.Add(conflict.Key, types.ToArray());
       }
       return aliases;
     }
@@ -481,18 +486,47 @@ namespace LsMsgPack.TypeResolving.Types
     /// <param name="writers">The writer's classes the class was paired with (more than one, so none was used), null when it was not paired</param>
     private Exception NoEntry(Type type, Type[] writers)
     {
-      string pairing = writers is null
-        ? $"The data was written with another class ({string.Join(", ", ByTypeId.Select(d => d.TypeName))}), and none of them could be paired with {type.Name} "
-          + "(the root is the first class of the schema, the other classes follow from the properties both classes have: by the types of the writer's classes, or without them by the types schema version 2 describes). "
-        : $"{type.Name} is read where the writer had different classes ({string.Join(", ", writers.Select(w => w.Name))}), so it could not be paired with one of them. ";
-      return new MsgPackException($"The data has no schema entry for {type.FullName}, so its values cannot be matched to its properties. "
-        + pairing + "Deserialize with an out ReadDifferences to skip such objects and get them reported.");
+      StringBuilder message = new StringBuilder("The data has no schema entry for ").Append(type.FullName).Append(", so its values cannot be matched to its properties. ");
+      if (writers is null)
+      {
+        message.Append("The data was written with another class (");
+        for (int t = 0; t < ByTypeId.Count; t++)
+        {
+          if (t > 0)
+            message.Append(", ");
+          message.Append(ByTypeId[t].TypeName);
+        }
+        message.Append("), and none of them could be paired with ").Append(type.Name)
+          .Append(" (the root is the first class of the schema, the other classes follow from the properties both classes have: by the types of the writer's classes, or without them by the types schema version 2 describes). ");
+      }
+      else
+      {
+        message.Append(type.Name).Append(" is read where the writer had different classes (");
+        for (int t = 0; t < writers.Length; t++)
+        {
+          if (t > 0)
+            message.Append(", ");
+          message.Append(writers[t].Name);
+        }
+        message.Append("), so it could not be paired with one of them. ");
+      }
+      return new MsgPackException(message.Append("Deserialize with an out ReadDifferences to skip such objects and get them reported.").ToString());
     }
 
     private static Exception UnresolvedType(ComplexTypeDef def, MsgPackOptions settings)
     {
-      return new UnresolvedTypeException(def.TypeName, $"Unable to resolve type \"{def.TypeName}\" using resolver(s): {string.Join(", ", settings._typeResolvers.Select(r => r.GetType().Name))}\r\nIt may help to pre-register your type like this:\r\n  MsgPackTypes.CacheAssemblyTypes(typeof({def.TypeName}));"
-        + (def.ResolveError is null ? "" : string.Concat("\r\n", def.ResolveError)));
+      StringBuilder message = new StringBuilder("Unable to resolve type \"").Append(def.TypeName).Append("\" using resolver(s): ");
+      IMsgPackTypeResolver[] resolvers = settings._typeResolvers;
+      for (int t = 0; t < resolvers.Length; t++)
+      {
+        if (t > 0)
+          message.Append(", ");
+        message.Append(resolvers[t].GetType().Name);
+      }
+      message.Append("\r\nIt may help to pre-register your type like this:\r\n  MsgPackTypes.CacheAssemblyTypes(typeof(").Append(def.TypeName).Append("));");
+      if (!(def.ResolveError is null))
+        message.Append("\r\n").Append(def.ResolveError);
+      return new UnresolvedTypeException(def.TypeName, message.ToString());
     }
 
     /// <summary>

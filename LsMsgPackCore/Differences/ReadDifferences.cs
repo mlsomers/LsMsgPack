@@ -4,7 +4,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -458,15 +457,15 @@ namespace LsMsgPack
     /// </summary>
     private static List<object> InGraphOrder(Difference difference, Dictionary<object, Found> found)
     {
-      List<KeyValuePair<int, object>> ordered = new List<KeyValuePair<int, object>>();
-      for (int t = 0; t < difference._samples.Count; t++)
-      {
-        object sample = difference._samples[t];
-        ordered.Add(new KeyValuePair<int, object>(found.TryGetValue(sample, out Found at) ? at.Order : int.MaxValue, sample));
-      }
-      List<object> samples = new List<object>(ordered.Count);
-      foreach (KeyValuePair<int, object> sample in ordered.OrderBy(o => o.Key)) // stable: the samples that were not found keep their order
-        samples.Add(sample.Value);
+      List<object> differenceSamples = difference._samples;
+      // the order in the high bits, the index in the low bits: sorting the keys is stable (the samples that were not found keep their order)
+      long[] keys = new long[differenceSamples.Count];
+      for (int t = 0; t < keys.Length; t++)
+        keys[t] = ((long)(found.TryGetValue(differenceSamples[t], out Found at) ? at.Order : int.MaxValue) << 32) | (uint)t;
+      Array.Sort(keys);
+      List<object> samples = new List<object>(keys.Length);
+      for (int t = 0; t < keys.Length; t++)
+        samples.Add(differenceSamples[(int)(keys[t] & 0xFFFFFFFF)]);
       return samples;
     }
 

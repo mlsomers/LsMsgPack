@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
-using System.Text.RegularExpressions;
+using System.Text;
 using static LsMsgPack.MsgPackValidation;
 
 namespace ObjectDebugger
@@ -121,7 +121,23 @@ namespace ObjectDebugger
     /// </summary>
     private static readonly char[] UnsafeNameChars = new[] { ',', '[', ']', '&', '*' };
 
-    private static readonly Regex ArraySuffix = new Regex(@"(\[,*\])+$", RegexOptions.CultureInvariant);
+    /// <summary>
+    /// The name without its array suffixes ("[]", "[,]"...).
+    /// </summary>
+    private static string WithoutArraySuffix(string name)
+    {
+      int end = name.Length;
+      while (end > 0 && name[end - 1] == ']')
+      {
+        int open = end - 2;
+        while (open >= 0 && name[open] == ',')
+          open--;
+        if (open < 0 || name[open] != '[')
+          break;
+        end = open;
+      }
+      return end == name.Length ? name : name.Substring(0, end);
+    }
 
     /// <summary>
     /// Framework types known as deserialization gadgets (ysoserial.net and others): creating them or setting their properties runs code, starts processes,
@@ -176,7 +192,7 @@ namespace ObjectDebugger
     /// </summary>
     private static string ShortName(string name)
     {
-      name = ArraySuffix.Replace(name, string.Empty);
+      name = WithoutArraySuffix(name);
       int separator = Math.Max(name.LastIndexOf('.'), name.LastIndexOf('+'));
       if (separator >= 0)
         name = name.Substring(separator + 1);
@@ -193,7 +209,7 @@ namespace ObjectDebugger
       List<string> names = SplitNames(typeName);
       for (int t = 0; t < names.Count; t++)
       {
-        if (ArraySuffix.Replace(names[t], string.Empty).IndexOfAny(UnsafeNameChars) >= 0)
+        if (WithoutArraySuffix(names[t]).IndexOfAny(UnsafeNameChars) >= 0)
         {
           issues.Add(new ValidationItem(at, ValidationSeverity.SecurityVulnerability, 0, where, " names the type \"", typeName,
             "\" with an assembly name or bracketed generic arguments. LsMsgPack and LtMsgPack never write such names and refuse to read them: Type.GetType would load the assembly it names, which runs its code (see docs/security.md). The data was made by another writer or by hand, possibly to attack a reader."));
@@ -222,11 +238,16 @@ namespace ObjectDebugger
       arguments = new List<string>();
       rank = 0;
       string name = typeName.Trim();
-      Match suffix = Regex.Match(name, @"\[(,*)\]$", RegexOptions.CultureInvariant);
-      if (suffix.Success)
+      if (name.Length > 0 && name[name.Length - 1] == ']')
       {
-        rank = suffix.Groups[1].Length + 1;
-        return string.Concat(name.Substring(0, suffix.Index), "[]");
+        int bracket = name.Length - 2;
+        while (bracket >= 0 && name[bracket] == ',')
+          bracket--;
+        if (bracket >= 0 && name[bracket] == '[')
+        {
+          rank = name.Length - 1 - bracket;
+          return string.Concat(name.Substring(0, bracket), "[]");
+        }
       }
 
       int open = name.IndexOf('<');
@@ -376,8 +397,6 @@ namespace ObjectDebugger
 
     private sealed class BodyValidator
     {
-      private static readonly Regex Indexes = new Regex(@"\[\d+\]", RegexOptions.CultureInvariant);
-
       private readonly SchemaInfo _schema;
       private readonly List<ValidationItem> _issues;
 
@@ -558,14 +577,43 @@ namespace ObjectDebugger
               return string.Concat("#", parent.SchemaType.Index.ToString(CultureInfo.InvariantCulture), ".", obj.Name);
             if (parent.Type != null && !parent.TypeIsGuess)
               return string.Concat(parent.Type, ".", obj.Name);
-            return string.Concat(Indexes.Replace(parent.Path, "[]"), ".", obj.Name);
+            return string.Concat(WithoutIndexes(parent.Path), ".", obj.Name);
           case ObjectKind.Dictionary:
-            return Indexes.Replace(parent.Path, "[]") + "{}";
+            return WithoutIndexes(parent.Path) + "{}";
           case ObjectKind.Entry:
-            return string.Concat(Indexes.Replace(parent.Path, "[]"), ".", obj.Name);
+            return string.Concat(WithoutIndexes(parent.Path), ".", obj.Name);
           default:
-            return Indexes.Replace(parent.Path, "[]") + "[]";
+            return WithoutIndexes(parent.Path) + "[]";
         }
+      }
+
+      /// <summary>
+      /// The path with "[]" for each index ("[12]").
+      /// </summary>
+      private static string WithoutIndexes(string path)
+      {
+        int open = path.IndexOf('[');
+        if (open < 0)
+          return path;
+        StringBuilder result = null;
+        int copied = 0;
+        while (open >= 0)
+        {
+          int end = open + 1;
+          while (end < path.Length && char.IsDigit(path[end])) // Unicode digits, like \d
+            end++;
+          if (end > open + 1 && end < path.Length && path[end] == ']')
+          {
+            if (result is null)
+              result = new StringBuilder(path.Length);
+            result.Append(path, copied, open + 1 - copied).Append(']');
+            copied = end + 1;
+            open = path.IndexOf('[', copied);
+          }
+          else
+            open = path.IndexOf('[', open + 1);
+        }
+        return result is null ? path : result.Append(path, copied, path.Length - copied).ToString();
       }
 
       /// <summary>

@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using LsMsgPack.Types.Extensions;
 using System.Runtime;
 using System;

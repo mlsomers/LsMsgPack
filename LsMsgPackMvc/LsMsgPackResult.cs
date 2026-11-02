@@ -1,7 +1,6 @@
 using LsMsgPack;
 using LtMsgPack.Http;
 using System;
-using System.Linq;
 using System.Net.Http.Headers;
 using System.Web;
 using System.Web.Mvc;
@@ -74,12 +73,19 @@ namespace LsMsgPackMvc
       if (acceptTypes is null)
         return MsgPackMediaTypes.MsgPack;
 
-      string preferred = acceptTypes
-        .Select(accept => MediaTypeWithQualityHeaderValue.TryParse(accept, out MediaTypeWithQualityHeaderValue parsed) ? parsed : null)
-        .Where(accept => !(accept is null) && (accept.Quality ?? 1) > 0 && MsgPackMediaTypes.IsSupported(accept.MediaType))
-        .OrderByDescending(accept => accept.Quality ?? 1) // OrderBy is stable, so equal qualities keep the header order
-        .Select(accept => accept.MediaType)
-        .FirstOrDefault();
+      string preferred = null;
+      double best = 0; // a quality of 0 is not acceptable
+      for (int t = 0; t < acceptTypes.Length; t++)
+      {
+        if (!MediaTypeWithQualityHeaderValue.TryParse(acceptTypes[t], out MediaTypeWithQualityHeaderValue accept))
+          continue;
+        double quality = accept.Quality ?? 1;
+        if (quality > best && MsgPackMediaTypes.IsSupported(accept.MediaType)) // only a higher one: equal qualities keep the header order
+        {
+          best = quality;
+          preferred = accept.MediaType;
+        }
+      }
       return preferred ?? MsgPackMediaTypes.MsgPack;
     }
   }

@@ -2,7 +2,6 @@
 using System;
 using System.ComponentModel;
 using System.Globalization;
-using System.Linq;
 
 namespace LsMsgPack
 {
@@ -11,14 +10,16 @@ namespace LsMsgPack
   /// </summary>
   public class MsgPackTypeConverter:TypeConverter {
 
-    private static readonly Type[] supportedTypes = new Type[] { typeof(string), typeof(MsgPackTypeId), typeof(byte) };
-    
+    private static bool IsSupported(Type type) {
+      return type == typeof(string) || type == typeof(MsgPackTypeId) || type == typeof(byte);
+    }
+
     public override bool CanConvertFrom(ITypeDescriptorContext context, Type sourceType) {
-      return supportedTypes.Contains(sourceType);
+      return IsSupported(sourceType);
     }
 
     public override bool CanConvertTo(ITypeDescriptorContext context, Type destinationType) {
-      return supportedTypes.Contains(destinationType);
+      return IsSupported(destinationType);
     }
 
     public override object ConvertFrom(ITypeDescriptorContext context, CultureInfo culture, object value) {
@@ -49,7 +50,10 @@ namespace LsMsgPack
 
 
     public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext context) {
-      return new StandardValuesCollection(MsgPackMeta.AllPacks.Select(p => p.OfficialName).ToArray());
+      MsgPackMeta.PackDef[] packs = MsgPackMeta.AllPacks;
+      string[] names = new string[packs.Length];
+      for(int t = packs.Length - 1; t >= 0; t--) names[t] = packs[t].OfficialName;
+      return new StandardValuesCollection(names);
     }
 
     public override bool GetStandardValuesExclusive(ITypeDescriptorContext context) {
