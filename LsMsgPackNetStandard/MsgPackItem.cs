@@ -510,8 +510,10 @@ namespace LsMsgPack
           items.Add(new MpError(settings, ex, "Offset after parsing error is ", stream.Position) { storedOffset = lastpos, storedLength = stream.Position - lastpos });
           if (settings._continueProcessingOnBreakingError)
           {
-            if (lastpos == stream.Position && stream.Position < len)
-              FindNextValidTypeId(stream);
+            // Nearly every byte can start a value, so there is nothing to search for: skip a byte when nothing was read, so the loop moves on
+            if (lastpos == stream.Position)
+              stream.ReadByte();
+            lastpos = stream.Position;
           }
           else
           {
@@ -670,7 +672,6 @@ namespace LsMsgPack
               }
               long pos = stream.Position - 1;
 #if KEEPTRACK
-              if (settings._continueProcessingOnBreakingError) FindNextValidTypeId(stream);
               return new MpError(settings, pos, MsgPackTypeId.NeverUsed, NeverUsedMessage)
               {
                 storedLength = (stream.Position - pos)
@@ -709,7 +710,6 @@ namespace LsMsgPack
         {
 #if KEEPTRACK
           long pos = stream.Position - 1;
-          if (settings._continueProcessingOnBreakingError) FindNextValidTypeId(stream);
           return new MpError(settings, pos, type, "The type identifier with value 0x", BitConverter.ToString(new byte[] { (byte)type }),
             " is either new or invalid. It is not (yet) implemented in this version of LsMsgPack.")
           {
@@ -728,7 +728,6 @@ namespace LsMsgPack
       {
 #if KEEPTRACK
         long pos = stream.Position - 1;
-        if (settings._continueProcessingOnBreakingError) FindNextValidTypeId(stream);
         return new MpError(settings, new MsgPackException("Error while reading data.", ex, stream.Position, (MsgPackTypeId)typeByte))
         {
           storedOffset = pos,
@@ -776,25 +775,6 @@ namespace LsMsgPack
       throw ex;
 #endif
     }
-
-#if KEEPTRACK
-
-    /// <summary>
-    /// Is called after a breaking error occurred and the setting ContinueProcessingOnBreakingError is true (in order to find the beginning of the next item).
-    /// </summary>
-    protected static bool FindNextValidTypeId(Stream stream)
-    {
-      long lastPos = stream.Position;
-      int typeByte = stream.ReadByte();
-
-      while (typeByte >= 0 && !MsgPackMeta.IsValidPackageStartByte((byte)typeByte)) typeByte = stream.ReadByte();
-
-      bool result = (typeByte >= 0);
-      if (result) stream.Seek(stream.Position - 1, SeekOrigin.Begin);
-      return result;
-    }
-
-#endif
 
     public virtual T GetTypedValue<T>()
     {
