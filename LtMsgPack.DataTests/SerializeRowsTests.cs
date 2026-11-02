@@ -49,6 +49,31 @@ namespace LtMsgPack.DataTests
       CollectionAssert.AreEqual(serializer.Serialize(rows), target.ToArray());
     }
 
+    /// <summary>
+    /// More rows than one chunk of the body holds (64 KiB): the chunks and the rest of the body joined, to a byte array and to a stream; the second call reuses the pooled chunks.
+    /// </summary>
+    [TestMethod]
+    public void ManyRows_Chunked_SameBytes()
+    {
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer();
+      List<AllTypesRow> rows = new List<AllTypesRow>();
+      byte[] expected;
+      do
+      {
+        for (int t = 0; t < 100; t++)
+          rows.AddRange(Data.AllTypesRows());
+        expected = serializer.Serialize(rows);
+      }
+      while (expected.Length <= 3 * 64 * 1024);
+      for (int call = 0; call < 2; call++)
+      {
+        CollectionAssert.AreEqual(expected, serializer.SerializeRows<AllTypesRow>(Data.AllTypes(rows)), "call " + call);
+        MemoryStream target = new MemoryStream();
+        Assert.AreEqual(rows.Count, serializer.SerializeRows<AllTypesRow>(Data.AllTypes(rows), target));
+        CollectionAssert.AreEqual(expected, target.ToArray(), "stream, call " + call);
+      }
+    }
+
     [TestMethod]
     public void SecondCall_SamePlan_SameBytes()
     {

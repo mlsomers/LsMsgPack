@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# perf profile of the "new" data harness, writes <out>.self.txt and <out>.children.txt in <work dir>/perf (see lt/prof.sh).
+# Usage: data/prof.sh <work dir> <out name> <bench arguments...>   e.g. data/prof.sh $W sread stream-read 8
+set -euo pipefail
+WORK=$(realpath "${1:?Usage: data/prof.sh <work dir> <out name> <bench args...>}")
+OUT=$2; shift 2
+mkdir -p "$WORK/perf" && cd "$WORK/perf"
+DOTNET_PerfMapEnabled=1 DOTNET_EnableWriteXorExecute=0 perf record -F 2999 -g -o "$OUT.data" dotnet "$WORK/bench-new/bin/Release/net8.0/bench-new.dll" "$@" 2>&1 | grep -vE "^\[ perf|kernel|kallsyms|vmlinux|relocation|kexec|root|^$" || true
+perf report -i "$OUT.data" --no-children --sort symbol --stdio -g none 2>/dev/null | grep -E "^ +[0-9]" | sed -E 's/ +- +- *$//; s/\[OptimizedTier1\]//' | cut -c1-200 > "$OUT.self.txt"
+perf report -i "$OUT.data" --children --sort symbol --stdio -g none 2>/dev/null | grep -E "^ +[0-9]" | sed -E 's/ +- +- *$//; s/\[OptimizedTier1\]//' | cut -c1-220 > "$OUT.children.txt"
+head -30 "$OUT.self.txt"

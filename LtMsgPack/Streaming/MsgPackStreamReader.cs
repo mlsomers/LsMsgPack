@@ -48,6 +48,8 @@ namespace LtMsgPack.Streaming
     private bool _escaped; // escape sequences since the mark
     private readonly List<long> _counts = new List<long>(); // per value of unknown length since the mark (in the order of their starts): its number of elements, entries or bytes
     private long[] _passing; // PassBuffered: per open array or map the values still to come in the one around it
+    private int _passAt = -1; // TryReadObjectBuffered: where the value starts whose end (_passEnd) it found, for TryPassBuffered
+    private int _passEnd;
 
     private MsgPackTokenType _token;
     private int _tokenStart;
@@ -643,6 +645,28 @@ namespace LtMsgPack.Streaming
     }
 
     /// <summary>
+    /// <see cref="GetWhole"/> of an array or map of known length that is all in the buffer without escape sequences, without I/O (the asynchronous data reader: no <see cref="BufferCurrentAsync"/> pass first).
+    /// </summary>
+    /// <returns>false: nothing was read (not such a value, or not all buffered)</returns>
+    internal bool TryGetWholeBuffered(out byte[] data, out int offset, out int end)
+    {
+      data = null;
+      offset = 0;
+      end = 0;
+      if (_disposed || (_token != MsgPackTokenType.ArrayStart && _token != MsgPackTokenType.MapStart) || _frames[_depth - 1].Unknown)
+        return false;
+      int start = _tokenStart;
+      if (!TryEndBuffered())
+        return false;
+      _escaped = false; // as WholeValue leaves it
+      _counts.Clear();
+      data = _buf;
+      offset = start;
+      end = _pos;
+      return true;
+    }
+
+    /// <summary>
     /// The array, map, str or bin that starts at the current token, framed whole and without escape sequences (see <see cref="Plain"/>): the reader is then at its end.
     /// </summary>
     private void WholeValue(out byte[] data, out int offset, out int end)
@@ -868,7 +892,8 @@ namespace LtMsgPack.Streaming
     {
       if (_payloadPending || (_depth > 0 && !_frames[_depth - 1].Unknown && _frames[_depth - 1].Count == 0))
         return false;
-      int end = BufferedEnd(_pos, _maxDepth - _depth, 1);
+      int end = _passAt == _pos ? _passEnd : BufferedEnd(_pos, _maxDepth - _depth, 1);
+      _passAt = -1;
       if (end < 0)
         return false;
 

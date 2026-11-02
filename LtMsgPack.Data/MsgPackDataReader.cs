@@ -290,8 +290,17 @@ namespace LtMsgPack.Data
         return false;
       }
       await _reader.ReadAsync(cancellationToken).ConfigureAwait(false);
-      if (_reader.TokenType == MsgPackTokenType.ArrayStart || _reader.TokenType == MsgPackTokenType.MapStart)
+      MsgPackTokenType token = _reader.TokenType;
+      if (token == MsgPackTokenType.ArrayStart || token == MsgPackTokenType.MapStart)
+      {
+        _onRow = false;
+        if (_reader.TryGetWholeBuffered(out byte[] data, out int offset, out int end)) // usually: framed once, without the pass that buffers it
+        {
+          ReadRow(token, data, offset, end);
+          return true;
+        }
         await _reader.BufferCurrentAsync(cancellationToken).ConfigureAwait(false);
+      }
       ReadRow(true);
       return true;
     }
@@ -303,14 +312,25 @@ namespace LtMsgPack.Data
     private void ReadRow(bool buffered)
     {
       _onRow = false;
-      ColumnValue[] columns = _columns;
-      for (int t = columns.Length - 1; t >= 0; t--)
-        columns[t].IsNull = true;
-
       MsgPackTokenType token = _reader.TokenType;
       if (token == MsgPackTokenType.ArrayStart || token == MsgPackTokenType.MapStart)
       {
         _reader.GetWhole(out byte[] data, out int offset, out int end, buffered);
+        ReadRow(token, data, offset, end);
+      }
+      else
+        ReadRow(token, null, 0, 0);
+    }
+
+    /// <param name="data">The row framed whole (an array or a map), otherwise null</param>
+    private void ReadRow(MsgPackTokenType token, byte[] data, int offset, int end)
+    {
+      ColumnValue[] columns = _columns;
+      for (int t = columns.Length - 1; t >= 0; t--)
+        columns[t].IsNull = true;
+
+      if (data != null)
+      {
         MsgPackReader r = _context.R;
         r.Reset(data, offset, end);
         if (token == MsgPackTokenType.ArrayStart)

@@ -23,7 +23,40 @@ namespace LtMsgPack.Streaming
     /// <see cref="Read"/>, reading the stream asynchronously.
     /// </summary>
     /// <returns>false at the end of the stream between root values</returns>
-    public async Task<bool> ReadAsync(CancellationToken cancellationToken = default(CancellationToken))
+    public Task<bool> ReadAsync(CancellationToken cancellationToken = default(CancellationToken))
+    {
+      if (_disposed || _payloadPending || _depth == 0 || !TokenBuffered())
+        return ReadSlowAsync(cancellationToken);
+
+      // In an array or map with the token buffered (most tokens): the synchronous step, without the state machines of the async methods
+      _noIo = true;
+      try
+      {
+        return Read() ? True : False;
+      }
+      catch (Exception ex) // as an async method
+      {
+        return Task.FromException<bool>(ex);
+      }
+      finally
+      {
+        _noIo = false;
+      }
+    }
+
+    /// <summary>
+    /// The next token is in the buffer, or nothing needs to be read (the end of an array or map of known length): what <see cref="ReadSlowAsync"/> reads ahead in an array or map (<see cref="Depth"/> > 0, no payload pending).
+    /// </summary>
+    private bool TokenBuffered()
+    {
+      Frame frame = _frames[_depth - 1];
+      if (!frame.Unknown && frame.Count == 0)
+        return true;
+      int buffered = _end - _pos;
+      return buffered > 0 && buffered >= TokenLengths[_buf[_pos]];
+    }
+
+    private async Task<bool> ReadSlowAsync(CancellationToken cancellationToken)
     {
       ThrowIfDisposed();
       await PassPayloadAsync(cancellationToken).ConfigureAwait(false);
@@ -186,16 +219,72 @@ namespace LtMsgPack.Streaming
     /// (or in the body of a head, with the head's schema). The value is buffered whole before it is read.
     /// </summary>
     /// <typeparam name="T">The type to read the value as. In the body of a head, the type of the place in the root type (e.g. the element type of the list).</typeparam>
-    public async Task<T> ReadObjectAsync<T>(CancellationToken cancellationToken = default(CancellationToken))
+    public Task<T> ReadObjectAsync<T>(CancellationToken cancellationToken = default(CancellationToken))
     {
-      object result = await ReadObjectAsync(typeof(T), cancellationToken).ConfigureAwait(false);
+      try
+      {
+        if (TryReadObjectBuffered(typeof(T), out object read))
+          return Task.FromResult(read is null ? default(T) : (T)read);
+      }
+      catch (Exception ex) // as an async method
+      {
+        return Task.FromException<T>(ex);
+      }
+      return ReadObjectSlowAsync<T>(cancellationToken);
+    }
+
+    private async Task<T> ReadObjectSlowAsync<T>(CancellationToken cancellationToken)
+    {
+      object result = await ReadObjectSlowAsync(typeof(T), cancellationToken).ConfigureAwait(false);
       return result is null ? default(T) : (T)result;
     }
 
     /// <summary>
     /// <see cref="ReadObjectAsync{T}"/> for a type known at runtime.
     /// </summary>
-    public async Task<object> ReadObjectAsync(Type type, CancellationToken cancellationToken = default(CancellationToken))
+    public Task<object> ReadObjectAsync(Type type, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      try
+      {
+        if (type != null && TryReadObjectBuffered(type, out object read))
+          return Task.FromResult(read);
+      }
+      catch (Exception ex) // as an async method
+      {
+        return Task.FromException<object>(ex);
+      }
+      return ReadObjectSlowAsync(type, cancellationToken);
+    }
+
+    /// <summary>
+    /// <see cref="ReadObject(Type)"/> of an element of an array or map that is all in the buffer without escape sequences (one value, no schema before it), without the async steps:
+    /// its end is found once (<see cref="BufferedEnd"/>) and passed on to ReadObject (<see cref="_passAt"/>), not found again after a <see cref="Scan"/> pass.
+    /// </summary>
+    /// <returns>false: nothing was read, the async steps buffer it</returns>
+    private bool TryReadObjectBuffered(Type type, out object result)
+    {
+      result = null;
+      if (_disposed || _payloadPending || _depth == 0 || AtEndBuffered() != 0 || SchemaFollows())
+        return false;
+      int end = BufferedEnd(_pos, _maxDepth - _depth, 1);
+      if (end < 0)
+        return false;
+      _passAt = _pos;
+      _passEnd = end;
+      _noIo = true;
+      try
+      {
+        result = ReadObject(type);
+        return true;
+      }
+      finally
+      {
+        _noIo = false;
+        _passAt = -1;
+      }
+    }
+
+    private async Task<object> ReadObjectSlowAsync(Type type, CancellationToken cancellationToken)
     {
       if (type is null)
         throw new ArgumentNullException(nameof(type));
@@ -307,16 +396,18 @@ namespace LtMsgPack.Streaming
       }
       while (!await AtEndAsync(cancellationToken).ConfigureAwait(false))
       {
-        await PrepareObjectAsync(cancellationToken).ConfigureAwait(false);
-        object element;
-        _noIo = true;
-        try
+        if (!TryReadObjectBuffered(typeof(T), out object element))
         {
-          element = ReadObject(typeof(T));
-        }
-        finally
-        {
-          _noIo = false;
+          await PrepareObjectAsync(cancellationToken).ConfigureAwait(false);
+          _noIo = true;
+          try
+          {
+            element = ReadObject(typeof(T));
+          }
+          finally
+          {
+            _noIo = false;
+          }
         }
         yield return element is null ? default(T) : (T)element;
       }

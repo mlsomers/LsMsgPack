@@ -114,17 +114,7 @@ namespace LtMsgPack
             }
           }
 
-          SchemaSession session;
-          store.RunWriter(assignedTo, Options, (s, sessionSettings) =>
-          {
-            c.Depth = 0;
-            c.ByNames = false;
-            c.W.Reset(Options);
-            c.Mode = IdMode.Session;
-            c.IdSettings = sessionSettings;
-            write(c, root);
-            return true;
-          }, out session);
+          SchemaSession session = WriteGrowing(store, assignedTo, c, root, write);
           Output(session.Reference, session.Reference.Length, true, c.W, target, sink, out result);
           return;
         }
@@ -161,6 +151,25 @@ namespace LtMsgPack
         state.Context.Root = null;
         ReturnState(state);
       }
+    }
+
+    /// <summary>
+    /// Writes with the writer session of the root type under the store's lock, which grows it (in a method of its own: a lambda that captures parameters allocates its closure where the method starts, on every call).
+    /// </summary>
+    private SchemaSession WriteGrowing(SchemaStore store, Type assignedTo, WriteContext c, FullPropertyInfo root, Action<WriteContext, FullPropertyInfo> write)
+    {
+      SchemaSession session;
+      store.RunWriter(assignedTo, Options, (s, sessionSettings) =>
+      {
+        c.Depth = 0;
+        c.ByNames = false;
+        c.W.Reset(Options);
+        c.Mode = IdMode.Session;
+        c.IdSettings = sessionSettings;
+        write(c, root);
+        return true;
+      }, out session);
+      return session;
     }
 
     #region Schema heads (the stream writer)
