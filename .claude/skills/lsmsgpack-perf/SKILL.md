@@ -65,6 +65,18 @@ dotnet <work dir>/web-new/bin/Release/net8.0/web-new.dll 3                  # en
 - The `table` mode runs all candidates in one process, their numbers differ a bit from single candidate runs (shared JIT profile): compare base and new the same way.
 - Shared caches: also check a change with several threads on one serializer and alternating root types (a scratch program, compare with the single threaded bytes and values).
 
+## LtMsgPack.Data and streaming (`scripts/data/`)
+
+```bash
+.claude/skills/lsmsgpack-perf/scripts/data/setup.sh <work dir> [base ref]           # bench-new and bench-base (the base needs LtMsgPack.Data)
+.claude/skills/lsmsgpack-perf/scripts/data/ab.sh <work dir> all 2 2                  # alternating base/new: ns and bytes per row of every mode
+.claude/skills/lsmsgpack-perf/scripts/data/prof.sh <work dir> sread stream-read 8    # perf, as lt/prof.sh
+dotnet <work dir>/bench-new/bin/Release/net8.0/bench-new.dll percall                 # closures of the assemblies, bytes/ns per Serialize/Deserialize of one object
+dotnet <work dir>/bench-new/bin/Release/net8.0/bench-new.dll allocs stream-read      # allocated types (sampled)
+```
+
+`DataBench.cs` (its header lists the modes): `MsgPackDataReader` over a dump, `ReadRows`/`SerializeRows`/`WriteTable` on the tests' in-memory reader, and `WriteObject`/`ReadObject`(`Async`) per element of a head's body against `Serialize`/`Deserialize` of the whole list. It discards results (no retention), so its numbers are lower than `BenchmarkRows` (the docs' numbers), which keeps the lists of a pass. The equivalence of the stream bytes is checked by the tests (`StreamWriterReaderTests`, `StreamReaderAsyncTests`, `SerializeRowsTests`), not by a harness.
+
 ## Pitfalls
 
 - **Noise.** The same run varies 5-10% on this kind of machine. Alternate base/new, repeat, compare ranges, and do not claim a gain smaller than the noise. The System.Text.Json row in the unit test output shows how noisy a run was.

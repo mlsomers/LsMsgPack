@@ -38,9 +38,10 @@ namespace LsMsgPackUnitTests
       return new MsgPackStreamReader(new MemoryStream(bytes), serializer ?? Plain());
     }
 
-    private static MsgPackStreamReader AsyncReader(byte[] bytes, LtMsgPackSerializer serializer = null)
+    /// <param name="wholeReads">The stream returns all it can per read, so values are usually buffered whole (the fast paths), otherwise 1 to 3 bytes</param>
+    private static MsgPackStreamReader AsyncReader(byte[] bytes, LtMsgPackSerializer serializer = null, bool wholeReads = false)
     {
-      return new MsgPackStreamReader(new AsyncOnlyStream(bytes), serializer ?? Plain());
+      return new MsgPackStreamReader(new AsyncOnlyStream(bytes, wholeReads), serializer ?? Plain());
     }
 
     private static byte[] Hex(string hex)
@@ -105,10 +106,10 @@ namespace LsMsgPackUnitTests
       return text.ToString();
     }
 
-    private static async Task<string> AsyncTokens(byte[] bytes, bool whole)
+    private static async Task<string> AsyncTokens(byte[] bytes, bool whole, bool wholeReads = false)
     {
       StringBuilder text = new StringBuilder();
-      using (MsgPackStreamReader reader = AsyncReader(bytes))
+      using (MsgPackStreamReader reader = AsyncReader(bytes, null, wholeReads))
       {
         while (await reader.ReadAsync())
         {
@@ -195,7 +196,10 @@ namespace LsMsgPackUnitTests
     {
       byte[] corpus = Corpus();
       foreach (bool whole in new[] { false, true })
+      {
         Assert.AreEqual(SyncTokens(corpus, whole), await AsyncTokens(corpus, whole), "whole: " + whole);
+        Assert.AreEqual(SyncTokens(corpus, whole), await AsyncTokens(corpus, whole, true), "whole reads, whole: " + whole);
+      }
     }
 
     [TestMethod]
@@ -428,6 +432,86 @@ namespace LsMsgPackUnitTests
       }
     }
 
+    /// <summary>
+    /// Values all in the buffer (a stream that returns all it can per read): ReadAsync, ReadObjectAsync and ReadElementsAsync take their paths without async steps, with the same values and state as the synchronous methods.
+    /// </summary>
+    [TestMethod]
+    public async Task ObjectsFromTheBuffer_SameAsSynchronous()
+    {
+      foreach (LtMsgPackSerializer serializer in new[] { new LtMsgPackSerializer(), Plain() })
+      {
+        byte[] bytes = Write(w =>
+        {
+          w.WriteHead<List<SwOrder>>();
+          w.WriteArrayHeader(3);
+          for (int n = 1; n <= 3; n++)
+            w.WriteObject(Order(n));
+          w.WriteHead<List<SwOrder>>();
+          w.WriteArrayStart();
+          w.WriteObject(Order(4));
+          w.WriteObject(Order(1500)); // longer than the buffer
+          w.WriteObject<SwOrder>(null);
+          w.WriteEnd();
+          w.WriteHead<List<SwOrder>>();
+          w.WriteArrayStart();
+          for (int n = 5; n <= 7; n++)
+            w.WriteObject(Order(n));
+          w.WriteEnd();
+          w.WriteObject(Order(8)); // a root value (with the indexed schema: its schema, then the value)
+        }, serializer, index: new MsgPackStreamIndexOptions());
+
+        StringBuilder expected = new StringBuilder();
+        using (MsgPackStreamReader reader = SyncReader(bytes, serializer))
+        {
+          for (int table = 0; table < 3; table++)
+          {
+            reader.ReadHead<List<SwOrder>>();
+            reader.Read();
+            while (!reader.AtEnd)
+              State(expected, reader, reader.ReadObject<SwOrder>(), reader.Depth > 0 && reader.AtEnd);
+            reader.Read();
+            expected.Append(reader.TokenType).Append(' ').Append(reader.Depth).Append('|');
+          }
+          State(expected, reader, reader.ReadObject<SwOrder>(), false);
+          expected.Append(reader.Read());
+        }
+
+        foreach (bool wholeReads in new[] { true, false })
+        {
+          StringBuilder actual = new StringBuilder();
+          using (MsgPackStreamReader reader = AsyncReader(bytes, serializer, wholeReads))
+          {
+            for (int table = 0; table < 2; table++)
+            {
+              await reader.ReadHeadAsync<List<SwOrder>>();
+              await reader.ReadAsync();
+              while (!await reader.AtEndAsync())
+              {
+                object read = table == 0 ? await reader.ReadObjectAsync<SwOrder>() : await reader.ReadObjectAsync(typeof(SwOrder));
+                State(actual, reader, read, reader.Depth > 0 && await reader.AtEndAsync());
+              }
+              await reader.ReadAsync();
+              actual.Append(reader.TokenType).Append(' ').Append(reader.Depth).Append('|');
+            }
+            await reader.ReadHeadAsync<List<SwOrder>>();
+            await foreach (SwOrder order in reader.ReadElementsAsync<SwOrder>())
+              State(actual, reader, order, reader.Depth > 0 && await reader.AtEndAsync());
+            actual.Append(reader.TokenType).Append(' ').Append(reader.Depth).Append('|');
+            State(actual, reader, await reader.ReadObjectAsync<SwOrder>(), false);
+            actual.Append(await reader.ReadAsync());
+          }
+          Assert.AreEqual(expected.ToString(), actual.ToString(), "whole reads: " + wholeReads);
+        }
+        StringAssert.Contains(expected.ToString(), "Customer 1500");
+      }
+    }
+
+    private static void State(StringBuilder text, MsgPackStreamReader reader, object value, bool atEnd)
+    {
+      string shown = value is SwOrder order ? order.Customer + " " + order.Lines.Count : Convert.ToString(value);
+      text.Append(shown).Append(" depth ").Append(reader.Depth).Append(" at ").Append(reader.Position).Append(" end ").Append(atEnd).Append('|');
+    }
+
     [TestMethod]
     public async Task ElementsRefuseOtherValues()
     {
@@ -450,17 +534,24 @@ namespace LsMsgPackUnitTests
       {
         LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, MaxDepth = 2 });
 
-        Exception sync = Catch(() => { using (MsgPackStreamReader r = SyncReader(Hex(hex), serializer)) { while (r.Read()) { } } });
-        Exception async = await CatchAsync(async () => { using (MsgPackStreamReader r = AsyncReader(Hex(hex), serializer)) { while (await r.ReadAsync()) { } } });
-        AreSame(sync, async, "tokens " + hex);
+        foreach (bool wholeReads in new[] { false, true })
+        {
+          Exception sync = Catch(() => { using (MsgPackStreamReader r = SyncReader(Hex(hex), serializer)) { while (r.Read()) { } } });
+          Exception async = await CatchAsync(async () => { using (MsgPackStreamReader r = AsyncReader(Hex(hex), serializer, wholeReads)) { while (await r.ReadAsync()) { } } });
+          AreSame(sync, async, "tokens " + hex);
 
-        sync = Catch(() => { using (MsgPackStreamReader r = SyncReader(Hex(hex), serializer)) r.ReadObject<object>(); });
-        async = await CatchAsync(async () => { using (MsgPackStreamReader r = AsyncReader(Hex(hex), serializer)) await r.ReadObjectAsync<object>(); });
-        AreSame(sync, async, "object " + hex);
+          sync = Catch(() => { using (MsgPackStreamReader r = SyncReader(Hex(hex), serializer)) r.ReadObject<object>(); });
+          async = await CatchAsync(async () => { using (MsgPackStreamReader r = AsyncReader(Hex(hex), serializer, wholeReads)) await r.ReadObjectAsync<object>(); });
+          AreSame(sync, async, "object " + hex);
 
-        sync = Catch(() => { using (MsgPackStreamReader r = SyncReader(Hex(hex), serializer)) { r.Read(); r.GetValue(); } });
-        async = await CatchAsync(async () => { using (MsgPackStreamReader r = AsyncReader(Hex(hex), serializer)) { await r.ReadAsync(); await r.GetValueAsync(); } });
-        AreSame(sync, async, "value " + hex);
+          sync = Catch(() => { using (MsgPackStreamReader r = SyncReader(Hex(hex), serializer)) { r.Read(); r.ReadObject<object>(); } }); // an element: the buffered path of ReadObjectAsync
+          async = await CatchAsync(async () => { using (MsgPackStreamReader r = AsyncReader(Hex(hex), serializer, wholeReads)) { await r.ReadAsync(); await r.ReadObjectAsync<object>(); } });
+          AreSame(sync, async, "element " + hex);
+
+          sync = Catch(() => { using (MsgPackStreamReader r = SyncReader(Hex(hex), serializer)) { r.Read(); r.GetValue(); } });
+          async = await CatchAsync(async () => { using (MsgPackStreamReader r = AsyncReader(Hex(hex), serializer, wholeReads)) { await r.ReadAsync(); await r.GetValueAsync(); } });
+          AreSame(sync, async, "value " + hex);
+        }
       }
     }
 
@@ -499,13 +590,14 @@ namespace LsMsgPackUnitTests
     #endregion
 
     /// <summary>
-    /// Refuses synchronous reads, returns 1 to 3 bytes per read and completes every other read asynchronously.
+    /// Refuses synchronous reads, returns 1 to 3 bytes per read (or all it can, <c>wholeReads</c>) and completes every other read asynchronously.
     /// </summary>
     private sealed class AsyncOnlyStream : Stream
     {
       private readonly MemoryStream _inner;
+      private readonly bool _wholeReads;
       private int _reads;
-      public AsyncOnlyStream(byte[] bytes) { _inner = new MemoryStream(bytes); }
+      public AsyncOnlyStream(byte[] bytes, bool wholeReads = false) { _inner = new MemoryStream(bytes); _wholeReads = wholeReads; }
       public override bool CanRead { get { return true; } }
       public override bool CanSeek { get { return false; } }
       public override bool CanWrite { get { return false; } }
@@ -517,7 +609,7 @@ namespace LsMsgPackUnitTests
       {
         if ((_reads++ & 1) == 0)
           await Task.Yield();
-        return _inner.Read(buffer, offset, Math.Min(count, 1 + _reads % 3));
+        return _inner.Read(buffer, offset, _wholeReads ? count : Math.Min(count, 1 + _reads % 3));
       }
       public override long Seek(long offset, SeekOrigin origin) { throw new NotSupportedException(); }
       public override void SetLength(long value) { throw new NotSupportedException(); }

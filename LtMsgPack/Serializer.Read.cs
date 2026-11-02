@@ -93,6 +93,11 @@ namespace LtMsgPack
     /// </summary>
     private volatile Type _cachedRoot;
 
+    /// <summary>
+    /// The type of a value in a body whose assembly was cached last (see <see cref="DeserializeBody"/>).
+    /// </summary>
+    private volatile Type _cachedBodyType;
+
     internal bool CustomTypeResolvers { get { return _customTypeResolvers; } }
 
     private void InitReading()
@@ -235,13 +240,7 @@ namespace LtMsgPack
     internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null)
     {
       if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
-      {
-        ReadDifferences found = new ReadDifferences(Options);
-        int used = 0;
-        object read = ReadDifferences.Collect(found, () => Deserialize(type, buffer, offset, end, out used, found));
-        consumed = used;
-        return read;
-      }
+        return DeserializeCollecting(type, buffer, offset, end, out consumed);
 
       if (type != _cachedRoot)
       {
@@ -275,6 +274,16 @@ namespace LtMsgPack
       {
         ReturnContext(c);
       }
+    }
+
+    // The lambdas are in methods of their own: a lambda that captures parameters allocates its closure where the method starts, on every call
+    private object DeserializeCollecting(Type type, byte[] buffer, int offset, int end, out int consumed)
+    {
+      ReadDifferences found = new ReadDifferences(Options);
+      int used = 0;
+      object read = ReadDifferences.Collect(found, () => Deserialize(type, buffer, offset, end, out used, found));
+      consumed = used;
+      return read;
     }
 
     [ThreadStatic]
@@ -413,6 +422,11 @@ namespace LtMsgPack
         }
       }
 
+      return ReadGrowing(c, root, type, bodyStart, schema, lengthSettings);
+    }
+
+    private object ReadGrowing(ReadContext c, Type root, Type type, int bodyStart, SchemaStore.Entry schema, MsgPackOptions lengthSettings)
+    {
       return schema.RunReader(Options, lengthSettings, (session, sessionSettings) => ReadBody(c, root, type, bodyStart, session, sessionSettings, true));
     }
 
@@ -494,13 +508,7 @@ namespace LtMsgPack
     internal object DeserializeBody(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null)
     {
       if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
-      {
-        ReadDifferences found = new ReadDifferences(Options);
-        int used = 0;
-        object read = ReadDifferences.Collect(found, () => DeserializeBody(head, root, type, buffer, offset, end, out used, found));
-        consumed = used;
-        return read;
-      }
+        return DeserializeBodyCollecting(head, root, type, buffer, offset, end, out consumed);
 
       if (root != _cachedRoot)
       {
@@ -508,8 +516,11 @@ namespace LtMsgPack
         TypeResolver.CacheReachableAssemblies(root);
         _cachedRoot = root;
       }
-      if (type != root)
+      if (type != root && type != _cachedBodyType) // the elements of a body are usually of one type: one lookup
+      {
         TypeResolver.CacheAssembly(type.Assembly, type.Name);
+        _cachedBodyType = type;
+      }
 
       ReadContext c = RentContext(buffer, offset, end);
       try
@@ -525,6 +536,15 @@ namespace LtMsgPack
       {
         ReturnContext(c);
       }
+    }
+
+    private object DeserializeBodyCollecting(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed)
+    {
+      ReadDifferences found = new ReadDifferences(Options);
+      int used = 0;
+      object read = ReadDifferences.Collect(found, () => DeserializeBody(head, root, type, buffer, offset, end, out used, found));
+      consumed = used;
+      return read;
     }
 
     #endregion

@@ -134,13 +134,13 @@ Measured on an i7-7700K with .NET 8 in Release, per row, best of 5 passes (`Benc
 | Dapper 2.1.66 `Query<T>` / `Parse<T>` | 412 ns | 2857 ns |
 | `ReadRows<T>` | **237 ns** (1.74x Dapper) | **2047 ns** (1.40x Dapper) |
 | Dapper + LtMsgPack `Serialize` | 847 ns | 3144 ns |
-| `SerializeRows` | 457 ns | 1948 ns |
+| `SerializeRows` | 379 ns | 1948 ns |
 | `WriteTable` (stream writer) | **356 ns** (2.4x Dapper + `Serialize`) | **1880 ns** (1.67x) |
 | Dapper + System.Text.Json | 1268 ns | 3734 ns |
 
-- **Allocations per row** (in memory): Dapper 330 B, `ReadRows` 138 B (the object and its strings, as the hand-written loop), `WriteTable` 25 B, Dapper + `Serialize` 871 B.
+- **Allocations per row** (in memory): Dapper 330 B, `ReadRows` 138 B (the object and its strings, as the hand-written loop), `WriteTable` 25 B, `SerializeRows` 122 B (the result; none to a stream), Dapper + `Serialize` 871 B.
 - **Typed getters**: Dapper reads every value with `GetValue`, boxed. The mapper and the writers use the typed getters, which makes the difference on the in-memory reader.
 - **With a real provider** the provider takes most of the time, and `ReadRows`, `SerializeRows` and `WriteTable` cost about what a hand-written loop costs.
 - **NULL checks**: SQLite's `IsDBNull` is a native call of about 65 ns per column, and its typed getters check again. After the first 64 rows of a call, a column that had no NULL yet is read with its typed getter alone, when the reader's getters throw for a NULL, as the providers' getters do (SQLite, SqlClient, Npgsql...). Such an exception is checked with `IsDBNull`, so a NULL that comes later is still a NULL, also in a column the provider calls NOT NULL (the outer side of a join). That column is then checked on every row. Whether a reader type's getters throw is tried once, at the first NULL it has; a reader whose getters return a value for a NULL (0, null) is checked on every row. The provider's schema (`GetSchemaTable`'s `AllowDBNull`) is not used: on SQLite it takes about 10 ms per query, and it says NOT NULL for the outer side of a join.
 - **Values the provider converts**: on SQLite with dates and decimals stored as TEXT the provider parses the text for both: `ReadRows` 3.1 µs per row, Dapper 3.7 µs.
-- **`MsgPackDataReader`** over a dump in memory (the invoices, opened at the index entry): `Read` alone 250 ns per row, with `GetValues` 415 ns (boxed), `ReadAsync` + `GetValues` 525 ns. The typed getters cost 5-12 ns each.
+- **`MsgPackDataReader`** over a dump in memory (the invoices, opened at the index entry): `Read` alone 240 ns per row, with `GetValues` 375 ns (boxed), `ReadAsync` + `GetValues` 400 ns. The typed getters cost 5-12 ns each.
