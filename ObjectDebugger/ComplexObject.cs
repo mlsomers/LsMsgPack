@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 
 namespace ObjectDebugger
 {
@@ -42,7 +41,7 @@ namespace ObjectDebugger
     /// </summary>
     public IEnumerable<ComplexObject> Children
     {
-      get { return Members.OfType<ComplexObject>(); }
+      get { return ComplexMembers(false, false); }
     }
 
     /// <summary>
@@ -50,7 +49,7 @@ namespace ObjectDebugger
     /// </summary>
     public IEnumerable<ComplexObject> ComplexProperties
     {
-      get { return Children.Where(c => !c.IsCollection); }
+      get { return ComplexMembers(true, false); }
     }
 
     /// <summary>
@@ -58,7 +57,7 @@ namespace ObjectDebugger
     /// </summary>
     public IEnumerable<ComplexObject> CollectionProperties
     {
-      get { return Children.Where(c => c.IsCollection); }
+      get { return ComplexMembers(true, true); }
     }
 
     /// <summary>
@@ -66,7 +65,20 @@ namespace ObjectDebugger
     /// </summary>
     public IEnumerable<PrimitiveObject> PrimitiveProperties
     {
-      get { return Members.Where(m => !(m is ComplexObject)); }
+      get
+      {
+        for (int t = 0; t < Members.Count; t++)
+          if (!(Members[t] is ComplexObject))
+            yield return Members[t];
+      }
+    }
+
+    /// <param name="filter">Only the collections or only the objects (<paramref name="collections"/>), otherwise both</param>
+    private IEnumerable<ComplexObject> ComplexMembers(bool filter, bool collections)
+    {
+      for (int t = 0; t < Members.Count; t++)
+        if (Members[t] is ComplexObject complex && (!filter || complex.IsCollection == collections))
+          yield return complex;
     }
 
     public bool IsCollection

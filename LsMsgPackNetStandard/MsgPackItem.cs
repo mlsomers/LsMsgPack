@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Xml.Serialization;
 using System.IO;
 using System.Collections;
-using System.Linq;
 using LsMsgPack.Types.Extensions;
 
 #if KEEPTRACK
@@ -282,8 +281,26 @@ namespace LsMsgPack
       object[] items = new object[array.Rank + 1];
       for (int t = 0; t < array.Rank; t++)
         items[t] = array.GetLength(t);
-      items[array.Rank] = array.Cast<object>().ToArray();
+      object[] values = new object[array.Length];
+      int index = 0;
+      foreach (object value in array) // in the order of the indexes (the last one first), Array.Copy only copies between arrays of the same rank
+        values[index++] = value;
+      items[array.Rank] = values;
       return items;
+    }
+
+    private static object[] ToObjectArray(IEnumerable values)
+    {
+      if (values is Array array && array.Rank == 1)
+      {
+        object[] items = new object[array.Length];
+        Array.Copy(array, items, items.Length); // boxes the elements of value types
+        return items;
+      }
+      List<object> list = values is ICollection collection ? new List<object>(collection.Count) : new List<object>();
+      foreach (object value in values)
+        list.Add(value);
+      return list.ToArray();
     }
 
     public static MsgPackItem Pack(object value, MsgPackSettings settings, Type valuesType = null)
@@ -338,8 +355,8 @@ namespace LsMsgPack
           return new MpMap(settings) { Value = info.ToPairs(enumerable) };
       }
       if (valuesType.IsArray && valuesType.GetArrayRank() > 1) return new MpArray(settings) { Value = Multidimensional((Array)value) };
-      if (valuesType.IsArray) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
-      if (typeof(IEnumerable).IsAssignableFrom(valuesType)) return new MpArray(settings) { Value = ((IEnumerable)value).Cast<Object>().ToArray() };
+      if (valuesType.IsArray) return new MpArray(settings) { Value = ToObjectArray((IEnumerable)value) };
+      if (typeof(IEnumerable).IsAssignableFrom(valuesType)) return new MpArray(settings) { Value = ToObjectArray((IEnumerable)value) };
 
       // Extension types will come in like this most of the time:
       MsgPackItem val = value as MsgPackItem;

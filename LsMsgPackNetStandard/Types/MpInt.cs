@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
 using System.Xml.Serialization;
 using LsMsgPack.Meta;
 
@@ -27,7 +26,7 @@ namespace LsMsgPack
       if (_settings._dynamicallyCompact) return svalue < 0;
       if (((byte)typeId & 0xE0) == 0xE0) return true; // 5-bit negative integer
       if (((byte)typeId & 0x7F) == 0) return false; // 7-bit positive integer
-      return SignedTypeIds.Contains(typeId);
+      return typeId == MsgPackTypeId.MpSByte || typeId == MsgPackTypeId.MpShort || typeId == MsgPackTypeId.MpInt || typeId == MsgPackTypeId.MpLong; // SignedTypeIds
     }
 
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]

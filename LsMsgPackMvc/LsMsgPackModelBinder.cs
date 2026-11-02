@@ -3,7 +3,6 @@ using LtMsgPack.Http;
 using System;
 using System.ComponentModel;
 using System.IO;
-using System.Linq;
 using System.Web;
 using System.Web.Mvc;
 
@@ -103,8 +102,11 @@ namespace LsMsgPackMvc
       if (ModelBinders.Binders.TryGetValue(modelType, out IModelBinder registered))
         return registered;
 
-      CustomModelBinderAttribute attribute = TypeDescriptor.GetAttributes(modelType).OfType<CustomModelBinderAttribute>().FirstOrDefault();
-      return attribute?.GetBinder() ?? ModelBinders.Binders.DefaultBinder;
+      AttributeCollection attributes = TypeDescriptor.GetAttributes(modelType);
+      for (int t = 0; t < attributes.Count; t++)
+        if (attributes[t] is CustomModelBinderAttribute attribute)
+          return attribute.GetBinder() ?? ModelBinders.Binders.DefaultBinder;
+      return ModelBinders.Binders.DefaultBinder;
     }
 
     private static void Validate(object model, ControllerContext controllerContext, ModelBindingContext bindingContext)

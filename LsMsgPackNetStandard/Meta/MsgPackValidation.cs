@@ -1,6 +1,5 @@
 ﻿#if KEEPTRACK
 using System.Collections.Generic;
-using System.Linq;
 using LsMsgPack.Types.Extensions;
 
 namespace LsMsgPack
@@ -257,7 +256,7 @@ namespace LsMsgPack
                 }
             }
             MsgPackTypeId firstKeyType = map.PackedValues[reference].Key.TypeId;
-            if (!MsgPackMeta.StrTypeFamily.Contains(firstKeyType) && !MsgPackMeta.IntTypeFamily.Contains(firstKeyType) && firstKeyType != MsgPackTypeId.MpNull)
+            if (!MsgPackMeta.IsOneOf(MsgPackMeta.StrTypeFamily, firstKeyType) && !MsgPackMeta.IsOneOf(MsgPackMeta.IntTypeFamily, firstKeyType) && firstKeyType != MsgPackTypeId.MpNull)
             {
                 issues.Add(new ValidationItem(item, ValidationSeverity.Comment, 0, "A key of type ", MsgPackItem.GetOfficialTypeName(firstKeyType),
                   " is rather unusual in a map. Some implementations might only support string or integer types as keys."));
@@ -317,7 +316,7 @@ namespace LsMsgPack
                           "This integer should have been stored in a smaller container (", MsgPackItem.GetOfficialTypeName(calcType), " instead of ",
                           MsgPackItem.GetOfficialTypeName(intItem.PreservedType), "). This would have saved ", (used - potential), " bytes."));
                     }
-                    else if (MpInt.SignedTypeIds.Contains(intItem.PreservedType) && !MpInt.SignedTypeIds.Contains(calcType))
+                    else if (MsgPackMeta.IsOneOf(MpInt.SignedTypeIds, intItem.PreservedType) && !MsgPackMeta.IsOneOf(MpInt.SignedTypeIds, calcType))
                     {
                         issues.Add(new ValidationItem(item, ValidationSeverity.Comment, 0,
                           "A positive integer has no need of a signing bit and can potentially be stored in a smaller container (in this case it did not matter)."));
