@@ -400,7 +400,7 @@ namespace LtMsgPack.Writing
   #region Objects and collections (the runtime type may differ: then written boxed, with a type id)
 
   /// <summary>
-  /// A class, or a struct (boxed once: the plans read the properties of the box, see StructPropWriter).
+  /// A class, or a struct (by reference when the plan allows it, see ObjectPlan.WriteStruct, otherwise boxed once: the plans read the properties of the box, see StructPropWriter).
   /// </summary>
   internal sealed class ObjectHandler<T> : ValueHandler<T>
   {
@@ -424,7 +424,10 @@ namespace LtMsgPack.Writing
       ObjectPlan plan = c.Mode == IdMode.Names
         ? _names ?? (_names = _serializer.Plan(typeof(T), true))
         : _schema ?? (_schema = _serializer.Plan(typeof(T), false));
-      plan.Write(c, value, false, assignedTo);
+      if (typeof(T).IsValueType && plan.ByRef) // the JIT drops the test for classes
+        plan.WriteStruct(c, ref value, assignedTo); // the parameter by reference, no box
+      else
+        plan.Write(c, value, false, assignedTo);
     }
 
     internal override bool IncludeByDefault(T value, FullPropertyInfo info)

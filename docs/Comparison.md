@@ -10,7 +10,7 @@ All three serialize .NET classes to MsgPack. This page compares speed, payload s
 - **A schema in the payload.** The indexed schema (the default) lists each type's property names once per message, then refers to them by index. Payloads stay small and still carry the names, so data written by older or newer versions of your classes loads by name. With the other two you pick one: arrays (compact, but the order of the `[Key]`s is the contract) or maps (with every name in every object). See [schema.md](schema.md).
 - **A built-in debugger.** MsgPack Explorer (Windows, also as a Fiddler inspector and a Visual Studio debugger visualizer), the VS Code extension, and an [MCP server](Mcp.md) for AI agents. They show the types and property names from the schema and type ids, and the offset of any error. The other two can convert MsgPack to JSON in code (`ConvertToJson`), but don't ship such tools.
 - **A TypeScript client for your ASP.NET backend.** [@lsmsgpack/client](TypeScriptClient.md) reads the schema-based responses of the [web formatters](WebFormatters.md) into complete objects, including polymorphic values and the properties the server left out. [lsmsgpack-ts](TypeScriptModels.md) generates the TypeScript models. With the other libraries you use a generic JavaScript MsgPack decoder and map the arrays or maps to your types yourself.
-- **Plain classes, no setup, on a JIT.** On .NET and .NET Framework, LtMsgPack needs no attributes, no `partial` classes and no source generator. Without generated code it was faster than both other libraries with theirs in the invoice benchmark (below). Its source generator is optional there: it made writing 1.4-2x as fast here, reading about the same. Struct values cost it one allocation each (see [game messages](#benchmark-game-messages)).
+- **Plain classes, no setup, on a JIT.** On .NET and .NET Framework, LtMsgPack needs no attributes, no `partial` classes and no source generator. Without generated code it was faster than both other libraries with theirs in the invoice benchmark (below). Its source generator is optional there: it made writing 1.4-2x as fast here, reading about the same. Struct values are written and read in place, without allocations (see [game messages](#benchmark-game-messages)).
 - Also: [ReadDifferences](ReadDifferences.md) (what didn't match between the data and your classes), [streaming](Streaming.md) with an index for seeking, [ADO.NET data readers](DataReader.md), and [presets](Compatibility.md#ltmsgpack-presets) that write the same bytes as MessagePack-CSharp, or what Nerdbank.MessagePack reads.
 
 **Pick MessagePack-CSharp when** you need a library with a long track record: it is widely used in production (ASP.NET Core SignalR's MessagePack protocol is built on it), supports Unity, and has LZ4 compression and typeless serialization.
@@ -22,7 +22,7 @@ All three serialize .NET classes to MsgPack. This page compares speed, payload s
 - **You need a track record.** LtMsgPack has no known production users yet, and until it does, breaking changes to its API and defaults are still allowed. Pin the version, and check the release notes before you upgrade.
 - **You target NativeAOT, WebAssembly AOT or iOS but don't want a source generator.** LtMsgPack needs its generator there: one context class or one assembly attribute, which can pick up classes you already marked `[Serializable]`, `[DataContract]` or `[JsonSerializable]` (see [SourceGenerator.md](SourceGenerator.md)). Without it, LtMsgPack fails under NativeAOT on the first object. The NativeAOT speed of the three libraries was not compared.
 - **The other side expects another library's polymorphism format.** MessagePack-CSharp's and Nerdbank.MessagePack's unions (an array of a key and the object) can't be read or written by LtMsgPack. Most other data works with the right settings (see [Compatibility.md](Compatibility.md) and its list of what [cannot match](Compatibility.md#what-settings-cannot-match)).
-- **Every allocation counts and your models are built from structs**, like the vectors of game messages. LtMsgPack writes and reads each struct value through a box (32 B for a `Vec3`). The other two allocate nothing when writing into a reused buffer (see [game messages](#benchmark-game-messages)). Its source generator doesn't cover structs yet, so under NativeAOT they take a slower path through reflection. Vector types with public fields and no setters (`System.Numerics.Vector3`) are refused with an exception. The other two libraries write their fields.
+- **Your models are built from structs and you target NativeAOT**, or your structs have fields instead of properties. LtMsgPack's source generator doesn't cover structs yet, so under NativeAOT they take a slower path through reflection, with a box per value (see [game messages](#benchmark-game-messages)). Vector types with public fields and no setters (`System.Numerics.Vector3`) are refused with an exception. The other two libraries write their fields.
 - **You need Unity**: LtMsgPack is not tested there.
 
 ## Benchmark
@@ -123,19 +123,19 @@ The data is 64 simulated ticks: arbitrary float coordinates, about 1 in 7 player
 
 | Setup | Size: state / snapshot | State: write / read / send | Snapshot: write / read / send |
 |---|---|---|---|
-| System.Text.Json (baseline) | 190 B / 2,928 B | 1,659 / 1,816 / 1,617 ns | 23.1 / 27.4 / 23.1 µs |
-| MessagePack-CSharp, `[Key(n)]`, generated | 51 B / 775 B | 184 / 253 / 172 ns | 1.79 / 3.04 / 1.63 µs |
-| Nerdbank.MessagePack, `PerfOverSchemaStability`, generated shapes | 51 B / 775 B | 318 / 419 / 299 ns | 4.19 / 5.53 / 4.01 µs |
-| LtMsgPack, `MessagePackCSharp()` preset as arrays | 51 B / 775 B | 235 / 245 / 237 ns | 2.95 / 3.47 / 2.89 µs |
-| LtMsgPack, arrays without the schema | 45 B / 690 B | 242 / 222 / 242 ns | 3.04 / 3.17 / 2.98 µs |
-| the same, generated | | 191 / 194 / 194 ns | 2.30 / 2.77 / 2.24 µs |
-| LtMsgPack, schema reference (arrays) | 63 B / 708 B | 275 / 256 / 276 ns | 3.14 / 3.36 / 3.05 µs |
-| the same, generated | | 224 / 222 / 223 ns | 2.42 / 2.79 / 2.37 µs |
-| LtMsgPack, default options (arrays with the indexed schema) | 131 B / 826 B | 311 / 253 / 306 ns | 3.34 / 3.25 / 3.30 µs |
-| the same, generated | | 257 / 223 / 255 ns | 2.60 / 2.86 / 2.52 µs |
-| MessagePack-CSharp, `keyAsPropertyName` (maps), generated | 123 B / 1,890 B | 227 / 451 / 210 ns | 2.52 / 6.14 / 2.22 µs |
-| Nerdbank.MessagePack, maps, generated shapes | 123 B / 1,890 B | 441 / 1,033 / 411 ns | 5.95 / 14.7 / 5.53 µs |
-| LtMsgPack, property names (maps) | 110 B / 1,703 B | 366 / 333 / 358 ns | 4.95 / 4.79 / 4.78 µs |
+| System.Text.Json (baseline) | 190 B / 2,928 B | 1,544 / 1,731 / 1,510 ns | 21.6 / 26.3 / 21.7 µs |
+| MessagePack-CSharp, `[Key(n)]`, generated | 51 B / 775 B | 163 / 236 / 159 ns | 1.67 / 2.89 / 1.54 µs |
+| Nerdbank.MessagePack, `PerfOverSchemaStability`, generated shapes | 51 B / 775 B | 302 / 400 / 289 ns | 3.99 / 5.27 / 3.83 µs |
+| LtMsgPack, `MessagePackCSharp()` preset as arrays | 51 B / 775 B | 178 / 211 / 176 ns | 2.07 / 2.96 / 1.96 µs |
+| LtMsgPack, arrays without the schema | 45 B / 690 B | 206 / 191 / 204 ns | 2.41 / 2.69 / 2.33 µs |
+| the same, generated | | 167 / 160 / 164 ns | 1.86 / 2.28 / 1.81 µs |
+| LtMsgPack, schema reference (arrays) | 63 B / 708 B | 230 / 217 / 232 ns | 2.52 / 2.79 / 2.44 µs |
+| the same, generated | | 196 / 185 / 192 ns | 1.98 / 2.36 / 1.91 µs |
+| LtMsgPack, default options (arrays with the indexed schema) | 131 B / 826 B | 265 / 217 / 261 ns | 2.70 / 2.82 / 2.62 µs |
+| the same, generated | | 227 / 185 / 221 ns | 2.16 / 2.41 / 2.08 µs |
+| MessagePack-CSharp, `keyAsPropertyName` (maps), generated | 123 B / 1,890 B | 216 / 427 / 201 ns | 2.42 / 5.73 / 2.15 µs |
+| Nerdbank.MessagePack, maps, generated shapes | 123 B / 1,890 B | 419 / 1,001 / 397 ns | 5.67 / 14.2 / 5.34 µs |
+| LtMsgPack, property names (maps) | 110 B / 1,703 B | 349 / 292 / 335 ns | 4.51 / 4.28 / 4.26 µs |
 
 ### LtMsgPack with `Vec3` as a class
 
@@ -143,12 +143,12 @@ The same data, with `class Vec3` for LtMsgPack (the other libraries keep the str
 
 | Setup | Size: state / snapshot | State: write / read / send | Snapshot: write / read / send |
 |---|---|---|---|
-| LtMsgPack, `MessagePackCSharp()` preset as arrays (still MessagePack-CSharp's bytes) | 51 B / 775 B | 233 / 269 / 229 ns | 2.96 / 3.84 / 2.85 µs |
-| LtMsgPack, arrays without the schema | 46 B / 699 B | 241 / 248 / 240 ns | 3.06 / 3.49 / 2.96 µs |
-| the same, generated | | 153 / 190 / 150 ns | 1.77 / 2.66 / 1.66 µs |
-| LtMsgPack, schema reference (arrays), generated | 64 B / 717 B | 183 / 217 / 182 ns | 1.81 / 2.76 / 1.70 µs |
-| LtMsgPack, default options | 134 B / 838 B | 314 / 280 / 307 ns | 3.25 / 3.67 / 3.16 µs |
-| the same, generated | | 221 / 219 / 216 ns | 2.00 / 2.83 / 1.88 µs |
+| LtMsgPack, `MessagePackCSharp()` preset as arrays (still MessagePack-CSharp's bytes) | 51 B / 775 B | 210 / 240 / 212 ns | 2.50 / 3.42 / 2.43 µs |
+| LtMsgPack, arrays without the schema | 46 B / 699 B | 218 / 221 / 217 ns | 2.59 / 3.14 / 2.52 µs |
+| the same, generated | | 147 / 176 / 147 ns | 1.62 / 2.45 / 1.55 µs |
+| LtMsgPack, schema reference (arrays), generated | 64 B / 717 B | 178 / 200 / 176 ns | 1.75 / 2.55 / 1.67 µs |
+| LtMsgPack, default options | 134 B / 838 B | 280 / 247 / 280 ns | 2.87 / 3.27 / 2.77 µs |
+| the same, generated | | 214 / 200 / 205 ns | 1.89 / 2.57 / 1.80 µs |
 
 ### Allocated per message
 
@@ -156,29 +156,29 @@ The same data, with `class Vec3` for LtMsgPack (the other libraries keep the str
 |---|---|---|
 | System.Text.Json | 594 / 600 / 376 B | 4,227 / 2,752 / 1,272 B |
 | MessagePack-CSharp and Nerdbank.MessagePack, arrays | 80 / 64 / 0 B | 800 / 1,168 / 0 B |
-| LtMsgPack, arrays without the schema, `Vec3` struct | 129 / 122 / 57 B | 1,583 / 2,033 / 865 B |
-| LtMsgPack, default options, `Vec3` struct | 217 / 122 / 57 B | 1,719 / 2,033 / 865 B |
+| LtMsgPack, arrays without the schema, `Vec3` struct | 72 / 64 / 0 B | 718 / 1,168 / 0 B |
+| LtMsgPack, default options, `Vec3` struct | 160 / 64 / 0 B | 854 / 1,168 / 0 B |
 | LtMsgPack, arrays without the schema, `Vec3` class | 72 / 120 / 0 B | 726 / 2,008 / 0 B |
 | LtMsgPack, default options, `Vec3` class | 160 / 120 / 0 B | 866 / 2,008 / 0 B |
 
-Reading allocates the objects. With a class, those are two more `Vec3` objects per player. With the struct, LtMsgPack writes and reads each `Vec3` that isn't (0, 0, 0) through a box of 32 B. The generated rows allocate the same as the runtime ones.
+Reading allocates the objects. With a class, those are two more `Vec3` objects per player. With the struct, LtMsgPack writes and reads the `Vec3` values in place, so it allocates what the other two do. Writing to a new `byte[]` allocates the payload. The generated rows allocate the same as the runtime ones.
 
 ### Findings
 
-- **LtMsgPack boxes struct values once.** It reads and sets their properties inside the box through typed delegates, so a struct cost about what a class did: arrays without the schema wrote a state in 242 ns and read it in 222 ns, against 241 / 248 ns with `Vec3` as a class. The box is the cost: 57 B per state and 865 B per snapshot written into a reused buffer, where MessagePack-CSharp and Nerdbank.MessagePack allocate nothing.
-- **The source generator doesn't cover structs.** A class's generated code hands its struct properties to the runtime. With generated code, LtMsgPack wrote a state with struct vectors in 191 ns (class vectors 153 ns, MessagePack-CSharp 184 ns) and read it in 194 ns (190 ns, 253 ns). It wrote a snapshot in 2.30 µs (1.77 µs, 1.79 µs) and read it in 2.77 µs (2.66 µs, 3.04 µs). Without dynamic code (NativeAOT), struct values take LtMsgPack's slower path through reflection; that was not measured here.
-- **With classes and generated code, LtMsgPack was the fastest here.** Arrays without the schema wrote a state in 153 ns and read it in 190 ns (MessagePack-CSharp: 184 / 253 ns). Snapshots were written as fast (1.77 µs against 1.79 µs, sending 1.66 µs against 1.63 µs) and read 13% faster (2.66 µs against 3.04 µs). Without generated code, LtMsgPack wrote states 1.3x slower and read them as fast (241 / 248 ns), and wrote snapshots 1.7x and read them 1.15x slower.
+- **LtMsgPack writes and reads struct values in place.** It passes a struct by reference and reads and sets its properties through typed delegates. So `Vec3` values allocate nothing: written into a reused buffer, states and snapshots allocated 0 B, as with MessagePack-CSharp and Nerdbank.MessagePack. Without generated code the struct was also faster than the class: arrays without the schema wrote a state in 206 ns and read it in 191 ns, against 218 / 221 ns with `Vec3` as a class. A struct as the root value (`Serialize<Vec3>`, `Deserialize<Vec3>`) is still boxed once per call.
+- **The source generator doesn't cover structs.** A class's generated code hands its struct properties to the runtime. With generated code, LtMsgPack wrote a state with struct vectors in 167 ns (class vectors 147 ns, MessagePack-CSharp 163 ns) and read it in 160 ns (176 ns, 236 ns). It wrote a snapshot in 1.86 µs (1.62 µs, 1.67 µs) and read it in 2.28 µs (2.45 µs, 2.89 µs). Without dynamic code (NativeAOT), struct values take LtMsgPack's slower path through reflection; that was not measured here.
+- **With classes and generated code, LtMsgPack was the fastest here.** Arrays without the schema wrote a state in 147 ns and read it in 176 ns (MessagePack-CSharp: 163 / 236 ns). Snapshots were written 3% faster (1.62 µs against 1.67 µs, sending 1.55 µs against 1.54 µs) and read 15% faster (2.45 µs against 2.89 µs). Without generated code, LtMsgPack wrote states 1.3x slower and read them faster (218 / 221 ns), and wrote snapshots 1.55x and read them 1.1x slower.
 - **Vector types with fields.** `System.Numerics.Vector3` has public fields and no setters. MessagePack-CSharp (contractless) and Nerdbank.MessagePack write the fields. LtMsgPack refuses it with a `MsgPackException`, so it doesn't silently write an empty map. Use your own type with properties, or a custom extension (`LtMsgPackOptions.Extensions`). Unity's `Vector3` was not tested.
 - **Leave the inline schema out of small messages.** The indexed schema (the default) writes the property names in every message: 131 B per state, against 45 B without it. Snapshots grow less (826 B against 690 B, +20%) because they hold the names once for 15 players. When both sides have the same classes, use arrays without the schema. Use a schema reference (`WriteSchemaReference` with a `SchemaStore`, 18 B per message) to keep reading by name across versions, with the schemas sent once when connecting.
 - **LtMsgPack's arrays are the smallest:** 45 B against MessagePack-CSharp's 51 B per state. A zero (the velocity of a player standing still) is a default value, written as nil (1 byte) instead of a 5 byte float. A side effect: `-0.0` is a default value too, so it reads back as `0.0`. The other two libraries keep the sign.
-- **Writing to a new `byte[]` costs little more than sending.** The difference was up to 10%, the copy of the payload, plus its allocation (the payload size + 24 B).
-- **Per tick.** A server that reads 16 states and sends 16 snapshots each tick spent ~30 µs on it with MessagePack-CSharp and with generated LtMsgPack on classes. With generated LtMsgPack on the struct model it spent ~39 µs, and made ~16 KB of garbage per tick (~1 MB/s at 60 ticks per second). A client sends one state and reads one snapshot per tick: 3-15 µs for any of the MsgPack setups, a small part of a 16.7 ms frame.
-- **JSON** took 7-13x as long as MessagePack-CSharp, and its payloads were 3.7x larger.
-- **Nerdbank.MessagePack** took 1.7x as long as MessagePack-CSharp for states and 1.8-2.5x for snapshots, with the same bytes and allocations.
+- **Writing to a new `byte[]` costs little more than sending.** The difference was up to 12%, the copy of the payload, plus its allocation (the payload size + 24 B).
+- **Per tick.** A server that reads 16 states and sends 16 snapshots each tick spent ~28 µs on it with MessagePack-CSharp and with generated LtMsgPack on classes. With generated LtMsgPack on the struct model it spent ~32 µs. MessagePack-CSharp and LtMsgPack on the struct model both made ~1 KB of garbage per tick: the 16 states they read. A client sends one state and reads one snapshot per tick: 3-15 µs for any of the MsgPack setups, a small part of a 16.7 ms frame.
+- **JSON** took 7-14x as long as MessagePack-CSharp, and its payloads were 3.7x larger.
+- **Nerdbank.MessagePack** took 1.7-1.9x as long as MessagePack-CSharp for states and 1.8-2.5x for snapshots, with the same bytes and allocations.
 
 ### How it was measured
 
-The machine and runtime were the same as for the invoices. Each operation was warmed up for 0.5 s per setup. A pass ran 200,000 states and 20,000 snapshots per operation, cycling through the 1,024 states and 64 snapshots of the data. The fastest of 7 interleaved passes was kept. Between two runs most values differed by less than 5%, a few LtMsgPack rows by up to 9%. Not measured: reading from a slice of a larger receive buffer (`Deserialize(byte[], offset, count)`, `ReadOnlyMemory<byte>`), reusing objects when reading, larger matches, delta compression, NativeAOT and Unity.
+The machine and runtime were the same as for the invoices. Each operation was warmed up for 0.5 s per setup. A pass ran 200,000 states and 20,000 snapshots per operation, cycling through the 1,024 states and 64 snapshots of the data. The fastest of 7 interleaved passes was kept. Between two runs most values differed by less than 5%, some LtMsgPack rows without generated code by up to 20%. Not measured: reading from a slice of a larger receive buffer (`Deserialize(byte[], offset, count)`, `ReadOnlyMemory<byte>`), reusing objects when reading, larger matches, delta compression, NativeAOT and Unity.
 
 To run it:
 

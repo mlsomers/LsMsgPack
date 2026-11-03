@@ -13,6 +13,10 @@ public class WithGuid { public Guid G { get; set; } public byte[] B { get; set; 
 public class Attributed { [System.Xml.Serialization.XmlElement("renamed")] public string A { get; set; } [System.Xml.Serialization.XmlIgnore] public string Ignored { get; set; } public int ReadOnly { get { return 5; } } public int B { get; set; } public Attributed Child { get; set; } public List<Attributed> Kids { get; set; } }
 public class Poly { public object Any { get; set; } public Attributed Base { get; set; } public List<object> Items { get; set; } public int[] Ints { get; set; } public Dictionary<string, object> Bag { get; set; } }
 public class WithDefault { [System.ComponentModel.DefaultValue("Woof")] public string Sound { get; set; } = "Woof"; public int Zero { get; set; } public string Last { get; set; } }
+public struct EqVec { public float X { get; set; } public float Y { get; set; } public float Z { get; set; } public float Sum => X + Y + Z; } // structs: by reference (a computed property), boxed in an object, by their constructor
+public struct EqLine { public EqVec From { get; set; } public EqVec To { get; set; } public string Label { get; set; } public EqVec? Hint { get; set; } }
+public struct EqInit { public EqInit() { N = 5; } public int N { get; set; } }
+public class EqMover { public EqVec Position { get; set; } public EqVec Velocity { get; set; } public EqVec? Target { get; set; } public List<EqVec> Path { get; set; } public EqVec[] Points { get; set; } public object Boxed { get; set; } public EqLine Line { get; set; } public EqInit Init { get; set; } }
 public static class P {
   static string Hex(byte[] b) => BitConverter.ToString(b);
   static string H(string s) => BitConverter.ToString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(s))).Replace("-", "").Substring(0, 16);
@@ -59,6 +63,8 @@ public static class P {
     values.Add(new Nested { Name = "", Objs = new List<object> { "", null } }); // empty strings are written (FilterDefaultValues), null is left out
     values.Add(new WithDefault { Sound = null, Zero = 0, Last = null }); values.Add(new WithDefault { Sound = "Woof", Zero = 7, Last = "l" });
     values.Add(new Bench.Invoice[] { }); values.AddRange(Bench.Invoices.Take(3));
+    values.Add(new EqMover { Position = new EqVec { X = 1.5f, Y = -0f, Z = float.NaN }, Target = new EqVec(), Path = new List<EqVec> { new EqVec { X = 1 }, new EqVec() }, Points = new[] { new EqVec { Z = -2 } }, Boxed = new EqVec { Y = 7 }, Line = new EqLine { To = new EqVec { X = 3 }, Label = "l", Hint = new EqVec { Z = 1 } }, Init = new EqInit() });
+    values.Add(new EqMover()); values.Add(new EqVec { X = 0.5f, Z = -8 }); values.Add(new EqLine { From = new EqVec { Y = 2 } }); values.Add(new List<EqLine> { new EqLine { Label = "a" }, new EqLine() }); values.Add(new EqInit { N = 0 });
     return values;
   }
   static string Run(Func<string> f) { try { return f(); } catch (Exception ex) { return "EX " + ex.GetType().Name + ": " + ex.Message.Split('\n')[0]; } }

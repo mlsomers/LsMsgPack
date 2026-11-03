@@ -45,6 +45,11 @@ namespace LtMsgPack.Writing
     internal readonly GeneratedWritePlan GeneratedPlan;
 
     /// <summary>
+    /// A struct whose properties are all read by reference (<see cref="RefPropWriter{T}"/>), without generated code: <see cref="WriteStruct{T}"/> writes it without a box.
+    /// </summary>
+    internal readonly bool ByRef;
+
+    /// <summary>
     /// <see cref="IdMode.Session"/>: the ids of the frozen session used last (see <see cref="WriteContext.BeginObject"/>).
     /// </summary>
     internal volatile SessionIds LastSession;
@@ -76,6 +81,13 @@ namespace LtMsgPack.Writing
 
       Code = serializer.GeneratedCode(type);
       GeneratedPlan = serializer.GeneratedWritePlan(Code, Infos, Props);
+      if (type.IsValueType && GeneratedPlan is null)
+      {
+        bool byRef = true;
+        for (int t = Props.Length - 1; t >= 0; t--)
+          byRef &= Props[t].ByRef; // a struct declares all its properties: each is a RefPropWriter of this type
+        ByRef = byRef;
+      }
 
       if (names)
       {
@@ -205,6 +217,68 @@ namespace LtMsgPack.Writing
     }
 
     /// <summary>
+    /// <see cref="Write"/>, <see cref="WriteArray"/> and <see cref="WriteTrimmed"/> for a struct by reference (<see cref="ByRef"/>, see ObjectHandler): no box, no type id (a struct is its own type),
+    /// no generated code. A copy so the class path stays as it is: keep the two the same.
+    /// </summary>
+    internal void WriteStruct<T>(WriteContext c, ref T value, FullPropertyInfo assignedTo)
+    {
+      byte[][] keys = c.BeginObject(this, out FullPropertyInfo[] infos); // before anything else, as LsMsgPack resolves the ids first
+      PropWriter[] props = Props;
+      if (c.Serializer.Options._objectLayout == ObjectLayout.Array)
+      {
+        SerializationRules.ThrowIfUnresolvableAsArray(Type, assignedTo);
+        c.EnterContainer();
+        if (c.Serializer.Options._trimTrailingNulls)
+          WriteStructTrimmed(c, ref value, infos);
+        else
+        {
+          c.W.ArrayHeader(props.Length);
+          for (int t = 0; t < props.Length; t++)
+            if (!Unsafe.As<RefPropWriter<T>>(props[t]).Write(c, ref value, null, infos[t])) // ByRef: each is one
+              c.W.Nil();
+        }
+        c.LeaveContainer();
+        return;
+      }
+
+      int max = props.Length + 1; // as Write reserves it (the header's size)
+      int at = c.W.ReserveMapHeader(max);
+      int count = 0;
+      SerializationRules.ThrowIfUnresolvableWithSchema(Type, assignedTo, c.UsesSchema);
+      c.EnterContainer();
+      for (int t = 0; t < props.Length; t++)
+        if (Unsafe.As<RefPropWriter<T>>(props[t]).Write(c, ref value, keys[t], infos[t]))
+          count++;
+      c.LeaveContainer();
+      c.W.PatchMapHeader(at, max, count);
+    }
+
+    /// <summary>
+    /// <see cref="WriteTrimmed"/> for a struct by reference, see <see cref="WriteStruct{T}"/>.
+    /// </summary>
+    private void WriteStructTrimmed<T>(WriteContext c, ref T value, FullPropertyInfo[] infos)
+    {
+      MsgPackWriter w = c.W;
+      PropWriter[] props = Props;
+      int at = w.ReserveArrayHeader(props.Length);
+      int count = 0;
+      int end = w.Pos; // after the last value that is not nil
+      for (int t = 0; t < props.Length; t++)
+      {
+        int start = w.Pos;
+        if (!Unsafe.As<RefPropWriter<T>>(props[t]).Write(c, ref value, null, infos[t]))
+          w.Nil();
+        if (w.Pos != start + 1 || w.Buf[start] != 0xC0) // nil is the only value of one byte 0xC0
+        {
+          count = t + 1;
+          end = w.Pos;
+        }
+      }
+      w.Pos = end;
+      w.PatchArrayHeader(at, props.Length, count);
+    }
+
+    /// <summary>
     /// Writes the properties into a map that is being written (a collection with <c>SerializeProperties</c>).
     /// </summary>
     /// <returns>The number of entries written</returns>
@@ -298,6 +372,14 @@ namespace LtMsgPack.Writing
     /// <param name="key">The encoded property id, null for the array layout (only the value)</param>
     /// <returns>false when the filters left the value out (nothing was written)</returns>
     internal abstract bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info);
+
+    /// <summary>
+    /// A <see cref="RefPropWriter{T}"/>: writes the property of a struct by reference.
+    /// </summary>
+    internal virtual bool ByRef
+    {
+      get { return false; }
+    }
 
     protected bool IncludeBoxed(object value, FullPropertyInfo info)
     {
@@ -396,10 +478,28 @@ namespace LtMsgPack.Writing
   internal delegate TValue RefGetter<TTarget, TValue>(ref TTarget target);
 
   /// <summary>
-  /// A property of a struct read through a typed delegate on the boxed struct (the object plans write a struct boxed once, see ObjectHandler), the value is not boxed.
+  /// Writes a property of a struct of type <typeparamref name="T"/> by reference (see <see cref="ObjectPlan.WriteStruct{T}"/>). Without a struct constraint, so ObjectHandler can call it.
+  /// </summary>
+  internal abstract class RefPropWriter<T> : PropWriter
+  {
+    protected RefPropWriter(Serializer serializer, FullPropertyInfo info) : base(serializer, info)
+    {
+    }
+
+    internal sealed override bool ByRef
+    {
+      get { return true; }
+    }
+
+    /// <inheritdoc cref="PropWriter.Write"/>
+    internal abstract bool Write(WriteContext c, ref T target, byte[] key, FullPropertyInfo info);
+  }
+
+  /// <summary>
+  /// A property of a struct read through a typed delegate on the struct by reference (in the caller's value, see ObjectPlan.WriteStruct, or in a box: a struct written as an object), the value is not boxed.
   /// The same as <see cref="PropWriter{TTarget, TValue}.Write"/> after the getter: keep the two the same (the class writer is not changed for this, it is the usual path).
   /// </summary>
-  internal sealed class StructPropWriter<TTarget, TValue> : PropWriter where TTarget : struct
+  internal sealed class StructPropWriter<TTarget, TValue> : RefPropWriter<TTarget> where TTarget : struct
   {
     private readonly RefGetter<TTarget, TValue> _get;
     private readonly FullPropertyInfo _declared;
@@ -413,7 +513,12 @@ namespace LtMsgPack.Writing
 
     internal override bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info)
     {
-      TValue value = _get(ref Unsafe.Unbox<TTarget>(target)); // in the box, without copying the struct
+      return Write(c, ref Unsafe.Unbox<TTarget>(target), key, info); // in the box, without copying the struct
+    }
+
+    internal override bool Write(WriteContext c, ref TTarget target, byte[] key, FullPropertyInfo info)
+    {
+      TValue value = _get(ref target);
 
       ValueHandler<TValue> handler = _handler ?? (_handler = Serializer.Handler<TValue>(_declared));
       if (!NoFilters)

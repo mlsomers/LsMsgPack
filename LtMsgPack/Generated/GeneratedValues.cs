@@ -82,7 +82,7 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
-    /// Any other type: structs with properties (the runtime's object plans box each value, see Serializer.StructPlans), framework types...
+    /// Any other type: structs with properties (the runtime's object plans take them by reference, see Serializer.StructPlans), framework types...
     /// </summary>
     public static GeneratedType Boxed<T>()
     {

@@ -1,15 +1,16 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LtMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// LtMsgPack's typed plans for structs (boxed once, properties read and set in the box) and its default check for structs (StructDefault, the same decision as Core's ValueType.Equals).
+  /// LtMsgPack's typed plans for structs (by reference, or boxed once with the properties read and set in the box) and its default check for structs (StructDefault, the same decision as Core's ValueType.Equals).
   /// CrossLibraryTests compares the bytes and values with LsMsgPack (its corpus has structs too).
   /// </summary>
   [TestClass]
@@ -35,6 +36,10 @@ namespace LsMsgPackUnitTests
     public class LtsWriterPoint { public int X { get; set; } public int Extra { get; set; } }
     public class LtsReaderShape { public LtsReaderPoint P { get; set; } }
     public struct LtsReaderPoint { public int X { get; set; } }
+
+    /// <summary>A vector as games use it, with a computed property (written, skipped when read)</summary>
+    public struct LtsVec { public float X { get; set; } public float Y { get; set; } public float Z { get; set; } public float Sum => X + Y + Z; }
+    public class LtsMover { public string Name { get; set; } public LtsVec Position { get; set; } public LtsVec Velocity { get; set; } public LtsVec? Target { get; set; } public List<LtsVec> Path { get; set; } public LtsVec[] Points { get; set; } }
 
     private static readonly Type StructDefault = typeof(LtMsgPackSerializer).Assembly.GetType("LtMsgPack.Writing.StructDefault`1", true);
 
@@ -96,6 +101,83 @@ namespace LsMsgPackUnitTests
         Assert.AreEqual("ObjectReader`1", reader.MakeGenericMethod(type).Invoke(serializer, null).GetType().Name, type.Name);
       }
       Assert.AreEqual("NullableHandler`1", handler.MakeGenericMethod(typeof(LtsFloats?)).Invoke(serializer, new object[] { null }).GetType().Name);
+    }
+
+    [TestMethod]
+    public void Structs_ByRefPlans()
+    {
+      LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions() { UseRegisteredContexts = false });
+      object serializer = typeof(LtMsgPackSerializer).GetField("_serializer", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(lt);
+      MethodInfo plan = serializer.GetType().GetMethod("Plan", BindingFlags.Instance | BindingFlags.NonPublic);
+      MethodInfo readPlan = serializer.GetType().GetMethod("GetReadPlan", BindingFlags.Instance | BindingFlags.NonPublic);
+      bool WritesByRef(Type type, bool names) { object p = plan.Invoke(serializer, new object[] { type, names }); return (bool)p.GetType().GetField("ByRef", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(p); }
+      bool ReadsByRef(Type type) { object p = readPlan.Invoke(serializer, new object[] { type }); return (bool)p.GetType().GetField("ByRef", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(p); }
+
+      foreach (Type type in new[] { typeof(LtsFloats), typeof(LtsNested), typeof(LtsVec), typeof(LtsTree) })
+      {
+        Assert.IsTrue(WritesByRef(type, true), type.Name);
+        Assert.IsTrue(WritesByRef(type, false), type.Name);
+        Assert.IsTrue(ReadsByRef(type), type.Name);
+      }
+      Assert.IsTrue(WritesByRef(typeof(LtsWithConstructor), false));
+      Assert.IsFalse(ReadsByRef(typeof(LtsWithConstructor)), "its constructor makes the instance (boxed)");
+      Assert.IsFalse(WritesByRef(typeof(LtsMover), false), "a class");
+      Assert.IsFalse(ReadsByRef(typeof(LtsMover)), "a class");
+    }
+
+    /// <summary>
+    /// Struct values are written and read by reference: nothing is allocated for them (into a reused stream nothing at all), in every layout and id mode.
+    /// A struct as the root value is boxed once per call (the public Deserialize and Serialize take the root as an object).
+    /// </summary>
+    [TestMethod]
+    public void Structs_NoAllocation()
+    {
+      LtsMover moving = new LtsMover { Name = "m", Position = new LtsVec { X = 1, Y = 2, Z = 3 }, Velocity = new LtsVec { Z = -0.5f }, Target = new LtsVec { Y = 4 }, Path = new List<LtsVec> { new LtsVec { X = 1 }, new LtsVec { Y = 2 } }, Points = new[] { new LtsVec { Z = 9 } } };
+      LtsMover resting = new LtsMover { Name = "m", Target = default(LtsVec), Path = new List<LtsVec> { default(LtsVec), default(LtsVec) }, Points = new[] { default(LtsVec) } };
+      MemoryStream stream = new MemoryStream(1024);
+      foreach (bool schema in new[] { false, true })
+      {
+        foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+        {
+          foreach (bool trim in new[] { false, true })
+          {
+            LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false });
+            string setting = $"schema {schema}, {layout}, trim {trim}";
+
+            for (int t = 0; t < 3; t++) // warm up (plans, contexts, the stream's capacity)
+            {
+              stream.SetLength(0);
+              lt.Serialize(moving, stream);
+            }
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            stream.SetLength(0);
+            lt.Serialize(moving, stream);
+            Assert.AreEqual(0L, GC.GetAllocatedBytesForCurrentThread() - before, setting + ": writing");
+
+            // Reading the vectors costs nothing: the same allocations as when they are all left out (written as nil, or default elements)
+            byte[] movingData = lt.Serialize(moving);
+            byte[] restingData = lt.Serialize(resting);
+            for (int t = 0; t < 3; t++)
+            {
+              lt.Deserialize<LtsMover>(movingData);
+              lt.Deserialize<LtsMover>(restingData);
+            }
+            before = GC.GetAllocatedBytesForCurrentThread();
+            LtsMover read = lt.Deserialize<LtsMover>(movingData);
+            long readMoving = GC.GetAllocatedBytesForCurrentThread() - before;
+            before = GC.GetAllocatedBytesForCurrentThread();
+            lt.Deserialize<LtsMover>(restingData);
+            long readResting = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.AreEqual(readResting, readMoving, setting + ": reading the vectors");
+
+            Assert.AreEqual(moving.Position, read.Position, setting);
+            Assert.AreEqual(moving.Velocity, read.Velocity, setting);
+            Assert.AreEqual(moving.Target, read.Target, setting);
+            CollectionAssert.AreEqual(moving.Path, read.Path, setting);
+            CollectionAssert.AreEqual(moving.Points, read.Points, setting);
+          }
+        }
+      }
     }
 
     [TestMethod]

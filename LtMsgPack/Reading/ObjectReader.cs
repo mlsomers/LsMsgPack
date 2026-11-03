@@ -22,7 +22,8 @@ namespace LtMsgPack.Reading
   /// Reads a map into an object with properties: the type id (when it is the first key) picks the type, the keys are looked up by name or by schema index.
   /// Anything unexpected (a wrapped value, a type id elsewhere, keys of another kind, custom resolvers) is read as LsMsgPack does.
   /// </summary>
-  /// <remarks>A struct is read into a box the plan creates (its properties are set in the box, see StructPropReader) and unboxed at the end.</remarks>
+  /// <remarks>A struct is read into a local by reference when the plan allows it (<see cref="ReadPlan.ByRef"/>), otherwise into a box the plan creates (its properties are set in the box,
+  /// see StructPropReader), unboxed at the end.</remarks>
   internal sealed class ObjectReader<T> : ValueReader<T>
   {
     private readonly Serializer _serializer;
@@ -89,6 +90,9 @@ namespace LtMsgPack.Reading
           return Slow(c, start, assignedTo);
       }
 
+      if (typeof(T).IsValueType && plan.ByRef) // the JIT drops the test for classes (a struct's plan is the plan of T: no other type is assignable to it)
+        return ReadByRef(c, plan, bound, count, start, assignedTo);
+
       int depth = c.Depth;
       c.Enter();
       object result = plan.Create();
@@ -136,6 +140,9 @@ namespace LtMsgPack.Reading
           return Slow(c, start, assignedTo);
       }
 
+      if (typeof(T).IsValueType && plan.ByRef)
+        return ReadPositionalByRef(c, props, items);
+
       int depth = c.Depth;
       c.Enter();
       object result = plan.Create();
@@ -164,6 +171,68 @@ namespace LtMsgPack.Reading
       c.Depth = depth;
       return Slow(c, start, assignedTo);
     }
+
+    #region Structs by reference
+
+    /// <summary>
+    /// The loop of <see cref="Read"/> for a struct (<see cref="ReadPlan.ByRef"/>): its properties are set in a local by reference, without a box (no generated code, no constructor with values).
+    /// A copy so the class path stays as it is: keep the two the same.
+    /// </summary>
+    private T ReadByRef(ReadContext c, ReadPlan plan, PropReader[] bound, int count, int start, FullPropertyInfo assignedTo)
+    {
+      int depth = c.Depth;
+      c.Enter();
+      T result = default(T); // what StructCreator makes (no declared parameterless constructor)
+      int next = 0; // names are usually written in the order of the properties
+      for (int t = 0; t < count; t++)
+      {
+        PropReader prop;
+        if (c.Schema)
+        {
+          if (!c.R.TryReadInt64(out long index))
+            return Restart(c, start, depth, assignedTo);
+          prop = index >= 0 && index < bound.Length ? bound[index] : null;
+        }
+        else
+        {
+          int length = c.R.TryReadStringHeader();
+          if (length <= 0 || (length == 1 && c.R.Buf[c.R.Pos] == (byte)'@')) // another kind of key, or a reserved one ("" or "@")
+            return Restart(c, start, depth, assignedTo);
+          prop = plan.FindByName(c.R.Buf, c.R.Pos, length, ref next);
+          c.R.Pos += length;
+        }
+
+        if (prop is null)
+          c.R.Skip(c.Depth); // not a property of this type (removed, or ignored here)
+        else
+          Unsafe.As<RefPropReader<T>>(prop).Read(c, ref result); // ByRef: the plan's readers (also the bound ones) are all of this type
+      }
+      c.Depth = depth;
+      return result;
+    }
+
+    /// <summary>
+    /// The loop of <see cref="ReadPositional"/> for a struct by reference, see <see cref="ReadByRef"/>.
+    /// </summary>
+    private static T ReadPositionalByRef(ReadContext c, PropReader[] props, int items)
+    {
+      int depth = c.Depth;
+      c.Enter();
+      T result = default(T);
+      for (int t = 0; t < items; t++)
+      {
+        if (t >= props.Length || props[t] is null)
+          c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
+        else if (c.R.TryReadNil())
+          Unsafe.As<RefPropReader<T>>(props[t]).ReadNil(ref result);
+        else
+          Unsafe.As<RefPropReader<T>>(props[t]).Read(c, ref result);
+      }
+      c.Depth = depth;
+      return result;
+    }
+
+    #endregion
 
     #region Collecting the differences
 
@@ -413,6 +482,12 @@ namespace LtMsgPack.Reading
     /// </summary>
     internal readonly bool Positional;
 
+    /// <summary>
+    /// A struct created as its default (StructCreator) whose properties are all set by reference (<see cref="RefPropReader{T}"/>), without generated code:
+    /// ObjectReader reads it into a local, without a box.
+    /// </summary>
+    internal readonly bool ByRef;
+
     private readonly bool _caseInsensitive;
 
     internal bool CaseInsensitive { get { return _caseInsensitive; } }
@@ -471,6 +546,13 @@ namespace LtMsgPack.Reading
         Positional = (code.Capabilities & positional) == positional;
         for (int t = 0; t < infos.Length; t++)
           Props[t].GeneratedId = serializer.ReadMember(code, infos[t]);
+      }
+      else if (type.IsValueType && _create.Target is ICreator creator && creator.GetType().IsGenericType && creator.GetType().GetGenericTypeDefinition() == typeof(StructCreator<>))
+      {
+        bool byRef = true;
+        for (int t = Props.Length - 1; t >= 0; t--)
+          byRef &= Props[t].ByRef; // a struct declares all its properties: each is a RefPropReader of this type
+        ByRef = byRef;
       }
     }
 
@@ -802,6 +884,14 @@ namespace LtMsgPack.Reading
     }
 
     /// <summary>
+    /// A <see cref="RefPropReader{T}"/>: sets the property of a struct by reference.
+    /// </summary>
+    internal virtual bool ByRef
+    {
+      get { return false; }
+    }
+
+    /// <summary>
     /// What <see cref="ReadNil"/> sets, typed.
     /// </summary>
     internal static TValue NilOf<TValue>(Serializer serializer, FullPropertyInfo info)
@@ -814,10 +904,10 @@ namespace LtMsgPack.Reading
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // StructPropReader's struct constraint (for Unsafe.Unbox) asks for a parameterless constructor, none is called
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
-      if (info.IsComputed) // written only (a collection without a setter is filled by its accessor, see BoxedPropReader)
-        return new ComputedPropReader(info);
-
       PropertyInfo property = info.PropertyInfo;
+      if (info.IsComputed) // written only (a collection without a setter is filled by its accessor, see BoxedPropReader)
+        return ComputedReader(serializer, info, property.DeclaringType);
+
       PropReader generated = serializer.GeneratedProperty(property)?.CreateReader(serializer, info); // the setter of the source generator
       if (generated != null)
         return generated;
@@ -836,6 +926,46 @@ namespace LtMsgPack.Reading
       }
       return new BoxedPropReader(serializer, info);
     }
+
+    /// <summary>
+    /// A struct's computed property is skipped by reference too (see ReadPlan.ByRef).
+    /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure skips it boxed.")]
+    private static PropReader ComputedReader(Serializer serializer, FullPropertyInfo info, Type declaringType)
+    {
+      if (declaringType.IsValueType && !declaringType.ContainsGenericParameters && serializer.CanBindDelegates)
+      {
+        try
+        {
+          return (PropReader)Activator.CreateInstance(typeof(StructComputedPropReader<>).MakeGenericType(declaringType), info);
+        }
+        catch (Exception) // e.g. a runtime that cannot create the generic type
+        {
+        }
+      }
+      return new ComputedPropReader(info);
+    }
+  }
+
+  /// <summary>
+  /// Sets a property of a struct of type <typeparamref name="T"/> by reference (see ObjectReader.ReadByRef). Without a struct constraint, so ObjectReader can call it.
+  /// </summary>
+  internal abstract class RefPropReader<T> : PropReader
+  {
+    internal RefPropReader(FullPropertyInfo info) : base(info)
+    {
+    }
+
+    internal sealed override bool ByRef
+    {
+      get { return true; }
+    }
+
+    /// <inheritdoc cref="PropReader.Read"/>
+    internal abstract void Read(ReadContext c, ref T target);
+
+    /// <inheritdoc cref="PropReader.ReadNil"/>
+    internal abstract void ReadNil(ref T target);
   }
 
   internal sealed class PropReader<TTarget, TValue> : PropReader where TTarget : class
@@ -884,9 +1014,9 @@ namespace LtMsgPack.Reading
   internal delegate void RefSetter<TTarget, TValue>(ref TTarget target, TValue value);
 
   /// <summary>
-  /// A property of a struct set through a typed delegate in the box the plan created (see ObjectReader), the value is not boxed.
+  /// A property of a struct set through a typed delegate by reference (in a local, see ObjectReader.ReadByRef, or in the box the plan created), the value is not boxed.
   /// </summary>
-  internal sealed class StructPropReader<TTarget, TValue> : PropReader where TTarget : struct
+  internal sealed class StructPropReader<TTarget, TValue> : RefPropReader<TTarget> where TTarget : struct
   {
     private readonly Serializer _serializer;
     private readonly RefSetter<TTarget, TValue> _set;
@@ -902,13 +1032,23 @@ namespace LtMsgPack.Reading
 
     public override void Read(ReadContext c, object target)
     {
+      Read(c, ref Unsafe.Unbox<TTarget>(target));
+    }
+
+    internal override void Read(ReadContext c, ref TTarget target)
+    {
       ValueReader<TValue> reader = _reader ?? (_reader = _serializer.Reader<TValue>());
-      _set(ref Unsafe.Unbox<TTarget>(target), reader.Read(c, Info)); // the value is read before the setter runs (a nested value of the same struct type has a box of its own)
+      _set(ref target, reader.Read(c, Info)); // the value is read before the setter runs (a nested value of the same struct type has a local or box of its own)
     }
 
     public override void ReadNil(object target)
     {
       _set(ref Unsafe.Unbox<TTarget>(target), _nil);
+    }
+
+    internal override void ReadNil(ref TTarget target)
+    {
+      _set(ref target, _nil);
     }
 
     internal override void SetBoxed(object target, object value)
@@ -957,6 +1097,34 @@ namespace LtMsgPack.Reading
     }
 
     public override void ReadNil(object target)
+    {
+    }
+  }
+
+  /// <summary>
+  /// A computed property of a struct (see <see cref="ComputedPropReader"/>), skipped by reference too.
+  /// </summary>
+  internal sealed class StructComputedPropReader<T> : RefPropReader<T>
+  {
+    public StructComputedPropReader(FullPropertyInfo info) : base(info)
+    {
+    }
+
+    public override void Read(ReadContext c, object target)
+    {
+      c.R.Skip(c.Depth);
+    }
+
+    internal override void Read(ReadContext c, ref T target)
+    {
+      c.R.Skip(c.Depth);
+    }
+
+    public override void ReadNil(object target)
+    {
+    }
+
+    internal override void ReadNil(ref T target)
     {
     }
   }
