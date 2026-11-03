@@ -29,6 +29,8 @@ jobs:
       run: dotnet build LsMsgPack.slnf --no-restore -c DEBUG
     - name: Test
       run: dotnet test LsMsgPack.slnf --no-build --verbosity normal -c DEBUG
+    - name: Test the allocations (only measured in optimized code)
+      run: dotnet test LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj -c Release --filter "Name~Structs_NoAllocation"
 
   aot-smoke:
 

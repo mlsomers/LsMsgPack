@@ -168,7 +168,7 @@ public IActionResult Receive([FromBody] JsonElement body) => ...;            // 
 MsgPackSerializer.Deserialize<JsonElement>(bytes);                           // LSMP009
 ```
 
-MsgPack has no form for a JSON document. System.Text.Json's `JsonElement`, `JsonDocument` and `JsonNode` (`JsonObject`, `JsonArray`, `JsonValue`) have no settable state, so the serializers refuse them with a `MsgPackException`: a web formatter answers 500 for a response and 400 for a request body. Json.NET's `JToken` types (`JObject`, `JArray`, `JValue`...) aren't refused, but they are written as their own properties and read back empty or with an exception.
+MsgPack has no form for a JSON document. System.Text.Json's `JsonElement`, `JsonDocument` and `JsonNode` (`JsonObject`, `JsonArray`, `JsonValue`) have no settable state, so the serializers don't write or read their content. Writing one throws a `MsgPackException`, also from a web formatter (a `JsonElement` in a response answers 500). Reading one throws too, not always a `MsgPackException` (a `[FromBody] JsonElement` answers 400). The exceptions are the values without content: a `JsonObject` or `JsonArray` that is empty or only holds nulls is written as a map or array, an empty map or array is read into an empty one, and a nil is read as `default(JsonElement)`. Json.NET's `JToken` types (`JObject`, `JArray`, `JValue`...) aren't refused, but they are written as their own properties and read back empty or with an exception.
 
 Hold the JSON text in a `string` (`element.GetRawText()`, `JsonDocument.Parse(text)`), or the values in a class of your own. An endpoint that passes JSON through (a webhook) can also stay on JSON: the formatters only answer MsgPack to clients that ask for it.
 

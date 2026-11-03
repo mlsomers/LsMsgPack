@@ -3,6 +3,7 @@ using LtMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -170,6 +171,7 @@ namespace LsMsgPackUnitTests
     /// <summary>
     /// Struct values are written and read by reference: nothing is allocated for them (into a reused stream nothing at all), in every layout and id mode.
     /// A struct as the root value is boxed once per call (the public Deserialize and Serialize take the root as an object).
+    /// <para>Only measured when the code is optimized (Release, ReleaseKeepTrack): the generic code boxes values behind type checks, and only the optimizing JIT removes those boxes. The round trips are checked in every configuration.</para>
     /// </summary>
     [TestMethod]
     [DataRow(false)]
@@ -179,6 +181,7 @@ namespace LsMsgPackUnitTests
       LtsMover moving = new LtsMover { Name = "m", Position = new LtsVec { X = 1, Y = 2, Z = 3 }, Velocity = new LtsVec { Z = -0.5f }, Target = new LtsVec { Y = 4 }, Path = new List<LtsVec> { new LtsVec { X = 1 }, new LtsVec { Y = 2 } }, Points = new[] { new LtsVec { Z = 9 } } };
       LtsMover resting = new LtsMover { Name = "m", Target = default(LtsVec), Path = new List<LtsVec> { default(LtsVec), default(LtsVec) }, Points = new[] { default(LtsVec) } };
       MemoryStream stream = new MemoryStream(1024);
+      bool optimized = IsOptimized(typeof(LtMsgPackSerializer)) && IsOptimized(typeof(LtStructTests)); // the generated code is in this assembly
       foreach (bool schema in new[] { false, true })
       {
         foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
@@ -197,7 +200,9 @@ namespace LsMsgPackUnitTests
             long before = GC.GetAllocatedBytesForCurrentThread();
             stream.SetLength(0);
             lt.Serialize(moving, stream);
-            Assert.AreEqual(0L, GC.GetAllocatedBytesForCurrentThread() - before, setting + ": writing");
+            long written = GC.GetAllocatedBytesForCurrentThread() - before;
+            if (optimized)
+              Assert.AreEqual(0L, written, setting + ": writing");
 
             // Reading the vectors costs nothing: the same allocations as when they are all left out (written as nil, or default elements)
             byte[] movingData = lt.Serialize(moving);
@@ -213,7 +218,8 @@ namespace LsMsgPackUnitTests
             before = GC.GetAllocatedBytesForCurrentThread();
             lt.Deserialize<LtsMover>(restingData);
             long readResting = GC.GetAllocatedBytesForCurrentThread() - before;
-            Assert.AreEqual(readResting, readMoving, setting + ": reading the vectors");
+            if (optimized)
+              Assert.AreEqual(readResting, readMoving, setting + ": reading the vectors");
 
             Assert.AreEqual(moving.Position, read.Position, setting);
             Assert.AreEqual(moving.Velocity, read.Velocity, setting);
@@ -223,6 +229,12 @@ namespace LsMsgPackUnitTests
           }
         }
       }
+    }
+
+    private static bool IsOptimized(Type type)
+    {
+      DebuggableAttribute debuggable = type.Assembly.GetCustomAttribute<DebuggableAttribute>();
+      return debuggable == null || !debuggable.IsJITOptimizerDisabled;
     }
 
     [TestMethod]

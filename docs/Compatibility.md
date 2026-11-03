@@ -99,6 +99,8 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 | polymorphic value | type id in the object's map (key `""`) | `[Union]`: array of the union key and the object | incompatible |
 | default values | left out | written | see above |
 
+JSON document types (`JsonElement`, `JsonDocument`, `JsonNode`, Json.NET's `JObject`...) aren't supported: MsgPack has no form for them. Hold the JSON text in a `string`, or the values in a class of your own (analyzer [LSMP009](Analyzers.md#lsmp009-json-document-type-is-not-serialized)).
+
 ## MessagePack-CSharp
 
 Tested with 3.1.10: all 100 invoices of the benchmark read back identical in both directions.

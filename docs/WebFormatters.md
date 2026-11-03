@@ -37,6 +37,8 @@ Property names in bodies are matched ignoring case when no property has the exac
 
 Anonymous objects (`return Ok(new { Id = 1, Name = "x" });`, `Ok(items.Select(i => new { i.Id }))`) are written with their properties and read into classes with the same names, as with JSON. In a property declared as `object`, or inside another anonymous object, they're written as maps of names. See [anonymous types](schema.md#anonymous-types).
 
+MsgPack has no form for a JSON document, so `JsonElement`, `JsonDocument`, `JsonNode` and Json.NET's `JObject` can't be used in models or bodies: a response with a `JsonElement` answers 500, a `[FromBody] JsonElement` 400. Hold the JSON text in a `string`, or the values in a class of your own. An endpoint that passes JSON through (a webhook) can also stay on JSON: the formatters only answer MsgPack to clients that ask for it. Analyzer [LSMP009](Analyzers.md#lsmp009-json-document-type-is-not-serialized) reports these types.
+
 The options are read once, when a formatter is created, so later changes have no effect. A formatter can safely handle concurrent requests.
 
 ASP.NET Core

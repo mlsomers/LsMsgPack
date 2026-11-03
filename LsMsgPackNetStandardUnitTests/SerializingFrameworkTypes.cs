@@ -9,6 +9,8 @@ using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace LsMsgPackUnitTests
 {
@@ -622,6 +624,21 @@ namespace LsMsgPackUnitTests
       public Type Kind { get; set; }
     }
 
+    public class JsonElementHolder
+    {
+      public JsonElement Payload { get; set; }
+    }
+
+    public class NullableJsonElementHolder
+    {
+      public JsonElement? Payload { get; set; }
+    }
+
+    public class JsonNodeListHolder
+    {
+      public List<JsonNode> Items { get; set; }
+    }
+
     /// <summary>
     /// Framework types the serializers do not know and that have no settable properties are refused, instead of being written as an empty map and read back as their default value.
     /// </summary>
@@ -653,6 +670,40 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
       MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new FrameworkTypeHolder() { Kind = typeof(string) }, settings));
       StringAssert.Contains(ex.Message, "the data would pick the type");
+    }
+
+    /// <summary>
+    /// System.Text.Json's document types are refused with what to do instead (as analyzer LSMP009 says), "no settable properties" would not help there.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void JsonDocumentTypesAreRefusedWithWhatToDoInstead(bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      using (JsonDocument document = JsonDocument.Parse("{\"a\":1}"))
+      {
+        JsonElement element = document.RootElement;
+        AssertRefused(() => Serializer.Serialize(document, settings));
+        AssertRefused(() => Serializer.Serialize(element, settings));
+        AssertRefused(() => Serializer.Serialize<JsonNode>(JsonValue.Create(1), settings));
+        AssertRefused(() => Serializer.Serialize<JsonNode>(JsonNode.Parse("{\"a\":1}"), settings));
+        AssertRefused(() => Serializer.Serialize<JsonNode>(JsonNode.Parse("[1]"), settings));
+        AssertRefused(() => Serializer.Serialize(new JsonElementHolder() { Payload = element }, settings));
+        AssertRefused(() => Serializer.Serialize(new NullableJsonElementHolder() { Payload = element }, settings));
+        AssertRefused(() => Serializer.Serialize(new JsonNodeListHolder() { Items = new List<JsonNode>() { JsonValue.Create(1) } }, settings));
+      }
+
+      MsgPackSettings map = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      byte[] bytes = Serializer.Serialize(new Dictionary<string, int>() { { "a", 1 } }, map);
+      AssertRefused(() => Serializer.Deserialize<JsonElement>(bytes, map));
+    }
+
+    private static void AssertRefused(Action action)
+    {
+      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(action);
+      StringAssert.Contains(ex.Message, "no form for a JSON document");
+      StringAssert.Contains(ex.Message, "as a string");
     }
   }
 

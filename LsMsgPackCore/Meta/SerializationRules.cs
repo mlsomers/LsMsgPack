@@ -219,8 +219,20 @@ namespace LsMsgPack.Meta
       if (!hasState)
         return null; // nothing to lose (e.g. an EventArgs)
 
+      if (IsJsonDocumentType(type))
+        return $"{type.FullName} is not supported: MsgPack has no form for a JSON document. Hold the JSON as a string (JsonElement.GetRawText(), JsonNode.ToJsonString(), JsonDocument.Parse(text)) or its values in a class of your own, "
+          + "or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions).";
+
       return $"{type.FullName} is not supported: it has no settable properties, so it would be written as an empty map and read back as its default value. "
         + "Serialize the values it holds (in a class of your own), or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions).";
+    }
+
+    /// <summary>
+    /// System.Text.Json's JsonElement, JsonDocument and the JsonNode types, the ones analyzer LSMP009 reports. By name: the .NET Standard builds do not reference System.Text.Json.
+    /// </summary>
+    private static bool IsJsonDocumentType(Type type)
+    {
+      return type.Namespace == "System.Text.Json.Nodes" || type.FullName == "System.Text.Json.JsonElement" || type.FullName == "System.Text.Json.JsonDocument";
     }
 
     internal static IndexedSchemaTypeResolver GetIndexedSchema(MsgPackOptions settings)
