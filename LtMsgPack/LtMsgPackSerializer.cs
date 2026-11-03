@@ -274,7 +274,15 @@ namespace LtMsgPack
       if (offset < 0 || count < 0 || data.Length - offset < count)
         throw new ArgumentOutOfRangeException(nameof(count));
       ReadDifferences found = new ReadDifferences(_serializer.Options);
-      object result = ReadDifferences.Collect(found, () => _serializer.Deserialize(type, data, offset, offset + count, out int consumed, found));
+      object result;
+      try // ReadDifferences.Collect without the delegate (a closure per call)
+      {
+        result = found.Collected(_serializer.Deserialize(type, data, offset, offset + count, out int consumed, found));
+      }
+      catch (Exception ex) when (found.AttachTo(ex))
+      {
+        throw; // not reached, the filter attaches the differences and passes it on as it is
+      }
       differences = found.IsEmpty ? null : found;
       return result;
     }
@@ -283,7 +291,15 @@ namespace LtMsgPack
     public object Deserialize(Type type, Stream source, out ReadDifferences differences)
     {
       ReadDifferences found = new ReadDifferences(_serializer.Options);
-      object result = ReadDifferences.Collect(found, () => Deserialize(type, source, found));
+      object result;
+      try // ReadDifferences.Collect without the delegate (a closure per call)
+      {
+        result = found.Collected(Deserialize(type, source, found));
+      }
+      catch (Exception ex) when (found.AttachTo(ex))
+      {
+        throw; // not reached, the filter attaches the differences and passes it on as it is
+      }
       differences = found.IsEmpty ? null : found;
       return result;
     }
