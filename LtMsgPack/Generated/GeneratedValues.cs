@@ -82,7 +82,7 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
-    /// Any other type the serializer writes and reads boxed (structs with properties, framework types...).
+    /// Any other type: structs with properties (the runtime's object plans box each value, see Serializer.StructPlans), framework types...
     /// </summary>
     public static GeneratedType Boxed<T>()
     {

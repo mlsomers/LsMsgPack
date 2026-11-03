@@ -8,6 +8,7 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace LtMsgPack.Writing
 {
@@ -308,6 +309,7 @@ namespace LtMsgPack.Writing
     }
 
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // StructPropWriter's struct constraint (for Unsafe.Unbox) asks for a parameterless constructor, none is called
     internal static PropWriter Create(Serializer serializer, FullPropertyInfo info)
     {
       PropertyInfo property = info.PropertyInfo;
@@ -316,11 +318,11 @@ namespace LtMsgPack.Writing
         return generated;
 
       MethodInfo get = property.GetGetMethod(true);
-      if (get != null && !get.IsStatic && !property.DeclaringType.IsValueType && !property.DeclaringType.ContainsGenericParameters && serializer.CanBindDelegates)
+      if (get != null && !get.IsStatic && !property.DeclaringType.ContainsGenericParameters && serializer.CanBindDelegates)
       {
         try
         {
-          Type writerType = typeof(PropWriter<,>).MakeGenericType(property.DeclaringType, property.PropertyType);
+          Type writerType = (property.DeclaringType.IsValueType ? typeof(StructPropWriter<,>) : typeof(PropWriter<,>)).MakeGenericType(property.DeclaringType, property.PropertyType);
           return (PropWriter)Activator.CreateInstance(writerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, get }, null);
         }
         catch (Exception) // e.g. a runtime that cannot create the generic type, use reflection
@@ -389,7 +391,54 @@ namespace LtMsgPack.Writing
   }
 
   /// <summary>
-  /// A property read by reflection (struct targets, static properties, or when delegates cannot be bound), the value is written like any boxed value.
+  /// The getter of a struct as an open instance delegate: its first parameter is the struct by reference.
+  /// </summary>
+  internal delegate TValue RefGetter<TTarget, TValue>(ref TTarget target);
+
+  /// <summary>
+  /// A property of a struct read through a typed delegate on the boxed struct (the object plans write a struct boxed once, see ObjectHandler), the value is not boxed.
+  /// The same as <see cref="PropWriter{TTarget, TValue}.Write"/> after the getter: keep the two the same (the class writer is not changed for this, it is the usual path).
+  /// </summary>
+  internal sealed class StructPropWriter<TTarget, TValue> : PropWriter where TTarget : struct
+  {
+    private readonly RefGetter<TTarget, TValue> _get;
+    private readonly FullPropertyInfo _declared;
+    private ValueHandler<TValue> _handler;
+
+    public StructPropWriter(Serializer serializer, FullPropertyInfo info, MethodInfo get) : base(serializer, info)
+    {
+      _declared = info;
+      _get = (RefGetter<TTarget, TValue>)Delegate.CreateDelegate(typeof(RefGetter<TTarget, TValue>), get);
+    }
+
+    internal override bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info)
+    {
+      TValue value = _get(ref Unsafe.Unbox<TTarget>(target)); // in the box, without copying the struct
+
+      ValueHandler<TValue> handler = _handler ?? (_handler = Serializer.Handler<TValue>(_declared));
+      if (!NoFilters)
+      {
+        if (BoxedFilters)
+        {
+          if (!IncludeBoxed(value, info))
+            return false;
+        }
+        else if (!handler.IncludeByDefault(value, info))
+          return false;
+      }
+
+      if (key != null)
+        c.W.Raw(key);
+      if (value == null)
+        c.W.Nil();
+      else
+        handler.Write(c, value, info);
+      return true;
+    }
+  }
+
+  /// <summary>
+  /// A property read by reflection (static properties, or when delegates cannot be bound), the value is written like any boxed value.
   /// </summary>
   internal sealed class BoxedPropWriter : PropWriter
   {

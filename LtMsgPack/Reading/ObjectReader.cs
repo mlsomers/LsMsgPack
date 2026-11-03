@@ -8,6 +8,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 #if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
 using System.Reflection.Emit;
@@ -21,7 +22,8 @@ namespace LtMsgPack.Reading
   /// Reads a map into an object with properties: the type id (when it is the first key) picks the type, the keys are looked up by name or by schema index.
   /// Anything unexpected (a wrapped value, a type id elsewhere, keys of another kind, custom resolvers) is read as LsMsgPack does.
   /// </summary>
-  internal sealed class ObjectReader<T> : ValueReader<T> where T : class
+  /// <remarks>A struct is read into a box the plan creates (its properties are set in the box, see StructPropReader) and unboxed at the end.</remarks>
+  internal sealed class ObjectReader<T> : ValueReader<T>
   {
     private readonly Serializer _serializer;
     private ReadPlan _plan;
@@ -35,7 +37,7 @@ namespace LtMsgPack.Reading
     {
       int start = c.R.Pos;
       if (c.R.TryReadNil())
-        return null;
+        return default(T); // null, a struct's default as Core converts a nil
 
       if (c.Unusual) // objects read as LsMsgPack does, or the differences are collected
         return _serializer.SlowObjects ? Slow(c, start, assignedTo) : ReadReporting(c, start, assignedTo);
@@ -617,7 +619,17 @@ namespace LtMsgPack.Reading
       if (generated != null) // the parameterless constructor (an exception of the constructor is passed on as it is)
         return generated;
 
-      if (type.GetConstructor(Type.EmptyTypes) != null)
+      if (type.IsValueType && type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) is null) // a struct without a declared parameterless constructor: its default, boxed (as Activator.CreateInstance makes it)
+      {
+        try
+        {
+          return ((ICreator)Activator.CreateInstance(typeof(StructCreator<>).MakeGenericType(type))).Create;
+        }
+        catch (Exception) // e.g. a runtime that cannot create the generic type
+        {
+        }
+      }
+      else if (type.GetConstructor(Type.EmptyTypes) != null)
       {
         try
         {
@@ -634,6 +646,17 @@ namespace LtMsgPack.Reading
   internal interface ICreator
   {
     object Create();
+  }
+
+  /// <summary>
+  /// The box a struct without a declared parameterless constructor is read into (see ObjectReader).
+  /// </summary>
+  internal sealed class StructCreator<T> : ICreator where T : struct
+  {
+    public object Create()
+    {
+      return default(T);
+    }
   }
 
   /// <summary>
@@ -778,7 +801,17 @@ namespace LtMsgPack.Reading
       Info.SetValue(target, value);
     }
 
+    /// <summary>
+    /// What <see cref="ReadNil"/> sets, typed.
+    /// </summary>
+    internal static TValue NilOf<TValue>(Serializer serializer, FullPropertyInfo info)
+    {
+      object nil = info.NilValue(serializer.Options);
+      return nil is null ? default(TValue) : (TValue)nil;
+    }
+
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // StructPropReader's struct constraint (for Unsafe.Unbox) asks for a parameterless constructor, none is called
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
       if (info.IsComputed) // written only (a collection without a setter is filled by its accessor, see BoxedPropReader)
@@ -790,11 +823,11 @@ namespace LtMsgPack.Reading
         return generated;
 
       MethodInfo set = property.GetSetMethod(true);
-      if (set != null && !set.IsStatic && !property.DeclaringType.IsValueType && !property.DeclaringType.ContainsGenericParameters && serializer.CanBindDelegates)
+      if (set != null && !set.IsStatic && !property.DeclaringType.ContainsGenericParameters && serializer.CanBindDelegates)
       {
         try
         {
-          Type readerType = typeof(PropReader<,>).MakeGenericType(property.DeclaringType, property.PropertyType);
+          Type readerType = (property.DeclaringType.IsValueType ? typeof(StructPropReader<,>) : typeof(PropReader<,>)).MakeGenericType(property.DeclaringType, property.PropertyType);
           return (PropReader)Activator.CreateInstance(readerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, set }, null);
         }
         catch (Exception) // use reflection
@@ -816,7 +849,7 @@ namespace LtMsgPack.Reading
     {
       _serializer = serializer;
       _set = (Action<TTarget, TValue>)Delegate.CreateDelegate(typeof(Action<TTarget, TValue>), set);
-      _nil = NilOf(serializer, info);
+      _nil = NilOf<TValue>(serializer, info);
     }
 
     /// <param name="set">The setter of the source generator</param>
@@ -824,14 +857,9 @@ namespace LtMsgPack.Reading
     {
       _serializer = serializer;
       _set = set;
-      _nil = NilOf(serializer, info);
+      _nil = NilOf<TValue>(serializer, info);
     }
 
-    private static TValue NilOf(Serializer serializer, FullPropertyInfo info)
-    {
-      object nil = info.NilValue(serializer.Options);
-      return nil is null ? default(TValue) : (TValue)nil;
-    }
 
     public override void Read(ReadContext c, object target)
     {
@@ -851,7 +879,46 @@ namespace LtMsgPack.Reading
   }
 
   /// <summary>
-  /// Set by reflection (struct targets, static properties).
+  /// The setter of a struct as an open instance delegate: its first parameter is the struct by reference.
+  /// </summary>
+  internal delegate void RefSetter<TTarget, TValue>(ref TTarget target, TValue value);
+
+  /// <summary>
+  /// A property of a struct set through a typed delegate in the box the plan created (see ObjectReader), the value is not boxed.
+  /// </summary>
+  internal sealed class StructPropReader<TTarget, TValue> : PropReader where TTarget : struct
+  {
+    private readonly Serializer _serializer;
+    private readonly RefSetter<TTarget, TValue> _set;
+    private readonly TValue _nil;
+    private ValueReader<TValue> _reader;
+
+    public StructPropReader(Serializer serializer, FullPropertyInfo info, MethodInfo set) : base(info)
+    {
+      _serializer = serializer;
+      _set = (RefSetter<TTarget, TValue>)Delegate.CreateDelegate(typeof(RefSetter<TTarget, TValue>), set);
+      _nil = NilOf<TValue>(serializer, info);
+    }
+
+    public override void Read(ReadContext c, object target)
+    {
+      ValueReader<TValue> reader = _reader ?? (_reader = _serializer.Reader<TValue>());
+      _set(ref Unsafe.Unbox<TTarget>(target), reader.Read(c, Info)); // the value is read before the setter runs (a nested value of the same struct type has a box of its own)
+    }
+
+    public override void ReadNil(object target)
+    {
+      _set(ref Unsafe.Unbox<TTarget>(target), _nil);
+    }
+
+    internal override void SetBoxed(object target, object value)
+    {
+      _set(ref Unsafe.Unbox<TTarget>(target), value is null ? default(TValue) : (TValue)value);
+    }
+  }
+
+  /// <summary>
+  /// Set by reflection (static properties, or when delegates cannot be bound).
   /// </summary>
   internal sealed class BoxedPropReader : PropReader
   {

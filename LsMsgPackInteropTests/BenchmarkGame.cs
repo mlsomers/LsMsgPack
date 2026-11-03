@@ -46,7 +46,7 @@ namespace LsMsgPackInteropTests
     public List<PlayerState> Players { get; set; }
   }
 
-  // The same model with a class instead of the struct: LtMsgPack writes and reads structs boxed, through its slow path
+  // The same model with a class instead of the struct: LtMsgPack writes and reads each struct value through a box, and its source generator does not cover structs
 
   public class Vec3C
   {
@@ -149,7 +149,7 @@ namespace LsMsgPackInteropTests
   /// Lots of small messages, so the cost per call and the size of every message count, not the throughput on large data.
   /// <para>Each message is written to a new byte[] ("Write") and to a buffer that is reused ("Send": an ArrayBufferWriter, or a MemoryStream for LtMsgPack, which has no IBufferWriter overload), as a game loop would to keep the garbage collector quiet.
   /// The schema reference rows get the writer's schemas once, as in a handshake when connecting.</para>
-  /// <para>The "Vec3 class" rows are LtMsgPack with <see cref="Vec3C"/>: LtMsgPack writes and reads structs boxed (no typed plans, also not in the generated code), which costs it 4-5x here.</para>
+  /// <para>The "Vec3 class" rows are LtMsgPack with <see cref="Vec3C"/>: LtMsgPack writes and reads each struct value through a box (typed accessors on the box), its source generator does not cover structs.</para>
   /// <para>Results are written to the test output (docs/Comparison.md has a run), timings are not asserted.</para>
   /// </summary>
   [TestClass]

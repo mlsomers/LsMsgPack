@@ -131,12 +131,21 @@ namespace LtMsgPack
             return Instantiate(type, typeof(ListHandler<>), type.GenericTypeArguments[0], this);
           return Boxed(type);
         case TypeKind.Complex:
-          if (!type.IsValueType && type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
+          if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
             return Instantiate(type, typeof(ObjectHandler<>), type, this);
           return Boxed(type);
         default:
           return Boxed(type);
       }
+    }
+
+    /// <summary>
+    /// A struct with properties (<see cref="TypeKind.Complex"/>) gets the object plans: boxed once, its properties read and set in the box by typed delegates (StructPropWriter, StructPropReader).
+    /// Without dynamic code those would be reflection, the struct is written and read boxed then (BoxedHandler, BoxedReader).
+    /// </summary>
+    internal bool StructPlans(Type type)
+    {
+      return CanBindDelegates && !type.ContainsGenericParameters && Nullable.GetUnderlyingType(type) is null;
     }
 
     /// <summary>

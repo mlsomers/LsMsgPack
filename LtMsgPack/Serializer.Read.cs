@@ -170,7 +170,7 @@ namespace LtMsgPack
             return (ValueReader)Instantiate(type, typeof(ListReader<>), type.GenericTypeArguments[0], this);
           break;
         case TypeKind.Complex:
-          if (!type.IsValueType && type != typeof(object) && !type.ContainsGenericParameters)
+          if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.ContainsGenericParameters)
             return (ValueReader)Instantiate(type, typeof(ObjectReader<>), type, this);
           break;
       }
@@ -196,7 +196,7 @@ namespace LtMsgPack
       if (_readPlans.TryGetValue(type, out ReadPlan plan))
         return plan;
 
-      if (type.IsAbstract || type.IsInterface || type.IsValueType || type.ContainsGenericParameters || GetTypeInfo(type).Kind != TypeKind.Complex)
+      if (type.IsAbstract || type.IsInterface || type.ContainsGenericParameters || GetTypeInfo(type).Kind != TypeKind.Complex || (type.IsValueType && !StructPlans(type)))
         return null;
 
       // The properties LsMsgPack sets: names mode FullPropertyInfo.GetSerializedProps (their ids are the names without custom resolvers), the schema binds the same ones by name

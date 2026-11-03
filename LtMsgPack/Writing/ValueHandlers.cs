@@ -399,7 +399,10 @@ namespace LtMsgPack.Writing
 
   #region Objects and collections (the runtime type may differ: then written boxed, with a type id)
 
-  internal sealed class ObjectHandler<T> : ValueHandler<T> where T : class
+  /// <summary>
+  /// A class, or a struct (boxed once: the plans read the properties of the box, see StructPropWriter).
+  /// </summary>
+  internal sealed class ObjectHandler<T> : ValueHandler<T>
   {
     private readonly Serializer _serializer;
     private ObjectPlan _names;
@@ -412,7 +415,7 @@ namespace LtMsgPack.Writing
 
     internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
     {
-      if (value.GetType() != typeof(T))
+      if (!typeof(T).IsValueType && value.GetType() != typeof(T)) // a struct is its own type (GetType would box it), the JIT drops the test for structs
       {
         _serializer.WriteBoxed(c, value, assignedTo);
         return;
@@ -426,6 +429,8 @@ namespace LtMsgPack.Writing
 
     internal override bool IncludeByDefault(T value, FullPropertyInfo info)
     {
+      if (typeof(T).IsValueType)
+        return !StructDefault<T>.IsDefault(ref value);
       return value != null;
     }
   }

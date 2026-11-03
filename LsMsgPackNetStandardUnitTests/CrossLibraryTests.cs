@@ -90,6 +90,34 @@ namespace LsMsgPackUnitTests
       public string Y { get; set; }
     }
 
+    // Structs as games use them (LtMsgPack writes and reads them with the object plans, boxed once): floats, nesting, defaults, nullables, collections, type ids
+
+    public struct XlVec { public float X { get; set; } public float Y { get; set; } public float Z { get; set; } }
+    public struct XlLine { public XlVec From { get; set; } public XlVec To { get; set; } public string Label { get; set; } public XlVec? Hint { get; set; } public double Length { get; set; } }
+
+    /// <summary>Equals of its own: 10 equals the default (0), so the default filter leaves it out</summary>
+    public struct XlTens { public int A { get; set; } public override bool Equals(object obj) { return obj is XlTens other && other.A % 10 == A % 10; } public override int GetHashCode() { return A % 10; } }
+
+    public record struct XlRecordStruct(int Id, string Name);
+    public interface IXlPositioned { XlVec Position { get; set; } }
+    public struct XlPositioned : IXlPositioned { public XlVec Position { get; set; } public int Id { get; set; } }
+
+    public class XlStructs
+    {
+      public XlVec Position { get; set; }
+      public XlVec Velocity { get; set; }
+      public XlVec? Maybe { get; set; }
+      public XlVec? None { get; set; }
+      public XlLine Line { get; set; }
+      public List<XlVec> Path { get; set; }
+      public XlVec[] Points { get; set; }
+      public object Boxed { get; set; }
+      public IXlPositioned Positioned { get; set; }
+      public XlTens Tens { get; set; }
+      public XlTens Ones { get; set; }
+      public XlRecordStruct Record { get; set; }
+    }
+
     public class XlFramework
     {
       public Half H { get; set; }
@@ -239,6 +267,24 @@ namespace LsMsgPackUnitTests
       values.Add((1, "a", 2.5, (object)XlE8.B, 5, 6, 7, 8, 9));
       values.Add(new XlTaggedList { "only" });
       values.Add(new XlStruct { X = 1, Y = "struct" });
+      values.Add(new XlStructs
+      {
+        Position = new XlVec { X = 1.5f, Y = -0f, Z = float.NaN },
+        Maybe = new XlVec { Z = 2 },
+        Line = new XlLine { From = new XlVec { X = -1 }, To = new XlVec { X = 3.25f, Y = 4, Z = 5 }, Label = "l", Hint = new XlVec(), Length = 4.5 },
+        Path = new List<XlVec> { new XlVec { X = 1 }, new XlVec(), new XlVec { Y = float.MaxValue } },
+        Points = new[] { new XlVec { Z = -2 }, new XlVec() },
+        Boxed = new XlVec { X = 7 },
+        Positioned = new XlPositioned { Position = new XlVec { Y = 1 }, Id = 3 },
+        Tens = new XlTens { A = 10 },
+        Ones = new XlTens { A = 11 },
+        Record = new XlRecordStruct(5, "five")
+      });
+      values.Add(new XlStructs()); // all default
+      values.Add(new XlVec { X = 0.5f, Z = -8 });
+      values.Add(new XlLine { To = new XlVec { Y = 1 } });
+      values.Add(new List<XlLine> { new XlLine { Label = "a" }, new XlLine() });
+      values.Add(new XlRecordStruct(1, null));
       values.Add(new int[,] { { 1, 2 }, { 3, 4 } }); // [2, 2, [1, 2, 3, 4]]
       values.Add(new object[] { new string[2, 1, 1], System.Collections.Immutable.ImmutableArray.Create(1), System.Collections.Immutable.ImmutableDictionary.CreateRange(new[] { new KeyValuePair<string, object>("k", 'c') }), new BitArray(3) });
       values.Add(new XlCircle { Name = "root", Radius = 1 });
