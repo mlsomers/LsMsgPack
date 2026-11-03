@@ -526,6 +526,9 @@ namespace LsMsgPack.Meta
         return props;
       }
 
+      if (props.Length > 0 && ReferenceEquals(props, SharedIndexed(type, settings))) // the ids are not the positions (reading data with other names): this session's own instances
+        settings._staticPropsCache[type] = props = Copies(GetStaticallyKept(type, settings));
+
       for (int t = 0; t < props.Length; t++)
         ResolvePropertyId(props[t], settings);
       ThrowIfIdsNotUnique(type, props);
@@ -548,6 +551,12 @@ namespace LsMsgPack.Meta
       /// What the filters keep with the name as id (see <see cref="GetStaticallyIncludedProps"/>), the sessions get copies.
       /// </summary>
       internal readonly ConcurrentDictionary<Type, FullPropertyInfo[]>[] StaticPerOrder = CachePerOrder<FullPropertyInfo[]>();
+
+      /// <summary>
+      /// What <see cref="StaticPerOrder"/> keeps, as copies with their positions as ids, for the sessions whose only property id resolver is the indexed schema
+      /// (see <see cref="GetStaticallyIncludedProps"/>), null for a type whose properties do not all have unique names.
+      /// </summary>
+      internal readonly ConcurrentDictionary<Type, FullPropertyInfo[]>[] IndexedPerOrder = CachePerOrder<FullPropertyInfo[]>();
 
       /// <summary>
       /// The non-public properties of the <see cref="FilterNonSettable"/> among the filters (the last one, as the filters are asked from last to first), none without one.
@@ -646,18 +655,58 @@ namespace LsMsgPack.Meta
       if (settings._schemaFrozen) // a shared session, see SchemaSession
         throw SchemaGrowthException.Instance;
 
-      // The filters decide per property (they are immutable, see SharedPropsCache), so they run once per type and filter array; each session gets its own instances (it sets its ids on them)
-      ConcurrentDictionary<Type, FullPropertyInfo[]> shared = GetSharedPropsCaches(settings).StaticPerOrder[(int)settings._propertyOrder];
-      if (!shared.TryGetValue(type, out FullPropertyInfo[] kept))
-        kept = shared.GetOrAdd(type, FilterStatically(type, settings));
-
-      FullPropertyInfo[] result = new FullPropertyInfo[kept.Length];
-      for (int t = 0; t < kept.Length; t++)
-        result[t] = new FullPropertyInfo(kept[t]);
+      // The filters decide per property (they are immutable, see SharedPropsCache), so they run once per type and filter array; each session gets its own instances (it sets its ids on them),
+      // except that sessions with the indexed schema as their only property id resolver share instances with the positions as ids: the ids TryAssignIds gives in every such session
+      // that has the same names in its entry (any session writing, and reading the writer's properties). GetSerializedProps replaces them by copies for the others.
+      FullPropertyInfo[] result = sessionCache is null ? null : SharedIndexed(type, settings);
+      if (result is null)
+        result = Copies(GetStaticallyKept(type, settings));
 
       if (sessionCache != null)
         sessionCache[type] = result;
       return result;
+    }
+
+    private static FullPropertyInfo[] GetStaticallyKept(Type type, MsgPackOptions settings)
+    {
+      ConcurrentDictionary<Type, FullPropertyInfo[]> shared = GetSharedPropsCaches(settings).StaticPerOrder[(int)settings._propertyOrder];
+      if (!shared.TryGetValue(type, out FullPropertyInfo[] kept))
+        kept = shared.GetOrAdd(type, FilterStatically(type, settings));
+      return kept;
+    }
+
+    private static FullPropertyInfo[] Copies(FullPropertyInfo[] kept)
+    {
+      FullPropertyInfo[] copies = new FullPropertyInfo[kept.Length];
+      for (int t = 0; t < kept.Length; t++)
+        copies[t] = new FullPropertyInfo(kept[t]);
+      return copies;
+    }
+
+    /// <summary>
+    /// The statically included properties with their positions as ids, shared by the sessions whose only property id resolver is the indexed schema (see GetStaticallyIncludedProps),
+    /// null for other settings and when two properties have the same name (TryAssignIds refuses them).
+    /// </summary>
+    private static FullPropertyInfo[] SharedIndexed(Type type, MsgPackOptions settings)
+    {
+      IMsgPackPropertyIdResolver[] resolvers = settings._propertyNameResolvers;
+      if (resolvers is null || resolvers.Length != 1 || !(resolvers[0] is IndexedSchemaTypeResolver))
+        return null;
+
+      ConcurrentDictionary<Type, FullPropertyInfo[]> indexed = GetSharedPropsCaches(settings).IndexedPerOrder[(int)settings._propertyOrder];
+      if (indexed.TryGetValue(type, out FullPropertyInfo[] props))
+        return props;
+
+      FullPropertyInfo[] kept = GetStaticallyKept(type, settings);
+      props = Copies(kept);
+      for (int t = 0; t < props.Length && props != null; t++)
+      {
+        if (props[t]._uniqueName)
+          props[t].PropertyId = IndexedSchemaTypeResolver.BoxedId(t);
+        else
+          props = null;
+      }
+      return indexed.GetOrAdd(type, props);
     }
 
     /// <summary>

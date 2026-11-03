@@ -28,15 +28,48 @@ namespace LtMsgPack.Reading
     internal BoundSchema Bound;
 
     /// <summary>
-    /// The settings for the conversions of LsMsgPack.Core (ValueConverter): the options, or in schema mode a copy using the session.
+    /// The settings for the conversions of LsMsgPack.Core (ValueConverter): the options, or in schema mode the session's (see <see cref="ConversionSettings"/>).
     /// </summary>
     internal MsgPackOptions SlowSettings;
     public int Depth;
 
     /// <summary>
-    /// Collects the differences between the data and the classes (null when not asked for). <see cref="SlowSettings"/> then has them too, for LsMsgPack.Core's conversions.
+    /// Collects the differences between the data and the classes (null when not asked for). <see cref="ConversionSettings"/> then has them too, for LsMsgPack.Core's conversions.
     /// </summary>
     internal ReadDifferences Differences;
+
+    /// <summary>
+    /// <see cref="SlowSettings"/> with the <see cref="Differences"/>, copied when a conversion first needs it (a copy of the options per call otherwise, which data that matches the classes never uses).
+    /// </summary>
+    private MsgPackOptions _withDifferences;
+    private MsgPackOptions _withDifferencesOf;
+
+    /// <summary>
+    /// The settings for the conversions of LsMsgPack.Core: <see cref="SlowSettings"/>, with the <see cref="Differences"/> when they are collected.
+    /// </summary>
+    internal MsgPackOptions ConversionSettings()
+    {
+      ReadDifferences differences = Differences;
+      if (differences is null)
+        return SlowSettings;
+      MsgPackOptions copy = _withDifferences;
+      if (copy is null || !ReferenceEquals(_withDifferencesOf, SlowSettings) || !ReferenceEquals(copy._differences, differences))
+      {
+        _withDifferences = copy = SlowSettings.WithDifferences(differences);
+        _withDifferencesOf = SlowSettings;
+      }
+      return copy;
+    }
+
+    /// <summary>
+    /// The call ends: the differences are not kept alive.
+    /// </summary>
+    internal void EndDifferences()
+    {
+      Differences = null;
+      _withDifferences = null;
+      _withDifferencesOf = null;
+    }
 
     /// <summary>
     /// The objects are read as LsMsgPack does (<see cref="Serializer.SlowObjects"/>), or the <see cref="Differences"/> are collected: one check per object for both.
@@ -86,14 +119,14 @@ namespace LtMsgPack.Reading
     {
       c.R.Pos = start;
       object plain = c.R.ReadPlain(c.Depth);
-      object value = ValueConverter.ConvertDeserializeValue(plain, typeof(T), c.SlowSettings, assignedTo);
+      object value = ValueConverter.ConvertDeserializeValue(plain, typeof(T), c.ConversionSettings(), assignedTo);
       if (value is null)
         return default(T);
       if (value is T typed)
         return typed;
       if (c.Depth == 0 && assignedTo is null) // the root: LsMsgPack returns what it could convert, only its generic Deserialize casts
         throw new RootValue(value);
-      throw ReadDifferences.NotConverted(c.SlowSettings, new ArgumentException($"Object of type '{value.GetType()}' cannot be converted to type '{typeof(T)}'.")); // as reflection reports it when LsMsgPack sets the property
+      throw ReadDifferences.NotConverted(c.ConversionSettings(), new ArgumentException($"Object of type '{value.GetType()}' cannot be converted to type '{typeof(T)}'.")); // as reflection reports it when LsMsgPack sets the property
     }
   }
 
@@ -176,7 +209,7 @@ namespace LtMsgPack.Reading
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static Exception Overflow(ReadContext c)
     {
-      return ReadDifferences.NotConverted(c.SlowSettings, new OverflowException());
+      return ReadDifferences.NotConverted(c.ConversionSettings(), new OverflowException());
     }
   }
 
@@ -256,13 +289,13 @@ namespace LtMsgPack.Reading
       if (c.R.TryReadShortString(chars, out int count))
       {
         if (Guid.TryParse(chars.Slice(0, count), out value)) return value;
-        throw ReadDifferences.NotConverted(c.SlowSettings, new MsgPackException($"\"{chars.Slice(0, count).ToString()}\" is not a Guid."));
+        throw ReadDifferences.NotConverted(c.ConversionSettings(), new MsgPackException($"\"{chars.Slice(0, count).ToString()}\" is not a Guid."));
       }
 #endif
       if (c.R.TryReadString(out string text))
       {
         if (Guid.TryParse(text, out value)) return value;
-        throw ReadDifferences.NotConverted(c.SlowSettings, new MsgPackException($"\"{text}\" is not a Guid."));
+        throw ReadDifferences.NotConverted(c.ConversionSettings(), new MsgPackException($"\"{text}\" is not a Guid."));
       }
       if (c.R.TryReadNil()) return Guid.Empty;
       return Slow(c, start, assignedTo);
