@@ -139,7 +139,7 @@ The tool can also be used as a debugging Visualizer in Visual Studio. Directly i
 VS Code Integration
 -------------------
 
-[LsMsgPackVsCode](LsMsgPackVsCode/README.md) is the same explorer as a VS Code extension (any OS, needs the .NET 8 runtime): right-click a `byte[]`, `Stream`, `List<byte>`, `Memory<byte>`, HTTP content or base64 string in the Variables view while debugging and choose **View as MsgPack**, or open a `.msgpack` file. It also reads typed arrays in JavaScript and bytes in Python.
+[LsMsgPackVsCode](LsMsgPackVsCode/README.md) is the same explorer as a VS Code extension (any OS, needs the .NET 8 runtime): right-click a `byte[]`, `Stream`, `List<byte>`, `Memory<byte>`, HTTP content or base64 string in the Variables view while debugging and choose **View as MsgPack**, or open a `.msgpack` file. It also reads typed arrays in JavaScript and bytes in Python. It can be installed via the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=mlsomers.lsmsgpack-explorer).
 
 ![Screenshot of the debugging user interface](https://github.com/mlsomers/LsMsgPack/raw/HEAD/LsMsgPackVsCode/Screenshot.png "MsgPack explorer")
 

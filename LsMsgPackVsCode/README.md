@@ -4,6 +4,8 @@ Inspect MsgPack data while debugging, and in `.msgpack` files. At the top low le
 
 **Requires the .Net 8 (or higher) runtime**.
 
+Install it from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=mlsomers.lsmsgpack-explorer), or with `code --install-extension mlsomers.lsmsgpack-explorer`.
+
 ![Screenshot of the debugging user interface](https://github.com/mlsomers/LsMsgPack/raw/HEAD/LsMsgPackVsCode/Screenshot.png "MsgPack explorer")
 
 ## While debugging

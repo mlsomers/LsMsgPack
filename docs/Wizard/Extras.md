@@ -99,7 +99,7 @@ MsgPack is binary, so you can't read it in a text editor. These tools show it as
 | MsgPack Explorer | Windows | Download it from the [releases](https://github.com/mlsomers/LsMsgPack/releases), open a file or paste from the clipboard |
 | Visual Studio visualizer | Visual Studio (Windows) | Install from the [marketplace](https://marketplace.visualstudio.com/items?itemName=mlsomers.V2025102900); while debugging, click the magnifier next to a `byte[]` or `Stream` |
 | Fiddler inspector | Windows | Inspect MsgPack HTTP traffic, see the [README](../../README.md#fiddler-integration) |
-| VS Code extension | any OS | [LsMsgPackVsCode](../../LsMsgPackVsCode/README.md): **View as MsgPack** on a variable while debugging, or open a `.msgpack` file |
+| VS Code extension | any OS | Install from the [marketplace](https://marketplace.visualstudio.com/items?itemName=mlsomers.lsmsgpack-explorer), see the [README](../../LsMsgPackVsCode/README.md); **View as MsgPack** on a variable while debugging, or open a `.msgpack` file |
 | MCP server | AI agents (Claude Code, VS Code chat...) | `dotnet tool install -g LsMsgPack.Mcp`, then add `lsmsgpack-mcp` to your agent, see [Mcp.md](../Mcp.md) |
 
 They also validate the data: for example, they flag places where the data picks a class for a property declared as `object`.
