@@ -14,7 +14,7 @@ namespace LtMsgPack.Generator
     /// <summary>
     /// The version of the generated code (LsMsgPack.Generated.GeneratedContract.Current of the runtime this generator is released with, checked by a test).
     /// </summary>
-    internal const int ContractVersion = 2;
+    internal const int ContractVersion = 3;
 
     private const string Values = "global::LtMsgPack.Generated.GeneratedValues";
 
@@ -184,21 +184,32 @@ namespace LtMsgPack.Generator
           return;
       }
 
+      bool byRef = type.Kind == TypeModelKind.Struct;
+      string factory = Values + (byRef ? ".Struct<" : ".Object<") + type.TypeName + ">(";
       string code = type.Members.Length > 0 ? "new " + CodeClass(index) + "()" : "null";
       if (type.Properties.Length == 0)
       {
-        w.Line("types.Add(" + Values + ".Object<" + type.TypeName + ">(" + Creator(type) + ", " + code + "));");
+        w.Line("types.Add(" + factory + Creator(type) + ", " + code + "));");
         return;
       }
 
-      w.Line("types.Add(" + Values + ".Object<" + type.TypeName + ">(" + Creator(type) + ", " + code + ",");
+      w.Line("types.Add(" + factory + Creator(type) + ", " + code + ",");
       w.Indent++;
       for (int t = 0; t < type.Properties.Length; t++)
       {
         PropertyModel property = type.Properties[t];
-        string get = property.CanGet ? "o => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o") : "null";
-        string set = property.CanSet ? "(o, v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v") : "null";
-        w.Line(Values + ".Property<" + type.TypeName + ", " + property.TypeName + ">(\"" + property.Name + "\", " + get + ", " + set + ")" + (t < type.Properties.Length - 1 ? "," : "));"));
+        string get, set;
+        if (byRef) // the struct by reference (StructGetter, StructSetter): explicitly typed lambdas, C# 7.3 infers no ref parameters
+        {
+          get = property.CanGet ? "(ref " + type.TypeName + " o) => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", true) : "null";
+          set = property.CanSet ? "(ref " + type.TypeName + " o, " + property.TypeName + " v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", true) : "null";
+        }
+        else
+        {
+          get = property.CanGet ? "o => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", false) : "null";
+          set = property.CanSet ? "(o, v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", false) : "null";
+        }
+        w.Line(Values + (byRef ? ".StructProperty<" : ".Property<") + type.TypeName + ", " + property.TypeName + ">(\"" + property.Name + "\", " + get + ", " + set + ")" + (t < type.Properties.Length - 1 ? "," : "));"));
       }
       w.Indent--;
     }
@@ -216,14 +227,17 @@ namespace LtMsgPack.Generator
     /// <summary>
     /// The writer and reader of a class: the per property part of the runtime's ObjectPlan and ObjectReader, for the members of the kinds it writes and reads itself
     /// (the runtime does the others, and the ones its options write otherwise: see GeneratedWritePlan.Ids and PropReader.GeneratedId).
+    /// A struct's is the same code on the struct by reference (GeneratedStructCode): <c>ref T o</c>, the runtime's writers and readers through the by reference helpers.
     /// </summary>
     private static void ObjectCode(CodeWriter w, TypeModel type, int index, Accessors accessors)
     {
-      string t = type.TypeName;
+      bool byRef = type.Kind == TypeModelKind.Struct;
+      string t = (byRef ? "ref " : "") + type.TypeName; // the parameter's type
+      string o = byRef ? "ref o" : "o"; // the argument
       w.Line("/// <summary>");
       w.Line("/// The generated writer and reader of " + type.TypeName.Replace("global::", "").Replace("<", "{").Replace(">", "}") + ".");
       w.Line("/// </summary>");
-      w.Line("private sealed class " + CodeClass(index) + " : " + Generated + "GeneratedObjectCode<" + t + ">");
+      w.Line("private sealed class " + CodeClass(index) + " : " + Generated + (byRef ? "GeneratedStructCode<" : "GeneratedObjectCode<") + type.TypeName + ">");
       w.Open();
 
       List<int> unrolled = new List<int>();
@@ -240,10 +254,21 @@ namespace LtMsgPack.Generator
           + Bool(member.Nullable) + ", " + Bool(member.CanGet) + ", " + Bool(member.CanSet) + ")" + (m < type.Members.Length - 1 ? "," : ""));
       }
       w.Indent--;
+      bool isDefault = byRef && type.IsDefault != null;
       w.Line("}, new int[] { " + string.Join(", ", unrolled) + " }, " + Generated + "GeneratedCapabilities.Write | " + Generated + "GeneratedCapabilities.WriteUnrolled | "
-        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadValue)");
+        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadValue"
+        + (isDefault ? " | " + Generated + "GeneratedCapabilities.IsDefault" : "") + ")");
       w.Open();
       w.Close();
+
+      if (isDefault) // FilterDefaultValues: the struct's fields against their defaults (LtMsgPack's StructDefault), without a box
+      {
+        w.Line();
+        w.Line("public override bool IsDefault(ref " + type.TypeName + " v)");
+        w.Open();
+        w.Line("return " + type.IsDefault + ";");
+        w.Close();
+      }
 
       // Write: the values in the runtime's order (p.Ids), map entries with keys, array items without
       w.Line();
@@ -284,7 +309,7 @@ namespace LtMsgPack.Generator
         w.Close();
       }
       w.Line("default:");
-      w.Line("  written = p.Runtime(t, c, o, key, infos[t]);");
+      w.Line("  written = p.Runtime(t, c, " + o + ", key, infos[t]);");
       w.Line("  break;");
       w.Close();
       w.Line("if (written)");
@@ -311,7 +336,7 @@ namespace LtMsgPack.Generator
         MemberModel member = type.Members[unrolled[position]];
         if (member.Kind == "None" || !member.CanGet)
         {
-          w.Line("if (!p.Runtime(" + position + ", c, o, null, infos[" + position + "]))");
+          w.Line("if (!p.Runtime(" + position + ", c, " + o + ", null, infos[" + position + "]))");
           w.Line("  w.Nil();");
           continue;
         }
@@ -361,7 +386,7 @@ namespace LtMsgPack.Generator
         }
         w.Close();
       }
-      w.Line("prop.ReadNil(o); // the value the writer leaves out (null, the default of the type or of [DefaultValue])");
+      w.Line((byRef ? Generated + "GeneratedIO.ReadNil(prop, ref o);" : "prop.ReadNil(o);") + " // the value the writer leaves out (null, the default of the type or of [DefaultValue])");
       w.Line("continue;");
       w.Close();
       bool reads = ReadsAny(type); // no empty switch (warning CS1522)
@@ -383,7 +408,7 @@ namespace LtMsgPack.Generator
       }
       if (reads)
         w.Close();
-      w.Line("prop.Read(c, o); // another format: read as the runtime does");
+      w.Line((byRef ? Generated + "GeneratedIO.Read(prop, c, ref o);" : "prop.Read(c, o);") + " // another format: read as the runtime does");
       w.Close();
       w.Close();
 
@@ -599,7 +624,7 @@ namespace LtMsgPack.Generator
     /// </summary>
     private static string Get(Accessors accessors, MemberModel member)
     {
-      return accessors.Get(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeGet, "o");
+      return accessors.Get(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeGet, "o", member.ByRef);
     }
 
     /// <summary>
@@ -607,7 +632,7 @@ namespace LtMsgPack.Generator
     /// </summary>
     private static string Set(Accessors accessors, MemberModel member, string value)
     {
-      return accessors.Set(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeSet, "o", value);
+      return accessors.Set(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeSet, "o", value, member.ByRef);
     }
 
     /// <summary>
@@ -619,24 +644,27 @@ namespace LtMsgPack.Generator
       private readonly Dictionary<string, string> _names = new Dictionary<string, string>();
       private readonly List<string> _declarations = new List<string>();
 
+      /// <param name="byRef">A struct: <paramref name="target"/> is a ref parameter, the accessor takes it by reference</param>
       /// <returns>The value of the property of <paramref name="target"/> (an expression)</returns>
-      public string Get(string declaringType, string name, string typeName, string access, bool viaAccessor, string target)
+      public string Get(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, bool byRef)
       {
         if (!viaAccessor)
           return target + "." + access;
-        return Method(declaringType, name, typeName, true) + "(" + target + ")";
+        return Method(declaringType, name, typeName, true, byRef) + "(" + (byRef ? "ref " : "") + target + ")";
       }
 
       /// <returns>The assignment of the property of <paramref name="target"/> (a statement without its semicolon, or a lambda body)</returns>
-      public string Set(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, string value)
+      public string Set(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, string value, bool byRef)
       {
         if (!viaAccessor)
           return target + "." + access + " = " + value;
-        return Method(declaringType, name, typeName, false) + "(" + target + ", " + value + ")";
+        return Method(declaringType, name, typeName, false, byRef) + "(" + (byRef ? "ref " : "") + target + ", " + value + ")";
       }
 
-      private string Method(string declaringType, string name, string typeName, bool get)
+      /// <param name="byRef">A struct: UnsafeAccessor takes the instance of a value type by reference</param>
+      private string Method(string declaringType, string name, string typeName, bool get, bool byRef)
       {
+        string self = (byRef ? "ref " : "") + declaringType + " o";
         string key = (get ? "get " : "set ") + declaringType + " " + name;
         if (_names.TryGetValue(key, out string method))
           return method;
@@ -645,8 +673,8 @@ namespace LtMsgPack.Generator
         string accessor = "[global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Method, Name = \"" + (get ? "get_" : "set_") + name + "\")]";
         _declarations.Add(accessor);
         _declarations.Add(get
-          ? "private static extern " + typeName + " " + method + "(" + declaringType + " o);"
-          : "private static extern void " + method + "(" + declaringType + " o, " + typeName + " value);");
+          ? "private static extern " + typeName + " " + method + "(" + self + ");"
+          : "private static extern void " + method + "(" + self + ", " + typeName + " value);");
         return method;
       }
 

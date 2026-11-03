@@ -104,6 +104,34 @@ namespace LtMsgPackAotSmokeTest
 
   public record Signature(string By, DateTime At);
 
+  /// <summary>
+  /// A struct: written and read by reference with the generated accessors and code (without them NativeAOT would box each value and use reflection).
+  /// </summary>
+  public struct Vector
+  {
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float Z { get; set; }
+    public int? Tag { get; set; }
+    public Unit Unit { get; set; }
+    public float Sum => X + Y + Z; // computed: written, skipped when read
+  }
+
+  /// <summary>
+  /// A struct with init-only properties (set by reflection, kept by the generated DynamicDependency).
+  /// </summary>
+  public readonly record struct Fee(decimal Amount, string Currency);
+
+  public class Route
+  {
+    public string Name { get; set; }
+    public Vector Start { get; set; }
+    public Vector? End { get; set; }
+    public List<Vector> Points { get; set; }
+    public Vector[] Corners { get; set; }
+    public Fee Fee { get; set; }
+  }
+
   public class Invoice
   {
     public Guid Id { get; set; }
@@ -125,6 +153,7 @@ namespace LtMsgPackAotSmokeTest
     public Extras Extras { get; set; }
     public Payment Payment { get; set; }
     public Signature Signed { get; set; }
+    public Route Route { get; set; }
   }
 
   /// <summary>
@@ -228,7 +257,7 @@ namespace LtMsgPackAotSmokeTest
 
         foreach ((string which, Func<LtMsgPackOptions, LtMsgPackSerializer> create) in new (string, Func<LtMsgPackOptions, LtMsgPackSerializer>)[] { ("explicit", Explicit), ("registered", Registered) })
         {
-          string problem = Problem(create(options()), sample, expected, values);
+          string problem = Problem(create(options()), sample, expected, values) ?? AllocationProblem(create(options()));
           Console.WriteLine($"{name} {which}: {problem ?? "OK"}");
           if (problem != null)
             failures++;
@@ -294,6 +323,7 @@ namespace LtMsgPackAotSmokeTest
         Urgent = true,
         Payment = new Payment(100.5m) { Note = "first" },
         Signed = new Signature("Clerk", new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc)),
+        Route = SampleRoute(),
         Extras = new Extras()
         {
           Day = new DateOnly(2026, 10, 13),
@@ -320,6 +350,52 @@ namespace LtMsgPackAotSmokeTest
       };
     }
 
+    private static Route SampleRoute()
+    {
+      return new Route()
+      {
+        Name = "delivery",
+        Start = new Vector() { X = 1, Y = -2.5f, Z = 3, Tag = 4, Unit = Unit.Kilogram },
+        End = new Vector() { Z = 9 },
+        Points = new List<Vector>() { new Vector() { X = 0.5f }, default(Vector) },
+        Corners = new[] { new Vector() { Y = 7, Tag = 0 } },
+        Fee = new Fee(12.5m, "EUR")
+      };
+    }
+
+    /// <summary>
+    /// The structs are written by reference and compared with their defaults by the generated code: writing a route into a stream that has the room allocates nothing
+    /// (boxed, or with the boxed default check of FilterDefaultValues, each struct value would allocate).
+    /// </summary>
+    private static string AllocationProblem(LtMsgPackSerializer serializer)
+    {
+      Route route = SampleRoute();
+      MemoryStream stream = new MemoryStream(4096);
+      for (int t = 0; t < 3; t++) // warm up (plans, contexts)
+      {
+        stream.SetLength(0);
+        serializer.Serialize(route, stream);
+      }
+      long before = GC.GetAllocatedBytesForCurrentThread();
+      stream.SetLength(0);
+      serializer.Serialize(route, stream);
+      long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+      return allocated == 0 ? null : $"writing the structs allocated {allocated} bytes";
+    }
+
+    private static string Dump(Route o)
+    {
+      if (o is null)
+        return "null";
+      return $"[{o.Name ?? "null"} {Dump(o.Start)} {(o.End.HasValue ? Dump(o.End.Value) : "null")} {(o.Points is null ? "null" : string.Join(",", o.Points.Select(Dump)))} "
+        + $"{(o.Corners is null ? "null" : string.Join(",", o.Corners.Select(Dump)))} {o.Fee.Amount.ToString(CultureInfo.InvariantCulture)}/{o.Fee.Currency ?? "null"}]";
+    }
+
+    private static string Dump(Vector o)
+    {
+      return $"({o.X.ToString("R", CultureInfo.InvariantCulture)} {o.Y.ToString("R", CultureInfo.InvariantCulture)} {o.Z.ToString("R", CultureInfo.InvariantCulture)} {o.Tag?.ToString(CultureInfo.InvariantCulture) ?? "null"} {o.Unit})";
+    }
+
     private static string Dump(Invoice o)
     {
       if (o is null)
@@ -332,7 +408,7 @@ namespace LtMsgPackAotSmokeTest
         .Append(o.Numbers is null ? "null" : string.Join(",", o.Numbers)).Append(';').Append(Dump(o.Stamp)).Append(';')
         .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent).Append(';').Append(Dump(o.Extras)).Append(';')
         .Append(o.Payment is null ? "null" : $"[{o.Payment.Amount.ToString(CultureInfo.InvariantCulture)} {o.Payment.Note ?? "null"} {o.Payment.Logged}]").Append(';')
-        .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]");
+        .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]").Append(';').Append(Dump(o.Route));
       return text.ToString();
     }
 

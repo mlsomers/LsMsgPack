@@ -77,7 +77,12 @@ namespace LtMsgPack.Generated
     /// <see cref="GeneratedObjectCode{T}.ReadPositional"/> sets the value of a nil (<see cref="Reading.PropReader.ReadNil"/>, version 2). Without it (version 1: a nil left the property as the constructor made it)
     /// the runtime reads the array layout itself.
     /// </summary>
-    ReadPositionalNil = 16
+    ReadPositionalNil = 16,
+
+    /// <summary>
+    /// <see cref="GeneratedStructCode{T}.IsDefault"/>: the default check of FilterDefaultValues for a struct (version 3). Without it the runtime compares (StructDefault).
+    /// </summary>
+    IsDefault = 32
   }
 
   /// <summary>
@@ -181,6 +186,93 @@ namespace LtMsgPack.Generated
   }
 
   /// <summary>
+  /// The generated writer and reader of the struct <typeparamref name="T"/> (the generator derives from it per struct): the same as <see cref="GeneratedObjectCode{T}"/> on the struct by reference,
+  /// so the runtime's plans write and read it without a box (ObjectPlan.WriteStruct, ObjectReader.ReadByRef). Methods it does not override are not in <see cref="GeneratedObjectCode.Capabilities"/>.
+  /// <para>Without a struct constraint, so the plans (generic over any T) can call it; only <see cref="GeneratedValues.Struct{T}"/> makes it usable (it gives the code the unboxing of T for the boxed paths).</para>
+  /// </summary>
+  [EditorBrowsable(EditorBrowsableState.Never)]
+  public abstract class GeneratedStructCode<T> : GeneratedObjectCode
+  {
+    /// <summary>
+    /// The struct in a box by reference (set by <see cref="GeneratedValues.Struct{T}"/>, where T is known to be a struct).
+    /// </summary>
+    internal StructUnboxer<T> Unboxer;
+
+    protected GeneratedStructCode(GeneratedMember[] members, int[] unrolledIds, GeneratedCapabilities capabilities) : base(members, unrolledIds, capabilities)
+    {
+    }
+
+    /// <inheritdoc cref="GeneratedObjectCode{T}.Write"/>
+    public virtual int Write(WriteContext c, ref T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
+    {
+      throw new NotSupportedException();
+    }
+
+    /// <inheritdoc cref="GeneratedObjectCode{T}.WriteUnrolled"/>
+    public virtual void WriteUnrolled(WriteContext c, ref T value, FullPropertyInfo[] infos, GeneratedWritePlan p)
+    {
+      throw new NotSupportedException();
+    }
+
+    /// <inheritdoc cref="GeneratedObjectCode{T}.ReadPositional"/>
+    public virtual void ReadPositional(ReadContext c, ref T target, PropReader[] props, int items, GeneratedReadPlan p)
+    {
+      throw new NotSupportedException();
+    }
+
+    /// <inheritdoc cref="GeneratedObjectCode{T}.ReadValue"/>
+    public virtual bool ReadValue(ReadContext c, ref T target, int id, GeneratedReadPlan p)
+    {
+      return false;
+    }
+
+    /// <summary>
+    /// The value is the default FilterDefaultValues leaves out: what LsMsgPack.Core's <c>Activator.CreateInstance(type).Equals(value)</c> says (ValueType.Equals: each field with the Equals of its type
+    /// against its default), without a box (the runtime compiles the same comparison where it can, StructDefault, otherwise compares boxed).
+    /// </summary>
+    public virtual bool IsDefault(ref T value)
+    {
+      throw new NotSupportedException();
+    }
+
+    internal sealed override int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
+    {
+      return Write(c, ref Unboxer.Unbox(value), keys, infos, p, out end);
+    }
+
+    internal sealed override void WriteUnrolledBoxed(WriteContext c, object value, FullPropertyInfo[] infos, GeneratedWritePlan p)
+    {
+      WriteUnrolled(c, ref Unboxer.Unbox(value), infos, p);
+    }
+
+    internal sealed override void ReadPositionalBoxed(ReadContext c, object target, PropReader[] props, int items, GeneratedReadPlan p)
+    {
+      ReadPositional(c, ref Unboxer.Unbox(target), props, items, p); // set in the box
+    }
+
+    internal sealed override bool ReadValueBoxed(ReadContext c, object target, int id, GeneratedReadPlan p)
+    {
+      return ReadValue(c, ref Unboxer.Unbox(target), id, p);
+    }
+  }
+
+  /// <summary>
+  /// The value in a box by reference, for code that is generic over any T (Unsafe.Unbox needs the struct constraint).
+  /// </summary>
+  internal abstract class StructUnboxer<T>
+  {
+    internal abstract ref T Unbox(object box);
+  }
+
+  internal sealed class StructUnboxer<TStruct, TSame> : StructUnboxer<TSame> where TStruct : struct
+  {
+    internal override ref TSame Unbox(object box)
+    {
+      return ref Unsafe.As<TStruct, TSame>(ref Unsafe.Unbox<TStruct>(box)); // TSame is TStruct (GeneratedValues.Struct)
+    }
+  }
+
+  /// <summary>
   /// What the generated writer of a type needs to know about a serializer (its options do not change): which member each property position is, and the formats.
   /// </summary>
   [EditorBrowsable(EditorBrowsableState.Never)]
@@ -233,6 +325,17 @@ namespace LtMsgPack.Generated
     {
       return _props[position].Write(c, target, key, info);
     }
+
+    /// <summary>
+    /// <see cref="Runtime(int, WriteContext, object, byte[], FullPropertyInfo)"/> for a struct by reference (<see cref="GeneratedStructCode{T}"/>).
+    /// </summary>
+    public bool Runtime<T>(int position, WriteContext c, ref T target, byte[] key, FullPropertyInfo info)
+    {
+      PropWriter prop = _props[position];
+      if (prop.ByRef) // a property of this struct (the plan's type)
+        return Unsafe.As<RefPropWriter<T>>(prop).Write(c, ref target, key, info);
+      return prop.Write(c, (object)target, key, info); // by reflection: a copy in a box (only read)
+    }
   }
 
   /// <summary>
@@ -258,6 +361,36 @@ namespace LtMsgPack.Generated
   [EditorBrowsable(EditorBrowsableState.Never)]
   public static class GeneratedIO
   {
+    /// <summary>
+    /// The runtime reads the value into a struct by reference (<see cref="GeneratedStructCode{T}"/>): another format, or a property the generated code does not read.
+    /// </summary>
+    public static void Read<T>(PropReader prop, ReadContext c, ref T target)
+    {
+      if (prop.ByRef) // a property of this struct (the plan's type)
+      {
+        Unsafe.As<RefPropReader<T>>(prop).Read(c, ref target);
+        return;
+      }
+      object box = target; // set by reflection: in a box, then copied back
+      prop.Read(c, box);
+      target = (T)box;
+    }
+
+    /// <summary>
+    /// The runtime sets the value of a nil into a struct by reference (<see cref="PropReader.ReadNil"/>).
+    /// </summary>
+    public static void ReadNil<T>(PropReader prop, ref T target)
+    {
+      if (prop.ByRef)
+      {
+        Unsafe.As<RefPropReader<T>>(prop).ReadNil(ref target);
+        return;
+      }
+      object box = target;
+      prop.ReadNil(box);
+      target = (T)box;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsZero(decimal value)
     {

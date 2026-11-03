@@ -539,6 +539,214 @@ namespace LsMsgPackUnitTests
 
     #endregion
 
+    #region Structs (by reference)
+
+    public enum GcSuit : short { Hearts = 1, Spades = -2 }
+
+    public struct GcInnerStruct
+    {
+      public int A { get; set; }
+      public string B { get; set; }
+    }
+
+    public struct GcStruct
+    {
+      public string Text { get; set; }
+      public bool Flag { get; set; }
+      public sbyte S8 { get; set; }
+      public int S32 { get; set; }
+      public long S64 { get; set; }
+      public byte U8 { get; set; }
+      public ushort U16 { get; set; }
+      public uint U32 { get; set; }
+      public ulong U64 { get; set; }
+      public float F32 { get; set; }
+      public double F64 { get; set; }
+      public char Letter { get; set; }
+      public decimal Money { get; set; }
+      public Guid Id { get; set; }
+      public DateTime When { get; set; }
+      public TimeSpan Span { get; set; }
+      public GcSuit Suit { get; set; }
+      public int? MaybeInt { get; set; }
+      public GcSuit? MaybeSuit { get; set; }
+      public GcInnerStruct Inner { get; set; } // the runtime writes and reads these (by reference)
+      public GcPerson Owner { get; set; }
+      public List<int> Numbers { get; set; }
+      [System.ComponentModel.DefaultValue(5)]
+      public int WithDefault { get; set; }
+      public double Twice => F64 * 2; // computed: written, skipped when read
+
+      [System.Text.Json.Serialization.JsonInclude]
+      private int Hidden { get; set; }
+
+      public int GetHidden() { return Hidden; }
+      public void SetHidden(int value) { Hidden = value; }
+    }
+
+    public struct GcCounterStruct
+    {
+      public GcCounterStruct() { Count = 1; }
+      public int Count { get; set; }
+      public string Label { get; set; }
+    }
+
+    public readonly record struct GcPairStruct(int A, string B);
+
+    public class GcStructHolder
+    {
+      public GcStruct Value { get; set; }
+      public GcStruct? Maybe { get; set; }
+      public List<GcStruct> List { get; set; }
+      public GcStruct[] Array { get; set; }
+      public GcCounterStruct Counter { get; set; }
+      public GcPairStruct Pair { get; set; }
+    }
+
+    private static GcStructHolder Structs(bool defaults)
+    {
+      if (defaults)
+        return new GcStructHolder() { Maybe = default(GcStruct), List = new List<GcStruct>() { default(GcStruct) }, Array = new GcStruct[1] };
+      GcStruct value = new GcStruct()
+      {
+        Text = "text", Flag = true, S8 = -8, S32 = -320000, S64 = -64000000000, U8 = 200, U16 = 60000, U32 = 4000000000, U64 = ulong.MaxValue, F32 = 1.5f, F64 = -2.25, Letter = 'é',
+        Money = -12.3456m, Id = new Guid("0f8fad5b-d9cb-469f-a165-70867728950e"), When = new DateTime(2026, 10, 12, 8, 30, 0, DateTimeKind.Unspecified), Span = TimeSpan.FromMinutes(90),
+        Suit = GcSuit.Spades, MaybeInt = 0, MaybeSuit = GcSuit.Hearts, Inner = new GcInnerStruct() { A = 3, B = "b" }, Owner = new GcPerson() { Name = "owner" }, Numbers = new List<int>() { 1, 2 }, WithDefault = 7
+      };
+      value.SetHidden(9);
+      GcStruct other = new GcStruct() { Text = "other", S32 = 1 };
+      return new GcStructHolder()
+      {
+        Value = value, Maybe = other, List = new List<GcStruct>() { value, other }, Array = new[] { other, default(GcStruct) },
+        Counter = new GcCounterStruct() { Count = 0, Label = "zero" }, Pair = new GcPairStruct(4, "four")
+      };
+    }
+
+    private static string ReadStructs(LtMsgPackSerializer serializer, byte[] data, LtMsgPackSerializer dumper)
+    {
+      try
+      {
+        return BitConverter.ToString(dumper.Serialize(serializer.Deserialize<GcStructHolder>(data)));
+      }
+      catch (Exception ex)
+      {
+        return "EX " + ex.GetType().Name;
+      }
+    }
+
+    [TestMethod]
+    public void Structs_SameBytesAndValuesAsTheRuntime_InEveryOptionVariant()
+    {
+      List<string> differences = new List<string>();
+      LtMsgPackSerializer dumper = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      foreach ((string name, LtMsgPackOptions options) in OptionVariants())
+      {
+        foreach (bool defaults in new[] { false, true })
+        {
+          GcStructHolder value = Structs(defaults);
+          byte[] runtime = WithCode(options, false).Serialize(value);
+          byte[] generated = WithCode(options, true).Serialize(value);
+          if (!runtime.AsSpan().SequenceEqual(generated))
+          {
+            differences.Add($"{name} (defaults {defaults}): bytes differ\n  runtime   {BitConverter.ToString(runtime)}\n  generated {BitConverter.ToString(generated)}");
+            continue;
+          }
+          string expected = ReadStructs(WithCode(options, false), runtime, dumper);
+          string actual = ReadStructs(WithCode(options, true), runtime, dumper);
+          if (expected != actual)
+            differences.Add($"{name} (defaults {defaults}): values differ\n  runtime   {expected}\n  generated {actual}");
+        }
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences));
+    }
+
+    [TestMethod]
+    public void Structs_DataOfOtherOptions_ReadAsTheRuntimeReadsIt()
+    {
+      List<string> differences = new List<string>();
+      LtMsgPackSerializer dumper = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      List<(string Name, LtMsgPackOptions Options)> variants = new List<(string, LtMsgPackOptions)>(OptionVariants());
+      foreach ((string writerName, LtMsgPackOptions writer) in variants)
+      {
+        byte[] data = WithCode(writer, false).Serialize(Structs(false));
+        foreach ((string readerName, LtMsgPackOptions reader) in variants)
+        {
+          if (reader.UseInexedSchema != writer.UseInexedSchema)
+            continue;
+          string expected = ReadStructs(WithCode(reader, false), data, dumper);
+          string actual = ReadStructs(WithCode(reader, true), data, dumper);
+          if (expected != actual)
+            differences.Add($"written {writerName}, read {readerName}\n  runtime   {expected}\n  generated {actual}");
+        }
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences.GetRange(0, Math.Min(10, differences.Count))));
+    }
+
+    [TestMethod]
+    public void Structs_TheGeneratedCodeIsUsedByReference()
+    {
+      foreach (bool names in new[] { true, false })
+      {
+        LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = !names });
+        serializer.Deserialize<GcStructHolder>(serializer.Serialize(Structs(false)));
+        object inner = Inner(serializer);
+
+        object plan = inner.GetType().GetMethod("Plan", Internal).Invoke(inner, new object[] { typeof(GcStruct), names });
+        Assert.IsInstanceOfType<GeneratedStructCode<GcStruct>>(plan.GetType().GetField("Code", Internal).GetValue(plan));
+        Assert.IsNotNull(plan.GetType().GetField("GeneratedPlan", Internal).GetValue(plan), "the generated writer is used");
+        Assert.IsTrue((bool)plan.GetType().GetField("ByRef", Internal).GetValue(plan), "by reference");
+        foreach (object writer in (Array)plan.GetType().GetField("Props", Internal).GetValue(plan))
+        {
+          Delegate get = (Delegate)writer.GetType().GetField("_get", Internal)?.GetValue(writer);
+          if (get != null)
+            Assert.AreEqual(typeof(TestMsgPackContext), get.Method.DeclaringType.DeclaringType, "the getter is a lambda of the generated context");
+        }
+
+        object readPlan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { typeof(GcStruct) });
+        Assert.IsTrue((bool)readPlan.GetType().GetField("ByRef", Internal).GetValue(readPlan), "read into a local");
+        Assert.IsTrue((bool)readPlan.GetType().GetField("Positional", Internal).GetValue(readPlan), "the generated positional reader");
+        Assert.IsNotNull(readPlan.GetType().GetField("Code", Internal).GetValue(readPlan));
+
+        object counter = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { typeof(GcCounterStruct) });
+        Assert.IsFalse((bool)counter.GetType().GetField("ByRef", Internal).GetValue(counter), "its declared constructor makes it (boxed)");
+        Assert.IsNotNull(counter.GetType().GetField("Code", Internal).GetValue(counter), "the generated reader sets the box");
+        Delegate create = (Delegate)counter.GetType().GetField("_create", Internal).GetValue(counter); // boxes what the generated lambda returns
+        Delegate typed = (Delegate)create.Target.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).First(f => typeof(Delegate).IsAssignableFrom(f.FieldType)).GetValue(create.Target);
+        Assert.AreEqual(typeof(TestMsgPackContext), typed.Method.DeclaringType.DeclaringType, "the generated constructor call");
+        Assert.AreEqual("zero", serializer.Deserialize<GcStructHolder>(serializer.Serialize(Structs(false))).Counter.Label);
+      }
+    }
+
+    [TestMethod]
+    public void Structs_NonPublicProperties_ThroughUnsafeAccessorsByReference()
+    {
+      LtMsgPackOptions options = new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false };
+      options.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All, LsMsgPack.TypeResolving.Filters.NonPublicProperties.Attributed),
+        new LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute(), new LsMsgPack.TypeResolving.Filters.FilterStatic() };
+      LtMsgPackOptions runtime = options.Clone();
+      runtime.Contexts = null;
+
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+      byte[] data = serializer.Serialize(Structs(false));
+      CollectionAssert.AreEqual(new LtMsgPackSerializer(runtime).Serialize(Structs(false)), data);
+      Assert.AreEqual(9, serializer.Deserialize<GcStructHolder>(data).Value.GetHidden());
+
+      LtMsgPack.Generated.GeneratedWritePlan plan = (LtMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcStruct), true);
+      object code = Inner(serializer).GetType().GetMethod("GeneratedCode", Internal).Invoke(Inner(serializer), new object[] { typeof(GcStruct) });
+      Array members = (Array)code.GetType().GetField("Members", Internal | BindingFlags.Public).GetValue(code);
+      bool hidden = false;
+      for (int t = 0; t < plan.Ids.Length; t++)
+      {
+        if (plan.Ids[t] < 0)
+          continue;
+        object member = members.GetValue(plan.Ids[t]);
+        hidden |= (string)member.GetType().GetField("Name", Internal).GetValue(member) == "Hidden" && (bool)member.GetType().GetField("CanWrite", Internal | BindingFlags.Public).GetValue(member);
+      }
+      Assert.IsTrue(hidden, "the generated code reads the non-public getter (UnsafeAccessor, the struct by reference)");
+    }
+
+    #endregion
+
     #region Registered for the process (LsMsgPack's accessors and creators)
 
     [LtMsgPackSerializable(typeof(GcRegistered))]
@@ -563,6 +771,43 @@ namespace LsMsgPackUnitTests
 
       LtMsgPackSerializer lt = new LtMsgPackSerializer(); // UseRegisteredContexts: on by default
       Assert.AreEqual(5, lt.Deserialize<GcRegistered>(lt.Serialize(value)).Number);
+    }
+
+    public struct GcRegisteredStruct
+    {
+      public string Name { get; set; }
+      public int Number { get; set; }
+    }
+
+    public class GcRegisteredStructHolder
+    {
+      public GcRegisteredStruct Value { get; set; }
+    }
+
+    [LtMsgPackSerializable(typeof(GcRegisteredStructHolder))]
+    public partial class GcRegisteredStructContext : LtMsgPackContext { }
+
+    [TestMethod]
+    public void Ls_UsesRegisteredStructAccessors()
+    {
+      GeneratedTypes.Register(GcRegisteredStructContext.Default); // only these two types: the process keeps it
+
+      foreach (string name in new[] { nameof(GcRegisteredStruct.Name), nameof(GcRegisteredStruct.Number) })
+      {
+        PropertyAccessor accessor = PropertyAccessor.Get(typeof(GcRegisteredStruct).GetProperty(name));
+        Assert.IsNotNull(typeof(PropertyAccessor).GetField("_getter", Internal).GetValue(accessor), "set at once (not after 100 calls)");
+        Delegate setter = (Delegate)typeof(PropertyAccessor).GetField("_setter", Internal).GetValue(accessor);
+        Delegate typed = (Delegate)setter.Target.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).First(f => typeof(Delegate).IsAssignableFrom(f.FieldType)).GetValue(setter.Target);
+        Assert.AreEqual(typeof(GcRegisteredStructContext), typed.Method.DeclaringType.DeclaringType, "the setter of the generated context, on the box by reference");
+      }
+
+      GcRegisteredStructHolder value = new GcRegisteredStructHolder() { Value = new GcRegisteredStruct() { Name = "x", Number = 5 } };
+      GcRegisteredStructHolder read = MsgPackSerializer.Deserialize<GcRegisteredStructHolder>(MsgPackSerializer.Serialize(value));
+      Assert.AreEqual("x", read.Value.Name);
+      Assert.AreEqual(5, read.Value.Number);
+
+      LtMsgPackSerializer lt = new LtMsgPackSerializer(); // UseRegisteredContexts: on by default
+      Assert.AreEqual(5, lt.Deserialize<GcRegisteredStructHolder>(lt.Serialize(value)).Value.Number);
     }
 
     [LtMsgPackSerializable(typeof(GcByConstructor))]

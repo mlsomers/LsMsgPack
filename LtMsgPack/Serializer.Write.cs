@@ -140,12 +140,12 @@ namespace LtMsgPack
     }
 
     /// <summary>
-    /// A struct with properties (<see cref="TypeKind.Complex"/>) gets the object plans: boxed once, its properties read and set in the box by typed delegates (StructPropWriter, StructPropReader).
-    /// Without dynamic code those would be reflection, the struct is written and read boxed then (BoxedHandler, BoxedReader).
+    /// A struct with properties (<see cref="TypeKind.Complex"/>) gets the object plans: by reference or boxed once, its properties read and set by typed delegates (StructPropWriter, StructPropReader).
+    /// Without dynamic code those are the source generator's (a generated struct, <see cref="LtMsgPack.Generated.IGeneratedStruct"/>), otherwise they would be reflection: the struct is written and read boxed then (BoxedHandler, BoxedReader).
     /// </summary>
     internal bool StructPlans(Type type)
     {
-      return CanBindDelegates && !type.ContainsGenericParameters && Nullable.GetUnderlyingType(type) is null;
+      return (CanBindDelegates || Generated(type) is LtMsgPack.Generated.IGeneratedStruct) && !type.ContainsGenericParameters && Nullable.GetUnderlyingType(type) is null;
     }
 
     /// <summary>

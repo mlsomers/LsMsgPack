@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Generated;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
@@ -45,7 +46,7 @@ namespace LtMsgPack.Writing
     internal readonly GeneratedWritePlan GeneratedPlan;
 
     /// <summary>
-    /// A struct whose properties are all read by reference (<see cref="RefPropWriter{T}"/>), without generated code: <see cref="WriteStruct{T}"/> writes it without a box.
+    /// A struct whose properties are all read by reference (<see cref="RefPropWriter{T}"/>): <see cref="WriteStruct{T}"/> writes it without a box (with its generated code, <see cref="GeneratedStructCode{T}"/>, when there is a <see cref="GeneratedPlan"/>).
     /// </summary>
     internal readonly bool ByRef;
 
@@ -81,7 +82,7 @@ namespace LtMsgPack.Writing
 
       Code = serializer.GeneratedCode(type);
       GeneratedPlan = serializer.GeneratedWritePlan(Code, Infos, Props);
-      if (type.IsValueType && GeneratedPlan is null)
+      if (type.IsValueType)
       {
         bool byRef = true;
         for (int t = Props.Length - 1; t >= 0; t--)
@@ -218,12 +219,13 @@ namespace LtMsgPack.Writing
 
     /// <summary>
     /// <see cref="Write"/>, <see cref="WriteArray"/> and <see cref="WriteTrimmed"/> for a struct by reference (<see cref="ByRef"/>, see ObjectHandler): no box, no type id (a struct is its own type),
-    /// no generated code. A copy so the class path stays as it is: keep the two the same.
+    /// the generated code by reference (<see cref="GeneratedStructCode{T}"/>). A copy so the class path stays as it is: keep the two the same.
     /// </summary>
     internal void WriteStruct<T>(WriteContext c, ref T value, FullPropertyInfo assignedTo)
     {
       byte[][] keys = c.BeginObject(this, out FullPropertyInfo[] infos); // before anything else, as LsMsgPack resolves the ids first
       PropWriter[] props = Props;
+      GeneratedWritePlan generated = GeneratedPlan;
       if (c.Serializer.Options._objectLayout == ObjectLayout.Array)
       {
         SerializationRules.ThrowIfUnresolvableAsArray(Type, assignedTo);
@@ -233,9 +235,19 @@ namespace LtMsgPack.Writing
         else
         {
           c.W.ArrayHeader(props.Length);
-          for (int t = 0; t < props.Length; t++)
-            if (!Unsafe.As<RefPropWriter<T>>(props[t]).Write(c, ref value, null, infos[t])) // ByRef: each is one
-              c.W.Nil();
+          if (generated != null)
+          {
+            if (generated.Unrolled)
+              Unsafe.As<GeneratedStructCode<T>>(Code).WriteUnrolled(c, ref value, infos, generated); // the code of the plan's type
+            else
+              Unsafe.As<GeneratedStructCode<T>>(Code).Write(c, ref value, null, infos, generated, out int end);
+          }
+          else
+          {
+            for (int t = 0; t < props.Length; t++)
+              if (!Unsafe.As<RefPropWriter<T>>(props[t]).Write(c, ref value, null, infos[t])) // ByRef: each is one
+                c.W.Nil();
+          }
         }
         c.LeaveContainer();
         return;
@@ -246,9 +258,14 @@ namespace LtMsgPack.Writing
       int count = 0;
       SerializationRules.ThrowIfUnresolvableWithSchema(Type, assignedTo, c.UsesSchema);
       c.EnterContainer();
-      for (int t = 0; t < props.Length; t++)
-        if (Unsafe.As<RefPropWriter<T>>(props[t]).Write(c, ref value, keys[t], infos[t]))
-          count++;
+      if (generated != null)
+        count += Unsafe.As<GeneratedStructCode<T>>(Code).Write(c, ref value, keys, infos, generated, out int end);
+      else
+      {
+        for (int t = 0; t < props.Length; t++)
+          if (Unsafe.As<RefPropWriter<T>>(props[t]).Write(c, ref value, keys[t], infos[t]))
+            count++;
+      }
       c.LeaveContainer();
       c.W.PatchMapHeader(at, max, count);
     }
@@ -261,6 +278,14 @@ namespace LtMsgPack.Writing
       MsgPackWriter w = c.W;
       PropWriter[] props = Props;
       int at = w.ReserveArrayHeader(props.Length);
+      if (GeneratedPlan != null)
+      {
+        int last = Unsafe.As<GeneratedStructCode<T>>(Code).Write(c, ref value, null, infos, GeneratedPlan, out int after);
+        w.Pos = after;
+        w.PatchArrayHeader(at, props.Length, last);
+        return;
+      }
+
       int count = 0;
       int end = w.Pos; // after the last value that is not nil
       for (int t = 0; t < props.Length; t++)
@@ -473,11 +498,6 @@ namespace LtMsgPack.Writing
   }
 
   /// <summary>
-  /// The getter of a struct as an open instance delegate: its first parameter is the struct by reference.
-  /// </summary>
-  internal delegate TValue RefGetter<TTarget, TValue>(ref TTarget target);
-
-  /// <summary>
   /// Writes a property of a struct of type <typeparamref name="T"/> by reference (see <see cref="ObjectPlan.WriteStruct{T}"/>). Without a struct constraint, so ObjectHandler can call it.
   /// </summary>
   internal abstract class RefPropWriter<T> : PropWriter
@@ -501,14 +521,22 @@ namespace LtMsgPack.Writing
   /// </summary>
   internal sealed class StructPropWriter<TTarget, TValue> : RefPropWriter<TTarget> where TTarget : struct
   {
-    private readonly RefGetter<TTarget, TValue> _get;
+    private readonly StructGetter<TTarget, TValue> _get;
     private readonly FullPropertyInfo _declared;
     private ValueHandler<TValue> _handler;
 
+    /// <param name="get">Bound as an open instance delegate: its first parameter is the struct by reference</param>
     public StructPropWriter(Serializer serializer, FullPropertyInfo info, MethodInfo get) : base(serializer, info)
     {
       _declared = info;
-      _get = (RefGetter<TTarget, TValue>)Delegate.CreateDelegate(typeof(RefGetter<TTarget, TValue>), get);
+      _get = (StructGetter<TTarget, TValue>)Delegate.CreateDelegate(typeof(StructGetter<TTarget, TValue>), get);
+    }
+
+    /// <param name="get">The getter of the source generator</param>
+    internal StructPropWriter(Serializer serializer, FullPropertyInfo info, StructGetter<TTarget, TValue> get) : base(serializer, info)
+    {
+      _declared = info;
+      _get = get;
     }
 
     internal override bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info)

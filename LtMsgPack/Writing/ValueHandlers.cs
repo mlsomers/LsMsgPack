@@ -1,6 +1,7 @@
 ﻿using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LtMsgPack.Extensions;
+using LtMsgPack.Generated;
 using LtMsgPack.IO;
 using System;
 using System.Collections.Generic;
@@ -408,9 +409,16 @@ namespace LtMsgPack.Writing
     private ObjectPlan _names;
     private ObjectPlan _schema;
 
+    /// <summary>
+    /// A struct's generated default check (<see cref="GeneratedStructCode{T}.IsDefault"/>), null when there is none (then StructDefault).
+    /// </summary>
+    private readonly GeneratedStructCode<T> _default;
+
     internal ObjectHandler(Serializer serializer)
     {
       _serializer = serializer;
+      if (typeof(T).IsValueType && serializer.GeneratedCode(typeof(T)) is GeneratedStructCode<T> code && (code.Capabilities & GeneratedCapabilities.IsDefault) != 0)
+        _default = code;
     }
 
     internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
@@ -433,7 +441,12 @@ namespace LtMsgPack.Writing
     internal override bool IncludeByDefault(T value, FullPropertyInfo info)
     {
       if (typeof(T).IsValueType)
+      {
+        GeneratedStructCode<T> generated = _default;
+        if (generated != null)
+          return !generated.IsDefault(ref value); // no box, also without dynamic code
         return !StructDefault<T>.IsDefault(ref value);
+      }
       return value != null;
     }
   }

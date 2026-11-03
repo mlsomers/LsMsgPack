@@ -39,11 +39,18 @@ namespace Shop
     public Address BillingAddress { get; set; }
   }
 
+  public struct Money
+  {
+    public decimal Amount { get; set; }
+    public string Currency { get; set; }
+  }
+
   public class InvoiceLine
   {
     public int LineNumber { get; set; }
     public decimal Quantity { get; set; }
     public UnitOfMeasure Unit { get; set; }
+    public Money UnitPrice { get; set; }
   }
 
   public class Invoice
@@ -299,6 +306,106 @@ namespace M
       Assert.IsFalse(result.GeneratorDiagnostics.Any(d => d.Id == "LTMP004" && d.GetMessage().Contains("Secret")));
     }
 
+    private const string StructModel = @"
+using LtMsgPack;
+using System.Collections.Generic;
+using System.Runtime.Serialization;
+namespace S
+{
+  public struct Vec
+  {
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float Sum => X + Y;
+    [DataMember] private int Hidden { get; set; }
+    public int? Maybe { get; set; }
+  }
+
+  public struct Counter
+  {
+    public Counter() { Count = 1; }
+    public int Count { get; set; }
+  }
+
+  public readonly record struct Pair(int A, string B);
+
+  public class Root
+  {
+    public Vec V { get; set; }
+    public Counter C { get; set; }
+    public Pair P { get; set; }
+    public List<Vec> Path { get; set; }
+    public Vec? Target { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(Root))]
+  public partial class Context : LtMsgPackContext { }
+}";
+
+    [TestMethod]
+    public void Structs_ByReference()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(StructModel);
+      result.AssertCompiles();
+      Assert.IsEmpty(result.CompileProblems, string.Join("\n", result.CompileProblems.Select(p => p.ToString())) + "\n" + result.AllGenerated);
+      string code = result.AllGenerated;
+      Assert.Contains("Struct<global::S.Vec>(null, new LtMsgPackCode", code, "no declared constructor: read into its default");
+      Assert.Contains("StructProperty<global::S.Vec, float>(\"Sum\", (ref global::S.Vec o) => o.Sum, null)", code);
+      Assert.Contains("private static extern int LtMsgPackGet", code);
+      Assert.Contains("(ref global::S.Vec o);", code, "UnsafeAccessor takes a struct by reference");
+      Assert.Contains("(ref global::S.Vec o, int value);", code);
+      Assert.Contains("(ref global::S.Vec o) => LtMsgPackGet", code);
+      Assert.Contains("Struct<global::S.Counter>(() => new global::S.Counter(), new LtMsgPackCode", code, "a declared parameterless constructor");
+      Assert.Contains("StructProperty<global::S.Pair, int>(\"A\", (ref global::S.Pair o) => o.A, null)", code, "init-only: the runtime's constructor plan reads it");
+      Assert.IsTrue(result.GeneratorDiagnostics.Any(d => d.Id == "LTMP004" && d.GetMessage().Contains("Pair")), "set by reflection");
+      Assert.Contains("GeneratedStructCode<global::S.Vec>", code);
+      Assert.Contains("Nullable<global::S.Vec>()", code);
+      Assert.Contains("List<global::S.Vec>()", code);
+
+      // Compiled for .NET Standard 2.0 in C# 7.3 (without what needs later versions: declared struct constructors, records): explicitly typed ref lambdas, no UnsafeAccessor
+      string model = StructModel.Replace("    public Counter() { Count = 1; }\n", "").Replace("  public readonly record struct Pair(int A, string B);\n", "").Replace("    public Pair P { get; set; }\n", "");
+      GeneratorHarness.Result old = GeneratorHarness.Run(model, LanguageVersion.CSharp7_3, netStandard20: true);
+      old.AssertCompiles();
+      Assert.DoesNotContain("UnsafeAccessor", old.AllGenerated);
+    }
+
+    [TestMethod]
+    public void Structs_SameDataAsTheRuntime()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(StructModel.Replace("namespace S", "namespace SLoaded"), assemblyName: "SLoaded");
+      Assembly assembly = GeneratorHarness.Load(result);
+      LtMsgPackContext context = (LtMsgPackContext)assembly.GetType("SLoaded.Context").GetProperty("Default").GetValue(null);
+      Type rootType = assembly.GetType("SLoaded.Root");
+      Type vecType = assembly.GetType("SLoaded.Vec");
+      object vec = Activator.CreateInstance(vecType);
+      vecType.GetProperty("X").SetValue(vec, 1.5f);
+      vecType.GetProperty("Y").SetValue(vec, -2f);
+      vecType.GetProperty("Maybe").SetValue(vec, (int?)7);
+      object root = Activator.CreateInstance(rootType);
+      rootType.GetProperty("V").SetValue(root, vec);
+      rootType.GetProperty("Target").SetValue(root, vec);
+      rootType.GetProperty("P").SetValue(root, Activator.CreateInstance(assembly.GetType("SLoaded.Pair"), 3, "three"));
+      System.Collections.IList path = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(vecType));
+      path.Add(vec);
+      path.Add(Activator.CreateInstance(vecType));
+      rootType.GetProperty("Path").SetValue(root, path);
+
+      foreach (bool schema in new[] { false, true })
+        foreach (LsMsgPack.ObjectLayout layout in new[] { LsMsgPack.ObjectLayout.Array, LsMsgPack.ObjectLayout.Map })
+          foreach (bool trim in new[] { false, true })
+          {
+            LtMsgPackOptions options = new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false };
+            LtMsgPackSerializer runtime = new LtMsgPackSerializer(options);
+            options.Contexts = new[] { context };
+            LtMsgPackSerializer generated = new LtMsgPackSerializer(options);
+            string what = $"schema={schema} {layout} trim={trim}";
+            byte[] expected = runtime.Serialize(root, rootType);
+            CollectionAssert.AreEqual(expected, generated.Serialize(root, rootType), what + ": bytes");
+            // Against the runtime's reading: not always the original (Counter's constructor sets Count, which trimming may leave out)
+            CollectionAssert.AreEqual(runtime.Serialize(runtime.Deserialize(rootType, expected), rootType), runtime.Serialize(generated.Deserialize(rootType, expected), rootType), what + ": values");
+          }
+    }
+
     [TestMethod]
     public void NonPublic_All_ByMsBuildProperty()
     {
@@ -444,7 +551,9 @@ namespace M
       Assert.Contains("Object<global::M.Outer.Inner>(", code);
       Assert.Contains("Collection<global::System.Collections.Generic.HashSet<long>>(", code);
       Assert.Contains("Array<global::M.Point>()", code);
-      Assert.Contains("Boxed<global::M.Point>()", code);
+      Assert.Contains("Struct<global::M.Point>(null, new LtMsgPackCode", code);
+      Assert.Contains("StructProperty<global::M.Point, int>(\"X\", (ref global::M.Point o) => o.X, (ref global::M.Point o, int v) => o.X = v)", code);
+      Assert.Contains("GeneratedStructCode<global::M.Point>", code);
       Assert.Contains("Nullable<global::M.Point>()", code);
       Assert.Contains("Object<global::M.IShape>(null, null)", code);
       Assert.Contains("Collection<global::System.Collections.Generic.IList<int>>(null)", code);
@@ -452,7 +561,7 @@ namespace M
       Assert.Contains("Boxed<global::System.Collections.Generic.KeyValuePair<string, int>>()", code);
       Assert.Contains("Boxed<object>()", code);
       Assert.DoesNotContain("<byte[]>", code, "bin is not generic");
-      Assert.DoesNotContain("Property<global::M.Point", code, "structs are written and read boxed");
+      Assert.Contains("p.Runtime(t, c, ref o, key, infos[t])", code, "the runtime writes Owner, by reference");
     }
 
     #endregion

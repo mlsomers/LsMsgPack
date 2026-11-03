@@ -87,6 +87,41 @@ namespace LsMsgPackUnitTests
       Assert.IsFalse(IsCompiled<LtsRecord>());
     }
 
+    /// <summary>
+    /// The source generator's default check (GeneratedStructCode.IsDefault), where it writes one, says what Core says.
+    /// </summary>
+    private static void GeneratedSameAsCore<T>(bool generated, params T[] values)
+    {
+      LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions() { UseRegisteredContexts = false, Contexts = new LtMsgPack.LtMsgPackContext[] { TestMsgPackContext.Default } });
+      object serializer = typeof(LtMsgPackSerializer).GetField("_serializer", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(lt);
+      LtMsgPack.Generated.GeneratedStructCode<T> code = (LtMsgPack.Generated.GeneratedStructCode<T>)serializer.GetType().GetMethod("GeneratedCode", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(serializer, new object[] { typeof(T) });
+      LtMsgPack.Generated.GeneratedCapabilities capabilities = (LtMsgPack.Generated.GeneratedCapabilities)typeof(LtMsgPack.Generated.GeneratedObjectCode).GetField("Capabilities", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(code);
+      Assert.AreEqual(generated, (capabilities & LtMsgPack.Generated.GeneratedCapabilities.IsDefault) != 0, typeof(T).Name + ": a generated default check");
+      for (int t = 0; generated && t < values.Length; t++)
+      {
+        T value = values[t];
+        Assert.AreEqual(Activator.CreateInstance(typeof(T)).Equals(values[t]), code.IsDefault(ref value), $"{typeof(T).Name} #{t}");
+      }
+    }
+
+    [TestMethod]
+    public void DefaultCheck_Generated_SameAsValueTypeEquals()
+    {
+      GeneratedSameAsCore(true, default(LtsFloats), new LtsFloats { X = -0f }, new LtsFloats { Y = -0.0 }, new LtsFloats { X = float.NaN }, new LtsFloats { Y = double.NaN }, new LtsFloats { X = 1 }, new LtsFloats { Y = double.Epsilon });
+      GeneratedSameAsCore(true, default(LtsPadded), new LtsPadded { A = 1 }, new LtsPadded { B = -1 });
+      GeneratedSameAsCore(true, default(LtsRefs), new LtsRefs { S = "" }, new LtsRefs { Items = new int[0] });
+      GeneratedSameAsCore(true, default(LtsNested), new LtsNested { N = 0 }, new LtsNested { Inner = new LtsFloats { X = -0f } }, new LtsNested { Inner = new LtsFloats { Y = 2 } }, new LtsNested { Kind = LtsKind.Some }, new LtsNested { Flag = true }, new LtsNested { C = 'c' });
+      GeneratedSameAsCore(true, default(LtsFramework), new LtsFramework { M = 0.00m }, new LtsFramework { M = 0.01m }, new LtsFramework { D = new DateTime(0, DateTimeKind.Local) }, new LtsFramework { D = new DateTime(1) },
+        new LtsFramework { G = Guid.NewGuid() }, new LtsFramework { T = TimeSpan.FromTicks(-1) }, new LtsFramework { O = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) });
+      GeneratedSameAsCore(true, default(LtsEquatable), new LtsEquatable { A = 1 });
+      GeneratedSameAsCore(true, default(LtsRecord), new LtsRecord(0, ""), new LtsRecord(1, null), new LtsRecord(0, null));
+      GeneratedSameAsCore(true, default(LtsVec), new LtsVec { Z = -0f }, new LtsVec { X = 1, Y = -1 });
+      GeneratedSameAsCore(true, default(LtsTree), new LtsTree { Holder = new LtsHolder() });
+      GeneratedSameAsCore<LtsTens>(false); // its own Equals: compared as Core does
+      GeneratedSameAsCore<LtsHoldsTens>(false); // a field with its own Equals
+      GeneratedSameAsCore<LtsWithConstructor>(false); // Core's default is what its constructor makes
+    }
+
     [TestMethod]
     public void Structs_GetTypedPlans()
     {
@@ -104,13 +139,20 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    public void Structs_ByRefPlans()
+    [DataRow(false)]
+    [DataRow(true)]
+    public void Structs_ByRefPlans(bool generated)
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions() { UseRegisteredContexts = false });
+      LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions() { UseRegisteredContexts = false, Contexts = generated ? new LtMsgPack.LtMsgPackContext[] { TestMsgPackContext.Default } : null });
       object serializer = typeof(LtMsgPackSerializer).GetField("_serializer", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(lt);
       MethodInfo plan = serializer.GetType().GetMethod("Plan", BindingFlags.Instance | BindingFlags.NonPublic);
       MethodInfo readPlan = serializer.GetType().GetMethod("GetReadPlan", BindingFlags.Instance | BindingFlags.NonPublic);
-      bool WritesByRef(Type type, bool names) { object p = plan.Invoke(serializer, new object[] { type, names }); return (bool)p.GetType().GetField("ByRef", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(p); }
+      bool WritesByRef(Type type, bool names)
+      {
+        object p = plan.Invoke(serializer, new object[] { type, names });
+        Assert.AreEqual(generated, p.GetType().GetField("GeneratedPlan", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(p) != null, type.Name + ": the generated writer");
+        return (bool)p.GetType().GetField("ByRef", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(p);
+      }
       bool ReadsByRef(Type type) { object p = readPlan.Invoke(serializer, new object[] { type }); return (bool)p.GetType().GetField("ByRef", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(p); }
 
       foreach (Type type in new[] { typeof(LtsFloats), typeof(LtsNested), typeof(LtsVec), typeof(LtsTree) })
@@ -130,7 +172,9 @@ namespace LsMsgPackUnitTests
     /// A struct as the root value is boxed once per call (the public Deserialize and Serialize take the root as an object).
     /// </summary>
     [TestMethod]
-    public void Structs_NoAllocation()
+    [DataRow(false)]
+    [DataRow(true)]
+    public void Structs_NoAllocation(bool generated)
     {
       LtsMover moving = new LtsMover { Name = "m", Position = new LtsVec { X = 1, Y = 2, Z = 3 }, Velocity = new LtsVec { Z = -0.5f }, Target = new LtsVec { Y = 4 }, Path = new List<LtsVec> { new LtsVec { X = 1 }, new LtsVec { Y = 2 } }, Points = new[] { new LtsVec { Z = 9 } } };
       LtsMover resting = new LtsMover { Name = "m", Target = default(LtsVec), Path = new List<LtsVec> { default(LtsVec), default(LtsVec) }, Points = new[] { default(LtsVec) } };
@@ -141,8 +185,9 @@ namespace LsMsgPackUnitTests
         {
           foreach (bool trim in new[] { false, true })
           {
-            LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false });
-            string setting = $"schema {schema}, {layout}, trim {trim}";
+            LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false,
+              Contexts = generated ? new LtMsgPack.LtMsgPackContext[] { TestMsgPackContext.Default } : null });
+            string setting = $"schema {schema}, {layout}, trim {trim}, generated {generated}";
 
             for (int t = 0; t < 3; t++) // warm up (plans, contexts, the stream's capacity)
             {
@@ -181,14 +226,17 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    public void Structs_RoundTrip()
+    [DataRow(false)]
+    [DataRow(true)]
+    public void Structs_RoundTrip(bool generated)
     {
       foreach (bool schema in new[] { false, true })
       {
         foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
         {
-          LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false });
-          string setting = $"schema {schema}, {layout}";
+          LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
+            Contexts = generated ? new LtMsgPack.LtMsgPackContext[] { TestMsgPackContext.Default } : null });
+          string setting = $"schema {schema}, {layout}, generated {generated}";
 
           // A struct holding a class holding the same struct type: each value has its own box
           LtsTree tree = new LtsTree { V = 1, Holder = new LtsHolder { Name = "h", Inner = new LtsTree { V = 2, Holder = new LtsHolder { Name = "leaf" } } } };

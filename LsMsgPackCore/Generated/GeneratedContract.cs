@@ -15,7 +15,7 @@ namespace LsMsgPack.Generated
     /// <summary>
     /// The version the generator of this release writes.
     /// </summary>
-    public const int Current = 2; // 2: ReadPositional sets the value of a nil (October 2026)
+    public const int Current = 3; // 2: ReadPositional sets the value of a nil (October 2026); 3: structs (GeneratedValues.Struct, GeneratedStructCode, November 2026)
 
     /// <summary>
     /// The oldest version of generated code this runtime still uses.

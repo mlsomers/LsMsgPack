@@ -287,7 +287,7 @@ namespace LtMsgPack.Generator
               walker.AddRoot(attribute.ConstructorArguments[0].Value as ITypeSymbol, null);
         }
 
-        if (type.TypeKind != TypeKind.Class || type.IsStatic || type.IsGenericType || !type.CanBeReferencedByName || type.IsImplicitlyDeclared
+        if ((type.TypeKind != TypeKind.Class && type.TypeKind != TypeKind.Struct) || type.IsRefLikeType || type.IsStatic || type.IsGenericType || !type.CanBeReferencedByName || type.IsImplicitlyDeclared
           || DerivesFrom(type, contextBase) || (exception != null && DerivesFrom(type, exception)) || (attributeType != null && DerivesFrom(type, attributeType))
           || (jsonContext != null && DerivesFrom(type, jsonContext)))
           continue;

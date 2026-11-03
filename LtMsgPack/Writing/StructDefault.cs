@@ -40,10 +40,12 @@ namespace LtMsgPack.Writing
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2090", Justification = TrimReasons.ModelTypes)]
-    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only used where the runtime supports dynamic code (Serializer.CanBindDelegates), a failure compares boxed.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only compiled where the runtime supports dynamic code (PropertyAccessor.CanCompile), a failure compares boxed.")]
     private static RefPredicate<T> Create()
     {
       Type type = typeof(T);
+      if (!PropertyAccessor.CanCompile) // without dynamic code (NativeAOT, a generated struct) expressions are interpreted: compare as Core does
+        return IsDefaultBoxed;
       if (!type.IsValueType || OwnEquals(type) || type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null) // Core's default is what that constructor makes
         return IsDefaultBoxed;
       try

@@ -45,9 +45,9 @@ or in code:
 
 | `Include` | The roots |
 |---|---|
-| `AllTypes` | Every class of the assembly with public properties, that the generated code can access (public and internal) |
-| `Serializable` | Classes marked `[Serializable]` (as for the XmlSerializer's sgen and the binary formatters), not exceptions |
-| `DataContract` | Classes marked `[DataContract]` |
+| `AllTypes` | Every class and struct of the assembly with public properties, that the generated code can access (public and internal) |
+| `Serializable` | Classes and structs marked `[Serializable]` (as for the XmlSerializer's sgen and the binary formatters), not exceptions |
+| `DataContract` | Classes and structs marked `[DataContract]` |
 | `JsonSerializable` | The types of System.Text.Json's source generation: every `[JsonSerializable(typeof(...))]` in the assembly |
 
 These go into one generated context per assembly: `GeneratedMsgPackContext` in the project's root namespace. Name it yourself with `<LtMsgPackContextName>MyApp.Serialization.MsgPackContext</LtMsgPackContextName>` or `ContextName`. The assembly attribute wins over the MSBuild properties.
@@ -88,10 +88,10 @@ The context of the constructor is asked first, then the options' contexts, then 
 
 ## What it writes, and what it leaves to the runtime
 
-For each class:
+For each class and struct:
 
 1. **Accessors and creators:** a typed getter and setter per property, `new T()` for an accessible parameterless constructor, and the generic handlers and readers of each type (enums, nullables, lists, arrays, objects) created without `MakeGenericType`. The runtime uses them wherever it would have used reflection, with every option.
-2. **Writers and readers per class:** the loop over the properties, with the values of simple types written and read inline: strings, numbers, `bool`, `char`, enums, `Guid`, `DateTime`, `TimeSpan`, `decimal`, and nullables of those. When the runtime's property order is the one the generator predicted (the default `PropertyOrder.Reflection`), objects in the array layout are written by straight-line code. Otherwise a loop maps each property position to its generated member, so every `PropertyOrder` works.
+2. **Writers and readers per class and struct:** the loop over the properties, with the values of simple types written and read inline: strings, numbers, `bool`, `char`, enums, `Guid`, `DateTime`, `TimeSpan`, `decimal`, and nullables of those. When the runtime's property order is the one the generator predicted (the default `PropertyOrder.Reflection`), objects in the array layout are written by straight-line code. Otherwise a loop maps each property position to its generated member, so every `PropertyOrder` works.
 
 The runtime checks once per class and serializer whether the generated code fits the options. Where it doesn't, the runtime does that part itself, as it does without the generator:
 
@@ -100,8 +100,10 @@ The runtime checks once per class and serializer whether the generated code fits
 - Properties with `[DefaultValue]`, nested objects and collections (written and read by the runtime, which then uses the generated code of their class).
 - Values in another format than expected (an `int` written as a string, a number out of range): the runtime converts them, or throws, exactly as without the generator.
 - Collecting `ReadDifferences` and `ReadErrors` other than `FailFast`.
-- Properties the generated code can't reach: `init`-only setters, non-public accessors without `UnsafeAccessor` (before .NET 8, of generic classes, virtual properties) or that `NonPublicProperties` doesn't cover (set by reflection, reported as info `LTMP004`), private types, structs (the runtime writes and reads them: in place with typed accessors on .NET, boxed and by reflection without dynamic code such as NativeAOT).
+- Properties the generated code can't reach: `init`-only setters, non-public accessors without `UnsafeAccessor` (before .NET 8, of generic classes, virtual properties) or that `NonPublicProperties` doesn't cover (set by reflection, reported as info `LTMP004`), private types.
 - A class that changed since its code was generated (a model in another assembly that was updated on its own): a property is only used when its declaring type, name and type still match. New properties are done by reflection.
+
+**Structs** are written and read in place: the generated accessors and code take the struct by reference, so a struct value is neither copied nor boxed, also in trimmed and NativeAOT apps (without the generator those box each struct value and use reflection). A struct as the root value of a call is still boxed once. A struct without a declared parameterless constructor is read into its default value; one that declares a parameterless constructor (C# 10) is created by it, in a box. The `init` properties of a struct (a `readonly record struct`) are written by the generated code and set by reflection when read, in a box (info `LTMP004`).
 
 ## Versions
 

@@ -108,6 +108,9 @@ namespace LtMsgPack.Generator
   {
     /// <summary>A class, abstract class or interface: accessors of the properties it declares, its constructor</summary>
     Object,
+
+    /// <summary>A struct: accessors of its properties by reference, its declared parameterless constructor</summary>
+    Struct,
     Enum,
 
     /// <summary>T? (<see cref="TypeModel.Argument"/> is T)</summary>
@@ -155,7 +158,8 @@ namespace LtMsgPack.Generator
     bool Unrolled, // kept by the default static filters (the unrolled writer)
     bool HasDefaultValue, // [DefaultValue]: a nil in the array layout may be its value (PropReader.ReadNil), otherwise it is default(T)
     bool UnsafeGet = false, // CanGet through an UnsafeAccessor (a non-public getter)
-    bool UnsafeSet = false);
+    bool UnsafeSet = false,
+    bool ByRef = false); // declared by a struct: the generated code has it by reference
 
   internal sealed record TypeModel(
     TypeModelKind Kind,
@@ -164,9 +168,10 @@ namespace LtMsgPack.Generator
     bool HasCreator,
     bool KeepMetadata, // its properties and constructors are kept by the trimmer (DynamicDependency)
     EquatableArray<PropertyModel> Properties,
-    EquatableArray<MemberModel> Members, // the generated writer and reader (concrete classes), empty when there is none
+    EquatableArray<MemberModel> Members, // the generated writer and reader (concrete classes, structs), empty when there is none
     string Factory = null, // Collection: the static method that creates the immutable or frozen collection from its elements (with its type arguments), null for others
-    bool KeepNonPublic = false); // KeepMetadata also keeps its non-public properties (it declares some the runtime may serialize)
+    bool KeepNonPublic = false, // KeepMetadata also keeps its non-public properties (it declares some the runtime may serialize)
+    string IsDefault = null); // Struct: the default check of FilterDefaultValues over "v" (a C# expression), null when the runtime compares
 
   /// <summary>
   /// A context class: one written by the user (with LtMsgPackSerializable attributes), or the one of the assembly (LtMsgPackGenerate, MSBuild properties).
