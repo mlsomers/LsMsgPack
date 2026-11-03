@@ -20,7 +20,7 @@
 
 Tests:
 - `LsMsgPackNetStandardUnitTests` (`LsMsgPackUnitTests`): most test classes run against both serializers (an `Ls...` and an `Lt...` subclass each), `CrossLibraryTests` checks that they write the same bytes in all settings, and `BenchmarkInvoices` compares them with System.Text.Json.
-- `LsMsgPackInteropTests`: what MessagePack-CSharp and Nerdbank.MessagePack read of our output and the other way around, the source of [Compatibility.md](Compatibility.md).
+- `LsMsgPackInteropTests`: what MessagePack-CSharp and Nerdbank.MessagePack read of our output and the other way around, the source of [Compatibility.md](Compatibility.md); `BenchmarkLibraries` compares the speed with them, the source of [Comparison.md](Comparison.md).
 - `LsMsgPackFormattersTests`, `LsMsgPackWebApiFormattersTests`, `LsMsgPackMvcTests`: the web formatters, in process.
 - `LsMsgPackVsCode/test`: the VS Code extension (`npm test`): reading bytes from debuggers, text formats, and the inspector process.
 

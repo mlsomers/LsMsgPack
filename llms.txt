@@ -23,6 +23,7 @@ Key facts:
 - [Web formatters](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/WebFormatters.md): ASP.NET Core, Web API 2 / HttpClient and MVC 5 formatters, settings per media type, schema negotiation
 - [Schema, type ids and polymorphism](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/schema.md): how objects look on the wire, the indexed schema, type ids, what each option costs
 - [Compatibility](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Compatibility.md): settings to exchange data with MessagePack-CSharp, Nerdbank.MessagePack, Python, JavaScript and others, tested by the interop tests
+- [Comparison](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Comparison.md): LtMsgPack vs MessagePack-CSharp vs Nerdbank.MessagePack, benchmarks in each library's fastest setup and when to pick which
 - [Source generator](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/SourceGenerator.md): compile-time plans for NativeAOT, WebAssembly AOT, iOS and trimming
 - [Streaming](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Streaming.md): MsgPackStreamWriter and MsgPackStreamReader, values of unknown length, tables with one schema, async reading
 - [Data readers](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/DataReader.md): LtMsgPack.Data, ADO.NET result sets and table dumps as MsgPack streams, dumps read back as a DbDataReader

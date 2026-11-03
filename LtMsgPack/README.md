@@ -72,6 +72,7 @@ options.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(IShape));
 - [The source generator](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md): NativeAOT, WebAssembly AOT, trimming, speed
 - [Wire formats, the indexed schema and polymorphism](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md)
 - [Compatibility with other MsgPack libraries](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Compatibility.md)
+- [LtMsgPack vs MessagePack-CSharp vs Nerdbank.MessagePack](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Comparison.md): benchmarks, and when to pick which
 - [Security](https://github.com/mlsomers/LsMsgPack/blob/master/docs/security.md)
 - [Streaming](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Streaming.md): `MsgPackStreamWriter` and `MsgPackStreamReader`, values one after another, arrays and maps of unknown length, an index at the end of the stream to go to any table or row
 - [Reporting differences](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ReadDifferences.md): what didn't match between the data and your classes (`serializer.Deserialize<T>(data, out ReadDifferences differences)`)
