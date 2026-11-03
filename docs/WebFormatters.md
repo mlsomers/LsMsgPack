@@ -6,7 +6,7 @@ Three packages let controllers receive and return MsgPack the same way they hand
 |---|---|---|---|
 | [ASP.NET Core](#aspnet-core) MVC / Web API controllers, [minimal APIs](#minimal-apis) | `LsMsgPack.AspNetCore` | ASP.NET Core 2.x (netstandard2.0, also on .NET Framework) and ASP.NET Core 3.0 and up (net8.0) | `LsMsgPackFormatters` |
 | [ASP.NET Web API 2](#aspnet-web-api-2) (`System.Web.Http`) | `LsMsgPack.AspNet.WebApi` | netstandard2.0 (Web API 2 runs on .NET Framework) | `LsMsgPackWebApiFormatters` |
-| [HttpClient](#httpclient) (`ObjectContent` / `ReadAsAsync`, [streams](#streams-with-httpclient)) | `LsMsgPack.AspNet.WebApi` | netstandard2.0 and 2.1 (`IAsyncEnumerable`), any platform | `LsMsgPackWebApiFormatters` |
+| [HttpClient](#httpclient) (`GetFromMsgPackAsync` / `PostAsMsgPackAsync`, `ObjectContent` / `ReadAsAsync`, [streams](#streams-with-httpclient)) | `LsMsgPack.AspNet.WebApi` | netstandard2.0 and 2.1 (`IAsyncEnumerable`), any platform | `LsMsgPackWebApiFormatters` |
 | [ASP.NET MVC 5](#aspnet-mvc-5) (`System.Web.Mvc`) | `LsMsgPack.AspNet.Mvc` | .NET Framework 4.6.2+ | `LsMsgPackMvc` |
 
 All of them depend on the `LtMsgPack` package (and through it `LsMsgPack.Core`) and speak exactly the same wire formats, so an HttpClient using the Web API formatter can talk to an ASP.NET Core server, for example.
@@ -230,23 +230,36 @@ HttpClient
 The same package works on the client side, on any platform (.NET Framework, .NET, MAUI, Avalonia and so on). It builds on `System.Net.Http.Formatting` (the `Microsoft.AspNet.WebApi.Client` package):
 
 ```csharp
-using LsMsgPack;
 using LsMsgPackWebApiFormatters;
-using System.Net.Http.Formatting;
-using System.Net.Http.Headers;
 
 LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter(); // trimmed or AOT apps: new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options))
 HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = new Uri("https://example.com/") }; // keep both for the lifetime of the app
 
+Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
+
+HttpResponseMessage response = await client.PostAsMsgPackAsync("api/orders", order, formatter); // also PutAsMsgPackAsync, PatchAsMsgPackAsync
+response.EnsureSuccessStatusCode();
+Order saved = await response.Content.ReadFromMsgPackAsync<Order>(formatter);
+```
+
+The helpers (`MsgPackHttpClientExtensions`) work like `GetFromJsonAsync`, `PostAsJsonAsync` and `ReadFromJsonAsync` of System.Net.Http.Json:
+- They send `MsgPackHttpClientExtensions.Accept` (`application/x-lsmsgpack, application/msgpack; q=0.9`) when neither the request nor `client.DefaultRequestHeaders` has an `Accept` header.
+- `PostAsMsgPackAsync` (and `Put`, `Patch`) send the value as `application/x-lsmsgpack`, with the declared type `T`, and return the response without checking its status code.
+- `GetFromMsgPackAsync` throws an `HttpRequestException` for a status code outside 200-299. It and `ReadFromMsgPackAsync` throw a `NotSupportedException` for a body that isn't MsgPack (JSON) or is a [stream](#streams-with-httpclient), and a `MsgPackException` for a body that can't be read as `T`. An empty body (`204 No Content`) gives `default(T)`.
+- With [`ReportDifferences`](#reporting-differences), read the response with `ReadFromMsgPackAsync` and then call `response.GetReadDifferences()`: `GetFromMsgPackAsync` disposes the response.
+
+For another media type or your own request, use the formatter directly:
+
+```csharp
 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "api/orders")
 {
-  Content = new ObjectContent<Order>(order, formatter, MsgPackMediaTypes.XLsMsgPack)
+  Content = new ObjectContent<Order>(order, formatter, MsgPackMediaTypes.MsgPack)
 };
 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack));
 
 HttpResponseMessage response = await client.SendAsync(request);
 response.EnsureSuccessStatusCode();
-Order result = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
+Order result = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter }); // or ReadFromMsgPackAsync<Order>(formatter)
 ```
 
 Notes:
@@ -254,9 +267,9 @@ Notes:
 - With `IHttpClientFactory`, which sets the inner handler itself and refuses a handler that has one, add `formatter.CreateDelegatingHandler()` (`CreateDelegatingHandler(true)` for version 2 of the schema): `services.AddHttpClient("api").AddHttpMessageHandler(() => formatter.CreateDelegatingHandler());`. Keep the formatter as a singleton: the handlers the factory creates (one per handler lifetime) share its schemas.
 - `formatter.CreateHandler(true)` (`LsMsgPackSchemaHandler.RequestDescribedSchemas`) also asks for [version 2 of the schema](#schema-version-2-for-clients-without-the-classes), for a client whose classes differ from the server's (other names or namespaces, e.g. an SDK with its own models): the reader then pairs its classes with the server's by the declared types (see [schema.md](schema.md)).
 - Without an explicit media type, `ObjectContent` uses the formatter's first media type, `application/msgpack` (plain MsgPack).
-- Set the `Accept` header, or the server will probably answer with JSON.
+- Without the helpers, set the `Accept` header, or the server will probably answer with JSON.
 - `HttpClientHandler` doesn't ask for [compressed responses](#response-compression) by default, and the handler `CreateHandler()` makes doesn't either. Pass one that does: `formatter.CreateHandler(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate })` (`DecompressionMethods.All` on .NET Core 3.0 and up, which adds Brotli). With `IHttpClientFactory`, set it in `ConfigurePrimaryHttpMessageHandler`.
-- On the client side, a response that can't be deserialized throws from `ReadAsAsync` instead of being logged.
+- On the client side, a response that can't be deserialized throws from `ReadFromMsgPackAsync` or `ReadAsAsync` instead of being logged.
 - Use the same `XLsMsgPack` options on the client and the server for `application/x-lsmsgpack` (at least the same `UseInexedSchema`).
 
 ### Streams with HttpClient
@@ -378,7 +391,7 @@ builder.Services.AddControllers()
 |---|---|---|
 | ASP.NET Core | `HttpContext.GetReadDifferences()` (in `HttpContext.Features`) | Through `ILogger` (category `LsMsgPackFormatters.LsMsgPackInputFormatter`), with the report: at the `Debug` level, or as a warning with `LogDifferencesAsWarning` |
 | Web API 2 | `Request.GetReadDifferences()` in the controller | No |
-| HttpClient | `response.GetReadDifferences()` (or `content.GetReadDifferences()`) after `ReadAsAsync` | No |
+| HttpClient | `response.GetReadDifferences()` (or `content.GetReadDifferences()`) after `ReadFromMsgPackAsync` or `ReadAsAsync` | No |
 | MVC 5 | `HttpContext.GetReadDifferences()` in the controller | No |
 
 Values that can't be read (a string where an `int` is declared...) fail the request by default. Set `ReadErrors` on the options of the media type to skip them instead (`o.XLsMsgPack.ReadErrors = ReadErrorHandling.ReportAndContinue`, they're then reported with the other differences), or to fail with all of them at once (`FailDeferred`, the message in the `ModelState` has the complete report), see [ReadDifferences.md](ReadDifferences.md#values-that-cant-be-read-readerrors).

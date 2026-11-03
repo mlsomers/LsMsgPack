@@ -119,7 +119,11 @@ namespace LsMsgPack.AnalyzerTests
       references.Add(MetadataReference.CreateFromFile(typeof(MsgPackOptions).Assembly.Location));
       references.Add(MetadataReference.CreateFromFile(typeof(LtMsgPack.LtMsgPackSerializer).Assembly.Location));
       if (formatters)
+      {
         references.Add(MetadataReference.CreateFromFile(typeof(LsMsgPackFormatters.LsMsgPackInputFormatter).Assembly.Location));
+        references.Add(MetadataReference.CreateFromFile(typeof(LsMsgPackWebApiFormatters.LsMsgPackMediaTypeFormatter).Assembly.Location)); // HttpClient
+        references.Add(MetadataReference.CreateFromFile(typeof(System.Net.Http.Formatting.MediaTypeFormatter).Assembly.Location));
+      }
       return references.ToArray();
     }
 

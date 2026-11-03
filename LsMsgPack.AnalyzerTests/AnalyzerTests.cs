@@ -577,6 +577,39 @@ public static class Endpoints
     }
 
     /// <summary>
+    /// HttpClient with the Web API package: the type arguments of ReadAsAsync, GetFromMsgPackAsync, ReadFromMsgPackAsync and GetFromMsgPackAsAsyncEnumerable are read, of PostAsMsgPackAsync (and Put, Patch) written.
+    /// </summary>
+    [TestMethod]
+    public void HttpClient_Helpers()
+    {
+      string source = Usings + @"
+using System.Net.Http;
+using System.Net.Http.Formatting;
+using System.Threading.Tasks;
+using LsMsgPackWebApiFormatters;
+public class Order { public int Copies { get; set; } = 1; }
+public class Line { public int Quantity { get; set; } = 1; }
+public class Problem { public int Code { get; set; } = 400; }
+public class Export { public int Version { get; set; } = 1; }
+public class Legacy { public int Level { get; set; } = 2; }
+public class Untouched { public int Size { get; set; } = 3; }
+public static class Api
+{
+  public static async Task Call(HttpClient client, LsMsgPackMediaTypeFormatter formatter)
+  {
+    Order order = await client.GetFromMsgPackAsync<Order>(""orders/1"", formatter);
+    HttpResponseMessage response = await client.PostAsMsgPackAsync(""lines"", new Line(), formatter);
+    await response.Content.ReadFromMsgPackAsync<Problem>(formatter);
+    await foreach (Export export in client.GetFromMsgPackAsAsyncEnumerable<Export>(""export"", formatter)) { }
+    await response.Content.ReadAsAsync<Legacy>(new MediaTypeFormatter[] { formatter });
+    await client.GetAsync(""untouched/"" + nameof(Untouched));
+  }
+}
+";
+      AssertDiagnostics(Analyze(source, formatters: true), "LSMP001 Copies", "LSMP001 Quantity", "LSMP001 Code", "LSMP001 Version", "LSMP001 Level");
+    }
+
+    /// <summary>
     /// Without the formatters MsgPackBody and MsgPackResult are other classes.
     /// </summary>
     [TestMethod]

@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Tests of LsMsgPack.Analyzers and its code fixes: source text compiled against the libraries (and the ASP.NET Core formatters), the diagnostics and the fixed text -->
+  <!-- Tests of LsMsgPack.Analyzers and its code fixes: source text compiled against the libraries (and the ASP.NET Core and HttpClient formatters), the diagnostics and the fixed text -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <OutputType>Library</OutputType>
@@ -23,6 +23,7 @@
     <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
     <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
     <ProjectReference Include="..\LsMsgPackFormatters\LsMsgPackFormatters.csproj" />
+    <ProjectReference Include="..\LsMsgPackWebApiFormatters\LsMsgPackWebApiFormatters.csproj" />
   </ItemGroup>
 
 </Project>

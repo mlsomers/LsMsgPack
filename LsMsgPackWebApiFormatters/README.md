@@ -1,6 +1,6 @@
 # LsMsgPack.AspNet.WebApi
 
-MsgPack `MediaTypeFormatter` for ASP.NET Web API 2 and for `HttpClient` (`ObjectContent` / `ReadAsAsync`) on any platform. Serializing is done by [LtMsgPack](https://www.nuget.org/packages/LtMsgPack), which reads and writes several times faster than System.Text.Json.
+MsgPack `MediaTypeFormatter` for ASP.NET Web API 2 and for `HttpClient` (`GetFromMsgPackAsync` / `PostAsMsgPackAsync`, or `ObjectContent` / `ReadAsAsync`) on any platform. Serializing is done by [LtMsgPack](https://www.nuget.org/packages/LtMsgPack), which reads and writes several times faster than System.Text.Json.
 
 It speaks the same formats as [LsMsgPack.AspNetCore](https://www.nuget.org/packages/LsMsgPack.AspNetCore) and [LsMsgPack.AspNet.Mvc](https://www.nuget.org/packages/LsMsgPack.AspNet.Mvc), so a client using this package can talk to a server using either of them.
 
@@ -26,21 +26,20 @@ Web API's content negotiation handles the rest, based on the `Content-Type` and 
 ## HttpClient
 
 ```csharp
-using LsMsgPack;
 using LsMsgPackWebApiFormatters;
-using System.Net.Http.Formatting;
-using System.Net.Http.Headers;
 
 // Once, for the lifetime of the app. The handler lets the server stop repeating schemas the client already has.
 LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter();
 HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = new Uri("https://example.com/") };
-client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack));
 
 // Per call
-HttpResponseMessage response = await client.PostAsync("api/orders", new ObjectContent<Order>(order, formatter, MsgPackMediaTypes.XLsMsgPack));
+Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
+HttpResponseMessage response = await client.PostAsMsgPackAsync("api/orders", order, formatter); // also PutAsMsgPackAsync, PatchAsMsgPackAsync
 response.EnsureSuccessStatusCode();
-Order saved = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
+Order saved = await response.Content.ReadFromMsgPackAsync<Order>(formatter);
 ```
+
+The helpers ask for MsgPack (`Accept: application/x-lsmsgpack, application/msgpack; q=0.9`) unless the request or the client has an `Accept` header, and send the body as `application/x-lsmsgpack`. For another media type, use `new ObjectContent<Order>(order, formatter, MsgPackMediaTypes.MsgPack)` and `response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter })` ([details](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#httpclient)).
 
 Lists that the server streams (an ASP.NET Core action returning an `IAsyncEnumerable<T>`) are read as they arrive (.NET Standard 2.1: .NET Core 3.0 and up, MAUI...), and a server that doesn't stream sends the whole list, read the same way:
 

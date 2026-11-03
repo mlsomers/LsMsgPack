@@ -58,23 +58,17 @@ app.MapPost("/api/orders", (MsgPackBody<Order> order) => MsgPackResults.MsgPack(
 ## The client
 
 ```csharp
-using LsMsgPack;
 using LsMsgPackWebApiFormatters;
-using System.Net.Http.Formatting;
-using System.Net.Http.Headers;
 
 // Once, for the lifetime of the app (a static field, or a singleton in your DI container)
 LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter();
 HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = new Uri("https://api.example.com/") };
-client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack));
 
 // Per call
-Order order = await (await client.GetAsync("api/orders/42")).EnsureSuccessStatusCode()
-  .Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
+Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
 
-HttpResponseMessage response = await client.PostAsync("api/orders",
-  new ObjectContent<Order>(newOrder, formatter, MsgPackMediaTypes.XLsMsgPack));
-Order saved = await response.EnsureSuccessStatusCode().Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
+HttpResponseMessage response = await client.PostAsMsgPackAsync("api/orders", newOrder, formatter);
+Order saved = await response.EnsureSuccessStatusCode().Content.ReadFromMsgPackAsync<Order>(formatter);
 ```
 
 A long list, sent while the server reads it (an action returning an `IAsyncEnumerable<Order>`, e.g. an EF Core query with `AsAsyncEnumerable()`), is read item by item as it arrives:
@@ -123,7 +117,7 @@ builder.Services.AddControllers()
 ## Watch out
 
 - **Requests come from the internet**, even if only your app is meant to call the API: anyone can send a request. Avoid `object` properties in request classes, and see [Add-ons](Extras.md#reading-data-you-dont-trust) for the type guard.
-- **Set the `Accept` header**, or the server answers with JSON (which `ReadAsAsync` reads too, but slower and bigger).
+- **Without the helpers, set the `Accept` header** (`GetFromMsgPackAsync` and `PostAsMsgPackAsync` do), or the server answers with JSON (which `ReadAsAsync` reads too, but slower and bigger; `ReadFromMsgPackAsync` refuses it).
 - **Request bodies always carry their schema.** The client can't know whether the server (or the instance behind a load balancer) still holds it, so only responses use references. The server recognizes repeated schemas cheaply.
 - **Dates arrive in UTC** (`Kind = Utc`), as with JSON.
 - Keep one `HttpClient` and one formatter: the formatter remembers the schemas.
