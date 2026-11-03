@@ -41,6 +41,59 @@ namespace LsMsgPack.Meta
       ByName = new Dictionary<string, object>(atts.Length);
       for (int t = atts.Length - 1; t >= 0; t--)
         ByName.TryAdd(atts[t].GetType().Name, atts[t]);
+
+      Type type = property.PropertyType;
+      if (type.IsValueType)
+      {
+        IsNullable = Nullable.GetUnderlyingType(type) != null;
+        if (!IsNullable)
+        {
+          ValueType = type;
+          Default = DefaultKindOf(type.IsEnum ? Enum.GetUnderlyingType(type) : type); // a boxed enum unboxes as its underlying type
+        }
+      }
+    }
+
+    internal PropertyInfo Property { get { return _property; } }
+
+    /// <summary>
+    /// The type of the property when it is a value type other than <see cref="Nullable{T}"/>: its values are boxed as this type, and FilterDefaultValues compares them as <see cref="Default"/> says.
+    /// Null for other properties.
+    /// </summary>
+    internal readonly Type ValueType;
+
+    /// <summary>
+    /// How FilterDefaultValues compares a value of <see cref="ValueType"/> with the default, decided once per property instead of by the type of every value.
+    /// </summary>
+    internal readonly DefaultKind Default;
+
+    /// <summary>
+    /// The property is a <see cref="Nullable{T}"/>.
+    /// </summary>
+    internal readonly bool IsNullable;
+
+    internal enum DefaultKind : byte
+    {
+      Other, Int32, Bool, Int64, Single, Double, Guid, Byte, Int16, UInt16, UInt32, UInt64, SByte, Decimal, DateTime
+    }
+
+    private static DefaultKind DefaultKindOf(Type type)
+    {
+      if (type == typeof(int)) return DefaultKind.Int32;
+      if (type == typeof(bool)) return DefaultKind.Bool;
+      if (type == typeof(long)) return DefaultKind.Int64;
+      if (type == typeof(float)) return DefaultKind.Single;
+      if (type == typeof(double)) return DefaultKind.Double;
+      if (type == typeof(Guid)) return DefaultKind.Guid;
+      if (type == typeof(byte)) return DefaultKind.Byte;
+      if (type == typeof(short)) return DefaultKind.Int16;
+      if (type == typeof(ushort)) return DefaultKind.UInt16;
+      if (type == typeof(uint)) return DefaultKind.UInt32;
+      if (type == typeof(ulong)) return DefaultKind.UInt64;
+      if (type == typeof(sbyte)) return DefaultKind.SByte;
+      if (type == typeof(decimal)) return DefaultKind.Decimal;
+      if (type == typeof(DateTime)) return DefaultKind.DateTime;
+      return DefaultKind.Other;
     }
 
     /// <summary>

@@ -89,7 +89,11 @@ namespace LsMsgPack.TypeResolving.Types
       }
 
       for (int t = 0; t < props.Length; t++)
-        props[t].PropertyId = BoxedId(t);
+      {
+        object id = BoxedId(t);
+        if (!ReferenceEquals(props[t].PropertyId, id)) // the instances of FullPropertyInfo.SharedIndexed have it already (shared by the sessions of several threads)
+          props[t].PropertyId = id;
+      }
       return true;
     }
 
@@ -801,6 +805,8 @@ namespace LsMsgPack.TypeResolving.Types
     /// <exception cref="MsgPackException">When property id resolvers give two properties the same name (as FullPropertyInfo checks the ids)</exception>
     internal void ParseProps(FullPropertyInfo[] props, MsgPackOptions settings)
     {
+      if (Props.Capacity < Props.Count + props.Length)
+        Props.Capacity = Props.Count + props.Length; // one array per entry (every call is a new session)
       bool renamed = false;
       for (int t = 0; t < props.Length; t++)
       {

@@ -1,4 +1,4 @@
-# LsMsgPack (item-tree serializer)
+﻿# LsMsgPack (item-tree serializer)
 
 Assembly and package `LsMsgPack`, on top of `LsMsgPack.Core` (read `../LsMsgPackCore/CLAUDE.md` for the shared format rules). Keeps the items (`MsgPackItem`, `Types/`), the serializer, `Meta/FrameworkTypes.cs`, `MsgPackMeta`. The explorers use it with KEEPTRACK; LtMsgPack writes the same bytes faster.
 
@@ -18,6 +18,6 @@ Assembly and package `LsMsgPack`, on top of `LsMsgPack.Core` (read `../LsMsgPack
 
 ## Performance
 
-Speed relative to System.Text.Json (`BenchmarkInvoices`, 100 invoices × 20 rounds, Release, i7-7700K): write 0.33x (indexed) / 0.38x (reference) / 0.36x (names), read 0.40x / 0.49x / 0.41x (inline schema with a store 0.48x); array layout (the default) write 0.37x (indexed), read 0.54x. Without a `SchemaStore` each call builds its schema session: the static filter results are cached globally and copied, the ids assigned by position.
+Speed relative to System.Text.Json (`BenchmarkInvoices`, 100 invoices × 20 rounds, Release, i7-7700K): write 0.33x (indexed) / 0.38x (reference) / 0.36x (names), read 0.40x / 0.49x / 0.41x (inline schema with a store 0.48x); array layout (the default) write 0.37x (indexed), read 0.54x. Without a `SchemaStore` each call builds its schema session: the static filter results are cached globally, with the ids by position shared by the sessions (see `LsMsgPackCore/CLAUDE.md`, "Resolving the properties of a type").
 
 Ideas not done: the remaining time is the `MsgPackItem` tree (building it, and converting it back). `ConvertMap` builds a dictionary per object to look up property ids; with the schema the keys are indexes that could address an array directly. Every value still becomes an `MsgPackItem` and then a boxed value.

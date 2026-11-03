@@ -259,9 +259,8 @@ namespace LtMsgPack
         object result;
         if (!Options._useInexedSchema)
         {
-          MsgPackOptions slowSettings = differences is null ? Options : Options.WithDifferences(differences);
-          if (!ReferenceEquals(c.SlowSettings, slowSettings))
-            c.SlowSettings = slowSettings;
+          if (!ReferenceEquals(c.SlowSettings, Options))
+            c.SlowSettings = Options;
           result = ReadRoot(c, type);
         }
         else
@@ -308,10 +307,7 @@ namespace LtMsgPack
     {
       c.R.Reset(null, 0, 0); // the data is not kept alive
       if (c.Differences != null)
-      {
-        c.Differences = null;
-        c.SlowSettings = null; // has the differences
-      }
+        c.EndDifferences();
       _threadContext = c; // Bound and SlowSettings are kept: usually the next call has the same
     }
 
@@ -446,10 +442,7 @@ namespace LtMsgPack
       if (!ReferenceEquals(c.Bound, bound))
         c.Bound = bound;
       if (c.Differences != null)
-      {
-        c.Differences.Reset(); // the body is read again when the shared session has to grow
-        c.SlowSettings = sessionSettings.WithDifferences(c.Differences); // the session's settings are shared by calls
-      }
+        c.Differences.Reset(); // the body is read again when the shared session has to grow (ConversionSettings copies the new session's settings)
       return ReadRoot(c, type);
     }
 

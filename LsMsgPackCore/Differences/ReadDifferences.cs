@@ -49,7 +49,7 @@ namespace LsMsgPack
     private readonly MsgPackOptions _settings;
     private readonly List<Difference> _differences = new List<Difference>();
     [NonSerialized]
-    private readonly Dictionary<Key, Difference> _byKey = new Dictionary<Key, Difference>();
+    private Dictionary<Key, Difference> _byKey; // made at the first difference: most reads have none
     [NonSerialized]
     private readonly List<object> _parents = new List<object>();
     private readonly ReadErrorHandling _mode;
@@ -125,7 +125,7 @@ namespace LsMsgPack
     internal void Reset()
     {
       _differences.Clear();
-      _byKey.Clear();
+      _byKey?.Clear();
       _parents.Clear();
       Omitted = 0;
       ErrorCount = 0;
@@ -245,16 +245,24 @@ namespace LsMsgPack
     {
       try
       {
-        object result = read();
-        found.Root = result;
-        if (found.ErrorCount > 0 && found._mode == ReadErrorHandling.FailDeferred)
-          throw new ReadErrorsException(found, found._firstError);
-        return result;
+        return found.Collected(read());
       }
       catch (Exception ex) when (found.AttachTo(ex))
       {
         throw; // not reached, the filter attaches the differences and passes it on as it is
       }
+    }
+
+    /// <summary>
+    /// The end of <see cref="Collect"/> after the read, for callers without its delegate (its closure is an allocation per call): call it in a try with the filter <see cref="AttachTo"/>.
+    /// </summary>
+    /// <exception cref="ReadErrorsException">With <see cref="ReadErrorHandling.FailDeferred"/> when values could not be read</exception>
+    internal object Collected(object result)
+    {
+      Root = result;
+      if (ErrorCount > 0 && _mode == ReadErrorHandling.FailDeferred)
+        throw new ReadErrorsException(this, _firstError);
+      return result;
     }
 
     /// <param name="typeName">The type id in the data (with the indexed schema the writer's class name)</param>
@@ -316,7 +324,8 @@ namespace LsMsgPack
     private Difference Add(Type type, DifferenceKind kind, string name, int position, object sample)
     {
       Key key = new Key(type, kind, name, position);
-      if (!_byKey.TryGetValue(key, out Difference difference))
+      Dictionary<Key, Difference> byKey = _byKey ?? (_byKey = new Dictionary<Key, Difference>());
+      if (!byKey.TryGetValue(key, out Difference difference))
       {
         if (_differences.Count >= MaxDifferences)
         {
@@ -324,7 +333,7 @@ namespace LsMsgPack
           return null;
         }
         difference = new Difference(type, kind, name, position);
-        _byKey.Add(key, difference);
+        byKey.Add(key, difference);
         _differences.Add(difference);
       }
 
