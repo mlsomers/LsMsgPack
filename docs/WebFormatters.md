@@ -238,14 +238,14 @@ HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = ne
 Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
 
 HttpResponseMessage response = await client.PostAsMsgPackAsync("api/orders", order, formatter); // also PutAsMsgPackAsync, PatchAsMsgPackAsync
-response.EnsureSuccessStatusCode();
+await response.EnsureSuccessStatusCodeAsync(); // a MsgPackHttpException with the problem details of an error
 Order saved = await response.Content.ReadFromMsgPackAsync<Order>(formatter);
 ```
 
 The helpers (`MsgPackHttpClientExtensions`) work like `GetFromJsonAsync`, `PostAsJsonAsync` and `ReadFromJsonAsync` of System.Net.Http.Json:
 - They send `MsgPackHttpClientExtensions.Accept` (`application/x-lsmsgpack, application/msgpack; q=0.9`) when neither the request nor `client.DefaultRequestHeaders` has an `Accept` header.
-- `PostAsMsgPackAsync` (and `Put`, `Patch`) send the value as `application/x-lsmsgpack`, with the declared type `T`, and return the response without checking its status code.
-- `GetFromMsgPackAsync` throws an `HttpRequestException` for a status code outside 200-299. It and `ReadFromMsgPackAsync` throw a `NotSupportedException` for a body that isn't MsgPack (JSON) or is a [stream](#streams-with-httpclient), and a `MsgPackException` for a body that can't be read as `T`. An empty body (`204 No Content`) gives `default(T)`.
+- `PostAsMsgPackAsync` (and `Put`, `Patch`) send the value as `application/x-lsmsgpack`, with the declared type `T`, and return the response without checking its status code: `await response.EnsureSuccessStatusCodeAsync()` does.
+- `GetFromMsgPackAsync` and `EnsureSuccessStatusCodeAsync` throw a [`MsgPackHttpException`](#error-responses) for a status code outside 200-299. `GetFromMsgPackAsync` and `ReadFromMsgPackAsync` throw a `NotSupportedException` for a body that isn't MsgPack (JSON, with the start of its text in the message) or is a [stream](#streams-with-httpclient), and a `MsgPackException` for a body that can't be read as `T`. An empty body (`204 No Content`) gives `default(T)`.
 - With [`ReportDifferences`](#reporting-differences), read the response with `ReadFromMsgPackAsync` and then call `response.GetReadDifferences()`: `GetFromMsgPackAsync` disposes the response.
 
 For another media type or your own request, use the formatter directly:
@@ -272,6 +272,31 @@ Notes:
 - On the client side, a response that can't be deserialized throws from `ReadFromMsgPackAsync` or `ReadAsAsync` instead of being logged.
 - Use the same `XLsMsgPack` options on the client and the server for `application/x-lsmsgpack` (at least the same `UseInexedSchema`).
 
+### Error responses
+
+ASP.NET Core answers errors with problem details ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457), `application/problem+json`), also when the request asks for MsgPack: `NotFound()` and the other status code results without a value of an `[ApiController]`, `Problem()`, the automatic `400 Bad Request` of `[ApiController]` for a model that isn't valid (with the `errors` per property), and with `AddProblemDetails()` + `UseExceptionHandler()` an exception. MVC limits these results to the problem details media types, so the MsgPack formatter isn't chosen. A value of your own (`return NotFound(new OrderError(...))`) is negotiated as any value: MsgPack when the request asks for it. A request no endpoint matches gets an empty `404`, or a text with `UseStatusCodePages()`.
+
+A `MsgPackHttpException` (an `HttpRequestException`) has what the body says:
+
+```csharp
+try
+{
+  Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
+}
+catch (MsgPackHttpException ex) when (ex.StatusCode == HttpStatusCode.BadRequest)
+{
+  foreach (KeyValuePair<string, string[]> error in ex.Errors) // the validation errors per property
+    Show(error.Key, error.Value);
+}
+```
+
+- `StatusCode`, `ReasonPhrase` and `ContentType` of the response, and its `Body` (at most the first `MsgPackHttpException.MaxBodyLength` bytes, 64 KiB).
+- `Text`: the body of a text, JSON or XML `Content-Type` (or none) as text, in its charset. Null for MsgPack.
+- `Title`, `Detail`, `ProblemType` (`type`) and `Instance`: the members of problem details, for a JSON body. `Errors`: the `errors` of validation problem details, empty when the body has none.
+- `ReadBody<T>(formatter)` reads a MsgPack body (a value of your own) as `T`.
+- The message is that of `EnsureSuccessStatusCode` with the title, detail and errors, or the start of a text: `Response status code does not indicate success: 400 (Bad Request). One or more validation errors occurred. Customer: The Customer field is required.`
+- On .NET 5 and up the `StatusCode` of `HttpRequestException` is set too, so `catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)` catches it.
+
 ### Streams with HttpClient
 
 An ASP.NET Core action that returns an `IAsyncEnumerable<T>` [streams](#streaming-responses) its items when the request asks for it. The client reads them as they arrive (.NET Standard 2.1: .NET Core 3.0 and up, .NET 5 and up, MAUI...):
@@ -284,7 +309,7 @@ await foreach (Order order in client.GetFromMsgPackAsAsyncEnumerable<Order>("api
 - It sends `MsgPackStreamExtensions.StreamAccept` as the `Accept` header (application/x-lsmsgpack, then application/msgpack, each with `stream=unknown-length` and without), and returns once the headers are there (`HttpCompletionOption.ResponseHeadersRead`). The request is sent when the enumeration starts.
 - A server that doesn't stream (Web API 2, MVC 5, or `WriteStreams = false`) sends the `List<T>` or `T[]` as one body: the same items, read the same way. Nil and an empty body (`204 No Content`) are no items.
 - The schema of the stream's head is learned as the schema of any response: the next requests list it in `MsgPack-Schemas`, and the server refers to it. The handler (`formatter.CreateHandler()`) passes streams through without buffering them. With `CreateHandler(true)` the stream range gets `schema=described` too.
-- A status code outside 200-299 throws an `HttpRequestException`, a response that isn't MsgPack (JSON) a `NotSupportedException`. An exception of the server's source after the first item aborts the response: the enumeration throws, after the items that arrived.
+- A status code outside 200-299 throws a [`MsgPackHttpException`](#error-responses), a response that isn't MsgPack (JSON) a `NotSupportedException`. An exception of the server's source after the first item aborts the response: the enumeration throws, after the items that arrived.
 - `response.ReadFromMsgPackAsAsyncEnumerable<T>(formatter)` reads the items of a response you sent yourself (with `HttpCompletionOption.ResponseHeadersRead`, otherwise HttpClient buffers it first).
 
 Anything else in a stream (several tables, objects of several types, an index; see [Streaming.md](Streaming.md)) is read with a `MsgPackStreamReader`, on .NET Framework too:

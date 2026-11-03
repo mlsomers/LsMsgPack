@@ -68,7 +68,7 @@ HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = ne
 Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
 
 HttpResponseMessage response = await client.PostAsMsgPackAsync("api/orders", newOrder, formatter);
-Order saved = await response.EnsureSuccessStatusCode().Content.ReadFromMsgPackAsync<Order>(formatter);
+Order saved = await (await response.EnsureSuccessStatusCodeAsync()).Content.ReadFromMsgPackAsync<Order>(formatter);
 ```
 
 A long list, sent while the server reads it (an action returning an `IAsyncEnumerable<Order>`, e.g. an EF Core query with `AsAsyncEnumerable()`), is read item by item as it arrives:

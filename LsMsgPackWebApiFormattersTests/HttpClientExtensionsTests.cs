@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -42,11 +43,32 @@ namespace LsMsgPackWebApiFormattersTests
     [HttpGet("stream")]
     public IAsyncEnumerable<Order> GetStream() => StreamingClientTests.OrdersAsync(2);
 
+    [HttpGet("problem")]
+    public IActionResult GetProblem() => Problem("Order 3 is locked.", statusCode: 409, title: "Locked");
+
+    [HttpPost("validate")]
+    public IActionResult Validate(ValidatedOrder order) => Ok(order);
+
+    [HttpGet("notfoundorder")]
+    public IActionResult GetNotFoundOrder() => NotFound(StreamingClientTests.MakeOrder(8));
+
+    [HttpGet("down")]
+    public IActionResult GetDown() => new ContentResult() { StatusCode = 503, Content = "Down for maintenance", ContentType = "text/plain; charset=utf-8" };
+
     private static Order Echo(Order order, string method)
     {
       order.Customer += " " + method;
       return order;
     }
+  }
+
+  public class ValidatedOrder
+  {
+    [Required]
+    public string Customer { get; set; }
+
+    [System.ComponentModel.DataAnnotations.Range(1, 5)]
+    public int Count { get; set; }
   }
 
   [System.Web.Http.RoutePrefix("clientextwebapi")]
@@ -165,7 +187,8 @@ namespace LsMsgPackWebApiFormattersTests
         {
           Assert.That(await client.GetFromMsgPackAsync<Order>("clientext/none", formatter), Is.Null);
           Assert.That(await client.GetFromMsgPackAsync<int>("clientext/none", formatter), Is.EqualTo(0));
-          Assert.ThrowsAsync<HttpRequestException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/missing", formatter)));
+          MsgPackHttpException missing = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/missing", formatter)));
+          Assert.That(missing.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
           Assert.ThrowsAsync<NotSupportedException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/json", formatter)));
 
           HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "clientext/stream");
@@ -175,6 +198,110 @@ namespace LsMsgPackWebApiFormattersTests
           Assert.That(await client.GetFromMsgPackAsync<List<Order>>("clientext/stream", formatter), Has.Count.EqualTo(2), "Not a stream without the parameter");
         }
       }
+    }
+
+    [Test]
+    public async Task ErrorsHaveTheirProblemDetails()
+    {
+      using (IHost host = await StartAspNetCore())
+      {
+        LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter();
+        using (HttpClient client = new HttpClient(formatter.CreateHandler(host.GetTestServer().CreateHandler())) { BaseAddress = new Uri("http://localhost/") })
+        {
+          // NotFound() of an [ApiController]: problem details, JSON although the request asks for MsgPack
+          MsgPackHttpException notFound = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/missingorder", formatter)));
+          Assert.That(notFound.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+          Assert.That(((HttpRequestException)notFound).StatusCode, Is.EqualTo(HttpStatusCode.NotFound), "The one of HttpRequestException (.NET 5+)");
+          Assert.That(notFound.Body, Is.Empty, "No action: an empty 404");
+
+          MsgPackHttpException problem = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/problem", formatter)));
+          Assert.That(problem.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+          Assert.That(problem.ContentType, Does.StartWith("application/problem+json"));
+          Assert.That(problem.Title, Is.EqualTo("Locked"));
+          Assert.That(problem.Detail, Is.EqualTo("Order 3 is locked."));
+          Assert.That(problem.ProblemType, Does.StartWith("https://tools.ietf.org/html/rfc9110"));
+          Assert.That(problem.Errors, Is.Empty);
+          Assert.That(problem.Text, Does.Contain("\"traceId\""));
+          Assert.That(problem.Message, Is.EqualTo("Response status code does not indicate success: 409 (Conflict). Locked Order 3 is locked."));
+          Assert.Throws<NotSupportedException>(new Action(() => problem.ReadBody<Order>(formatter)));
+
+          // The automatic 400 of [ApiController]: validation problem details
+          using (HttpResponseMessage response = await client.PostAsMsgPackAsync("clientext/validate", new ValidatedOrder() { Count = 9 }, formatter))
+          {
+            MsgPackHttpException invalid = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => response.EnsureSuccessStatusCodeAsync()));
+            Assert.That(invalid.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+            Assert.That(invalid.Title, Is.EqualTo("One or more validation errors occurred."));
+            Assert.That(invalid.Errors.Keys, Is.EquivalentTo(new[] { "Customer", "Count" }));
+            Assert.That(invalid.Errors["Customer"], Is.EqualTo(new[] { "The Customer field is required." }));
+            Assert.That(invalid.Message, Does.Contain("One or more validation errors occurred. ").And.Contain("Customer: The Customer field is required."));
+          }
+          using (HttpResponseMessage response = await client.PostAsMsgPackAsync("clientext/validate", new ValidatedOrder() { Count = 9 }, formatter))
+          {
+            NotSupportedException notChecked = Assert.ThrowsAsync<NotSupportedException>(new Func<Task>(() => response.Content.ReadFromMsgPackAsync<ValidatedOrder>(formatter)));
+            Assert.That(notChecked.Message, Does.StartWith("The response is application/problem+json, not MsgPack. It starts with: {").And.Contain("One or more validation errors occurred."));
+          }
+          using (HttpResponseMessage response = await client.PostAsMsgPackAsync("clientext/validate", new ValidatedOrder() { Customer = "c", Count = 2 }, formatter))
+            Assert.That(await response.EnsureSuccessStatusCodeAsync(), Is.SameAs(response));
+
+          // A value of the action: MsgPack, as the request asks
+          MsgPackHttpException withOrder = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/notfoundorder", formatter)));
+          Assert.That(withOrder.ContentType, Does.StartWith(MsgPackMediaTypes.XLsMsgPack));
+          Assert.That(withOrder.Text, Is.Null);
+          Assert.That(withOrder.Title, Is.Null);
+          Assert.That(withOrder.Message, Is.EqualTo("Response status code does not indicate success: 404 (Not Found)."));
+          Assert.That(withOrder.ReadBody<Order>(formatter).Customer, Is.EqualTo("c8"));
+
+          // A text
+          MsgPackHttpException down = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/down", formatter)));
+          Assert.That(down.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
+          Assert.That(down.Text, Is.EqualTo("Down for maintenance"));
+          Assert.That(down.Message, Is.EqualTo("Response status code does not indicate success: 503 (Service Unavailable). Down for maintenance"));
+
+          // Streams
+          MsgPackHttpException streamProblem = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetMsgPackStreamAsync("clientext/problem", formatter)));
+          Assert.That(streamProblem.Detail, Is.EqualTo("Order 3 is locked."));
+        }
+      }
+    }
+
+    [Test]
+    public void ProblemDetailsOfOtherServers()
+    {
+      byte[] Utf8(string text) => System.Text.Encoding.UTF8.GetBytes(text);
+      MsgPackHttpException errorsAsStrings = new MsgPackHttpException(HttpStatusCode.BadRequest, null, "application/json", Utf8("{\"title\":\"Invalid\",\"errors\":{\"name\":\"required\",\"other\":5}}"));
+      Assert.That(errorsAsStrings.Title, Is.EqualTo("Invalid"));
+      Assert.That(errorsAsStrings.Errors, Has.Count.EqualTo(1));
+      Assert.That(errorsAsStrings.Errors["name"], Is.EqualTo(new[] { "required" }));
+      Assert.That(errorsAsStrings.Message, Is.EqualTo("Response status code does not indicate success: 400. Invalid name: required"));
+
+      MsgPackHttpException notJson = new MsgPackHttpException(HttpStatusCode.BadGateway, "Bad Gateway", "application/json", Utf8("<html>proxy error</html>"));
+      Assert.That(notJson.Title, Is.Null);
+      Assert.That(notJson.Text, Is.EqualTo("<html>proxy error</html>"));
+      Assert.That(notJson.Message, Does.EndWith("Bad Gateway). <html>proxy error</html>"));
+
+      MsgPackHttpException latin1 = new MsgPackHttpException(HttpStatusCode.InternalServerError, "Internal Server Error", "text/plain; charset=iso-8859-1", new byte[] { 0x63, 0x61, 0x66, 0xE9 });
+      Assert.That(latin1.Text, Is.EqualTo("caf\u00E9"));
+
+      MsgPackHttpException empty = new MsgPackHttpException(HttpStatusCode.NotFound, "Not Found", null, null);
+      Assert.That(empty.Body, Is.Empty);
+      Assert.That(empty.Text, Is.Null);
+      Assert.That(empty.ReadBody<Order>(new LsMsgPackMediaTypeFormatter()), Is.Null);
+
+      MsgPackHttpException longText = new MsgPackHttpException(HttpStatusCode.InternalServerError, "Internal Server Error", "text/html", Utf8(new string('x', 1000)));
+      Assert.That(longText.Message, Does.EndWith(new string('x', 200) + "..."));
+    }
+
+    [Test]
+    public async Task ALargeErrorBodyIsCut()
+    {
+      using (HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new ByteArrayContent(new byte[MsgPackHttpException.MaxBodyLength * 2]) })
+      {
+        response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+        MsgPackHttpException large = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => response.EnsureSuccessStatusCodeAsync()));
+        Assert.That(large.Body, Has.Length.EqualTo(MsgPackHttpException.MaxBodyLength));
+        Assert.That(large.Text, Is.Null);
+      }
+      await Task.CompletedTask;
     }
 
     [Test]

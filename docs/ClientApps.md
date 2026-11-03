@@ -95,7 +95,7 @@ HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = ne
 // Per call
 Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
 HttpResponseMessage response = await client.PostAsMsgPackAsync("api/orders", order, formatter);
-response.EnsureSuccessStatusCode();
+await response.EnsureSuccessStatusCodeAsync(); // a MsgPackHttpException with the problem details of an error
 Order saved = await response.Content.ReadFromMsgPackAsync<Order>(formatter);
 ```
 

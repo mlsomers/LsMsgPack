@@ -35,11 +35,13 @@ HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = ne
 // Per call
 Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
 HttpResponseMessage response = await client.PostAsMsgPackAsync("api/orders", order, formatter); // also PutAsMsgPackAsync, PatchAsMsgPackAsync
-response.EnsureSuccessStatusCode();
+await response.EnsureSuccessStatusCodeAsync();
 Order saved = await response.Content.ReadFromMsgPackAsync<Order>(formatter);
 ```
 
 The helpers ask for MsgPack (`Accept: application/x-lsmsgpack, application/msgpack; q=0.9`) unless the request or the client has an `Accept` header, and send the body as `application/x-lsmsgpack`. For another media type, use `new ObjectContent<Order>(order, formatter, MsgPackMediaTypes.MsgPack)` and `response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter })` ([details](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#httpclient)).
+
+An error status code throws a `MsgPackHttpException` (an `HttpRequestException`) with what the body says: `StatusCode`, `Text`, and the `Title`, `Detail` and validation `Errors` of the problem details ASP.NET Core sends (`application/problem+json`, also when the request asks for MsgPack); `ReadBody<T>(formatter)` reads a MsgPack body ([details](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#error-responses)).
 
 Lists that the server streams (an ASP.NET Core action returning an `IAsyncEnumerable<T>`) are read as they arrive (.NET Standard 2.1: .NET Core 3.0 and up, MAUI...), and a server that doesn't stream sends the whole list, read the same way:
 

@@ -27,7 +27,7 @@ namespace LsMsgPackWebApiFormatters
     /// </summary>
     /// <param name="formatter">Its serializer reads the body (the one the client's <see cref="LsMsgPackSchemaHandler"/> was created with)</param>
     /// <returns>The value, default for an empty body (204 No Content)</returns>
-    /// <exception cref="HttpRequestException">The status code is not a success</exception>
+    /// <exception cref="MsgPackHttpException">The status code is not a success (with the problem details or text of the body)</exception>
     /// <exception cref="NotSupportedException">The response is not MsgPack, or a stream</exception>
     /// <exception cref="MsgPackException">The body is not valid or not a <typeparamref name="T"/></exception>
     public static Task<T> GetFromMsgPackAsync<T>(this HttpClient client, string requestUri, LsMsgPackMediaTypeFormatter formatter, CancellationToken cancellationToken = default(CancellationToken))
@@ -45,7 +45,7 @@ namespace LsMsgPackWebApiFormatters
 
     /// <summary>
     /// Sends a POST request with the value as an application/x-lsmsgpack body (declared type <typeparamref name="T"/>, the schema inline), asking for MsgPack (<see cref="Accept"/>).
-    /// The status code is not checked. Read the response with <see cref="ReadFromMsgPackAsync{T}"/>. For another media type: <c>client.PostAsync(uri, new ObjectContent&lt;T&gt;(value, formatter, mediaType))</c>.
+    /// The status code is not checked: <see cref="EnsureSuccessStatusCodeAsync"/>. Read the response with <see cref="ReadFromMsgPackAsync{T}"/>. For another media type: <c>client.PostAsync(uri, new ObjectContent&lt;T&gt;(value, formatter, mediaType))</c>.
     /// </summary>
     /// <param name="formatter">Its serializer writes the body</param>
     public static Task<HttpResponseMessage> PostAsMsgPackAsync<T>(this HttpClient client, string requestUri, T value, LsMsgPackMediaTypeFormatter formatter, CancellationToken cancellationToken = default(CancellationToken))
@@ -94,12 +94,29 @@ namespace LsMsgPackWebApiFormatters
     }
 
     /// <summary>
+    /// Throws a <see cref="MsgPackHttpException"/> for a status code outside 200-299, as <see cref="HttpResponseMessage.EnsureSuccessStatusCode"/>, but with what the body says
+    /// (problem details or a text, the first <see cref="MsgPackHttpException.MaxBodyLength"/> bytes): <c>await response.EnsureSuccessStatusCodeAsync()</c> after <c>PostAsMsgPackAsync</c>.
+    /// The body has been read then.
+    /// </summary>
+    /// <returns>The response</returns>
+    /// <exception cref="MsgPackHttpException">The status code is not a success</exception>
+    public static async Task<HttpResponseMessage> EnsureSuccessStatusCodeAsync(this HttpResponseMessage response, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      if (response is null)
+        throw new ArgumentNullException(nameof(response));
+      if (!response.IsSuccessStatusCode)
+        throw await MsgPackHttpException.FromResponseAsync(response, cancellationToken).ConfigureAwait(false);
+      return response;
+    }
+
+    /// <summary>
     /// Reads the body as <typeparamref name="T"/> with the formatter's serializer, as <c>ReadAsAsync&lt;T&gt;</c> with only this formatter, but a body that is not MsgPack (e.g. JSON) throws a <see cref="NotSupportedException"/>.
     /// With <see cref="LtMsgPack.Http.LtMsgPackHttpOptions.ReportDifferences"/> the content has the differences afterwards (<see cref="ReadDifferencesExtensions.GetReadDifferences(HttpContent)"/>).
     /// </summary>
     /// <param name="formatter">Its serializer reads the body (the one the client's <see cref="LsMsgPackSchemaHandler"/> was created with)</param>
     /// <returns>The value, default for an empty body</returns>
-    /// <exception cref="NotSupportedException">The body is not MsgPack, or a stream (read it with <see cref="MsgPackStreamExtensions.ReadAsMsgPackStreamAsync"/>)</exception>
+    /// <exception cref="NotSupportedException">The body is not MsgPack (the message has the start of a text body, e.g. the problem details of an error: check the status code first,
+    /// <see cref="EnsureSuccessStatusCodeAsync"/>), or a stream (read it with <see cref="MsgPackStreamExtensions.ReadAsMsgPackStreamAsync"/>)</exception>
     /// <exception cref="MsgPackException">The body is not valid or not a <typeparamref name="T"/></exception>
     public static async Task<T> ReadFromMsgPackAsync<T>(this HttpContent content, LsMsgPackMediaTypeFormatter formatter, CancellationToken cancellationToken = default(CancellationToken))
     {
@@ -114,7 +131,7 @@ namespace LsMsgPackWebApiFormatters
       if (mediaType is null && (await content.ReadAsByteArrayAsync().ConfigureAwait(false)).Length == 0)
         return default(T); // 204 No Content has no Content-Type, and may have no Content-Length either
       if (!MsgPackMediaTypes.IsSupported(mediaType))
-        throw new NotSupportedException($"The response is {mediaType ?? "without a Content-Type"}, not MsgPack.");
+        throw await NotMsgPackAsync(content, mediaType, cancellationToken).ConfigureAwait(false);
       if (MsgPackMediaTypes.IsStream(content.Headers.ContentType.ToString()))
         throw new NotSupportedException("The response is a stream (" + MsgPackMediaTypes.StreamParameter + "), read it with ReadAsMsgPackStreamAsync or ReadFromMsgPackAsAsyncEnumerable.");
 
@@ -135,12 +152,22 @@ namespace LsMsgPackWebApiFormatters
         // Headers only: the formatter copies the body once, instead of HttpClient buffering it first (the schema handler buffers application/x-lsmsgpack to learn its schema)
         using (HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
         {
-          response.EnsureSuccessStatusCode();
+          await response.EnsureSuccessStatusCodeAsync(cancellationToken).ConfigureAwait(false);
           if (response.Content is null) // .NET Framework, without a body
             return default(T);
           return await ReadFromMsgPackAsync<T>(response.Content, formatter, cancellationToken).ConfigureAwait(false);
         }
       }
+    }
+
+    /// <summary>
+    /// A body that is not MsgPack, with the start of its text: usually an error (problem details) whose status code was not checked.
+    /// </summary>
+    internal static async Task<NotSupportedException> NotMsgPackAsync(HttpContent content, string mediaType, CancellationToken cancellationToken)
+    {
+      string message = $"The response is {mediaType ?? "without a Content-Type"}, not MsgPack.";
+      string text = await MsgPackHttpException.ReadExcerptAsync(content, cancellationToken).ConfigureAwait(false);
+      return new NotSupportedException(text is null ? message : message + " It starts with: " + text);
     }
 
     private static async Task<HttpResponseMessage> SendAsync<T>(HttpClient client, HttpRequestMessage request, T value, LsMsgPackMediaTypeFormatter formatter, CancellationToken cancellationToken)
