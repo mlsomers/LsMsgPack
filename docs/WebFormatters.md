@@ -18,20 +18,20 @@ Every package supports three media types (`Content-Type` for request bodies and 
 
 | Media type | Constant | Settings | Default |
 |---|---|---|---|
-| `application/msgpack` | `MsgPackMediaTypes.MsgPack` | `Plain` | Plain MsgPack: maps keyed by property names, no indexed schema, no type ids, default values left out. Any MsgPack implementation can read and write it. Use a preset for another library (below). |
+| `application/msgpack` | `MsgPackMediaTypes.MsgPack` | `Plain` | What any MsgPack implementation reads (`LtMsgPackPresets.Generic()`): maps keyed by property names, every value, no indexed schema, no type ids, `Guid` and `decimal` as text, dates as timestamps (a `DateTimeOffset` loses its offset). Use a preset for a specific library (below). |
 | `application/x-msgpack` | `MsgPackMediaTypes.XMsgPack` | `Plain` | Same as `application/msgpack` (an older, widely used name). |
 | `application/x-lsmsgpack` | `MsgPackMediaTypes.XLsMsgPack` | `XLsMsgPack` | What LsMsgPack writes by default (`LtMsgPackPresets.LsMsgPack()`): the [indexed schema](schema.md#the-indexed-schema), objects as arrays of their values, type ids where the type differs from the declared type (full [polymorphism](schema.md#polymorphic-class-hierarchy-support)), and [schema references](#schema-references-applicationx-lsmsgpack) between these formatters (`NegotiateSchemas`). Use this between LsMsgPack / LtMsgPack endpoints. |
 
-`Plain` and `XLsMsgPack` are independent `LtMsgPackOptions` objects. Changing one doesn't affect the other. To exchange plain MsgPack with another library, use one of its presets (see [Compatibility.md](Compatibility.md)):
+`Plain` and `XLsMsgPack` are independent `LtMsgPackOptions` objects. Changing one doesn't affect the other. To match a specific library, use its preset (see [Compatibility.md](Compatibility.md)):
 
 ```csharp
 services.AddControllers().AddLsMsgPackSerializerFormatters(o =>
 {
-  o.Plain = LtMsgPackPresets.MessagePackCSharp(); // or Nerdbank(), Generic()
+  o.Plain = LtMsgPackPresets.MessagePackCSharp(); // or Nerdbank()
 });
 ```
 
-No type ids are written for the plain media types, so properties declared as an interface or abstract class can't be read back from them. Use `application/x-lsmsgpack` for those, or see [resolving by signature](schema.md#resolving-by-signature).
+No type ids are written for the plain media types, so properties declared as an interface or abstract class can't be read back from them. Use `application/x-lsmsgpack` for those, or see [resolving by signature](schema.md#resolving-by-signature). Use it too between .NET programs that need the offset of a `DateTimeOffset`.
 
 Property names in bodies are matched ignoring case when no property has the exact name (`PropertyNameCaseInsensitive`, on by default, as ASP.NET Core reads JSON), so clients that write camelCase names are read too: the [TypeScript client](TypeScriptClient.md) (camelCase by default), objects of other JavaScript code. It applies to maps keyed by names (the plain media types, `application/x-lsmsgpack` without the indexed schema) and to the names of the indexed schema (matched once per class and schema), and costs nothing for the exact names, which are looked up first. When several properties of a class differ only in case (`Id` and `ID`), a key that equals neither exactly (`id`) sets none. Set it to `false` to read the exact names only; it is `MsgPackOptions.PropertyNameCaseInsensitive` of both serializers (off by default outside the formatters).
 
@@ -266,7 +266,7 @@ Notes:
 - `formatter.CreateHandler()` enables [schema references](#schema-references-applicationx-lsmsgpack) for the responses. It's optional: without it (or with `new HttpClient()`), every response carries its schema inline. Use `formatter.CreateHandler(inner)` to chain another handler.
 - With `IHttpClientFactory`, which sets the inner handler itself and refuses a handler that has one, add `formatter.CreateDelegatingHandler()` (`CreateDelegatingHandler(true)` for version 2 of the schema): `services.AddHttpClient("api").AddHttpMessageHandler(() => formatter.CreateDelegatingHandler());`. Keep the formatter as a singleton: the handlers the factory creates (one per handler lifetime) share its schemas.
 - `formatter.CreateHandler(true)` (`LsMsgPackSchemaHandler.RequestDescribedSchemas`) also asks for [version 2 of the schema](#schema-version-2-for-clients-without-the-classes), for a client whose classes differ from the server's (other names or namespaces, e.g. an SDK with its own models): the reader then pairs its classes with the server's by the declared types (see [schema.md](schema.md)).
-- Without an explicit media type, `ObjectContent` uses the formatter's first media type, `application/msgpack` (plain MsgPack).
+- Without an explicit media type, `ObjectContent` uses the formatter's first media type, `application/msgpack` (plain MsgPack): a `DateTimeOffset` loses its offset and class hierarchies are lost. Pass `application/x-lsmsgpack` to keep them, as the helpers do.
 - Without the helpers, set the `Accept` header, or the server will probably answer with JSON.
 - `HttpClientHandler` doesn't ask for [compressed responses](#response-compression) by default, and the handler `CreateHandler()` makes doesn't either. Pass one that does: `formatter.CreateHandler(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate })` (`DecompressionMethods.All` on .NET Core 3.0 and up, which adds Brotli). With `IHttpClientFactory`, set it in `ConfigurePrimaryHttpMessageHandler`.
 - On the client side, a response that can't be deserialized throws from `ReadFromMsgPackAsync` or `ReadAsAsync` instead of being logged.

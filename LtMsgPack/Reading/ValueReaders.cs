@@ -303,10 +303,17 @@ namespace LtMsgPack.Reading
   }
 
   /// <summary>
-  /// <see cref="DecimalFormat.String"/>: a string in the invariant culture, anything else (the decimal extension, numbers) as LsMsgPack reads it.
+  /// <see cref="DecimalFormat.String"/>: a string in the invariant culture, the built-in extension in place (clients that write decimals as declared, e.g. to the plain media types of the web formatters), anything else (numbers) as LsMsgPack reads it.
   /// </summary>
   internal sealed class DecimalStringReader : ValueReader<decimal>
   {
+    private readonly int _extensionCode; // -1 never equals a byte of the data: no built-in extension, or -1 itself, the timestamp, read as such (as LsMsgPack)
+
+    internal DecimalStringReader(LtExtension extension)
+    {
+      _extensionCode = extension is DecimalExtension builtIn && builtIn.TypeCode != -1 ? unchecked((byte)builtIn.TypeCode) : -1;
+    }
+
     internal override decimal Read(ReadContext c, FullPropertyInfo assignedTo)
     {
       MsgPackReader r = c.R;
@@ -318,6 +325,12 @@ namespace LtMsgPack.Reading
         return simple;
       }
       r.Pos = start;
+      if (length < 0 && r.End - start >= 18 && r.Buf[start] == 0xD8 && r.Buf[start + 1] == _extensionCode)
+      {
+        decimal value = Unsafe.ReadUnaligned<decimal>(ref r.Buf[start + 2]); // as DecimalReader
+        r.Pos = start + 18;
+        return value;
+      }
 #if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[64];
       if (c.R.TryReadShortString(chars, out int count))
@@ -327,8 +340,8 @@ namespace LtMsgPack.Reading
         return Slow(c, start, assignedTo);
       }
 #endif
-      if (c.R.TryReadString(out string text) && decimal.TryParse(text, NumberStyles.Number | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out decimal value))
-        return value;
+      if (c.R.TryReadString(out string text) && decimal.TryParse(text, NumberStyles.Number | NumberStyles.AllowExponent, CultureInfo.InvariantCulture, out decimal fromText))
+        return fromText;
       return Slow(c, start, assignedTo);
     }
   }

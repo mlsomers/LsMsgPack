@@ -50,7 +50,7 @@ dotnet_diagnostic.LSMP004.severity = none
 The serializers leave out properties that hold their default value (`FilterDefaultValues`): the type's default (`0`, `false`, `null`), or the value of `[DefaultValue]`. How a reader fills them in depends on the layout:
 
 - **Arrays** (`ObjectLayout.Array`, the default, and `application/x-lsmsgpack`): a left-out value is written as nil, and a reader reads a nil as the value that was left out: the `[DefaultValue]`, otherwise the type's default (`null`, `0`, `false`), as JSON reads them. Only values missing after the end of the array (a writer with fewer properties, or `TrimTrailingNulls`) keep what the constructor set.
-- **Maps** (`ObjectLayout.Map`, `application/msgpack`): a left-out value has no key, and a reader keeps what the constructor set.
+- **Maps** (`ObjectLayout.Map`): a left-out value has no key, and a reader keeps what the constructor set. The web formatters' `application/msgpack` writes every value by default (`LtMsgPackPresets.Generic()`), so nothing is left out there.
 
 So in a map, when the constructor sets something other than what was left out, the value is lost:
 

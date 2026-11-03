@@ -160,6 +160,34 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
+    [DataRow((sbyte)1)]
+    [DataRow((sbyte)4)]
+    [DataRow((sbyte)-5)]
+    public void DecimalAsStringAlsoReadsTheExtension(sbyte typeCode)
+    {
+      decimal[] values = { 12.50m, -1m, 0m, decimal.MaxValue, decimal.MinValue, 0.0000000000000000000000000001m };
+      LtExtension[] extensions = { new DecimalExtension(typeCode) };
+      LtMsgPackSerializer writer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, Extensions = extensions });
+      LtMsgPackSerializer reader = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, Extensions = extensions, DecimalFormat = DecimalFormat.String });
+      for (int t = values.Length - 1; t >= 0; t--)
+      {
+        decimal back = reader.Deserialize<decimal>(writer.Serialize(values[t]));
+        Assert.AreEqual(values[t], back);
+        Assert.AreEqual(values[t].ToString(System.Globalization.CultureInfo.InvariantCulture), back.ToString(System.Globalization.CultureInfo.InvariantCulture), "The scale is kept");
+      }
+    }
+
+    [TestMethod]
+    public void GenericReadsDecimalsAndGuidsAsDeclared()
+    {
+      Guid id = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
+      LtMsgPackSerializer asDeclared = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      LtMsgPackSerializer generic = new LtMsgPackSerializer(LtMsgPackPresets.Generic());
+      Assert.AreEqual(12.50m, generic.Deserialize<decimal>(asDeclared.Serialize(12.50m)));
+      Assert.AreEqual(id, generic.Deserialize<Guid>(asDeclared.Serialize(id)));
+    }
+
+    [TestMethod]
     public void DecimalAsString()
     {
       LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, DecimalFormat = DecimalFormat.String });

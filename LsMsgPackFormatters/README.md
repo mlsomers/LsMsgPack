@@ -17,7 +17,7 @@ Clients choose the format with the `Content-Type` and `Accept` headers. JSON sta
 
 | Media type | Format |
 |---|---|
-| `application/msgpack`, `application/x-msgpack` | Plain MsgPack: maps keyed by property names, readable by any MsgPack implementation. |
+| `application/msgpack`, `application/x-msgpack` | Plain MsgPack, readable by any MsgPack implementation: maps keyed by property names, every value, `Guid` and `decimal` as text, dates as timestamps (a `DateTimeOffset` loses its offset). |
 | `application/x-lsmsgpack` | The indexed schema with type ids: smaller, polymorphic, and with the schema sent only once per client. Use this between LsMsgPack / LtMsgPack endpoints. |
 
 To change the settings, pass a configuration action:
@@ -29,7 +29,7 @@ using LtMsgPack;
 builder.Services.AddControllers()
   .AddLsMsgPackSerializerFormatters(o =>
   {
-    o.Plain = LtMsgPackPresets.MessagePackCSharp(); // or Nerdbank(), Generic()
+    o.Plain = LtMsgPackPresets.MessagePackCSharp(); // or Nerdbank(); the default is Generic()
     o.XLsMsgPack.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(Order));
   });
 ```

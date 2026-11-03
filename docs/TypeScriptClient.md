@@ -269,7 +269,7 @@ The client keeps an inline schema only when its hash equals the `MsgPack-Schema`
 | | raw | gzip | read |
 |---|---|---|---|
 | JSON (System.Text.Json, every property) | 316.7 KB | 42.1 KB | 1080 µs `JSON.parse` of the string, 1290-1310 µs with the UTF-8 decoding |
-| `application/msgpack` with @msgpack/msgpack | 300.6 KB | 42.8 KB | 2200 µs; this client 1580 µs |
+| `application/msgpack` with @msgpack/msgpack (November 2026) | 266.9 KB | 41.5 KB | 2880-2890 µs; this client 1890-1900 µs |
 | `application/x-lsmsgpack`, schema reference | 166.9 KB | 38.0 KB | 674-676 µs; with the models 668-680 µs |
 | the same without generated code (CSP) | | | 948-967 µs; with the models 959-968 µs |
 

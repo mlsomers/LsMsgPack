@@ -42,7 +42,7 @@ The presets use these LtMsgPack options (the defaults write what LsMsgPack write
 - `UnspecifiedDateTimeKind`: `Utc` (default, as MessagePack-CSharp) or `Local`. For reading see `DateTime` in [LsMsgPack settings](#lsmsgpack-settings).
 - `LtMsgPack.Extensions.NerdbankGuidExtension`: reads Nerdbank's Guid (extension type 2, big-endian).
 
-The web formatters use the presets for the plain media types: `AddLsMsgPackSerializerFormatters(o => o.Plain = LtMsgPackPresets.MessagePackCSharp())`, see [WebFormatters.md](WebFormatters.md).
+The web formatters use `Generic()` for the plain media types by default, set another preset with `AddLsMsgPackSerializerFormatters(o => o.Plain = LtMsgPackPresets.MessagePackCSharp())`, see [WebFormatters.md](WebFormatters.md).
 
 ## LsMsgPack settings
 
