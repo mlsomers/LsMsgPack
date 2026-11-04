@@ -100,10 +100,10 @@ The runtime checks once per class and serializer whether the generated code fits
 - Properties with `[DefaultValue]`, nested objects and collections (written and read by the runtime, which then uses the generated code of their class).
 - Values in another format than expected (an `int` written as a string, a number out of range): the runtime converts them, or throws, exactly as without the generator.
 - Collecting `ReadDifferences` and `ReadErrors` other than `FailFast`.
-- Properties the generated code can't reach: `init`-only setters, non-public accessors without `UnsafeAccessor` (before .NET 8, of generic classes, virtual properties) or that `NonPublicProperties` doesn't cover (set by reflection, reported as info `LTMP004`), private types.
+- Properties the generated code can't reach: `init`-only setters and non-public accessors without `UnsafeAccessor` (before .NET 8, of generic classes, virtual properties), non-public accessors that `NonPublicProperties` doesn't cover (set by reflection, reported as info `LTMP004`), private types. On .NET 8 and later, `init`-only setters of other properties are called through `[UnsafeAccessor]`, whatever `NonPublicProperties` says.
 - A class that changed since its code was generated (a model in another assembly that was updated on its own): a property is only used when its declaring type, name and type still match. New properties are done by reflection.
 
-**Structs** are written and read in place: the generated accessors and code take the struct by reference, so a struct value is neither copied nor boxed, also in trimmed and NativeAOT apps (without the generator those box each struct value and use reflection). A struct as the root value of a call is still boxed once. A struct without a declared parameterless constructor is read into its default value; one that declares a parameterless constructor (C# 10) is created by it, in a box. The `init` properties of a struct (a `readonly record struct`) are written by the generated code and set by reflection when read, in a box (info `LTMP004`).
+**Structs** are written and read in place: the generated accessors and code take the struct by reference, so a struct value is neither copied nor boxed, also in trimmed and NativeAOT apps (without the generator those box each struct value and use reflection). A struct as the root value of a call is still boxed once. A struct without a declared parameterless constructor is read into its default value; one that declares a parameterless constructor (C# 10) is created by it, in a box. The `init` properties of a struct (a `readonly record struct`) are set through `[UnsafeAccessor]` by reference as well; before .NET 8 by reflection, in a box (info `LTMP004`).
 
 ## Versions
 
@@ -116,7 +116,7 @@ Generated code says which version of the generated code's contract it was writte
 | LTMP001 | Error | The context class (or a class it is nested in) is not `partial` |
 | LTMP002 | Error | A class with `[LtMsgPackSerializable]` doesn't derive from `LtMsgPackContext` |
 | LTMP003 | Warning | A root type is not accessible to the generated code |
-| LTMP004 | Info | A property is set by reflection (`init`-only or non-public setter) |
+| LTMP004 | Info | A property is set by reflection (an `init`-only or non-public setter the generated code can't call) |
 | LTMP005 | Error | The context class is generic, nested in a generic type, abstract or static |
 | LTMP006 | Error | The context of the assembly can't get its name (taken, or not a valid class name) |
 | LTMP007 | Error | The context class declares a parameterless constructor (the generator writes it) |

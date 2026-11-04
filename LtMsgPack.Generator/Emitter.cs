@@ -636,7 +636,7 @@ namespace LtMsgPack.Generator
     }
 
     /// <summary>
-    /// The UnsafeAccessor methods of a context (.NET 8): the non-public getters and setters the generated code calls, declared once per property (written by <see cref="Write"/> at the end of the context class,
+    /// The UnsafeAccessor methods of a context (.NET 8): the non-public getters and setters and the init-only setters the generated code calls, declared once per property (written by <see cref="Write"/> at the end of the context class,
     /// the generated writers and readers are nested in it).
     /// </summary>
     private sealed class Accessors
@@ -683,7 +683,7 @@ namespace LtMsgPack.Generator
         if (_declarations.Count == 0)
           return;
         w.Line();
-        w.Line("// The non-public accessors of properties the runtime may serialize (FilterNonSettable's NonPublicProperties)");
+        w.Line("// The init-only setters, and the non-public accessors of properties the runtime may serialize (FilterNonSettable's NonPublicProperties)");
         foreach (string line in _declarations)
           w.Line(line);
       }

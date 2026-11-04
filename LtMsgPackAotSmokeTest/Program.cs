@@ -118,9 +118,42 @@ namespace LtMsgPackAotSmokeTest
   }
 
   /// <summary>
-  /// A struct with init-only properties (set by reflection, kept by the generated DynamicDependency).
+  /// A struct with init-only properties (set through the UnsafeAccessors of the generated code).
   /// </summary>
   public readonly record struct Fee(decimal Amount, string Currency);
+
+  /// <summary>
+  /// Init-only setters are called through UnsafeAccessors: reading allocates the same as for <see cref="SetsLimits"/>, the same class with plain setters (see ReadAllocationProblem).
+  /// </summary>
+  public class InitLimits
+  {
+    public int Min { get; init; }
+    public int Max { get; init; }
+    public double Rate { get; init; }
+    public bool On { get; init; }
+    public InitPoint Point { get; init; }
+  }
+
+  public readonly struct InitPoint
+  {
+    public int X { get; init; }
+    public int Y { get; init; }
+  }
+
+  public class SetsLimits
+  {
+    public int Min { get; set; }
+    public int Max { get; set; }
+    public double Rate { get; set; }
+    public bool On { get; set; }
+    public SetsPoint Point { get; set; }
+  }
+
+  public struct SetsPoint
+  {
+    public int X { get; set; }
+    public int Y { get; set; }
+  }
 
   public class Route
   {
@@ -130,6 +163,7 @@ namespace LtMsgPackAotSmokeTest
     public List<Vector> Points { get; set; }
     public Vector[] Corners { get; set; }
     public Fee Fee { get; set; }
+    public InitLimits Limits { get; set; }
   }
 
   public class Invoice
@@ -162,6 +196,7 @@ namespace LtMsgPackAotSmokeTest
   [LtMsgPackSerializable(typeof(Invoice))]
   [LtMsgPackSerializable(typeof(Circle))]
   [LtMsgPackSerializable(typeof(Square))]
+  [LtMsgPackSerializable(typeof(SetsLimits))]
   public partial class SmokeContext : LtMsgPackContext { }
 
   public static class Program
@@ -257,7 +292,7 @@ namespace LtMsgPackAotSmokeTest
 
         foreach ((string which, Func<LtMsgPackOptions, LtMsgPackSerializer> create) in new (string, Func<LtMsgPackOptions, LtMsgPackSerializer>)[] { ("explicit", Explicit), ("registered", Registered) })
         {
-          string problem = Problem(create(options()), sample, expected, values) ?? AllocationProblem(create(options()));
+          string problem = Problem(create(options()), sample, expected, values) ?? AllocationProblem(create(options())) ?? ReadAllocationProblem(create(options()));
           Console.WriteLine($"{name} {which}: {problem ?? "OK"}");
           if (problem != null)
             failures++;
@@ -359,7 +394,8 @@ namespace LtMsgPackAotSmokeTest
         End = new Vector() { Z = 9 },
         Points = new List<Vector>() { new Vector() { X = 0.5f }, default(Vector) },
         Corners = new[] { new Vector() { Y = 7, Tag = 0 } },
-        Fee = new Fee(12.5m, "EUR")
+        Fee = new Fee(12.5m, "EUR"),
+        Limits = new InitLimits() { Min = 300, Max = 70000, Rate = 0.25, On = true, Point = new InitPoint() { X = 300, Y = -300 } }
       };
     }
 
@@ -383,12 +419,39 @@ namespace LtMsgPackAotSmokeTest
       return allocated == 0 ? null : $"writing the structs allocated {allocated} bytes";
     }
 
+    /// <summary>
+    /// Init-only setters cost the same as plain ones: by reflection each value would be boxed.
+    /// </summary>
+    private static string ReadAllocationProblem(LtMsgPackSerializer serializer)
+    {
+      long init = ReadAllocation(serializer, new InitLimits() { Min = 300, Max = 70000, Rate = 0.25, On = true, Point = new InitPoint() { X = 300, Y = -300 } });
+      long plain = ReadAllocation(serializer, new SetsLimits() { Min = 300, Max = 70000, Rate = 0.25, On = true, Point = new SetsPoint() { X = 300, Y = -300 } });
+      return init == plain ? null : $"reading init-only properties allocated {init} bytes, plain setters {plain}";
+    }
+
+    private static long ReadAllocation<T>(LtMsgPackSerializer serializer, T value)
+    {
+      byte[] data = serializer.Serialize(value);
+      for (int t = 0; t < 3; t++) // warm up (plans, contexts)
+        serializer.Deserialize<T>(data);
+      long before = GC.GetAllocatedBytesForCurrentThread();
+      serializer.Deserialize<T>(data);
+      return GC.GetAllocatedBytesForCurrentThread() - before;
+    }
+
     private static string Dump(Route o)
     {
       if (o is null)
         return "null";
       return $"[{o.Name ?? "null"} {Dump(o.Start)} {(o.End.HasValue ? Dump(o.End.Value) : "null")} {(o.Points is null ? "null" : string.Join(",", o.Points.Select(Dump)))} "
-        + $"{(o.Corners is null ? "null" : string.Join(",", o.Corners.Select(Dump)))} {o.Fee.Amount.ToString(CultureInfo.InvariantCulture)}/{o.Fee.Currency ?? "null"}]";
+        + $"{(o.Corners is null ? "null" : string.Join(",", o.Corners.Select(Dump)))} {o.Fee.Amount.ToString(CultureInfo.InvariantCulture)}/{o.Fee.Currency ?? "null"} {Dump(o.Limits)}]";
+    }
+
+    private static string Dump(InitLimits o)
+    {
+      if (o is null)
+        return "null";
+      return $"({o.Min} {o.Max} {o.Rate.ToString("R", CultureInfo.InvariantCulture)} {o.On} {o.Point.X} {o.Point.Y})";
     }
 
     private static string Dump(Vector o)

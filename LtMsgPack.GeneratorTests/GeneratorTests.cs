@@ -208,7 +208,7 @@ namespace Shelf
     #region Properties
 
     [TestMethod]
-    public void Setters_InitOnlyAndNotAccessible_AreLeftToReflection()
+    public void Setters_NotAccessible_AreLeftToReflection()
     {
       GeneratorHarness.Result result = GeneratorHarness.Run(@"
 using LtMsgPack;
@@ -231,14 +231,163 @@ namespace M
 }");
       result.AssertCompiles();
       string code = result.AllGenerated;
-      Assert.Contains("Property<global::M.Settable, string>(\"Init\", o => o.Init, null)", code);
+      Assert.Contains("Property<global::M.Settable, string>(\"Init\", o => o.Init, (o, v) => LtMsgPackSet", code);
       Assert.Contains("Property<global::M.Settable, string>(\"PrivateSet\", o => o.PrivateSet, null)", code);
       Assert.Contains("Property<global::M.Settable, string>(\"PrivateGet\", null, (o, v) => o.PrivateGet = v)", code);
       Assert.Contains("Property<global::M.Settable, string>(\"ReadOnly\", o => o.ReadOnly, null)", code);
       Assert.Contains("Property<global::M.Settable, string>(\"class\", o => o.@class, (o, v) => o.@class = v)", code);
       Assert.DoesNotContain("\"Internal\"", code, "not public: the runtime does not see it");
       Assert.DoesNotContain("\"Static\"", code);
-      Assert.AreEqual(2, result.GeneratorDiagnostics.Count(d => d.Id == "LTMP004"), "Init and PrivateSet are set by reflection");
+      Assert.AreEqual(1, result.GeneratorDiagnostics.Count(d => d.Id == "LTMP004"), "PrivateSet is set by reflection");
+      Assert.IsTrue(result.GeneratorDiagnostics.Any(d => d.Id == "LTMP004" && d.GetMessage().Contains("PrivateSet")));
+    }
+
+    // Names of their own (InitRoot, InitPair): a schema pairs classes by their short names across the assemblies loaded in the process, and Structs_SameDataAsTheRuntime loads a Root and a Pair
+    private const string InitModel = @"
+using LtMsgPack;
+using System.Runtime.Serialization;
+namespace I
+{
+  public class Parent
+  {
+    public string Inherited { get; init; }
+  }
+
+  public class Limits : Parent
+  {
+    public int Min { get; init; }
+    public int? Max { get; init; }
+    public string Name { get; init; }
+    public System.Collections.Generic.List<int> Steps { get; init; }
+    public int Settable { get; set; }
+    public int InternalInit { get; internal init; }
+    public int PrivateInit { get; private init; }
+    [DataMember] public int OptedIn { get; private init; }
+    public virtual int Virtual { get; init; }
+  }
+
+  public class Page<T>
+  {
+    public T Item { get; init; }
+  }
+
+  public readonly struct Point
+  {
+    public int X { get; init; }
+    public int Y { get; init; }
+  }
+
+  public readonly record struct InitPair(int A, string B);
+
+  public record Person(string Name, int Age);
+
+  public class InitRoot
+  {
+    public Limits Limits { get; set; }
+    public Point Point { get; set; }
+    public InitPair Pair { get; set; }
+    public Person Person { get; set; }
+    public Page<int> Page { get; set; }
+    public System.Collections.Generic.List<Point> Points { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(InitRoot))]
+  public partial class Context : LtMsgPackContext { }
+}";
+
+    [TestMethod]
+    public void InitOnly_ThroughUnsafeAccessors()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(InitModel);
+      result.AssertCompiles();
+      Assert.IsEmpty(result.CompileProblems, string.Join("\n", result.CompileProblems.Select(p => p.ToString())) + "\n" + result.AllGenerated);
+      string code = result.AllGenerated;
+      foreach (string setter in new[] { "set_Min", "set_Max", "set_Name", "set_Steps", "set_Inherited", "set_InternalInit", "set_OptedIn", "set_X", "set_Y", "set_A", "set_B" })
+        Assert.Contains("UnsafeAccessorKind.Method, Name = \"" + setter + "\")]", code);
+      Assert.Contains("(global::I.Parent o, string value);", code, "the accessor of a base class's property takes the base class");
+      Assert.Contains("(ref global::I.Point o, int value);", code, "UnsafeAccessor takes a struct by reference");
+      Assert.Contains("Property<global::I.Limits, int>(\"Min\", o => o.Min, (o, v) => LtMsgPackSet", code);
+      Assert.Contains("StructProperty<global::I.Point, int>(\"X\", (ref global::I.Point o) => o.X, (ref global::I.Point o, int v) => LtMsgPackSet", code);
+      Assert.DoesNotContain("o.Min = ", code, "does not compile outside an object initializer");
+
+      // Left to reflection: what the UnsafeAccessor can't call, a non-public setter nothing opts in for
+      Assert.DoesNotContain("set_Virtual", code);
+      Assert.DoesNotContain("set_Item", code);
+      Assert.DoesNotContain("set_PrivateInit", code);
+      string[] reported = result.GeneratorDiagnostics.Where(d => d.Id == "LTMP004").Select(d => d.GetMessage()).ToArray();
+      foreach (string name in new[] { "Virtual", "PrivateInit", "Item" })
+        Assert.IsTrue(reported.Any(m => m.Contains("." + name + "'")), name + ": " + string.Join("\n", reported));
+      Assert.HasCount(3, reported, string.Join("\n", reported));
+    }
+
+    [TestMethod]
+    public void InitOnly_NotDependingOnNonPublicProperties()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(InitModel, msbuild: new Dictionary<string, string>() { { "LtMsgPackNonPublicProperties", "None" } });
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.Contains("Name = \"set_Min\")]", code, "the runtime sets a public init-only setter with every option");
+      Assert.Contains("Name = \"set_InternalInit\")]", code, "as an accessible setter that is not init-only");
+      Assert.DoesNotContain("set_OptedIn", code, "a non-public setter: only with NonPublicProperties");
+    }
+
+    [TestMethod]
+    public void InitOnly_NetStandard20_LeftToReflection()
+    {
+      string model = "namespace System.Runtime.CompilerServices { internal static class IsExternalInit { } }\n"
+        + "namespace I { public class Limits { public int Min { get; init; } } [LtMsgPack.LtMsgPackSerializable(typeof(Limits))] public partial class Context : LtMsgPack.LtMsgPackContext { } }";
+      GeneratorHarness.Result result = GeneratorHarness.Run(model, LanguageVersion.CSharp9, netStandard20: true);
+      result.AssertCompiles();
+      Assert.DoesNotContain("UnsafeAccessor", result.AllGenerated);
+      Assert.Contains("Property<global::I.Limits, int>(\"Min\", o => o.Min, null)", result.AllGenerated);
+      Assert.IsTrue(result.GeneratorDiagnostics.Any(d => d.Id == "LTMP004" && d.GetMessage().Contains("init-only")));
+    }
+
+    [TestMethod]
+    public void InitOnly_SameDataAsTheRuntime()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(InitModel.Replace("namespace I", "namespace ILoaded"), assemblyName: "ILoaded");
+      Assembly assembly = GeneratorHarness.Load(result);
+      LtMsgPackContext context = (LtMsgPackContext)assembly.GetType("ILoaded.Context").GetProperty("Default").GetValue(null);
+      Type rootType = assembly.GetType("ILoaded.InitRoot");
+      Type limitsType = assembly.GetType("ILoaded.Limits");
+      Type pointType = assembly.GetType("ILoaded.Point");
+
+      object limits = Activator.CreateInstance(limitsType);
+      foreach ((string name, object value) in new (string, object)[] { ("Min", 3), ("Max", (int?)9), ("Name", "n"), ("Steps", new List<int>() { 1, 2 }), ("Settable", 4), ("Virtual", 5), ("Inherited", "i"), ("OptedIn", 6) })
+        limitsType.GetProperty(name).SetValue(limits, value);
+      object point = Activator.CreateInstance(pointType);
+      pointType.GetProperty("X").SetValue(point, 7);
+      pointType.GetProperty("Y").SetValue(point, -7);
+      object root = Activator.CreateInstance(rootType);
+      rootType.GetProperty("Limits").SetValue(root, limits);
+      rootType.GetProperty("Point").SetValue(root, point);
+      rootType.GetProperty("Pair").SetValue(root, Activator.CreateInstance(assembly.GetType("ILoaded.InitPair"), 3, "three"));
+      rootType.GetProperty("Person").SetValue(root, Activator.CreateInstance(assembly.GetType("ILoaded.Person"), "p", 40));
+      System.Collections.IList points = (System.Collections.IList)Activator.CreateInstance(typeof(List<>).MakeGenericType(pointType));
+      points.Add(point);
+      points.Add(Activator.CreateInstance(pointType));
+      rootType.GetProperty("Points").SetValue(root, points);
+
+      foreach (bool schema in new[] { false, true })
+        foreach (LsMsgPack.ObjectLayout layout in new[] { LsMsgPack.ObjectLayout.Array, LsMsgPack.ObjectLayout.Map })
+          foreach (bool trim in new[] { false, true })
+          {
+            LtMsgPackOptions options = new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false };
+            LtMsgPackSerializer runtime = new LtMsgPackSerializer(options);
+            options.Contexts = new[] { context };
+            LtMsgPackSerializer generated = new LtMsgPackSerializer(options);
+            string what = $"schema={schema} {layout} trim={trim}";
+            byte[] expected = runtime.Serialize(root, rootType);
+            CollectionAssert.AreEqual(expected, generated.Serialize(root, rootType), what + ": bytes");
+            object read = generated.Deserialize(rootType, expected);
+            CollectionAssert.AreEqual(expected, runtime.Serialize(read, rootType), what + ": values");
+
+            object readLimits = rootType.GetProperty("Limits").GetValue(read);
+            Assert.AreEqual(3, limitsType.GetProperty("Min").GetValue(readLimits), what);
+            Assert.AreEqual("i", limitsType.GetProperty("Inherited").GetValue(readLimits), what);
+            Assert.AreEqual(-7, pointType.GetProperty("Y").GetValue(rootType.GetProperty("Point").GetValue(read)), what);
+          }
     }
 
     private const string PrivateModel = @"
@@ -356,8 +505,8 @@ namespace S
       Assert.Contains("(ref global::S.Vec o, int value);", code);
       Assert.Contains("(ref global::S.Vec o) => LtMsgPackGet", code);
       Assert.Contains("Struct<global::S.Counter>(() => new global::S.Counter(), new LtMsgPackCode", code, "a declared parameterless constructor");
-      Assert.Contains("StructProperty<global::S.Pair, int>(\"A\", (ref global::S.Pair o) => o.A, null)", code, "init-only: the runtime's constructor plan reads it");
-      Assert.IsTrue(result.GeneratorDiagnostics.Any(d => d.Id == "LTMP004" && d.GetMessage().Contains("Pair")), "set by reflection");
+      Assert.Contains("StructProperty<global::S.Pair, int>(\"A\", (ref global::S.Pair o) => o.A, (ref global::S.Pair o, int v) => LtMsgPackSet", code, "init-only: through an UnsafeAccessor");
+      Assert.IsFalse(result.GeneratorDiagnostics.Any(d => d.Id == "LTMP004" && d.GetMessage().Contains("Pair")), "not set by reflection");
       Assert.Contains("GeneratedStructCode<global::S.Vec>", code);
       Assert.Contains("Nullable<global::S.Vec>()", code);
       Assert.Contains("List<global::S.Vec>()", code);

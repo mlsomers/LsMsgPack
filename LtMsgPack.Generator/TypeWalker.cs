@@ -745,32 +745,43 @@ namespace LtMsgPack.Generator
     }
 
     /// <summary>
-    /// The generated code can call the setter (not an init-only one): it is accessible, or an UnsafeAccessor can call it (<paramref name="viaAccessor"/>, see <see cref="ViaAccessor"/>).
+    /// The generated code can call the setter: it is accessible, or an UnsafeAccessor can call it (<paramref name="viaAccessor"/>, see <see cref="ViaAccessor"/>).
+    /// An init-only setter only compiles in an object initializer, so an accessible one takes an UnsafeAccessor too, whatever <see cref="GenerateOptions.NonPublic"/> says (the runtime sets it with every option).
     /// </summary>
     private bool CanSet(INamedTypeSymbol declaring, IPropertySymbol property, out bool viaAccessor)
     {
       viaAccessor = false;
       IMethodSymbol set = property.SetMethod;
-      if (set is null || set.IsInitOnly || IsObsoleteError(set))
+      if (set is null || IsObsoleteError(set))
         return false;
-      if (IsAccessible(set))
-        return true;
-      return viaAccessor = ViaAccessor(declaring, property);
+      if (!IsAccessible(set))
+        return viaAccessor = ViaAccessor(declaring, property);
+      if (set.IsInitOnly)
+        return viaAccessor = CanUseAccessor(declaring, property);
+      return true;
     }
 
     /// <summary>
     /// A non-public accessor the generated code calls through an UnsafeAccessor (.NET 8): only of a property the runtime may serialize with its non-public accessors
-    /// (<see cref="GenerateOptions.NonPublic"/>: all, or the ones with an opt-in attribute), declared by a class that is not generic (UnsafeAccessor supports generics from .NET 9),
-    /// not virtual (UnsafeAccessor would call this declaration, the runtime calls the override). Otherwise the runtime uses reflection. A struct's accessor takes it by reference.
+    /// (<see cref="GenerateOptions.NonPublic"/>: all, or the ones with an opt-in attribute). Otherwise the runtime uses reflection.
     /// </summary>
     private bool ViaAccessor(INamedTypeSymbol declaring, IPropertySymbol property)
+    {
+      return CanUseAccessor(declaring, property) && (_nonPublic == LtMsgPackGenerator.NonPublicAll || (_nonPublic == LtMsgPackGenerator.NonPublicAttributed && OptsIn(property)));
+    }
+
+    /// <summary>
+    /// An UnsafeAccessor can call the property's accessors: declared by a class that is not generic (UnsafeAccessor supports generics from .NET 9), not virtual (UnsafeAccessor would call this declaration,
+    /// the runtime calls the override). A struct's accessor takes it by reference.
+    /// </summary>
+    private bool CanUseAccessor(INamedTypeSymbol declaring, IPropertySymbol property)
     {
       if (!_unsafeAccessors || (declaring.TypeKind != TypeKind.Class && declaring.TypeKind != TypeKind.Struct) || property.IsVirtual || property.IsOverride || property.IsAbstract || !IsAccessible(declaring))
         return false;
       for (INamedTypeSymbol t = declaring; t != null; t = t.ContainingType)
         if (t.IsGenericType)
           return false;
-      return _nonPublic == LtMsgPackGenerator.NonPublicAll || (_nonPublic == LtMsgPackGenerator.NonPublicAttributed && OptsIn(property));
+      return true;
     }
 
     /// <summary>
