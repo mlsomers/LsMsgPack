@@ -94,6 +94,9 @@ namespace LtMsgPack.Reading
       if (typeof(T).IsValueType && plan.ByRef) // the JIT drops the test for classes (a struct's plan is the plan of T: no other type is assignable to it)
         return ReadByRef(c, plan, bound, count, start, assignedTo);
 
+      if (plan.Map) // the reader of the source generator: the same loop, apart so this method stays as small as without it (inlined here the runtime's maps read 2-5% slower)
+        return ReadGeneratedMap(c, plan, bound, count, start, assignedTo);
+
       int depth = c.Depth;
       c.Enter();
       object result = plan.Create();
@@ -118,12 +121,27 @@ namespace LtMsgPack.Reading
 
         if (prop is null)
           c.R.Skip(c.Depth); // not a property of this type (removed, or ignored here)
-        else if (prop.GeneratedId < 0 || !plan.Code.ReadValueBoxed(c, result, prop.GeneratedId, plan.GeneratedRead)) // the reader of the source generator, the runtime's when it does not read the value
+        else if (prop.GeneratedId < 0 || !plan.Code.ReadValueBoxed(c, result, prop.GeneratedId, plan.GeneratedRead)) // the code of an older source generator (version 1, 2): a call per value; the runtime's when it does not read the value
           prop.Read(c, result);
       }
       c.Depth = depth;
       if (plan.WithValues != null) // the values were collected for the constructor
         result = plan.WithValues.Create(result);
+      return (T)result;
+    }
+
+    /// <summary>
+    /// The loop of <see cref="Read"/> by the source generator's code (<see cref="ReadPlan.Map"/>, never a constructor with values: those plans have no code).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private T ReadGeneratedMap(ReadContext c, ReadPlan plan, PropReader[] bound, int count, int start, FullPropertyInfo assignedTo)
+    {
+      int depth = c.Depth;
+      c.Enter();
+      object result = plan.Create();
+      if (!plan.Code.ReadMapBoxed(c, result, plan, bound, count, plan.GeneratedRead))
+        return Restart(c, start, depth, assignedTo);
+      c.Depth = depth;
       return (T)result;
     }
 
@@ -184,6 +202,13 @@ namespace LtMsgPack.Reading
       int depth = c.Depth;
       c.Enter();
       T result = default(T); // what StructCreator makes (no declared parameterless constructor)
+      if (plan.Map) // the reader of the source generator: the same loop
+      {
+        if (!Unsafe.As<GeneratedStructCode<T>>(plan.Code).ReadMap(c, ref result, plan, bound, count, plan.GeneratedRead))
+          return Restart(c, start, depth, assignedTo);
+        c.Depth = depth;
+        return result;
+      }
       int next = 0; // names are usually written in the order of the properties
       for (int t = 0; t < count; t++)
       {
@@ -459,7 +484,8 @@ namespace LtMsgPack.Reading
   /// <summary>
   /// The properties of a type for reading (the ones LsMsgPack sets: FullPropertyInfo.GetSerializedProps).
   /// </summary>
-  internal sealed class ReadPlan
+  [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+  public sealed class ReadPlan // public for the generated code (GeneratedObjectCode.ReadMap), which only passes it on
   {
     internal readonly Type Type;
     internal readonly PropReader[] Props;
@@ -487,6 +513,11 @@ namespace LtMsgPack.Reading
     /// Arrays are read by the generated <see cref="GeneratedObjectCode{T}.ReadPositional"/>.
     /// </summary>
     internal readonly bool Positional;
+
+    /// <summary>
+    /// Maps are read by the generated <see cref="GeneratedObjectCode{T}.ReadMap"/>.
+    /// </summary>
+    internal readonly bool Map;
 
     /// <summary>
     /// A struct created as its default (StructCreator) whose properties are all set by reference (<see cref="RefPropReader{T}"/>):
@@ -543,9 +574,10 @@ namespace LtMsgPack.Reading
       _create = Creator(type, serializer.Options._objectCreation, generated);
 
       GeneratedObjectCode code = serializer.GeneratedCode(type);
-      if (code != null && (code.Capabilities & GeneratedCapabilities.ReadValue) != 0)
+      if (code != null && (code.Capabilities & (GeneratedCapabilities.ReadValue | GeneratedCapabilities.ReadMap)) != 0)
       {
         Code = code;
+        Map = (code.Capabilities & GeneratedCapabilities.ReadMap) != 0;
         GeneratedRead = serializer.GeneratedReadPlan;
         // Version 1 of the generated code left a nil as the constructor made it: the runtime reads the array layout then
         GeneratedCapabilities positional = GeneratedCapabilities.ReadPositional | GeneratedCapabilities.ReadPositionalNil;

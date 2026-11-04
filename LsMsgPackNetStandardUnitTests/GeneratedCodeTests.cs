@@ -101,17 +101,17 @@ namespace LsMsgPackUnitTests
       foreach (object writer in (Array)plan.GetType().GetField("Props", Internal).GetValue(plan))
       {
         Delegate get = (Delegate)writer.GetType().GetField("_get", Internal).GetValue(writer);
-        Assert.AreEqual(typeof(TestMsgPackContext), get.Method.DeclaringType.DeclaringType, "the getter is a lambda of the generated context");
+        Assert.IsTrue(IsNestedIn(get.Method.DeclaringType, typeof(TestMsgPackContext)), "the getter is a lambda of the generated context");
       }
 
       object readPlan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { typeof(GcPerson) });
       foreach (object reader in (Array)readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
       {
         Delegate set = (Delegate)reader.GetType().GetField("_set", Internal).GetValue(reader);
-        Assert.AreEqual(typeof(TestMsgPackContext), set.Method.DeclaringType.DeclaringType, "the setter is a lambda of the generated context");
+        Assert.IsTrue(IsNestedIn(set.Method.DeclaringType, typeof(TestMsgPackContext)), "the setter is a lambda of the generated context");
       }
       Delegate create = (Delegate)readPlan.GetType().GetField("_create", Internal).GetValue(readPlan);
-      Assert.AreEqual(typeof(TestMsgPackContext), create.Method.DeclaringType.DeclaringType, "the generated constructor call itself");
+      Assert.IsTrue(IsNestedIn(create.Method.DeclaringType, typeof(TestMsgPackContext)), "the generated constructor call itself");
     }
 
     [TestMethod]
@@ -352,6 +352,80 @@ namespace LsMsgPackUnitTests
           || name == nameof(GcAllKinds.ReadOnly); // computed: written by the generated code, skipped by the runtime
         Assert.AreEqual(runtime, reader.GeneratedId < 0, name);
       }
+    }
+
+    /// <returns>Whether the type is nested in the outer type, at any depth (a lambda is in the closure class of the class describing its type)</returns>
+    internal static bool IsNestedIn(Type type, Type outer)
+    {
+      for (Type t = type.DeclaringType; t != null; t = t.DeclaringType)
+        if (t == outer)
+          return true;
+      return false;
+    }
+
+    [TestMethod]
+    public void Context_DescribesTypesWhenLookedUp()
+    {
+      TestMsgPackContext context = new TestMsgPackContext(); // not the shared Default: nothing is described yet
+      LsMsgPack.Generated.GeneratedTypeSet types = context.Types;
+      Assert.IsGreaterThan(10, types.Count);
+      Assert.IsTrue(context.IsUsable);
+      Assert.IsTrue(types.Described.All(d => d is null), "listing the types describes none");
+
+      Assert.IsTrue(context.TryGetType(typeof(GcPerson), out LsMsgPack.Generated.GeneratedType person));
+      Assert.AreEqual(typeof(GcPerson), person.Type);
+      Assert.AreEqual(1, types.Described.Count(d => d != null), "only the one looked up");
+      Assert.IsTrue(context.TryGetType(typeof(GcPerson), out LsMsgPack.Generated.GeneratedType again));
+      Assert.AreSame(person, again);
+      Assert.IsFalse(context.TryGetType(typeof(GeneratedCodeTests), out _), "not in the context");
+
+      foreach (Type type in types.Types.ToArray()) // what the context lists is what is described: every kind of type
+      {
+        Assert.IsTrue(context.TryGetType(type, out LsMsgPack.Generated.GeneratedType described), type.FullName);
+        Assert.AreEqual(type, described.Type);
+      }
+    }
+
+    /// <summary>
+    /// A key the generated loop does not read: the runtime reads the object from its start, as without the generated code.
+    /// </summary>
+    [TestMethod]
+    public void ReadMap_OtherKeys_SameAsTheRuntime()
+    {
+      LtMsgPackOptions Options(bool generated)
+      {
+        return new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false, Contexts = generated ? new LtMsgPackContext[] { TestMsgPackContext.Default } : null };
+      }
+      LtMsgPackSerializer runtime = new LtMsgPackSerializer(Options(false));
+      LtMsgPackSerializer generated = new LtMsgPackSerializer(Options(true));
+
+      string Read(LtMsgPackSerializer serializer, byte[] data)
+      {
+        try
+        {
+          GcPerson person = serializer.Deserialize<GcPerson>(data);
+          return person is null ? "null" : person.Name + "/" + person.Age;
+        }
+        catch (Exception ex)
+        {
+          return ex.GetType().Name + ": " + ex.Message;
+        }
+      }
+
+      byte[] name = { 0xA4, (byte)'N', (byte)'a', (byte)'m', (byte)'e', 0xA1, (byte)'x' };
+      byte[] age = { 0xA3, (byte)'A', (byte)'g', (byte)'e', 0x05 };
+      byte[][] maps =
+      {
+        new byte[] { 0x82 }.Concat(name).Concat(age).ToArray(),
+        new byte[] { 0x82 }.Concat(age).Concat(name).ToArray(), // out of order
+        new byte[] { 0x82 }.Concat(name).Concat(new byte[] { 0xA7, (byte)'U', (byte)'n', (byte)'k', (byte)'n', (byte)'o', (byte)'w', (byte)'n', 0x01 }).ToArray(), // not a property: skipped
+        new byte[] { 0x82 }.Concat(name).Concat(new byte[] { 0x07, 0x01 }).ToArray(), // an integer key without a schema
+        new byte[] { 0x82 }.Concat(name).Concat(new byte[] { 0xA1, (byte)'@', 0x01 }).ToArray(), // a reserved key
+        new byte[] { 0x82 }.Concat(new byte[] { 0xA3, (byte)'A', (byte)'g', (byte)'e', 0xA1, (byte)'5' }).Concat(name).ToArray(), // another format: the runtime converts it
+        new byte[] { 0x82 }.Concat(new byte[] { 0xA3, (byte)'A', (byte)'g', (byte)'e', 0xC0 }).Concat(new byte[] { 0xA4, (byte)'N', (byte)'a', (byte)'m', (byte)'e', 0xC0 }).ToArray(), // nils
+      };
+      for (int t = 0; t < maps.Length; t++)
+        Assert.AreEqual(Read(runtime, maps[t]), Read(generated, maps[t]), "map " + t);
     }
 
     public class GcComputedType
@@ -699,7 +773,7 @@ namespace LsMsgPackUnitTests
         {
           Delegate get = (Delegate)writer.GetType().GetField("_get", Internal)?.GetValue(writer);
           if (get != null)
-            Assert.AreEqual(typeof(TestMsgPackContext), get.Method.DeclaringType.DeclaringType, "the getter is a lambda of the generated context");
+            Assert.IsTrue(IsNestedIn(get.Method.DeclaringType, typeof(TestMsgPackContext)), "the getter is a lambda of the generated context");
         }
 
         object readPlan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { typeof(GcStruct) });
@@ -712,7 +786,7 @@ namespace LsMsgPackUnitTests
         Assert.IsNotNull(counter.GetType().GetField("Code", Internal).GetValue(counter), "the generated reader sets the box");
         Delegate create = (Delegate)counter.GetType().GetField("_create", Internal).GetValue(counter); // boxes what the generated lambda returns
         Delegate typed = (Delegate)create.Target.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).First(f => typeof(Delegate).IsAssignableFrom(f.FieldType)).GetValue(create.Target);
-        Assert.AreEqual(typeof(TestMsgPackContext), typed.Method.DeclaringType.DeclaringType, "the generated constructor call");
+        Assert.IsTrue(IsNestedIn(typed.Method.DeclaringType, typeof(TestMsgPackContext)), "the generated constructor call");
         Assert.AreEqual("zero", serializer.Deserialize<GcStructHolder>(serializer.Serialize(Structs(false))).Counter.Label);
       }
     }
@@ -761,7 +835,7 @@ namespace LsMsgPackUnitTests
       Delegate getter = (Delegate)typeof(PropertyAccessor).GetField("_getter", Internal).GetValue(accessor);
       Assert.IsNotNull(getter, "set at once (not after 100 calls)");
       Delegate typed = (Delegate)getter.Target.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)[0].GetValue(getter.Target);
-      Assert.AreEqual(typeof(GcRegisteredContext), typed.Method.DeclaringType.DeclaringType, "the getter of the generated context");
+      Assert.IsTrue(IsNestedIn(typed.Method.DeclaringType, typeof(GcRegisteredContext)), "the getter of the generated context");
       Assert.IsNotNull(GeneratedTypes.Find(typeof(GcRegistered)).Creator);
 
       GcRegistered value = new GcRegistered() { Name = "x", Number = 5 };
@@ -798,7 +872,7 @@ namespace LsMsgPackUnitTests
         Assert.IsNotNull(typeof(PropertyAccessor).GetField("_getter", Internal).GetValue(accessor), "set at once (not after 100 calls)");
         Delegate setter = (Delegate)typeof(PropertyAccessor).GetField("_setter", Internal).GetValue(accessor);
         Delegate typed = (Delegate)setter.Target.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).First(f => typeof(Delegate).IsAssignableFrom(f.FieldType)).GetValue(setter.Target);
-        Assert.AreEqual(typeof(GcRegisteredStructContext), typed.Method.DeclaringType.DeclaringType, "the setter of the generated context, on the box by reference");
+        Assert.IsTrue(IsNestedIn(typed.Method.DeclaringType, typeof(GcRegisteredStructContext)), "the setter of the generated context, on the box by reference");
       }
 
       GcRegisteredStructHolder value = new GcRegisteredStructHolder() { Value = new GcRegisteredStruct() { Name = "x", Number = 5 } };

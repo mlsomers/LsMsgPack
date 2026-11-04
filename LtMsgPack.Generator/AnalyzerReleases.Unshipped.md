@@ -15,3 +15,4 @@ LTMP007 | LtMsgPack.Generator | Error | Context class declares a parameterless c
 LTMP008 | LtMsgPack.Generator | Warning | Open generic type
 LTMP009 | LtMsgPack.Generator | Info | Context is not registered automatically
 LTMP010 | LtMsgPack.Generator | Warning | Values of types only known at runtime (only when trimmed or AOT)
+LTMP011 | LtMsgPack.Generator | Info | Generated code is not optimized (a Debug build)

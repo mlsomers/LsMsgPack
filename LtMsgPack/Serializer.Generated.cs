@@ -86,7 +86,7 @@ namespace LtMsgPack
     /// <returns>The generated member of the property the generated code reads itself, -1 otherwise</returns>
     internal int ReadMember(GeneratedObjectCode code, FullPropertyInfo info)
     {
-      if (code is null || (code.Capabilities & GeneratedCapabilities.ReadValue) == 0)
+      if (code is null || (code.Capabilities & (GeneratedCapabilities.ReadValue | GeneratedCapabilities.ReadMap)) == 0)
         return -1;
       int id = FindMember(code, info);
       if (id < 0)

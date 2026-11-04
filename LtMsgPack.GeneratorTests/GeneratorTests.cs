@@ -296,6 +296,25 @@ namespace I
 }";
 
     [TestMethod]
+    public void DebugBuild_Reported()
+    {
+      const string model = @"
+using LtMsgPack;
+namespace D
+{
+  public class Plain { public int Number { get; set; } }
+  [LtMsgPackSerializable(typeof(Plain))] public partial class First : LtMsgPackContext { }
+  [LtMsgPackSerializable(typeof(Plain))] public partial class Second : LtMsgPackContext { }
+}";
+      GeneratorHarness.Result debug = GeneratorHarness.Run(model, optimization: OptimizationLevel.Debug);
+      Assert.AreEqual(1, debug.GeneratorDiagnostics.Count(d => d.Id == "LTMP011"), "once per compilation");
+      Assert.AreEqual(DiagnosticSeverity.Info, debug.GeneratorDiagnostics.First(d => d.Id == "LTMP011").Severity);
+
+      Assert.IsFalse(GeneratorHarness.Run(model, optimization: OptimizationLevel.Release).GeneratorDiagnostics.Any(d => d.Id == "LTMP011"), "a Release build");
+      Assert.IsFalse(GeneratorHarness.Run("namespace D { public class Plain { } }", optimization: OptimizationLevel.Debug).GeneratorDiagnostics.Any(d => d.Id == "LTMP011"), "nothing generated");
+    }
+
+    [TestMethod]
     public void InitOnly_ThroughUnsafeAccessors()
     {
       GeneratorHarness.Result result = GeneratorHarness.Run(InitModel);

@@ -82,7 +82,12 @@ namespace LtMsgPack.Generated
     /// <summary>
     /// <see cref="GeneratedStructCode{T}.IsDefault"/>: the default check of FilterDefaultValues for a struct (version 3). Without it the runtime compares (StructDefault).
     /// </summary>
-    IsDefault = 32
+    IsDefault = 32,
+
+    /// <summary>
+    /// <see cref="GeneratedObjectCode{T}.ReadMap"/> (version 3): the loop over the values of a map, instead of a call to <see cref="GeneratedObjectCode{T}.ReadValue"/> per value.
+    /// </summary>
+    ReadMap = 64
   }
 
   /// <summary>
@@ -113,6 +118,8 @@ namespace LtMsgPack.Generated
     internal abstract void ReadPositionalBoxed(ReadContext c, object target, PropReader[] props, int items, GeneratedReadPlan p);
 
     internal abstract bool ReadValueBoxed(ReadContext c, object target, int id, GeneratedReadPlan p);
+
+    internal abstract bool ReadMapBoxed(ReadContext c, object target, ReadPlan plan, PropReader[] bound, int count, GeneratedReadPlan p);
   }
 
   /// <summary>
@@ -164,6 +171,16 @@ namespace LtMsgPack.Generated
       return false;
     }
 
+    /// <summary>
+    /// The values of a map (the header is read, the instance created), as ObjectReader's loop: the keys through <see cref="GeneratedIO.TryReadKey"/>, keys without a property are skipped, a value in another format is read by the runtime.
+    /// A loop here rather than a call per value: the frame of a method with the code of every property is zeroed per call, 816 bytes on a class of 114 properties.
+    /// </summary>
+    /// <returns>false on a key this does not read (<see cref="GeneratedIO.TryReadKey"/>): the runtime reads the object from its start</returns>
+    public virtual bool ReadMap(ReadContext c, T target, ReadPlan plan, PropReader[] bound, int count, GeneratedReadPlan p)
+    {
+      throw new NotSupportedException();
+    }
+
     internal sealed override int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
       return Write(c, (T)value, keys, infos, p, out end);
@@ -182,6 +199,11 @@ namespace LtMsgPack.Generated
     internal sealed override bool ReadValueBoxed(ReadContext c, object target, int id, GeneratedReadPlan p)
     {
       return ReadValue(c, (T)target, id, p);
+    }
+
+    internal sealed override bool ReadMapBoxed(ReadContext c, object target, ReadPlan plan, PropReader[] bound, int count, GeneratedReadPlan p)
+    {
+      return ReadMap(c, (T)target, plan, bound, count, p);
     }
   }
 
@@ -226,6 +248,12 @@ namespace LtMsgPack.Generated
       return false;
     }
 
+    /// <inheritdoc cref="GeneratedObjectCode{T}.ReadMap"/>
+    public virtual bool ReadMap(ReadContext c, ref T target, ReadPlan plan, PropReader[] bound, int count, GeneratedReadPlan p)
+    {
+      throw new NotSupportedException();
+    }
+
     /// <summary>
     /// The value is the default FilterDefaultValues leaves out: what LsMsgPack.Core's <c>Activator.CreateInstance(type).Equals(value)</c> says (ValueType.Equals: each field with the Equals of its type
     /// against its default), without a box (the runtime compiles the same comparison where it can, StructDefault, otherwise compares boxed).
@@ -253,6 +281,11 @@ namespace LtMsgPack.Generated
     internal sealed override bool ReadValueBoxed(ReadContext c, object target, int id, GeneratedReadPlan p)
     {
       return ReadValue(c, ref Unboxer.Unbox(target), id, p);
+    }
+
+    internal sealed override bool ReadMapBoxed(ReadContext c, object target, ReadPlan plan, PropReader[] bound, int count, GeneratedReadPlan p)
+    {
+      return ReadMap(c, ref Unboxer.Unbox(target), plan, bound, count, p);
     }
   }
 
@@ -361,6 +394,36 @@ namespace LtMsgPack.Generated
   [EditorBrowsable(EditorBrowsableState.Never)]
   public static class GeneratedIO
   {
+    /// <summary>
+    /// The key of a value of a map, as ObjectReader's loop reads it: an index into the schema, or a name.
+    /// </summary>
+    /// <param name="bound">The properties by the indexes of the schema, null without a schema</param>
+    /// <param name="next">The position after the property found last: names are usually written in the order of the properties</param>
+    /// <param name="prop">The property, null when the type has none with this key: its value is to be skipped</param>
+    /// <returns>false on another kind of key, or a reserved one ("" or "@")</returns>
+    public static bool TryReadKey(ReadContext c, ReadPlan plan, PropReader[] bound, ref int next, out PropReader prop)
+    {
+      MsgPackReader r = c.R;
+      if (c.Schema)
+      {
+        prop = null;
+        if (!r.TryReadInt64(out long index))
+          return false;
+        if (index >= 0 && index < bound.Length)
+          prop = bound[index];
+        return true;
+      }
+      int length = r.TryReadStringHeader();
+      if (length <= 0 || (length == 1 && r.Buf[r.Pos] == (byte)'@'))
+      {
+        prop = null;
+        return false;
+      }
+      prop = plan.FindByName(r.Buf, r.Pos, length, ref next);
+      r.Pos += length;
+      return true;
+    }
+
     /// <summary>
     /// The runtime reads the value into a struct by reference (<see cref="GeneratedStructCode{T}"/>): another format, or a property the generated code does not read.
     /// </summary>

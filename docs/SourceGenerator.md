@@ -100,6 +100,7 @@ The runtime checks once per class and serializer whether the generated code fits
 - Properties with `[DefaultValue]`, nested objects and collections (written and read by the runtime, which then uses the generated code of their class).
 - Values in another format than expected (an `int` written as a string, a number out of range): the runtime converts them, or throws, exactly as without the generator.
 - Collecting `ReadDifferences` and `ReadErrors` other than `FailFast`.
+- **Debug builds.** The generated code is compiled into your assembly, so in a Debug build it isn't optimized, while LtMsgPack's package is: it can be slower than without the generator (1.2-1.9x measured), reported as info `LTMP011`. Measure performance in Release.
 - Properties the generated code can't reach: `init`-only setters and non-public accessors without `UnsafeAccessor` (before .NET 8, of generic classes, virtual properties), non-public accessors that `NonPublicProperties` doesn't cover (set by reflection, reported as info `LTMP004`), private types. On .NET 8 and later, `init`-only setters of other properties are called through `[UnsafeAccessor]`, whatever `NonPublicProperties` says.
 - A class that changed since its code was generated (a model in another assembly that was updated on its own): a property is only used when its declaring type, name and type still match. New properties are done by reflection.
 
@@ -123,6 +124,7 @@ Generated code says which version of the generated code's contract it was writte
 | LTMP008 | Warning | An open generic type: list its constructed types (`typeof(Wrapper<int>)`) |
 | LTMP009 | Info | A context is not registered for the process (C# 7.3, or not accessible): pass it in `Contexts` |
 | LTMP010 | Warning | Only in projects that are trimmed or compiled ahead of time (`PublishTrimmed`, `PublishAot`, `IsAotCompatible`, `IsTrimmable`): a property holds values of an interface, an abstract class or `object` (also as the elements of a collection or the values of a dictionary), and no class of the context fits it. List the classes it holds with `[LtMsgPackSerializable]`. An `object` property is always reported: where it only holds primitives and strings, set `<NoWarn>$(NoWarn);LTMP010</NoWarn>` or `dotnet_diagnostic.LTMP010.severity = none` in `.editorconfig` |
+| LTMP011 | Info | The generated code is compiled without optimizations (a Debug build), so it can be slower than without the generator: measure performance in Release |
 
 To see the generated code, set `<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>` in the project: it lands in `obj/.../generated/LtMsgPack.Generator`.
 

@@ -94,7 +94,8 @@ namespace LtMsgPack.Generator
       return new GenerateOptions(include, contextName, autoRegister, rootNamespace, csharp9,
         initializer != null && compilation.IsSymbolAccessibleWithin(initializer, compilation.Assembly),
         dependency != null && compilation.IsSymbolAccessibleWithin(dependency, compilation.Assembly), trimmed, nonPublic,
-        unsafeAccessor != null && compilation.IsSymbolAccessibleWithin(unsafeAccessor, compilation.Assembly));
+        unsafeAccessor != null && compilation.IsSymbolAccessibleWithin(unsafeAccessor, compilation.Assembly),
+        compilation.Options.OptimizationLevel == OptimizationLevel.Debug);
     }
 
     private static bool IsTrue(AnalyzerConfigOptions global, string property)

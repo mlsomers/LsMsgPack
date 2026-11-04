@@ -47,6 +47,10 @@ namespace LtMsgPack.Generator
       "'{0}.{1}' holds values of '{2}' and no class of the context fits it: list the classes it holds with [LtMsgPackSerializable] (when trimmed their properties may be removed, under NativeAOT their handlers cannot be created)",
       Category, DiagnosticSeverity.Warning, true);
 
+    public static readonly DiagnosticDescriptor Unoptimized = new DiagnosticDescriptor("LTMP011", "Generated code is not optimized",
+      "The code of LtMsgPack's source generator is compiled without optimizations (a Debug build), so it can be slower than without the generator: measure performance in a Release build",
+      Category, DiagnosticSeverity.Info, true);
+
     public static DiagnosticDescriptor Get(string id)
     {
       switch (id)
@@ -61,6 +65,7 @@ namespace LtMsgPack.Generator
         case "LTMP008": return OpenGeneric;
         case "LTMP009": return NotRegistered;
         case "LTMP010": return Uncovered;
+        case "LTMP011": return Unoptimized;
         default: throw new System.ArgumentException("Unknown diagnostic " + id);
       }
     }

@@ -199,5 +199,6 @@ namespace LtMsgPack.Generator
     bool HasDynamicDependency,
     bool Trimmed, // PublishTrimmed, PublishAot, IsAotCompatible or IsTrimmable: LTMP010 is reported
     int NonPublic, // LsMsgPack.TypeResolving.Filters.NonPublicProperties: the non-public properties described (the runtime decides which it serializes)
-    bool UnsafeAccessors); // UnsafeAccessorAttribute (.NET 8): non-public accessors and init-only setters are called through it
+    bool UnsafeAccessors, // UnsafeAccessorAttribute (.NET 8): non-public accessors and init-only setters are called through it
+    bool Unoptimized); // a Debug build: LTMP011 is reported
 }

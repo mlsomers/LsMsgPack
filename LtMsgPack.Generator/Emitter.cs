@@ -31,6 +31,9 @@ namespace LtMsgPack.Generator
       if (assembly != null)
         contexts.Add(assembly);
 
+      if (options.Unoptimized && contexts.Exists(c => c.FullName != null && !HasErrors(c))) // once per compilation, there is code to optimize
+        output.ReportDiagnostic(Diagnostic.Create(Diagnostics.Unoptimized, null));
+
       List<ContextModel> registered = new List<ContextModel>();
       HashSet<string> files = new HashSet<string>();
       foreach (ContextModel context in contexts)
@@ -132,11 +135,39 @@ namespace LtMsgPack.Generator
         }
       }
       Accessors accessors = new Accessors();
+      // The types by number, each described when it is first looked up (GeneratedContext.Describe), by a class of its own: its lambdas are in a closure class of their own too,
+      // which is only loaded with it. Everything at once took 190 ms for 86 types with 1060 properties.
       w.Line("protected override void AddTypes(global::LsMsgPack.Generated.GeneratedTypeSet types)");
       w.Open();
       for (int t = 0; t < context.Types.Length; t++)
-        AddType(w, context.Types[t], t, accessors);
+        if (context.Types[t].Kind != TypeModelKind.Factory) // a DynamicDependency only
+          w.Line("types.Add(typeof(" + context.Types[t].TypeName + "), " + t + ");");
       w.Close();
+      w.Line();
+      w.Line("protected override global::LsMsgPack.Generated.GeneratedType Describe(int number)");
+      w.Open();
+      w.Line("switch (number)");
+      w.Open();
+      for (int t = 0; t < context.Types.Length; t++)
+        if (context.Types[t].Kind != TypeModelKind.Factory)
+          w.Line("case " + t + ": return " + DescriptionClass(t) + ".Describe();");
+      w.Line("default: return null;");
+      w.Close();
+      w.Close();
+
+      for (int t = 0; t < context.Types.Length; t++)
+      {
+        if (context.Types[t].Kind == TypeModelKind.Factory)
+          continue;
+        w.Line();
+        w.Line("private static class " + DescriptionClass(t));
+        w.Open();
+        w.Line("internal static global::LsMsgPack.Generated.GeneratedType Describe()");
+        w.Open();
+        Description(w, context.Types[t], t, accessors);
+        w.Close();
+        w.Close();
+      }
 
       for (int t = 0; t < context.Types.Length; t++)
       {
@@ -155,32 +186,33 @@ namespace LtMsgPack.Generator
       return w.ToString();
     }
 
-    private static void AddType(CodeWriter w, TypeModel type, int index, Accessors accessors)
+    /// <summary>
+    /// The statement returning the description of the type.
+    /// </summary>
+    private static void Description(CodeWriter w, TypeModel type, int index, Accessors accessors)
     {
       switch (type.Kind)
       {
         case TypeModelKind.Enum:
-          w.Line("types.Add(" + Values + ".Enum<" + type.TypeName + ">());");
+          w.Line("return " + Values + ".Enum<" + type.TypeName + ">();");
           return;
         case TypeModelKind.Nullable:
-          w.Line("types.Add(" + Values + ".Nullable<" + type.Argument + ">());");
+          w.Line("return " + Values + ".Nullable<" + type.Argument + ">();");
           return;
         case TypeModelKind.List:
-          w.Line("types.Add(" + Values + ".List<" + type.Argument + ">());");
+          w.Line("return " + Values + ".List<" + type.Argument + ">();");
           return;
         case TypeModelKind.Array:
-          w.Line("types.Add(" + Values + ".Array<" + type.Argument + ">());");
+          w.Line("return " + Values + ".Array<" + type.Argument + ">();");
           return;
         case TypeModelKind.Collection when type.Factory != null:
-          w.Line("types.Add(" + Values + ".Collection<" + type.TypeName + ", " + type.Argument + ">(items => " + type.Factory + "(items)));");
+          w.Line("return " + Values + ".Collection<" + type.TypeName + ", " + type.Argument + ">(items => " + type.Factory + "(items));");
           return;
         case TypeModelKind.Collection:
-          w.Line("types.Add(" + Values + ".Collection<" + type.TypeName + ">(" + Creator(type) + "));");
+          w.Line("return " + Values + ".Collection<" + type.TypeName + ">(" + Creator(type) + ");");
           return;
         case TypeModelKind.Boxed:
-          w.Line("types.Add(" + Values + ".Boxed<" + type.TypeName + ">());");
-          return;
-        case TypeModelKind.Factory: // a DynamicDependency only
+          w.Line("return " + Values + ".Boxed<" + type.TypeName + ">();");
           return;
       }
 
@@ -189,11 +221,11 @@ namespace LtMsgPack.Generator
       string code = type.Members.Length > 0 ? "new " + CodeClass(index) + "()" : "null";
       if (type.Properties.Length == 0)
       {
-        w.Line("types.Add(" + factory + Creator(type) + ", " + code + "));");
+        w.Line("return " + factory + Creator(type) + ", " + code + ");");
         return;
       }
 
-      w.Line("types.Add(" + factory + Creator(type) + ", " + code + ",");
+      w.Line("return " + factory + Creator(type) + ", " + code + ",");
       w.Indent++;
       for (int t = 0; t < type.Properties.Length; t++)
       {
@@ -209,9 +241,14 @@ namespace LtMsgPack.Generator
           get = property.CanGet ? "o => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", false) : "null";
           set = property.CanSet ? "(o, v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", false) : "null";
         }
-        w.Line(Values + (byRef ? ".StructProperty<" : ".Property<") + type.TypeName + ", " + property.TypeName + ">(\"" + property.Name + "\", " + get + ", " + set + ")" + (t < type.Properties.Length - 1 ? "," : "));"));
+        w.Line(Values + (byRef ? ".StructProperty<" : ".Property<") + type.TypeName + ", " + property.TypeName + ">(\"" + property.Name + "\", " + get + ", " + set + ")" + (t < type.Properties.Length - 1 ? "," : ");"));
       }
       w.Indent--;
+    }
+
+    private static string DescriptionClass(int index)
+    {
+      return "LtMsgPackType" + index;
     }
 
     private static string CodeClass(int index)
@@ -256,7 +293,7 @@ namespace LtMsgPack.Generator
       w.Indent--;
       bool isDefault = byRef && type.IsDefault != null;
       w.Line("}, new int[] { " + string.Join(", ", unrolled) + " }, " + Generated + "GeneratedCapabilities.Write | " + Generated + "GeneratedCapabilities.WriteUnrolled | "
-        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadValue"
+        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadMap"
         + (isDefault ? " | " + Generated + "GeneratedCapabilities.IsDefault" : "") + ")");
       w.Open();
       w.Close();
@@ -412,14 +449,25 @@ namespace LtMsgPack.Generator
       w.Close();
       w.Close();
 
-      // ReadValue: one value (the map layout, after its key)
+      // ReadMap: the map layout (ObjectReader.Read's loop). The loop is here, as in ReadPositional: this method has the code of every property, and the JIT zeroes its frame per call
       w.Line();
-      w.Line("public override bool ReadValue(" + Reading + "ReadContext c, " + t + " o, int id, " + Generated + "GeneratedReadPlan p)");
+      w.Line("public override bool ReadMap(" + Reading + "ReadContext c, " + t + " o, " + Reading + "ReadPlan plan, " + Reading + "PropReader[] bound, int count, " + Generated + "GeneratedReadPlan p)");
       w.Open();
+      w.Line(IO + "MsgPackReader r = c.R;");
+      w.Line("int next = 0;");
+      w.Line("for (int t = 0; t < count; t++)");
+      w.Open();
+      w.Line(Reading + "PropReader prop;");
+      w.Line("if (!" + Generated + "GeneratedIO.TryReadKey(c, plan, bound, ref next, out prop))");
+      w.Line("  return false;");
+      w.Line("if (prop == null)");
+      w.Open();
+      w.Line("r.Skip(c.Depth); // not a property of this type (removed, or ignored here)");
+      w.Line("continue;");
+      w.Close();
       if (reads)
       {
-        w.Line(IO + "MsgPackReader r = c.R;");
-        w.Line("switch (id)");
+        w.Line("switch (prop.GeneratedId)");
         w.Open();
       }
       for (int m = 0; m < type.Members.Length; m++)
@@ -434,25 +482,27 @@ namespace LtMsgPack.Generator
           w.Line("if (r.TryReadNil())");
           w.Open();
           w.Line(Set(accessors, member, "null") + ";");
-          w.Line("return true;");
+          w.Line("continue;");
           w.Close();
-          ReadValue(w, member, "return true;", accessors);
+          ReadValue(w, member, "continue;", accessors);
         }
         else
         {
-          ReadValue(w, member, "return true;", accessors);
+          ReadValue(w, member, "continue;", accessors);
           w.Line("if (r.TryReadNil())");
           w.Open();
           w.Line(Set(accessors, member, "default(" + member.TypeName + ")") + ";");
-          w.Line("return true;");
+          w.Line("continue;");
           w.Close();
         }
-        w.Line("return false;");
+        w.Line("break;");
         w.Close();
       }
       if (reads)
         w.Close();
-      w.Line("return false;");
+      w.Line((byRef ? Generated + "GeneratedIO.Read(prop, c, ref o);" : "prop.Read(c, o);") + " // another format: read as the runtime does");
+      w.Close();
+      w.Line("return true;");
       w.Close();
 
       w.Close();
