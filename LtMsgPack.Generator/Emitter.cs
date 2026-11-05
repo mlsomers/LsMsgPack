@@ -337,8 +337,15 @@ namespace LtMsgPack.Generator
       for (int m = 0; m < type.Members.Length; m++)
       {
         MemberModel member = type.Members[m];
-        if (member.Kind == "None" || !member.CanGet)
+        if (!member.CanGet)
           continue;
+        if (member.Kind == "None") // read here, written by the runtime's handler of its type (no getter delegate and call per property)
+        {
+          w.Line("case " + m + ":");
+          w.Line("  written = p.Value<" + member.TypeName + ">(t, c, " + Get(accessors, member) + ", key, infos[t]);");
+          w.Line("  break;");
+          continue;
+        }
         w.Line("case " + m + ":");
         w.Open();
         w.Line(member.TypeName + " v = " + Get(accessors, member) + ";");
@@ -380,9 +387,15 @@ namespace LtMsgPack.Generator
       for (int position = 0; position < unrolled.Count; position++)
       {
         MemberModel member = type.Members[unrolled[position]];
-        if (member.Kind == "None" || !member.CanGet)
+        if (!member.CanGet)
         {
           w.Line("if (!p.Runtime(" + position + ", c, " + o + ", null, infos[" + position + "]))");
+          w.Line("  w.Nil();");
+          continue;
+        }
+        if (member.Kind == "None")
+        {
+          w.Line("if (!p.Value<" + member.TypeName + ">(" + position + ", c, " + Get(accessors, member) + ", null, infos[" + position + "]))");
           w.Line("  w.Nil();");
           continue;
         }

@@ -365,8 +365,8 @@ namespace LtMsgPack
 
       result = new byte[headLength + body.Pos];
       if (headLength > 0)
-        Buffer.BlockCopy(head, 0, result, 0, headLength);
-      Buffer.BlockCopy(body.Buf, 0, result, headLength, body.Pos);
+        new ReadOnlySpan<byte>(head, 0, headLength).CopyTo(result); // Buffer.BlockCopy checks the array types first
+      new ReadOnlySpan<byte>(body.Buf, 0, body.Pos).CopyTo(new Span<byte>(result, headLength, body.Pos));
     }
   }
 

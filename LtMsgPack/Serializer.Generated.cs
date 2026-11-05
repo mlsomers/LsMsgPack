@@ -66,7 +66,7 @@ namespace LtMsgPack
       bool unrolled = (code.Capabilities & GeneratedCapabilities.WriteUnrolled) != 0 && !Options._trimTrailingNulls && ids.Length == code.UnrolledIds.Length;
       for (int t = 0; unrolled && t < ids.Length; t++)
         unrolled = ids[t] == code.UnrolledIds[t];
-      return new GeneratedWritePlan(ids, Filters == FilterMode.DefaultValues, Options._unspecifiedIsUtc, Options._trimTrailingNulls, DecimalCode(), unrolled, props);
+      return new GeneratedWritePlan(this, ids, Filters == FilterMode.DefaultValues, Options._unspecifiedIsUtc, Options._trimTrailingNulls, DecimalCode(), unrolled, props);
     }
 
     /// <returns>The generated member of the property; -1 when there is none, or the generated code would write it otherwise than these options do (the runtime writes it)</returns>

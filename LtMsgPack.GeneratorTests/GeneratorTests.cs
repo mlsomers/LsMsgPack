@@ -733,7 +733,7 @@ namespace M
       Assert.Contains("Boxed<int[,]>()", code);
       Assert.Contains("Boxed<global::System.Collections.Generic.KeyValuePair<string, int>>()", code);
       Assert.Contains("Boxed<object>()", code);
-      Assert.DoesNotContain("<byte[]>", code, "bin is not generic");
+      Assert.DoesNotContain("<byte[]>", code.Replace("p.Value<byte[]>", ""), "bin is not generic (its value goes to the runtime's handler)");
       Assert.Contains("p.Runtime(t, c, ref o, key, infos[t])", code, "the runtime writes Owner, by reference");
     }
 

@@ -1,6 +1,7 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Generated;
 using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Interfaces;
 using LtMsgPack;
 using LtMsgPack.Generated;
@@ -266,6 +267,73 @@ namespace LsMsgPackUnitTests
           string actual = Read(WithCode(options, true), runtime, dumper);
           if (expected != actual)
             differences.Add($"{name} (defaults {defaults}): values differ\n  runtime   {expected}\n  generated {actual}");
+        }
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences));
+    }
+
+    public struct GcNestedPoint
+    {
+      public float X { get; set; }
+      public float Y { get; set; }
+    }
+
+    public class GcNestedPerson : GcPerson
+    {
+      public string Nickname { get; set; }
+    }
+
+    /// <summary>
+    /// The members the generated code gets itself and hands to the runtime's handler of their type (GeneratedWritePlan.Value).
+    /// </summary>
+    public class GcNestedValues
+    {
+      public GcNestedPoint Point { get; set; }
+      public GcNestedPoint? MaybePoint { get; set; }
+      public GcPerson Person { get; set; } // also a derived class: a type id
+      [System.ComponentModel.DefaultValue(null)]
+      public GcPerson WithDefaultValue { get; set; }
+      public object Anything { get; set; }
+      public List<GcNestedPoint> Points { get; set; }
+      [SerializeEnumerable(typeof(GcPerson))]
+      public List<GcPerson> Attributed { get; set; }
+      public byte[] Bin { get; set; }
+    }
+
+    private static GcNestedValues NestedValues()
+    {
+      return new GcNestedValues()
+      {
+        Point = new GcNestedPoint() { X = 1.5f, Y = -2 },
+        MaybePoint = new GcNestedPoint() { Y = 3 },
+        Person = new GcNestedPerson() { Name = "Derived", Nickname = "D", Friends = new List<GcPerson>() { new GcPerson() { Name = "Friend" } } },
+        WithDefaultValue = new GcPerson() { Name = "Set" },
+        Anything = 42,
+        Points = new List<GcNestedPoint>() { new GcNestedPoint() { X = 1 }, default(GcNestedPoint) },
+        Attributed = new List<GcPerson>() { new GcPerson() { Age = 7 } },
+        Bin = new byte[] { 1, 2, 3 },
+      };
+    }
+
+    [TestMethod]
+    public void NestedValues_SameBytesAndValuesAsTheRuntime_InEveryOptionVariant()
+    {
+      List<string> differences = new List<string>();
+      foreach ((string name, LtMsgPackOptions options) in OptionVariants())
+      {
+        foreach (GcNestedValues value in new[] { NestedValues(), new GcNestedValues() })
+        {
+          byte[] runtime = WithCode(options, false).Serialize(value);
+          byte[] generated = WithCode(options, true).Serialize(value);
+          if (!runtime.AsSpan().SequenceEqual(generated))
+          {
+            differences.Add($"{name}: bytes differ\n  runtime   {BitConverter.ToString(runtime)}\n  generated {BitConverter.ToString(generated)}");
+            continue;
+          }
+          byte[] againRuntime = WithCode(options, false).Serialize(WithCode(options, false).Deserialize<GcNestedValues>(runtime));
+          byte[] againGenerated = WithCode(options, false).Serialize(WithCode(options, true).Deserialize<GcNestedValues>(runtime));
+          if (!againRuntime.AsSpan().SequenceEqual(againGenerated))
+            differences.Add($"{name}: values differ\n  runtime   {BitConverter.ToString(againRuntime)}\n  generated {BitConverter.ToString(againGenerated)}");
         }
       }
       Assert.IsEmpty(differences, string.Join("\n", differences));

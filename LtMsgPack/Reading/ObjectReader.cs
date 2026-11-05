@@ -1074,12 +1074,12 @@ namespace LtMsgPack.Reading
     public override void Read(ReadContext c, object target)
     {
       ValueReader<TValue> reader = _reader ?? (_reader = _serializer.Reader<TValue>());
-      _set((TTarget)target, reader.Read(c, Info));
+      _set(Unsafe.As<TTarget>(target), reader.Read(c, Info)); // an instance of the plan's type: no cast, which in shared generic code is a lookup per property
     }
 
     public override void ReadNil(object target)
     {
-      _set((TTarget)target, _nil);
+      _set(Unsafe.As<TTarget>(target), _nil);
     }
 
     internal override void SetBoxed(object target, object value)

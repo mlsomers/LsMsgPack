@@ -63,9 +63,46 @@ namespace LtMsgPack.IO
       Buf[Pos++] = value;
     }
 
+    /// <summary>
+    /// The bytes of an encoded key: up to 16 bytes as two (overlapping) blocks instead of a call to Memmove, which was 10% of writing maps of names.
+    /// </summary>
     public void Raw(byte[] bytes)
     {
-      Raw(bytes, 0, bytes.Length);
+      int count = bytes.Length;
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (count > 16 || count == 0 || buffer.Length - pos < 16)
+      {
+        Raw(bytes, 0, count);
+        return;
+      }
+
+      ref byte to = ref buffer[pos];
+      ref byte from = ref bytes[0];
+      if (count >= 8)
+      {
+        ulong first = Unsafe.ReadUnaligned<ulong>(ref from);
+        ulong last = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref from, count - 8));
+        Unsafe.WriteUnaligned(ref to, first);
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, count - 8), last);
+      }
+      else if (count >= 4)
+      {
+        uint first = Unsafe.ReadUnaligned<uint>(ref from);
+        uint last = Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref from, count - 4));
+        Unsafe.WriteUnaligned(ref to, first);
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, count - 4), last);
+      }
+      else if (count >= 2)
+      {
+        ushort first = Unsafe.ReadUnaligned<ushort>(ref from);
+        ushort last = Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref from, count - 2));
+        Unsafe.WriteUnaligned(ref to, first);
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, count - 2), last);
+      }
+      else
+        to = from;
+      Pos = pos + count;
     }
 
     internal void Raw(byte[] bytes, int offset, int count)
@@ -172,13 +209,44 @@ namespace LtMsgPack.IO
 
     internal void CompactUnsigned(ulong value)
     {
-      Ensure(9);
-      byte[] b = Buf;
-      if (value <= 0x7F) b[Pos++] = (byte)value;
-      else if (value <= 0xFF) { b[Pos++] = 0xCC; b[Pos++] = (byte)value; }
-      else if (value <= 0xFFFF) { b[Pos++] = 0xCD; U16((ushort)value); }
-      else if (value <= 0xFFFFFFFF) { b[Pos++] = 0xCE; U32((uint)value); }
-      else { b[Pos++] = 0xCF; U64(value); }
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (buffer.Length - pos < 9)
+      {
+        Grow(9);
+        buffer = Buf;
+      }
+      ref byte to = ref buffer[pos];
+      ref byte next = ref Unsafe.Add(ref to, 1);
+      if (value <= 0x7F)
+      {
+        to = (byte)value;
+        Pos = pos + 1;
+      }
+      else if (value <= 0xFF)
+      {
+        to = 0xCC;
+        next = (byte)value;
+        Pos = pos + 2;
+      }
+      else if (value <= 0xFFFF)
+      {
+        to = 0xCD;
+        Unsafe.WriteUnaligned(ref next, _littleEndian == BitConverter.IsLittleEndian ? (ushort)value : BinaryPrimitives.ReverseEndianness((ushort)value));
+        Pos = pos + 3;
+      }
+      else if (value <= 0xFFFFFFFF)
+      {
+        to = 0xCE;
+        Unsafe.WriteUnaligned(ref next, _littleEndian == BitConverter.IsLittleEndian ? (uint)value : BinaryPrimitives.ReverseEndianness((uint)value));
+        Pos = pos + 5;
+      }
+      else
+      {
+        to = 0xCF;
+        Unsafe.WriteUnaligned(ref next, _littleEndian == BitConverter.IsLittleEndian ? value : BinaryPrimitives.ReverseEndianness(value));
+        Pos = pos + 9;
+      }
     }
 
     // Without DynamicallyCompact the format of the .NET type is kept (only fixints stay single bytes), like MpInt
@@ -246,16 +314,47 @@ namespace LtMsgPack.IO
 
     public void Single(float value)
     {
-      Ensure(5);
-      Buf[Pos++] = 0xCA;
-      U32(new SingleBits(value).Bits);
+#if NET8_0_OR_GREATER
+      uint bits = BitConverter.SingleToUInt32Bits(value); // from register to register
+#else
+      uint bits = new SingleBits(value).Bits;
+#endif
+      Coded32(0xCA, bits);
     }
 
     public void Double(double value)
     {
-      Ensure(9);
-      Buf[Pos++] = 0xCB;
-      U64((ulong)BitConverter.DoubleToInt64Bits(value));
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (buffer.Length - pos < 9)
+      {
+        Grow(9);
+        buffer = Buf;
+      }
+      ref byte to = ref buffer[pos];
+      to = 0xCB;
+      ulong bits = (ulong)BitConverter.DoubleToInt64Bits(value);
+      Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, 1), _littleEndian == BitConverter.IsLittleEndian ? bits : BinaryPrimitives.ReverseEndianness(bits));
+      Pos = pos + 9;
+    }
+
+    /// <summary>
+    /// A format byte and 32 bits in the wire byte order, with one load and one store of the position (Ensure, Buf[Pos++] and <see cref="U32"/> each load it).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void Coded32(byte code, uint value)
+    {
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (buffer.Length - pos < 5)
+      {
+        Grow(5);
+        buffer = Buf;
+      }
+      ref byte to = ref buffer[pos];
+      to = code;
+      Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, 1), _littleEndian == BitConverter.IsLittleEndian ? value : BinaryPrimitives.ReverseEndianness(value));
+      Pos = pos + 5;
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]

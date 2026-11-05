@@ -4,6 +4,7 @@ using LtMsgPack.IO;
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Reflection;
 
 namespace LtMsgPack
@@ -173,10 +174,15 @@ namespace LtMsgPack
           c.W.Nil();
         else
         {
-          Writing.ValueHandler<T> handler = c.RootHandler as Writing.ValueHandler<T>; // the one of the previous call on this thread (usually the same root type)
-          if (handler is null)
+          Writing.ValueHandler<T> handler;
+          if (ReferenceEquals(c.RootHandlerOf, root)) // the previous call on this thread had this root type (usually the case): no casts, in shared generic code each is a lookup and a walk over the base classes
+            handler = Unsafe.As<Writing.ValueHandler<T>>(c.RootHandler);
+          else
+          {
             c.RootHandler = handler = c.Serializer.Handler<T>(null);
-          handler.Write(c, (T)value, root);
+            c.RootHandlerOf = root;
+          }
+          handler.Write(c, typeof(T).IsValueType ? (T)value : Unsafe.As<object, T>(ref value), root); // value is the T of the public Serialize<T>
         }
       };
     }

@@ -51,6 +51,7 @@ namespace LtMsgPack.Writing
     /// </summary>
     internal FullPropertyInfo RootInfo;
     internal object RootHandler;
+    internal FullPropertyInfo RootHandlerOf; // the root info (one per type) RootHandler was looked up for
     internal WriteTypeInfo RootTypeInfo;
     internal IdMode Mode;
     internal InlineSchema Inline;

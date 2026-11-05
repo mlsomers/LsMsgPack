@@ -221,6 +221,7 @@ namespace LtMsgPack.Writing
     /// <see cref="Write"/>, <see cref="WriteArray"/> and <see cref="WriteTrimmed"/> for a struct by reference (<see cref="ByRef"/>, see ObjectHandler): no box, no type id (a struct is its own type),
     /// the generated code by reference (<see cref="GeneratedStructCode{T}"/>). A copy so the class path stays as it is: keep the two the same.
     /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     internal void WriteStruct<T>(WriteContext c, ref T value, FullPropertyInfo assignedTo)
     {
       byte[][] keys = c.BeginObject(this, out FullPropertyInfo[] infos); // before anything else, as LsMsgPack resolves the ids first
@@ -384,7 +385,7 @@ namespace LtMsgPack.Writing
     /// <summary>
     /// The filters are asked with the value boxed: other filters than FilterDefaultValues, or a [DefaultValue] on the property.
     /// </summary>
-    protected readonly bool BoxedFilters;
+    internal readonly bool BoxedFilters;
     protected readonly bool NoFilters;
 
     protected PropWriter(Serializer serializer, FullPropertyInfo info)
@@ -406,7 +407,7 @@ namespace LtMsgPack.Writing
       get { return false; }
     }
 
-    protected bool IncludeBoxed(object value, FullPropertyInfo info)
+    internal bool IncludeBoxed(object value, FullPropertyInfo info)
     {
       IMsgPackPropertyIncludeDynamically[] filters = Serializer.Options._dynamicFilters;
       for (int t = filters.Length - 1; t >= 0; t--)
@@ -468,7 +469,7 @@ namespace LtMsgPack.Writing
       TValue value;
       try
       {
-        value = _get((TTarget)target);
+        value = _get(Unsafe.As<TTarget>(target)); // the plan of the target's type (or a type deriving from TTarget): no cast, which in shared generic code is a lookup per property
       }
       catch (TargetInvocationException ex) when (ex.InnerException != null)
       {

@@ -239,6 +239,12 @@ namespace Shop
               written = true;
               break;
             }
+            case 4:
+              written = p.Value<global::Shop.Customer>(t, c, o.Customer, key, infos[t]);
+              break;
+            case 5:
+              written = p.Value<global::System.Collections.Generic.List<global::Shop.InvoiceLine>>(t, c, o.Lines, key, infos[t]);
+              break;
             case 6:
             {
               decimal v = o.Total;
@@ -316,9 +322,9 @@ namespace Shop
             w.Int32((int)v);
           }
         }
-        if (!p.Runtime(4, c, o, null, infos[4]))
+        if (!p.Value<global::Shop.Customer>(4, c, o.Customer, null, infos[4]))
           w.Nil();
-        if (!p.Runtime(5, c, o, null, infos[5]))
+        if (!p.Value<global::System.Collections.Generic.List<global::Shop.InvoiceLine>>(5, c, o.Lines, null, infos[5]))
           w.Nil();
         {
           decimal v = o.Total;
@@ -571,6 +577,9 @@ namespace Shop
               written = true;
               break;
             }
+            case 2:
+              written = p.Value<global::Shop.Address>(t, c, o.BillingAddress, key, infos[t]);
+              break;
             default:
               written = p.Runtime(t, c, o, key, infos[t]);
               break;
@@ -613,7 +622,7 @@ namespace Shop
               w.String(v);
           }
         }
-        if (!p.Runtime(2, c, o, null, infos[2]))
+        if (!p.Value<global::Shop.Address>(2, c, o.BillingAddress, null, infos[2]))
           w.Nil();
       }
 
@@ -1012,6 +1021,9 @@ namespace Shop
               written = true;
               break;
             }
+            case 3:
+              written = p.Value<global::Shop.Money>(t, c, o.UnitPrice, key, infos[t]);
+              break;
             default:
               written = p.Runtime(t, c, o, key, infos[t]);
               break;
@@ -1060,7 +1072,7 @@ namespace Shop
             w.UInt8((byte)v);
           }
         }
-        if (!p.Runtime(3, c, o, null, infos[3]))
+        if (!p.Value<global::Shop.Money>(3, c, o.UnitPrice, null, infos[3]))
           w.Nil();
       }
 

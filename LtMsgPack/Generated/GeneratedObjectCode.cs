@@ -338,9 +338,17 @@ namespace LtMsgPack.Generated
 
     internal readonly bool Unrolled;
     private readonly PropWriter[] _props;
+    private readonly Serializer _serializer;
 
-    internal GeneratedWritePlan(int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool unrolled, PropWriter[] props)
+    /// <summary>
+    /// The handlers of the properties written by <see cref="Value{T}"/> (per position, a ValueHandler of the property's type), made at the first value: a handler can lead back to this plan's type.
+    /// </summary>
+    private readonly object[] _handlers;
+
+    internal GeneratedWritePlan(Serializer serializer, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool unrolled, PropWriter[] props)
     {
+      _serializer = serializer;
+      _handlers = new object[ids.Length];
       Ids = ids;
       FilterDefaults = filterDefaults;
       UnspecifiedIsUtc = unspecifiedIsUtc;
@@ -357,6 +365,41 @@ namespace LtMsgPack.Generated
     public bool Runtime(int position, WriteContext c, object target, byte[] key, FullPropertyInfo info)
     {
       return _props[position].Write(c, target, key, info);
+    }
+
+    /// <summary>
+    /// A value the generated code read itself but does not write itself (objects, collections...): what the runtime's <see cref="PropWriter{TTarget, TValue}"/> does after its getter.
+    /// </summary>
+    /// <typeparam name="T">The type of the property at <paramref name="position"/></typeparam>
+    /// <returns>false when the filters left the value out (nothing was written)</returns>
+    public bool Value<T>(int position, WriteContext c, T value, byte[] key, FullPropertyInfo info)
+    {
+      ValueHandler<T> handler = Unsafe.As<ValueHandler<T>>(_handlers[position]) ?? CreateHandler<T>(position, info);
+      if (FilterDefaults)
+      {
+        if (_props[position].BoxedFilters)
+        {
+          if (!_props[position].IncludeBoxed(value, info))
+            return false;
+        }
+        else if (!handler.IncludeByDefault(value, info))
+          return false;
+      }
+
+      if (key != null)
+        c.W.Raw(key);
+      if (value == null)
+        c.W.Nil();
+      else
+        handler.Write(c, value, info);
+      return true;
+    }
+
+    private ValueHandler<T> CreateHandler<T>(int position, FullPropertyInfo info)
+    {
+      ValueHandler<T> handler = _serializer.Handler<T>(info);
+      _handlers[position] = handler;
+      return handler;
     }
 
     /// <summary>
