@@ -1,6 +1,7 @@
 ﻿using LsMsgPack;
 using LtMsgPack.Extensions;
 using System;
+using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
@@ -80,29 +81,25 @@ namespace LtMsgPack.IO
     private ushort U16()
     {
       Need(2);
-      byte[] b = Buf;
-      ushort value = _littleEndian ? (ushort)(b[Pos] | b[Pos + 1] << 8) : (ushort)(b[Pos] << 8 | b[Pos + 1]);
+      ReadOnlySpan<byte> source = new ReadOnlySpan<byte>(Buf, Pos, 2);
       Pos += 2;
-      return value;
+      return _littleEndian ? BinaryPrimitives.ReadUInt16LittleEndian(source) : BinaryPrimitives.ReadUInt16BigEndian(source);
     }
 
     private uint U32()
     {
       Need(4);
-      byte[] b = Buf;
-      uint value = _littleEndian
-        ? (uint)(b[Pos] | b[Pos + 1] << 8 | b[Pos + 2] << 16 | b[Pos + 3] << 24)
-        : (uint)(b[Pos] << 24 | b[Pos + 1] << 16 | b[Pos + 2] << 8 | b[Pos + 3]);
+      ReadOnlySpan<byte> source = new ReadOnlySpan<byte>(Buf, Pos, 4);
       Pos += 4;
-      return value;
+      return _littleEndian ? BinaryPrimitives.ReadUInt32LittleEndian(source) : BinaryPrimitives.ReadUInt32BigEndian(source);
     }
 
     private ulong U64()
     {
       Need(8);
-      ulong first = U32();
-      ulong second = U32();
-      return _littleEndian ? second << 32 | first : first << 32 | second;
+      ReadOnlySpan<byte> source = new ReadOnlySpan<byte>(Buf, Pos, 8);
+      Pos += 8;
+      return _littleEndian ? BinaryPrimitives.ReadUInt64LittleEndian(source) : BinaryPrimitives.ReadUInt64BigEndian(source);
     }
 
     private byte[] Bytes(long count)

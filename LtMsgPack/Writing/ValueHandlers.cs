@@ -25,6 +25,39 @@ namespace LtMsgPack.Writing
     internal abstract bool IncludeByDefault(T value, FullPropertyInfo info);
   }
 
+  /// <summary>
+  /// The infos of the runtime types seen where one type is declared: a polymorphic list or property usually holds a few, comparing them costs less than the hash of a <see cref="Type"/> (a call into the runtime) and a dictionary lookup per value.
+  /// </summary>
+  internal sealed class RecentTypes
+  {
+    private const int Most = 8;
+    private WriteTypeInfo[] _infos = new WriteTypeInfo[0];
+
+    internal WriteTypeInfo Get(Serializer serializer, Type type)
+    {
+      WriteTypeInfo[] infos = _infos;
+      for (int t = infos.Length - 1; t >= 0; t--)
+      {
+        if (infos[t].Type == type)
+          return infos[t];
+      }
+      return Add(serializer, type, infos);
+    }
+
+    private WriteTypeInfo Add(Serializer serializer, Type type, WriteTypeInfo[] infos)
+    {
+      WriteTypeInfo info = serializer.GetTypeInfo(type);
+      if (infos.Length < Most) // a copy, other threads read the array (one that adds at the same time may get lost, it comes back)
+      {
+        WriteTypeInfo[] more = new WriteTypeInfo[infos.Length + 1];
+        Array.Copy(infos, more, infos.Length);
+        more[infos.Length] = info;
+        _infos = more;
+      }
+      return info;
+    }
+  }
+
   internal static class DefaultFilter
   {
     internal static readonly FilterDefaultValues Instance = new FilterDefaultValues();
@@ -36,6 +69,7 @@ namespace LtMsgPack.Writing
   internal sealed class BoxedHandler<T> : ValueHandler<T>
   {
     private readonly Serializer _serializer;
+    private readonly RecentTypes _recent = new RecentTypes();
 
     internal BoxedHandler(Serializer serializer)
     {
@@ -44,7 +78,14 @@ namespace LtMsgPack.Writing
 
     internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
     {
-      _serializer.WriteBoxed(c, value, assignedTo);
+      object boxed = value;
+      if (boxed is null)
+      {
+        c.W.Nil();
+        return;
+      }
+      Type type = boxed.GetType();
+      _serializer.WriteBoxedAs(c, boxed, type, _recent.Get(_serializer, type), assignedTo);
     }
 
     internal override bool IncludeByDefault(T value, FullPropertyInfo info)
@@ -408,6 +449,7 @@ namespace LtMsgPack.Writing
     private readonly Serializer _serializer;
     private ObjectPlan _names;
     private ObjectPlan _schema;
+    private readonly RecentTypes _recent = new RecentTypes();
 
     /// <summary>
     /// A struct's generated default check (<see cref="GeneratedStructCode{T}.IsDefault"/>), null when there is none (then StructDefault).
@@ -425,7 +467,7 @@ namespace LtMsgPack.Writing
     {
       if (!typeof(T).IsValueType && value.GetType() != typeof(T)) // a struct is its own type (GetType would box it), the JIT drops the test for structs
       {
-        _serializer.WriteBoxed(c, value, assignedTo);
+        WriteDerived(c, value, assignedTo);
         return;
       }
 
@@ -436,6 +478,13 @@ namespace LtMsgPack.Writing
         plan.WriteStruct(c, ref value, assignedTo); // the parameter by reference, no box
       else
         plan.Write(c, value, false, assignedTo);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)] // keeps Write small
+    private void WriteDerived(WriteContext c, object value, FullPropertyInfo assignedTo)
+    {
+      Type type = value.GetType();
+      _serializer.WriteBoxedAs(c, value, type, _recent.Get(_serializer, type), assignedTo);
     }
 
     internal override bool IncludeByDefault(T value, FullPropertyInfo info)
@@ -454,7 +503,16 @@ namespace LtMsgPack.Writing
   /// <summary>
   /// List&lt;T&gt; (not a derived type) as an array of its items.
   /// </summary>
-  internal sealed class ListHandler<TItem> : ValueHandler<List<TItem>>
+  /// <summary>
+  /// A handler of a collection type that also writes the elements of a value that goes through <see cref="Serializer.WriteBoxed"/> (declared as an interface, or as object), without boxing them.
+  /// </summary>
+  internal interface ITypedElements
+  {
+    /// <param name="collection">Of exactly the handled type</param>
+    void WriteElements(WriteContext c, object collection);
+  }
+
+  internal sealed class ListHandler<TItem> : ValueHandler<List<TItem>>, ITypedElements
   {
     private readonly Serializer _serializer;
     private readonly FullPropertyInfo _itemInfo = new FullPropertyInfo(typeof(TItem));
@@ -488,6 +546,11 @@ namespace LtMsgPack.Writing
       c.LeaveContainer();
     }
 
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<List<TItem>>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
     internal override bool IncludeByDefault(List<TItem> value, FullPropertyInfo info)
     {
       return value != null;
@@ -497,7 +560,7 @@ namespace LtMsgPack.Writing
   /// <summary>
   /// T[] (not an array of a derived type) as an array.
   /// </summary>
-  internal sealed class ArrayHandler<TItem> : ValueHandler<TItem[]>
+  internal sealed class ArrayHandler<TItem> : ValueHandler<TItem[]>, ITypedElements
   {
     private readonly Serializer _serializer;
     private readonly FullPropertyInfo _itemInfo = new FullPropertyInfo(typeof(TItem));
@@ -530,7 +593,109 @@ namespace LtMsgPack.Writing
       c.LeaveContainer();
     }
 
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<TItem[]>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
     internal override bool IncludeByDefault(TItem[] value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+
+  /// <summary>
+  /// HashSet&lt;T&gt; (not a derived class) as an array, in the order it enumerates.
+  /// </summary>
+  internal sealed class HashSetHandler<TItem> : ValueHandler<HashSet<TItem>>, ITypedElements
+  {
+    private readonly Serializer _serializer;
+    private readonly FullPropertyInfo _itemInfo = new FullPropertyInfo(typeof(TItem));
+    private ValueHandler<TItem> _item;
+
+    internal HashSetHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, HashSet<TItem> value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(HashSet<TItem>))
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      ValueHandler<TItem> item = _item ?? (_item = _serializer.Handler<TItem>(null));
+      c.EnterContainer();
+      c.W.ArrayHeader(value.Count);
+      foreach (TItem element in value)
+      {
+        if (element == null)
+          c.W.Nil();
+        else
+          item.Write(c, element, _itemInfo);
+      }
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<HashSet<TItem>>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(HashSet<TItem> value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+
+  /// <summary>
+  /// Dictionary&lt;TKey, TValue&gt; (not a derived class) as a map, in the order it enumerates.
+  /// </summary>
+  internal sealed class DictionaryHandler<TKey, TValue> : ValueHandler<Dictionary<TKey, TValue>>, ITypedElements
+  {
+    private readonly Serializer _serializer;
+    private readonly FullPropertyInfo _keyInfo = new FullPropertyInfo(typeof(TKey));
+    private readonly FullPropertyInfo _valueInfo = new FullPropertyInfo(typeof(TValue));
+    private ValueHandler<TKey> _key;
+    private ValueHandler<TValue> _value;
+
+    internal DictionaryHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, Dictionary<TKey, TValue> value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(Dictionary<TKey, TValue>))
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      ValueHandler<TKey> keys = _key ?? (_key = _serializer.Handler<TKey>(null));
+      ValueHandler<TValue> values = _value ?? (_value = _serializer.Handler<TValue>(null));
+      c.EnterContainer();
+      c.W.MapHeader(value.Count);
+      foreach (KeyValuePair<TKey, TValue> entry in value)
+      {
+        keys.Write(c, entry.Key, _keyInfo); // never null
+        TValue item = entry.Value;
+        if (item == null)
+          c.W.Nil();
+        else
+          values.Write(c, item, _valueInfo);
+      }
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<Dictionary<TKey, TValue>>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(Dictionary<TKey, TValue> value, FullPropertyInfo info)
     {
       return value != null;
     }

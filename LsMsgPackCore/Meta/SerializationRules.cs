@@ -25,6 +25,37 @@ namespace LsMsgPack.Meta
       return CollectionInfo.Get(tType).Attribute;
     }
 
+    /// <summary>
+    /// <see cref="GetEnumerableAttribute(Type, FullPropertyInfo)"/> when the caller has the info of the type.
+    /// </summary>
+    internal static SerializeEnumerableAttribute GetEnumerableAttribute(CollectionInfo info, FullPropertyInfo assignedTo)
+    {
+      if (assignedTo?.CustomAttributes != null && assignedTo.CustomAttributes.TryGetValue(nameof(SerializeEnumerableAttribute), out object att))
+        return (SerializeEnumerableAttribute)att;
+
+      return info.Attribute;
+    }
+
+    /// <summary>
+    /// A value of this type never gets a type id, see <see cref="NeedsTypeId(Type, FullPropertyInfo, MsgPackOptions)"/>.
+    /// </summary>
+    internal static bool NeverHasTypeId(Type tType)
+    {
+      return IsHiddenFrameworkType(tType) || HasAnonymousType(tType);
+    }
+
+    /// <summary>
+    /// <see cref="NeedsTypeId(Type, FullPropertyInfo, MsgPackOptions)"/> with the answer of <see cref="NeverHasTypeId"/> kept by the caller (these two look the type up in a dictionary, per value).
+    /// </summary>
+    internal static bool NeedsTypeId(Type tType, FullPropertyInfo assignedTo, MsgPackOptions settings, bool neverHasTypeId)
+    {
+      if (neverHasTypeId)
+        return false;
+      if ((settings._addTypeIdOptions & AddTypeIdOption.Always) != 0)
+        return true;
+      return (settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0 && assignedTo?.AssignedToType != tType;
+    }
+
     internal static bool NeedsTypeId(Type tType, FullPropertyInfo assignedTo, MsgPackOptions settings)
     {
       if ((settings._addTypeIdOptions & AddTypeIdOption.Always) != 0)

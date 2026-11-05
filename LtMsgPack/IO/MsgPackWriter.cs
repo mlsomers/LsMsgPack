@@ -1,5 +1,6 @@
 ﻿using LsMsgPack;
 using System;
+using System.Buffers.Binary;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -101,34 +102,38 @@ namespace LtMsgPack.IO
     #region Numbers in the wire byte order
 
     // Callers ensure the space
+    // One store with one bounds check instead of one per byte (the JIT of .NET 8 does not merge those)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void U16(ushort value)
     {
-      byte[] b = Buf;
-      if (_littleEndian) { b[Pos] = (byte)value; b[Pos + 1] = (byte)(value >> 8); }
-      else { b[Pos] = (byte)(value >> 8); b[Pos + 1] = (byte)value; }
+      Span<byte> target = new Span<byte>(Buf, Pos, 2);
+      if (_littleEndian)
+        BinaryPrimitives.WriteUInt16LittleEndian(target, value);
+      else
+        BinaryPrimitives.WriteUInt16BigEndian(target, value);
       Pos += 2;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void U32(uint value)
     {
-      byte[] b = Buf;
-      if (_littleEndian) { b[Pos] = (byte)value; b[Pos + 1] = (byte)(value >> 8); b[Pos + 2] = (byte)(value >> 16); b[Pos + 3] = (byte)(value >> 24); }
-      else { b[Pos] = (byte)(value >> 24); b[Pos + 1] = (byte)(value >> 16); b[Pos + 2] = (byte)(value >> 8); b[Pos + 3] = (byte)value; }
+      Span<byte> target = new Span<byte>(Buf, Pos, 4);
+      if (_littleEndian)
+        BinaryPrimitives.WriteUInt32LittleEndian(target, value);
+      else
+        BinaryPrimitives.WriteUInt32BigEndian(target, value);
       Pos += 4;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void U64(ulong value)
     {
+      Span<byte> target = new Span<byte>(Buf, Pos, 8);
       if (_littleEndian)
-      {
-        U32((uint)value);
-        U32((uint)(value >> 32));
-      }
+        BinaryPrimitives.WriteUInt64LittleEndian(target, value);
       else
-      {
-        U32((uint)(value >> 32));
-        U32((uint)value);
-      }
+        BinaryPrimitives.WriteUInt64BigEndian(target, value);
+      Pos += 8;
     }
 
     #endregion

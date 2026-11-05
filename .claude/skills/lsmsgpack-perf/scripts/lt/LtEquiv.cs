@@ -17,6 +17,20 @@ public struct EqVec { public float X { get; set; } public float Y { get; set; } 
 public struct EqLine { public EqVec From { get; set; } public EqVec To { get; set; } public string Label { get; set; } public EqVec? Hint { get; set; } }
 public struct EqInit { public EqInit() { N = 5; } public int N { get; set; } }
 public class EqMover { public EqVec Position { get; set; } public EqVec Velocity { get; set; } public EqVec? Target { get; set; } public List<EqVec> Path { get; set; } public EqVec[] Points { get; set; } public object Boxed { get; set; } public EqLine Line { get; set; } public EqInit Init { get; set; } }
+public class EqDerivedDict : Dictionary<string, int> { public int Extra { get; set; } }
+public class EqDerivedSet : HashSet<int> { }
+public class EqDerivedList : List<int> { }
+public class EqColl {
+  public Dictionary<string, string> DS { get; set; } public Dictionary<string, int> DI { get; set; } public Dictionary<int, Nested> DN { get; set; } public Dictionary<E8, string> DE { get; set; } public Dictionary<Guid, long?> DG { get; set; } public Dictionary<string, object> DO { get; set; } public Dictionary<object, object> DOO { get; set; } public Dictionary<string, EqVec> DV { get; set; } public Dictionary<string, List<int>> DL { get; set; }
+  public HashSet<int> HI { get; set; } public HashSet<string> HS { get; set; } public HashSet<EqVec> HV { get; set; }
+  public IList<int> IL { get; set; } public ICollection<string> IC { get; set; } public IEnumerable<Nested> IE { get; set; } public IReadOnlyList<EqVec> IR { get; set; } public IReadOnlyCollection<long> IRC { get; set; } public ISet<int> IS { get; set; }
+  public IDictionary<string, int> ID { get; set; } public IReadOnlyDictionary<int, string> IRD { get; set; } public IEnumerable<KeyValuePair<string, int>> IKV { get; set; } public SortedDictionary<string, int> SD { get; set; } public object Any { get; set; } public IEnumerable<object> IO { get; set; } public IList<IList<int>> ILL { get; set; }
+  [LsMsgPack.TypeResolving.Attributes.SerializeEnumerable(SerializeElements = true, SerializeProperties = true)] public Dictionary<string, int> AttrD { get; set; }
+  [LsMsgPack.TypeResolving.Attributes.SerializeEnumerable(SerializeElements = false, SerializeProperties = true)] public Dictionary<string, int> AttrE { get; set; }
+  [LsMsgPack.TypeResolving.Attributes.SerializeEnumerable(SerializeElements = true, SerializeProperties = true)] public HashSet<int> AttrH { get; set; }
+  [LsMsgPack.TypeResolving.Attributes.SerializeEnumerable(SerializeElements = true, SerializeProperties = true)] public IList<int> AttrI { get; set; }
+}
+public sealed class EqNoGuard : LsMsgPack.TypeResolving.Interfaces.IMsgPackTypeGuard { public bool IsAllowed(Type type, Type assignedTo, LsMsgPack.Meta.FullPropertyInfo prop, MsgPackOptions settings) => false; }
 public static class P {
   static string Hex(byte[] b) => BitConverter.ToString(b);
   static string H(string s) => BitConverter.ToString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(s))).Replace("-", "").Substring(0, 16);
@@ -65,7 +79,41 @@ public static class P {
     values.Add(new Bench.Invoice[] { }); values.AddRange(Bench.Invoices.Take(3));
     values.Add(new EqMover { Position = new EqVec { X = 1.5f, Y = -0f, Z = float.NaN }, Target = new EqVec(), Path = new List<EqVec> { new EqVec { X = 1 }, new EqVec() }, Points = new[] { new EqVec { Z = -2 } }, Boxed = new EqVec { Y = 7 }, Line = new EqLine { To = new EqVec { X = 3 }, Label = "l", Hint = new EqVec { Z = 1 } }, Init = new EqInit() });
     values.Add(new EqMover()); values.Add(new EqVec { X = 0.5f, Z = -8 }); values.Add(new EqLine { From = new EqVec { Y = 2 } }); values.Add(new List<EqLine> { new EqLine { Label = "a" }, new EqLine() }); values.Add(new EqInit { N = 0 });
+    values.AddRange(Collections());
     return values;
+  }
+  static List<object> Collections() {
+    var values = new List<object>();
+    var kids = new List<Nested> { new Nested { Name = "k" }, null, new Nested() };
+    values.Add(new EqColl());
+    values.Add(new EqColl { DS = new Dictionary<string, string> { { "a", "b" }, { "c", null }, { "", "empty" }, { "@", "content" }, { new string('k', 40), "long" }, { "é", "ü" } }, DI = new Dictionary<string, int> { { "x", 1 }, { "y", -300 }, { "z", 0 } }, DN = new Dictionary<int, Nested> { { 1, new Nested { Name = "n" } }, { -5, null }, { 70000, new Nested() } }, DE = new Dictionary<E8, string> { { E8.A, "a" }, { E8.B, "b" } }, DG = new Dictionary<Guid, long?> { { Guid.Empty, null }, { Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"), 7 } }, DO = new Dictionary<string, object> { { "a", 1 }, { "b", "s" }, { "c", null }, { "d", new Nested { Name = "o" } }, { "e", new List<int> { 1 } }, { "f", new Dictionary<string, int> { { "q", 1 } } } }, DOO = new Dictionary<object, object> { { "s", 1 }, { 2, "two" }, { 2.5, null }, { E8.B, true } }, DV = new Dictionary<string, EqVec> { { "v", new EqVec { X = 1 } }, { "w", new EqVec() } }, DL = new Dictionary<string, List<int>> { { "l", new List<int> { 1, 2 } }, { "n", null } } });
+    values.Add(new EqColl { HI = new HashSet<int> { 5, 1, 300, -7 }, HS = new HashSet<string> { "b", null, "a", "" }, HV = new HashSet<EqVec> { new EqVec { X = 1 }, new EqVec() } });
+    values.Add(new EqColl { IL = new List<int> { 1, 2 }, IC = new List<string> { "a", null }, IE = kids, IR = new List<EqVec> { new EqVec { Y = 2 } }, IRC = new List<long> { long.MaxValue }, IS = new HashSet<int> { 3, 2 }, ID = new Dictionary<string, int> { { "a", 1 }, { "", 2 } }, IRD = new Dictionary<int, string> { { 1, "x" } }, IKV = new Dictionary<string, int> { { "kv", 1 } }, IO = new List<object> { 1, "x", null, new Nested() }, ILL = new List<IList<int>> { new List<int> { 1 }, new[] { 2, 3 }, null } });
+    values.Add(new EqColl { IL = new[] { 1, 2 }, IC = new[] { "a" }, IE = kids.ToArray(), IR = new[] { new EqVec { Z = 3 } }, IRC = new long[0], IS = new SortedSet<int> { 9, 8 }, ID = new SortedDictionary<string, int> { { "b", 1 }, { "a", 2 } }, IRD = new System.Collections.ObjectModel.ReadOnlyDictionary<int, string>(new Dictionary<int, string> { { 2, "y" } }), IKV = new List<KeyValuePair<string, int>> { new KeyValuePair<string, int>("p", 1), new KeyValuePair<string, int>("p", 2) }, IO = new object[] { 1, new object[] { 2 } }, ILL = new IList<int>[] { new EqDerivedList { 1 } } });
+    values.Add(new EqColl { IL = new System.Collections.ObjectModel.Collection<int> { 1 }, IC = new HashSet<string> { "h" }, IE = kids.Where(x => x != null), IR = new System.Collections.ObjectModel.ReadOnlyCollection<EqVec>(new List<EqVec> { new EqVec() }), IRC = new HashSet<long> { 1 }, IS = new EqDerivedSet { 1 }, ID = new EqDerivedDict { { "d", 1 } }, IRD = System.Collections.Immutable.ImmutableDictionary<int, string>.Empty.Add(1, "i"), IKV = new KeyValuePair<string, int>[] { new KeyValuePair<string, int>("arr", 1) }, IO = Enumerable.Range(0, 3).Select(x => (object)x) });
+    values.Add(new EqColl { IL = new List<int>(), IC = new string[0], IE = new List<Nested>(), IS = new HashSet<int>(), ID = new Dictionary<string, int>(), DS = new Dictionary<string, string>(), HI = new HashSet<int>(), SD = new SortedDictionary<string, int> { { "s", 1 } } });
+    values.Add(new EqColl { Any = new List<int> { 1 } }); values.Add(new EqColl { Any = new Dictionary<string, int> { { "a", 1 } } }); values.Add(new EqColl { Any = new HashSet<int> { 1 } }); values.Add(new EqColl { Any = new[] { 1, 2 } }); values.Add(new EqColl { Any = new Dictionary<string, object> { { "", 1 }, { "@", 2 } } }); values.Add(new EqColl { Any = new EqDerivedDict { { "x", 1 } } }); values.Add(new EqColl { Any = new List<Nested> { new Nested() } });
+    values.Add(new EqColl { AttrD = new Dictionary<string, int> { { "a", 1 } }, AttrE = new Dictionary<string, int> { { "b", 2 } }, AttrH = new HashSet<int> { 3 }, AttrI = new List<int> { 4 } });
+    values.Add(new Dictionary<string, string> { { "root", "x" } }); values.Add(new HashSet<int> { 1, 2 }); values.Add(new Dictionary<string, Nested> { { "n", new Nested { Name = "z" } } }); values.Add(new EqDerivedDict { { "a", 1 } }); values.Add(new EqDerivedSet { 1 }); values.Add(new EqDerivedList { 1 });
+    values.Add(new Dictionary<string, object> { { "", "only reserved" } }); values.Add(new Dictionary<string, int> { { "@", 1 }, { "", 2 } }); values.Add(new List<Dictionary<string, int>> { new Dictionary<string, int> { { "a", 1 } }, null }); values.Add(new Dictionary<string, Dictionary<string, int>> { { "a", new Dictionary<string, int> { { "b", 1 } } } }); values.Add(new HashSet<Nested> { new Nested() }); values.Add(new List<IList<string>> { new List<string> { "x" }, new string[] { "y" } });
+    return values;
+  }
+  // Data that is not what the typed readers expect (of other writers, or damaged): the same values, or the same errors
+  static byte[] Raw(params object[] parts) { var ms = new System.IO.MemoryStream(); foreach (object p in parts) { switch (p) { case int b: ms.WriteByte((byte)b); break; case string t: byte[] u = Encoding.UTF8.GetBytes(t); if (u.Length < 32) ms.WriteByte((byte)(0xA0 + u.Length)); else { ms.WriteByte(0xD9); ms.WriteByte((byte)u.Length); } ms.Write(u); break; case byte[] r: ms.Write(r); break; } } return ms.ToArray(); }
+  static void Odd(StringBuilder sb, LtMsgPackSerializer s, byte[] prefix) {
+    var bodies = new (string, byte[])[] {
+      ("number key", Raw(0x81, 1, 2)), ("nil key", Raw(0x81, 0xC0, 2)), ("nil value", Raw(0x81, "a", 0xC0)), ("dup key", Raw(0x82, "a", 1, "a", 2)), ("empty key", Raw(0x81, "", 1)), ("content key", Raw(0x81, "@", 1)), ("content array", Raw(0x81, "@", 0x92, 1, 2)), ("str8 empty key", Raw(0x81, 0xD9, 0, 1)), ("str8 content key", Raw(0x81, 0xD9, 1, 0x40, 1)), ("str16 key", Raw(0x81, 0xDA, 0, 1, 0x61, 1)), ("long key", Raw(0x81, new string('k', 40), 1)),
+      ("text number key", Raw(0x81, "5", 1)), ("text value", Raw(0x81, "a", "7")), ("bad text value", Raw(0x81, "a", "x")), ("array value", Raw(0x81, "a", 0x91, 1)), ("map value", Raw(0x81, "a", 0x81, "b", 1)), ("float value", Raw(0x81, "a", 0xCA, 0x40, 0x20, 0, 0)), ("bool key", Raw(0x81, 0xC3, 1)), ("bin key", Raw(0x81, 0xC4, 1, 65, 1)), ("float key", Raw(0x81, 0xCA, 0x40, 0x20, 0, 0, 1)), ("array key", Raw(0x81, 0x91, 1, 1)),
+      ("array", Raw(0x92, 1, 2)), ("array nil", Raw(0x92, 1, 0xC0)), ("array dup", Raw(0x93, 1, 1, 2)), ("array text", Raw(0x92, "1", "2")), ("array pairs", Raw(0x91, 0x92, "a", 1)), ("array odd pairs", Raw(0x91, 0x93, "a", 1, 2)), ("empty array", Raw(0x90)), ("empty map", Raw(0x80)), ("array16", Raw(0xDC, 0, 1, 1)), ("map16", Raw(0xDE, 0, 1, "a", 1)), ("number", Raw(5)), ("text", Raw("x")), ("nil", Raw(0xC0)),
+      ("wrapped list", Raw(0x82, "", "List<Int32>", "@", 0x92, 1, 2)), ("wrapped array", Raw(0x82, "", "Int32[]", "@", 0x92, 1, 2)), ("wrapped set", Raw(0x82, "", "HashSet<Int32>", "@", 0x92, 1, 2)), ("wrapped dict", Raw(0x82, "", "Dictionary<String, Int32>", "@", 0x81, "a", 1)), ("wrapped dict reserved", Raw(0x82, "", "Dictionary<String, Int32>", "@", 0x82, "", 1, "@", 2)), ("wrapped dict number key", Raw(0x82, "", "Dictionary<String, Int32>", "@", 0x81, 1, 1)), ("wrapped sorted", Raw(0x82, "", "SortedDictionary<String, Int32>", "@", 0x81, "a", 1)), ("wrapped unknown", Raw(0x82, "", "NoSuchType", "@", 0x91, 1)), ("wrapped not assignable", Raw(0x82, "", "Nested", "@", 0x91, 1)), ("wrapped number id", Raw(0x82, "", 0, "@", 0x91, 1)), ("wrapped nil content", Raw(0x82, "", "List<Int32>", "@", 0xC0)), ("wrapped wrong content", Raw(0x82, "", "List<Int32>", "@", 5)), ("wrapped map content", Raw(0x82, "", "List<Int32>", "@", 0x81, "a", 1)), ("wrapped third key", Raw(0x83, "", "List<Int32>", "@", 0x91, 1, "x", 1)), ("wrapped content first", Raw(0x82, "@", 0x91, 1, "", "List<Int32>")), ("id only", Raw(0x81, "", "List<Int32>")), ("cut map", Raw(0x82, "a", 1)), ("cut wrap", Raw(0x82, "")), ("cut key", Raw(0x81, 0xA5, 0x61)),
+    };
+    foreach (var (name, body) in bodies) {
+      byte[] data = new byte[prefix.Length + body.Length]; prefix.CopyTo(data, 0); body.CopyTo(data, prefix.Length);
+      foreach (Type t in new[] { typeof(Dictionary<string, int>), typeof(Dictionary<int, int>), typeof(Dictionary<string, object>), typeof(Dictionary<object, object>), typeof(Dictionary<string, int?>), typeof(HashSet<int>), typeof(HashSet<string>), typeof(IList<int>), typeof(IEnumerable<int>), typeof(ISet<int>), typeof(IDictionary<string, int>), typeof(IReadOnlyDictionary<string, int>), typeof(IEnumerable<KeyValuePair<string, int>>) }) {
+        sb.AppendLine($"odd {name} {t.Name} {string.Join(",", t.GenericTypeArguments.Select(x => x.Name))}: " + Run(() => Dump(s.Deserialize(t, data))));
+        if (t == typeof(Dictionary<string, int>) || t == typeof(IList<int>)) sb.AppendLine("  report: " + Run(() => { object r = s.Deserialize(t, data, out LsMsgPack.ReadDifferences d); return Dump(r) + " | " + (d?.GenerateReport() ?? "none").Replace("\r", "").Replace("\n", " "); }));
+      }
+    }
   }
   static string Run(Func<string> f) { try { return f(); } catch (Exception ex) { return "EX " + ex.GetType().Name + ": " + ex.Message.Split('\n')[0]; } }
   static void One(StringBuilder sb, LtMsgPackSerializer s, object v, Type t) {
@@ -114,6 +162,17 @@ public static class P {
       sb.AppendLine($"typedBack {H(typedBack)}/{typedBack.Length}");
       string stream = Run(() => { var ms = new System.IO.MemoryStream(); s.Serialize(Bench.Invoices[1], ms); s.Serialize(Bench.Invoices[2], ms); ms.Position = 0; var x = Dump(s.Deserialize<Bench.Invoice>(ms)) + Dump(s.Deserialize<Bench.Invoice>(ms)); return Hex(ms.ToArray()) + x; });
       sb.AppendLine($"stream {H(stream)}/{stream.Length}");
+    }
+    foreach (var (name, make, prefix) in new (string, Func<LtMsgPackOptions>, byte[])[] {
+      ("names", () => new LtMsgPackOptions { UseInexedSchema = false }, new byte[0]),
+      ("names map", () => new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, new byte[0]),
+      ("schema", () => new LtMsgPackOptions(), new byte[] { 0x80 }),
+      ("depth 1", () => new LtMsgPackOptions { UseInexedSchema = false, MaxDepth = 1 }, new byte[0]),
+      ("guard", () => new LtMsgPackOptions { UseInexedSchema = false, TypeGuard = new EqNoGuard() }, new byte[0]),
+      ("collect", () => new LtMsgPackOptions { UseInexedSchema = false, ReadErrors = ReadErrorHandling.FailDeferred }, new byte[0]),
+    }) {
+      sb.AppendLine("### odd data " + name);
+      Odd(sb, new LtMsgPackSerializer(make()), prefix);
     }
     foreach (string mt in new[] { "application/x-lsmsgpack", "application/msgpack" })
     foreach (bool negotiate in new[] { true, false }) {

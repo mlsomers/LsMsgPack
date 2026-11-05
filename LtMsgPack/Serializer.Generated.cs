@@ -177,5 +177,18 @@ namespace LtMsgPack
       return Activator.CreateInstance(definition.MakeGenericType(argument), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null,
         constructorArgument is null ? new object[0] : new object[] { constructorArgument }, null);
     }
+
+    /// <summary>
+    /// A handler or reader of a collection the source generator does not describe: only where the runtime has dynamic code (<see cref="CanBindDelegates"/>), otherwise those collections are written and read boxed.
+    /// </summary>
+    /// <param name="definition">E.g. <c>typeof(DictionaryHandler&lt;,&gt;)</c></param>
+    /// <param name="arguments">Its type arguments</param>
+    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
+    private static object InstantiateCollection(Type definition, Type[] arguments, object constructorArgument)
+    {
+      return Activator.CreateInstance(definition.MakeGenericType(arguments), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { constructorArgument }, null);
+    }
   }
 }

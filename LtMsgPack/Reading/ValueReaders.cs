@@ -1,5 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Attributes;
 using LtMsgPack.Extensions;
 using LtMsgPack.IO;
 using System;
@@ -505,7 +506,17 @@ namespace LtMsgPack.Reading
 
   #region Collections
 
-  internal sealed class ListReader<TItem> : ValueReader<List<TItem>>
+  /// <summary>
+  /// A reader of a collection type that also reads the content of a value wrapped with a type id, or of one declared as an interface (see <see cref="CollectionInterfaceReader{T}"/>).
+  /// </summary>
+  internal interface ICollectionContent
+  {
+    /// <param name="value">The collection, of exactly the handled type</param>
+    /// <returns>false when the value is not in the expected format: the depth is as it was, the caller rewinds and reads it as LsMsgPack does</returns>
+    bool TryReadContent(ReadContext c, out object value);
+  }
+
+  internal sealed class ListReader<TItem> : ValueReader<List<TItem>>, ICollectionContent
   {
     private readonly Serializer _serializer;
     private ValueReader<TItem> _item;
@@ -533,9 +544,15 @@ namespace LtMsgPack.Reading
       c.Depth--;
       return list;
     }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      value = CollectionRules.IsArray(c.R) ? Read(c, null) : null;
+      return value != null;
+    }
   }
 
-  internal sealed class ArrayReader<TItem> : ValueReader<TItem[]>
+  internal sealed class ArrayReader<TItem> : ValueReader<TItem[]>, ICollectionContent
   {
     private readonly Serializer _serializer;
     private ValueReader<TItem> _item;
@@ -562,6 +579,263 @@ namespace LtMsgPack.Reading
         array[t] = item.Read(c, null);
       c.Depth--;
       return array;
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      value = CollectionRules.IsArray(c.R) ? Read(c, null) : null;
+      return value != null;
+    }
+  }
+
+  /// <summary>
+  /// HashSet&lt;T&gt; (not a derived class) from an array.
+  /// </summary>
+  internal sealed class HashSetReader<TItem> : ValueReader<HashSet<TItem>>, ICollectionContent
+  {
+    private readonly Serializer _serializer;
+    private ValueReader<TItem> _item;
+
+    internal HashSetReader(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override HashSet<TItem> Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadNil())
+        return null;
+
+      int count = c.Unusual || CollectionRules.HasEnumerableAttribute(assignedTo) ? -1 : c.R.TryReadArrayHeader();
+      if (count < 0)
+        return Slow(c, start, assignedTo);
+      return ReadItems(c, count);
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      int count = c.R.TryReadArrayHeader();
+      value = count < 0 ? null : ReadItems(c, count);
+      return count >= 0;
+    }
+
+    private HashSet<TItem> ReadItems(ReadContext c, int count)
+    {
+      ValueReader<TItem> item = _item ?? (_item = _serializer.Reader<TItem>());
+      c.Enter();
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      HashSet<TItem> set = new HashSet<TItem>(count); // the header's count is checked against the data (MsgPackReader.Count)
+#else
+      HashSet<TItem> set = new HashSet<TItem>();
+#endif
+      for (int t = 0; t < count; t++)
+        set.Add(item.Read(c, null));
+      c.Depth--;
+      return set;
+    }
+  }
+
+  /// <summary>
+  /// Dictionary&lt;TKey, TValue&gt; (not a derived class) from a map of entries. Everything that is not simply an entry is read as LsMsgPack does (Core: ValueConverter.ConvertMap, ConvertPairs), from the start of the map:
+  /// the reserved keys ("" and "@" make it a wrapped value), a nil key, a number key into string keys, a nil for a value type (these two throw there).
+  /// </summary>
+  internal sealed class DictionaryReader<TKey, TValue> : ValueReader<Dictionary<TKey, TValue>>, ICollectionContent
+  {
+    private readonly Serializer _serializer;
+    private readonly bool _stringKeys = typeof(TKey) == typeof(string);
+    private readonly bool _valueTakesNoNil = typeof(TValue).IsValueType && Nullable.GetUnderlyingType(typeof(TValue)) is null;
+    private ValueReader<TKey> _key;
+    private ValueReader<TValue> _value;
+
+    internal DictionaryReader(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override Dictionary<TKey, TValue> Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadNil())
+        return null;
+
+      if (!c.Unusual && !CollectionRules.HasEnumerableAttribute(assignedTo) && TryRead(c, out Dictionary<TKey, TValue> value))
+        return value;
+      return Slow(c, start, assignedTo);
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      bool read = TryRead(c, out Dictionary<TKey, TValue> dictionary);
+      value = dictionary;
+      return read;
+    }
+
+    private bool TryRead(ReadContext c, out Dictionary<TKey, TValue> result)
+    {
+      result = null;
+      MsgPackReader r = c.R;
+      int count = r.TryReadMapHeader();
+      if (count < 0)
+        return false;
+
+      ValueReader<TKey> keys = _key ?? (_key = _serializer.Reader<TKey>());
+      ValueReader<TValue> values = _value ?? (_value = _serializer.Reader<TValue>());
+      int depth = c.Depth;
+      c.Enter();
+      Dictionary<TKey, TValue> dictionary = new Dictionary<TKey, TValue>(count); // the header's count is checked against the data (MsgPackReader.Count)
+      for (int t = 0; t < count; t++)
+      {
+        if (!CollectionRules.IsEntryKey(r, _stringKeys))
+        {
+          c.Depth = depth;
+          return false;
+        }
+        TKey key = keys.Read(c, null);
+        if (_valueTakesNoNil && r.Peek() == 0xC0)
+        {
+          c.Depth = depth;
+          return false;
+        }
+        dictionary.Add(key, values.Read(c, null)); // a key twice throws, as there
+      }
+      c.Depth = depth;
+      result = dictionary;
+      return true;
+    }
+  }
+
+  /// <summary>
+  /// A property or element declared as a generic interface of a collection (see Serializer.CollectionInterface). The writer wraps a value of another type than the declared one: { "": typeId, "@": content },
+  /// the content is read by the typed reader of that type when it has one. Data without a type id (of another library) is read into the interface's concrete type, as Core does (CollectionInfo.ConcreteType).
+  /// Anything else is read as LsMsgPack does, from the start.
+  /// </summary>
+  internal sealed class CollectionInterfaceReader<T> : ValueReader<T> where T : class
+  {
+    private readonly Serializer _serializer;
+    private readonly ICollectionContent _concrete;
+
+    /// <summary>
+    /// The type id read last and its reader: a property usually holds one type.
+    /// </summary>
+    private sealed class Wrapped
+    {
+      internal readonly Type Type;
+      internal readonly ICollectionContent Content;
+
+      internal Wrapped(Type type, ICollectionContent content)
+      {
+        Type = type;
+        Content = content;
+      }
+    }
+
+    private Wrapped _last;
+
+    internal CollectionInterfaceReader(Serializer serializer)
+    {
+      _serializer = serializer;
+      _concrete = (ICollectionContent)serializer.Reader(CollectionInfo.Get(typeof(T)).ConcreteType);
+    }
+
+    internal override T Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadNil())
+        return null;
+
+      if (c.Unusual || CollectionRules.HasEnumerableAttribute(assignedTo))
+        return Slow(c, start, assignedTo);
+
+      MsgPackReader r = c.R;
+      object value;
+      if (r.Peek() == 0x82 && r.End - r.Pos >= 6 && r.Buf[r.Pos + 1] == 0xA0) // a map of two (with the keys, an id and a content at least 6 bytes), the type id (key "") first
+      {
+        r.Pos += 2;
+        Type type = ReadTypeId(c);
+        if (type is null || r.Pos + 1 >= r.End || r.Buf[r.Pos] != 0xA1 || r.Buf[r.Pos + 1] != (byte)'@')
+          return Slow(c, start, assignedTo);
+        r.Pos += 2;
+
+        Wrapped wrapped = _last;
+        if (wrapped is null || wrapped.Type != type)
+        {
+          if (!typeof(T).IsAssignableFrom(type) || !(_serializer.Reader(type) is ICollectionContent content)) // Core refuses a type that is not assignable
+            return Slow(c, start, assignedTo);
+          _last = wrapped = new Wrapped(type, content);
+        }
+        if (_serializer.Options._typeGuard != null) // the type guard, before the instance is created (see docs/security.md)
+          TypeResolver.ThrowIfNotAllowed(type, typeof(T), assignedTo, _serializer.Options, type);
+
+        int depth = c.Depth;
+        c.Enter();
+        bool read = wrapped.Content.TryReadContent(c, out value);
+        c.Depth = depth;
+        if (!read)
+          return Slow(c, start, assignedTo);
+      }
+      else if (!CollectionRules.IsPlainContent(r) || !_concrete.TryReadContent(c, out value))
+        return Slow(c, start, assignedTo);
+
+      return Unsafe.As<T>(value); // assignable: checked above, or the concrete type of the interface
+    }
+
+    /// <returns>null when the type id is not a plain index or name of a type that is found</returns>
+    private Type ReadTypeId(ReadContext c)
+    {
+      if (c.Schema)
+        return c.R.TryReadInt64(out long id) ? c.Bound.TypeById(id) : null;
+      if (!c.R.TryReadString(out string name) || string.IsNullOrWhiteSpace(name))
+        return null;
+      return _serializer.ResolveTypeName(name, typeof(T), false);
+    }
+  }
+
+  internal static class CollectionRules
+  {
+    /// <summary>
+    /// [SerializeEnumerable] on the property changes what its value looks like in the data (properties, elements left out).
+    /// </summary>
+    internal static bool HasEnumerableAttribute(FullPropertyInfo assignedTo)
+    {
+      return assignedTo != null && assignedTo.CustomAttributes != null && assignedTo.CustomAttributes.ContainsKey(nameof(SerializeEnumerableAttribute));
+    }
+
+    /// <summary>
+    /// The next value is a key of a dictionary entry as the typed readers read it: not nil or a reserved key, a string for string keys.
+    /// </summary>
+    internal static bool IsEntryKey(MsgPackReader r, bool stringKeys)
+    {
+      byte first = r.Peek();
+      if ((first & 0xE0) == 0xA0) // up to 31 bytes
+        return first != 0xA0 && (first != 0xA1 || r.Pos + 1 >= r.End || r.Buf[r.Pos + 1] != (byte)'@');
+      if (first >= 0xD9 && first <= 0xDB) // not the shortest form of a reserved key
+      {
+        int at = r.Pos;
+        int length = r.TryReadStringHeader();
+        bool reserved = length == 0 || (length == 1 && r.Buf[r.Pos] == (byte)'@');
+        r.Pos = at;
+        return !reserved;
+      }
+      return !stringKeys && first != 0xC0;
+    }
+
+    /// <summary>
+    /// The next value is an array (of any length).
+    /// </summary>
+    internal static bool IsArray(MsgPackReader r)
+    {
+      byte first = r.Peek();
+      return (first & 0xF0) == 0x90 || first == 0xDC || first == 0xDD;
+    }
+
+    /// <summary>
+    /// Data without a wrapper: an array or a map of entries. The first key of a map of more entries decides nothing here, the reader of the content checks each key.
+    /// </summary>
+    internal static bool IsPlainContent(MsgPackReader r)
+    {
+      byte first = r.Peek();
+      return (first & 0xE0) == 0x80 || first == 0xDC || first == 0xDD || first == 0xDE || first == 0xDF; // fixmap, fixarray, array16/32, map16/32
     }
   }
 

@@ -129,6 +129,12 @@ namespace LtMsgPack
             return Instantiate(type, typeof(ArrayHandler<>), type.GetElementType(), this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
             return Instantiate(type, typeof(ListHandler<>), type.GenericTypeArguments[0], this);
+          if (CanBindDelegates && type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
+            return InstantiateCollection(typeof(HashSetHandler<>), type.GenericTypeArguments, this);
+          return Boxed(type);
+        case TypeKind.Map:
+          if (CanBindDelegates && type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+            return InstantiateCollection(typeof(DictionaryHandler<,>), type.GenericTypeArguments, this);
           return Boxed(type);
         case TypeKind.Complex:
           if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
@@ -302,7 +308,7 @@ namespace LtMsgPack
       WriteBoxedAs(c, value, type, info, root);
     }
 
-    private void WriteBoxedAs(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
+    internal void WriteBoxedAs(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
     {
       if (info.HasAnonymousType)
       {
@@ -340,7 +346,7 @@ namespace LtMsgPack
           return;
 
         case TypeKind.Complex:
-          PlanOf(info, c.Mode == IdMode.Names).Write(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options), assignedTo);
+          PlanOf(info, c.Mode == IdMode.Names).Write(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId), assignedTo);
           return;
 
         case TypeKind.Pair:
@@ -356,7 +362,7 @@ namespace LtMsgPack
           return;
       }
 
-      if (assignedTo is null || info.NeverWrapped || !SerializationRules.NeedsTypeId(type, assignedTo, Options))
+      if (assignedTo is null || info.NeverWrapped || !SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId))
       {
         WriteLeaf(c, value, info);
         return;
@@ -568,10 +574,10 @@ namespace LtMsgPack
 
     private void WriteCollection(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
     {
-      SerializeEnumerableAttribute handleItems = SerializationRules.GetEnumerableAttribute(type, assignedTo);
+      SerializeEnumerableAttribute handleItems = SerializationRules.GetEnumerableAttribute(info.Collection, assignedTo);
       bool serializeElements = handleItems?.SerializeElements ?? true;
       bool serializeProperties = handleItems?.SerializeProperties ?? false;
-      bool addTypeId = SerializationRules.NeedsTypeId(type, assignedTo, Options);
+      bool addTypeId = SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId);
 
       if (!addTypeId && !serializeProperties && serializeElements)
       {
@@ -642,6 +648,12 @@ namespace LtMsgPack
     /// </summary>
     private void WriteElements(WriteContext c, object value, WriteTypeInfo info, Type elementType)
     {
+      if (elementType is null && TypedElements(info) is ITypedElements typed)
+      {
+        typed.WriteElements(c, value);
+        return;
+      }
+
       c.EnterContainer();
       if (info.Kind == TypeKind.Map)
       {
@@ -713,6 +725,26 @@ namespace LtMsgPack
       c.LeaveContainer();
     }
 
+    /// <summary>
+    /// The handler of the collection type when it writes the elements without boxing them (see <see cref="ITypedElements"/>), kept on the info.
+    /// </summary>
+    private ITypedElements TypedElements(WriteTypeInfo info)
+    {
+      if (info.ElementsKnown)
+        return info.Elements;
+
+      Type type = info.Type;
+      Type definition = type.IsGenericType ? type.GetGenericTypeDefinition() : null;
+      if (CanBindDelegates // without dynamic code only the instantiations of the generated code exist, not those of every runtime type
+        && (IsVector(type) || definition == typeof(List<>) || definition == typeof(HashSet<>) || definition == typeof(Dictionary<,>)))
+      {
+        object handler = _handlers.TryGetValue(type, out object found) ? found : _handlers.GetOrAdd(type, t => CreateHandler(t));
+        info.Elements = handler as ITypedElements;
+      }
+      info.ElementsKnown = true; // another thread that still sees false looks it up again
+      return info.Elements;
+    }
+
     #endregion
   }
 
@@ -739,10 +771,21 @@ namespace LtMsgPack
     internal readonly bool HasAnonymousType;
 
     /// <summary>
+    /// SerializationRules.NeverHasTypeId, asked per value.
+    /// </summary>
+    internal readonly bool NeverHasTypeId;
+
+    /// <summary>
     /// The plans of an object (<see cref="TypeKind.Complex"/>), set when first used (see Serializer.PlanOf): the infos belong to one serializer.
     /// </summary>
     internal ObjectPlan NamesPlan;
     internal ObjectPlan SchemaPlan;
+
+    /// <summary>
+    /// The handler that writes the elements of this collection type, null when they are written boxed (see Serializer.TypedElements).
+    /// </summary>
+    internal ITypedElements Elements;
+    internal bool ElementsKnown;
 
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties, typeof(KeyValuePair<,>))]
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.KeptMembers)]
@@ -751,6 +794,7 @@ namespace LtMsgPack
       Type = type;
       Kind = TypeKinds.Classify(type, options._extensions, out Extension);
       HasAnonymousType = SerializationRules.HasAnonymousType(type);
+      NeverHasTypeId = SerializationRules.NeverHasTypeId(type);
       if (Kind == TypeKind.Plain)
         PlainForm = FrameworkTypeInfo.GetPlainForm(type);
       if (Kind == TypeKind.Guid && options._guidFormat == GuidFormat.String)

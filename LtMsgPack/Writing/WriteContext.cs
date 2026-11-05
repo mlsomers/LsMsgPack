@@ -154,6 +154,17 @@ namespace LtMsgPack.Writing
     }
 
     /// <summary>
+    /// <see cref="WriteTypeId(Type, FullPropertyInfo)"/> of the type of a plan (which has its schema entry: no lookup).
+    /// </summary>
+    internal void WriteTypeId(ObjectPlan plan, FullPropertyInfo assignedTo)
+    {
+      if (Mode == IdMode.Inline)
+        W.Int32(Inline.Register(plan.Schema));
+      else
+        WriteTypeId(plan.Type, assignedTo);
+    }
+
+    /// <summary>
     /// Writes the type id (LsMsgPack: GetTypeIdentifier), which adds the type to the indexed schema.
     /// </summary>
     internal void WriteTypeId(Type type, FullPropertyInfo assignedTo)

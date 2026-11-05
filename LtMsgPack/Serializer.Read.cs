@@ -168,6 +168,16 @@ namespace LtMsgPack
             return (ValueReader)Instantiate(type, typeof(ArrayReader<>), type.GetElementType(), this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
             return (ValueReader)Instantiate(type, typeof(ListReader<>), type.GenericTypeArguments[0], this);
+          if (CanBindDelegates && type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
+            return (ValueReader)InstantiateCollection(typeof(HashSetReader<>), type.GenericTypeArguments, this);
+          if (CollectionInterface(type))
+            return (ValueReader)InstantiateCollection(typeof(CollectionInterfaceReader<>), new[] { type }, this);
+          break;
+        case TypeKind.Map:
+          if (CanBindDelegates && type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+            return (ValueReader)InstantiateCollection(typeof(DictionaryReader<,>), type.GenericTypeArguments, this);
+          if (CollectionInterface(type))
+            return (ValueReader)InstantiateCollection(typeof(CollectionInterfaceReader<>), new[] { type }, this);
           break;
         case TypeKind.Complex:
           if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.ContainsGenericParameters)
@@ -175,6 +185,17 @@ namespace LtMsgPack
           break;
       }
       return (ValueReader)Instantiate(type, typeof(BoxedReader<>), type, null);
+    }
+
+    /// <summary>
+    /// A generic interface of a collection (IList&lt;T&gt;, IEnumerable&lt;T&gt;, IDictionary&lt;TKey, TValue&gt;...) whose concrete type has a typed reader (see <see cref="CollectionInterfaceReader{T}"/>).
+    /// </summary>
+    private bool CollectionInterface(Type type)
+    {
+      if (!CanBindDelegates || !type.IsInterface || !type.IsGenericType || type.ContainsGenericParameters)
+        return false;
+      CollectionInfo info = CollectionInfo.Get(type);
+      return info.Attribute is null && info.ConcreteType != type && Reader(info.ConcreteType) is ICollectionContent;
     }
 
     /// <returns>The reader of a custom extension of the type (an LtExtension&lt;T&gt; of the type), null for others</returns>

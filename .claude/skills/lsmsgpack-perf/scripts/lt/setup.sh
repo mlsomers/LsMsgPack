@@ -44,6 +44,7 @@ for v in new base; do
   make_project bench-$v "$SRC/LtBench.cs" "$ROOT" "$LIBS
 $GEN_ITEMS" "$GEN_PROPS"
   make_project equiv-$v "$SRC/LtEquiv.cs $SRC/EquivModel.cs" "$ROOT" "$LIBS"
+  make_project shapes-$v "$SRC/LtShapes.cs" "$ROOT" "$LIBS"
   make_project web-$v "$SRC/WebBench.cs $WORK/WebModel.cs" "$ROOT" "    <FrameworkReference Include=\"Microsoft.AspNetCore.App\" />
     <PackageReference Include=\"Microsoft.AspNetCore.TestHost\" Version=\"8.0.20\" />
     <ProjectReference Include=\"$ROOT/LsMsgPackFormatters/LsMsgPackFormatters.csproj\" />"

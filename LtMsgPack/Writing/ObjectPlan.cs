@@ -123,7 +123,7 @@ namespace LtMsgPack.Writing
       if (typeId)
       {
         c.W.String(string.Empty);
-        c.WriteTypeId(Type, assignedTo);
+        c.WriteTypeId(this, assignedTo);
         count++;
       }
       else
@@ -153,7 +153,7 @@ namespace LtMsgPack.Writing
       {
         c.W.MapHeader(2);
         c.W.String(string.Empty);
-        c.WriteTypeId(Type, assignedTo);
+        c.WriteTypeId(this, assignedTo);
         c.W.String(MsgPackOptions.ContentKey);
       }
       else

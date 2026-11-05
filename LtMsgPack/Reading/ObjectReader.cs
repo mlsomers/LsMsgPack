@@ -30,6 +30,12 @@ namespace LtMsgPack.Reading
     private readonly Serializer _serializer;
     private ReadPlan _plan;
 
+    /// <summary>
+    /// The plans of the assignable types the type ids named last: a polymorphic list or property usually holds a few, comparing them costs less than per value the hash of a <see cref="Type"/> (a call into the runtime), a dictionary lookup and IsAssignableFrom.
+    /// </summary>
+    private ReadPlan[] _derived = new ReadPlan[0];
+    private const int MostDerived = 8;
+
     internal ObjectReader(Serializer serializer)
     {
       _serializer = serializer;
@@ -60,8 +66,8 @@ namespace LtMsgPack.Reading
         Type type = ReadTypeId(c, assignedTo);
         if (type is null)
           return Slow(c, start, assignedTo);
-        plan = type == typeof(T) ? Plan : _serializer.GetReadPlan(type);
-        if (plan is null || !typeof(T).IsAssignableFrom(type)) // LsMsgPack's way refuses a type that is not assignable
+        plan = type == typeof(T) ? Plan : Derived(type);
+        if (plan is null) // LsMsgPack's way refuses a type that is not assignable
           return Slow(c, start, assignedTo);
         if (type != typeof(T) && _serializer.Options._typeGuard != null) // the type guard, before the instance is created (see docs/security.md)
           TypeResolver.ThrowIfNotAllowed(type, typeof(T), assignedTo, _serializer.Options, type);
@@ -127,7 +133,7 @@ namespace LtMsgPack.Reading
       c.Depth = depth;
       if (plan.WithValues != null) // the values were collected for the constructor
         result = plan.WithValues.Create(result);
-      return (T)result;
+      return Typed(result);
     }
 
     /// <summary>
@@ -142,7 +148,7 @@ namespace LtMsgPack.Reading
       if (!plan.Code.ReadMapBoxed(c, result, plan, bound, count, plan.GeneratedRead))
         return Restart(c, start, depth, assignedTo);
       c.Depth = depth;
-      return (T)result;
+      return Typed(result);
     }
 
     /// <summary>
@@ -182,7 +188,38 @@ namespace LtMsgPack.Reading
       c.Depth = depth;
       if (plan.WithValues != null) // the values were collected for the constructor
         result = plan.WithValues.Create(result);
-      return (T)result;
+      return Typed(result);
+    }
+
+    /// <summary>
+    /// An object of a plan is of its type, which is <typeparamref name="T"/> or assignable to it (<see cref="Derived"/>): no cast per object, it walks the base classes of a derived type.
+    /// </summary>
+    private static T Typed(object result)
+    {
+      return typeof(T).IsValueType ? (T)result : Unsafe.As<object, T>(ref result);
+    }
+
+    /// <returns>The plan of a type a type id named, null when it has none or is not assignable to <typeparamref name="T"/></returns>
+    private ReadPlan Derived(Type type)
+    {
+      ReadPlan[] known = _derived;
+      for (int t = known.Length - 1; t >= 0; t--)
+      {
+        if (known[t].Type == type)
+          return known[t];
+      }
+
+      ReadPlan plan = _serializer.GetReadPlan(type);
+      if (plan is null || !typeof(T).IsAssignableFrom(type))
+        return null;
+      if (known.Length < MostDerived) // a copy, other threads read the array (one that adds at the same time may get lost, it comes back)
+      {
+        ReadPlan[] more = new ReadPlan[known.Length + 1];
+        Array.Copy(known, more, known.Length);
+        more[known.Length] = plan;
+        _derived = more;
+      }
+      return plan;
     }
 
     private T Restart(ReadContext c, int start, int depth, FullPropertyInfo assignedTo)
