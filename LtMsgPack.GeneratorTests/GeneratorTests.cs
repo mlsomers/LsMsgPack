@@ -188,7 +188,9 @@ namespace Shelf
     [TestMethod]
     public void ContractVersion_IsTheRuntimes()
     {
+#pragma warning disable MSTEST0032 // both are constants, always equal when this compiles: it fails when one changes without the other
       Assert.AreEqual(GeneratedContract.Current, Emitter.ContractVersion);
+#pragma warning restore MSTEST0032
     }
 
     [TestMethod]

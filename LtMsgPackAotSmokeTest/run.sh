@@ -12,7 +12,7 @@ if ! command -v clang > /dev/null; then
   linker=(-p:CppCompilerAndLinker=gcc)
 fi
 # Every warning separately (not one IL2104 per assembly), compiled again so the warnings are reported again
-rm -rf obj/Release/net8.0/linux-x64
+rm -rf obj/Release/net10.0/linux-x64
 dotnet publish -c Release -r linux-x64 -o "$out/publish" -p:TrimmerSingleWarn=false "${linker[@]}" | tee "$out/publish.log"
 # No trim or AOT warnings: the libraries fix or justify theirs, the app creates its serializer with the context (its deliberate uses without one are suppressed)
 if grep -E "warning IL[0-9]{4}" "$out/publish.log"; then

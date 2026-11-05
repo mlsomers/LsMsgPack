@@ -178,6 +178,7 @@ namespace LsMsgPackFormatters
     }
 
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Without dynamic code only items of a value type fail, with the NotSupportedException thrown here: List<T>, BufferAsync<T> and StreamItemsAsync<T> are shared by reference types.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2060", Justification = "BufferAsync<T> and StreamItemsAsync<T> ask nothing of T's members (reported by the .NET 10 tools).")]
     private static AsyncBuffer Buffer(Type element)
     {
       if (!RuntimeFeature.IsDynamicCodeSupported && element.IsValueType)

@@ -417,6 +417,7 @@ namespace LtMsgPack.Writing
 
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // StructPropWriter's struct constraint (for Unsafe.Unbox) asks for a parameterless constructor, none is called
+    [UnconditionalSuppressMessage("Trimming", "IL2076", Justification = TrimReasons.Fallback)] // the same, as the .NET 10 tools report it
     internal static PropWriter Create(Serializer serializer, FullPropertyInfo info)
     {
       PropertyInfo property = info.PropertyInfo;

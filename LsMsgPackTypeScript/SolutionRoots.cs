@@ -54,11 +54,14 @@ namespace LsMsgPackTypeScript
       string full = Path.GetFullPath(path);
       using (MSBuildWorkspace workspace = MSBuildWorkspace.Create())
       {
-        workspace.WorkspaceFailed += (s, e) =>
+        using WorkspaceEventRegistration failures = workspace.RegisterWorkspaceFailedHandler(e =>
         {
           if (e.Diagnostic.Kind == WorkspaceDiagnosticKind.Failure)
-            warnings.Add(string.Concat("Loading the solution: ", e.Diagnostic.Message));
-        };
+          {
+            lock (warnings) // the handler need not run on this thread
+              warnings.Add(string.Concat("Loading the solution: ", e.Diagnostic.Message));
+          }
+        });
         IEnumerable<Project> projects;
         if (full.EndsWith(".sln", StringComparison.OrdinalIgnoreCase) || full.EndsWith(".slnf", StringComparison.OrdinalIgnoreCase) || full.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
           projects = (await workspace.OpenSolutionAsync(full).ConfigureAwait(false)).Projects;

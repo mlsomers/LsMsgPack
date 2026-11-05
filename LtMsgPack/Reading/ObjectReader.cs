@@ -730,6 +730,7 @@ namespace LtMsgPack.Reading
     /// Creates the instances as <see cref="MsgPackOptions.ObjectCreation"/> says (decided once per type, the options of a serializer do not change).
     /// </summary>
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("Trimming", "IL2071", Justification = TrimReasons.Fallback)] // new() of Creator<T> and StructCreator<T> (reported by the .NET 10 tools): the constructor was just looked up
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
     private static Func<object> Creator(Type type, ObjectCreation creation, Func<object> generated)
     {
@@ -940,6 +941,7 @@ namespace LtMsgPack.Reading
 
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // StructPropReader's struct constraint (for Unsafe.Unbox) asks for a parameterless constructor, none is called
+    [UnconditionalSuppressMessage("Trimming", "IL2076", Justification = TrimReasons.Fallback)] // the same, as the .NET 10 tools report it
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
       PropertyInfo property = info.PropertyInfo;

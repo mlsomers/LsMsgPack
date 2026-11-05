@@ -330,7 +330,6 @@ namespace LsMsgPack {
     }
 
     protected byte[] GetLengthBytes(long length, SupportedLengths supported) {
-      // if(length < 0) return new byte[0];
       if(length < 256 && (supported & SupportedLengths.Byte1)>0) return new byte[1] { (byte)length };
       byte[] bytes; // from here we should worry about endianness
       if(length <= ushort.MaxValue && (supported & SupportedLengths.Short2) > 0) bytes = BitConverter.GetBytes((ushort)length);

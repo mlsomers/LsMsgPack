@@ -81,6 +81,7 @@ namespace LsMsgPack.Meta
       [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
       [DynamicDependency(DynamicallyAccessedMemberTypes.PublicMethods | DynamicallyAccessedMemberTypes.PublicProperties, typeof(ICollection<>))]
       [UnconditionalSuppressMessage("Trimming", "IL2065", Justification = TrimReasons.KeptMembers)]
+      [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.KeptMembers)] // the interfaces of GetInterfaces (reported by the .NET 10 tools)
       internal Filler(Type type)
       {
         Type[] interfaces = type.GetInterfaces();

@@ -790,7 +790,6 @@ namespace LsMsgPack
     {
       MsgPackMeta.PackDef def;
       if (MsgPackMeta.FromTypeId.TryGetValue(typeId, out def)) return def.OfficialName;
-      //if(typeId == MsgPackTypeId.NeverUsed) return "[\"Officially never used\"] (0xC1)";
       return $"Undefined (0x{BitConverter.ToString(new byte[] { (byte)typeId })})";
     }
 
