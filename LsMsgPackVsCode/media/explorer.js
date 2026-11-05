@@ -35,6 +35,7 @@
     canRefresh: false,
     /** @type {Uint8Array} */
     bytes: new Uint8Array(0),
+    length: 0,
     settings: {
       continueOnError: !!saved.continueOnError,
       endian: saved.endian || 'SwapIfCurrentSystemIsLittleEndian',
@@ -348,6 +349,8 @@
   /**
    * 16 bytes per row: the type byte of each item in red, the bytes holding a length in blue, bytes after the data in gray,
    * the selected item (or object) on a green background. Clicking a byte selects the item it belongs to.
+   * Bytes that are not in memory (the middle of a value that is too large for practical debugging) are a row of dots: HexLayout places the rows,
+   * items have offsets in the data, this.bytes and the classes are indexed without the skipped bytes.
    */
   class HexView {
     constructor(onByte) {
@@ -358,8 +361,12 @@
       this.element.append(this.spacer, this.rowsElement);
       this.bytes = new Uint8Array(0);
       this.classes = new Uint8Array(0);
+      this.layout = new HexLayout(0, []);
+      this.total = 0;
       this.rangeStart = -1;
       this.rangeEnd = -1;
+      this.rangeStartOffset = -1;
+      this.rangeEndOffset = -1;
       this.element.addEventListener('scroll', () => this.render());
       this.element.addEventListener('click', (e) => {
         const target = /** @type {HTMLElement} */ (e.target);
@@ -371,26 +378,34 @@
       new ResizeObserver(() => this.render()).observe(this.element);
     }
 
-    setData(bytes, items) {
+    /**
+     * @param bytes The data without the skipped bytes
+     * @param skipped What was left out: [{ offset, length }] in the order of the data
+     * @param total The length of the data
+     */
+    setData(bytes, items, skipped, total) {
       this.bytes = bytes;
+      this.total = total;
+      const layout = new HexLayout(bytes.length, skipped);
+      this.layout = layout;
       // 0 data, 1 type bytes (also the escape sequences of values of unknown length: 0xC1 and its code, and the end 0xC1 0xC0), 2 length bytes, 3 not part of the data (after it, or the whole data when it could not be read)
       const classes = new Uint8Array(bytes.length);
       if (items && items.length > 0) {
         const root = items[0];
         classes.fill(3);
-        classes.fill(0, Math.max(0, root.offset), Math.min(bytes.length, root.offset + Math.max(root.length, 0)));
+        classes.fill(0, layout.toIndex(Math.max(0, root.offset)), layout.toIndex(root.offset + Math.max(root.length, 0)));
         for (const item of items) {
-          let offset = item.offset;
-          if (item.typeBytes > 0 && offset >= 0 && offset < bytes.length) {
-            for (let t = 0; t < item.typeBytes && offset < bytes.length; t++) {
-              classes[offset++] = 1;
+          let index = layout.toIndex(item.offset);
+          if (item.typeBytes > 0 && item.offset >= 0 && index < bytes.length) {
+            for (let t = 0; t < item.typeBytes && index < bytes.length; t++) {
+              classes[index++] = 1;
             }
-            for (let t = 0; t < item.lengthBytes && offset < bytes.length; t++) {
-              classes[offset++] = 2;
+            for (let t = 0; t < item.lengthBytes && index < bytes.length; t++) {
+              classes[index++] = 2;
             }
           }
           if (item.endBytes > 0) {
-            const end = item.offset + item.length;
+            const end = layout.toIndex(item.offset + item.length);
             for (let t = Math.max(0, end - item.endBytes); t < end && t < bytes.length; t++) {
               classes[t] = 1;
             }
@@ -398,19 +413,22 @@
         }
       }
       this.classes = classes;
-      this.rangeStart = this.rangeEnd = -1;
-      this.spacer.style.height = `${Math.ceil(bytes.length / 16) * rowHeight()}px`;
+      this.rangeStart = this.rangeEnd = this.rangeStartOffset = this.rangeEndOffset = -1;
+      this.spacer.style.height = `${layout.rows * rowHeight()}px`;
       this.element.scrollTop = 0;
       this.render();
     }
 
+    /** @param start The offset in the data, -1 for none */
     setRange(start, end, scroll) {
-      this.rangeStart = start;
-      this.rangeEnd = end;
+      this.rangeStartOffset = start;
+      this.rangeEndOffset = end;
+      this.rangeStart = start < 0 ? -1 : this.layout.toIndex(start);
+      this.rangeEnd = start < 0 ? -1 : this.layout.toIndex(end);
       if (scroll && start >= 0) {
         const height = rowHeight();
-        const top = Math.floor(start / 16) * height;
-        const bottom = Math.ceil(Math.max(end, start + 1) / 16) * height;
+        const top = this.layout.rowOf(this.rangeStart) * height;
+        const bottom = (this.layout.rowOf(Math.max(this.rangeEnd - 1, this.rangeStart)) + 1) * height;
         if (top < this.element.scrollTop || bottom > this.element.scrollTop + this.element.clientHeight) {
           this.element.scrollTop = Math.max(0, top - height);
         }
@@ -420,27 +438,36 @@
 
     render() {
       const height = rowHeight();
-      const rows = Math.ceil(this.bytes.length / 16);
+      const layout = this.layout;
+      const rows = layout.rows;
       const top = this.element.scrollTop;
       const first = Math.max(0, Math.floor(top / height) - 3);
       const last = Math.min(rows, Math.ceil((top + this.element.clientHeight) / height) + 3);
-      const digits = Math.max(4, hex(Math.max(0, this.bytes.length - 1), 1).length);
+      const digits = Math.max(4, hex(Math.max(0, this.total - 1), 1).length);
       const names = ['', ' t', ' l', ' x'];
       this.rowsElement.style.top = `${first * height}px`;
       const html = [];
       for (let row = first; row < last; row++) {
-        const start = row * 16;
-        let line = `<div class="row"><span class="off">${hex(start, digits)}</span>`;
+        const place = layout.row(row);
+        if (place.skip >= 0) {
+          const skipped = layout.skipped[place.skip];
+          const inRange = skipped.offset >= this.rangeStartOffset && skipped.offset < this.rangeEndOffset ? ' r' : '';
+          html.push(`<div class="row skip"><span class="off">${hex(skipped.offset, digits)}</span><span class="dots${inRange}" data-o="${skipped.offset}" title="These bytes are not in memory: too large for practical debugging.">... ${skipped.length} bytes ...</span></div>`);
+          continue;
+        }
+        const first = layout.toOffset(place.start); // the bytes of a row follow each other in the data
+        let line = `<div class="row"><span class="off">${hex(first, digits)}</span>`;
         let ascii = '<span class="ascii">';
         for (let column = 0; column < 16; column++) {
-          const offset = start + column;
-          if (offset >= this.bytes.length) {
+          if (column >= place.count) {
             line += `<span class="b none${column === 8 ? ' gap' : ''}"> </span>`; // keeps the text column in place
             continue;
           }
-          const value = this.bytes[offset];
-          const inRange = offset >= this.rangeStart && offset < this.rangeEnd ? ' r' : '';
-          line += `<span class="b${column === 8 ? ' gap' : ''}${names[this.classes[offset]]}${inRange}" data-o="${offset}">${hex(value, 2)}</span>`;
+          const index = place.start + column;
+          const offset = first + column;
+          const value = this.bytes[index];
+          const inRange = index >= this.rangeStart && index < this.rangeEnd ? ' r' : '';
+          line += `<span class="b${column === 8 ? ' gap' : ''}${names[this.classes[index]]}${inRange}" data-o="${offset}">${hex(value, 2)}</span>`;
           const ch = value >= 32 && value < 127 ? String.fromCharCode(value) : '.';
           ascii += `<span class="a${inRange}" data-o="${offset}">${ch === '<' ? '&lt;' : ch === '&' ? '&amp;' : ch === '>' ? '&gt;' : ch}</span>`;
         }
@@ -673,11 +700,20 @@
 
   // ---------------------------------------------------------------- Loading
 
+  function fromBase64(text) {
+    const binary = atob(text);
+    const bytes = new Uint8Array(binary.length);
+    for (let t = 0; t < binary.length; t++) {
+      bytes[t] = binary.charCodeAt(t);
+    }
+    return bytes;
+  }
+
   function load() {
     state.loading = true;
     state.loadSeq++;
     resetSearch();
-    ui.statusLength.textContent = `${state.bytes.length} bytes, reading...`;
+    ui.statusLength.textContent = `${state.length} bytes, reading...`;
     post({ type: 'load', seq: state.loadSeq, settings: state.settings });
   }
 
@@ -697,20 +733,20 @@
       kind: item.kind,
       text: item.text,
       role: item.role,
-      classes: item.guess ? 'guess' : item.schema ? 'schema' : '',
-      title: `${item.text}\nOffset ${item.offset} (0x${hex(item.offset, 1)}), ${item.length} bytes${item.guess ? '\nAfter an error: may not be read correctly.' : ''}${item.schema ? '\nPart of the indexed schema.' : ''}`
+      classes: `${item.guess ? 'guess' : item.schema ? 'schema' : ''}${item.truncated ? ' truncated' : ''}`,
+      title: `${item.text}\nOffset ${item.offset} (0x${hex(item.offset, 1)}), ${item.length} bytes${item.truncated ? '\nToo large for practical debugging: only its first and last bytes or characters are kept.' : ''}${item.guess ? '\nAfter an error: may not be read correctly.' : ''}${item.schema ? '\nPart of the indexed schema.' : ''}`
     }));
     if (model.truncated && nodes.length > 0) {
       nodes.push({ id: nodes.length, parent: 0, kind: 'limit', text: `Limit of ${model.displayLimit} displayed items reached...`, classes: 'limit' });
     }
-    ui.tree.setNodes(nodes, model.error ? `The data could not be read:\n${model.error}\n\nSwitch on "Ignore errors" to see what could be read.` : state.bytes.length === 0 ? 'No data.' : '');
+    ui.tree.setNodes(nodes, model.error ? `The data could not be read:\n${model.error}\n\nSwitch on "Ignore errors" to see what could be read.` : state.length === 0 ? 'No data.' : '');
     if (model.error) {
       showBanner(`The data could not be read: ${model.error}`, true);
     } else {
       showBanner(state.warning, false);
     }
 
-    ui.hex.setData(state.bytes, items);
+    ui.hex.setData(model.hexBytes ? fromBase64(model.hexBytes) : state.bytes, items, model.skipped || [], state.length);
     showIssues(model.issues || []);
 
     // The objects: shown when asked, or when the data was likely written from objects (then the button can still hide them)
@@ -741,7 +777,7 @@
       ui.objectProps.show([], '');
     }
 
-    ui.statusLength.textContent = `${state.bytes.length} bytes, ${items.length} items${model.truncated ? ' shown' : ''}`;
+    ui.statusLength.textContent = `${state.length} bytes, ${items.length} items${model.truncated ? ' shown' : ''}`;
     if (items.length > 0) {
       ui.tree.select(0, true);
     } else {
@@ -936,12 +972,8 @@
         state.description = message.description;
         state.warning = message.warning || '';
         state.canRefresh = message.canRefresh;
-        const binary = atob(message.data || '');
-        const bytes = new Uint8Array(binary.length);
-        for (let t = 0; t < binary.length; t++) {
-          bytes[t] = binary.charCodeAt(t);
-        }
-        state.bytes = bytes;
+        state.bytes = fromBase64(message.data || '');
+        state.length = message.length; // a large file has no bytes here: the model brings those of the hex view
         if (typeof saved.displayLimit !== 'number' && typeof message.displayLimit === 'number') {
           state.settings.displayLimit = message.displayLimit;
         }

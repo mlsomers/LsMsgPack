@@ -31,11 +31,17 @@ namespace ObjectDebugger
     /// <param name="schemaStore">Holds the schemas the data may refer to (<c>WriteSchemaReference</c>), optional</param>
     public void Reconstruct(MsgPackItem item, SchemaStore schemaStore = null)
     {
-      Reconstruct(item, schemaStore, null);
+      Reconstruct(item, schemaStore, (TrimmedData)null);
     }
 
     /// <param name="data">The bytes <paramref name="item"/> was read from (KEEPTRACK): a schema written inline is then also found by the references to it later in the data (a stream written with <c>MsgPackStreamSchemas.PerStream</c>)</param>
     public void Reconstruct(MsgPackItem item, SchemaStore schemaStore, byte[] data)
+    {
+      Reconstruct(item, schemaStore, data is null ? null : TrimmedData.FromBytes(data, null));
+    }
+
+    /// <param name="data">What was kept of the bytes <paramref name="item"/> was read from (KEEPTRACK): a schema written inline is then also found by the references to it later in the data (a stream written with <c>MsgPackStreamSchemas.PerStream</c>)</param>
+    public void Reconstruct(MsgPackItem item, SchemaStore schemaStore, TrimmedData data)
     {
       Members.Clear();
       Warnings.Clear();
@@ -260,7 +266,7 @@ namespace ObjectDebugger
     /// A schema (or a reference to it) is followed by its body. Without a schema each item is a payload of its own.
     /// </summary>
     /// <param name="data">The bytes of the items: the schemas written inline are kept in a store of this call, for the references to them later in the data (a stream)</param>
-    private static List<Payload> SplitPayloads(List<MsgPackItem> items, SchemaStore schemaStore, byte[] data)
+    private static List<Payload> SplitPayloads(List<MsgPackItem> items, SchemaStore schemaStore, TrimmedData data)
     {
       List<Payload> payloads = new List<Payload>();
       SchemaStore inline = null;
@@ -304,15 +310,16 @@ namespace ObjectDebugger
     /// Registers the bytes of a schema written inline (its id is computed from them), so a reference to it later in the data finds it.
     /// </summary>
     /// <returns>The id of the schema, null when it was not registered</returns>
-    private static string KeepInline(ref SchemaStore inline, MsgPackItem item, byte[] data)
+    private static string KeepInline(ref SchemaStore inline, MsgPackItem item, TrimmedData data)
     {
 #if KEEPTRACK
-      if (item.StoredOffset < 0 || item.StoredLength <= 0 || item.StoredOffset + item.StoredLength > data.Length)
+      if (item.StoredLength <= 0)
         return null;
       if (item.Settings != null && item.Settings.EndianAction != EndianAction.SwapIfCurrentSystemIsLittleEndian)
         return null; // the store keeps schemas in the byte order of the specification
-      byte[] bytes = new byte[item.StoredLength];
-      Array.Copy(data, item.StoredOffset, bytes, 0, bytes.Length);
+      byte[] bytes = data.Copy(item.StoredOffset, item.StoredLength);
+      if (bytes is null)
+        return null;
       try
       {
         if (inline is null)

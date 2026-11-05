@@ -9,7 +9,10 @@ export interface ByteSource {
   title: string;
   /** Where the bytes came from, e.g. "byte[] buffer (debugger)" */
   description: string;
+  /** Empty for a large file, see file */
   bytes: Uint8Array;
+  /** A file that is too large to send as bytes: the inspector reads it */
+  file?: { uri: vscode.Uri; length: number };
   /** A warning to show with the data (e.g. read up to the maximum length) */
   warning?: string;
   /** Reads the bytes again (e.g. evaluates the expression again in the debugger), undefined when that is not possible */
@@ -74,6 +77,7 @@ export class ExplorerView implements vscode.Disposable {
       description: this.source.description,
       warning: this.source.warning,
       data: Buffer.from(this.source.bytes).toString('base64'),
+      length: this.source.file ? this.source.file.length : this.source.bytes.length,
       canRefresh: !!this.source.refresh,
       displayLimit: config.get<number>('displayLimit', 1000),
       showObjectsAt: config.get<string>('showObjectsAt', 'high')
@@ -118,7 +122,10 @@ export class ExplorerView implements vscode.Disposable {
     const generation = client.generation;
     const known = generation !== 0 && generation === this.loadedGeneration;
     try {
-      const result = await client.load(this.doc, known ? undefined : Buffer.from(this.source.bytes).toString('base64'), settings);
+      const file = this.source.file;
+      const result = !known && file
+        ? await client.loadFile(this.doc, file.uri.fsPath, settings)
+        : await client.load(this.doc, known ? undefined : Buffer.from(this.source.bytes).toString('base64'), settings);
       this.loadedGeneration = client.generation;
       return result;
     } catch (error) {
@@ -154,12 +161,18 @@ export class ExplorerView implements vscode.Disposable {
       defaultUri: vscode.Uri.joinPath(vscode.workspace.workspaceFolders?.[0]?.uri ?? vscode.Uri.file(os.homedir()), name.endsWith('.msgpack') ? name : `${name}.msgpack`),
       filters: { 'MsgPack': ['msgpack', 'MsgPack', 'mpk'], 'All files': ['*'] }
     });
-    if (uri) {
+    if (uri && this.source.file) {
+      await vscode.workspace.fs.copy(this.source.file.uri, uri, { overwrite: true });
+    } else if (uri) {
       await vscode.workspace.fs.writeFile(uri, this.source.bytes);
     }
   }
 
   private async copy(format: string): Promise<void> {
+    if (this.source.file) {
+      vscode.window.showWarningMessage(`This file of ${this.source.file.length} bytes is too large for the clipboard.`);
+      return;
+    }
     const buffer = Buffer.from(this.source.bytes);
     const text = format === 'base64' ? buffer.toString('base64') : buffer.toString('hex').toUpperCase().replace(/(..)(?!$)/g, '$1 ');
     await vscode.env.clipboard.writeText(text);
@@ -208,6 +221,7 @@ export class ExplorerView implements vscode.Disposable {
 </head>
 <body>
 <div id="app"></div>
+<script nonce="${nonce}" src="${media('hexLayout.js')}"></script>
 <script nonce="${nonce}" src="${media('explorer.js')}"></script>
 </body>
 </html>`;

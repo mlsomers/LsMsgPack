@@ -279,6 +279,16 @@ button:focus-visible,
   background: #777;
 }
 
+/* Torn off at the right with dots: only the ends of the value are kept */
+.row.truncated .badge {
+  padding-right: 6px;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 3px) 25%, 100% 50%, calc(100% - 3px) 75%, 100% 100%, 0 100%);
+}
+
+.row.truncated .badge::after {
+  content: '\2026';
+}
+
 .role {
   flex: none;
   margin-right: 4px;
@@ -374,6 +384,15 @@ button:focus-visible,
 
 .hex .b.r,
 .hex .a.r {
+  background: var(--range-background);
+}
+
+.hex .dots {
+  color: var(--trailing-byte);
+  cursor: pointer;
+}
+
+.hex .dots.r {
   background: var(--range-background);
 }
 

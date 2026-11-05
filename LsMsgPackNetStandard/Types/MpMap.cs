@@ -152,6 +152,9 @@ namespace LsMsgPack
 
     internal override void WriteTo(ByteWriter bytes)
     {
+#if KEEPTRACK
+      ThrowWhenItemsTruncated();
+#endif
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       MsgPackTypeId typeId = GetTypeId(value.LongLength);
 #else

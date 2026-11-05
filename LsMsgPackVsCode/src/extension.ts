@@ -198,6 +198,9 @@ async function readFromDebugger(name: string, expression: string | undefined, va
  * Opens .msgpack files in the explorer (read only).
  */
 class FileEditorProvider implements vscode.CustomReadonlyEditorProvider {
+  /** Larger files are not sent as text to the inspector and the webview (a string in JavaScript holds at most 512 MB), the inspector reads them. */
+  private static readonly largeFileBytes = 256 * 1024 * 1024;
+
   constructor(private readonly extensionUri: vscode.Uri, private readonly client: () => InspectorClient) {
   }
 
@@ -207,6 +210,18 @@ class FileEditorProvider implements vscode.CustomReadonlyEditorProvider {
 
   async resolveCustomEditor(document: vscode.CustomDocument, panel: vscode.WebviewPanel): Promise<void> {
     const read = async (): Promise<ByteSource> => {
+      if (document.uri.scheme === 'file') {
+        const { size } = await vscode.workspace.fs.stat(document.uri);
+        if (size > FileEditorProvider.largeFileBytes) {
+          return {
+            title: path.basename(document.uri.fsPath),
+            description: `${vscode.workspace.asRelativePath(document.uri)} (${size} bytes)`,
+            bytes: new Uint8Array(0),
+            file: { uri: document.uri, length: size },
+            refresh: read
+          };
+        }
+      }
       const bytes = await vscode.workspace.fs.readFile(document.uri);
       return {
         title: path.basename(document.uri.fsPath),

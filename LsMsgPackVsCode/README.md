@@ -78,6 +78,7 @@ The data is read by the LsMsgPack library itself (the same code as the Visual St
 - **Objects**: the objects the data was written from, reconstructed without the types: type names and property names from the indexed schema of [LsMsgPack](https://github.com/mlsomers/LsMsgPack), names from the keys of maps (data without a schema, e.g. from other languages), or the values by position. Shown automatically when the data looks like objects (`lsmsgpack.showObjectsAt`, the tooltip of the Objects button tells why). Selecting an object selects its bytes.
 - **Search**: strings containing the text, and values the text converts to (numbers, true/false, null, Guids, dates and times). Enter for the next, Shift+Enter for the previous.
 - **Limit**, **Endian** and **Ignore errors** like the Visual Studio visualizer: show more items, read numbers in another byte order, keep reading after a breaking error (best effort).
+- Values that are too large for practical debugging (a str, bin or ext above 16 MiB, up to the 4 GB of the specification) keep their first and last 100 characters or bytes: the icon gets a mark, the properties show the original length and the hex view has a row of dots for the bytes in between. Files can be larger than 2 GB. Of a file above 256 MiB the hex view shows at most 256 MiB after leaving out such values.
 - **Save**, **Copy hex**, **Copy base64** and **Refresh** (read the value again while the program is paused, or the file again).
 
 ## License

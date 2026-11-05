@@ -21,6 +21,10 @@ namespace LsMsgPack
 
     public override MsgPackTypeId TypeId {
       get {
+#if KEEPTRACK
+        if (_truncatedLength > 0)
+          return GetTypeId(_truncatedLength);
+#endif
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
         return GetTypeId(StrAsBytes.LongLength);
 #else
@@ -33,6 +37,50 @@ namespace LsMsgPack
     {
       get { return value.Length; }
     }
+
+#if KEEPTRACK
+    [Browsable(true)]
+    public override long OriginalLength
+    {
+      get { return _truncatedLength > 0 ? _truncatedLength : encoding.GetByteCount(value); }
+    }
+
+    /// <summary>
+    /// A chunk of a str of unknown length of which only the ends were kept.
+    /// </summary>
+    internal static MpString Truncated(MsgPackSettings settings, byte[] head, byte[] tail, long start, long len)
+    {
+      MpString str = new MpString(settings);
+      str.SetEnds(head, tail, start, len);
+      return str;
+    }
+
+    /// <summary>
+    /// The first and last characters around <see cref="MsgPackVarLen.TooLargeText"/>, the hex views keep the bytes of these characters.
+    /// </summary>
+    private void SetEnds(byte[] head, byte[] tail, long start, long len)
+    {
+      string first;
+      string last;
+      Keep(head, 0, head.Length, tail, 0, tail.Length, out first, out last);
+      value = string.Concat(first, " ... ", TooLargeText, " ... ", last);
+      // An invalid byte becomes a character of 3 bytes: not more than what was read
+      MarkTruncated(start, len, Math.Min(encoding.GetByteCount(first), head.Length), Math.Min(encoding.GetByteCount(last), tail.Length));
+    }
+
+    private void Keep(byte[] head, int headOffset, int headCount, byte[] tail, int tailOffset, int tailCount, out string first, out string last)
+    {
+      first = encoding.GetString(head, headOffset, headCount);
+      if (first.Length > KeptCharacters)
+        first = first.Substring(0, char.IsHighSurrogate(first[KeptCharacters - 1]) ? KeptCharacters - 1 : KeptCharacters);
+      last = encoding.GetString(tail, tailOffset, tailCount);
+      if (last.Length > KeptCharacters)
+      {
+        int from = last.Length - KeptCharacters;
+        last = last.Substring(char.IsLowSurrogate(last[from]) ? from + 1 : from);
+      }
+    }
+#endif
 
     protected override MsgPackTypeId GetTypeId(long len)
     {
@@ -86,6 +134,9 @@ namespace LsMsgPack
 
     public override byte[] ToBytes()
     {
+#if KEEPTRACK
+      ThrowWhenTruncated();
+#endif
       int byteCount = encoding.GetByteCount(value);
       ByteWriter bytes = new ByteWriter(byteCount + 5); // current max length limit is 4 bytes + string identifier
       WriteValue(bytes, byteCount);
@@ -99,6 +150,9 @@ namespace LsMsgPack
         base.WriteTo(target);
         return;
       }
+#if KEEPTRACK
+      ThrowWhenTruncated();
+#endif
       WriteValue(target, encoding.GetByteCount(value));
     }
 
@@ -130,6 +184,17 @@ namespace LsMsgPack
           default: throw new MsgPackException($"MpString does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position - 1, typeId);
         }
       }
+#if KEEPTRACK
+      if (Truncates(len, BytesForKeptCharacters))
+      {
+        byte[] head;
+        byte[] tail;
+        long start;
+        ReadEnds(data, len, BytesForKeptCharacters, out head, out tail, out start);
+        SetEnds(head, tail, start, len);
+        return this;
+      }
+#endif
       StrAsBytes = ReadBytes(data, len);
       return this;
     }
@@ -163,10 +228,20 @@ namespace LsMsgPack
       }
       finally
       {
-        StrAsBytes = content.ToArray(); // decoded at once: a chunk may end inside a character
 #if KEEPTRACK
         chunks = parts.ToArray();
+        if (_truncatedLength > 0)
+        {
+          // The chunks noted what they left out
+          byte[] ends = content.ToArray();
+          string first;
+          string last;
+          Keep(ends, 0, _truncatedHead, ends, _truncatedHead, ends.Length - _truncatedHead, out first, out last);
+          value = string.Concat(first, " ... ", TooLargeText, " ... ", last);
+        }
+        else
 #endif
+        StrAsBytes = content.ToArray(); // decoded at once: a chunk may end inside a character
       }
       return this;
     }
@@ -174,6 +249,8 @@ namespace LsMsgPack
     public override string ToString()
     {
 #if KEEPTRACK
+      if (_truncatedLength > 0) // on one line: the explorers show the first line of it, the marker is in the middle
+        return $"String ({GetOfficialTypeName(TypeId)}) of {_truncatedLength} bytes with the value \"{value.Replace('\r', ' ').Replace('\n', ' ')}\"";
       if (_lengthUnknown)
         return $"String of unknown length in {chunks.Length} chunks (0xC1 0xA0 ... 0xC1 0xC0) with the value \"{value}\"";
 #endif

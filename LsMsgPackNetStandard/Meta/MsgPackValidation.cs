@@ -14,6 +14,8 @@ namespace LsMsgPack
             else if (item is MpError) ValidateError((MpError)item, issues);
             else if (item is MsgPackVarLen)
             {
+                if (((MsgPackVarLen)item).IsTruncated)
+                    return issues.ToArray(); // only its ends are known
                 if (((MsgPackVarLen)item).LengthUnknown)
                 {
                     issues.Add(new ValidationItem(item, ValidationSeverity.Comment, 0, "Written without its length (0xC1 escape sequences, as proposed in msgpack/msgpack#347 for streams): only readers that know the proposal read it, other MsgPack readers refuse it."));

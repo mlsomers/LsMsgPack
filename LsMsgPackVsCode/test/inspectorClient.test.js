@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { InspectorClient } = require('../out/inspectorClient');
 
@@ -143,3 +144,64 @@ function crc32(bytes) {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
+
+test('values that are too large for practical debugging, files read by the inspector', { skip }, async () => {
+  const client = new InspectorClient(process.env.DOTNET || 'dotnet', assembly);
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lsmsgpack-'));
+  try {
+    // ["abc", bin of 5000 bytes, 7]
+    const content = Buffer.alloc(5000);
+    for (let t = 0; t < content.length; t++) {
+      content[t] = t % 251;
+    }
+    const data = Buffer.concat([Buffer.from('93a3616263c5', 'hex'), Buffer.from([0x13, 0x88]), content, Buffer.from([7])]);
+    const limited = Object.assign({}, settings, { largeValueLimit: 1000 });
+    const expectBin = (model) => {
+      assert.strictEqual(model.length, data.length);
+      assert.deepStrictEqual(model.skipped, [{ offset: 8 + 100, length: 4800 }]);
+      const bin = model.items.find((item) => item.kind === 'bin');
+      assert.strictEqual(bin.truncated, true);
+      assert.match(bin.text, /5000 bytes, too large for practical debugging/);
+      assert.strictEqual(bin.offset, 5);
+      assert.strictEqual(bin.length, 5003);
+      assert.strictEqual(bin.typeBytes, 1);
+      assert.strictEqual(bin.lengthBytes, 2);
+      assert.strictEqual(bin.props.find((p) => p.name === 'Original length').value, '5000');
+      assert.strictEqual(model.items.find((item) => item.kind === 'str').truncated, false);
+
+      const seven = model.items.find((item) => item.kind === 'int');
+      assert.strictEqual(seven.offset, 5008);
+
+      const hexBytes = Buffer.from(model.hexBytes, 'base64');
+      assert.strictEqual(hexBytes.length, 8 + 200 + 1);
+      assert.deepStrictEqual(hexBytes.subarray(0, 108), data.subarray(0, 108));
+      assert.deepStrictEqual(hexBytes.subarray(108), data.subarray(4908));
+      assert.deepStrictEqual(model.issues.filter((issue) => issue.item === bin.id), [], 'nothing to say about what is not there');
+    };
+
+    // As data: without skipped bytes the extension has them all
+    expectBin(await client.load('d', data.toString('base64'), limited));
+    const whole = await client.load('d', undefined, settings);
+    assert.strictEqual(whole.hexBytes, undefined);
+    assert.deepStrictEqual(whole.skipped, []);
+    assert.strictEqual(whole.items.find((item) => item.kind === 'bin').truncated, false);
+
+    // As a file, read again without sending anything
+    const file = path.join(directory, 'large.msgpack');
+    fs.writeFileSync(file, data);
+    expectBin(await client.loadFile('f', file, limited));
+    expectBin(await client.load('f', undefined, limited));
+    const search = await client.search('f', 'abc', false);
+    assert.strictEqual(search.total, 1);
+
+    // A file has its bytes for the hex view in the model
+    const fromFile = await client.loadFile('g', file, settings);
+    assert.strictEqual(Buffer.from(fromFile.hexBytes, 'base64').length, data.length);
+
+    const missing = await client.loadFile('h', path.join(directory, 'missing.msgpack'), settings);
+    assert.ok(missing.error);
+  } finally {
+    client.dispose();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});

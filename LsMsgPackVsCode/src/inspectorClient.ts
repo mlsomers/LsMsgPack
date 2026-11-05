@@ -16,6 +16,8 @@ export interface LoadSettings {
   objects: ObjectsMode;
   /** Default 'high' */
   showObjectsAt?: ObjectConfidence;
+  /** A str, bin or ext with a longer content only keeps its ends. Default: 16 MiB */
+  largeValueLimit?: number;
 }
 
 interface Pending {
@@ -49,6 +51,11 @@ export class InspectorClient {
   /** Reads the data (base64, or undefined to read the document's data again with other settings). */
   load(doc: string, data: string | undefined, settings: LoadSettings): Promise<unknown> {
     return this.request({ method: 'load', doc, data, ...settings });
+  }
+
+  /** Reads a file by itself, without having all of it in memory: for files too large to send (the model then has the bytes of the hex view). */
+  loadFile(doc: string, path: string, settings: LoadSettings): Promise<unknown> {
+    return this.request({ method: 'load', doc, path, ...settings });
   }
 
   search(doc: string, text: string, matchCase: boolean): Promise<unknown> {
