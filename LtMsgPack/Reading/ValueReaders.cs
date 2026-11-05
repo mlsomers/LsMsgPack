@@ -713,7 +713,7 @@ namespace LtMsgPack.Reading
   internal sealed class CollectionInterfaceReader<T> : ValueReader<T> where T : class
   {
     private readonly Serializer _serializer;
-    private readonly ICollectionContent _concrete;
+    private ICollectionContent _concrete;
 
     /// <summary>
     /// The type id read last and its reader: a property usually holds one type.
@@ -735,7 +735,6 @@ namespace LtMsgPack.Reading
     internal CollectionInterfaceReader(Serializer serializer)
     {
       _serializer = serializer;
-      _concrete = (ICollectionContent)serializer.Reader(CollectionInfo.Get(typeof(T)).ConcreteType);
     }
 
     internal override T Read(ReadContext c, FullPropertyInfo assignedTo)
@@ -760,7 +759,9 @@ namespace LtMsgPack.Reading
         Wrapped wrapped = _last;
         if (wrapped is null || wrapped.Type != type)
         {
-          if (!typeof(T).IsAssignableFrom(type) || !(_serializer.Reader(type) is ICollectionContent content)) // Core refuses a type that is not assignable
+          if (!typeof(T).IsAssignableFrom(type) // Core refuses a type that is not assignable
+            || !(_serializer.CanBindDelegates || _serializer.Generated(type) != null) // without dynamic code a type the source generator did not describe has no reader
+            || !(_serializer.Reader(type) is ICollectionContent content))
             return Slow(c, start, assignedTo);
           _last = wrapped = new Wrapped(type, content);
         }
@@ -774,10 +775,18 @@ namespace LtMsgPack.Reading
         if (!read)
           return Slow(c, start, assignedTo);
       }
-      else if (!CollectionRules.IsPlainContent(r) || !_concrete.TryReadContent(c, out value))
+      else if (!CollectionRules.IsPlainContent(r) || !Concrete().TryReadContent(c, out value))
         return Slow(c, start, assignedTo);
 
       return Unsafe.As<T>(value); // assignable: checked above, or the concrete type of the interface
+    }
+
+    /// <summary>
+    /// When the first value without a wrapper is read, as Core asks for the concrete type.
+    /// </summary>
+    private ICollectionContent Concrete()
+    {
+      return _concrete ?? (_concrete = (ICollectionContent)_serializer.Reader(CollectionInfo.Get(typeof(T)).ConcreteType));
     }
 
     /// <returns>null when the type id is not a plain index or name of a type that is found</returns>

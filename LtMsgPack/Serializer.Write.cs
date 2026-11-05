@@ -129,12 +129,12 @@ namespace LtMsgPack
             return Instantiate(type, typeof(ArrayHandler<>), type.GetElementType(), this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
             return Instantiate(type, typeof(ListHandler<>), type.GenericTypeArguments[0], this);
-          if (CanBindDelegates && type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
-            return InstantiateCollection(typeof(HashSetHandler<>), type.GenericTypeArguments, this);
+          if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
+            return InstantiateCollection(type, typeof(HashSetHandler<>), type.GenericTypeArguments, this) ?? Boxed(type);
           return Boxed(type);
         case TypeKind.Map:
-          if (CanBindDelegates && type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
-            return InstantiateCollection(typeof(DictionaryHandler<,>), type.GenericTypeArguments, this);
+          if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+            return InstantiateCollection(type, typeof(DictionaryHandler<,>), type.GenericTypeArguments, this) ?? Boxed(type);
           return Boxed(type);
         case TypeKind.Complex:
           if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
@@ -735,7 +735,7 @@ namespace LtMsgPack
 
       Type type = info.Type;
       Type definition = type.IsGenericType ? type.GetGenericTypeDefinition() : null;
-      if (CanBindDelegates // without dynamic code only the instantiations of the generated code exist, not those of every runtime type
+      if ((CanBindDelegates || Generated(type) != null) // without dynamic code only the instantiations of the generated code exist, not those of every runtime type
         && (IsVector(type) || definition == typeof(List<>) || definition == typeof(HashSet<>) || definition == typeof(Dictionary<,>)))
       {
         object handler = _handlers.TryGetValue(type, out object found) ? found : _handlers.GetOrAdd(type, t => CreateHandler(t));

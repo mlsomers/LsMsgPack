@@ -175,6 +175,9 @@ namespace Shelf
         "Array<string>()",
         "Array<global::System.Collections.Generic.KeyValuePair<string, int>>()", // an immutable dictionary's factory takes the pairs
         "List<int>()", // created for IList<int>
+        "CollectionInterface<global::System.Collections.Generic.IList<int>>()", // their typed readers
+        "HashSet<string>()",
+        "Dictionary<string, double>()",
         "List<global::Shelf.Item>()", // created for IReadOnlyList<Item>
         "Collection<global::System.Collections.Immutable.ImmutableArray<int>, int>(items => global::System.Collections.Immutable.ImmutableArray.CreateRange<int>(items))",
         "Collection<global::System.Collections.Immutable.ImmutableHashSet<string>, string>(items => global::System.Collections.Immutable.ImmutableHashSet.CreateRange<string>(items))", // created for IImmutableSet<string>
@@ -717,16 +720,16 @@ namespace M
       Assert.Contains("Property<global::M.Base, string>(\"Name\"", code);
       Assert.Contains("Object<global::M.Wrapper<int>>(() => new global::M.Wrapper<int>(), new LtMsgPackCode", code);
       Assert.Contains("Property<global::M.Wrapper<int>, int>(\"Value\"", code);
-      Assert.Contains("Collection<global::System.Collections.Generic.Dictionary<string, global::M.Outer.Inner>>(() => new global::System.Collections.Generic.Dictionary<string, global::M.Outer.Inner>())", code);
+      Assert.Contains("Dictionary<string, global::M.Outer.Inner>()", code);
       Assert.Contains("Object<global::M.Outer.Inner>(", code);
-      Assert.Contains("Collection<global::System.Collections.Generic.HashSet<long>>(", code);
+      Assert.Contains("HashSet<long>()", code);
       Assert.Contains("Array<global::M.Point>()", code);
       Assert.Contains("Struct<global::M.Point>(null, new LtMsgPackCode", code);
       Assert.Contains("StructProperty<global::M.Point, int>(\"X\", (ref global::M.Point o) => o.X, (ref global::M.Point o, int v) => o.X = v)", code);
       Assert.Contains("GeneratedStructCode<global::M.Point>", code);
       Assert.Contains("Nullable<global::M.Point>()", code);
       Assert.Contains("Object<global::M.IShape>(null, null)", code);
-      Assert.Contains("Collection<global::System.Collections.Generic.IList<int>>(null)", code);
+      Assert.Contains("CollectionInterface<global::System.Collections.Generic.IList<int>>()", code);
       Assert.Contains("Boxed<int[,]>()", code);
       Assert.Contains("Boxed<global::System.Collections.Generic.KeyValuePair<string, int>>()", code);
       Assert.Contains("Boxed<object>()", code);

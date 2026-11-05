@@ -256,7 +256,14 @@ namespace LtMsgPack.Generator
           }
         }
         string factory = element is null ? null : FactoryCall(named, element);
-        Add(TypeModelKind.Collection, name, factory is null ? null : element.ToDisplayString(Format), HasCreator(named), HasCreator(named), factory: factory);
+        if (IsDefinition(named, "HashSet", 1))
+          Add(TypeModelKind.HashSet, name, named.TypeArguments[0].ToDisplayString(Format));
+        else if (IsDefinition(named, "Dictionary", 2))
+          Add(TypeModelKind.Dictionary, name, named.TypeArguments[0].ToDisplayString(Format) + ", " + named.TypeArguments[1].ToDisplayString(Format));
+        else if (HasTypedConcrete(named, element))
+          Add(TypeModelKind.CollectionInterface, name);
+        else
+          Add(TypeModelKind.Collection, name, factory is null ? null : element.ToDisplayString(Format), HasCreator(named), HasCreator(named), factory: factory);
         AddImplied(named, element);
         return;
       }
@@ -289,6 +296,21 @@ namespace LtMsgPack.Generator
       bool creator = HasCreator(named);
       List<PropertyModel> properties = GetProperties(named, out bool nonPublic);
       Add(TypeModelKind.Object, name, null, creator, true, properties, named.IsAbstract ? null : GetMembers(named), keepNonPublic: nonPublic);
+    }
+
+    /// <returns>Whether the type is exactly this generic class of System.Collections.Generic</returns>
+    private static bool IsDefinition(INamedTypeSymbol type, string name, int arity)
+    {
+      return type.Name == name && type.Arity == arity && type.TypeKind == TypeKind.Class && type.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic";
+    }
+
+    /// <returns>A generic interface the runtime reads into a class with a typed reader (Serializer.InterfaceReader)</returns>
+    private bool HasTypedConcrete(INamedTypeSymbol type, ITypeSymbol element)
+    {
+      if (element is null || type.TypeKind != TypeKind.Interface || !type.IsGenericType)
+        return false;
+      INamedTypeSymbol concrete = ConcreteOf(type, element);
+      return concrete != null && (IsDefinition(concrete, "List", 1) || IsDefinition(concrete, "HashSet", 1) || IsDefinition(concrete, "Dictionary", 2));
     }
 
     /// <summary>

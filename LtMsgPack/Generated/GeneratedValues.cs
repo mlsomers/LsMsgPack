@@ -81,6 +81,30 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
+    /// <c>HashSet&lt;T&gt;</c>: its typed handler and reader, also without dynamic code.
+    /// </summary>
+    public static GeneratedType HashSet<T>()
+    {
+      return new GeneratedHashSetType<T>();
+    }
+
+    /// <summary>
+    /// <c>Dictionary&lt;TKey, TValue&gt;</c>: its typed handler and reader, also without dynamic code.
+    /// </summary>
+    public static GeneratedType Dictionary<TKey, TValue>()
+    {
+      return new GeneratedDictionaryType<TKey, TValue>();
+    }
+
+    /// <summary>
+    /// A generic interface of a collection whose concrete type has a typed reader (<c>IList&lt;T&gt;</c> is a <c>List&lt;T&gt;</c>, <c>ISet&lt;T&gt;</c> a <c>HashSet&lt;T&gt;</c>...), described separately.
+    /// </summary>
+    public static GeneratedType CollectionInterface<T>() where T : class
+    {
+      return new GeneratedCollectionInterfaceType<T>();
+    }
+
+    /// <summary>
     /// Another collection or dictionary (filled by the runtime as before).
     /// </summary>
     /// <param name="creator">Calls the accessible parameterless constructor, null when there is none</param>
@@ -272,6 +296,59 @@ namespace LtMsgPack.Generated
         return new ListHandler<T>((Serializer)argument);
       if (definition == typeof(ListReader<>))
         return new ListReader<T>((Serializer)argument);
+      return base.Instantiate(definition, argument);
+    }
+  }
+
+  internal sealed class GeneratedHashSetType<T> : LtGeneratedType<HashSet<T>>
+  {
+    internal GeneratedHashSetType() : base(() => new HashSet<T>())
+    {
+    }
+
+    public override object Instantiate(Type definition, object argument)
+    {
+      if (definition == typeof(HashSetHandler<>))
+        return new HashSetHandler<T>((Serializer)argument);
+      if (definition == typeof(HashSetReader<>))
+        return new HashSetReader<T>((Serializer)argument);
+      return base.Instantiate(definition, argument);
+    }
+  }
+
+  internal sealed class GeneratedDictionaryType<TKey, TValue> : LtGeneratedType<Dictionary<TKey, TValue>>
+  {
+    internal GeneratedDictionaryType() : base(() => new Dictionary<TKey, TValue>())
+    {
+    }
+
+    public override object Instantiate(Type definition, object argument)
+    {
+      if (definition == typeof(DictionaryHandler<,>))
+        return new DictionaryHandler<TKey, TValue>((Serializer)argument);
+      if (definition == typeof(DictionaryReader<,>))
+        return new DictionaryReader<TKey, TValue>((Serializer)argument);
+      return base.Instantiate(definition, argument);
+    }
+  }
+
+  /// <summary>
+  /// The source generator predicted a concrete type with a typed reader for this interface (see Serializer.InterfaceReader).
+  /// </summary>
+  internal interface IGeneratedCollectionInterface
+  {
+  }
+
+  internal sealed class GeneratedCollectionInterfaceType<T> : LtGeneratedType<T>, IGeneratedCollectionInterface where T : class
+  {
+    internal GeneratedCollectionInterfaceType() : base((Func<T>)null)
+    {
+    }
+
+    public override object Instantiate(Type definition, object argument)
+    {
+      if (definition == typeof(CollectionInterfaceReader<>))
+        return new CollectionInterfaceReader<T>((Serializer)argument);
       return base.Instantiate(definition, argument);
     }
   }

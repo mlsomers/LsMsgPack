@@ -205,6 +205,15 @@ namespace LtMsgPack.Generator
         case TypeModelKind.Array:
           w.Line("return " + Values + ".Array<" + type.Argument + ">();");
           return;
+        case TypeModelKind.HashSet:
+          w.Line("return " + Values + ".HashSet<" + type.Argument + ">();");
+          return;
+        case TypeModelKind.Dictionary:
+          w.Line("return " + Values + ".Dictionary<" + type.Argument + ">();");
+          return;
+        case TypeModelKind.CollectionInterface:
+          w.Line("return " + Values + ".CollectionInterface<" + type.TypeName + ">();");
+          return;
         case TypeModelKind.Collection when type.Factory != null:
           w.Line("return " + Values + ".Collection<" + type.TypeName + ", " + type.Argument + ">(items => " + type.Factory + "(items));");
           return;

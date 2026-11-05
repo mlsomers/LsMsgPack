@@ -179,15 +179,25 @@ namespace LtMsgPack
     }
 
     /// <summary>
-    /// A handler or reader of a collection the source generator does not describe: only where the runtime has dynamic code (<see cref="CanBindDelegates"/>), otherwise those collections are written and read boxed.
+    /// A typed handler or reader of a set, dictionary or collection interface: created by its generated description, otherwise only where the runtime has dynamic code (<see cref="CanBindDelegates"/>).
     /// </summary>
+    /// <param name="handled">The type the handler or reader is for</param>
     /// <param name="definition">E.g. <c>typeof(DictionaryHandler&lt;,&gt;)</c></param>
     /// <param name="arguments">Its type arguments</param>
+    /// <returns>null when there is no such instantiation: written and read boxed (a context of an older version, a type it does not describe)</returns>
     [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.Fallback)]
     [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.Fallback)]
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
-    private static object InstantiateCollection(Type definition, Type[] arguments, object constructorArgument)
+    private object InstantiateCollection(Type handled, Type definition, Type[] arguments, object constructorArgument)
     {
+      if (Generated(handled) is IGeneratedInstantiations generated)
+      {
+        object instance = generated.Instantiate(definition, constructorArgument);
+        if (instance != null)
+          return instance;
+      }
+      if (!CanBindDelegates)
+        return null;
       return Activator.CreateInstance(definition.MakeGenericType(arguments), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { constructorArgument }, null);
     }
   }

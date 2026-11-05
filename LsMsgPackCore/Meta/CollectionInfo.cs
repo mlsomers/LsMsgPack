@@ -331,22 +331,30 @@ namespace LsMsgPack.Meta
       if (immutable != null)
         return immutable;
 
-      Type[] candidates = IsDictionary
-        ? new[] { typeof(Dictionary<,>).MakeGenericType(KeyType, ValueType) }
-        : new[] {
-          ElementType == typeof(object) ? typeof(object[]) : null, // IEnumerable, ICollection, IList
-          typeof(List<>).MakeGenericType(ElementType), // IEnumerable<T>, IList<T>, IReadOnlyList<T>, ...
-          typeof(HashSet<>).MakeGenericType(ElementType), // ISet<T>
-          ElementType.MakeArrayType()
-        };
+      // One at a time, the first that fits: NativeAOT only has the instantiations the application uses (the generator describes the one it predicts, e.g. no HashSet<T> of a struct for an IList<T>)
+      if (IsDictionary)
+        return Fitting(type, typeof(Dictionary<,>), KeyType, ValueType) ?? type;
+      if (ElementType == typeof(object) && type.IsAssignableFrom(typeof(object[]))) // IEnumerable, ICollection, IList
+        return typeof(object[]);
+      return Fitting(type, typeof(List<>), ElementType, null) // IEnumerable<T>, IList<T>, IReadOnlyList<T>, ...
+        ?? Fitting(type, typeof(HashSet<>), ElementType, null) // ISet<T>
+        ?? (type.IsAssignableFrom(ElementType.MakeArrayType()) ? ElementType.MakeArrayType() : type); // otherwise an unknown abstraction, will fail on creating an instance
+    }
 
-      for (int t = 0; t < candidates.Length; t++)
+    /// <returns>The instantiation of <paramref name="definition"/> when it can be assigned to <paramref name="type"/>, otherwise (also when NativeAOT does not have it) null</returns>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Instantiations)]
+    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.Instantiations)]
+    private static Type Fitting(Type type, Type definition, Type first, Type second)
+    {
+      try
       {
-        if (candidates[t] != null && type.IsAssignableFrom(candidates[t]))
-          return candidates[t];
+        Type candidate = second is null ? definition.MakeGenericType(first) : definition.MakeGenericType(first, second);
+        return type.IsAssignableFrom(candidate) ? candidate : null;
       }
-
-      return type; // Unknown abstraction, will fail on creating an instance
+      catch (NotSupportedException)
+      {
+        return null;
+      }
     }
 
     /// <summary>

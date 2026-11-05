@@ -125,6 +125,15 @@ namespace LtMsgPack.Generator
     /// <summary>T[] (<see cref="TypeModel.Argument"/> is T)</summary>
     Array,
 
+    /// <summary>HashSet&lt;T&gt; (<see cref="TypeModel.Argument"/> is T)</summary>
+    HashSet,
+
+    /// <summary>Dictionary&lt;TKey, TValue&gt; (<see cref="TypeModel.Argument"/> is "TKey, TValue")</summary>
+    Dictionary,
+
+    /// <summary>A generic interface of a collection whose concrete type is a List&lt;T&gt;, HashSet&lt;T&gt; or Dictionary&lt;TKey, TValue&gt; (described too): the runtime's typed reader</summary>
+    CollectionInterface,
+
     /// <summary>Another collection or dictionary, its constructor</summary>
     Collection,
 

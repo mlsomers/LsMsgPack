@@ -82,6 +82,13 @@ namespace LtMsgPackAotSmokeTest
     public IImmutableSet<string> Codes { get; set; }
     public FrozenSet<string> Frozen { get; set; }
     public List<KeyValuePair<string, double>> Weights { get; set; }
+    public Dictionary<string, int> Stock { get; set; }
+    public Dictionary<int, Vector> Grid { get; set; }
+    public HashSet<int> Seen { get; set; }
+    public ISet<string> Labels { get; set; }
+    public IDictionary<string, Address> ByName { get; set; }
+    public ICollection<Vector> Track { get; set; }
+    public IEnumerable<long> Totals { get; set; }
   }
 
   /// <summary>
@@ -292,7 +299,7 @@ namespace LtMsgPackAotSmokeTest
 
         foreach ((string which, Func<LtMsgPackOptions, LtMsgPackSerializer> create) in new (string, Func<LtMsgPackOptions, LtMsgPackSerializer>)[] { ("explicit", Explicit), ("registered", Registered) })
         {
-          string problem = Problem(create(options()), sample, expected, values) ?? AllocationProblem(create(options())) ?? ReadAllocationProblem(create(options()));
+          string problem = Problem(create(options()), sample, expected, values) ?? AllocationProblem(create(options())) ?? ReadAllocationProblem(create(options())) ?? CollectionAllocationProblem(create(options()));
           Console.WriteLine($"{name} {which}: {problem ?? "OK"}");
           if (problem != null)
             failures++;
@@ -380,7 +387,14 @@ namespace LtMsgPackAotSmokeTest
           Names = ImmutableList.Create("x", "y"),
           Codes = ImmutableHashSet.Create("NL"),
           Frozen = new[] { "f" }.ToFrozenSet(),
-          Weights = new List<KeyValuePair<string, double>>() { new KeyValuePair<string, double>("w", 0.5) }
+          Weights = new List<KeyValuePair<string, double>>() { new KeyValuePair<string, double>("w", 0.5) },
+          Stock = new Dictionary<string, int>() { { "a", 1 }, { "b", 300 } },
+          Grid = new Dictionary<int, Vector>() { { 1, new Vector() { X = 1 } } },
+          Seen = new HashSet<int>() { 3, 2, 1 },
+          Labels = new HashSet<string>() { "l" },
+          ByName = new Dictionary<string, Address>() { { "home", home } },
+          Track = new List<Vector>() { new Vector() { Y = 2 } },
+          Totals = new long[] { long.MaxValue }
         }
       };
     }
@@ -417,6 +431,27 @@ namespace LtMsgPackAotSmokeTest
       serializer.Serialize(route, stream);
       long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
       return allocated == 0 ? null : $"writing the structs allocated {allocated} bytes";
+    }
+
+    /// <summary>
+    /// The typed handler of a set: boxed, each element would allocate.
+    /// </summary>
+    private static string CollectionAllocationProblem(LtMsgPackSerializer serializer)
+    {
+      HashSet<int> set = new HashSet<int>();
+      for (int t = 0; t < 1000; t++)
+        set.Add(t);
+      MemoryStream stream = new MemoryStream(8192);
+      for (int t = 0; t < 3; t++) // warm up (plans, contexts)
+      {
+        stream.SetLength(0);
+        serializer.Serialize(set, stream);
+      }
+      long before = GC.GetAllocatedBytesForCurrentThread();
+      stream.SetLength(0);
+      serializer.Serialize(set, stream);
+      long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+      return allocated < set.Count ? null : $"writing a set of {set.Count} allocated {allocated} bytes";
     }
 
     /// <summary>
@@ -487,7 +522,11 @@ namespace LtMsgPackAotSmokeTest
         o.Release?.ToString() ?? "null", o.Pair.Item1 + "," + (o.Pair.Item2 ?? "null"), o.Couple is null ? "null" : o.Couple.Item1 + "," + o.Couple.Item2, o.Entry.Key + "=" + o.Entry.Value,
         o.Counts is null ? "null" : o.Counts.GetType().Name + ":" + string.Join(",", o.Counts), o.Places is null ? "null" : string.Join(",", o.Places.Select(Dump)),
         o.Fixed.IsDefault ? "default" : string.Join(",", o.Fixed), o.Names is null ? "null" : string.Join(",", o.Names), o.Codes is null ? "null" : o.Codes.GetType().Name + ":" + string.Join(",", o.Codes),
-        o.Frozen is null ? "null" : string.Join(",", o.Frozen), o.Weights is null ? "null" : string.Join(",", o.Weights.Select(w => w.Key + "=" + w.Value.ToString("R", CultureInfo.InvariantCulture)))
+        o.Frozen is null ? "null" : string.Join(",", o.Frozen), o.Weights is null ? "null" : string.Join(",", o.Weights.Select(w => w.Key + "=" + w.Value.ToString("R", CultureInfo.InvariantCulture))),
+        o.Stock is null ? "null" : o.Stock.GetType().Name + ":" + string.Join(",", o.Stock.Select(e => e.Key + "=" + e.Value)), o.Grid is null ? "null" : string.Join(",", o.Grid.Select(e => e.Key + "=" + Dump(e.Value))),
+        o.Seen is null ? "null" : o.Seen.GetType().Name + ":" + string.Join(",", o.Seen), o.Labels is null ? "null" : o.Labels.GetType().Name + ":" + string.Join(",", o.Labels),
+        o.ByName is null ? "null" : o.ByName.GetType().Name + ":" + string.Join(",", o.ByName.Select(e => e.Key + "=" + Dump(e.Value))), o.Track is null ? "null" : o.Track.GetType().Name + ":" + string.Join(",", o.Track.Select(Dump)),
+        o.Totals is null ? "null" : o.Totals.GetType().Name + ":" + string.Join(",", o.Totals)
       });
     }
 
