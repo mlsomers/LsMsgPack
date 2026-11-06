@@ -81,7 +81,7 @@ Register the serializer once: `builder.Services.AddSingleton(new LtMsgPackSerial
 
 ## More speed: the source generator
 
-LtMsgPack contains a source generator that writes the serialization code of your classes at compile time. For a cache that's hit on every request, that makes writing about 1.6x as fast again:
+LtMsgPack contains a source generator that writes the serialization code of your classes at compile time. For a cache that's hit on every request, that makes writing about 1.4-1.9x as fast again:
 
 ```csharp
 [LtMsgPackSerializable(typeof(Order))]

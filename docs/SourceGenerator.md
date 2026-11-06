@@ -4,7 +4,7 @@ LtMsgPack builds a plan per class the first time it meets the class: typed prope
 
 - **NativeAOT, WebAssembly AOT (Blazor), iOS:** code that can't be generated at runtime. Without the generator, LtMsgPack fails under NativeAOT on the first object. With it, the generated code runs compiled where the runtime plans would be interpreted.
 - **Trimming:** the generated code refers to your classes and their properties, so the trimmer keeps them (.NET 5 and later). A serializer created with the context has no trim or AOT warnings (see [Trimming and NativeAOT](#trimming-and-nativeaot)).
-- **Speed:** writing is about 1.6x and reading about 1.15x as fast with a JIT. Under WebAssembly AOT writing is 7-8x and reading about 3x as fast (measurements below).
+- **Speed:** writing is about 1.4-1.9x and reading about 1.2x as fast with a JIT. Under WebAssembly AOT writing is 7-8x and reading about 3x as fast (measurements below).
 
 The data doesn't change: the generated code writes the same bytes and reads the same values as LtMsgPack does without it, with the same options. Anything it doesn't cover is done by the runtime as before, so you can switch it on and off without touching stored data or peers.
 
@@ -153,20 +153,20 @@ The NativeAOT smoke test (`LtMsgPackAotSmokeTest/run.sh`, CI job `aot-smoke`) pu
 
 ## Measurements
 
-The invoice model of the benchmarks (100 invoices × 20 rounds, the fastest round), October 2026, one machine. Speed is relative to System.Text.Json with its default options.
+The invoice model of the benchmarks (100 invoices × 20 rounds), one machine: on a JIT in November 2026 (the medians of three runs, see [Comparison.md](Comparison.md#how-it-was-measured)), on WebAssembly in October 2026 (the fastest round). Speed is relative to System.Text.Json with its default options.
 
-| .NET 8, JIT | write | read |
+| .NET 10, JIT | write | read |
 |---|---|---|
-| LtMsgPack, default options (indexed schema, arrays) | 5.3 ms (3.5x) | 7.3 ms (4.5x) |
-| the same with the generated code | 3.3 ms (5.5x) | 6.4 ms (5.1x) |
-| LtMsgPack, arrays without the schema | 4.7 ms (3.9x) | 7.0 ms (4.7x) |
-| the same with the generated code | 2.9 ms (6.3x) | 6.2 ms (5.3x) |
-| LtMsgPack, maps with property names | 7.4 ms (2.5x) | 9.5 ms (3.4x) |
-| the same with the generated code | 5.8 ms (3.2x) | 9.4 ms (3.5x) |
+| LtMsgPack, default options (indexed schema, arrays) | 5.69 ms (2.8x) | 5.99 ms (5.0x) |
+| the same with the generated code | 3.04 ms (5.2x) | 4.94 ms (6.0x) |
+| LtMsgPack, arrays without the schema | 5.05 ms (3.1x) | 5.81 ms (5.1x) |
+| the same with the generated code | 2.71 ms (5.8x) | 4.85 ms (6.1x) |
+| LtMsgPack, maps with property names | 7.11 ms (2.2x) | 7.63 ms (3.9x) |
+| the same with the generated code | 5.16 ms (3.1x) | 6.59 ms (4.5x) |
 
 | .NET 10, WebAssembly (node) | interpreter write | read | AOT write | read |
 |---|---|---|---|---|
 | LtMsgPack, default options | 183 ms (3.0x) | 235 ms (3.5x) | 78 ms (2.8x) | 69 ms (3.1x) |
 | the same with the generated code | 92 ms (5.8x) | 196 ms (4.2x) | 10.5 ms (20x) | 24 ms (8.7x) |
 
-Reading gains less than writing: decoding strings and converting timestamps to local time (the default `ReadDateTimeKind` when this was measured, now UTC) take most of the time, the same with or without generated code.
+Reading gains less than writing: decoding strings takes most of the time, the same with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).
