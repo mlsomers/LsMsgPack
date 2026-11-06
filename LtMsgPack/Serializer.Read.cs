@@ -144,7 +144,7 @@ namespace LtMsgPack
         case TypeKind.String: return new StringReader();
         case TypeKind.Guid: return new GuidReader();
         case TypeKind.GuidString: return new GuidStringReader();
-        case TypeKind.DecimalString: return new DecimalStringReader();
+        case TypeKind.DecimalString: return new DecimalStringReader(info.Extension);
         case TypeKind.DateTime: return new DateTimeReader();
         case TypeKind.DateTimeOffset:
         case TypeKind.DateTimeOffsetMoment: return new DateTimeOffsetReader();
@@ -168,13 +168,49 @@ namespace LtMsgPack
             return (ValueReader)Instantiate(type, typeof(ArrayReader<>), type.GetElementType(), this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
             return (ValueReader)Instantiate(type, typeof(ListReader<>), type.GenericTypeArguments[0], this);
+          if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
+          {
+            ValueReader set = (ValueReader)InstantiateCollection(type, typeof(HashSetReader<>), type.GenericTypeArguments, this);
+            if (set != null)
+              return set;
+          }
+          ValueReader items = InterfaceReader(type);
+          if (items != null)
+            return items;
+          break;
+        case TypeKind.Map:
+          if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
+          {
+            ValueReader dictionary = (ValueReader)InstantiateCollection(type, typeof(DictionaryReader<,>), type.GenericTypeArguments, this);
+            if (dictionary != null)
+              return dictionary;
+          }
+          ValueReader entries = InterfaceReader(type);
+          if (entries != null)
+            return entries;
           break;
         case TypeKind.Complex:
-          if (!type.IsValueType && type != typeof(object) && !type.ContainsGenericParameters)
+          if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.ContainsGenericParameters)
             return (ValueReader)Instantiate(type, typeof(ObjectReader<>), type, this);
           break;
       }
       return (ValueReader)Instantiate(type, typeof(BoxedReader<>), type, null);
+    }
+
+    /// <returns>The reader of a generic interface of a collection (IList&lt;T&gt;, IEnumerable&lt;T&gt;, IDictionary&lt;TKey, TValue&gt;...) whose concrete type has a typed reader (see <see cref="CollectionInterfaceReader{T}"/>), otherwise null</returns>
+    private ValueReader InterfaceReader(Type type)
+    {
+      if (!type.IsInterface || !type.IsGenericType || type.ContainsGenericParameters)
+        return null;
+      if (!(Generated(type) is IGeneratedCollectionInterface)) // the source generator looked at it (its elements may have no other instantiations, see CollectionInfo)
+      {
+        if (!CanBindDelegates)
+          return null;
+        CollectionInfo info = CollectionInfo.Get(type);
+        if (info.Attribute != null || info.ConcreteType == type || !(Reader(info.ConcreteType) is ICollectionContent))
+          return null;
+      }
+      return (ValueReader)InstantiateCollection(type, typeof(CollectionInterfaceReader<>), new[] { type }, this);
     }
 
     /// <returns>The reader of a custom extension of the type (an LtExtension&lt;T&gt; of the type), null for others</returns>
@@ -196,7 +232,7 @@ namespace LtMsgPack
       if (_readPlans.TryGetValue(type, out ReadPlan plan))
         return plan;
 
-      if (type.IsAbstract || type.IsInterface || type.IsValueType || type.ContainsGenericParameters || GetTypeInfo(type).Kind != TypeKind.Complex)
+      if (type.IsAbstract || type.IsInterface || type.ContainsGenericParameters || GetTypeInfo(type).Kind != TypeKind.Complex || (type.IsValueType && !StructPlans(type)))
         return null;
 
       // The properties LsMsgPack sets: names mode FullPropertyInfo.GetSerializedProps (their ids are the names without custom resolvers), the schema binds the same ones by name

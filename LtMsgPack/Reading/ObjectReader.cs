@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Generated;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Types;
 using LtMsgPack.Generated;
@@ -8,6 +9,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 #if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
 using System.Reflection.Emit;
@@ -21,10 +23,18 @@ namespace LtMsgPack.Reading
   /// Reads a map into an object with properties: the type id (when it is the first key) picks the type, the keys are looked up by name or by schema index.
   /// Anything unexpected (a wrapped value, a type id elsewhere, keys of another kind, custom resolvers) is read as LsMsgPack does.
   /// </summary>
-  internal sealed class ObjectReader<T> : ValueReader<T> where T : class
+  /// <remarks>A struct is read into a local by reference when the plan allows it (<see cref="ReadPlan.ByRef"/>), otherwise into a box the plan creates (its properties are set in the box,
+  /// see StructPropReader), unboxed at the end.</remarks>
+  internal sealed class ObjectReader<T> : ValueReader<T>
   {
     private readonly Serializer _serializer;
     private ReadPlan _plan;
+
+    /// <summary>
+    /// The plans of the assignable types the type ids named last: a polymorphic list or property usually holds a few, comparing them costs less than per value the hash of a <see cref="Type"/> (a call into the runtime), a dictionary lookup and IsAssignableFrom.
+    /// </summary>
+    private ReadPlan[] _derived = new ReadPlan[0];
+    private const int MostDerived = 8;
 
     internal ObjectReader(Serializer serializer)
     {
@@ -35,7 +45,7 @@ namespace LtMsgPack.Reading
     {
       int start = c.R.Pos;
       if (c.R.TryReadNil())
-        return null;
+        return default(T); // null, a struct's default as Core converts a nil
 
       if (c.Unusual) // objects read as LsMsgPack does, or the differences are collected
         return _serializer.SlowObjects ? Slow(c, start, assignedTo) : ReadReporting(c, start, assignedTo);
@@ -56,8 +66,8 @@ namespace LtMsgPack.Reading
         Type type = ReadTypeId(c, assignedTo);
         if (type is null)
           return Slow(c, start, assignedTo);
-        plan = type == typeof(T) ? Plan : _serializer.GetReadPlan(type);
-        if (plan is null || !typeof(T).IsAssignableFrom(type)) // LsMsgPack's way refuses a type that is not assignable
+        plan = type == typeof(T) ? Plan : Derived(type);
+        if (plan is null) // LsMsgPack's way refuses a type that is not assignable
           return Slow(c, start, assignedTo);
         if (type != typeof(T) && _serializer.Options._typeGuard != null) // the type guard, before the instance is created (see docs/security.md)
           TypeResolver.ThrowIfNotAllowed(type, typeof(T), assignedTo, _serializer.Options, type);
@@ -87,6 +97,12 @@ namespace LtMsgPack.Reading
           return Slow(c, start, assignedTo);
       }
 
+      if (typeof(T).IsValueType && plan.ByRef) // the JIT drops the test for classes (a struct's plan is the plan of T: no other type is assignable to it)
+        return ReadByRef(c, plan, bound, count, start, assignedTo);
+
+      if (plan.Map) // the reader of the source generator: the same loop, apart so this method stays as small as without it (inlined here the runtime's maps read 2-5% slower)
+        return ReadGeneratedMap(c, plan, bound, count, start, assignedTo);
+
       int depth = c.Depth;
       c.Enter();
       object result = plan.Create();
@@ -111,13 +127,28 @@ namespace LtMsgPack.Reading
 
         if (prop is null)
           c.R.Skip(c.Depth); // not a property of this type (removed, or ignored here)
-        else if (prop.GeneratedId < 0 || !plan.Code.ReadValueBoxed(c, result, prop.GeneratedId, plan.GeneratedRead)) // the reader of the source generator, the runtime's when it does not read the value
+        else if (prop.GeneratedId < 0 || !plan.Code.ReadValueBoxed(c, result, prop.GeneratedId, plan.GeneratedRead)) // the code of an older source generator (version 1, 2): a call per value; the runtime's when it does not read the value
           prop.Read(c, result);
       }
       c.Depth = depth;
       if (plan.WithValues != null) // the values were collected for the constructor
         result = plan.WithValues.Create(result);
-      return (T)result;
+      return Typed(result);
+    }
+
+    /// <summary>
+    /// The loop of <see cref="Read"/> by the source generator's code (<see cref="ReadPlan.Map"/>, never a constructor with values: those plans have no code).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private T ReadGeneratedMap(ReadContext c, ReadPlan plan, PropReader[] bound, int count, int start, FullPropertyInfo assignedTo)
+    {
+      int depth = c.Depth;
+      c.Enter();
+      object result = plan.Create();
+      if (!plan.Code.ReadMapBoxed(c, result, plan, bound, count, plan.GeneratedRead))
+        return Restart(c, start, depth, assignedTo);
+      c.Depth = depth;
+      return Typed(result);
     }
 
     /// <summary>
@@ -133,6 +164,9 @@ namespace LtMsgPack.Reading
         if (props is null) // not in the schema (LsMsgPack takes the properties in its own order)
           return Slow(c, start, assignedTo);
       }
+
+      if (typeof(T).IsValueType && plan.ByRef)
+        return ReadPositionalByRef(c, plan, props, items);
 
       int depth = c.Depth;
       c.Enter();
@@ -154,7 +188,38 @@ namespace LtMsgPack.Reading
       c.Depth = depth;
       if (plan.WithValues != null) // the values were collected for the constructor
         result = plan.WithValues.Create(result);
-      return (T)result;
+      return Typed(result);
+    }
+
+    /// <summary>
+    /// An object of a plan is of its type, which is <typeparamref name="T"/> or assignable to it (<see cref="Derived"/>): no cast per object, it walks the base classes of a derived type.
+    /// </summary>
+    private static T Typed(object result)
+    {
+      return typeof(T).IsValueType ? (T)result : Unsafe.As<object, T>(ref result);
+    }
+
+    /// <returns>The plan of a type a type id named, null when it has none or is not assignable to <typeparamref name="T"/></returns>
+    private ReadPlan Derived(Type type)
+    {
+      ReadPlan[] known = _derived;
+      for (int t = known.Length - 1; t >= 0; t--)
+      {
+        if (known[t].Type == type)
+          return known[t];
+      }
+
+      ReadPlan plan = _serializer.GetReadPlan(type);
+      if (plan is null || !typeof(T).IsAssignableFrom(type))
+        return null;
+      if (known.Length < MostDerived) // a copy, other threads read the array (one that adds at the same time may get lost, it comes back)
+      {
+        ReadPlan[] more = new ReadPlan[known.Length + 1];
+        Array.Copy(known, more, known.Length);
+        more[known.Length] = plan;
+        _derived = more;
+      }
+      return plan;
     }
 
     private T Restart(ReadContext c, int start, int depth, FullPropertyInfo assignedTo)
@@ -162,6 +227,80 @@ namespace LtMsgPack.Reading
       c.Depth = depth;
       return Slow(c, start, assignedTo);
     }
+
+    #region Structs by reference
+
+    /// <summary>
+    /// The loop of <see cref="Read"/> for a struct (<see cref="ReadPlan.ByRef"/>): its properties are set in a local by reference, without a box (the generated code by reference, <see cref="GeneratedStructCode{T}"/>;
+    /// no constructor with values). A copy so the class path stays as it is: keep the two the same.
+    /// </summary>
+    private T ReadByRef(ReadContext c, ReadPlan plan, PropReader[] bound, int count, int start, FullPropertyInfo assignedTo)
+    {
+      int depth = c.Depth;
+      c.Enter();
+      T result = default(T); // what StructCreator makes (no declared parameterless constructor)
+      if (plan.Map) // the reader of the source generator: the same loop
+      {
+        if (!Unsafe.As<GeneratedStructCode<T>>(plan.Code).ReadMap(c, ref result, plan, bound, count, plan.GeneratedRead))
+          return Restart(c, start, depth, assignedTo);
+        c.Depth = depth;
+        return result;
+      }
+      int next = 0; // names are usually written in the order of the properties
+      for (int t = 0; t < count; t++)
+      {
+        PropReader prop;
+        if (c.Schema)
+        {
+          if (!c.R.TryReadInt64(out long index))
+            return Restart(c, start, depth, assignedTo);
+          prop = index >= 0 && index < bound.Length ? bound[index] : null;
+        }
+        else
+        {
+          int length = c.R.TryReadStringHeader();
+          if (length <= 0 || (length == 1 && c.R.Buf[c.R.Pos] == (byte)'@')) // another kind of key, or a reserved one ("" or "@")
+            return Restart(c, start, depth, assignedTo);
+          prop = plan.FindByName(c.R.Buf, c.R.Pos, length, ref next);
+          c.R.Pos += length;
+        }
+
+        if (prop is null)
+          c.R.Skip(c.Depth); // not a property of this type (removed, or ignored here)
+        else if (prop.GeneratedId < 0 || !Unsafe.As<GeneratedStructCode<T>>(plan.Code).ReadValue(c, ref result, prop.GeneratedId, plan.GeneratedRead)) // the reader of the source generator, the runtime's when it does not read the value
+          Unsafe.As<RefPropReader<T>>(prop).Read(c, ref result); // ByRef: the plan's readers (also the bound ones) are all of this type
+      }
+      c.Depth = depth;
+      return result;
+    }
+
+    /// <summary>
+    /// The loop of <see cref="ReadPositional"/> for a struct by reference, see <see cref="ReadByRef"/>.
+    /// </summary>
+    private static T ReadPositionalByRef(ReadContext c, ReadPlan plan, PropReader[] props, int items)
+    {
+      int depth = c.Depth;
+      c.Enter();
+      T result = default(T);
+      if (plan.Positional) // the reader of the source generator: the same loop
+        Unsafe.As<GeneratedStructCode<T>>(plan.Code).ReadPositional(c, ref result, props, items, plan.GeneratedRead);
+      else
+      {
+        for (int t = 0; t < items; t++)
+        {
+          if (t >= props.Length || props[t] is null)
+            c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
+          else if (c.R.TryReadNil())
+            Unsafe.As<RefPropReader<T>>(props[t]).ReadNil(ref result);
+          else
+            Unsafe.As<RefPropReader<T>>(props[t]).Read(c, ref result);
+        }
+      }
+      c.Depth = depth;
+      return result;
+    }
+
+    #endregion
 
     #region Collecting the differences
 
@@ -382,7 +521,8 @@ namespace LtMsgPack.Reading
   /// <summary>
   /// The properties of a type for reading (the ones LsMsgPack sets: FullPropertyInfo.GetSerializedProps).
   /// </summary>
-  internal sealed class ReadPlan
+  [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+  public sealed class ReadPlan // public for the generated code (GeneratedObjectCode.ReadMap), which only passes it on
   {
     internal readonly Type Type;
     internal readonly PropReader[] Props;
@@ -410,6 +550,17 @@ namespace LtMsgPack.Reading
     /// Arrays are read by the generated <see cref="GeneratedObjectCode{T}.ReadPositional"/>.
     /// </summary>
     internal readonly bool Positional;
+
+    /// <summary>
+    /// Maps are read by the generated <see cref="GeneratedObjectCode{T}.ReadMap"/>.
+    /// </summary>
+    internal readonly bool Map;
+
+    /// <summary>
+    /// A struct created as its default (StructCreator) whose properties are all set by reference (<see cref="RefPropReader{T}"/>):
+    /// ObjectReader reads it into a local, without a box (its generated code by reference, <see cref="GeneratedStructCode{T}"/>).
+    /// </summary>
+    internal readonly bool ByRef;
 
     private readonly bool _caseInsensitive;
 
@@ -460,15 +611,23 @@ namespace LtMsgPack.Reading
       _create = Creator(type, serializer.Options._objectCreation, generated);
 
       GeneratedObjectCode code = serializer.GeneratedCode(type);
-      if (code != null && (code.Capabilities & GeneratedCapabilities.ReadValue) != 0)
+      if (code != null && (code.Capabilities & (GeneratedCapabilities.ReadValue | GeneratedCapabilities.ReadMap)) != 0)
       {
         Code = code;
+        Map = (code.Capabilities & GeneratedCapabilities.ReadMap) != 0;
         GeneratedRead = serializer.GeneratedReadPlan;
         // Version 1 of the generated code left a nil as the constructor made it: the runtime reads the array layout then
         GeneratedCapabilities positional = GeneratedCapabilities.ReadPositional | GeneratedCapabilities.ReadPositionalNil;
         Positional = (code.Capabilities & positional) == positional;
         for (int t = 0; t < infos.Length; t++)
           Props[t].GeneratedId = serializer.ReadMember(code, infos[t]);
+      }
+      if (type.IsValueType && _create.Target is ICreator creator && creator.GetType().IsGenericType && creator.GetType().GetGenericTypeDefinition() == typeof(StructCreator<>))
+      {
+        bool byRef = true;
+        for (int t = Props.Length - 1; t >= 0; t--)
+          byRef &= Props[t].ByRef; // a struct declares all its properties: each is a RefPropReader of this type
+        ByRef = byRef;
       }
     }
 
@@ -608,6 +767,7 @@ namespace LtMsgPack.Reading
     /// Creates the instances as <see cref="MsgPackOptions.ObjectCreation"/> says (decided once per type, the options of a serializer do not change).
     /// </summary>
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("Trimming", "IL2071", Justification = TrimReasons.Fallback)] // new() of Creator<T> and StructCreator<T> (reported by the .NET 10 tools): the constructor was just looked up
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
     private static Func<object> Creator(Type type, ObjectCreation creation, Func<object> generated)
     {
@@ -617,7 +777,17 @@ namespace LtMsgPack.Reading
       if (generated != null) // the parameterless constructor (an exception of the constructor is passed on as it is)
         return generated;
 
-      if (type.GetConstructor(Type.EmptyTypes) != null)
+      if (type.IsValueType && type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) is null) // a struct without a declared parameterless constructor: its default, boxed (as Activator.CreateInstance makes it)
+      {
+        try
+        {
+          return ((ICreator)Activator.CreateInstance(typeof(StructCreator<>).MakeGenericType(type))).Create;
+        }
+        catch (Exception) // e.g. a runtime that cannot create the generic type
+        {
+        }
+      }
+      else if (type.GetConstructor(Type.EmptyTypes) != null)
       {
         try
         {
@@ -634,6 +804,17 @@ namespace LtMsgPack.Reading
   internal interface ICreator
   {
     object Create();
+  }
+
+  /// <summary>
+  /// The box a struct without a declared parameterless constructor is read into (see ObjectReader).
+  /// </summary>
+  internal sealed class StructCreator<T> : ICreator where T : struct
+  {
+    public object Create()
+    {
+      return default(T);
+    }
   }
 
   /// <summary>
@@ -778,23 +959,42 @@ namespace LtMsgPack.Reading
       Info.SetValue(target, value);
     }
 
+    /// <summary>
+    /// A <see cref="RefPropReader{T}"/>: sets the property of a struct by reference.
+    /// </summary>
+    internal virtual bool ByRef
+    {
+      get { return false; }
+    }
+
+    /// <summary>
+    /// What <see cref="ReadNil"/> sets, typed.
+    /// </summary>
+    internal static TValue NilOf<TValue>(Serializer serializer, FullPropertyInfo info)
+    {
+      object nil = info.NilValue(serializer.Options);
+      return nil is null ? default(TValue) : (TValue)nil;
+    }
+
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // StructPropReader's struct constraint (for Unsafe.Unbox) asks for a parameterless constructor, none is called
+    [UnconditionalSuppressMessage("Trimming", "IL2076", Justification = TrimReasons.Fallback)] // the same, as the .NET 10 tools report it
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
-      if (info.IsComputed) // written only (a collection without a setter is filled by its accessor, see BoxedPropReader)
-        return new ComputedPropReader(info);
-
       PropertyInfo property = info.PropertyInfo;
+      if (info.IsComputed) // written only (a collection without a setter is filled by its accessor, see BoxedPropReader)
+        return ComputedReader(serializer, info, property.DeclaringType);
+
       PropReader generated = serializer.GeneratedProperty(property)?.CreateReader(serializer, info); // the setter of the source generator
       if (generated != null)
         return generated;
 
       MethodInfo set = property.GetSetMethod(true);
-      if (set != null && !set.IsStatic && !property.DeclaringType.IsValueType && !property.DeclaringType.ContainsGenericParameters && serializer.CanBindDelegates)
+      if (set != null && !set.IsStatic && !property.DeclaringType.ContainsGenericParameters && serializer.CanBindDelegates)
       {
         try
         {
-          Type readerType = typeof(PropReader<,>).MakeGenericType(property.DeclaringType, property.PropertyType);
+          Type readerType = (property.DeclaringType.IsValueType ? typeof(StructPropReader<,>) : typeof(PropReader<,>)).MakeGenericType(property.DeclaringType, property.PropertyType);
           return (PropReader)Activator.CreateInstance(readerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, set }, null);
         }
         catch (Exception) // use reflection
@@ -803,6 +1003,49 @@ namespace LtMsgPack.Reading
       }
       return new BoxedPropReader(serializer, info);
     }
+
+    /// <summary>
+    /// A struct's computed property is skipped by reference too (see ReadPlan.ByRef).
+    /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure skips it boxed.")]
+    private static PropReader ComputedReader(Serializer serializer, FullPropertyInfo info, Type declaringType)
+    {
+      if (declaringType.IsValueType && serializer.Generated(declaringType) is IGeneratedInstantiations generated
+        && generated.Instantiate(typeof(StructComputedPropReader<>), info) is PropReader instantiated) // the source generator's (also without dynamic code)
+        return instantiated;
+      if (declaringType.IsValueType && !declaringType.ContainsGenericParameters && serializer.CanBindDelegates)
+      {
+        try
+        {
+          return (PropReader)Activator.CreateInstance(typeof(StructComputedPropReader<>).MakeGenericType(declaringType), info);
+        }
+        catch (Exception) // e.g. a runtime that cannot create the generic type
+        {
+        }
+      }
+      return new ComputedPropReader(info);
+    }
+  }
+
+  /// <summary>
+  /// Sets a property of a struct of type <typeparamref name="T"/> by reference (see ObjectReader.ReadByRef). Without a struct constraint, so ObjectReader can call it.
+  /// </summary>
+  internal abstract class RefPropReader<T> : PropReader
+  {
+    internal RefPropReader(FullPropertyInfo info) : base(info)
+    {
+    }
+
+    internal sealed override bool ByRef
+    {
+      get { return true; }
+    }
+
+    /// <inheritdoc cref="PropReader.Read"/>
+    internal abstract void Read(ReadContext c, ref T target);
+
+    /// <inheritdoc cref="PropReader.ReadNil"/>
+    internal abstract void ReadNil(ref T target);
   }
 
   internal sealed class PropReader<TTarget, TValue> : PropReader where TTarget : class
@@ -816,7 +1059,7 @@ namespace LtMsgPack.Reading
     {
       _serializer = serializer;
       _set = (Action<TTarget, TValue>)Delegate.CreateDelegate(typeof(Action<TTarget, TValue>), set);
-      _nil = NilOf(serializer, info);
+      _nil = NilOf<TValue>(serializer, info);
     }
 
     /// <param name="set">The setter of the source generator</param>
@@ -824,24 +1067,19 @@ namespace LtMsgPack.Reading
     {
       _serializer = serializer;
       _set = set;
-      _nil = NilOf(serializer, info);
+      _nil = NilOf<TValue>(serializer, info);
     }
 
-    private static TValue NilOf(Serializer serializer, FullPropertyInfo info)
-    {
-      object nil = info.NilValue(serializer.Options);
-      return nil is null ? default(TValue) : (TValue)nil;
-    }
 
     public override void Read(ReadContext c, object target)
     {
       ValueReader<TValue> reader = _reader ?? (_reader = _serializer.Reader<TValue>());
-      _set((TTarget)target, reader.Read(c, Info));
+      _set(Unsafe.As<TTarget>(target), reader.Read(c, Info)); // an instance of the plan's type: no cast, which in shared generic code is a lookup per property
     }
 
     public override void ReadNil(object target)
     {
-      _set((TTarget)target, _nil);
+      _set(Unsafe.As<TTarget>(target), _nil);
     }
 
     internal override void SetBoxed(object target, object value)
@@ -851,7 +1089,60 @@ namespace LtMsgPack.Reading
   }
 
   /// <summary>
-  /// Set by reflection (struct targets, static properties).
+  /// A property of a struct set through a typed delegate by reference (in a local, see ObjectReader.ReadByRef, or in the box the plan created), the value is not boxed.
+  /// </summary>
+  internal sealed class StructPropReader<TTarget, TValue> : RefPropReader<TTarget> where TTarget : struct
+  {
+    private readonly Serializer _serializer;
+    private readonly StructSetter<TTarget, TValue> _set;
+    private readonly TValue _nil;
+    private ValueReader<TValue> _reader;
+
+    /// <param name="set">Bound as an open instance delegate: its first parameter is the struct by reference</param>
+    public StructPropReader(Serializer serializer, FullPropertyInfo info, MethodInfo set) : base(info)
+    {
+      _serializer = serializer;
+      _set = (StructSetter<TTarget, TValue>)Delegate.CreateDelegate(typeof(StructSetter<TTarget, TValue>), set);
+      _nil = NilOf<TValue>(serializer, info);
+    }
+
+    /// <param name="set">The setter of the source generator</param>
+    internal StructPropReader(Serializer serializer, FullPropertyInfo info, StructSetter<TTarget, TValue> set) : base(info)
+    {
+      _serializer = serializer;
+      _set = set;
+      _nil = NilOf<TValue>(serializer, info);
+    }
+
+    public override void Read(ReadContext c, object target)
+    {
+      Read(c, ref Unsafe.Unbox<TTarget>(target));
+    }
+
+    internal override void Read(ReadContext c, ref TTarget target)
+    {
+      ValueReader<TValue> reader = _reader ?? (_reader = _serializer.Reader<TValue>());
+      _set(ref target, reader.Read(c, Info)); // the value is read before the setter runs (a nested value of the same struct type has a local or box of its own)
+    }
+
+    public override void ReadNil(object target)
+    {
+      _set(ref Unsafe.Unbox<TTarget>(target), _nil);
+    }
+
+    internal override void ReadNil(ref TTarget target)
+    {
+      _set(ref target, _nil);
+    }
+
+    internal override void SetBoxed(object target, object value)
+    {
+      _set(ref Unsafe.Unbox<TTarget>(target), value is null ? default(TValue) : (TValue)value);
+    }
+  }
+
+  /// <summary>
+  /// Set by reflection (static properties, or when delegates cannot be bound).
   /// </summary>
   internal sealed class BoxedPropReader : PropReader
   {
@@ -890,6 +1181,34 @@ namespace LtMsgPack.Reading
     }
 
     public override void ReadNil(object target)
+    {
+    }
+  }
+
+  /// <summary>
+  /// A computed property of a struct (see <see cref="ComputedPropReader"/>), skipped by reference too.
+  /// </summary>
+  internal sealed class StructComputedPropReader<T> : RefPropReader<T>
+  {
+    public StructComputedPropReader(FullPropertyInfo info) : base(info)
+    {
+    }
+
+    public override void Read(ReadContext c, object target)
+    {
+      c.R.Skip(c.Depth);
+    }
+
+    internal override void Read(ReadContext c, ref T target)
+    {
+      c.R.Skip(c.Depth);
+    }
+
+    public override void ReadNil(object target)
+    {
+    }
+
+    internal override void ReadNil(ref T target)
     {
     }
   }

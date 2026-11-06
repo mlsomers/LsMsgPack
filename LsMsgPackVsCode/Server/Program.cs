@@ -61,7 +61,7 @@ namespace LsMsgPackInspector
         settings.Objects = ObjectsMode.Show;
       if (Array.IndexOf(args, "--continue") > 0)
         settings.ContinueOnError = true;
-      LoadResult result = new InspectorDocument().Load(File.ReadAllBytes(args[0]), settings);
+      LoadResult result = new InspectorDocument().LoadFile(args[0], settings);
       Console.WriteLine(JsonSerializer.Serialize(result, new JsonSerializerOptions(JsonOptions) { WriteIndented = true }));
       return result.Error is null ? 0 : 1;
     }
@@ -112,10 +112,11 @@ namespace LsMsgPackInspector
     private static LoadResult Load(JsonElement root, string doc, Dictionary<string, InspectorDocument> documents)
     {
       string data = GetString(root, "data");
+      string path = GetString(root, "path");
       InspectorDocument document;
       if (!documents.TryGetValue(doc, out document))
       {
-        if (data is null)
+        if (data is null && path is null)
           throw new ArgumentException(string.Concat("Unknown document: ", doc)); // e.g. the process was started again, the extension sends the data
         document = new InspectorDocument();
         documents[doc] = document;
@@ -137,6 +138,11 @@ namespace LsMsgPackInspector
       if (!string.IsNullOrEmpty(showObjectsAt))
         settings.ShowObjectsAt = (ObjectConfidence)Enum.Parse(typeof(ObjectConfidence), showObjectsAt, true);
 
+      if (root.TryGetProperty("largeValueLimit", out JsonElement largeValues) && largeValues.ValueKind == JsonValueKind.Number)
+        settings.LargeValueLimit = largeValues.GetInt64();
+
+      if (path != null)
+        return document.LoadFile(path, settings);
       return document.Load(data is null ? null : Convert.FromBase64String(data), settings);
     }
 

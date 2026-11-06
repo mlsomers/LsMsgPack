@@ -15,7 +15,7 @@ byte[] data = LtMsgPack.LtMsgPackSerializer.Default.Serialize(order);
 Order copy = LtMsgPack.LtMsgPackSerializer.Default.Deserialize<Order>(data);
 ```
 
-**LtMsgPack** is the serializer to use: about 4x as fast as System.Text.Json, with 35-47% smaller payloads. The `LsMsgPack` package (the repository's name) is the slower one that builds a tree of MsgPack items for inspecting data, see [which package](#which-package). For ASP.NET, add [a formatter](#aspnet-integration) instead, it brings LtMsgPack along.
+**LtMsgPack** is the serializer to use: about 3-5x as fast as System.Text.Json, with 35-47% smaller payloads. The `LsMsgPack` package (the repository's name) is the slower one that builds a tree of MsgPack items for inspecting data, see [which package](#which-package). For ASP.NET, add [a formatter](#aspnet-integration) instead, it brings LtMsgPack along.
 
 **Not sure where to start?** The [setup wizard](docs/Wizard/README.md) asks a few questions (files or network, who reads the data, JavaScript or not) and ends with the packages, settings and code for your case.
 
@@ -44,7 +44,7 @@ Which package
 
 There are two serializers. They write exactly the same data with the same settings and read each other's output:
 
-- **LtMsgPack** (`LtMsgPack`): use this for normal use. It writes and reads directly from and to your objects. On the invoices of the benchmark it writes about 3-4x and reads about 4x as fast as System.Text.Json, with 35-47% smaller payloads. It also has presets for exchanging data with MessagePack-CSharp, Nerdbank.MessagePack and non-.NET libraries. The web formatters use it.
+- **LtMsgPack** (`LtMsgPack`): use this for normal use. It writes and reads directly from and to your objects. On the invoices of the benchmark it writes about 3x and reads about 5x as fast as System.Text.Json, with 35-47% smaller payloads. It also has presets for exchanging data with MessagePack-CSharp, Nerdbank.MessagePack and non-.NET libraries. The web formatters use it. How it compares with MessagePack-CSharp and Nerdbank.MessagePack (benchmarks, and when to pick which): [docs/Comparison.md](docs/Comparison.md).
 - **LsMsgPack** (`LsMsgPack`): use this when you really want to inspect MsgPack data in your app. It builds a tree of MsgPack items (maps, arrays, strings...) that you can walk, for any payload, also when you don't have the classes. That makes it much slower: about 2-4x slower than System.Text.Json.
 
 ### NuGet packages
@@ -139,7 +139,7 @@ The tool can also be used as a debugging Visualizer in Visual Studio. Directly i
 VS Code Integration
 -------------------
 
-[LsMsgPackVsCode](LsMsgPackVsCode/README.md) is the same explorer as a VS Code extension (any OS, needs the .NET 8 runtime): right-click a `byte[]`, `Stream`, `List<byte>`, `Memory<byte>`, HTTP content or base64 string in the Variables view while debugging and choose **View as MsgPack**, or open a `.msgpack` file. It also reads typed arrays in JavaScript and bytes in Python.
+[LsMsgPackVsCode](LsMsgPackVsCode/README.md) is the same explorer as a VS Code extension (any OS, needs the .NET 8 runtime): right-click a `byte[]`, `Stream`, `List<byte>`, `Memory<byte>`, HTTP content or base64 string in the Variables view while debugging and choose **View as MsgPack**, or open a `.msgpack` file. It also reads typed arrays in JavaScript and bytes in Python. It can be installed via the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=mlsomers.lsmsgpack-explorer).
 
 ![Screenshot of the debugging user interface](https://github.com/mlsomers/LsMsgPack/raw/HEAD/LsMsgPackVsCode/Screenshot.png "MsgPack explorer")
 

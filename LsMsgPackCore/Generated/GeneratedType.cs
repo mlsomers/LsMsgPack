@@ -1,6 +1,7 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace LsMsgPack.Generated
 {
@@ -138,6 +139,77 @@ namespace LsMsgPack.Generated
           set((TTarget)instance, typed);
         else if (value is null && (object)default(TValue) is null) // reference types and Nullable<T>
           set((TTarget)instance, default(TValue));
+        else
+          reflection.SetValue(instance, value, null); // reflection also converts other values (e.g. null to the default of a value type, primitive widening)
+      };
+    }
+  }
+
+  /// <summary>
+  /// The getter of a property of the struct <typeparamref name="TTarget"/>, on the struct by reference (no copy, no box).
+  /// </summary>
+  [EditorBrowsable(EditorBrowsableState.Never)]
+  public delegate TValue StructGetter<TTarget, TValue>(ref TTarget target);
+
+  /// <summary>
+  /// The setter of a property of the struct <typeparamref name="TTarget"/>, on the struct by reference.
+  /// </summary>
+  [EditorBrowsable(EditorBrowsableState.Never)]
+  public delegate void StructSetter<TTarget, TValue>(ref TTarget target, TValue value);
+
+  /// <summary>
+  /// The generated accessors of a property of <typeparamref name="TTarget"/> (a struct), by reference.
+  /// </summary>
+  [EditorBrowsable(EditorBrowsableState.Never)]
+  public abstract class GeneratedStructProperty<TTarget, TValue> : GeneratedProperty where TTarget : struct
+  {
+    /// <summary>
+    /// null when the getter is not accessible to the generated code
+    /// </summary>
+    internal readonly StructGetter<TTarget, TValue> Get;
+
+    /// <summary>
+    /// null when the setter is not accessible to the generated code, or init-only
+    /// </summary>
+    internal readonly StructSetter<TTarget, TValue> Set;
+
+    internal GeneratedStructProperty(string name, StructGetter<TTarget, TValue> get, StructSetter<TTarget, TValue> set) : base(name)
+    {
+      Get = get;
+      Set = set;
+    }
+
+    internal override Type DeclaringType { get { return typeof(TTarget); } }
+
+    internal override Type PropertyType { get { return typeof(TValue); } }
+
+    internal override bool CanGet { get { return Get != null; } }
+
+    internal override bool CanSet { get { return Set != null; } }
+
+    internal override Func<object, object> BoxedGetter
+    {
+      get
+      {
+        StructGetter<TTarget, TValue> get = Get;
+        if (get is null)
+          return null;
+        return instance => get(ref Unsafe.Unbox<TTarget>(instance)); // in the box, without copying the struct
+      }
+    }
+
+    internal override Action<object, object> BoxedSetter(PropertyInfo reflection)
+    {
+      StructSetter<TTarget, TValue> set = Set;
+      if (set is null)
+        return null;
+
+      return (instance, value) => // the box is changed, as reflection's SetValue on a boxed struct does
+      {
+        if (value is TValue typed)
+          set(ref Unsafe.Unbox<TTarget>(instance), typed);
+        else if (value is null && (object)default(TValue) is null) // reference types and Nullable<T>
+          set(ref Unsafe.Unbox<TTarget>(instance), default(TValue));
         else
           reflection.SetValue(instance, value, null); // reflection also converts other values (e.g. null to the default of a value type, primitive widening)
       };

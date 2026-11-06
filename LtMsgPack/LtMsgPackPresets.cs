@@ -48,6 +48,7 @@ namespace LtMsgPack
 
     /// <summary>
     /// Libraries without .NET types (Python, JavaScript, Go, Rust and others): Guids and decimals as strings, dates (also DateTimeOffset) as timestamps, every value written, no type ids.
+    /// The default of the web formatters for application/msgpack and application/x-msgpack.
     /// </summary>
     public static LtMsgPackOptions Generic()
     {

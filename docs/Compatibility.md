@@ -2,7 +2,7 @@
 
 MsgPack standardizes the value types (integers, strings, binary data, arrays, maps, extensions), their bytes and one extension: the timestamp. How a .NET class, a `Guid` or a `decimal` is written is up to each library (see the proposal [msgpack/msgpack#334](https://github.com/msgpack/msgpack/pull/334)). So every library can read LsMsgPack's bytes, but whether it gets the objects back depends on the settings below.
 
-*Tested* means checked by the `LsMsgPackInteropTests` project (MessagePack-CSharp 3.1.10 and Nerdbank.MessagePack 1.3.88, with the invoice model of the benchmark), or by hand for Python (msgpack 1.2.2) and JavaScript (@msgpack/msgpack 3.1.3).
+*Tested* means checked by the `LsMsgPackInteropTests` project (MessagePack-CSharp 3.1.12 and Nerdbank.MessagePack 1.4.95, with the invoice model of the benchmark), or by hand for Python (msgpack 1.2.2) and JavaScript (@msgpack/msgpack 3.1.3).
 
 | Library | LsMsgPack writes, the library reads | The library writes, LsMsgPack reads |
 |---|---|---|
@@ -42,7 +42,7 @@ The presets use these LtMsgPack options (the defaults write what LsMsgPack write
 - `UnspecifiedDateTimeKind`: `Utc` (default, as MessagePack-CSharp) or `Local`. For reading see `DateTime` in [LsMsgPack settings](#lsmsgpack-settings).
 - `LtMsgPack.Extensions.NerdbankGuidExtension`: reads Nerdbank's Guid (extension type 2, big-endian).
 
-The web formatters use the presets for the plain media types: `AddLsMsgPackSerializerFormatters(o => o.Plain = LtMsgPackPresets.MessagePackCSharp())`, see [WebFormatters.md](WebFormatters.md).
+The web formatters use `Generic()` for the plain media types by default, set another preset with `AddLsMsgPackSerializerFormatters(o => o.Plain = LtMsgPackPresets.MessagePackCSharp())`, see [WebFormatters.md](WebFormatters.md).
 
 ## LsMsgPack settings
 
@@ -99,9 +99,11 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 | polymorphic value | type id in the object's map (key `""`) | `[Union]`: array of the union key and the object | incompatible |
 | default values | left out | written | see above |
 
+JSON document types (`JsonElement`, `JsonDocument`, `JsonNode`, Json.NET's `JObject`...) aren't supported: MsgPack has no form for them. Hold the JSON text in a `string`, or the values in a class of your own (analyzer [LSMP009](Analyzers.md#lsmp009-json-document-type-is-not-serialized)).
+
 ## MessagePack-CSharp
 
-Tested with 3.1.10: all 100 invoices of the benchmark read back identical in both directions.
+Tested with 3.1.12: all 100 invoices of the benchmark read back identical in both directions.
 
 **LsMsgPack writes, MessagePack-CSharp reads.** Read objects as maps keyed by property names (the contractless resolver, or `[MessagePackObject(keyAsPropertyName: true)]`), Guids as binary (`NativeGuidResolver`) and add a formatter for LsMsgPack's decimal:
 
@@ -177,7 +179,7 @@ A nil sets the property to null (the type's default for value types), as Message
 
 ## Nerdbank.MessagePack
 
-Nerdbank.MessagePack is the newer library of MessagePack-CSharp's maintainer. It writes objects as maps keyed by property names and writes every value, like LsMsgPack with the settings above. Tested with 1.3.88: all 100 invoices read back identical in both directions. The differences:
+Nerdbank.MessagePack is the newer library of MessagePack-CSharp's maintainer. It writes objects as maps keyed by property names and writes every value, like LsMsgPack with the settings above. Tested with 1.4.95: all 100 invoices read back identical in both directions. The differences:
 
 - `Guid`: extension type 2 with the bytes in big-endian (RFC 4122) order. It also reads LsMsgPack's bin 16.
 - `decimal`: extension type 4 with the same 16 bytes as LsMsgPack's extension type 1. Its extension type 1 is an object reference.

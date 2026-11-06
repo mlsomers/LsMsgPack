@@ -256,7 +256,14 @@ namespace LtMsgPack.Generator
           }
         }
         string factory = element is null ? null : FactoryCall(named, element);
-        Add(TypeModelKind.Collection, name, factory is null ? null : element.ToDisplayString(Format), HasCreator(named), HasCreator(named), factory: factory);
+        if (IsDefinition(named, "HashSet", 1))
+          Add(TypeModelKind.HashSet, name, named.TypeArguments[0].ToDisplayString(Format));
+        else if (IsDefinition(named, "Dictionary", 2))
+          Add(TypeModelKind.Dictionary, name, named.TypeArguments[0].ToDisplayString(Format) + ", " + named.TypeArguments[1].ToDisplayString(Format));
+        else if (HasTypedConcrete(named, element))
+          Add(TypeModelKind.CollectionInterface, name);
+        else
+          Add(TypeModelKind.Collection, name, factory is null ? null : element.ToDisplayString(Format), HasCreator(named), HasCreator(named), factory: factory);
         AddImplied(named, element);
         return;
       }
@@ -267,10 +274,10 @@ namespace LtMsgPack.Generator
         return;
       }
 
-      if (named.TypeKind == TypeKind.Struct)
+      if (named.TypeKind == TypeKind.Struct) // written and read by reference (the runtime's struct plans), with the accessors and the code generated here
       {
-        GetProperties(named, out _); // the types of the properties (the runtime writes and reads structs boxed)
-        Add(TypeModelKind.Boxed, name);
+        List<PropertyModel> fields = GetProperties(named, out bool hidden);
+        Add(TypeModelKind.Struct, name, null, HasCreator(named), true, fields, GetMembers(named), keepNonPublic: hidden, isDefault: DefaultCheck(named));
         return;
       }
 
@@ -289,6 +296,21 @@ namespace LtMsgPack.Generator
       bool creator = HasCreator(named);
       List<PropertyModel> properties = GetProperties(named, out bool nonPublic);
       Add(TypeModelKind.Object, name, null, creator, true, properties, named.IsAbstract ? null : GetMembers(named), keepNonPublic: nonPublic);
+    }
+
+    /// <returns>Whether the type is exactly this generic class of System.Collections.Generic</returns>
+    private static bool IsDefinition(INamedTypeSymbol type, string name, int arity)
+    {
+      return type.Name == name && type.Arity == arity && type.TypeKind == TypeKind.Class && type.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic";
+    }
+
+    /// <returns>A generic interface the runtime reads into a class with a typed reader (Serializer.InterfaceReader)</returns>
+    private bool HasTypedConcrete(INamedTypeSymbol type, ITypeSymbol element)
+    {
+      if (element is null || type.TypeKind != TypeKind.Interface || !type.IsGenericType)
+        return false;
+      INamedTypeSymbol concrete = ConcreteOf(type, element);
+      return concrete != null && (IsDefinition(concrete, "List", 1) || IsDefinition(concrete, "HashSet", 1) || IsDefinition(concrete, "Dictionary", 2));
     }
 
     /// <summary>
@@ -410,10 +432,196 @@ namespace LtMsgPack.Generator
     }
 
     private void Add(TypeModelKind kind, string name, string argument = null, bool creator = false, bool keep = false, List<PropertyModel> properties = null, List<MemberModel> members = null, string factory = null,
-      bool keepNonPublic = false)
+      bool keepNonPublic = false, string isDefault = null)
     {
-      _types.Add(new TypeModel(kind, name, argument, creator, keep, (properties ?? new List<PropertyModel>()).ToEquatable(), (members ?? new List<MemberModel>()).ToEquatable(), factory, keepNonPublic));
+      _types.Add(new TypeModel(kind, name, argument, creator, keep, (properties ?? new List<PropertyModel>()).ToEquatable(), (members ?? new List<MemberModel>()).ToEquatable(), factory, keepNonPublic, isDefault));
     }
+
+    #region The default check of a struct (LtMsgPack's StructDefault)
+
+    /// <summary>
+    /// The default check of FilterDefaultValues for the struct, as LtMsgPack's StructDefault compiles it (LsMsgPack.Core: <c>Activator.CreateInstance(type).Equals(value)</c>, ValueType.Equals):
+    /// each field against its default with the Equals of its type. A record struct by its own Equals (what its Equals(object) calls). Null where the generated code cannot see or read
+    /// every field the same way (fields of other assemblies, inaccessible ones, explicit layouts, own Equals, a declared parameterless constructor): the runtime compares then.
+    /// </summary>
+    /// <returns>A C# expression over <c>v</c> (the struct), or null</returns>
+    private string DefaultCheck(INamedTypeSymbol type)
+    {
+      foreach (IMethodSymbol constructor in type.InstanceConstructors)
+        if (constructor.Parameters.Length == 0 && !constructor.IsImplicitlyDeclared) // Core's default is what it makes
+          return null;
+      string name = type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format);
+      if (OwnEquals(type))
+        return type.IsRecord ? "default(" + name + ").Equals(v)" : null; // a record's Equals(object) calls its Equals(T)
+      return FieldsAreDefault(type, "v", 0);
+    }
+
+    private string FieldsAreDefault(INamedTypeSymbol type, string value, int depth)
+    {
+      if (depth > 16 || type.Locations.Length == 0 || !type.Locations[0].IsInSource || IsExplicitLayout(type)) // the fields of another assembly are not all visible
+        return null;
+      List<string> checks = new List<string>();
+      foreach (ISymbol member in type.GetMembers())
+      {
+        if (member.IsStatic)
+          continue;
+        string check;
+        switch (member)
+        {
+          case IFieldSymbol field:
+            if (field.IsConst)
+              continue;
+            if (field.AssociatedSymbol is IPropertySymbol) // the backing field of an auto-property: compared through the property
+              continue;
+            if (field.IsImplicitlyDeclared || field.IsFixedSizeBuffer || !IsAccessible(field))
+              return null;
+            check = FieldIsDefault(value + "." + Escape(field.Name), field.Type, depth);
+            break;
+          case IPropertySymbol property:
+            bool? auto = IsAutoProperty(property);
+            if (auto is null)
+              return null;
+            if (!auto.Value) // computed: no field
+              continue;
+            if (property.GetMethod is null || !IsAccessible(property.GetMethod))
+              return null;
+            check = FieldIsDefault(value + "." + Escape(property.Name), property.Type, depth);
+            break;
+          case IEventSymbol _: // a field-like event has a field
+            return null;
+          default:
+            continue;
+        }
+        if (check is null)
+          return null;
+        checks.Add(check);
+      }
+      return checks.Count == 0 ? "true" : string.Join(" && ", checks);
+    }
+
+    /// <summary>
+    /// The field (of the default instance, zero) equals the value as StructDefault.FieldIsDefault compares it.
+    /// </summary>
+    private string FieldIsDefault(string value, ITypeSymbol type, int depth)
+    {
+      if (type.TypeKind == TypeKind.Pointer || type.TypeKind == TypeKind.FunctionPointer || type.IsRefLikeType || type.TypeKind == TypeKind.TypeParameter)
+        return null;
+      if (!type.IsValueType) // a null field
+        return "(object)" + value + " == null";
+      if (type.TypeKind == TypeKind.Enum)
+        return value + " == 0";
+      string name = type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format);
+      switch (type.SpecialType)
+      {
+        case SpecialType.System_Boolean:
+        case SpecialType.System_Char:
+        case SpecialType.System_SByte:
+        case SpecialType.System_Int16:
+        case SpecialType.System_Int32:
+        case SpecialType.System_Int64:
+        case SpecialType.System_Byte:
+        case SpecialType.System_UInt16:
+        case SpecialType.System_UInt32:
+        case SpecialType.System_UInt64:
+        case SpecialType.System_Single: // == 0: -0.0 is a default, NaN is not (as 0f.Equals)
+        case SpecialType.System_Double:
+        case SpecialType.System_IntPtr:
+        case SpecialType.System_UIntPtr:
+          return value + " == default(" + name + ")";
+        case SpecialType.System_Decimal: // decimal.Equals: 0.00m equals 0m
+          return value + " == 0m";
+      }
+      if (type is INamedTypeSymbol named)
+      {
+        if (named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T) // a Nullable without a value is boxed as null
+          return "!" + value + ".HasValue";
+        if (OwnEquals(named))
+          return named.IsRecord || (IsFramework(named) && Implements(named, "System.IEquatable<T>")) ? "default(" + name + ").Equals(" + value + ")" : null; // their Equals(T) is their Equals(object)
+        return FieldsAreDefault(named, value, depth + 1);
+      }
+      return null;
+    }
+
+    /// <summary>
+    /// The struct overrides Equals(object) (otherwise it is ValueType.Equals).
+    /// </summary>
+    private static bool OwnEquals(INamedTypeSymbol type)
+    {
+      foreach (ISymbol member in type.GetMembers("Equals"))
+        if (member is IMethodSymbol method && !method.IsStatic && method.IsOverride && method.Parameters.Length == 1 && method.Parameters[0].Type.SpecialType == SpecialType.System_Object)
+          return true;
+      return false;
+    }
+
+    /// <param name="metadataName">The generic interface as ToDisplayString writes its definition (System.IEquatable&lt;T&gt;)</param>
+    private static bool Implements(INamedTypeSymbol type, string metadataName)
+    {
+      foreach (INamedTypeSymbol face in type.AllInterfaces)
+        if (face.OriginalDefinition.ToDisplayString() == metadataName && face.TypeArguments.Length == 1 && SymbolEqualityComparer.Default.Equals(face.TypeArguments[0], type))
+          return true;
+      return false;
+    }
+
+    private static bool IsExplicitLayout(INamedTypeSymbol type)
+    {
+      foreach (AttributeData attribute in type.GetAttributes())
+        if (attribute.AttributeClass?.ToDisplayString() == "System.Runtime.InteropServices.StructLayoutAttribute" && attribute.ConstructorArguments.Length > 0
+          && attribute.ConstructorArguments[0].Value is int kind && kind == 2) // LayoutKind.Explicit
+          return true;
+      return false;
+    }
+
+    /// <summary>
+    /// The property reads a field the compiler declared for it (an auto-property, or a positional property of a record): true; computed (no field of its own): false;
+    /// null when it cannot be told (an accessor using the field keyword, a property of another assembly).
+    /// </summary>
+    private static bool? IsAutoProperty(IPropertySymbol property)
+    {
+      if (property.IsIndexer)
+        return false;
+      if (property.DeclaringSyntaxReferences.Length != 1) // another assembly's, or a partial property (its definition has no bodies)
+        return null;
+      foreach (SyntaxReference reference in property.DeclaringSyntaxReferences)
+      {
+        SyntaxNode node = reference.GetSyntax();
+        if (node is Microsoft.CodeAnalysis.CSharp.Syntax.ParameterSyntax) // a positional property of a record
+          return true;
+        if (!(node is Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax declaration))
+          return null;
+        if (declaration.ExpressionBody != null)
+          return UsesField(declaration.ExpressionBody) ? (bool?)null : false;
+        if (declaration.AccessorList is null || declaration.AccessorList.Accessors.Count == 0)
+          return null;
+        int bodies = 0;
+        foreach (Microsoft.CodeAnalysis.CSharp.Syntax.AccessorDeclarationSyntax accessor in declaration.AccessorList.Accessors)
+        {
+          if (accessor.Body is null && accessor.ExpressionBody is null)
+            continue;
+          if (UsesField(accessor))
+            return null;
+          bodies++;
+        }
+        if (bodies == 0)
+          return true; // { get; set; }
+        if (bodies == declaration.AccessorList.Accessors.Count)
+          return false; // computed
+        return null; // { get; set { ... } }: a field read through code (C# 14 semi-auto)
+      }
+      return null;
+    }
+
+    /// <summary>
+    /// The field keyword (C# 14): the property has a field, read through code the generator does not follow.
+    /// </summary>
+    private static bool UsesField(SyntaxNode node)
+    {
+      foreach (SyntaxToken token in node.DescendantTokens())
+        if (token.IsKind(SyntaxKind.FieldKeyword) || (token.IsKind(SyntaxKind.IdentifierToken) && token.ValueText == "field"))
+          return true;
+      return false;
+    }
+
+    #endregion
 
     /// <summary>
     /// The values the serializer writes and reads without generic instantiations (its typed handlers of these types are not generic).
@@ -482,16 +690,17 @@ namespace LtMsgPack.Generator
 
     /// <summary>
     /// A parameterless constructor the generated code can call with <c>new T()</c> (the runtime uses the parameterless constructor too, or creates the object without one).
+    /// A struct only with a declared one (C# 10): otherwise it is read into its default, as the runtime does.
     /// </summary>
     private bool HasCreator(INamedTypeSymbol type)
     {
-      if (type.TypeKind != TypeKind.Class || type.IsAbstract || type.IsStatic)
+      if ((type.TypeKind != TypeKind.Class && type.TypeKind != TypeKind.Struct) || type.IsAbstract || type.IsStatic)
         return false;
 
       bool found = false;
       foreach (IMethodSymbol constructor in type.InstanceConstructors)
       {
-        if (constructor.Parameters.Length == 0 && IsAccessible(constructor) && !IsObsoleteError(constructor))
+        if (constructor.Parameters.Length == 0 && IsAccessible(constructor) && !IsObsoleteError(constructor) && (type.TypeKind == TypeKind.Class || !constructor.IsImplicitlyDeclared))
         {
           found = true;
           break;
@@ -529,8 +738,6 @@ namespace LtMsgPack.Generator
         nonPublic |= property.DeclaredAccessibility != Accessibility.Public;
         Enqueue(property.Type);
         RecordPolymorphic(type, property);
-        if (type.TypeKind != TypeKind.Class)
-          continue;
 
         bool canGet = CanGet(type, property, out bool unsafeGet);
         bool canSet = CanSet(type, property, out bool unsafeSet);
@@ -560,32 +767,43 @@ namespace LtMsgPack.Generator
     }
 
     /// <summary>
-    /// The generated code can call the setter (not an init-only one): it is accessible, or an UnsafeAccessor can call it (<paramref name="viaAccessor"/>, see <see cref="ViaAccessor"/>).
+    /// The generated code can call the setter: it is accessible, or an UnsafeAccessor can call it (<paramref name="viaAccessor"/>, see <see cref="ViaAccessor"/>).
+    /// An init-only setter only compiles in an object initializer, so an accessible one takes an UnsafeAccessor too, whatever <see cref="GenerateOptions.NonPublic"/> says (the runtime sets it with every option).
     /// </summary>
     private bool CanSet(INamedTypeSymbol declaring, IPropertySymbol property, out bool viaAccessor)
     {
       viaAccessor = false;
       IMethodSymbol set = property.SetMethod;
-      if (set is null || set.IsInitOnly || IsObsoleteError(set))
+      if (set is null || IsObsoleteError(set))
         return false;
-      if (IsAccessible(set))
-        return true;
-      return viaAccessor = ViaAccessor(declaring, property);
+      if (!IsAccessible(set))
+        return viaAccessor = ViaAccessor(declaring, property);
+      if (set.IsInitOnly)
+        return viaAccessor = CanUseAccessor(declaring, property);
+      return true;
     }
 
     /// <summary>
     /// A non-public accessor the generated code calls through an UnsafeAccessor (.NET 8): only of a property the runtime may serialize with its non-public accessors
-    /// (<see cref="GenerateOptions.NonPublic"/>: all, or the ones with an opt-in attribute), declared by a class that is not generic (UnsafeAccessor supports generics from .NET 9),
-    /// not virtual (UnsafeAccessor would call this declaration, the runtime calls the override). Otherwise the runtime uses reflection.
+    /// (<see cref="GenerateOptions.NonPublic"/>: all, or the ones with an opt-in attribute). Otherwise the runtime uses reflection.
     /// </summary>
     private bool ViaAccessor(INamedTypeSymbol declaring, IPropertySymbol property)
     {
-      if (!_unsafeAccessors || declaring.TypeKind != TypeKind.Class || property.IsVirtual || property.IsOverride || property.IsAbstract || !IsAccessible(declaring))
+      return CanUseAccessor(declaring, property) && (_nonPublic == LtMsgPackGenerator.NonPublicAll || (_nonPublic == LtMsgPackGenerator.NonPublicAttributed && OptsIn(property)));
+    }
+
+    /// <summary>
+    /// An UnsafeAccessor can call the property's accessors: declared by a class that is not generic (UnsafeAccessor supports generics from .NET 9), not virtual (UnsafeAccessor would call this declaration,
+    /// the runtime calls the override). A struct's accessor takes it by reference.
+    /// </summary>
+    private bool CanUseAccessor(INamedTypeSymbol declaring, IPropertySymbol property)
+    {
+      if (!_unsafeAccessors || (declaring.TypeKind != TypeKind.Class && declaring.TypeKind != TypeKind.Struct) || property.IsVirtual || property.IsOverride || property.IsAbstract || !IsAccessible(declaring))
         return false;
       for (INamedTypeSymbol t = declaring; t != null; t = t.ContainingType)
         if (t.IsGenericType)
           return false;
-      return _nonPublic == LtMsgPackGenerator.NonPublicAll || (_nonPublic == LtMsgPackGenerator.NonPublicAttributed && OptsIn(property));
+      return true;
     }
 
     /// <summary>
@@ -649,7 +867,7 @@ namespace LtMsgPack.Generator
         bool publicPass = pass == 0;
         if (!publicPass && _nonPublic == LtMsgPackGenerator.NonPublicNone)
           break;
-        for (INamedTypeSymbol t = type; t != null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+        for (INamedTypeSymbol t = type; t != null && t.SpecialType != SpecialType.System_Object && t.SpecialType != SpecialType.System_ValueType; t = t.BaseType)
         {
           if (!publicPass && IsFramework(t)) // the runtime leaves out the framework's non-public properties
             continue;
@@ -682,7 +900,8 @@ namespace LtMsgPack.Generator
               nullable = false;
             members.Add(new MemberModel(t.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), property.Name, Escape(property.Name),
               property.Type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), kind, nullable,
-              valueType.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), underlying, canGet, canSet, unrolled, hasDefaultValue, canGet && unsafeGet, unsafeSet));
+              valueType.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), underlying, canGet, canSet, unrolled, hasDefaultValue, canGet && unsafeGet, unsafeSet,
+              t.TypeKind == TypeKind.Struct));
           }
         }
       }

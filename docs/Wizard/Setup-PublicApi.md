@@ -10,7 +10,7 @@ An ASP.NET Core API that others call, in any language, next to JSON: partners, c
 |---|---|
 | Package | `LsMsgPack.AspNetCore` (ASP.NET Web API 2 / MVC 5: `LsMsgPack.AspNet.WebApi` / `LsMsgPack.AspNet.Mvc`) |
 | Media types | `application/msgpack` for everyone, `application/x-lsmsgpack` for clients with these packages, JSON as before |
-| Settings | `Plain = LtMsgPackPresets.Generic()`, a `TypeGuard` on both |
+| Settings | a `TypeGuard` on both (`application/msgpack` already writes what any MsgPack library expects) |
 | Keep in mind | requests are untrusted; published property names are a contract |
 
 ```
@@ -22,14 +22,10 @@ dotnet add package LsMsgPack.AspNetCore
 ```csharp
 using LsMsgPack.TypeResolving.Types;
 using LsMsgPackFormatters;
-using LtMsgPack;
 
 builder.Services.AddControllers()
   .AddLsMsgPackSerializerFormatters(o =>
   {
-    // application/msgpack: what any MsgPack library expects (every value, Guid and decimal as text)
-    o.Plain = LtMsgPackPresets.Generic();
-
     // Only the classes of your API may be created from request data
     AllowedTypesGuard guard = new AllowedTypesGuard().AllowAssemblyOf(typeof(Shipment));
     o.Plain.TypeGuard = guard;
@@ -68,7 +64,7 @@ Put the two media types and an example like this in your API documentation. The 
 
 ## Why these settings
 
-- **`Generic()` for `application/msgpack`.** The plain default leaves out values that are `0`, `false` or `null` and writes `Guid` and `decimal` in .NET's binary form, which is right between .NET programs but makes a Python client check for missing keys and decode bytes. `Generic()` writes every value, and `Guid` and `decimal` as text. If most of your clients use MessagePack-CSharp, `LtMsgPackPresets.MessagePackCSharp()` writes exactly what it expects ([Compatibility.md](../Compatibility.md)).
+- **`application/msgpack` needs no settings.** It writes every value, and `Guid` and `decimal` as text (`LtMsgPackPresets.Generic()`, the default of `Plain`), so a Python client doesn't have to check for missing keys or decode bytes. If most of your clients use MessagePack-CSharp, set `o.Plain = LtMsgPackPresets.MessagePackCSharp()`: it writes exactly what that library expects ([Compatibility.md](../Compatibility.md)).
 - **The type guard.** Clients of `application/x-lsmsgpack` can send class names for properties declared as an interface or base class, and the server creates those classes. The serializers already refuse a class that doesn't fit the declared type and never load assemblies; the guard also limits it to the classes of your API. Plain MsgPack carries no class names, so it's mostly a safety net there.
 - **`application/x-lsmsgpack` stays available** for your own .NET and TypeScript clients, which get smaller responses and class hierarchies. Nothing to configure.
 
@@ -85,7 +81,7 @@ Clients you don't control can't be updated with your server, so treat the proper
 - **Avoid `object` in request classes** (`object`, `List<object>`, `Dictionary<string, object>`): there the data picks the class. The analyzers that come with the package warn about them (LSMP004, LSMP005). More in [security.md](../security.md).
 - **Limits are built in**: nesting deeper than 256 levels is refused, and lengths are checked against the body before anything is allocated. Keep ASP.NET Core's request size limit (`MaxRequestBodySize`) at a sensible value for your API.
 - **Class hierarchies over plain MsgPack**: a property declared as an interface or abstract class can't be read from plain MsgPack (there's no class name). Use concrete classes in public request types, or a property that says which variant it is.
-- **`DateTimeOffset`** is sent as the moment only with `Generic()`: the offset is lost.
+- **`DateTimeOffset`** is sent over `application/msgpack` as the moment only: the offset is lost. Add a property for it if clients need it (`application/x-lsmsgpack` keeps it).
 
 ## Next
 

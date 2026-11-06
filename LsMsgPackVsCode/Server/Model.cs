@@ -9,7 +9,17 @@ namespace LsMsgPackInspector
   /// </summary>
   public class LoadResult
   {
-    public int Length { get; set; }
+    public long Length { get; set; }
+
+    /// <summary>
+    /// The parts of the data that are not in the hex view (the middle of values that are too large for practical debugging, also the rest of a file beyond what is kept), in the order of the data.
+    /// </summary>
+    public LsMsgPack.SkippedRange[] Skipped { get; set; }
+
+    /// <summary>
+    /// The bytes of the hex view (the data without <see cref="Skipped"/>), null when that is all the data the extension sent.
+    /// </summary>
+    public byte[] HexBytes { get; set; }
 
     /// <summary>
     /// The displayed items in the order of the tree (depth first: a map entry is its key with the value below it).
@@ -97,6 +107,11 @@ namespace LsMsgPackInspector
     /// Part of the indexed schema (navy in the tree), not of the objects.
     /// </summary>
     public bool Schema { get; set; }
+
+    /// <summary>
+    /// Only the ends of the value were kept: too large for practical debugging (a mark on the icon).
+    /// </summary>
+    public bool Truncated { get; set; }
 
     /// <summary>
     /// What the property grid of the explorer shows.

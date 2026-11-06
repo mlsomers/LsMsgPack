@@ -6,7 +6,7 @@ Three packages let controllers receive and return MsgPack the same way they hand
 |---|---|---|---|
 | [ASP.NET Core](#aspnet-core) MVC / Web API controllers, [minimal APIs](#minimal-apis) | `LsMsgPack.AspNetCore` | ASP.NET Core 2.x (netstandard2.0, also on .NET Framework) and ASP.NET Core 3.0 and up (net8.0) | `LsMsgPackFormatters` |
 | [ASP.NET Web API 2](#aspnet-web-api-2) (`System.Web.Http`) | `LsMsgPack.AspNet.WebApi` | netstandard2.0 (Web API 2 runs on .NET Framework) | `LsMsgPackWebApiFormatters` |
-| [HttpClient](#httpclient) (`ObjectContent` / `ReadAsAsync`, [streams](#streams-with-httpclient)) | `LsMsgPack.AspNet.WebApi` | netstandard2.0 and 2.1 (`IAsyncEnumerable`), any platform | `LsMsgPackWebApiFormatters` |
+| [HttpClient](#httpclient) (`GetFromMsgPackAsync` / `PostAsMsgPackAsync`, `ObjectContent` / `ReadAsAsync`, [streams](#streams-with-httpclient)) | `LsMsgPack.AspNet.WebApi` | netstandard2.0 and 2.1 (`IAsyncEnumerable`), any platform | `LsMsgPackWebApiFormatters` |
 | [ASP.NET MVC 5](#aspnet-mvc-5) (`System.Web.Mvc`) | `LsMsgPack.AspNet.Mvc` | .NET Framework 4.6.2+ | `LsMsgPackMvc` |
 
 All of them depend on the `LtMsgPack` package (and through it `LsMsgPack.Core`) and speak exactly the same wire formats, so an HttpClient using the Web API formatter can talk to an ASP.NET Core server, for example.
@@ -18,24 +18,26 @@ Every package supports three media types (`Content-Type` for request bodies and 
 
 | Media type | Constant | Settings | Default |
 |---|---|---|---|
-| `application/msgpack` | `MsgPackMediaTypes.MsgPack` | `Plain` | Plain MsgPack: maps keyed by property names, no indexed schema, no type ids, default values left out. Any MsgPack implementation can read and write it. Use a preset for another library (below). |
+| `application/msgpack` | `MsgPackMediaTypes.MsgPack` | `Plain` | What any MsgPack implementation reads (`LtMsgPackPresets.Generic()`): maps keyed by property names, every value, no indexed schema, no type ids, `Guid` and `decimal` as text, dates as timestamps (a `DateTimeOffset` loses its offset). Use a preset for a specific library (below). |
 | `application/x-msgpack` | `MsgPackMediaTypes.XMsgPack` | `Plain` | Same as `application/msgpack` (an older, widely used name). |
 | `application/x-lsmsgpack` | `MsgPackMediaTypes.XLsMsgPack` | `XLsMsgPack` | What LsMsgPack writes by default (`LtMsgPackPresets.LsMsgPack()`): the [indexed schema](schema.md#the-indexed-schema), objects as arrays of their values, type ids where the type differs from the declared type (full [polymorphism](schema.md#polymorphic-class-hierarchy-support)), and [schema references](#schema-references-applicationx-lsmsgpack) between these formatters (`NegotiateSchemas`). Use this between LsMsgPack / LtMsgPack endpoints. |
 
-`Plain` and `XLsMsgPack` are independent `LtMsgPackOptions` objects. Changing one doesn't affect the other. To exchange plain MsgPack with another library, use one of its presets (see [Compatibility.md](Compatibility.md)):
+`Plain` and `XLsMsgPack` are independent `LtMsgPackOptions` objects. Changing one doesn't affect the other. To match a specific library, use its preset (see [Compatibility.md](Compatibility.md)):
 
 ```csharp
 services.AddControllers().AddLsMsgPackSerializerFormatters(o =>
 {
-  o.Plain = LtMsgPackPresets.MessagePackCSharp(); // or Nerdbank(), Generic()
+  o.Plain = LtMsgPackPresets.MessagePackCSharp(); // or Nerdbank()
 });
 ```
 
-No type ids are written for the plain media types, so properties declared as an interface or abstract class can't be read back from them. Use `application/x-lsmsgpack` for those, or see [resolving by signature](schema.md#resolving-by-signature).
+No type ids are written for the plain media types, so properties declared as an interface or abstract class can't be read back from them. Use `application/x-lsmsgpack` for those, or see [resolving by signature](schema.md#resolving-by-signature). Use it too between .NET programs that need the offset of a `DateTimeOffset`.
 
 Property names in bodies are matched ignoring case when no property has the exact name (`PropertyNameCaseInsensitive`, on by default, as ASP.NET Core reads JSON), so clients that write camelCase names are read too: the [TypeScript client](TypeScriptClient.md) (camelCase by default), objects of other JavaScript code. It applies to maps keyed by names (the plain media types, `application/x-lsmsgpack` without the indexed schema) and to the names of the indexed schema (matched once per class and schema), and costs nothing for the exact names, which are looked up first. When several properties of a class differ only in case (`Id` and `ID`), a key that equals neither exactly (`id`) sets none. Set it to `false` to read the exact names only; it is `MsgPackOptions.PropertyNameCaseInsensitive` of both serializers (off by default outside the formatters).
 
 Anonymous objects (`return Ok(new { Id = 1, Name = "x" });`, `Ok(items.Select(i => new { i.Id }))`) are written with their properties and read into classes with the same names, as with JSON. In a property declared as `object`, or inside another anonymous object, they're written as maps of names. See [anonymous types](schema.md#anonymous-types).
+
+MsgPack has no form for a JSON document, so `JsonElement`, `JsonDocument`, `JsonNode` and Json.NET's `JObject` can't be used in models or bodies: a response with a `JsonElement` answers 500, a `[FromBody] JsonElement` 400. Hold the JSON text in a `string`, or the values in a class of your own. An endpoint that passes JSON through (a webhook) can also stay on JSON: the formatters only answer MsgPack to clients that ask for it. Analyzer [LSMP009](Analyzers.md#lsmp009-json-document-type-is-not-serialized) reports these types.
 
 The options are read once, when a formatter is created, so later changes have no effect. A formatter can safely handle concurrent requests.
 
@@ -230,34 +232,72 @@ HttpClient
 The same package works on the client side, on any platform (.NET Framework, .NET, MAUI, Avalonia and so on). It builds on `System.Net.Http.Formatting` (the `Microsoft.AspNet.WebApi.Client` package):
 
 ```csharp
-using LsMsgPack;
 using LsMsgPackWebApiFormatters;
-using System.Net.Http.Formatting;
-using System.Net.Http.Headers;
 
 LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter(); // trimmed or AOT apps: new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options))
 HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = new Uri("https://example.com/") }; // keep both for the lifetime of the app
 
+Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
+
+HttpResponseMessage response = await client.PostAsMsgPackAsync("api/orders", order, formatter); // also PutAsMsgPackAsync, PatchAsMsgPackAsync
+await response.EnsureSuccessStatusCodeAsync(); // a MsgPackHttpException with the problem details of an error
+Order saved = await response.Content.ReadFromMsgPackAsync<Order>(formatter);
+```
+
+The helpers (`MsgPackHttpClientExtensions`) work like `GetFromJsonAsync`, `PostAsJsonAsync` and `ReadFromJsonAsync` of System.Net.Http.Json:
+- They send `MsgPackHttpClientExtensions.Accept` (`application/x-lsmsgpack, application/msgpack; q=0.9`) when neither the request nor `client.DefaultRequestHeaders` has an `Accept` header.
+- `PostAsMsgPackAsync` (and `Put`, `Patch`) send the value as `application/x-lsmsgpack`, with the declared type `T`, and return the response without checking its status code: `await response.EnsureSuccessStatusCodeAsync()` does.
+- `GetFromMsgPackAsync` and `EnsureSuccessStatusCodeAsync` throw a [`MsgPackHttpException`](#error-responses) for a status code outside 200-299. `GetFromMsgPackAsync` and `ReadFromMsgPackAsync` throw a `NotSupportedException` for a body that isn't MsgPack (JSON, with the start of its text in the message) or is a [stream](#streams-with-httpclient), and a `MsgPackException` for a body that can't be read as `T`. An empty body (`204 No Content`) gives `default(T)`.
+- With [`ReportDifferences`](#reporting-differences), read the response with `ReadFromMsgPackAsync` and then call `response.GetReadDifferences()`: `GetFromMsgPackAsync` disposes the response.
+
+For another media type or your own request, use the formatter directly:
+
+```csharp
 HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "api/orders")
 {
-  Content = new ObjectContent<Order>(order, formatter, MsgPackMediaTypes.XLsMsgPack)
+  Content = new ObjectContent<Order>(order, formatter, MsgPackMediaTypes.MsgPack)
 };
 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack));
 
 HttpResponseMessage response = await client.SendAsync(request);
 response.EnsureSuccessStatusCode();
-Order result = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
+Order result = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter }); // or ReadFromMsgPackAsync<Order>(formatter)
 ```
 
 Notes:
 - `formatter.CreateHandler()` enables [schema references](#schema-references-applicationx-lsmsgpack) for the responses. It's optional: without it (or with `new HttpClient()`), every response carries its schema inline. Use `formatter.CreateHandler(inner)` to chain another handler.
 - With `IHttpClientFactory`, which sets the inner handler itself and refuses a handler that has one, add `formatter.CreateDelegatingHandler()` (`CreateDelegatingHandler(true)` for version 2 of the schema): `services.AddHttpClient("api").AddHttpMessageHandler(() => formatter.CreateDelegatingHandler());`. Keep the formatter as a singleton: the handlers the factory creates (one per handler lifetime) share its schemas.
 - `formatter.CreateHandler(true)` (`LsMsgPackSchemaHandler.RequestDescribedSchemas`) also asks for [version 2 of the schema](#schema-version-2-for-clients-without-the-classes), for a client whose classes differ from the server's (other names or namespaces, e.g. an SDK with its own models): the reader then pairs its classes with the server's by the declared types (see [schema.md](schema.md)).
-- Without an explicit media type, `ObjectContent` uses the formatter's first media type, `application/msgpack` (plain MsgPack).
-- Set the `Accept` header, or the server will probably answer with JSON.
+- Without an explicit media type, `ObjectContent` uses the formatter's first media type, `application/msgpack` (plain MsgPack): a `DateTimeOffset` loses its offset and class hierarchies are lost. Pass `application/x-lsmsgpack` to keep them, as the helpers do.
+- Without the helpers, set the `Accept` header, or the server will probably answer with JSON.
 - `HttpClientHandler` doesn't ask for [compressed responses](#response-compression) by default, and the handler `CreateHandler()` makes doesn't either. Pass one that does: `formatter.CreateHandler(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate })` (`DecompressionMethods.All` on .NET Core 3.0 and up, which adds Brotli). With `IHttpClientFactory`, set it in `ConfigurePrimaryHttpMessageHandler`.
-- On the client side, a response that can't be deserialized throws from `ReadAsAsync` instead of being logged.
+- On the client side, a response that can't be deserialized throws from `ReadFromMsgPackAsync` or `ReadAsAsync` instead of being logged.
 - Use the same `XLsMsgPack` options on the client and the server for `application/x-lsmsgpack` (at least the same `UseInexedSchema`).
+
+### Error responses
+
+ASP.NET Core answers errors with problem details ([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457), `application/problem+json`), also when the request asks for MsgPack: `NotFound()` and the other status code results without a value of an `[ApiController]`, `Problem()`, the automatic `400 Bad Request` of `[ApiController]` for a model that isn't valid (with the `errors` per property), and with `AddProblemDetails()` + `UseExceptionHandler()` an exception. MVC limits these results to the problem details media types, so the MsgPack formatter isn't chosen. A value of your own (`return NotFound(new OrderError(...))`) is negotiated as any value: MsgPack when the request asks for it. A request no endpoint matches gets an empty `404`, or a text with `UseStatusCodePages()`.
+
+A `MsgPackHttpException` (an `HttpRequestException`) has what the body says:
+
+```csharp
+try
+{
+  Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
+}
+catch (MsgPackHttpException ex) when (ex.StatusCode == HttpStatusCode.BadRequest)
+{
+  foreach (KeyValuePair<string, string[]> error in ex.Errors) // the validation errors per property
+    Show(error.Key, error.Value);
+}
+```
+
+- `StatusCode`, `ReasonPhrase` and `ContentType` of the response, and its `Body` (at most the first `MsgPackHttpException.MaxBodyLength` bytes, 64 KiB).
+- `Text`: the body of a text, JSON or XML `Content-Type` (or none) as text, in its charset. Null for MsgPack.
+- `Title`, `Detail`, `ProblemType` (`type`) and `Instance`: the members of problem details, for a JSON body. `Errors`: the `errors` of validation problem details, empty when the body has none.
+- `ReadBody<T>(formatter)` reads a MsgPack body (a value of your own) as `T`.
+- The message is that of `EnsureSuccessStatusCode` with the title, detail and errors, or the start of a text: `Response status code does not indicate success: 400 (Bad Request). One or more validation errors occurred. Customer: The Customer field is required.`
+- On .NET 5 and up the `StatusCode` of `HttpRequestException` is set too, so `catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)` catches it.
 
 ### Streams with HttpClient
 
@@ -271,7 +311,7 @@ await foreach (Order order in client.GetFromMsgPackAsAsyncEnumerable<Order>("api
 - It sends `MsgPackStreamExtensions.StreamAccept` as the `Accept` header (application/x-lsmsgpack, then application/msgpack, each with `stream=unknown-length` and without), and returns once the headers are there (`HttpCompletionOption.ResponseHeadersRead`). The request is sent when the enumeration starts.
 - A server that doesn't stream (Web API 2, MVC 5, or `WriteStreams = false`) sends the `List<T>` or `T[]` as one body: the same items, read the same way. Nil and an empty body (`204 No Content`) are no items.
 - The schema of the stream's head is learned as the schema of any response: the next requests list it in `MsgPack-Schemas`, and the server refers to it. The handler (`formatter.CreateHandler()`) passes streams through without buffering them. With `CreateHandler(true)` the stream range gets `schema=described` too.
-- A status code outside 200-299 throws an `HttpRequestException`, a response that isn't MsgPack (JSON) a `NotSupportedException`. An exception of the server's source after the first item aborts the response: the enumeration throws, after the items that arrived.
+- A status code outside 200-299 throws a [`MsgPackHttpException`](#error-responses), a response that isn't MsgPack (JSON) a `NotSupportedException`. An exception of the server's source after the first item aborts the response: the enumeration throws, after the items that arrived.
 - `response.ReadFromMsgPackAsAsyncEnumerable<T>(formatter)` reads the items of a response you sent yourself (with `HttpCompletionOption.ResponseHeadersRead`, otherwise HttpClient buffers it first).
 
 Anything else in a stream (several tables, objects of several types, an index; see [Streaming.md](Streaming.md)) is read with a `MsgPackStreamReader`, on .NET Framework too:
@@ -378,7 +418,7 @@ builder.Services.AddControllers()
 |---|---|---|
 | ASP.NET Core | `HttpContext.GetReadDifferences()` (in `HttpContext.Features`) | Through `ILogger` (category `LsMsgPackFormatters.LsMsgPackInputFormatter`), with the report: at the `Debug` level, or as a warning with `LogDifferencesAsWarning` |
 | Web API 2 | `Request.GetReadDifferences()` in the controller | No |
-| HttpClient | `response.GetReadDifferences()` (or `content.GetReadDifferences()`) after `ReadAsAsync` | No |
+| HttpClient | `response.GetReadDifferences()` (or `content.GetReadDifferences()`) after `ReadFromMsgPackAsync` or `ReadAsAsync` | No |
 | MVC 5 | `HttpContext.GetReadDifferences()` in the controller | No |
 
 Values that can't be read (a string where an `int` is declared...) fail the request by default. Set `ReadErrors` on the options of the media type to skip them instead (`o.XLsMsgPack.ReadErrors = ReadErrorHandling.ReportAndContinue`, they're then reported with the other differences), or to fail with all of them at once (`FailDeferred`, the message in the `ModelState` has the complete report), see [ReadDifferences.md](ReadDifferences.md#values-that-cant-be-read-readerrors).

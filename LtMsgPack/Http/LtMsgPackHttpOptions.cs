@@ -5,7 +5,7 @@ namespace LtMsgPack.Http
   /// <summary>
   /// The settings of the web formatters (ASP.NET Core, ASP.NET Web API and HttpClient, ASP.NET MVC 5) per media type, see <see cref="MsgPackMediaTypes"/>.
   /// <para>The defaults need nothing from the other side: application/x-lsmsgpack uses the indexed schema and, between these formatters, schema references (see <see cref="NegotiateSchemas"/>).
-  /// application/msgpack and application/x-msgpack write maps keyed by property names, set <see cref="Plain"/> to one of the <see cref="LtMsgPackPresets"/> to match another library.</para>
+  /// application/msgpack and application/x-msgpack write what any MsgPack library reads (<see cref="LtMsgPackPresets.Generic"/>), set <see cref="Plain"/> to another of the <see cref="LtMsgPackPresets"/> to match a specific library.</para>
   /// <para>Read when the formatters are created (<see cref="LtMsgPackHttpSerializer"/>), later changes do not apply.</para>
   /// </summary>
   public class LtMsgPackHttpOptions
@@ -17,9 +17,10 @@ namespace LtMsgPack.Http
     public LtMsgPackOptions XLsMsgPack { get; set; } = LtMsgPackPresets.LsMsgPack();
 
     /// <summary>
-    /// application/msgpack and application/x-msgpack: by default maps keyed by property names without type ids. For other libraries use a preset, e.g. <c>Plain = LtMsgPackPresets.MessagePackCSharp()</c>.
+    /// application/msgpack and application/x-msgpack: by default what any MsgPack library reads (<see cref="LtMsgPackPresets.Generic"/>): maps keyed by property names, every value, no type ids, Guids and decimals as text, dates as timestamps (a DateTimeOffset loses its offset).
+    /// For a specific library use its preset, e.g. <c>Plain = LtMsgPackPresets.MessagePackCSharp()</c>; between .NET programs application/x-lsmsgpack keeps the offset and the class hierarchies.
     /// </summary>
-    public LtMsgPackOptions Plain { get; set; } = MsgPackMediaTypes.ToPlain(new LtMsgPackOptions());
+    public LtMsgPackOptions Plain { get; set; } = LtMsgPackPresets.Generic();
 
     /// <summary>
     /// application/x-lsmsgpack with the indexed schema: a response refers to its schema (18 bytes) instead of containing it when the request says the client holds it (header <see cref="LtMsgPackHttpSerializer.SchemasHeader"/>), otherwise the schema is sent inline. Default true.

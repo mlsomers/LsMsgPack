@@ -28,10 +28,36 @@ export class MissingSchemaError extends MsgPackError {
   }
 }
 
-/** A response that is not successful (status outside 200-299). The body is kept as text (or the decoded value for MsgPack). */
+/**
+ * A response that is not successful (status outside 200-299), with its decoded body: an object for JSON (ASP.NET Core sends problem details, RFC 9457, as application/problem+json
+ * also when the request asks for MsgPack: `title`, `detail`, and `errors` per property for its automatic 400), the decoded value for MsgPack, otherwise the text.
+ * The message has the title, detail and errors of problem details, or the start of a text.
+ */
 export class HttpError extends Error {
   constructor(readonly status: number, readonly statusText: string, readonly body: unknown, readonly response: Response) {
-    super(`${status} ${statusText}${typeof body === 'string' && body.length > 0 ? ': ' + body : ''}`);
+    super(errorMessage(status, statusText, body));
     this.name = 'HttpError';
   }
+}
+
+const MaxMessageText = 200;
+
+function errorMessage(status: number, statusText: string, body: unknown): string {
+  const head = statusText.length > 0 ? `${status} ${statusText}` : `${status}`; // HTTP/2 has no reason phrase
+  if (typeof body === 'string') {
+    const text = body.trim();
+    return text.length === 0 ? head : `${head}: ${text.length > MaxMessageText ? text.slice(0, MaxMessageText) + '...' : text}`;
+  }
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) return head;
+  const problem = body as { title?: unknown; detail?: unknown; errors?: unknown };
+  const parts: string[] = [];
+  if (typeof problem.title === 'string' && problem.title !== statusText) parts.push(problem.title);
+  if (typeof problem.detail === 'string') parts.push(problem.detail);
+  if (problem.errors !== null && typeof problem.errors === 'object' && !Array.isArray(problem.errors)) {
+    for (const [name, messages] of Object.entries(problem.errors as Record<string, unknown>)) {
+      const texts = (Array.isArray(messages) ? messages : [messages]).filter((m): m is string => typeof m === 'string');
+      if (texts.length > 0) parts.push(`${name}: ${texts.join(' ')}`);
+    }
+  }
+  return parts.length === 0 ? head : `${head}: ${parts.join(' ')}`;
 }

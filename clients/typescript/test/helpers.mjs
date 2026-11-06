@@ -11,7 +11,7 @@ const here = fileURLToPath(new URL('.', import.meta.url));
 
 /** The built test server (the first that exists), or undefined: the live tests are skipped. */
 export const serverAssembly = ['Debug', 'DEBUG', 'Release', 'RELEASE']
-  .map((c) => `${here}../test-server/bin/${c}/net8.0/LsMsgPackTsTestServer.dll`)
+  .map((c) => `${here}../test-server/bin/${c}/net10.0/LsMsgPackTsTestServer.dll`)
   .find((p) => existsSync(p));
 
 /** The built generator lsmsgpack-ts (the first that exists), or undefined: the tests with generated models are skipped. */

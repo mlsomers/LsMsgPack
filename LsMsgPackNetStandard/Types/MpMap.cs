@@ -152,6 +152,9 @@ namespace LsMsgPack
 
     internal override void WriteTo(ByteWriter bytes)
     {
+#if KEEPTRACK
+      ThrowWhenItemsTruncated();
+#endif
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       MsgPackTypeId typeId = GetTypeId(value.LongLength);
 #else
@@ -168,7 +171,6 @@ namespace LsMsgPack
       }
       for (int t = 0; t < value.Length; t++)
       {
-        // TODO: call MsgPackSerializer.GetTypedOrUntyped for keys as well as values
         MsgPackItem key = value[t].Key as MsgPackItem ?? MsgPackItem.Pack(value[t].Key, _settings) ?? MsgPackSerializer.SerializeObject(value[t].Key, _settings); // may already be packed by the serializer
         MsgPackItem val = value[t].Value as MsgPackItem ?? MsgPackItem.Pack(value[t].Value, _settings) ?? MsgPackSerializer.SerializeObject(value[t].Value, _settings);
         key.WriteTo(bytes);

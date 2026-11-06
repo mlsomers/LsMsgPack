@@ -66,7 +66,7 @@ namespace LtMsgPack
       bool unrolled = (code.Capabilities & GeneratedCapabilities.WriteUnrolled) != 0 && !Options._trimTrailingNulls && ids.Length == code.UnrolledIds.Length;
       for (int t = 0; unrolled && t < ids.Length; t++)
         unrolled = ids[t] == code.UnrolledIds[t];
-      return new GeneratedWritePlan(ids, Filters == FilterMode.DefaultValues, Options._unspecifiedIsUtc, Options._trimTrailingNulls, DecimalCode(), unrolled, props);
+      return new GeneratedWritePlan(this, ids, Filters == FilterMode.DefaultValues, Options._unspecifiedIsUtc, Options._trimTrailingNulls, DecimalCode(), unrolled, props);
     }
 
     /// <returns>The generated member of the property; -1 when there is none, or the generated code would write it otherwise than these options do (the runtime writes it)</returns>
@@ -86,7 +86,7 @@ namespace LtMsgPack
     /// <returns>The generated member of the property the generated code reads itself, -1 otherwise</returns>
     internal int ReadMember(GeneratedObjectCode code, FullPropertyInfo info)
     {
-      if (code is null || (code.Capabilities & GeneratedCapabilities.ReadValue) == 0)
+      if (code is null || (code.Capabilities & (GeneratedCapabilities.ReadValue | GeneratedCapabilities.ReadMap)) == 0)
         return -1;
       int id = FindMember(code, info);
       if (id < 0)
@@ -176,6 +176,29 @@ namespace LtMsgPack
       }
       return Activator.CreateInstance(definition.MakeGenericType(argument), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null,
         constructorArgument is null ? new object[0] : new object[] { constructorArgument }, null);
+    }
+
+    /// <summary>
+    /// A typed handler or reader of a set, dictionary or collection interface: created by its generated description, otherwise only where the runtime has dynamic code (<see cref="CanBindDelegates"/>).
+    /// </summary>
+    /// <param name="handled">The type the handler or reader is for</param>
+    /// <param name="definition">E.g. <c>typeof(DictionaryHandler&lt;,&gt;)</c></param>
+    /// <param name="arguments">Its type arguments</param>
+    /// <returns>null when there is no such instantiation: written and read boxed (a context of an older version, a type it does not describe)</returns>
+    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
+    private object InstantiateCollection(Type handled, Type definition, Type[] arguments, object constructorArgument)
+    {
+      if (Generated(handled) is IGeneratedInstantiations generated)
+      {
+        object instance = generated.Instantiate(definition, constructorArgument);
+        if (instance != null)
+          return instance;
+      }
+      if (!CanBindDelegates)
+        return null;
+      return Activator.CreateInstance(definition.MakeGenericType(arguments), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { constructorArgument }, null);
     }
   }
 }

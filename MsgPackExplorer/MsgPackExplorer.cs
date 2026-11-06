@@ -18,6 +18,9 @@ namespace MsgPackExplorer
             InitializeComponent();
             // The state image of ValidationSeverity.SecurityVulnerability (4), after those of the designer's image list (Error, Warning, Info, Broken)
             imageListValidation.Images.Add("Security.png", Properties.Resources.Security);
+            _truncatedBinIcon = AddTruncatedIcon(4);
+            _truncatedStringIcon = AddTruncatedIcon(5);
+            _truncatedExtensionIcon = AddTruncatedIcon(10);
             _search = new ExplorerSearch(this, searchTextBox, searchMatchCase, searchPrev, searchNext, searchPosCount);
 
             ddEndianess.Items.AddRange(new[]{
@@ -158,7 +161,7 @@ namespace MsgPackExplorer
                 if (value != _continueOnError)
                 {
                     _continueOnError = value;
-                    if (!ReferenceEquals(data, null) && data.Length > 0) Data = data;
+                    if (!ReferenceEquals(_file, null) || !ReferenceEquals(data, null) && data.Length > 0) Reload();
                     btnProcessAfterError.Checked = value; // its handler sets the same value
                 }
             }
@@ -174,23 +177,82 @@ namespace MsgPackExplorer
             set
             {
                 data = value;
+                _file = null;
+                _trimmed = null;
                 if (ReferenceEquals(value, null)) Item = null;
                 else
                 {
-
-                    MsgPackSettings settings = new MsgPackSettings()
-                    {
-                        DynamicallyCompact = false,
-                        PreservePackages = true,
-                        ContinueProcessingOnBreakingError = _continueOnError,
-                        EndianAction = _endianHandling,
-                        ReadStreams = true // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
-                    };
-
+                    MsgPackSettings settings = NewReadSettings();
                     MpRoot root = MsgPackItem.UnpackMultiple(data, settings);
+                    _trimmed = TrimmedData.FromBytes(data, settings.SkippedRanges, MaxHexBytes);
                     Item = root?.Count == 1 ? root[0] : root;
                 }
             }
+        }
+
+        /// <summary>
+        /// Files above this are read from disk (<see cref="OpenFile"/>): only what is shown stays in memory, they can be larger than a .NET array can hold.
+        /// </summary>
+        private const long LargeFileBytes = 256 * 1024 * 1024;
+
+        /// <summary>
+        /// The most the hex view shows (3 characters per byte in a RichTextBox), bytes after it are dots.
+        /// </summary>
+        private const long MaxHexBytes = 16 * 1024 * 1024;
+
+        private string _file;
+
+        /// <summary>
+        /// What the hex view shows: <see cref="data"/> or the file without the middle of the values that are too large for practical debugging.
+        /// </summary>
+        private TrimmedData _trimmed;
+
+        private MsgPackSettings NewReadSettings()
+        {
+            return new MsgPackSettings()
+            {
+                DynamicallyCompact = false,
+                PreservePackages = true,
+                ContinueProcessingOnBreakingError = _continueOnError,
+                EndianAction = _endianHandling,
+                ReadStreams = true, // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
+                TruncateValuesLargerThan = MsgPackSettings.PracticalDebuggingLimit
+            };
+        }
+
+        /// <summary>
+        /// Shows a file. <see cref="Data"/> stays empty for a large file, which is not read into memory.
+        /// </summary>
+        public void OpenFile(string path)
+        {
+            if (new FileInfo(path).Length <= LargeFileBytes)
+            {
+                Data = File.ReadAllBytes(path);
+                return;
+            }
+            _file = path;
+            data = null;
+            Reload();
+        }
+
+        /// <summary>
+        /// Reads the data again (with other settings).
+        /// </summary>
+        private void Reload()
+        {
+            if (ReferenceEquals(_file, null))
+            {
+                Data = data;
+                return;
+            }
+            MsgPackSettings settings = NewReadSettings();
+            MpRoot root;
+            using (FileStream file = new FileStream(_file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            {
+                root = MsgPackItem.UnpackMultiple(file, settings);
+                _trimmed = TrimmedData.Read(file, settings.SkippedRanges, MaxHexBytes);
+            }
+            Item = root?.Count == 1 ? root[0] : root;
         }
 
         private long _displayLimit = 500; // the first choice of the toolbar
@@ -270,7 +332,7 @@ namespace MsgPackExplorer
         private class EditorMetaData
         {
             public int CharOffset = 0;
-            public int Length = 0;
+            public int Length = 0; // in characters of the hex view
             public TreeNode Node;
             public MsgPackItem Item;
         }
@@ -302,37 +364,37 @@ namespace MsgPackExplorer
 
                 treeView1.Nodes.Add(root);
                 treeView1.ExpandAll();
-                if (ReferenceEquals(data, null) || data.Length == 0) data = item.ToBytes();
-                //richTextBox1.Text = BitConverter.ToString(data).Replace('-', ' ');
+                if (ReferenceEquals(_trimmed, null) || _trimmed.Length == 0)
+                {
+                    data = item.ToBytes();
+                    _trimmed = TrimmedData.FromBytes(data, null, MaxHexBytes);
+                }
 
-                string[] hex = BitConverter.ToString(data).Split('-');
                 StringBuilder sb = new StringBuilder("{\\rtf1 {\\colortbl ;\\red255\\green0\\blue0;\\red0\\green77\\blue187;\\red127\\green127\\blue127;}\r\n");
-                int byteOffset = 0;
+                HexText hex = new HexText(_trimmed, sb);
 
                 EditorMetaData meta = null;
-                byteOffset = AddParts(hex, root, byteOffset, sb, ref meta);
+                AddParts(hex, root, ref meta);
                 _objects = ReconstructObjects();
                 ValidatePayload(_objects, (EditorMetaData)item.Tag);
 
                 if (!ReferenceEquals(meta, null) && !ReferenceEquals(meta.Item, null))
                 {
-                    while (meta.Item.StoredOffset + meta.Item.StoredLength > byteOffset)
+                    int end = _trimmed.ToIndex(meta.Item.StoredOffset + meta.Item.StoredLength);
+                    while (end > hex.Index)
                     {
-                        sb.Append(hex[byteOffset]).Append(' ');
-                        byteOffset++;
-                        meta.Length++;
+                        hex.AppendByte();
+                        meta.Length += 3;
                     }
                 }
 
                 meta = (EditorMetaData)item.Tag;
-                meta.Length = byteOffset;
+                meta.Length = hex.Chars;
 
-                if (hex.Length - 1 > byteOffset) sb.Append("\\cf3 "); // gray
-                while (hex.Length - 1 > byteOffset)
-                {
-                    sb.Append(hex[byteOffset]).Append(' ');
-                    byteOffset++;
-                }
+                if (_trimmed.Bytes.Length - 1 > hex.Index) sb.Append("\\cf3 "); // gray
+                while (_trimmed.Bytes.Length - 1 > hex.Index)
+                    hex.AppendByte();
+                hex.AppendDots();
 
                 sb.Append("\r\n}\r\n");
                 richTextBox1.Rtf = sb.ToString();
@@ -347,31 +409,95 @@ namespace MsgPackExplorer
             }
         }
 
-        private int AddParts(string[] hex, TreeNode node, int byteOffset, StringBuilder sb, ref EditorMetaData previousMeta)
+        /// <summary>
+        /// The text of the hex view in RTF: the bytes that were kept, with dots where others were left out (the offsets of the items are in the data, the selection in the text).
+        /// </summary>
+        private sealed class HexText
+        {
+            private const string Dots = "... ";
+            private static readonly string[] ByteTexts = CreateByteTexts();
+            private readonly TrimmedData _data;
+            private int _skipped;
+
+            public HexText(TrimmedData data, StringBuilder rtf)
+            {
+                _data = data;
+                Rtf = rtf;
+            }
+
+            public StringBuilder Rtf { get; }
+
+            /// <summary>
+            /// The next byte of <see cref="TrimmedData.Bytes"/>.
+            /// </summary>
+            public int Index { get; private set; }
+
+            /// <summary>
+            /// The characters written so far (what the selection of the text box counts).
+            /// </summary>
+            public int Chars { get; private set; }
+
+            public bool AtEnd
+            {
+                get { return Index >= _data.Bytes.Length; }
+            }
+
+            public void AppendByte()
+            {
+                AppendDots();
+                if (AtEnd)
+                    return;
+                Rtf.Append(ByteTexts[_data.Bytes[Index]]);
+                Index++;
+                Chars += 3;
+            }
+
+            /// <summary>
+            /// The dots of the bytes left out before the next byte (or at the end of the data).
+            /// </summary>
+            public void AppendDots()
+            {
+                while (_skipped < _data.Skipped.Length && _data.ToIndex(_data.Skipped[_skipped].Offset) <= Index)
+                {
+                    Rtf.Append(Dots);
+                    Chars += Dots.Length;
+                    _skipped++;
+                }
+            }
+
+            private static string[] CreateByteTexts()
+            {
+                string[] texts = new string[256];
+                for (int t = 0; t < texts.Length; t++)
+                    texts[t] = t.ToString("X2") + " ";
+                return texts;
+            }
+        }
+
+        private void AddParts(HexText hex, TreeNode node, ref EditorMetaData previousMeta)
         {
             MsgPackItem item = (MsgPackItem)node.Tag;
-            if (ReferenceEquals(item, null)) return byteOffset;
-            int additionalBytes = 0;
-            while (item.StoredOffset > byteOffset)
+            if (ReferenceEquals(item, null)) return;
+            StringBuilder sb = hex.Rtf;
+            int charsBefore = hex.Chars;
+            int start = _trimmed.ToIndex(item.StoredOffset);
+            while (hex.Index < start)
+                hex.AppendByte();
+            int additionalChars = hex.Chars - charsBefore;
+            if (additionalChars > 0)
             {
-                sb.Append(hex[byteOffset]).Append(' ');
-                byteOffset++;
-                additionalBytes++;
-            }
-            if (additionalBytes > 0)
-            {
-                previousMeta.Length += additionalBytes;
+                previousMeta.Length += additionalChars;
                 TreeNode parent = previousMeta.Node.Parent;
                 while (!ReferenceEquals(parent, null))
                 {
-                    ((EditorMetaData)((MsgPackItem)parent.Tag).Tag).Length += additionalBytes;
+                    ((EditorMetaData)((MsgPackItem)parent.Tag).Tag).Length += additionalChars;
                     parent = parent.Parent;
                 }
             }
 
             EditorMetaData meta = new EditorMetaData()
             {
-                CharOffset = byteOffset * 3,
+                CharOffset = hex.Chars,
                 Node = node,
                 Item = item
             };
@@ -381,16 +507,14 @@ namespace MsgPackExplorer
 
             MsgPackVarLen varLen = item as MsgPackVarLen;
             bool unknownLength = varLen != null && varLen.LengthUnknown;
-            if (!ReferenceEquals(item, null) && !(item is MpError && !ReferenceEquals(((MpError)item).PartialItem, null)) && !(item is MpRoot) && byteOffset < hex.Length)
+            if (!ReferenceEquals(item, null) && !(item is MpError && !ReferenceEquals(((MpError)item).PartialItem, null)) && !(item is MpRoot) && !hex.AtEnd)
             {
                 sb.Append("\\cf1 "); // red
-                sb.Append(hex[byteOffset]).Append(' ');
-                byteOffset++;
-                if (unknownLength && byteOffset < hex.Length)
+                hex.AppendByte();
+                if (unknownLength && !hex.AtEnd)
                 {
                     // The escape sequence of a value of unknown length: 0xC1 and its code
-                    sb.Append(hex[byteOffset]).Append(' ');
-                    byteOffset++;
+                    hex.AppendByte();
                 }
             }
 
@@ -417,32 +541,29 @@ namespace MsgPackExplorer
                 {
                     sb.Append("\\cf2 "); // blue
                     for (int t = lengthBytes - 1; t >= 0; t--)
-                    {
-                        sb.Append(hex[byteOffset]).Append(' ');
-                        byteOffset++;
-                    }
+                        hex.AppendByte();
                 }
             }
             sb.Append("\\cf0 "); // black
 
             for (int t = 0; t < node.Nodes.Count; t++)
             {
-                byteOffset = AddParts(hex, node.Nodes[t], byteOffset, sb, ref previousMeta);
+                AddParts(hex, node.Nodes[t], ref previousMeta);
             }
 
             if (unknownLength)
             {
                 // Its end, 0xC1 0xC0 (not when an error cut it off), after the bytes of its last item
                 long end = item.StoredOffset + item.StoredLength;
-                if (item.StoredLength >= 4 && end <= hex.Length && end - 2 >= byteOffset && data[end - 2] == 0xC1 && data[end - 1] == 0xC0)
+                int endIndex = _trimmed.ToIndex(end);
+                if (item.StoredLength >= 4 && endIndex - 2 >= hex.Index && _trimmed.At(end - 2) == 0xC1 && _trimmed.At(end - 1) == 0xC0)
                 {
-                    while (byteOffset < end - 2)
-                    {
-                        sb.Append(hex[byteOffset]).Append(' ');
-                        byteOffset++;
-                    }
-                    sb.Append("\\cf1 ").Append(hex[byteOffset]).Append(' ').Append(hex[byteOffset + 1]).Append(' ').Append("\\cf0 ");
-                    byteOffset += 2;
+                    while (hex.Index < endIndex - 2)
+                        hex.AppendByte();
+                    sb.Append("\\cf1 ");
+                    hex.AppendByte();
+                    hex.AppendByte();
+                    sb.Append("\\cf0 ");
                 }
             }
 
@@ -451,8 +572,7 @@ namespace MsgPackExplorer
             if (!(parentNode != null && (parentNode.Tag is MpStreamTail || parentNode.Tag is MpString || parentNode.Tag is MpBin)))
                 ValidateItem(meta);
 
-            meta.Length = (byteOffset - (int)item.StoredOffset);
-            return byteOffset;
+            meta.Length = hex.Chars - meta.CharOffset;
         }
 
         private TreeNode GetTreeNodeFor(MsgPackItem item)
@@ -578,6 +698,27 @@ namespace MsgPackExplorer
             }
         }
 
+        private readonly int _truncatedBinIcon;
+        private readonly int _truncatedStringIcon;
+        private readonly int _truncatedExtensionIcon;
+
+        /// <summary>
+        /// The icon with dots along the bottom: the value is too large for practical debugging, only its ends were kept. The image list keeps the bitmap until it is shown, so it is not disposed.
+        /// </summary>
+        /// <returns>The index of the new icon</returns>
+        private int AddTruncatedIcon(int original)
+        {
+            Bitmap bitmap = new Bitmap(imageList1.Images[original]);
+            using (Graphics graphics = Graphics.FromImage(bitmap))
+            {
+                graphics.FillRectangle(Brushes.White, 0, bitmap.Height - 4, bitmap.Width, 4);
+                for (int x = 1; x + 2 <= bitmap.Width; x += 5)
+                    graphics.FillRectangle(Brushes.Red, x, bitmap.Height - 3, 2, 2);
+            }
+            imageList1.Images.Add(bitmap);
+            return imageList1.Images.Count - 1;
+        }
+
         private int GetIconFor(MsgPackItem item)
         {
             if (ReferenceEquals(item, null)) return 0;
@@ -585,11 +726,12 @@ namespace MsgPackExplorer
             if (typ == typeof(MpBool)) return 1;
             if (typ == typeof(MpInt)) return 2;
             if (typ == typeof(MpFloat)) return 3;
-            if (typ == typeof(MpBin)) return 4;
-            if (typ == typeof(MpString)) return 5;
+            if (typ == typeof(MpBin)) return ((MpBin)item).IsTruncated ? _truncatedBinIcon : 4;
+            if (typ == typeof(MpString)) return ((MpString)item).IsTruncated ? _truncatedStringIcon : 5;
             if (typ == typeof(MpArray) || typ == typeof(MpStreamTail)) return 6;
             if (typ == typeof(MpMap)) return 7;
-            if (typ == typeof(MpExt) || typ == typeof(MpStreamIndex) || typ == typeof(MpStreamSidecar)) return 10;
+            if (typ == typeof(MpExt)) return ((MpExt)item).IsTruncated ? _truncatedExtensionIcon : 10;
+            if (typ == typeof(MpStreamIndex) || typ == typeof(MpStreamSidecar)) return 10;
             if (typ == typeof(MpError)) return 11;
             if (typ == typeof(MpRoot)) return 12;
             return -1;
@@ -672,7 +814,7 @@ namespace MsgPackExplorer
                 if (!ReferenceEquals(meta, null))
                 {
                     richTextBox1.SelectionStart = meta.CharOffset;
-                    richTextBox1.SelectionLength = meta.Length * 3;
+                    richTextBox1.SelectionLength = meta.Length;
 
                     richTextBox1.SelectionBackColor = Color.LightGreen;
                 }
@@ -853,7 +995,7 @@ namespace MsgPackExplorer
         {
             if (openFileDialog1.ShowDialog(this) == DialogResult.OK)
             {
-                Data = System.IO.File.ReadAllBytes(openFileDialog1.FileName);
+                OpenFile(openFileDialog1.FileName);
             }
         }
 
@@ -931,7 +1073,7 @@ namespace MsgPackExplorer
             if (choice is null || choice.Value == _endianHandling)
                 return; // both events are raised for one choice
             _endianHandling = choice.Value;
-            Data = data;
+            Reload();
         }
 
         private void installAsFiddlerInspectorToolStripMenuItem_Click(object sender, EventArgs e)

@@ -25,6 +25,37 @@ namespace LsMsgPack.Meta
       return CollectionInfo.Get(tType).Attribute;
     }
 
+    /// <summary>
+    /// <see cref="GetEnumerableAttribute(Type, FullPropertyInfo)"/> when the caller has the info of the type.
+    /// </summary>
+    internal static SerializeEnumerableAttribute GetEnumerableAttribute(CollectionInfo info, FullPropertyInfo assignedTo)
+    {
+      if (assignedTo?.CustomAttributes != null && assignedTo.CustomAttributes.TryGetValue(nameof(SerializeEnumerableAttribute), out object att))
+        return (SerializeEnumerableAttribute)att;
+
+      return info.Attribute;
+    }
+
+    /// <summary>
+    /// A value of this type never gets a type id, see <see cref="NeedsTypeId(Type, FullPropertyInfo, MsgPackOptions)"/>.
+    /// </summary>
+    internal static bool NeverHasTypeId(Type tType)
+    {
+      return IsHiddenFrameworkType(tType) || HasAnonymousType(tType);
+    }
+
+    /// <summary>
+    /// <see cref="NeedsTypeId(Type, FullPropertyInfo, MsgPackOptions)"/> with the answer of <see cref="NeverHasTypeId"/> kept by the caller (these two look the type up in a dictionary, per value).
+    /// </summary>
+    internal static bool NeedsTypeId(Type tType, FullPropertyInfo assignedTo, MsgPackOptions settings, bool neverHasTypeId)
+    {
+      if (neverHasTypeId)
+        return false;
+      if ((settings._addTypeIdOptions & AddTypeIdOption.Always) != 0)
+        return true;
+      return (settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0 && assignedTo?.AssignedToType != tType;
+    }
+
     internal static bool NeedsTypeId(Type tType, FullPropertyInfo assignedTo, MsgPackOptions settings)
     {
       if ((settings._addTypeIdOptions & AddTypeIdOption.Always) != 0)
@@ -219,8 +250,20 @@ namespace LsMsgPack.Meta
       if (!hasState)
         return null; // nothing to lose (e.g. an EventArgs)
 
+      if (IsJsonDocumentType(type))
+        return $"{type.FullName} is not supported: MsgPack has no form for a JSON document. Hold the JSON as a string (JsonElement.GetRawText(), JsonNode.ToJsonString(), JsonDocument.Parse(text)) or its values in a class of your own, "
+          + "or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions).";
+
       return $"{type.FullName} is not supported: it has no settable properties, so it would be written as an empty map and read back as its default value. "
         + "Serialize the values it holds (in a class of your own), or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions).";
+    }
+
+    /// <summary>
+    /// System.Text.Json's JsonElement, JsonDocument and the JsonNode types, the ones analyzer LSMP009 reports. By name: the .NET Standard builds do not reference System.Text.Json.
+    /// </summary>
+    private static bool IsJsonDocumentType(Type type)
+    {
+      return type.Namespace == "System.Text.Json.Nodes" || type.FullName == "System.Text.Json.JsonElement" || type.FullName == "System.Text.Json.JsonDocument";
     }
 
     internal static IndexedSchemaTypeResolver GetIndexedSchema(MsgPackOptions settings)

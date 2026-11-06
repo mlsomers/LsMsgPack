@@ -246,6 +246,7 @@ namespace LtMsgPack.Data
     /// </summary>
     [UnconditionalSuppressMessage("Trimming", "IL2060", Justification = TrimReasons.Fallback)]
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("Trimming", "IL2071", Justification = TrimReasons.Fallback)] // the struct constraint of NullableOf (reported by the .NET 10 tools), a failure converts the value boxed
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
     private static ColumnSetter<T> CreateTyped(Serializer serializer, PropertyInfo property, Type type, Type underlying, int ordinal, bool dbReader)
     {

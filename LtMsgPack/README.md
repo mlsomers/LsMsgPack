@@ -1,6 +1,6 @@
 ﻿# LtMsgPack
 
-Fast MsgPack serializer for .NET classes, used like the xml and json serializers. It writes and reads your objects directly, without an intermediate item tree. On the invoices of the benchmark it writes about 3-4x and reads about 4x as fast as System.Text.Json, with 35-47% smaller payloads.
+Fast MsgPack serializer for .NET classes, used like the xml and json serializers. It writes and reads your objects directly, without an intermediate item tree. On the invoices of the benchmark it writes about 3x and reads about 5x as fast as System.Text.Json, with 35-47% smaller payloads.
 
 - **Indexed schema** (on by default): each message lists its types and property names once, and the body refers to them by index. Messages are smaller, and data written by older or newer versions of your classes still loads.
 - **Polymorphism** out of the box: a type id is written where a value's type differs from the declared type (a `List<IShape>` holding circles and squares), without extra attributes.
@@ -72,6 +72,7 @@ options.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(IShape));
 - [The source generator](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md): NativeAOT, WebAssembly AOT, trimming, speed
 - [Wire formats, the indexed schema and polymorphism](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md)
 - [Compatibility with other MsgPack libraries](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Compatibility.md)
+- [LtMsgPack vs MessagePack-CSharp vs Nerdbank.MessagePack](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Comparison.md): benchmarks, and when to pick which
 - [Security](https://github.com/mlsomers/LsMsgPack/blob/master/docs/security.md)
 - [Streaming](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Streaming.md): `MsgPackStreamWriter` and `MsgPackStreamReader`, values one after another, arrays and maps of unknown length, an index at the end of the stream to go to any table or row
 - [Reporting differences](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ReadDifferences.md): what didn't match between the data and your classes (`serializer.Deserialize<T>(data, out ReadDifferences differences)`)

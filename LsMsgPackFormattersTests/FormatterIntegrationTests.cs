@@ -77,6 +77,8 @@ namespace LsMsgPackFormattersTests
   {
     public Guid Id { get; set; }
     public decimal Total { get; set; }
+    public DateTimeOffset Issued { get; set; }
+    public int Discount { get; set; }
   }
 
   [ApiController]
@@ -110,7 +112,7 @@ namespace LsMsgPackFormattersTests
     }
 
     [HttpGet("receipt")]
-    public Receipt GetReceipt() => new Receipt { Id = FormatterIntegrationTests.ReceiptId, Total = 12.50m };
+    public Receipt GetReceipt() => new Receipt { Id = FormatterIntegrationTests.ReceiptId, Total = 12.50m, Issued = FormatterIntegrationTests.ReceiptIssued };
 
     [HttpGet("orders")]
     public List<Order> GetOrders() => Enumerable.Range(1, 3).Select(MakeOrder).ToList();
@@ -151,6 +153,7 @@ namespace LsMsgPackFormattersTests
   {
     private static readonly Order SampleOrder = new Order { Id = 42, Customer = "Infotopie", Amounts = new[] { 1.5, 2.25 } };
     internal static readonly Guid ReceiptId = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
+    internal static readonly DateTimeOffset ReceiptIssued = new DateTimeOffset(2026, 11, 3, 14, 30, 0, TimeSpan.FromHours(2));
 
     private static MsgPackSettings Plain => new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never, ObjectLayout = ObjectLayout.Map };
 
@@ -689,6 +692,41 @@ namespace LsMsgPackFormattersTests
 
         Assert.That(SchemaHeader(response), Is.Null);
         Assert.That(response.Headers.Vary, Is.Empty);
+      }
+    }
+
+    [TestCase(MsgPackMediaTypes.MsgPack)]
+    [TestCase(MsgPackMediaTypes.XMsgPack)]
+    public async Task PlainMediaTypesDefaultToWhatAnyLibraryReads(string mediaType)
+    {
+      (IHost host, HttpClient client) = await StartAsync();
+      using (host)
+      {
+        HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "/test/receipt");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(mediaType));
+        HttpResponseMessage response = await client.SendAsync(request);
+
+        Dictionary<string, object> receipt = MsgPackSerializer.Deserialize<Dictionary<string, object>>(await response.Content.ReadAsByteArrayAsync(), Plain);
+        Assert.That(receipt["Id"], Is.EqualTo(ReceiptId.ToString("D")));
+        Assert.That(receipt["Total"], Is.EqualTo("12.50"));
+        Assert.That(receipt["Issued"], Is.EqualTo(ReceiptIssued.UtcDateTime), "A timestamp of the moment");
+        Assert.That(Convert.ToInt32(receipt["Discount"]), Is.EqualTo(0), "Default values are written");
+      }
+    }
+
+    [Test]
+    public async Task XLsMsgPackKeepsTheOffsetOfADateTimeOffset()
+    {
+      (IHost host, HttpClient client) = await StartAsync();
+      using (host)
+      {
+        HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "/test/receipt");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack));
+        HttpResponseMessage response = await client.SendAsync(request);
+
+        Receipt receipt = MsgPackSerializer.Deserialize<Receipt>(await response.Content.ReadAsByteArrayAsync(), new MsgPackSettings());
+        Assert.That(receipt.Issued, Is.EqualTo(ReceiptIssued));
+        Assert.That(receipt.Issued.Offset, Is.EqualTo(ReceiptIssued.Offset));
       }
     }
 

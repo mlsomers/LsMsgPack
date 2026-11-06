@@ -77,8 +77,8 @@ namespace LsMsgPack.Analyzers
     public static readonly DiagnosticDescriptor JsonDocument = new DiagnosticDescriptor("LSMP009", "JSON document type is not serialized",
       "{0}: the serializers do not write or read {1}, a JSON document type. Hold the JSON as a string, or its values in a class of your own.",
       SupportCategory, DiagnosticSeverity.Warning, true,
-      "System.Text.Json's JsonElement, JsonDocument and JsonNode (JsonObject, JsonArray, JsonValue) have no settable state: the serializers refuse them with a MsgPackException "
-      + "(in an ASP.NET Core response a 500, as a request body a 400). Json.NET's JToken types (JObject, JArray, JValue...) are written as their own properties and read back empty or with an exception. "
+      "System.Text.Json's JsonElement, JsonDocument and JsonNode (JsonObject, JsonArray, JsonValue) have no settable state: the serializers don't write or read their content, they throw "
+      + "(for a JsonElement in an ASP.NET Core response a 500, as a request body a 400). Json.NET's JToken types (JObject, JArray, JValue...) are written as their own properties and read back empty or with an exception. "
       + "A string with the JSON text, or a class with the values, works both ways.",
       DocsUrl + "lsmp009-json-document-type-is-not-serialized");
   }

@@ -4,7 +4,7 @@
 
 Key facts:
 
-- Use the `LtMsgPack` package to serialize: `dotnet add package LtMsgPack`, then `byte[] data = LtMsgPackSerializer.Default.Serialize(order);` and `Order copy = LtMsgPackSerializer.Default.Deserialize<Order>(data);` (namespace `LtMsgPack`). On the invoice benchmark it writes about 3-4x and reads about 4x as fast as System.Text.Json, with 35-47% smaller payloads.
+- Use the `LtMsgPack` package to serialize: `dotnet add package LtMsgPack`, then `byte[] data = LtMsgPackSerializer.Default.Serialize(order);` and `Order copy = LtMsgPackSerializer.Default.Deserialize<Order>(data);` (namespace `LtMsgPack`). On the invoice benchmark it writes about 3x and reads about 5x as fast as System.Text.Json, with 35-47% smaller payloads.
 - The `LsMsgPack` package (the repository's name) writes and reads the same bytes but builds a tree of MsgPack items, for inspecting data: slower, only use it for that.
 - ASP.NET Core: `dotnet add package LsMsgPack.AspNetCore`, then `services.AddControllers().AddLsMsgPackSerializerFormatters();` (minimal APIs: `AddLsMsgPack()` and `MsgPackResults.MsgPack(value)`). Media types `application/msgpack`, `application/x-msgpack` (plain MsgPack) and `application/x-lsmsgpack` (indexed schema with type ids).
 - Polymorphism needs no attributes: a type id is written where a value's type differs from the declared type. Data written by older or newer versions of the classes still loads.
@@ -23,6 +23,7 @@ Key facts:
 - [Web formatters](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/WebFormatters.md): ASP.NET Core, Web API 2 / HttpClient and MVC 5 formatters, settings per media type, schema negotiation
 - [Schema, type ids and polymorphism](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/schema.md): how objects look on the wire, the indexed schema, type ids, what each option costs
 - [Compatibility](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Compatibility.md): settings to exchange data with MessagePack-CSharp, Nerdbank.MessagePack, Python, JavaScript and others, tested by the interop tests
+- [Comparison](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Comparison.md): LtMsgPack vs MessagePack-CSharp vs Nerdbank.MessagePack, benchmarks in each library's fastest setup and when to pick which
 - [Source generator](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/SourceGenerator.md): compile-time plans for NativeAOT, WebAssembly AOT, iOS and trimming
 - [Streaming](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Streaming.md): MsgPackStreamWriter and MsgPackStreamReader, values of unknown length, tables with one schema, async reading
 - [Data readers](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/DataReader.md): LtMsgPack.Data, ADO.NET result sets and table dumps as MsgPack streams, dumps read back as a DbDataReader

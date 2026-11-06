@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Text;
 
 namespace LsMsgPackInspector
@@ -33,6 +34,11 @@ namespace LsMsgPackInspector
     /// <see cref="ObjectsMode.Auto"/> shows the objects from this confidence on (see <see cref="ObjectAssessment"/>).
     /// </summary>
     public ObjectConfidence ShowObjectsAt { get; set; } = ObjectConfidence.High;
+
+    /// <summary>
+    /// A str, bin or ext with a longer content only keeps its ends (<see cref="MsgPackSettings.TruncateValuesLargerThan"/>).
+    /// </summary>
+    public long LargeValueLimit { get; set; } = MsgPackSettings.PracticalDebuggingLimit;
   }
 
   /// <summary>
@@ -40,7 +46,14 @@ namespace LsMsgPackInspector
   /// </summary>
   public class InspectorDocument
   {
+    /// <summary>
+    /// The most of a file that is kept for the hex view, whatever the file holds. The extension reads smaller files itself.
+    /// </summary>
+    private const long MaxFileHexBytes = 256 * 1024 * 1024;
+
     private byte[] _data = new byte[0];
+    private string _path; // read from this file instead of _data
+    private TrimmedData _trimmed; // while loading
     private MsgPackItem _item;
     private long _displayLimit;
     private long _nodeCount;
@@ -53,18 +66,31 @@ namespace LsMsgPackInspector
     private readonly Dictionary<MsgPackItem, int> _ids = new Dictionary<MsgPackItem, int>(ReferenceEqualityComparer.Instance);
     private readonly List<List<int>> _children = new List<List<int>>();
 
-    public byte[] Data
-    {
-      get { return _data; }
-    }
-
     /// <summary>
     /// Reads the data (or the data loaded before when null) with the settings.
     /// </summary>
     public LoadResult Load(byte[] data, InspectorSettings settings)
     {
       if (data != null)
+      {
         _data = data;
+        _path = null;
+      }
+      return Read(settings);
+    }
+
+    /// <summary>
+    /// Reads a file without having all of it in memory, it may be larger than a .NET array can hold.
+    /// </summary>
+    public LoadResult LoadFile(string path, InspectorSettings settings)
+    {
+      _path = path;
+      _data = null;
+      return Read(settings);
+    }
+
+    private LoadResult Read(InspectorSettings settings)
+    {
       _items.Clear();
       _ids.Clear();
       _children.Clear();
@@ -72,8 +98,8 @@ namespace LsMsgPackInspector
       _schemaItems = new List<MsgPackItem>();
       _displayLimit = settings.DisplayLimit <= 0 ? long.MaxValue : settings.DisplayLimit;
 
-      LoadResult result = new LoadResult() { Length = _data.Length, DisplayLimit = _displayLimit };
-      if (_data.Length == 0)
+      LoadResult result = new LoadResult() { Length = _data?.Length ?? 0, DisplayLimit = _displayLimit };
+      if (_path is null && _data.Length == 0)
         return result;
 
       MsgPackSettings msgPackSettings = new MsgPackSettings()
@@ -82,20 +108,38 @@ namespace LsMsgPackInspector
         PreservePackages = true,
         ContinueProcessingOnBreakingError = settings.ContinueOnError,
         EndianAction = settings.Endian,
-        ReadStreams = true // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
+        ReadStreams = true, // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
+        TruncateValuesLargerThan = settings.LargeValueLimit
       };
 
       try
       {
-        MpRoot root = MsgPackItem.UnpackMultiple(_data, msgPackSettings);
-        _item = root?.Count == 1 ? root[0] : root;
+        if (_path != null)
+        {
+          using (FileStream file = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+          {
+            ReadItems(file, msgPackSettings, result);
+            _trimmed = TrimmedData.Read(file, msgPackSettings.SkippedRanges, MaxFileHexBytes);
+          }
+          result.HexBytes = _trimmed.Bytes;
+        }
+        else
+        {
+          using (MemoryStream memory = new MemoryStream(_data, false))
+            ReadItems(memory, msgPackSettings, result);
+          _trimmed = TrimmedData.FromBytes(_data, msgPackSettings.SkippedRanges);
+          if (_trimmed.Skipped.Length > 0)
+            result.HexBytes = _trimmed.Bytes;
+        }
       }
       catch (Exception ex)
       {
         result.Error = ex.Message;
         return result;
       }
-      if (ReferenceEquals(_item, null))
+      result.Length = _trimmed.Length;
+      result.Skipped = _trimmed.Skipped;
+      if (result.Error != null || ReferenceEquals(_item, null))
         return result;
 
       _schemaItems = RootObject.FindSchemaItems(_item);
@@ -116,7 +160,21 @@ namespace LsMsgPackInspector
       bool showObjects = settings.Objects == ObjectsMode.Show || settings.Objects == ObjectsMode.Auto && assessment.Confidence >= settings.ShowObjectsAt;
       if (showObjects)
         result.Objects = BuildObjects(objects);
+      _trimmed = null;
       return result;
+    }
+
+    private void ReadItems(Stream source, MsgPackSettings settings, LoadResult result)
+    {
+      try
+      {
+        MpRoot root = MsgPackItem.UnpackMultiple(source, settings);
+        _item = root?.Count == 1 ? root[0] : root;
+      }
+      catch (Exception ex)
+      {
+        result.Error = ex.Message;
+      }
     }
 
     /// <summary>
@@ -158,7 +216,8 @@ namespace LsMsgPackInspector
         Parent = parent,
         Role = role,
         Kind = GetKind(item),
-        Schema = schema
+        Schema = schema,
+        Truncated = (item as MsgPackVarLen)?.IsTruncated ?? false
       };
 
       if (ReferenceEquals(item, null))
@@ -179,7 +238,7 @@ namespace LsMsgPackInspector
           // An escape sequence (0xC1 and its code) starts it, 0xC1 0xC0 ends it (not when an error cut it off)
           model.TypeBytes = 2;
           long end = item.StoredOffset + item.StoredLength;
-          model.EndBytes = item.StoredLength >= 4 && end <= _data.Length && _data[end - 2] == 0xC1 && _data[end - 1] == 0xC0 ? 2 : 0;
+          model.EndBytes = item.StoredLength >= 4 && _trimmed.At(end - 2) == 0xC1 && _trimmed.At(end - 1) == 0xC0 ? 2 : 0;
         }
         else
         {
@@ -463,7 +522,7 @@ namespace LsMsgPackInspector
       RootObject root = new RootObject();
       try
       {
-        root.Reconstruct(_item, null, _data); // the data: schemas written once per stream are found by the references to them
+        root.Reconstruct(_item, null, _trimmed); // the data: schemas written once per stream are found by the references to them
       }
       catch (Exception ex)
       {

@@ -7,7 +7,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
 using System.Collections.Generic;
 using System.Threading;
 #endif
@@ -45,7 +45,7 @@ namespace LsMsgPackWebApiFormatters
       Headers.ContentType = MediaTypeHeaderValue.Parse(mediaType + "; " + MsgPackMediaTypes.StreamParameter);
     }
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
     /// <summary>
     /// The items as they come, as the ASP.NET Core formatters stream an <c>IAsyncEnumerable&lt;T&gt;</c>: a head of <c>List&lt;T&gt;</c> (its schema), then an array of unknown length.
     /// With known lengths this would be the payload of the <c>List&lt;T&gt;</c>. The server reads it with <see cref="MsgPackStreamReader.ReadHeadAsync{TRoot}"/> and <see cref="MsgPackStreamReader.ReadElementsAsync{T}"/>.

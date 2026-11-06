@@ -39,6 +39,8 @@ namespace LsMsgPack
 #if KEEPTRACK
     internal bool _preservePackages = Default_PreservePackages;
     internal bool _continueProcessingOnBreakingError = Default_ContinueProcessingOnBreakingError;
+    internal long _truncateValuesLargerThan = long.MaxValue;
+    private readonly List<SkippedRange> _skippedRanges = new List<SkippedRange>();
 #endif
 
     internal ICustomExt[] _customExtentionTypes = Default_CustomExtentionTypes;
@@ -88,6 +90,34 @@ namespace LsMsgPack
     {
       get { return _continueProcessingOnBreakingError; }
       set { _continueProcessingOnBreakingError = value; }
+    }
+
+    /// <summary>
+    /// What the explorers use for <see cref="TruncateValuesLargerThan"/>.
+    /// </summary>
+    public const long PracticalDebuggingLimit = 16 * 1024 * 1024;
+
+    /// <summary>
+    /// A str, bin or ext with a longer content in bytes only keeps its first and last 100 characters or bytes, the rest is passed without reading it into memory (<see cref="MsgPackVarLen.IsTruncated"/>, <see cref="SkippedRanges"/>).
+    /// This is for looking at the data, not for reading objects from it. Off (<see cref="long.MaxValue"/>) by default: a value that does not fit a .NET array is then an error.
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Truncate Values Larger Than")]
+    [Description("A str, bin or ext with a longer content in bytes only keeps its first and last 100 characters or bytes, the rest is not read into memory.")]
+    [DefaultValue(long.MaxValue)]
+    public long TruncateValuesLargerThan
+    {
+      get { return _truncateValuesLargerThan; }
+      set { _truncateValuesLargerThan = value; }
+    }
+
+    /// <summary>
+    /// The bytes of the truncated values that were read with these settings and not kept, for <see cref="TrimmedData"/>.
+    /// </summary>
+    [Browsable(false)]
+    public List<SkippedRange> SkippedRanges
+    {
+      get { return _skippedRanges; }
     }
 
 #endif

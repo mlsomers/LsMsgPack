@@ -51,6 +51,7 @@ namespace LtMsgPack.Writing
     /// </summary>
     internal FullPropertyInfo RootInfo;
     internal object RootHandler;
+    internal FullPropertyInfo RootHandlerOf; // the root info (one per type) RootHandler was looked up for
     internal WriteTypeInfo RootTypeInfo;
     internal IdMode Mode;
     internal InlineSchema Inline;
@@ -151,6 +152,17 @@ namespace LtMsgPack.Writing
             plan.LastSession = new ObjectPlan.SessionIds(IdSettings, infos, keys);
           return keys;
       }
+    }
+
+    /// <summary>
+    /// <see cref="WriteTypeId(Type, FullPropertyInfo)"/> of the type of a plan (which has its schema entry: no lookup).
+    /// </summary>
+    internal void WriteTypeId(ObjectPlan plan, FullPropertyInfo assignedTo)
+    {
+      if (Mode == IdMode.Inline)
+        W.Int32(Inline.Register(plan.Schema));
+      else
+        WriteTypeId(plan.Type, assignedTo);
     }
 
     /// <summary>

@@ -13,7 +13,8 @@
     <!-- Framework-dependent and portable: runs with the user's dotnet on any OS (also as a .NET tool), like lsmsgpack-mcp -->
     <SelfContained>false</SelfContained>
     <UseAppHost>false</UseAppHost>
-    <RollForward>Major</RollForward>
+    <!-- The newest runtime installed: it loads the user's assemblies, which may target a newer .NET than this tool (as lsmsgpack-mcp's read-as worker) -->
+    <RollForward>LatestMajor</RollForward>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <IsPackable>true</IsPackable>
     <PackAsTool>true</PackAsTool>
@@ -35,9 +36,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- 4.11: MSBuildWorkspace loads the projects in a build host process of its own (the SDK's MSBuild may need a newer runtime than this tool) -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
-    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="4.11.0" />
+    <!-- MSBuildWorkspace loads the projects in a build host process of its own (the SDK's MSBuild may need a newer runtime than this tool).
+         5.0 and up no longer bring MSBuild's own packages (with their security advisories); 5.6 is the last version with a net8.0 build. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.6.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.6.0" />
     <PackageReference Include="Microsoft.Build.Locator" Version="1.7.8" />
   </ItemGroup>
 

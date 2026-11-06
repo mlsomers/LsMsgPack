@@ -34,6 +34,26 @@ namespace LtMsgPack.Generated
       return new LtGeneratedProperty<TTarget, TValue>(name, get, set);
     }
 
+    /// <summary>
+    /// A struct with properties: the runtime's object plans write and read it by reference (see Serializer.StructPlans), also without dynamic code.
+    /// </summary>
+    /// <param name="creator">Calls the declared parameterless constructor, null when the struct has none (it is read into its default, by reference)</param>
+    /// <param name="code">The generated writer and reader of the struct, null when there is none</param>
+    /// <param name="properties">The properties the struct declares (<see cref="StructProperty{TTarget, TValue}"/>)</param>
+    public static GeneratedType Struct<T>(Func<T> creator, GeneratedStructCode<T> code, params GeneratedProperty[] properties) where T : struct
+    {
+      if (code != null)
+        code.Unboxer = new StructUnboxer<T, T>();
+      return new GeneratedStructType<T>(creator, code, properties);
+    }
+
+    /// <param name="get">null when the generated code cannot call the getter</param>
+    /// <param name="set">null when the generated code cannot call the setter (not accessible, or init-only)</param>
+    public static GeneratedProperty StructProperty<TTarget, TValue>(string name, StructGetter<TTarget, TValue> get, StructSetter<TTarget, TValue> set) where TTarget : struct
+    {
+      return new LtGeneratedStructProperty<TTarget, TValue>(name, get, set);
+    }
+
     public static GeneratedType Enum<T>() where T : struct
     {
       return new GeneratedEnumType<T>();
@@ -61,6 +81,30 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
+    /// <c>HashSet&lt;T&gt;</c>: its typed handler and reader, also without dynamic code.
+    /// </summary>
+    public static GeneratedType HashSet<T>()
+    {
+      return new GeneratedHashSetType<T>();
+    }
+
+    /// <summary>
+    /// <c>Dictionary&lt;TKey, TValue&gt;</c>: its typed handler and reader, also without dynamic code.
+    /// </summary>
+    public static GeneratedType Dictionary<TKey, TValue>()
+    {
+      return new GeneratedDictionaryType<TKey, TValue>();
+    }
+
+    /// <summary>
+    /// A generic interface of a collection whose concrete type has a typed reader (<c>IList&lt;T&gt;</c> is a <c>List&lt;T&gt;</c>, <c>ISet&lt;T&gt;</c> a <c>HashSet&lt;T&gt;</c>...), described separately.
+    /// </summary>
+    public static GeneratedType CollectionInterface<T>() where T : class
+    {
+      return new GeneratedCollectionInterfaceType<T>();
+    }
+
+    /// <summary>
     /// Another collection or dictionary (filled by the runtime as before).
     /// </summary>
     /// <param name="creator">Calls the accessible parameterless constructor, null when there is none</param>
@@ -82,7 +126,7 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
-    /// Any other type the serializer writes and reads boxed (structs with properties, framework types...).
+    /// Any other type: framework types, multidimensional arrays...
     /// </summary>
     public static GeneratedType Boxed<T>()
     {
@@ -144,6 +188,13 @@ namespace LtMsgPack.Generated
     GeneratedObjectCode Code { get; }
   }
 
+  /// <summary>
+  /// A generated struct: its accessors, creator and instantiations need no dynamic code (Serializer.StructPlans).
+  /// </summary>
+  internal interface IGeneratedStruct
+  {
+  }
+
   internal sealed class GeneratedObjectType<T> : LtGeneratedType<T>, IGeneratedObject where T : class
   {
     private readonly GeneratedObjectCode<T> _code;
@@ -161,6 +212,42 @@ namespace LtMsgPack.Generated
         return new ObjectHandler<T>((Serializer)argument);
       if (definition == typeof(ObjectReader<>))
         return new ObjectReader<T>((Serializer)argument);
+      return base.Instantiate(definition, argument);
+    }
+  }
+
+  /// <summary>
+  /// A struct (see <see cref="GeneratedValues.Struct{T}"/>): its object handler and reader, the box it is read into without a declared constructor, the reader of its computed properties.
+  /// </summary>
+  internal sealed class GeneratedStructType<T> : LtGeneratedType<T>, IGeneratedObject, IGeneratedStruct where T : struct
+  {
+    private readonly GeneratedStructCode<T> _code;
+
+    internal GeneratedStructType(Func<T> creator, GeneratedStructCode<T> code, GeneratedProperty[] properties) : base(BoxCreator(creator), properties)
+    {
+      _code = code;
+    }
+
+    /// <summary>
+    /// Without a declared parameterless constructor the default in a box: StructCreator, which the read plan recognizes (it then reads the struct into a local, ReadPlan.ByRef).
+    /// </summary>
+    private static Func<object> BoxCreator(Func<T> creator)
+    {
+      if (creator is null)
+        return new StructCreator<T>().Create;
+      return () => creator();
+    }
+
+    public GeneratedObjectCode Code { get { return _code; } }
+
+    public override object Instantiate(Type definition, object argument)
+    {
+      if (definition == typeof(ObjectHandler<>))
+        return new ObjectHandler<T>((Serializer)argument);
+      if (definition == typeof(ObjectReader<>))
+        return new ObjectReader<T>((Serializer)argument);
+      if (definition == typeof(StructComputedPropReader<>))
+        return new StructComputedPropReader<T>((FullPropertyInfo)argument);
       return base.Instantiate(definition, argument);
     }
   }
@@ -213,6 +300,59 @@ namespace LtMsgPack.Generated
     }
   }
 
+  internal sealed class GeneratedHashSetType<T> : LtGeneratedType<HashSet<T>>
+  {
+    internal GeneratedHashSetType() : base(() => new HashSet<T>())
+    {
+    }
+
+    public override object Instantiate(Type definition, object argument)
+    {
+      if (definition == typeof(HashSetHandler<>))
+        return new HashSetHandler<T>((Serializer)argument);
+      if (definition == typeof(HashSetReader<>))
+        return new HashSetReader<T>((Serializer)argument);
+      return base.Instantiate(definition, argument);
+    }
+  }
+
+  internal sealed class GeneratedDictionaryType<TKey, TValue> : LtGeneratedType<Dictionary<TKey, TValue>>
+  {
+    internal GeneratedDictionaryType() : base(() => new Dictionary<TKey, TValue>())
+    {
+    }
+
+    public override object Instantiate(Type definition, object argument)
+    {
+      if (definition == typeof(DictionaryHandler<,>))
+        return new DictionaryHandler<TKey, TValue>((Serializer)argument);
+      if (definition == typeof(DictionaryReader<,>))
+        return new DictionaryReader<TKey, TValue>((Serializer)argument);
+      return base.Instantiate(definition, argument);
+    }
+  }
+
+  /// <summary>
+  /// The source generator predicted a concrete type with a typed reader for this interface (see Serializer.InterfaceReader).
+  /// </summary>
+  internal interface IGeneratedCollectionInterface
+  {
+  }
+
+  internal sealed class GeneratedCollectionInterfaceType<T> : LtGeneratedType<T>, IGeneratedCollectionInterface where T : class
+  {
+    internal GeneratedCollectionInterfaceType() : base((Func<T>)null)
+    {
+    }
+
+    public override object Instantiate(Type definition, object argument)
+    {
+      if (definition == typeof(CollectionInterfaceReader<>))
+        return new CollectionInterfaceReader<T>((Serializer)argument);
+      return base.Instantiate(definition, argument);
+    }
+  }
+
   internal sealed class GeneratedArrayType<T> : LtGeneratedType<T[]>
   {
     internal GeneratedArrayType() : base(null)
@@ -258,6 +398,26 @@ namespace LtMsgPack.Generated
     public PropReader CreateReader(Serializer serializer, FullPropertyInfo info)
     {
       return Set is null ? null : new PropReader<TTarget, TValue>(serializer, info, Set);
+    }
+  }
+
+  /// <summary>
+  /// The generated accessors of a property of a struct, creating the serializer's property writer and reader by reference.
+  /// </summary>
+  internal sealed class LtGeneratedStructProperty<TTarget, TValue> : GeneratedStructProperty<TTarget, TValue>, ILtGeneratedProperty where TTarget : struct
+  {
+    internal LtGeneratedStructProperty(string name, StructGetter<TTarget, TValue> get, StructSetter<TTarget, TValue> set) : base(name, get, set)
+    {
+    }
+
+    public PropWriter CreateWriter(Serializer serializer, FullPropertyInfo info)
+    {
+      return Get is null ? null : new StructPropWriter<TTarget, TValue>(serializer, info, Get);
+    }
+
+    public PropReader CreateReader(Serializer serializer, FullPropertyInfo info)
+    {
+      return Set is null ? null : new StructPropReader<TTarget, TValue>(serializer, info, Set);
     }
   }
 }

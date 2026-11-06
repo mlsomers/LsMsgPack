@@ -56,7 +56,7 @@ namespace LtMsgPack.GeneratorTests
     }
 
     /// <summary>
-    /// An invoice of the fixture's model (GeneratorTests.InvoiceModel), filled by reflection.
+    /// An invoice of the fixture's model (GeneratorTests.InvoiceModel), filled by reflection (the struct Money only where the model has it).
     /// </summary>
     private static object Sample(Assembly assembly)
     {
@@ -64,7 +64,10 @@ namespace LtMsgPack.GeneratorTests
       object customer = Create(assembly, "Shop.Customer", ("CustomerId", 7), ("CompanyName", "Infotopie"), ("BillingAddress", address));
       Type lineType = assembly.GetType("Shop.InvoiceLine");
       IList lines = (IList)Activator.CreateInstance(typeof(System.Collections.Generic.List<>).MakeGenericType(lineType));
-      lines.Add(Create(assembly, "Shop.InvoiceLine", ("LineNumber", 1), ("Quantity", 2.5m), ("Unit", Enum.ToObject(assembly.GetType("Shop.UnitOfMeasure"), 1))));
+      object first = Create(assembly, "Shop.InvoiceLine", ("LineNumber", 1), ("Quantity", 2.5m), ("Unit", Enum.ToObject(assembly.GetType("Shop.UnitOfMeasure"), 1)));
+      if (assembly.GetType("Shop.Money") != null) // version 3 and later: a struct
+        lineType.GetProperty("UnitPrice").SetValue(first, Create(assembly, "Shop.Money", ("Amount", 100.99m), ("Currency", "EUR")));
+      lines.Add(first);
       lines.Add(Create(assembly, "Shop.InvoiceLine", ("LineNumber", 2)));
       return Create(assembly, "Shop.Invoice",
         ("Id", new Guid("0f8fad5b-d9cb-469f-a165-70867728950e")),

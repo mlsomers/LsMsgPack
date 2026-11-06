@@ -76,7 +76,7 @@ namespace LtMsgPack.Http
       if (options is null)
         throw new ArgumentNullException(nameof(options));
 
-      LtMsgPackOptions plain = options.Plain?.Clone() ?? MsgPackMediaTypes.ToPlain(new LtMsgPackOptions());
+      LtMsgPackOptions plain = options.Plain?.Clone() ?? LtMsgPackPresets.Generic();
       plain.PropertyNameCaseInsensitive |= options.PropertyNameCaseInsensitive;
       _plain = new LtMsgPackSerializer(plain, context);
 

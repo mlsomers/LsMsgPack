@@ -71,7 +71,7 @@ Cons:
 - Property names are repeated for every object, which makes large collections big.
 - No type information is included. A property declared as an interface, an abstract class or `object` can't be deserialized unless a custom [type resolver](#resolving-by-signature) recognizes the type from its properties. For the example above, reading it back throws *"Cannot create an instance of an interface or abstract type"*.
 
-This is what the web formatters send for `application/msgpack` and `application/x-msgpack` (see [Web formatters](WebFormatters.md)).
+This is what the web formatters send for `application/msgpack` and `application/x-msgpack`, with every value and `Guid` and `decimal` as text (`LtMsgPackPresets.Generic()`, see [Web formatters](WebFormatters.md)).
 
 Type ids
 --------

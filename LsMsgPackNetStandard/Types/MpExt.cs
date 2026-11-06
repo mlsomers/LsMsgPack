@@ -44,6 +44,13 @@ namespace LsMsgPack {
       get { return value is null ? 0 : value.Length; } // null when the data ended before the content (KEEPTRACK keeps the item)
     }
 
+#if KEEPTRACK
+    [Browsable(true)]
+    public override long OriginalLength {
+      get { return base.OriginalLength; }
+    }
+#endif
+
     ///<summary>
     /// The type Extension type assigned to this container
     /// </summary>
@@ -88,6 +95,9 @@ namespace LsMsgPack {
     }
 
     public override byte[] ToBytes() {
+#if KEEPTRACK
+      ThrowWhenTruncated();
+#endif
       ByteWriter bytes = new ByteWriter(value.Length + 6); // current max length limit is 4 bytes + specifier + identifier
       WriteExt(bytes);
       return bytes.ToArray();
@@ -105,6 +115,9 @@ namespace LsMsgPack {
     /// Writes the bytes of <see cref="MpExt.ToBytes"/>, derived types that know they do not need anything else can call this from their <see cref="WriteTo"/>.
     /// </summary>
     internal void WriteExt(ByteWriter bytes) {
+#if KEEPTRACK
+      ThrowWhenTruncated();
+#endif
 #if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
       if (typeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(value.LongLength);
 #else
@@ -139,6 +152,20 @@ namespace LsMsgPack {
         default: throw new MsgPackException($"Ext does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position-1, typeId);
       }
       typeSpecifier = unchecked((sbyte)ReadByteExactly(data)); // at the end of the data ReadByte returns -1: the timestamp type
+#if KEEPTRACK
+      // Nothing can read a type from its ends: it stays an extension with its type specifier. The index of a stream is needed whole, it has a tail to check it.
+      if (Truncates(len, KeptBytes) && !(_settings._readStreams && _depth == 0 && typeSpecifier == MsgPackStreamIndex.IndexExtensionType)) {
+        byte[] head;
+        byte[] tail;
+        long contentStart;
+        ReadEnds(data, len, KeptBytes, out head, out tail, out contentStart);
+        value = new byte[head.Length + tail.Length];
+        Array.Copy(head, 0, value, 0, head.Length);
+        Array.Copy(tail, 0, value, head.Length, tail.Length);
+        MarkTruncated(contentStart, len, head.Length, tail.Length);
+        return this;
+      }
+#endif
       value = ReadBytes(data, len);
 
       if (typeSpecifier == -1)
@@ -169,6 +196,10 @@ namespace LsMsgPack {
     }
 
     public override string ToString() {
+#if KEEPTRACK
+      if (_truncatedLength > 0)
+        return $"Extension value ({GetOfficialTypeName(typeId)}) with a type specifier of {TypeSpecifier} containing {_truncatedLength} bytes, {TooLargeText}.";
+#endif
       if (value is null) // the data ended before the content (KEEPTRACK keeps the item): the explorers show it, a NullReferenceException hid the data
         return $"Extension value ({GetOfficialTypeName(typeId)}) with a type specifier of {TypeSpecifier}, the data ended before its content.";
       return
@@ -179,6 +210,7 @@ namespace LsMsgPack {
 #if KEEPTRACK
       storedOffset = generic.storedOffset;
       storedLength = generic.storedLength;
+      _truncatedLength = generic._truncatedLength;
 #endif
       _settings = generic._settings;
       typeId = generic.typeId;

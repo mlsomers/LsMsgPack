@@ -82,6 +82,13 @@ namespace LtMsgPackAotSmokeTest
     public IImmutableSet<string> Codes { get; set; }
     public FrozenSet<string> Frozen { get; set; }
     public List<KeyValuePair<string, double>> Weights { get; set; }
+    public Dictionary<string, int> Stock { get; set; }
+    public Dictionary<int, Vector> Grid { get; set; }
+    public HashSet<int> Seen { get; set; }
+    public ISet<string> Labels { get; set; }
+    public IDictionary<string, Address> ByName { get; set; }
+    public ICollection<Vector> Track { get; set; }
+    public IEnumerable<long> Totals { get; set; }
   }
 
   /// <summary>
@@ -104,6 +111,68 @@ namespace LtMsgPackAotSmokeTest
 
   public record Signature(string By, DateTime At);
 
+  /// <summary>
+  /// A struct: written and read by reference with the generated accessors and code (without them NativeAOT would box each value and use reflection).
+  /// </summary>
+  public struct Vector
+  {
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float Z { get; set; }
+    public int? Tag { get; set; }
+    public Unit Unit { get; set; }
+    public float Sum => X + Y + Z; // computed: written, skipped when read
+  }
+
+  /// <summary>
+  /// A struct with init-only properties (set through the UnsafeAccessors of the generated code).
+  /// </summary>
+  public readonly record struct Fee(decimal Amount, string Currency);
+
+  /// <summary>
+  /// Init-only setters are called through UnsafeAccessors: reading allocates the same as for <see cref="SetsLimits"/>, the same class with plain setters (see ReadAllocationProblem).
+  /// </summary>
+  public class InitLimits
+  {
+    public int Min { get; init; }
+    public int Max { get; init; }
+    public double Rate { get; init; }
+    public bool On { get; init; }
+    public InitPoint Point { get; init; }
+  }
+
+  public readonly struct InitPoint
+  {
+    public int X { get; init; }
+    public int Y { get; init; }
+  }
+
+  public class SetsLimits
+  {
+    public int Min { get; set; }
+    public int Max { get; set; }
+    public double Rate { get; set; }
+    public bool On { get; set; }
+    public SetsPoint Point { get; set; }
+  }
+
+  public struct SetsPoint
+  {
+    public int X { get; set; }
+    public int Y { get; set; }
+  }
+
+  public class Route
+  {
+    public string Name { get; set; }
+    public Vector Start { get; set; }
+    public Vector? End { get; set; }
+    public List<Vector> Points { get; set; }
+    public Vector[] Corners { get; set; }
+    public Fee Fee { get; set; }
+    public InitLimits Limits { get; set; }
+  }
+
   public class Invoice
   {
     public Guid Id { get; set; }
@@ -125,6 +194,7 @@ namespace LtMsgPackAotSmokeTest
     public Extras Extras { get; set; }
     public Payment Payment { get; set; }
     public Signature Signed { get; set; }
+    public Route Route { get; set; }
   }
 
   /// <summary>
@@ -133,6 +203,7 @@ namespace LtMsgPackAotSmokeTest
   [LtMsgPackSerializable(typeof(Invoice))]
   [LtMsgPackSerializable(typeof(Circle))]
   [LtMsgPackSerializable(typeof(Square))]
+  [LtMsgPackSerializable(typeof(SetsLimits))]
   public partial class SmokeContext : LtMsgPackContext { }
 
   public static class Program
@@ -228,7 +299,7 @@ namespace LtMsgPackAotSmokeTest
 
         foreach ((string which, Func<LtMsgPackOptions, LtMsgPackSerializer> create) in new (string, Func<LtMsgPackOptions, LtMsgPackSerializer>)[] { ("explicit", Explicit), ("registered", Registered) })
         {
-          string problem = Problem(create(options()), sample, expected, values);
+          string problem = Problem(create(options()), sample, expected, values) ?? AllocationProblem(create(options())) ?? ReadAllocationProblem(create(options())) ?? CollectionAllocationProblem(create(options()));
           Console.WriteLine($"{name} {which}: {problem ?? "OK"}");
           if (problem != null)
             failures++;
@@ -294,6 +365,7 @@ namespace LtMsgPackAotSmokeTest
         Urgent = true,
         Payment = new Payment(100.5m) { Note = "first" },
         Signed = new Signature("Clerk", new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc)),
+        Route = SampleRoute(),
         Extras = new Extras()
         {
           Day = new DateOnly(2026, 10, 13),
@@ -315,9 +387,111 @@ namespace LtMsgPackAotSmokeTest
           Names = ImmutableList.Create("x", "y"),
           Codes = ImmutableHashSet.Create("NL"),
           Frozen = new[] { "f" }.ToFrozenSet(),
-          Weights = new List<KeyValuePair<string, double>>() { new KeyValuePair<string, double>("w", 0.5) }
+          Weights = new List<KeyValuePair<string, double>>() { new KeyValuePair<string, double>("w", 0.5) },
+          Stock = new Dictionary<string, int>() { { "a", 1 }, { "b", 300 } },
+          Grid = new Dictionary<int, Vector>() { { 1, new Vector() { X = 1 } } },
+          Seen = new HashSet<int>() { 3, 2, 1 },
+          Labels = new HashSet<string>() { "l" },
+          ByName = new Dictionary<string, Address>() { { "home", home } },
+          Track = new List<Vector>() { new Vector() { Y = 2 } },
+          Totals = new long[] { long.MaxValue }
         }
       };
+    }
+
+    private static Route SampleRoute()
+    {
+      return new Route()
+      {
+        Name = "delivery",
+        Start = new Vector() { X = 1, Y = -2.5f, Z = 3, Tag = 4, Unit = Unit.Kilogram },
+        End = new Vector() { Z = 9 },
+        Points = new List<Vector>() { new Vector() { X = 0.5f }, default(Vector) },
+        Corners = new[] { new Vector() { Y = 7, Tag = 0 } },
+        Fee = new Fee(12.5m, "EUR"),
+        Limits = new InitLimits() { Min = 300, Max = 70000, Rate = 0.25, On = true, Point = new InitPoint() { X = 300, Y = -300 } }
+      };
+    }
+
+    /// <summary>
+    /// The structs are written by reference and compared with their defaults by the generated code: writing a route into a stream that has the room allocates nothing
+    /// (boxed, or with the boxed default check of FilterDefaultValues, each struct value would allocate).
+    /// </summary>
+    private static string AllocationProblem(LtMsgPackSerializer serializer)
+    {
+      Route route = SampleRoute();
+      MemoryStream stream = new MemoryStream(4096);
+      for (int t = 0; t < 3; t++) // warm up (plans, contexts)
+      {
+        stream.SetLength(0);
+        serializer.Serialize(route, stream);
+      }
+      long before = GC.GetAllocatedBytesForCurrentThread();
+      stream.SetLength(0);
+      serializer.Serialize(route, stream);
+      long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+      return allocated == 0 ? null : $"writing the structs allocated {allocated} bytes";
+    }
+
+    /// <summary>
+    /// The typed handler of a set: boxed, each element would allocate.
+    /// </summary>
+    private static string CollectionAllocationProblem(LtMsgPackSerializer serializer)
+    {
+      HashSet<int> set = new HashSet<int>();
+      for (int t = 0; t < 1000; t++)
+        set.Add(t);
+      MemoryStream stream = new MemoryStream(8192);
+      for (int t = 0; t < 3; t++) // warm up (plans, contexts)
+      {
+        stream.SetLength(0);
+        serializer.Serialize(set, stream);
+      }
+      long before = GC.GetAllocatedBytesForCurrentThread();
+      stream.SetLength(0);
+      serializer.Serialize(set, stream);
+      long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+      return allocated < set.Count ? null : $"writing a set of {set.Count} allocated {allocated} bytes";
+    }
+
+    /// <summary>
+    /// Init-only setters cost the same as plain ones: by reflection each value would be boxed.
+    /// </summary>
+    private static string ReadAllocationProblem(LtMsgPackSerializer serializer)
+    {
+      long init = ReadAllocation(serializer, new InitLimits() { Min = 300, Max = 70000, Rate = 0.25, On = true, Point = new InitPoint() { X = 300, Y = -300 } });
+      long plain = ReadAllocation(serializer, new SetsLimits() { Min = 300, Max = 70000, Rate = 0.25, On = true, Point = new SetsPoint() { X = 300, Y = -300 } });
+      return init == plain ? null : $"reading init-only properties allocated {init} bytes, plain setters {plain}";
+    }
+
+    private static long ReadAllocation<T>(LtMsgPackSerializer serializer, T value)
+    {
+      byte[] data = serializer.Serialize(value);
+      for (int t = 0; t < 3; t++) // warm up (plans, contexts)
+        serializer.Deserialize<T>(data);
+      long before = GC.GetAllocatedBytesForCurrentThread();
+      serializer.Deserialize<T>(data);
+      return GC.GetAllocatedBytesForCurrentThread() - before;
+    }
+
+    private static string Dump(Route o)
+    {
+      if (o is null)
+        return "null";
+      return $"[{o.Name ?? "null"} {Dump(o.Start)} {(o.End.HasValue ? Dump(o.End.Value) : "null")} {(o.Points is null ? "null" : string.Join(",", o.Points.Select(Dump)))} "
+        + $"{(o.Corners is null ? "null" : string.Join(",", o.Corners.Select(Dump)))} {o.Fee.Amount.ToString(CultureInfo.InvariantCulture)}/{o.Fee.Currency ?? "null"} {Dump(o.Limits)}]";
+    }
+
+    private static string Dump(InitLimits o)
+    {
+      if (o is null)
+        return "null";
+      return $"({o.Min} {o.Max} {o.Rate.ToString("R", CultureInfo.InvariantCulture)} {o.On} {o.Point.X} {o.Point.Y})";
+    }
+
+    private static string Dump(Vector o)
+    {
+      return $"({o.X.ToString("R", CultureInfo.InvariantCulture)} {o.Y.ToString("R", CultureInfo.InvariantCulture)} {o.Z.ToString("R", CultureInfo.InvariantCulture)} {o.Tag?.ToString(CultureInfo.InvariantCulture) ?? "null"} {o.Unit})";
     }
 
     private static string Dump(Invoice o)
@@ -332,7 +506,7 @@ namespace LtMsgPackAotSmokeTest
         .Append(o.Numbers is null ? "null" : string.Join(",", o.Numbers)).Append(';').Append(Dump(o.Stamp)).Append(';')
         .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent).Append(';').Append(Dump(o.Extras)).Append(';')
         .Append(o.Payment is null ? "null" : $"[{o.Payment.Amount.ToString(CultureInfo.InvariantCulture)} {o.Payment.Note ?? "null"} {o.Payment.Logged}]").Append(';')
-        .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]");
+        .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]").Append(';').Append(Dump(o.Route));
       return text.ToString();
     }
 
@@ -348,7 +522,11 @@ namespace LtMsgPackAotSmokeTest
         o.Release?.ToString() ?? "null", o.Pair.Item1 + "," + (o.Pair.Item2 ?? "null"), o.Couple is null ? "null" : o.Couple.Item1 + "," + o.Couple.Item2, o.Entry.Key + "=" + o.Entry.Value,
         o.Counts is null ? "null" : o.Counts.GetType().Name + ":" + string.Join(",", o.Counts), o.Places is null ? "null" : string.Join(",", o.Places.Select(Dump)),
         o.Fixed.IsDefault ? "default" : string.Join(",", o.Fixed), o.Names is null ? "null" : string.Join(",", o.Names), o.Codes is null ? "null" : o.Codes.GetType().Name + ":" + string.Join(",", o.Codes),
-        o.Frozen is null ? "null" : string.Join(",", o.Frozen), o.Weights is null ? "null" : string.Join(",", o.Weights.Select(w => w.Key + "=" + w.Value.ToString("R", CultureInfo.InvariantCulture)))
+        o.Frozen is null ? "null" : string.Join(",", o.Frozen), o.Weights is null ? "null" : string.Join(",", o.Weights.Select(w => w.Key + "=" + w.Value.ToString("R", CultureInfo.InvariantCulture))),
+        o.Stock is null ? "null" : o.Stock.GetType().Name + ":" + string.Join(",", o.Stock.Select(e => e.Key + "=" + e.Value)), o.Grid is null ? "null" : string.Join(",", o.Grid.Select(e => e.Key + "=" + Dump(e.Value))),
+        o.Seen is null ? "null" : o.Seen.GetType().Name + ":" + string.Join(",", o.Seen), o.Labels is null ? "null" : o.Labels.GetType().Name + ":" + string.Join(",", o.Labels),
+        o.ByName is null ? "null" : o.ByName.GetType().Name + ":" + string.Join(",", o.ByName.Select(e => e.Key + "=" + Dump(e.Value))), o.Track is null ? "null" : o.Track.GetType().Name + ":" + string.Join(",", o.Track.Select(Dump)),
+        o.Totals is null ? "null" : o.Totals.GetType().Name + ":" + string.Join(",", o.Totals)
       });
     }
 

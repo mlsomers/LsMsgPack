@@ -302,6 +302,8 @@ namespace LsMsgPack.Analyzers
     public readonly INamedTypeSymbol HttpContentExtensions;
     public readonly INamedTypeSymbol HttpClientExtensions;
     public readonly INamedTypeSymbol ObjectContent;
+    public readonly INamedTypeSymbol MsgPackClientExtensions; // GetFromMsgPackAsync<T>, PostAsMsgPackAsync<T>...
+    public readonly INamedTypeSymbol MsgPackStreamExtensions; // GetFromMsgPackAsAsyncEnumerable<T>...
 
     public KnownSymbols(Compilation compilation)
     {
@@ -334,6 +336,8 @@ namespace LsMsgPack.Analyzers
         HttpContentExtensions = compilation.GetTypeByMetadataName("System.Net.Http.HttpContentExtensions");
         HttpClientExtensions = compilation.GetTypeByMetadataName("System.Net.Http.HttpClientExtensions");
         ObjectContent = compilation.GetTypeByMetadataName("System.Net.Http.ObjectContent`1");
+        MsgPackClientExtensions = compilation.GetTypeByMetadataName("LsMsgPackWebApiFormatters.MsgPackHttpClientExtensions");
+        MsgPackStreamExtensions = compilation.GetTypeByMetadataName("LsMsgPackWebApiFormatters.MsgPackStreamExtensions");
       }
       if (mvc)
       {
@@ -365,7 +369,7 @@ namespace LsMsgPack.Analyzers
       {
         string name = MethodName(invocation.Expression);
         return name == "Serialize" || name == "Deserialize" || name == "DeserializeBody" || name == "SerializeObject" || name == "ReadAsAsync" || name == "PostAsync" || name == "PutAsync"
-          || name == "MsgPack" || (name != null && ResultMethods.Contains(name));
+          || (name != null && (name.IndexOf("MsgPack", StringComparison.Ordinal) >= 0 || ResultMethods.Contains(name)));
       }
       if (node is GenericNameSyntax generic)
         return IsMinimalApiTypeName(generic);
@@ -489,6 +493,15 @@ namespace LsMsgPack.Analyzers
       {
         bool reads = method.Name == "ReadAsAsync";
         uses.Add(new SerializedUse(method.TypeArguments[0], reads, TypeArgumentLocation(invocation.Syntax) ?? invocation.Syntax.GetLocation(), string.Concat(container.Name, ".", method.Name)));
+        return;
+      }
+
+      // The helpers of the Web API package: Get/ReadFromMsgPackAsync and the stream enumerables read, Post/Put/PatchAsMsgPackAsync write
+      if (method.IsGenericMethod && (Same(container, known.MsgPackClientExtensions) || Same(container, known.MsgPackStreamExtensions)))
+      {
+        bool reads = method.Name.StartsWith("GetFrom", StringComparison.Ordinal) || method.Name.StartsWith("ReadFrom", StringComparison.Ordinal);
+        if (reads || method.Name.EndsWith("AsMsgPackAsync", StringComparison.Ordinal))
+          uses.Add(new SerializedUse(method.TypeArguments[0], reads, TypeArgumentLocation(invocation.Syntax) ?? invocation.Syntax.GetLocation(), string.Concat(container.Name, ".", method.Name)));
       }
     }
 

@@ -27,7 +27,7 @@
     "bench:stream": "npm run build && node bench/stream.mjs"
   },
   "devDependencies": {
-    "@msgpack/msgpack": "3.1.2",
+    "@msgpack/msgpack": "3.1.3",
     "@types/node": "^20.0.0",
     "typescript": "~5.9.3"
   },

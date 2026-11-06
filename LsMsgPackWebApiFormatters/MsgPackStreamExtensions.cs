@@ -7,7 +7,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 #endif
@@ -52,7 +52,7 @@ namespace LsMsgPackWebApiFormatters
     /// Sends the request, returning when the response headers are there (<see cref="HttpCompletionOption.ResponseHeadersRead"/>), and returns a reader of the body (<see cref="ReadAsMsgPackStreamAsync"/>).
     /// A request without an Accept header gets <see cref="StreamAccept"/>. Dispose the reader: it closes the body.
     /// </summary>
-    /// <exception cref="HttpRequestException">The status code is not a success</exception>
+    /// <exception cref="MsgPackHttpException">The status code is not a success (with the problem details or text of the body)</exception>
     /// <exception cref="NotSupportedException">The response is not MsgPack</exception>
     public static async Task<MsgPackStreamReader> SendForMsgPackStreamAsync(this HttpClient client, HttpRequestMessage request, LsMsgPackMediaTypeFormatter formatter, CancellationToken cancellationToken = default(CancellationToken))
     {
@@ -74,7 +74,7 @@ namespace LsMsgPackWebApiFormatters
     /// The schema of a head is learned (<see cref="LtMsgPackHttpSerializer.CreateStreamReader"/>), so the next requests advertise it. An empty body (204 No Content) is an empty stream.
     /// Dispose the reader: it closes the body. The response is disposed when this throws.
     /// </summary>
-    /// <exception cref="HttpRequestException">The status code is not a success</exception>
+    /// <exception cref="MsgPackHttpException">The status code is not a success (with the problem details or text of the body)</exception>
     /// <exception cref="NotSupportedException">The response is not MsgPack</exception>
     public static async Task<MsgPackStreamReader> ReadAsMsgPackStreamAsync(this HttpResponseMessage response, LsMsgPackMediaTypeFormatter formatter)
     {
@@ -84,14 +84,14 @@ namespace LsMsgPackWebApiFormatters
         throw new ArgumentNullException(nameof(formatter));
       try
       {
-        response.EnsureSuccessStatusCode();
+        await response.EnsureSuccessStatusCodeAsync().ConfigureAwait(false);
         HttpContent content = response.Content;
         if (content is null || response.StatusCode == HttpStatusCode.NoContent || content.Headers.ContentLength == 0)
           return formatter.HttpSerializer.CreateStreamReader(Stream.Null, MsgPackMediaTypes.MsgPack);
 
         string mediaType = content.Headers.ContentType?.MediaType;
         if (!MsgPackMediaTypes.IsSupported(mediaType))
-          throw new NotSupportedException($"The response is {mediaType ?? "without a Content-Type"}, not MsgPack.");
+          throw await MsgPackHttpClientExtensions.NotMsgPackAsync(content, mediaType, CancellationToken.None).ConfigureAwait(false);
         Stream body = await content.ReadAsStreamAsync().ConfigureAwait(false);
         return formatter.HttpSerializer.CreateStreamReader(body, mediaType, response.RequestMessage?.RequestUri, LsMsgPackSchemaHandler.HeaderValue(response, LtMsgPackHttpSerializer.SchemaHeader));
       }
@@ -102,7 +102,7 @@ namespace LsMsgPackWebApiFormatters
       }
     }
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
     /// <summary>
     /// Sends a GET request for a stream and returns the items as they arrive: of an <c>IAsyncEnumerable&lt;T&gt;</c> that the server streams (a head of <c>List&lt;T&gt;</c>, then an array of unknown length),
     /// or of a <c>List&lt;T&gt;</c> or <c>T[]</c> it sends as one body (servers that don't stream). The request is sent when the enumeration starts. Nil and an empty body are no items.

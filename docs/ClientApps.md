@@ -86,20 +86,17 @@ Calling a web service
 **When the server uses the [web formatters](WebFormatters.md)** (ASP.NET Core, Web API 2 or MVC 5), add the `LsMsgPack.AspNet.WebApi` package to the client. It has a `MediaTypeFormatter` for `HttpClient` that works on any platform:
 
 ```csharp
-using LsMsgPack;
 using LsMsgPackWebApiFormatters;
-using System.Net.Http.Formatting;
-using System.Net.Http.Headers;
 
 // Once, for the lifetime of the app
 LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter();
 HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = new Uri("https://example.com/") };
-client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack));
 
 // Per call
-HttpResponseMessage response = await client.PostAsync("api/orders", new ObjectContent<Order>(order, formatter, MsgPackMediaTypes.XLsMsgPack));
-response.EnsureSuccessStatusCode();
-Order saved = await response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter });
+Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
+HttpResponseMessage response = await client.PostAsMsgPackAsync("api/orders", order, formatter);
+await response.EnsureSuccessStatusCodeAsync(); // a MsgPackHttpException with the problem details of an error
+Order saved = await response.Content.ReadFromMsgPackAsync<Order>(formatter);
 ```
 
 `application/x-lsmsgpack` sends the indexed schema and type ids, and with `formatter.CreateHandler()` the server stops repeating schemas the client already has (`formatter.CreateHandler(true)` also asks for the described schema, for client classes that differ from the server's). See [WebFormatters.md](WebFormatters.md#httpclient) for the details.

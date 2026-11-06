@@ -22,7 +22,7 @@ namespace MsgPackExplorer {
     private RootObject ReconstructObjects() {
       RootObject root = new RootObject();
       try {
-        root.Reconstruct(item, null, data); // the data: schemas written once per stream are found by the references to them
+        root.Reconstruct(item, null, _trimmed); // the data: schemas written once per stream are found by the references to them
       } catch (Exception ex) {
         // Errors are normally kept with the value they occurred in, this keeps what was reconstructed anyway
         root.AddError(ex.Message);

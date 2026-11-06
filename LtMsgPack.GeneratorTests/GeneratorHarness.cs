@@ -60,13 +60,13 @@ namespace LtMsgPack.GeneratorTests
 
     /// <param name="netStandard20">Compile against .NET Standard 2.0 (and LtMsgPack's .NET Standard 2.0 build) instead of .NET 8</param>
     /// <param name="msbuild">MSBuild properties the generator sees (build_property.Name)</param>
-    public static Result Run(string source, LanguageVersion language = LanguageVersion.Latest, bool netStandard20 = false, IDictionary<string, string> msbuild = null, string assemblyName = "TestModels")
+    public static Result Run(string source, LanguageVersion language = LanguageVersion.Latest, bool netStandard20 = false, IDictionary<string, string> msbuild = null, string assemblyName = "TestModels", OptimizationLevel optimization = OptimizationLevel.Debug)
     {
       CSharpParseOptions parse = new CSharpParseOptions(language);
       CSharpCompilation compilation = CSharpCompilation.Create(assemblyName,
         new[] { CSharpSyntaxTree.ParseText(source, parse, "Model.cs") },
         netStandard20 ? NetStandard20References() : Net8References(),
-        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: language >= LanguageVersion.CSharp8 ? NullableContextOptions.Enable : NullableContextOptions.Disable));
+        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: language >= LanguageVersion.CSharp8 ? NullableContextOptions.Enable : NullableContextOptions.Disable, optimizationLevel: optimization));
 
       Diagnostic[] syntaxErrors = compilation.SyntaxTrees[0].GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToArray(); // the contexts only compile with the generated code
       Assert.IsEmpty(syntaxErrors, "The test source does not parse: " + string.Join("\n", syntaxErrors.Select(e => e.ToString())));

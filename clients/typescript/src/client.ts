@@ -182,7 +182,14 @@ export class LsMsgPackClient {
     }
     const text = await response.text();
     let value: unknown = text.length === 0 ? undefined : text; // e.g. 204 No Content for null
-    if (/[/+]json$/.test(mediaType) && text.length > 0) value = JSON.parse(text);
+    if (/[/+]json$/.test(mediaType) && text.length > 0) {
+      try {
+        value = JSON.parse(text);
+      } catch (e) {
+        if (response.ok) throw e;
+        // an error that is not JSON after all (e.g. the page of a proxy): the HttpError keeps the text
+      }
+    }
     return { value: value as T, response, reference: false };
   }
 

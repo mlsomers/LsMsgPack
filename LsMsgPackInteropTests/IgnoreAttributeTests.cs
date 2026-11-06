@@ -56,6 +56,7 @@ namespace LsMsgPackInteropTests
   /// </summary>
   public class InheritedIgnoreInteropProbe : IgnoreInteropProbeBase, IIgnoreInteropProbe
   {
+#pragma warning disable NBMsgPack110 // the initial values are the point: which of them a library writes shows what it ignores
     public string Plain { get; set; } = "p";
     public override string ONewtonsoft { get; set; } = "o";
     public override string OStj { get; set; } = "o";
@@ -69,6 +70,7 @@ namespace LsMsgPackInteropTests
     public string IDataMember { get; set; } = "i";
     public string IMessagePackCSharp { get; set; } = "i";
     public string IPolyType { get; set; } = "i";
+#pragma warning restore NBMsgPack110
   }
 
   [GenerateShapeFor<IgnoreInteropProbe>]

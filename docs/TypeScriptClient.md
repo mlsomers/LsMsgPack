@@ -49,7 +49,7 @@ order.pet = Object.assign(new Dog(), { name: 'Rex' });     // declared as Animal
 await api.post('api/orders', order);
 ```
 
-- `get`, `post`, `put`, `patch` and `delete` return the decoded body and throw an `HttpError` (with `status` and the decoded `body`) when the status is not 2xx. `send` returns `{ value, response, schema, reference }`.
+- `get`, `post`, `put`, `patch` and `delete` return the decoded body and throw an `HttpError` (with `status` and the decoded `body`) when the status is not 2xx. ASP.NET Core sends errors as problem details (`application/problem+json`, also when the request asks for MsgPack, see [error responses](WebFormatters.md#error-responses)): `body` is then that object (`title`, `detail`, and `errors` per property for a model that isn't valid), and the message has them: `400 Bad Request: One or more validation errors occurred. Customer: The Customer field is required.` `send` returns `{ value, response, schema, reference }`.
 - A body that is already text or bytes (`string`, `Uint8Array`, `Blob`, `FormData`...) is sent as it is, anything else is encoded as MsgPack with `Content-Type: application/msgpack`.
 - The property names are camelCase, as the JSON of ASP.NET Core has them (`invoiceDate` for `InvoiceDate`), or the names of the .NET properties with `propertyNames: 'dotnet'` (below).
 - Responses that are not MsgPack (JSON, text) are decoded as such, an empty body (`204 No Content`, a `null` result) is `undefined`.
@@ -269,7 +269,7 @@ The client keeps an inline schema only when its hash equals the `MsgPack-Schema`
 | | raw | gzip | read |
 |---|---|---|---|
 | JSON (System.Text.Json, every property) | 316.7 KB | 42.1 KB | 1080 µs `JSON.parse` of the string, 1290-1310 µs with the UTF-8 decoding |
-| `application/msgpack` with @msgpack/msgpack | 300.6 KB | 42.8 KB | 2200 µs; this client 1580 µs |
+| `application/msgpack` with @msgpack/msgpack (November 2026) | 266.9 KB | 41.5 KB | 2880-2890 µs; this client 1890-1900 µs |
 | `application/x-lsmsgpack`, schema reference | 166.9 KB | 38.0 KB | 674-676 µs; with the models 668-680 µs |
 | the same without generated code (CSP) | | | 948-967 µs; with the models 959-968 µs |
 

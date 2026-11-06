@@ -4,7 +4,7 @@ LtMsgPack builds a plan per class the first time it meets the class: typed prope
 
 - **NativeAOT, WebAssembly AOT (Blazor), iOS:** code that can't be generated at runtime. Without the generator, LtMsgPack fails under NativeAOT on the first object. With it, the generated code runs compiled where the runtime plans would be interpreted.
 - **Trimming:** the generated code refers to your classes and their properties, so the trimmer keeps them (.NET 5 and later). A serializer created with the context has no trim or AOT warnings (see [Trimming and NativeAOT](#trimming-and-nativeaot)).
-- **Speed:** writing is about 1.6x and reading about 1.15x as fast with a JIT. Under WebAssembly AOT writing is 7-8x and reading about 3x as fast (measurements below).
+- **Speed:** writing is about 1.4-1.9x and reading about 1.2x as fast with a JIT. Under WebAssembly AOT writing is 7-8x and reading about 3x as fast (measurements below).
 
 The data doesn't change: the generated code writes the same bytes and reads the same values as LtMsgPack does without it, with the same options. Anything it doesn't cover is done by the runtime as before, so you can switch it on and off without touching stored data or peers.
 
@@ -45,9 +45,9 @@ or in code:
 
 | `Include` | The roots |
 |---|---|
-| `AllTypes` | Every class of the assembly with public properties, that the generated code can access (public and internal) |
-| `Serializable` | Classes marked `[Serializable]` (as for the XmlSerializer's sgen and the binary formatters), not exceptions |
-| `DataContract` | Classes marked `[DataContract]` |
+| `AllTypes` | Every class and struct of the assembly with public properties, that the generated code can access (public and internal) |
+| `Serializable` | Classes and structs marked `[Serializable]` (as for the XmlSerializer's sgen and the binary formatters), not exceptions |
+| `DataContract` | Classes and structs marked `[DataContract]` |
 | `JsonSerializable` | The types of System.Text.Json's source generation: every `[JsonSerializable(typeof(...))]` in the assembly |
 
 These go into one generated context per assembly: `GeneratedMsgPackContext` in the project's root namespace. Name it yourself with `<LtMsgPackContextName>MyApp.Serialization.MsgPackContext</LtMsgPackContextName>` or `ContextName`. The assembly attribute wins over the MSBuild properties.
@@ -88,10 +88,10 @@ The context of the constructor is asked first, then the options' contexts, then 
 
 ## What it writes, and what it leaves to the runtime
 
-For each class:
+For each class and struct:
 
 1. **Accessors and creators:** a typed getter and setter per property, `new T()` for an accessible parameterless constructor, and the generic handlers and readers of each type (enums, nullables, lists, arrays, objects) created without `MakeGenericType`. The runtime uses them wherever it would have used reflection, with every option.
-2. **Writers and readers per class:** the loop over the properties, with the values of simple types written and read inline: strings, numbers, `bool`, `char`, enums, `Guid`, `DateTime`, `TimeSpan`, `decimal`, and nullables of those. When the runtime's property order is the one the generator predicted (the default `PropertyOrder.Reflection`), objects in the array layout are written by straight-line code. Otherwise a loop maps each property position to its generated member, so every `PropertyOrder` works.
+2. **Writers and readers per class and struct:** the loop over the properties, with the values of simple types written and read inline: strings, numbers, `bool`, `char`, enums, `Guid`, `DateTime`, `TimeSpan`, `decimal`, and nullables of those. When the runtime's property order is the one the generator predicted (the default `PropertyOrder.Reflection`), objects in the array layout are written by straight-line code. Otherwise a loop maps each property position to its generated member, so every `PropertyOrder` works.
 
 The runtime checks once per class and serializer whether the generated code fits the options. Where it doesn't, the runtime does that part itself, as it does without the generator:
 
@@ -100,8 +100,11 @@ The runtime checks once per class and serializer whether the generated code fits
 - Properties with `[DefaultValue]`, nested objects and collections (written and read by the runtime, which then uses the generated code of their class).
 - Values in another format than expected (an `int` written as a string, a number out of range): the runtime converts them, or throws, exactly as without the generator.
 - Collecting `ReadDifferences` and `ReadErrors` other than `FailFast`.
-- Properties the generated code can't reach: `init`-only setters, non-public accessors without `UnsafeAccessor` (before .NET 8, of generic classes, virtual properties) or that `NonPublicProperties` doesn't cover (set by reflection, reported as info `LTMP004`), private types, structs (written and read boxed).
+- **Debug builds.** The generated code is compiled into your assembly, so in a Debug build it isn't optimized, while LtMsgPack's package is: it can be slower than without the generator (1.2-1.9x measured), reported as info `LTMP011`. Measure performance in Release.
+- Properties the generated code can't reach: `init`-only setters and non-public accessors without `UnsafeAccessor` (before .NET 8, of generic classes, virtual properties), non-public accessors that `NonPublicProperties` doesn't cover (set by reflection, reported as info `LTMP004`), private types. On .NET 8 and later, `init`-only setters of other properties are called through `[UnsafeAccessor]`, whatever `NonPublicProperties` says.
 - A class that changed since its code was generated (a model in another assembly that was updated on its own): a property is only used when its declaring type, name and type still match. New properties are done by reflection.
+
+**Structs** are written and read in place: the generated accessors and code take the struct by reference, so a struct value is neither copied nor boxed, also in trimmed and NativeAOT apps (without the generator those box each struct value and use reflection). A struct as the root value of a call is still boxed once. A struct without a declared parameterless constructor is read into its default value; one that declares a parameterless constructor (C# 10) is created by it, in a box. The `init` properties of a struct (a `readonly record struct`) are set through `[UnsafeAccessor]` by reference as well; before .NET 8 by reflection, in a box (info `LTMP004`).
 
 ## Versions
 
@@ -114,13 +117,14 @@ Generated code says which version of the generated code's contract it was writte
 | LTMP001 | Error | The context class (or a class it is nested in) is not `partial` |
 | LTMP002 | Error | A class with `[LtMsgPackSerializable]` doesn't derive from `LtMsgPackContext` |
 | LTMP003 | Warning | A root type is not accessible to the generated code |
-| LTMP004 | Info | A property is set by reflection (`init`-only or non-public setter) |
+| LTMP004 | Info | A property is set by reflection (an `init`-only or non-public setter the generated code can't call) |
 | LTMP005 | Error | The context class is generic, nested in a generic type, abstract or static |
 | LTMP006 | Error | The context of the assembly can't get its name (taken, or not a valid class name) |
 | LTMP007 | Error | The context class declares a parameterless constructor (the generator writes it) |
 | LTMP008 | Warning | An open generic type: list its constructed types (`typeof(Wrapper<int>)`) |
 | LTMP009 | Info | A context is not registered for the process (C# 7.3, or not accessible): pass it in `Contexts` |
 | LTMP010 | Warning | Only in projects that are trimmed or compiled ahead of time (`PublishTrimmed`, `PublishAot`, `IsAotCompatible`, `IsTrimmable`): a property holds values of an interface, an abstract class or `object` (also as the elements of a collection or the values of a dictionary), and no class of the context fits it. List the classes it holds with `[LtMsgPackSerializable]`. An `object` property is always reported: where it only holds primitives and strings, set `<NoWarn>$(NoWarn);LTMP010</NoWarn>` or `dotnet_diagnostic.LTMP010.severity = none` in `.editorconfig` |
+| LTMP011 | Info | The generated code is compiled without optimizations (a Debug build), so it can be slower than without the generator: measure performance in Release |
 
 To see the generated code, set `<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>` in the project: it lands in `obj/.../generated/LtMsgPack.Generator`.
 
@@ -140,6 +144,7 @@ What the generated code does for a trimmed or NativeAOT app:
 
 - It keeps the properties and constructors of your classes (`DynamicDependency`, .NET 5 and later; also the non-public properties of the classes that have some it covers) and creates the generic handlers and readers for them.
 - For the collections it meets, it also describes what the runtime makes for them: the array of their elements, the class created for an interface (`List<T>` for `IList<T>`, `HashSet<T>` for `ISet<T>`, `ImmutableHashSet<T>` for `IImmutableSet<T>`...). For immutable and frozen collections it writes the call of their factory (`ImmutableArray.CreateRange<T>`, `FrozenSet.ToFrozenSet<T>`...), which NativeAOT can't instantiate at runtime for value types.
+- `HashSet<T>`, `Dictionary<TKey, TValue>` and generic collection interfaces (`IList<T>`, `IEnumerable<T>`, `ISet<T>`, `IDictionary<TKey, TValue>`...) get typed code in the runtime, so their elements aren't boxed, also under NativeAOT. Other collections are filled through reflection there.
 - A serializer created with a context registers it for the process (unless `UseRegisteredContexts = false`), as the module initializer does: LsMsgPack.Core creates collections and objects with the registered code.
 
 Classes the generated code doesn't know of are not kept. In a trimmed or AOT project, `LTMP010` points at the properties whose values are only known at runtime (interfaces, abstract classes, `object`), so you can list their classes. Type ids name classes. After trimming, only the classes the app keeps can be found, which includes those of the context.
@@ -148,20 +153,20 @@ The NativeAOT smoke test (`LtMsgPackAotSmokeTest/run.sh`, CI job `aot-smoke`) pu
 
 ## Measurements
 
-The invoice model of the benchmarks (100 invoices × 20 rounds, the fastest round), October 2026, one machine. Speed is relative to System.Text.Json with its default options.
+The invoice model of the benchmarks (100 invoices × 20 rounds), one machine: on a JIT in November 2026 (the medians of three runs, see [Comparison.md](Comparison.md#how-it-was-measured)), on WebAssembly in October 2026 (the fastest round). Speed is relative to System.Text.Json with its default options.
 
-| .NET 8, JIT | write | read |
+| .NET 10, JIT | write | read |
 |---|---|---|
-| LtMsgPack, default options (indexed schema, arrays) | 5.3 ms (3.5x) | 7.3 ms (4.5x) |
-| the same with the generated code | 3.3 ms (5.5x) | 6.4 ms (5.1x) |
-| LtMsgPack, arrays without the schema | 4.7 ms (3.9x) | 7.0 ms (4.7x) |
-| the same with the generated code | 2.9 ms (6.3x) | 6.2 ms (5.3x) |
-| LtMsgPack, maps with property names | 7.4 ms (2.5x) | 9.5 ms (3.4x) |
-| the same with the generated code | 5.8 ms (3.2x) | 9.4 ms (3.5x) |
+| LtMsgPack, default options (indexed schema, arrays) | 5.69 ms (2.8x) | 5.99 ms (5.0x) |
+| the same with the generated code | 3.04 ms (5.2x) | 4.94 ms (6.0x) |
+| LtMsgPack, arrays without the schema | 5.05 ms (3.1x) | 5.81 ms (5.1x) |
+| the same with the generated code | 2.71 ms (5.8x) | 4.85 ms (6.1x) |
+| LtMsgPack, maps with property names | 7.11 ms (2.2x) | 7.63 ms (3.9x) |
+| the same with the generated code | 5.16 ms (3.1x) | 6.59 ms (4.5x) |
 
 | .NET 10, WebAssembly (node) | interpreter write | read | AOT write | read |
 |---|---|---|---|---|
 | LtMsgPack, default options | 183 ms (3.0x) | 235 ms (3.5x) | 78 ms (2.8x) | 69 ms (3.1x) |
 | the same with the generated code | 92 ms (5.8x) | 196 ms (4.2x) | 10.5 ms (20x) | 24 ms (8.7x) |
 
-Reading gains less than writing: decoding strings and converting timestamps to local time (the default `ReadDateTimeKind` when this was measured, now UTC) take most of the time, the same with or without generated code.
+Reading gains less than writing: decoding strings takes most of the time, the same with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).

@@ -90,6 +90,34 @@ namespace LsMsgPackUnitTests
       public string Y { get; set; }
     }
 
+    // Structs as games use them (LtMsgPack writes and reads them with the object plans, boxed once): floats, nesting, defaults, nullables, collections, type ids
+
+    public struct XlVec { public float X { get; set; } public float Y { get; set; } public float Z { get; set; } }
+    public struct XlLine { public XlVec From { get; set; } public XlVec To { get; set; } public string Label { get; set; } public XlVec? Hint { get; set; } public double Length { get; set; } }
+
+    /// <summary>Equals of its own: 10 equals the default (0), so the default filter leaves it out</summary>
+    public struct XlTens { public int A { get; set; } public override bool Equals(object obj) { return obj is XlTens other && other.A % 10 == A % 10; } public override int GetHashCode() { return A % 10; } }
+
+    public record struct XlRecordStruct(int Id, string Name);
+    public interface IXlPositioned { XlVec Position { get; set; } }
+    public struct XlPositioned : IXlPositioned { public XlVec Position { get; set; } public int Id { get; set; } }
+
+    public class XlStructs
+    {
+      public XlVec Position { get; set; }
+      public XlVec Velocity { get; set; }
+      public XlVec? Maybe { get; set; }
+      public XlVec? None { get; set; }
+      public XlLine Line { get; set; }
+      public List<XlVec> Path { get; set; }
+      public XlVec[] Points { get; set; }
+      public object Boxed { get; set; }
+      public IXlPositioned Positioned { get; set; }
+      public XlTens Tens { get; set; }
+      public XlTens Ones { get; set; }
+      public XlRecordStruct Record { get; set; }
+    }
+
     public class XlFramework
     {
       public Half H { get; set; }
@@ -115,6 +143,27 @@ namespace LsMsgPackUnitTests
 
     [SerializeEnumerable(SerializeProperties = true)]
     public class XlNamedMap : Dictionary<string, int> { public string Name { get; set; } }
+    public class XlTypedCollections
+    {
+      public Dictionary<string, string> Strings { get; set; }
+      public Dictionary<string, int> Numbers { get; set; }
+      public Dictionary<int, XlSquare> Objects { get; set; }
+      public Dictionary<XlE8, string> Enums { get; set; }
+      public Dictionary<Guid, long?> Nullables { get; set; }
+      public Dictionary<string, object> Bag { get; set; }
+      public HashSet<int> Ints { get; set; }
+      public HashSet<string> Texts { get; set; }
+      public IList<int> List { get; set; }
+      public ICollection<string> Collection { get; set; }
+      public IEnumerable<XlSquare> Enumerable { get; set; }
+      public IReadOnlyList<long> ReadOnlyList { get; set; }
+      public ISet<int> Set { get; set; }
+      public IDictionary<string, int> Dictionary { get; set; }
+      public IReadOnlyDictionary<int, string> ReadOnlyDictionary { get; set; }
+      public IEnumerable<KeyValuePair<string, int>> Pairs { get; set; }
+      public IList<IList<int>> Lists { get; set; }
+      public object Any { get; set; }
+    }
 
     [SerializeEnumerable(SerializeElements = false, SerializeProperties = true)]
     public class XlBag : IEnumerable<string>
@@ -177,6 +226,15 @@ namespace LsMsgPackUnitTests
       values.Add(new int[20]);
       values.Add(new List<string> { "a", null, "b" });
       values.Add(new Dictionary<int, string> { { 1, "one" }, { 300, "three hundred" } });
+      values.Add(new XlTypedCollections());
+      values.Add(new XlTypedCollections { Strings = new Dictionary<string, string> { { "a", "b" }, { "c", null }, { "", "empty" }, { "@", "content" }, { new string('k', 40), "long" } }, Numbers = new Dictionary<string, int> { { "x", 1 }, { "y", -300 } }, Objects = new Dictionary<int, XlSquare> { { 1, new XlSquare { Side = 2 } }, { -5, null } }, Enums = new Dictionary<XlE8, string> { { XlE8.B, "b" } }, Nullables = new Dictionary<Guid, long?> { { Guid.Empty, null } }, Bag = new Dictionary<string, object> { { "a", 1 }, { "b", null }, { "c", new XlSquare() }, { "d", new List<int> { 1 } } }, Ints = new HashSet<int> { 5, 1, -7 }, Texts = new HashSet<string> { "b", null, "" } });
+      values.Add(new XlTypedCollections { List = new List<int> { 1, 2 }, Collection = new List<string> { "a", null }, Enumerable = new List<XlSquare> { new XlSquare(), null }, ReadOnlyList = new List<long> { long.MaxValue }, Set = new HashSet<int> { 3, 2 }, Dictionary = new Dictionary<string, int> { { "a", 1 }, { "", 2 } }, ReadOnlyDictionary = new Dictionary<int, string> { { 1, "x" } }, Pairs = new Dictionary<string, int> { { "kv", 1 } }, Lists = new List<IList<int>> { new List<int> { 1 }, new[] { 2 }, null } });
+      values.Add(new XlTypedCollections { List = new[] { 1, 2 }, Collection = new[] { "a" }, Enumerable = new[] { new XlSquare() }, ReadOnlyList = new long[0], Set = new SortedSet<int> { 9, 8 }, Dictionary = new SortedDictionary<string, int> { { "b", 1 }, { "a", 2 } }, Pairs = new List<KeyValuePair<string, int>> { new KeyValuePair<string, int>("p", 1) }, Any = new Dictionary<string, int> { { "any", 1 } } });
+      values.Add(new XlTypedCollections { List = new System.Collections.ObjectModel.Collection<int> { 1 }, Collection = new HashSet<string> { "h" }, Enumerable = new List<XlSquare>().Where(x => x != null), Set = new HashSet<int>(), Dictionary = new XlNamedMap { { "d", 1 } }, Any = new HashSet<int> { 1 } });
+      values.Add(new Dictionary<string, string> { { "root", "x" } });
+      values.Add(new Dictionary<string, object> { { "", 1 }, { "@", 2 } });
+      values.Add(new HashSet<int> { 1, 2 });
+      values.Add(new List<Dictionary<string, int>> { new Dictionary<string, int> { { "a", 1 } }, null });
       values.Add(new Dictionary<object, object> { { "k", 1 }, { 2, new XlSquare { Side = 2 } } });
       object[] big = new object[70000];
       for (int i = 0; i < big.Length; i++) big[i] = i;
@@ -239,6 +297,24 @@ namespace LsMsgPackUnitTests
       values.Add((1, "a", 2.5, (object)XlE8.B, 5, 6, 7, 8, 9));
       values.Add(new XlTaggedList { "only" });
       values.Add(new XlStruct { X = 1, Y = "struct" });
+      values.Add(new XlStructs
+      {
+        Position = new XlVec { X = 1.5f, Y = -0f, Z = float.NaN },
+        Maybe = new XlVec { Z = 2 },
+        Line = new XlLine { From = new XlVec { X = -1 }, To = new XlVec { X = 3.25f, Y = 4, Z = 5 }, Label = "l", Hint = new XlVec(), Length = 4.5 },
+        Path = new List<XlVec> { new XlVec { X = 1 }, new XlVec(), new XlVec { Y = float.MaxValue } },
+        Points = new[] { new XlVec { Z = -2 }, new XlVec() },
+        Boxed = new XlVec { X = 7 },
+        Positioned = new XlPositioned { Position = new XlVec { Y = 1 }, Id = 3 },
+        Tens = new XlTens { A = 10 },
+        Ones = new XlTens { A = 11 },
+        Record = new XlRecordStruct(5, "five")
+      });
+      values.Add(new XlStructs()); // all default
+      values.Add(new XlVec { X = 0.5f, Z = -8 });
+      values.Add(new XlLine { To = new XlVec { Y = 1 } });
+      values.Add(new List<XlLine> { new XlLine { Label = "a" }, new XlLine() });
+      values.Add(new XlRecordStruct(1, null));
       values.Add(new int[,] { { 1, 2 }, { 3, 4 } }); // [2, 2, [1, 2, 3, 4]]
       values.Add(new object[] { new string[2, 1, 1], System.Collections.Immutable.ImmutableArray.Create(1), System.Collections.Immutable.ImmutableDictionary.CreateRange(new[] { new KeyValuePair<string, object>("k", 'c') }), new BitArray(3) });
       values.Add(new XlCircle { Name = "root", Radius = 1 });

@@ -94,7 +94,8 @@ namespace LtMsgPack.Generator
       return new GenerateOptions(include, contextName, autoRegister, rootNamespace, csharp9,
         initializer != null && compilation.IsSymbolAccessibleWithin(initializer, compilation.Assembly),
         dependency != null && compilation.IsSymbolAccessibleWithin(dependency, compilation.Assembly), trimmed, nonPublic,
-        unsafeAccessor != null && compilation.IsSymbolAccessibleWithin(unsafeAccessor, compilation.Assembly));
+        unsafeAccessor != null && compilation.IsSymbolAccessibleWithin(unsafeAccessor, compilation.Assembly),
+        compilation.Options.OptimizationLevel == OptimizationLevel.Debug);
     }
 
     private static bool IsTrue(AnalyzerConfigOptions global, string property)
@@ -287,7 +288,7 @@ namespace LtMsgPack.Generator
               walker.AddRoot(attribute.ConstructorArguments[0].Value as ITypeSymbol, null);
         }
 
-        if (type.TypeKind != TypeKind.Class || type.IsStatic || type.IsGenericType || !type.CanBeReferencedByName || type.IsImplicitlyDeclared
+        if ((type.TypeKind != TypeKind.Class && type.TypeKind != TypeKind.Struct) || type.IsRefLikeType || type.IsStatic || type.IsGenericType || !type.CanBeReferencedByName || type.IsImplicitlyDeclared
           || DerivesFrom(type, contextBase) || (exception != null && DerivesFrom(type, exception)) || (attributeType != null && DerivesFrom(type, attributeType))
           || (jsonContext != null && DerivesFrom(type, jsonContext)))
           continue;

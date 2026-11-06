@@ -10,7 +10,7 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <RootNamespace>LtMsgPack</RootNamespace>
     <PackageId>LtMsgPack</PackageId>
-    <Description>Fast MessagePack (MsgPack) serializer for .NET classes, used like the JSON serializers: 3-4x as fast as System.Text.Json with 35-47% smaller payloads. Polymorphism with type ids, an optional indexed schema, data of older and newer class versions still loads, streaming, presets for MessagePack-CSharp and Nerdbank.MessagePack, and a source generator for NativeAOT and trimming.</Description>
+    <Description>Fast MessagePack (MsgPack) serializer for .NET classes, used like the JSON serializers: 3-5x as fast as System.Text.Json with 35-47% smaller payloads. Polymorphism with type ids, an optional indexed schema, data of older and newer class versions still loads, streaming, presets for MessagePack-CSharp and Nerdbank.MessagePack, and a source generator for NativeAOT and trimming.</Description>
     <PackageTags>$(PackageTags);binary-serialization;high-performance;polymorphism;schema;streaming;source-generator;aot</PackageTags>
   </PropertyGroup>
 

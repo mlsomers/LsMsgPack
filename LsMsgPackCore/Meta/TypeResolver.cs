@@ -502,7 +502,7 @@ namespace LsMsgPack.Meta
         if (assignedTo != typeof(object))
           assembly = assignedTo.Assembly;
 
-        //if (assembly != null) // Also cache null for a specific assign-to type so this block can be skipped for the next item
+        // Also cache null for a specific assign-to type so this block can be skipped for the next item
         AssemblyCache.Add(assignedTo, assembly);
       }
 

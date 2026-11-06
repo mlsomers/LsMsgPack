@@ -3,8 +3,9 @@
   <Import Project="..\Packaging.props" />
 
   <PropertyGroup>
-    <!-- ASP.NET Web API 2 (System.Web.Http) on .NET Framework, and HttpClient on any platform; 2.1 for IAsyncEnumerable (the items of streamed responses) -->
-    <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
+    <!-- ASP.NET Web API 2 (System.Web.Http) on .NET Framework, and HttpClient on any platform; 2.1 for IAsyncEnumerable (the items of streamed responses);
+         net8.0 for HttpRequestException.StatusCode (MsgPackHttpException sets it, so catch (HttpRequestException e) when (e.StatusCode == ...) keeps working) -->
+    <TargetFrameworks>netstandard2.0;netstandard2.1;net8.0</TargetFrameworks>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <PackageId>LsMsgPack.AspNet.WebApi</PackageId>
     <Description>MessagePack (MsgPack) MediaTypeFormatter for ASP.NET Web API 2 and for HttpClient (ObjectContent / ReadAsAsync) on any platform, on the fast LtMsgPack serializer (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>

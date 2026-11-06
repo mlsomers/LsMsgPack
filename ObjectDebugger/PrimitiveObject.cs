@@ -105,7 +105,15 @@ namespace ObjectDebugger
     /// </summary>
     public virtual string ValueText
     {
-      get { return FormatValue(Value); }
+      get
+      {
+#if KEEPTRACK
+        // The bytes that were kept are not the value (a str has its ends in its value)
+        if (LastItemRef is MsgPackVarLen varLen && varLen.IsTruncated && !(LastItemRef is MpString))
+          return LastItemRef.ToString();
+#endif
+        return FormatValue(Value);
+      }
     }
 
     /// <summary>
