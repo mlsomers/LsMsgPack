@@ -103,7 +103,7 @@ export type Language = 'dotnet' | 'javascript' | 'python' | 'other';
 
 export function languageOf(sessionType: string): Language {
   const type = sessionType.toLowerCase();
-  if (type === 'coreclr' || type === 'clr' || type.includes('dotnet') || type.includes('mono') || type === 'unity' || type === 'vsdbg') {
+  if (type === 'coreclr' || type === 'clr' || type.includes('dotnet') || type.includes('mono') || type === 'unity' || type === 'vstuc' || type === 'vsdbg') {
     return 'dotnet';
   }
   if (type.includes('node') || type.includes('chrome') || type.includes('msedge') || type.includes('extensionhost') || type === 'bun' || type === 'deno') {

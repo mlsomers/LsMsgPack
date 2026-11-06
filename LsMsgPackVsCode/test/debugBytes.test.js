@@ -94,6 +94,7 @@ function dotnetDebugger(maxString = Infinity) {
 test('languages by debug session type', () => {
   assert.strictEqual(languageOf('coreclr'), 'dotnet');
   assert.strictEqual(languageOf('clr'), 'dotnet');
+  assert.strictEqual(languageOf('vstuc'), 'dotnet');
   assert.strictEqual(languageOf('pwa-node'), 'javascript');
   assert.strictEqual(languageOf('pwa-chrome'), 'javascript');
   assert.strictEqual(languageOf('debugpy'), 'python');

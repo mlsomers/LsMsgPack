@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Debug sessions of Microsoft's Unity extension (`vstuc`) are read as .NET: faster than through the elements in the Variables view, and an AI agent can read a `SchemaStore` there.
 - Values that are too large for practical debugging: a str, bin or ext above 16 MiB keeps its first and last 100 characters or bytes, its icon gets a mark, the properties show its original length and the hex view has a row of dots for the bytes in between. Files above 256 MiB are read by the inspector itself, so they can be larger than 2 GB and hold values up to the 4 GB of the specification. Of such a file the hex view shows at most 256 MiB after leaving out those values, **Copy** is refused.
 - Streams of LtMsgPack's `MsgPackStreamWriter` (and the TypeScript client's): arrays, maps, str and bin of unknown length (the `0xC1` escape sequences of msgpack/msgpack#347; the escape and end bytes red in the hex view, the chunks of a str or bin in the tree), the stream's index with its fields by name, its tail (CRC-32 checked) and sidecars, payloads named after their entries in the objects pane, and schemas written once per stream found by the references to them.
 
