@@ -95,6 +95,27 @@ namespace LtMsgPack
       set { _useRegisteredContexts = value; }
     }
 
+    internal int _compileWritersAfter = Default_CompileWritersAfter;
+
+    /// <summary>
+    /// The default of <see cref="CompileWritersAfter"/>.
+    /// </summary>
+    public static int Default_CompileWritersAfter = 1000;
+
+    /// <summary>
+    /// After how many objects of a type a writer compiled for that type takes over (default 1000): the code the source generator writes (see <see cref="LtMsgPackContext"/>),
+    /// built at runtime for the type's properties and these options. Compiling costs 1-7 ms per type (most of it the JIT), done on the thread pool while the plans of the runtime keep writing,
+    /// so types written only a few times are not compiled at all. 0 compiles when the type is first written (on the calling thread, so its first object is written by the compiled writer), a negative number never.
+    /// <para>Only where the runtime compiles dynamic code (not under NativeAOT or on WebAssembly), not for types the source generator covers (its code is used), and not with custom dynamic filters
+    /// or <see cref="LsMsgPack.AddTypeIdOption.Always"/>. The data is the same either way.</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public int CompileWritersAfter
+    {
+      get { return _compileWritersAfter; }
+      set { _compileWritersAfter = value; }
+    }
+
     internal override bool HasCustomExtension(Type type)
     {
       LtExtension[] extensions = _extensions;

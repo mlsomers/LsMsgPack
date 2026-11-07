@@ -484,13 +484,19 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// LtMsgPack with the options, as it builds its plans at runtime and with the code of the source generator (TestMsgPackContext).
+    /// LtMsgPack with the options, as it builds its plans at runtime, with writers compiled at runtime from the first object (CompileWritersAfter = 0)
+    /// and with the code of the source generator (TestMsgPackContext).
     /// </summary>
     private static IEnumerable<(string Name, LtMsgPackSerializer Serializer)> LtAndGenerated(LtMsgPackOptions options)
     {
       LtMsgPackOptions runtime = options.Clone();
       runtime.UseRegisteredContexts = false;
+      runtime.CompileWritersAfter = -1;
       yield return ("Lt", new LtMsgPackSerializer(runtime));
+      LtMsgPackOptions compiled = options.Clone();
+      compiled.UseRegisteredContexts = false;
+      compiled.CompileWritersAfter = 0;
+      yield return ("Compiled", new LtMsgPackSerializer(compiled));
       LtMsgPackOptions generated = options.Clone();
       generated.Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default };
       generated.UseRegisteredContexts = false;

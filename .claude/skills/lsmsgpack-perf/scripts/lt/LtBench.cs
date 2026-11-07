@@ -374,8 +374,17 @@ public static class Bench
     return (minW, minR);
   }
 
+
+  /// <summary>LT_COMPILE_AFTER=n sets LtMsgPackOptions.Default_CompileWritersAfter (compiled writers after n objects per type, 0 at once, -1 never); ignored by a base without the option.</summary>
+  private static void CompileAfterFromEnvironment()
+  {
+    string after = System.Environment.GetEnvironmentVariable("LT_COMPILE_AFTER");
+    if (after != null)
+      typeof(LtMsgPack.LtMsgPackOptions).GetField("Default_CompileWritersAfter")?.SetValue(null, int.Parse(after));
+  }
   public static void Main(string[] args)
   {
+    CompileAfterFromEnvironment();
     string mode = args.Length > 0 ? args[0] : "table";
     long exceptions = 0;
     AppDomain.CurrentDomain.FirstChanceException += (s, e) => Interlocked.Increment(ref exceptions);

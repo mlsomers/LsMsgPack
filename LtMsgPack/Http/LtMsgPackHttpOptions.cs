@@ -56,6 +56,13 @@ namespace LtMsgPack.Http
     public bool PropertyNameCaseInsensitive { get; set; } = true;
 
     /// <summary>
+    /// When the writers of a type are compiled (<see cref="LtMsgPackOptions.CompileWritersAfter"/>, replaces the value of <see cref="XLsMsgPack"/> and <see cref="Plain"/>), default 0: when a type is first written.
+    /// <para>A server writes its types many times, so the compiled writer is used from the first response on (the type's first response waits for it: 1-7 ms, the first in the process ~16 ms more),
+    /// and the JIT optimizes the serializer's object loop with the compiled writers in place (compiled later, after its profile was taken: about 4% slower on arrays).</para>
+    /// </summary>
+    public int CompileWritersAfter { get; set; } = 0;
+
+    /// <summary>
     /// Collect what did not match between a body and the classes it is read into (<see cref="ReadDifferences"/>: unknown properties, classes without a schema entry, type ids that are not found...). Default false.
     /// <para>ASP.NET Core: in <c>HttpContext.Features</c> (<c>HttpContext.GetReadDifferences()</c>) and logged (see <see cref="LogDifferencesAsWarning"/>). Web API and HttpClient: <c>HttpContent.GetReadDifferences()</c> (also <c>request.GetReadDifferences()</c>).
     /// MVC 5: <c>HttpContextBase.GetReadDifferences()</c>. Reading with it is a bit slower (see docs/ReadDifferences.md), the report itself is only made when it is asked for.</para>

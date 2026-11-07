@@ -25,6 +25,12 @@ namespace LtMsgPack
     internal readonly LtMsgPackOptions Options;
     internal readonly FilterMode Filters;
     internal readonly bool CanBindDelegates;
+
+    /// <summary>
+    /// The plans compile their writers after this many objects (<see cref="LtMsgPackOptions.CompileWritersAfter"/>), -1 when they do not:
+    /// no compiled code (CompiledWriter.Supported) or the writers would not be used (as for the generated code: custom dynamic filters, a type id on every value).
+    /// </summary>
+    internal readonly int CompileWritersAfter;
     private readonly bool _alwaysTypeId;
     private readonly bool _customTypeResolvers;
     internal readonly bool CustomPropertyIds;
@@ -48,6 +54,7 @@ namespace LtMsgPack
       _customTypeResolvers = options._typeResolvers.Length > 0;
       CustomPropertyIds = options._propertyNameResolvers.Length > 0;
       _keyWriter = new MsgPackWriter(16);
+      CompileWritersAfter = options._compileWritersAfter >= 0 && CompiledWriter.Supported && Filters != FilterMode.Custom && !_alwaysTypeId ? options._compileWritersAfter : -1;
       InitGenerated();
       InitReading();
     }

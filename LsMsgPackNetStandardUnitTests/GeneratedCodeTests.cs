@@ -834,8 +834,9 @@ namespace LsMsgPackUnitTests
         object inner = Inner(serializer);
 
         object plan = inner.GetType().GetMethod("Plan", Internal).Invoke(inner, new object[] { typeof(GcStruct), names });
-        Assert.IsInstanceOfType<GeneratedStructCode<GcStruct>>(plan.GetType().GetField("Code", Internal).GetValue(plan));
-        Assert.IsNotNull(plan.GetType().GetField("GeneratedPlan", Internal).GetValue(plan), "the generated writer is used");
+        object generated = plan.GetType().GetField("GeneratedPlan", Internal).GetValue(plan);
+        Assert.IsNotNull(generated, "the generated writer is used");
+        Assert.IsInstanceOfType<GeneratedStructCode<GcStruct>>(generated.GetType().GetField("Code", Internal).GetValue(generated));
         Assert.IsTrue((bool)plan.GetType().GetField("ByRef", Internal).GetValue(plan), "by reference");
         foreach (object writer in (Array)plan.GetType().GetField("Props", Internal).GetValue(plan))
         {

@@ -253,6 +253,21 @@ namespace LsMsgPackFormattersTests
     }
 
     [Test]
+    public void WritersAreCompiledAtOnce_ForBothMediaTypes()
+    {
+      LtMsgPackHttpSerializer defaults = new LtMsgPackHttpSerializer();
+      Assert.That(defaults.For(MsgPackMediaTypes.XLsMsgPack).Options.CompileWritersAfter, Is.EqualTo(0));
+      Assert.That(defaults.For(MsgPackMediaTypes.MsgPack).Options.CompileWritersAfter, Is.EqualTo(0));
+
+      // The formatters' setting replaces the value of the media types' options
+      LtMsgPackOptions plain = LtMsgPackPresets.MessagePackCSharp();
+      plain.CompileWritersAfter = -1;
+      LtMsgPackHttpSerializer configured = new LtMsgPackHttpSerializer(new LtMsgPackHttpOptions { Plain = plain, CompileWritersAfter = 50 });
+      Assert.That(configured.For(MsgPackMediaTypes.XLsMsgPack).Options.CompileWritersAfter, Is.EqualTo(50));
+      Assert.That(configured.For(MsgPackMediaTypes.MsgPack).Options.CompileWritersAfter, Is.EqualTo(50));
+    }
+
+    [Test]
     public async Task LsMsgPackRoundTripsWithConfiguredSettings()
     {
       (IHost host, HttpClient client) = await StartAsync();

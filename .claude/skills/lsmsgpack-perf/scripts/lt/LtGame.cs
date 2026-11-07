@@ -251,8 +251,17 @@ public static class LtGame
     return sw.Elapsed.TotalMilliseconds * 1_000_000 / calls;
   }
 
+
+  /// <summary>LT_COMPILE_AFTER=n sets LtMsgPackOptions.Default_CompileWritersAfter (compiled writers after n objects per type, 0 at once, -1 never); ignored by a base without the option.</summary>
+  private static void CompileAfterFromEnvironment()
+  {
+    string after = System.Environment.GetEnvironmentVariable("LT_COMPILE_AFTER");
+    if (after != null)
+      typeof(LtMsgPack.LtMsgPackOptions).GetField("Default_CompileWritersAfter")?.SetValue(null, int.Parse(after));
+  }
   public static void Main(string[] args)
   {
+    CompileAfterFromEnvironment();
     if (args.Length > 0 && args[0] == "one")
     {
       Candidate one = Candidates(args[1])[0];
