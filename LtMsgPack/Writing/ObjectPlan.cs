@@ -10,6 +10,7 @@ using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace LtMsgPack.Writing
 {
@@ -40,10 +41,16 @@ namespace LtMsgPack.Writing
     internal readonly SchemaTypeInfo Schema;
 
     /// <summary>
-    /// The writer of the source generator (see LtMsgPackContext) and how it fits these options, null when there is none or it is not used: the <see cref="Props"/> write the values.
+    /// The writer of the source generator (see LtMsgPackContext), or one compiled at runtime (<see cref="CompiledWriter"/>), and how it fits these options (with the code: <see cref="GeneratedWritePlan.Code"/>);
+    /// null when there is none or it is not used: the <see cref="Props"/> write the values. A compiled writer is set once (<see cref="Compile"/>): read it once per object.
     /// </summary>
-    internal readonly GeneratedObjectCode Code;
-    internal readonly GeneratedWritePlan GeneratedPlan;
+    internal GeneratedWritePlan GeneratedPlan;
+
+    /// <summary>
+    /// The objects still to write before the writer is compiled (<see cref="Serializer.CompileWritersAfter"/>), 0 when it is not (any more). Not exact with several threads, which is all right
+    /// (two threads reaching 0 at once both compile, the last writer is kept).
+    /// </summary>
+    private int _untilCompiled;
 
     /// <summary>
     /// A struct whose properties are all read by reference (<see cref="RefPropWriter{T}"/>): <see cref="WriteStruct{T}"/> writes it without a box (with its generated code, <see cref="GeneratedStructCode{T}"/>, when there is a <see cref="GeneratedPlan"/>).
@@ -80,8 +87,7 @@ namespace LtMsgPack.Writing
       for (int t = 0; t < Infos.Length; t++)
         Props[t] = PropWriter.Create(serializer, Infos[t]);
 
-      Code = serializer.GeneratedCode(type);
-      GeneratedPlan = serializer.GeneratedWritePlan(Code, Infos, Props);
+      GeneratedPlan = serializer.GeneratedWritePlan(serializer.GeneratedCode(type), Infos, Props);
       if (type.IsValueType)
       {
         bool byRef = true;
@@ -103,6 +109,56 @@ namespace LtMsgPack.Writing
           IndexKeys[t] = serializer.EncodeKey(t);
         Schema = serializer.GetSchemaInfo(type);
       }
+
+      if (GeneratedPlan is null && serializer.CompileWritersAfter >= 0)
+      {
+        if (serializer.CompileWritersAfter == 0)
+          Compile(serializer);
+        else
+          _untilCompiled = serializer.CompileWritersAfter;
+      }
+    }
+
+    /// <summary>
+    /// Counts an object written by the runtime's plan, and compiles the writer after <see cref="Serializer.CompileWritersAfter"/> of them (in the background).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void CountWrite(Serializer serializer)
+    {
+      if (_untilCompiled > 0 && --_untilCompiled == 0)
+        CompileInBackground(serializer);
+    }
+
+    /// <summary>
+    /// Compiles on the thread pool, the runtime's plan writes until the compiled writer is set: compiling costs 1-7 ms per type (90% of it the JIT, which optimizes a dynamic method
+    /// at once and inlines the writer's methods for every property), which the call that reaches the count should not wait for. The generated code is optimized in the background too (tiered JIT).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void CompileInBackground(Serializer serializer)
+    {
+      ThreadPool.UnsafeQueueUserWorkItem(plan => ((ObjectPlan)plan).Compile(serializer), this); // no ExecutionContext: nothing of the caller's (AsyncLocal values) is needed or kept
+    }
+
+    /// <summary>
+    /// Compiles the writer of this plan (<see cref="CompiledWriter"/>) and sets it (one store: the plan holds its code); stays with the runtime's plan when it cannot.
+    /// Two threads may both compile, the last one is kept.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void Compile(Serializer serializer)
+    {
+      _untilCompiled = 0;
+      try
+      {
+        GeneratedObjectCode code = CompiledWriter.Create(serializer, Type, Infos);
+        GeneratedWritePlan plan = code is null ? null : serializer.GeneratedWritePlan(code, Infos, Props);
+        if (plan is null)
+          return;
+        ((ICompiledCode)code).Compile(plan);
+        Volatile.Write(ref GeneratedPlan, plan);
+      }
+      catch (Exception) // a type or runtime the expressions do not handle: the runtime's plan writes it, as before (CompiledWriterTests check that the writers are used)
+      {
+      }
     }
 
     /// <summary>
@@ -111,9 +167,12 @@ namespace LtMsgPack.Writing
     internal void Write(WriteContext c, object value, bool typeId, FullPropertyInfo assignedTo)
     {
       byte[][] keys = c.BeginObject(this, out FullPropertyInfo[] infos); // before the type id, as LsMsgPack resolves the ids first
+      GeneratedWritePlan generated = GeneratedPlan;
+      if (generated is null)
+        CountWrite(c.Serializer);
       if (c.Serializer.Options._objectLayout == ObjectLayout.Array)
       {
-        WriteArray(c, value, typeId, assignedTo, infos);
+        WriteArray(c, value, typeId, assignedTo, infos, generated);
         return;
       }
 
@@ -130,8 +189,8 @@ namespace LtMsgPack.Writing
         SerializationRules.ThrowIfUnresolvableWithSchema(Type, assignedTo, c.UsesSchema);
 
       c.EnterContainer();
-      if (GeneratedPlan != null)
-        count += Code.WriteBoxed(c, value, keys, infos, GeneratedPlan, out int end);
+      if (generated != null)
+        count += generated.Code.WriteBoxed(c, value, keys, infos, generated, out int end);
       else
       {
         PropWriter[] props = Props;
@@ -147,7 +206,7 @@ namespace LtMsgPack.Writing
     /// <summary>
     /// <see cref="ObjectLayout.Array"/> (LsMsgPack: SerializeAsArray): the values in the order of the properties, nil when the filters leave one out, wrapped in a map with the type id when needed.
     /// </summary>
-    private void WriteArray(WriteContext c, object value, bool typeId, FullPropertyInfo assignedTo, FullPropertyInfo[] infos)
+    private void WriteArray(WriteContext c, object value, bool typeId, FullPropertyInfo assignedTo, FullPropertyInfo[] infos, GeneratedWritePlan generated)
     {
       if (typeId)
       {
@@ -162,17 +221,16 @@ namespace LtMsgPack.Writing
       c.EnterContainer();
       PropWriter[] props = Props;
       if (c.Serializer.Options._trimTrailingNulls)
-        WriteTrimmed(c, value, infos);
+        WriteTrimmed(c, value, infos, generated);
       else
       {
         c.W.ArrayHeader(props.Length);
-        GeneratedWritePlan generated = GeneratedPlan;
         if (generated != null)
         {
           if (generated.Unrolled)
-            Code.WriteUnrolledBoxed(c, value, infos, generated);
+            generated.Code.WriteUnrolledBoxed(c, value, infos, generated);
           else
-            Code.WriteBoxed(c, value, null, infos, generated, out int end);
+            generated.Code.WriteBoxed(c, value, null, infos, generated, out int end);
         }
         else
         {
@@ -187,14 +245,14 @@ namespace LtMsgPack.Writing
     /// <summary>
     /// <see cref="MsgPackOptions.TrimTrailingNulls"/>: the nils after the last other value are taken back, the header is written for the values that are left.
     /// </summary>
-    private void WriteTrimmed(WriteContext c, object value, FullPropertyInfo[] infos)
+    private void WriteTrimmed(WriteContext c, object value, FullPropertyInfo[] infos, GeneratedWritePlan generated)
     {
       MsgPackWriter w = c.W;
       PropWriter[] props = Props;
       int at = w.ReserveArrayHeader(props.Length);
-      if (GeneratedPlan != null)
+      if (generated != null)
       {
-        int last = Code.WriteBoxed(c, value, null, infos, GeneratedPlan, out int after);
+        int last = generated.Code.WriteBoxed(c, value, null, infos, generated, out int after);
         w.Pos = after;
         w.PatchArrayHeader(at, props.Length, last);
         return;
@@ -227,21 +285,23 @@ namespace LtMsgPack.Writing
       byte[][] keys = c.BeginObject(this, out FullPropertyInfo[] infos); // before anything else, as LsMsgPack resolves the ids first
       PropWriter[] props = Props;
       GeneratedWritePlan generated = GeneratedPlan;
+      if (generated is null)
+        CountWrite(c.Serializer);
       if (c.Serializer.Options._objectLayout == ObjectLayout.Array)
       {
         SerializationRules.ThrowIfUnresolvableAsArray(Type, assignedTo);
         c.EnterContainer();
         if (c.Serializer.Options._trimTrailingNulls)
-          WriteStructTrimmed(c, ref value, infos);
+          WriteStructTrimmed(c, ref value, infos, generated);
         else
         {
           c.W.ArrayHeader(props.Length);
           if (generated != null)
           {
             if (generated.Unrolled)
-              Unsafe.As<GeneratedStructCode<T>>(Code).WriteUnrolled(c, ref value, infos, generated); // the code of the plan's type
+              Unsafe.As<GeneratedStructCode<T>>(generated.Code).WriteUnrolled(c, ref value, infos, generated); // the code of the plan's type
             else
-              Unsafe.As<GeneratedStructCode<T>>(Code).Write(c, ref value, null, infos, generated, out int end);
+              Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, null, infos, generated, out int end);
           }
           else
           {
@@ -260,7 +320,7 @@ namespace LtMsgPack.Writing
       SerializationRules.ThrowIfUnresolvableWithSchema(Type, assignedTo, c.UsesSchema);
       c.EnterContainer();
       if (generated != null)
-        count += Unsafe.As<GeneratedStructCode<T>>(Code).Write(c, ref value, keys, infos, generated, out int end);
+        count += Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, keys, infos, generated, out int end);
       else
       {
         for (int t = 0; t < props.Length; t++)
@@ -274,14 +334,14 @@ namespace LtMsgPack.Writing
     /// <summary>
     /// <see cref="WriteTrimmed"/> for a struct by reference, see <see cref="WriteStruct{T}"/>.
     /// </summary>
-    private void WriteStructTrimmed<T>(WriteContext c, ref T value, FullPropertyInfo[] infos)
+    private void WriteStructTrimmed<T>(WriteContext c, ref T value, FullPropertyInfo[] infos, GeneratedWritePlan generated)
     {
       MsgPackWriter w = c.W;
       PropWriter[] props = Props;
       int at = w.ReserveArrayHeader(props.Length);
-      if (GeneratedPlan != null)
+      if (generated != null)
       {
-        int last = Unsafe.As<GeneratedStructCode<T>>(Code).Write(c, ref value, null, infos, GeneratedPlan, out int after);
+        int last = Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, null, infos, generated, out int after);
         w.Pos = after;
         w.PatchArrayHeader(at, props.Length, last);
         return;
@@ -310,8 +370,10 @@ namespace LtMsgPack.Writing
     /// <returns>The number of entries written</returns>
     internal int WriteProperties(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos)
     {
-      if (GeneratedPlan != null)
-        return Code.WriteBoxed(c, value, keys, infos, GeneratedPlan, out int end);
+      GeneratedWritePlan generated = GeneratedPlan;
+      if (generated != null)
+        return generated.Code.WriteBoxed(c, value, keys, infos, generated, out int end);
+      CountWrite(c.Serializer);
 
       int count = 0;
       PropWriter[] props = Props;
