@@ -1,6 +1,6 @@
 ﻿# LtMsgPack
 
-Fast MsgPack serializer for .NET classes, used like the xml and json serializers. It writes and reads your objects directly, without an intermediate item tree. On the invoices of the benchmark it writes about 3x and reads about 5x as fast as System.Text.Json, with 35-47% smaller payloads.
+Fast MsgPack serializer for .NET classes, used like the xml and json serializers. It writes and reads your objects directly, without an intermediate item tree. On the invoices of the benchmark it writes and reads about 4.5-5.5x as fast as System.Text.Json, with 35-47% smaller payloads.
 
 - **Indexed schema** (on by default): each message lists its types and property names once, and the body refers to them by index. Messages are smaller, and data written by older or newer versions of your classes still loads.
 - **Polymorphism** out of the box: a type id is written where a value's type differs from the declared type (a `List<IShape>` holding circles and squares), without extra attributes.

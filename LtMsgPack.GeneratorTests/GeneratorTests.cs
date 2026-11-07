@@ -536,7 +536,8 @@ namespace S
       Assert.Contains("List<global::S.Vec>()", code);
 
       // Compiled for .NET Standard 2.0 in C# 7.3 (without what needs later versions: declared struct constructors, records): explicitly typed ref lambdas, no UnsafeAccessor
-      string model = StructModel.Replace("    public Counter() { Count = 1; }\n", "").Replace("  public readonly record struct Pair(int A, string B);\n", "").Replace("    public Pair P { get; set; }\n", "");
+      // The verbatim model has the line endings of the checkout (CRLF on Windows)
+      string model = StructModel.Replace("\r\n", "\n").Replace("    public Counter() { Count = 1; }\n", "").Replace("  public readonly record struct Pair(int A, string B);\n", "").Replace("    public Pair P { get; set; }\n", "");
       GeneratorHarness.Result old = GeneratorHarness.Run(model, LanguageVersion.CSharp7_3, netStandard20: true);
       old.AssertCompiles();
       Assert.DoesNotContain("UnsafeAccessor", old.AllGenerated);

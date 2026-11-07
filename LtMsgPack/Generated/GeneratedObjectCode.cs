@@ -337,6 +337,11 @@ namespace LtMsgPack.Generated
     public readonly byte DecimalCode;
 
     internal readonly bool Unrolled;
+
+    /// <summary>
+    /// The code this plan is for (one field, so ObjectPlan can switch to a compiled writer with one store).
+    /// </summary>
+    internal readonly GeneratedObjectCode Code;
     private readonly PropWriter[] _props;
     private readonly Serializer _serializer;
 
@@ -345,9 +350,10 @@ namespace LtMsgPack.Generated
     /// </summary>
     private readonly object[] _handlers;
 
-    internal GeneratedWritePlan(Serializer serializer, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool unrolled, PropWriter[] props)
+    internal GeneratedWritePlan(Serializer serializer, GeneratedObjectCode code, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool unrolled, PropWriter[] props)
     {
       _serializer = serializer;
+      Code = code;
       _handlers = new object[ids.Length];
       Ids = ids;
       FilterDefaults = filterDefaults;

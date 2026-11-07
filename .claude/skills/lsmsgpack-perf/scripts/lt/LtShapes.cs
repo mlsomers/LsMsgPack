@@ -188,8 +188,17 @@ public static class LtShapes
       : ns.ToString("0", CultureInfo.InvariantCulture) + " ns";
   }
 
+
+  /// <summary>LT_COMPILE_AFTER=n sets LtMsgPackOptions.Default_CompileWritersAfter (compiled writers after n objects per type, 0 at once, -1 never); ignored by a base without the option.</summary>
+  private static void CompileAfterFromEnvironment()
+  {
+    string after = System.Environment.GetEnvironmentVariable("LT_COMPILE_AFTER");
+    if (after != null)
+      typeof(LtMsgPack.LtMsgPackOptions).GetField("Default_CompileWritersAfter")?.SetValue(null, int.Parse(after));
+  }
   public static void Main(string[] args)
   {
+    CompileAfterFromEnvironment();
     double seconds = args.Length > 0 ? double.Parse(args[0], CultureInfo.InvariantCulture) : 0.5;
     string filter = args.Length > 1 ? args[1] : "";
     int passes = args.Length > 2 ? int.Parse(args[2], CultureInfo.InvariantCulture) : 5;

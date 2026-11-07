@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2026.11.3
 
 - Debug sessions of Microsoft's Unity extension (`vstuc`) are read as .NET: faster than through the elements in the Variables view, and an AI agent can read a `SchemaStore` there.
 - Values that are too large for practical debugging: a str, bin or ext above 16 MiB keeps its first and last 100 characters or bytes, its icon gets a mark, the properties show its original length and the hex view has a row of dots for the bytes in between. Files above 256 MiB are read by the inspector itself, so they can be larger than 2 GB and hold values up to the 4 GB of the specification. Of such a file the hex view shows at most 256 MiB after leaving out those values, **Copy** is refused.

@@ -30,7 +30,7 @@ Tests:
 
 **LsMsgPack** works in two phases. Writing: object → tree of `MsgPackItem`s → bytes (each item writes itself). Reading: bytes → tree of `MsgPackItem`s → plain values (`object[]` for arrays, key/value pairs for maps) → objects. The item tree is what makes it useful for inspecting data, and also what makes it slower.
 
-**LtMsgPack** skips the tree. Per type it builds a plan once (which properties, in which order, with typed getters and setters) and writes the values straight into a buffer, or reads them straight into the objects. When a value isn't what it expects, it falls back to reading it the way LsMsgPack does, so both return the same values.
+**LtMsgPack** skips the tree. Per type it builds a plan once (which properties, in which order, with typed getters and setters) and writes the values straight into a buffer, or reads them straight into the objects. Once a type has been written 1000 times (`LtMsgPackOptions.CompileWritersAfter`), its writer is compiled at runtime into straight-line code per property, the code the [source generator](SourceGenerator.md) writes at compile time (not under NativeAOT or on WebAssembly, where the runtime can't compile code). When a value isn't what it expects, it falls back to reading it the way LsMsgPack does, so both return the same values.
 
 Both use the decisions in `LsMsgPack.Core`: which properties are written (filters, property order), when a type id is needed and how it's resolved, and the indexed schema. See [schema.md](schema.md) for the wire formats.
 
