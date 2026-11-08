@@ -47,8 +47,8 @@ namespace LtMsgPack.Reading
       if (c.R.TryReadNil())
         return default(T); // null, a struct's default as Core converts a nil
 
-      if (c.Unusual) // objects read as LsMsgPack does, or the differences are collected
-        return _serializer.SlowObjects ? Slow(c, start, assignedTo) : ReadReporting(c, start, assignedTo);
+      if (c.Unusual) // objects read as LsMsgPack does, or the differences are collected (values declared as object: Core reports them)
+        return _serializer.SlowObjects || typeof(T) == typeof(object) ? Slow(c, start, assignedTo) : ReadReporting(c, start, assignedTo);
 
       int count = c.R.TryReadMapHeader();
       if (count < 0)
@@ -90,7 +90,7 @@ namespace LtMsgPack.Reading
       }
 
       PropReader[] bound = null;
-      if (c.Schema)
+      if (c.Schema && count > 0) // no keys, nothing to bind: a type without serialized members has no schema entry (Core's ValueConverter.ConvertMap creates it without looking)
       {
         bound = c.Bound.Binding(plan);
         if (bound is null)
@@ -350,7 +350,7 @@ namespace LtMsgPack.Reading
       }
 
       PropReader[] bound = null;
-      if (c.Schema)
+      if (c.Schema && count > 0) // no keys, nothing to bind: a type without serialized members has no schema entry (Core's ValueConverter.ConvertMap creates it without looking)
       {
         bound = c.Bound.Binding(plan);
         if (bound is null)

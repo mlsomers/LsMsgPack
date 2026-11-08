@@ -153,7 +153,7 @@ namespace LtMsgPack.Writing
         GeneratedWritePlan plan = code is null ? null : serializer.GeneratedWritePlan(code, Infos, Props);
         if (plan is null)
           return;
-        ((ICompiledCode)code).Compile(plan);
+        ((ICompiledCode)code).Compile(plan, serializer.Options._objectLayout != ObjectLayout.Array);
         Volatile.Write(ref GeneratedPlan, plan);
       }
       catch (Exception) // a type or runtime the expressions do not handle: the runtime's plan writes it, as before (CompiledWriterTests check that the writers are used)
@@ -454,7 +454,7 @@ namespace LtMsgPack.Writing
     {
       Serializer = serializer;
       NoFilters = serializer.Filters == FilterMode.None;
-      BoxedFilters = serializer.Filters == FilterMode.Custom || info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute));
+      BoxedFilters = IsBoxed(serializer, info);
     }
 
     /// <param name="key">The encoded property id, null for the array layout (only the value)</param>
@@ -467,6 +467,22 @@ namespace LtMsgPack.Writing
     internal virtual bool ByRef
     {
       get { return false; }
+    }
+
+    /// <summary>
+    /// The filter mode of a property as the type argument of <see cref="PropWriter{TTarget, TValue, TFilter}"/> and <see cref="StructPropWriter{TTarget, TValue, TFilter}"/>:
+    /// <see cref="NoFilter"/>, <see cref="DefaultValuesFilter"/> or <see cref="BoxedFilter"/> (decided once per property, not tested per value).
+    /// </summary>
+    internal static Type FilterType(Serializer serializer, FullPropertyInfo info)
+    {
+      if (serializer.Filters == FilterMode.None)
+        return typeof(NoFilter);
+      return IsBoxed(serializer, info) ? typeof(BoxedFilter) : typeof(DefaultValuesFilter);
+    }
+
+    private static bool IsBoxed(Serializer serializer, FullPropertyInfo info)
+    {
+      return serializer.Filters == FilterMode.Custom || info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute));
     }
 
     internal bool IncludeBoxed(object value, FullPropertyInfo info)
@@ -495,7 +511,7 @@ namespace LtMsgPack.Writing
       {
         try
         {
-          Type writerType = (property.DeclaringType.IsValueType ? typeof(StructPropWriter<,>) : typeof(PropWriter<,>)).MakeGenericType(property.DeclaringType, property.PropertyType);
+          Type writerType = (property.DeclaringType.IsValueType ? typeof(StructPropWriter<,,>) : typeof(PropWriter<,,>)).MakeGenericType(property.DeclaringType, property.PropertyType, FilterType(serializer, info));
           return (PropWriter)Activator.CreateInstance(writerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, get }, null);
         }
         catch (Exception) // e.g. a runtime that cannot create the generic type, use reflection
@@ -521,7 +537,7 @@ namespace LtMsgPack.Writing
       {
         try
         {
-          Type writerType = (declaring.IsValueType ? typeof(StructPropWriter<,>) : typeof(PropWriter<,>)).MakeGenericType(declaring, field.FieldType);
+          Type writerType = (declaring.IsValueType ? typeof(StructPropWriter<,,>) : typeof(PropWriter<,,>)).MakeGenericType(declaring, field.FieldType, FilterType(serializer, info));
           return (PropWriter)Activator.CreateInstance(writerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, field }, null);
         }
         catch (Exception) // e.g. a runtime that cannot create the generic type or compile the expression, use reflection
@@ -533,9 +549,30 @@ namespace LtMsgPack.Writing
   }
 
   /// <summary>
-  /// A property (or field) read through a typed delegate, the value is not boxed.
+  /// The filter modes of the typed property writers (a type argument: the JIT drops the tests of the other modes, see <see cref="PropWriter.FilterType"/>).
   /// </summary>
-  internal sealed class PropWriter<TTarget, TValue> : PropWriter where TTarget : class
+  internal struct NoFilter
+  {
+  }
+
+  /// <summary>
+  /// Only FilterDefaultValues, typed (<see cref="ValueHandler{T}.IncludeByDefault"/>).
+  /// </summary>
+  internal struct DefaultValuesFilter
+  {
+  }
+
+  /// <summary>
+  /// The dynamic filters with the value boxed (<see cref="PropWriter.BoxedFilters"/>).
+  /// </summary>
+  internal struct BoxedFilter
+  {
+  }
+
+  /// <summary>
+  /// A property (or field) read through a typed delegate, the value is not boxed. <typeparamref name="TFilter"/>: the filter mode (<see cref="PropWriter.FilterType"/>).
+  /// </summary>
+  internal sealed class PropWriter<TTarget, TValue, TFilter> : PropWriter where TTarget : class where TFilter : struct
   {
     private readonly Func<TTarget, TValue> _get;
     private readonly FullPropertyInfo _declared;
@@ -573,14 +610,14 @@ namespace LtMsgPack.Writing
       }
 
       ValueHandler<TValue> handler = _handler ?? (_handler = Serializer.Handler<TValue>(_declared));
-      if (!NoFilters)
+      if (typeof(TFilter) == typeof(BoxedFilter))
       {
-        if (BoxedFilters)
-        {
-          if (!IncludeBoxed(value, info))
-            return false;
-        }
-        else if (!handler.IncludeByDefault(value, info))
+        if (!IncludeBoxed(value, info))
+          return false;
+      }
+      else if (typeof(TFilter) == typeof(DefaultValuesFilter))
+      {
+        if (!handler.IncludeByDefault(value, info))
           return false;
       }
 
@@ -614,9 +651,9 @@ namespace LtMsgPack.Writing
 
   /// <summary>
   /// A property of a struct read through a typed delegate on the struct by reference (in the caller's value, see ObjectPlan.WriteStruct, or in a box: a struct written as an object), the value is not boxed.
-  /// The same as <see cref="PropWriter{TTarget, TValue}.Write"/> after the getter: keep the two the same (the class writer is not changed for this, it is the usual path).
+  /// The same as <see cref="PropWriter{TTarget, TValue, TFilter}.Write"/> after the getter: keep the two the same (the class writer is not changed for this, it is the usual path).
   /// </summary>
-  internal sealed class StructPropWriter<TTarget, TValue> : RefPropWriter<TTarget> where TTarget : struct
+  internal sealed class StructPropWriter<TTarget, TValue, TFilter> : RefPropWriter<TTarget> where TTarget : struct where TFilter : struct
   {
     private readonly StructGetter<TTarget, TValue> _get;
     private readonly FullPropertyInfo _declared;
@@ -651,14 +688,14 @@ namespace LtMsgPack.Writing
       TValue value = _get(ref target);
 
       ValueHandler<TValue> handler = _handler ?? (_handler = Serializer.Handler<TValue>(_declared));
-      if (!NoFilters)
+      if (typeof(TFilter) == typeof(BoxedFilter))
       {
-        if (BoxedFilters)
-        {
-          if (!IncludeBoxed(value, info))
-            return false;
-        }
-        else if (!handler.IncludeByDefault(value, info))
+        if (!IncludeBoxed(value, info))
+          return false;
+      }
+      else if (typeof(TFilter) == typeof(DefaultValuesFilter))
+      {
+        if (!handler.IncludeByDefault(value, info))
           return false;
       }
 

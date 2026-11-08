@@ -186,7 +186,7 @@ namespace LtMsgPack.Reading
           return Unsafe.As<ulong, T>(ref u);
         }
       }
-      else if (c.R.TryReadInt64(out long value))
+      else if (c.R.TryReadAnyInt64(out long value))
       {
         switch (Code)
         {

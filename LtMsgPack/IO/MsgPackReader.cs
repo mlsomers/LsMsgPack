@@ -83,7 +83,7 @@ namespace LtMsgPack.IO
       Need(2);
       ReadOnlySpan<byte> source = new ReadOnlySpan<byte>(Buf, Pos, 2);
       Pos += 2;
-      return _littleEndian ? BinaryPrimitives.ReadUInt16LittleEndian(source) : BinaryPrimitives.ReadUInt16BigEndian(source);
+      return U16(source);
     }
 
     private uint U32()
@@ -91,7 +91,7 @@ namespace LtMsgPack.IO
       Need(4);
       ReadOnlySpan<byte> source = new ReadOnlySpan<byte>(Buf, Pos, 4);
       Pos += 4;
-      return _littleEndian ? BinaryPrimitives.ReadUInt32LittleEndian(source) : BinaryPrimitives.ReadUInt32BigEndian(source);
+      return U32(source);
     }
 
     private ulong U64()
@@ -99,7 +99,7 @@ namespace LtMsgPack.IO
       Need(8);
       ReadOnlySpan<byte> source = new ReadOnlySpan<byte>(Buf, Pos, 8);
       Pos += 8;
-      return _littleEndian ? BinaryPrimitives.ReadUInt64LittleEndian(source) : BinaryPrimitives.ReadUInt64BigEndian(source);
+      return U64(source);
     }
 
     private byte[] Bytes(long count)
@@ -189,34 +189,107 @@ namespace LtMsgPack.IO
     }
 
     /// <summary>
-    /// Any integer that fits a long.
+    /// Any integer that fits a long. Small enough for the JIT to inline where it pays (the indexes of the schema's keys are positive fixints); AggressiveInlining made the key loops
+    /// larger, names maps read 2-3% slower.
     /// </summary>
     public bool TryReadInt64(out long value)
     {
-      byte c = Peek();
-      if (c <= 0x7F) { Pos++; value = c; return true; }
-      if (c >= 0xE0) { Pos++; value = (sbyte)c; return true; }
+      int pos = Pos;
+      if (pos >= End)
+        throw EndOfData();
+      byte[] buffer = Buf;
+      byte c = buffer[pos];
+      if (c <= 0x7F)
+      {
+        Pos = pos + 1;
+        value = c;
+        return true;
+      }
+      return TryReadInt64Formats(buffer, pos, c, out value);
+    }
+
+    /// <summary>
+    /// <see cref="TryReadInt64"/> in one call (the readers of integers: a value of more than one byte would take two calls, inlining it made their readers larger, names maps read 2% slower).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal bool TryReadAnyInt64(out long value)
+    {
+      int pos = Pos;
+      if (pos >= End)
+        throw EndOfData();
+      byte[] buffer = Buf;
+      byte c = buffer[pos];
+      if (c <= 0x7F)
+      {
+        Pos = pos + 1;
+        value = c;
+        return true;
+      }
+      return Int64Formats(buffer, pos, c, out value);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool TryReadInt64Formats(byte[] buffer, int pos, byte c, out long value)
+    {
+      return Int64Formats(buffer, pos, c, out value);
+    }
+
+    /// <summary>
+    /// The formats other than a positive fixint <paramref name="c"/> at <paramref name="pos"/> (the buffer and position are passed: loading them again made <c>int[]</c> reads 10% slower).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool Int64Formats(byte[] buffer, int pos, byte c, out long value)
+    {
+      if (c >= 0xE0) { Pos = pos + 1; value = (sbyte)c; return true; }
       switch (c)
       {
-        case 0xCC: Pos++; value = ReadByte(); return true;
-        case 0xCD: Pos++; value = U16(); return true;
-        case 0xCE: Pos++; value = U32(); return true;
+        case 0xCC: value = AfterFormat(buffer, pos, 1)[0]; Pos = pos + 2; return true;
+        case 0xCD: value = U16(AfterFormat(buffer, pos, 2)); Pos = pos + 3; return true;
+        case 0xCE: value = U32(AfterFormat(buffer, pos, 4)); Pos = pos + 5; return true;
         case 0xCF:
           {
-            int start = Pos;
-            Pos++;
-            ulong u = U64();
-            if (u > long.MaxValue) { Pos = start; value = 0; return false; }
+            ulong u = U64(AfterFormat(buffer, pos, 8));
+            if (u > long.MaxValue) { value = 0; return false; }
             value = (long)u;
+            Pos = pos + 9;
             return true;
           }
-        case 0xD0: Pos++; value = (sbyte)ReadByte(); return true;
-        case 0xD1: Pos++; value = (short)U16(); return true;
-        case 0xD2: Pos++; value = (int)U32(); return true;
-        case 0xD3: Pos++; value = (long)U64(); return true;
+        case 0xD0: value = (sbyte)AfterFormat(buffer, pos, 1)[0]; Pos = pos + 2; return true;
+        case 0xD1: value = (short)U16(AfterFormat(buffer, pos, 2)); Pos = pos + 3; return true;
+        case 0xD2: value = (int)U32(AfterFormat(buffer, pos, 4)); Pos = pos + 5; return true;
+        case 0xD3: value = (long)U64(AfterFormat(buffer, pos, 8)); Pos = pos + 9; return true;
       }
       value = 0;
       return false;
+    }
+
+    /// <summary>
+    /// The <paramref name="count"/> bytes after the format byte at <paramref name="pos"/> (checked against <see cref="End"/>).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ReadOnlySpan<byte> AfterFormat(byte[] buffer, int pos, int count)
+    {
+      if (End - pos <= count)
+        throw EndOfData();
+      return new ReadOnlySpan<byte>(buffer, pos + 1, count);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ushort U16(ReadOnlySpan<byte> source)
+    {
+      return _littleEndian ? BinaryPrimitives.ReadUInt16LittleEndian(source) : BinaryPrimitives.ReadUInt16BigEndian(source);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private uint U32(ReadOnlySpan<byte> source)
+    {
+      return _littleEndian ? BinaryPrimitives.ReadUInt32LittleEndian(source) : BinaryPrimitives.ReadUInt32BigEndian(source);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ulong U64(ReadOnlySpan<byte> source)
+    {
+      return _littleEndian ? BinaryPrimitives.ReadUInt64LittleEndian(source) : BinaryPrimitives.ReadUInt64BigEndian(source);
     }
 
     /// <summary>

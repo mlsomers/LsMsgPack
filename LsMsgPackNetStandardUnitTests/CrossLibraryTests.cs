@@ -37,6 +37,9 @@ namespace LsMsgPackUnitTests
     public readonly struct XlPoint { public XlPoint(int x, int y) { X = x; Y = y; } public int X { get; } public int Y { get; } }
     public class XlCart { public List<XlShapeBase> Lines { get; } = new List<XlShapeBase>(); public int Count { get { return Lines.Count; } } public Dictionary<string, int> Totals { get; } = new Dictionary<string, int>(); public string Name { get; set; } }
 
+    public class XlNoMembers { public int Unattributed; } // a public field without an attribute: not serialized by default (SerializedFields.Attributed)
+    public class XlNoMembersHolder { public XlNoMembers Inner { get; set; } public int After { get; set; } }
+
     public class XlNested
     {
       public string Name { get; set; }
@@ -392,6 +395,7 @@ namespace LsMsgPackUnitTests
       values.Add(new List<XlFieldVec> { new XlFieldVec { X = 1, Z = 2 }, default(XlFieldVec) });
       values.Add(new System.Numerics.Vector3(1, 2, 3));
       values.Add(new object[] { System.Numerics.Vector2.One, new System.Numerics.Vector4(1, 2, 3, 4), new System.Numerics.Plane(1, 0, 0, 2), System.Numerics.Matrix3x2.CreateRotation(1) });
+      values.Add(new XlNoMembersHolder { Inner = new XlNoMembers { Unattributed = 3 }, After = 2 }); // an object without serialized members (an empty map, no schema entry)
       return values;
     }
 

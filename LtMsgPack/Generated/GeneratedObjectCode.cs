@@ -374,7 +374,7 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
-    /// A value the generated code read itself but does not write itself (objects, collections...): what the runtime's <see cref="PropWriter{TTarget, TValue}"/> does after its getter.
+    /// A value the generated code read itself but does not write itself (objects, collections...): what the runtime's <see cref="PropWriter{TTarget, TValue, TFilter}"/> does after its getter.
     /// </summary>
     /// <typeparam name="T">The type of the property at <paramref name="position"/></typeparam>
     /// <returns>false when the filters left the value out (nothing was written)</returns>

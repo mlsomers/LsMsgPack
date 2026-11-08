@@ -25,9 +25,10 @@ namespace LtMsgPack.Writing
   internal interface ICompiledCode
   {
     /// <summary>
-    /// Compiles the writer the plan uses for its layout (the other one at its first call).
+    /// Compiles the writer the plan uses for its layout (the others at their first call).
     /// </summary>
-    void Compile(GeneratedWritePlan plan);
+    /// <param name="map">The map layout (<see cref="ObjectLayout.Map"/>), otherwise arrays</param>
+    void Compile(GeneratedWritePlan plan, bool map);
   }
 
   /// <summary>
@@ -36,7 +37,8 @@ namespace LtMsgPack.Writing
   internal sealed class CompiledObjectCode<T> : GeneratedObjectCode<T>, ICompiledCode where T : class
   {
     private readonly MemberInfo[] _properties; // properties and fields
-    private CompiledWrite<T> _write;
+    private CompiledWrite<T> _map;
+    private CompiledWrite<T> _items;
     private CompiledWriteUnrolled<T> _unrolled;
 
     public CompiledObjectCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled)
@@ -44,17 +46,21 @@ namespace LtMsgPack.Writing
       _properties = properties;
     }
 
-    public void Compile(GeneratedWritePlan plan)
+    public void Compile(GeneratedWritePlan plan, bool map)
     {
-      if (plan.Unrolled)
+      if (map)
+        _map = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, plan, true);
+      else if (plan.Unrolled)
         _unrolled = CompiledWriter.Unrolled<CompiledWriteUnrolled<T>>(typeof(T), false, Members, _properties, plan);
       else
-        _write = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, plan);
+        _items = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, plan, false);
     }
 
     public override int Write(WriteContext c, T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
-      CompiledWrite<T> write = _write ?? (_write = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, p)); // maps of the array layout: a collection with SerializeProperties
+      CompiledWrite<T> write = keys != null
+        ? _map ?? (_map = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, p, true)) // also the maps of the array layout: a collection with SerializeProperties
+        : _items;
       return write(c, value, keys, infos, p, out end);
     }
 
@@ -70,7 +76,8 @@ namespace LtMsgPack.Writing
   internal sealed class CompiledStructCode<T> : GeneratedStructCode<T>, ICompiledCode where T : struct
   {
     private readonly MemberInfo[] _properties; // properties and fields
-    private CompiledRefWrite<T> _write;
+    private CompiledRefWrite<T> _map;
+    private CompiledRefWrite<T> _items;
     private CompiledRefWriteUnrolled<T> _unrolled;
 
     public CompiledStructCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled)
@@ -79,17 +86,21 @@ namespace LtMsgPack.Writing
       Unboxer = new StructUnboxer<T, T>(); // what GeneratedValues.Struct gives the generated code: a struct written as an object
     }
 
-    public void Compile(GeneratedWritePlan plan)
+    public void Compile(GeneratedWritePlan plan, bool map)
     {
-      if (plan.Unrolled)
+      if (map)
+        _map = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, plan, true);
+      else if (plan.Unrolled)
         _unrolled = CompiledWriter.Unrolled<CompiledRefWriteUnrolled<T>>(typeof(T), true, Members, _properties, plan);
       else
-        _write = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, plan);
+        _items = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, plan, false);
     }
 
     public override int Write(WriteContext c, ref T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
-      CompiledRefWrite<T> write = _write ?? (_write = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, p));
+      CompiledRefWrite<T> write = keys != null
+        ? _map ?? (_map = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, p, true))
+        : _items;
       return write(c, ref value, keys, infos, p, out end);
     }
 
@@ -101,7 +112,7 @@ namespace LtMsgPack.Writing
 
   /// <summary>
   /// Writers compiled per <see cref="ObjectPlan"/> at runtime: the code of the source generator (<see cref="GeneratedObjectCode{T}"/>) as expression trees, for the plan's properties and options,
-  /// so the per property costs of the runtime's plans go (a getter delegate and two virtual calls per property: <see cref="PropWriter{TTarget, TValue}"/> → <see cref="ValueHandler{T}"/>).
+  /// so the per property costs of the runtime's plans go (a getter delegate and two virtual calls per property: <see cref="PropWriter{TTarget, TValue, TFilter}"/> → <see cref="ValueHandler{T}"/>).
   /// <para>A member per property of the plan, in its order: the ids of <see cref="GeneratedWritePlan"/> are the positions. Values of the types the generated code writes itself are written here
   /// (Serializer.Fits holds by construction: the kinds come from the same type infos), the others go to the runtime's handler of their type (<see cref="GeneratedWritePlan.Value{T}"/>,
   /// also a property with [DefaultValue]: its boxed filters), properties without an accessible instance getter to the property's writer (<see cref="GeneratedWritePlan.Runtime"/>).</para>
@@ -217,54 +228,53 @@ namespace LtMsgPack.Writing
     }
 
     /// <summary>
-    /// <see cref="GeneratedObjectCode{T}.Write"/>: map entries with keys, array items without (nil for a value the filters leave out), trimming with <see cref="GeneratedWritePlan.Trim"/>.
+    /// <see cref="GeneratedObjectCode{T}.Write"/>, one delegate per kind of call (the keys are known per object, not tested per property): map entries with keys (<paramref name="map"/>),
+    /// or array items without (nil for a value the filters leave out, trimming with <see cref="GeneratedWritePlan.Trim"/>).
     /// </summary>
+    /// <param name="map">The delegate is only called with keys</param>
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
-    internal static TDelegate Write<TDelegate>(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, GeneratedWritePlan plan) where TDelegate : Delegate
+    internal static TDelegate Write<TDelegate>(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, GeneratedWritePlan plan, bool map) where TDelegate : Delegate
     {
       Builder b = new Builder(type, byRef, members, properties, plan);
       ParameterExpression keys = Expression.Parameter(typeof(byte[][]), "keys");
       ParameterExpression end = Expression.Parameter(typeof(int).MakeByRefType(), "end");
-      ParameterExpression key = Expression.Variable(typeof(byte[]), "key");
       ParameterExpression count = Expression.Variable(typeof(int), "count");
-      ParameterExpression trim = Expression.Variable(typeof(bool), "trim");
       ParameterExpression last = Expression.Variable(typeof(int), "last");
       ParameterExpression start = Expression.Variable(typeof(int), "start");
       Expression pos = Expression.Field(b.W, nameof(MsgPackWriter.Pos));
+      Expression noKey = Expression.Constant(null, typeof(byte[]));
+      bool trim = plan.Trim && !map;
 
       List<Expression> body = new List<Expression>();
       body.Add(Expression.Assign(b.W, Expression.Field(b.C, nameof(WriteContext.W))));
       body.Add(Expression.Assign(count, Expression.Constant(0)));
       body.Add(Expression.Assign(end, pos));
-      if (plan.Trim)
-      {
-        body.Add(Expression.Assign(trim, Expression.Equal(keys, Expression.Constant(null, typeof(byte[][])))));
+      if (trim)
         body.Add(Expression.Assign(last, Expression.Constant(0)));
-      }
       int[] ids = plan.Ids;
       for (int t = 0; t < ids.Length; t++)
       {
-        body.Add(Expression.Assign(key, Expression.Condition(Expression.Equal(keys, Expression.Constant(null, typeof(byte[][]))), Expression.Constant(null, typeof(byte[])), Expression.ArrayIndex(keys, Expression.Constant(t)))));
-        if (plan.Trim)
+        if (map)
+        {
+          body.Add(Expression.IfThen(b.Member(t, ids[t], Expression.ArrayIndex(keys, Expression.Constant(t))), Expression.PreIncrementAssign(count)));
+          continue;
+        }
+        if (trim)
           body.Add(Expression.Assign(start, pos));
-        body.Add(Expression.IfThenElse(b.Member(t, ids[t], key),
-          Expression.PreIncrementAssign(count),
-          Expression.IfThen(Expression.Equal(key, Expression.Constant(null, typeof(byte[]))), b.Nil()))); // the array layout: nil for a value the filters leave out
-        if (plan.Trim) // nil is the only value of one byte 0xC0
-          body.Add(Expression.IfThen(Expression.AndAlso(trim, Expression.OrElse(
+        body.Add(Expression.IfThenElse(b.Member(t, ids[t], noKey), Expression.PreIncrementAssign(count), b.Nil())); // nil for a value the filters leave out
+        if (trim) // nil is the only value of one byte 0xC0
+          body.Add(Expression.IfThen(Expression.OrElse(
               Expression.NotEqual(pos, Expression.Add(start, Expression.Constant(1))),
-              Expression.NotEqual(Expression.ArrayIndex(Expression.Field(b.W, nameof(MsgPackWriter.Buf)), start), Expression.Constant((byte)0xC0)))),
+              Expression.NotEqual(Expression.ArrayIndex(Expression.Field(b.W, nameof(MsgPackWriter.Buf)), start), Expression.Constant((byte)0xC0))),
             Expression.Block(Expression.Assign(last, Expression.Constant(t + 1)), Expression.Assign(end, pos))));
       }
-      body.Add(plan.Trim ? Expression.Condition(trim, last, count) : (Expression)count);
+      body.Add(trim ? last : count);
 
       List<ParameterExpression> variables = b.Variables();
-      variables.Add(key);
       variables.Add(count);
-      if (plan.Trim)
+      if (trim)
       {
-        variables.Add(trim);
         variables.Add(last);
         variables.Add(start);
       }
@@ -370,7 +380,7 @@ namespace LtMsgPack.Writing
       }
 
       /// <summary>
-      /// The value at the position (with its key when <paramref name="key"/> is not null), as the switch of the generated Write does.
+      /// The value at the position (with its key, unless <paramref name="key"/> is the constant null of an array item), as the switch of the generated Write does.
       /// </summary>
       /// <returns>A bool: false when the filters left the value out (nothing was written)</returns>
       [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
@@ -385,10 +395,9 @@ namespace LtMsgPack.Writing
           return Expression.Call(P, ValueMethod.MakeGenericMethod(member.PropertyType), Expression.Constant(position), C, Get(id), key, Expression.ArrayIndex(Infos, Expression.Constant(position)));
 
         ParameterExpression v = Value(member.PropertyType);
-        Expression written = Expression.Block(
-          Expression.IfThen(Expression.NotEqual(key, Expression.Constant(null, typeof(byte[]))), Expression.Call(W, nameof(MsgPackWriter.Raw), null, key)),
-          WriteValue(member, v),
-          Expression.Constant(true));
+        Expression written = key is ConstantExpression // the constant null: an array item
+          ? Expression.Block(WriteValue(member, v), Expression.Constant(true))
+          : Expression.Block(Expression.Call(W, nameof(MsgPackWriter.Raw), null, key), WriteValue(member, v), Expression.Constant(true));
         if (_filter)
           written = Expression.Condition(Omitted(member, v), Expression.Constant(false), written);
         return Expression.Block(Expression.Assign(v, Get(id)), written);
