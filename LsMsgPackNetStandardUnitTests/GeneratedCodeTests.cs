@@ -408,6 +408,9 @@ namespace LsMsgPackUnitTests
       object generated = WritePlan(serializer, typeof(GcAllKinds), true);
       Assert.IsNotNull(generated, "the generated writer is used");
       Assert.IsTrue((bool)generated.GetType().GetField("Unrolled", Internal).GetValue(generated), "the runtime's order is the predicted one (derived class first, then the base class)");
+      Assert.IsTrue((bool)generated.GetType().GetField("UnrolledMap", Internal).GetValue(generated), "maps are written in sequence too");
+      object code = generated.GetType().GetField("Code", Internal).GetValue(generated);
+      Assert.IsNotNull(code.GetType().GetMethod("WriteUnrolledMapPart1", BindingFlags.Instance | BindingFlags.NonPublic), "a class of more than 16 members is written by parts (the JIT's inline budget per method)");
       int[] ids = ((LtMsgPack.Generated.GeneratedWritePlan)generated).Ids;
       Assert.DoesNotContain(-1, ids, "every property is a generated member (the runtime writes the ones of kind None, at their position)");
 

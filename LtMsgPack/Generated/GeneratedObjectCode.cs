@@ -87,7 +87,12 @@ namespace LtMsgPack.Generated
     /// <summary>
     /// <see cref="GeneratedObjectCode{T}.ReadMap"/> (version 3): the loop over the values of a map, instead of a call to <see cref="GeneratedObjectCode{T}.ReadValue"/> per value.
     /// </summary>
-    ReadMap = 64
+    ReadMap = 64,
+
+    /// <summary>
+    /// <see cref="GeneratedObjectCode{T}.WriteUnrolledMap"/> (version 4): the map layout written in sequence, when the runtime's properties are <see cref="GeneratedObjectCode.UnrolledIds"/>.
+    /// </summary>
+    WriteUnrolledMap = 128
   }
 
   /// <summary>
@@ -111,6 +116,10 @@ namespace LtMsgPack.Generated
       Capabilities = capabilities;
     }
 
+    /// <summary>
+    /// <see cref="GeneratedObjectCode{T}.Write"/>, or for a map (<paramref name="keys"/> given) <see cref="GeneratedObjectCode{T}.WriteUnrolledMap"/> when <see cref="GeneratedWritePlan.UnrolledMap"/>.
+    /// Decided here, not in ObjectPlan.Write, whose size decides whether it is inlined into the loops of collections (a dictionary of objects with compiled writers 7% slower).
+    /// </summary>
     internal abstract int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end);
 
     internal abstract void WriteUnrolledBoxed(WriteContext c, object value, FullPropertyInfo[] infos, GeneratedWritePlan p);
@@ -154,6 +163,17 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
+    /// The map entries in sequence (<see cref="Write"/> with keys, without its loop and switch over the ids), when the runtime's properties are <see cref="GeneratedObjectCode.UnrolledIds"/>
+    /// (<see cref="GeneratedWritePlan.UnrolledMap"/>): a value the filters leave out is not written.
+    /// </summary>
+    /// <param name="keys">The encoded property ids per position</param>
+    /// <returns>The number of entries</returns>
+    public virtual int WriteUnrolledMap(WriteContext c, T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p)
+    {
+      throw new NotSupportedException();
+    }
+
+    /// <summary>
     /// The values of an array (the header is read, the instance created): by position, a nil sets the value the writer leaves out (<see cref="Reading.PropReader.ReadNil"/>),
     /// positions without a property are skipped (as ObjectReader.ReadPositional).
     /// </summary>
@@ -183,6 +203,11 @@ namespace LtMsgPack.Generated
 
     internal sealed override int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
+      if (p.UnrolledMap && keys != null)
+      {
+        end = 0; // only for trimmed arrays
+        return WriteUnrolledMap(c, (T)value, keys, infos, p);
+      }
       return Write(c, (T)value, keys, infos, p, out end);
     }
 
@@ -236,6 +261,12 @@ namespace LtMsgPack.Generated
       throw new NotSupportedException();
     }
 
+    /// <inheritdoc cref="GeneratedObjectCode{T}.WriteUnrolledMap"/>
+    public virtual int WriteUnrolledMap(WriteContext c, ref T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p)
+    {
+      throw new NotSupportedException();
+    }
+
     /// <inheritdoc cref="GeneratedObjectCode{T}.ReadPositional"/>
     public virtual void ReadPositional(ReadContext c, ref T target, PropReader[] props, int items, GeneratedReadPlan p)
     {
@@ -265,6 +296,11 @@ namespace LtMsgPack.Generated
 
     internal sealed override int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
+      if (p.UnrolledMap && keys != null)
+      {
+        end = 0; // only for trimmed arrays
+        return WriteUnrolledMap(c, ref Unboxer.Unbox(value), keys, infos, p);
+      }
       return Write(c, ref Unboxer.Unbox(value), keys, infos, p, out end);
     }
 
@@ -339,6 +375,11 @@ namespace LtMsgPack.Generated
     internal readonly bool Unrolled;
 
     /// <summary>
+    /// Maps (also of the array layout: a collection with SerializeProperties) are written by <see cref="GeneratedObjectCode{T}.WriteUnrolledMap"/>: the ids are the unrolled ones (trimming does not apply to maps).
+    /// </summary>
+    internal readonly bool UnrolledMap;
+
+    /// <summary>
     /// The code this plan is for (one field, so ObjectPlan can switch to a compiled writer with one store).
     /// </summary>
     internal readonly GeneratedObjectCode Code;
@@ -350,7 +391,7 @@ namespace LtMsgPack.Generated
     /// </summary>
     private readonly object[] _handlers;
 
-    internal GeneratedWritePlan(Serializer serializer, GeneratedObjectCode code, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool unrolled, PropWriter[] props)
+    internal GeneratedWritePlan(Serializer serializer, GeneratedObjectCode code, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool unrolled, bool unrolledMap, PropWriter[] props)
     {
       _serializer = serializer;
       Code = code;
@@ -361,6 +402,7 @@ namespace LtMsgPack.Generated
       Trim = trim;
       DecimalCode = decimalCode;
       Unrolled = unrolled;
+      UnrolledMap = unrolledMap;
       _props = props;
     }
 

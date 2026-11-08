@@ -779,7 +779,7 @@ namespace F
 
       GeneratorHarness.Result none = GeneratorHarness.Run(FieldModel, msbuild: new Dictionary<string, string>() { { "LsMsgPackFields", "None" } });
       none.AssertCompiles();
-      Assert.Contains("int v = ((global::F.Base)o).Shared;", none.AllGenerated, "Item's field Shared (not serialized) hides the property of the base class in C#");
+      Assert.Contains(" = ((global::F.Base)o).Shared;", none.AllGenerated, "Item's field Shared (not serialized) hides the property of the base class in C#");
       foreach (string left in new[] { "\"Opted\"", "_secret", "UnsafeAccessorKind.Field", "NonPublicFields" })
         Assert.DoesNotContain(left, none.AllGenerated, left);
       Assert.Contains("PublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::F.Item))", none.AllGenerated,

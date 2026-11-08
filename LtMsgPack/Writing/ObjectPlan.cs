@@ -190,7 +190,7 @@ namespace LtMsgPack.Writing
 
       c.EnterContainer();
       if (generated != null)
-        count += generated.Code.WriteBoxed(c, value, keys, infos, generated, out int end);
+        count += generated.Code.WriteBoxed(c, value, keys, infos, generated, out int end); // WriteUnrolledMap or Write: decided there
       else
       {
         PropWriter[] props = Props;
@@ -320,7 +320,12 @@ namespace LtMsgPack.Writing
       SerializationRules.ThrowIfUnresolvableWithSchema(Type, assignedTo, c.UsesSchema);
       c.EnterContainer();
       if (generated != null)
-        count += Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, keys, infos, generated, out int end);
+      {
+        if (generated.UnrolledMap)
+          count += Unsafe.As<GeneratedStructCode<T>>(generated.Code).WriteUnrolledMap(c, ref value, keys, infos, generated);
+        else
+          count += Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, keys, infos, generated, out int end);
+      }
       else
       {
         for (int t = 0; t < props.Length; t++)

@@ -160,7 +160,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Customer", typeof(global::Shop.Customer), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Lines", typeof(global::System.Collections.Generic.List<global::Shop.InvoiceLine>), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Total", typeof(decimal), global::LtMsgPack.Generated.GeneratedKind.Decimal, false, true, true)
-      }, new int[] { 0, 1, 2, 3, 4, 5, 6 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
+      }, new int[] { 0, 1, 2, 3, 4, 5, 6 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
       {
       }
 
@@ -172,6 +172,11 @@ namespace Shop
         bool trim = p.Trim && keys == null;
         int count = 0;
         int last = 0;
+        global::System.Guid v0;
+        global::System.DateTime v1;
+        global::System.DateTime? v2;
+        global::Shop.InvoiceStatus v3;
+        decimal v4;
         end = w.Pos;
         for (int t = 0; t < ids.Length; t++)
         {
@@ -182,46 +187,46 @@ namespace Shop
           {
             case 0:
             {
-              global::System.Guid v = o.Id;
-              if (filter && v == global::System.Guid.Empty)
+              v0 = o.Id;
+              if (filter && v0 == global::System.Guid.Empty)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              w.Guid(v);
+              w.Guid(v0);
               written = true;
               break;
             }
             case 1:
             {
-              global::System.DateTime v = o.InvoiceDate;
-              if (filter && v.Ticks == 0)
+              v1 = o.InvoiceDate;
+              if (filter && v1.Ticks == 0)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              w.DateTime(global::LtMsgPack.Generated.GeneratedIO.Utc(v, p));
+              w.DateTime(global::LtMsgPack.Generated.GeneratedIO.Utc(v1, p));
               written = true;
               break;
             }
             case 2:
             {
-              global::System.DateTime? v = o.PaidDate;
-              if (filter && !v.HasValue)
+              v2 = o.PaidDate;
+              if (filter && !v2.HasValue)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              if (v.HasValue)
+              if (v2.HasValue)
               {
-                global::System.DateTime u = v.GetValueOrDefault();
-                w.DateTime(global::LtMsgPack.Generated.GeneratedIO.Utc(u, p));
+                v1 = v2.GetValueOrDefault();
+                w.DateTime(global::LtMsgPack.Generated.GeneratedIO.Utc(v1, p));
               }
               else
                 w.Nil();
@@ -230,15 +235,15 @@ namespace Shop
             }
             case 3:
             {
-              global::Shop.InvoiceStatus v = o.Status;
-              if (filter && v == 0)
+              v3 = o.Status;
+              if (filter && v3 == 0)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              w.Int32((int)v);
+              w.Int32((int)v3);
               written = true;
               break;
             }
@@ -250,15 +255,15 @@ namespace Shop
               break;
             case 6:
             {
-              decimal v = o.Total;
-              if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v))
+              v4 = o.Total;
+              if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v4))
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v, p.DecimalCode);
+              global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v4, p.DecimalCode);
               written = true;
               break;
             }
@@ -283,61 +288,114 @@ namespace Shop
       {
         global::LtMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
+        global::System.Guid v0;
+        global::System.DateTime v1;
+        global::System.DateTime? v2;
+        global::Shop.InvoiceStatus v3;
+        decimal v4;
+        v0 = o.Id;
+        if (filter && v0 == global::System.Guid.Empty)
+          w.Nil();
+        else
         {
-          global::System.Guid v = o.Id;
-          if (filter && v == global::System.Guid.Empty)
-            w.Nil();
-          else
-          {
-            w.Guid(v);
-          }
+          w.Guid(v0);
         }
+        v1 = o.InvoiceDate;
+        if (filter && v1.Ticks == 0)
+          w.Nil();
+        else
         {
-          global::System.DateTime v = o.InvoiceDate;
-          if (filter && v.Ticks == 0)
-            w.Nil();
-          else
-          {
-            w.DateTime(global::LtMsgPack.Generated.GeneratedIO.Utc(v, p));
-          }
+          w.DateTime(global::LtMsgPack.Generated.GeneratedIO.Utc(v1, p));
         }
+        v2 = o.PaidDate;
+        if (filter && !v2.HasValue)
+          w.Nil();
+        else
         {
-          global::System.DateTime? v = o.PaidDate;
-          if (filter && !v.HasValue)
-            w.Nil();
-          else
+          if (v2.HasValue)
           {
-            if (v.HasValue)
-            {
-              global::System.DateTime u = v.GetValueOrDefault();
-              w.DateTime(global::LtMsgPack.Generated.GeneratedIO.Utc(u, p));
-            }
-            else
-              w.Nil();
+            v1 = v2.GetValueOrDefault();
+            w.DateTime(global::LtMsgPack.Generated.GeneratedIO.Utc(v1, p));
           }
+          else
+            w.Nil();
         }
+        v3 = o.Status;
+        if (filter && v3 == 0)
+          w.Nil();
+        else
         {
-          global::Shop.InvoiceStatus v = o.Status;
-          if (filter && v == 0)
-            w.Nil();
-          else
-          {
-            w.Int32((int)v);
-          }
+          w.Int32((int)v3);
         }
         if (!p.Value<global::Shop.Customer>(4, c, o.Customer, null, infos[4]))
           w.Nil();
         if (!p.Value<global::System.Collections.Generic.List<global::Shop.InvoiceLine>>(5, c, o.Lines, null, infos[5]))
           w.Nil();
+        v4 = o.Total;
+        if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v4))
+          w.Nil();
+        else
         {
-          decimal v = o.Total;
-          if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v))
-            w.Nil();
-          else
-          {
-            global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v, p.DecimalCode);
-          }
+          global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v4, p.DecimalCode);
         }
+      }
+
+      public override int WriteUnrolledMap(global::LtMsgPack.Writing.WriteContext c, global::Shop.Invoice o, byte[][] keys, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LtMsgPack.Generated.GeneratedWritePlan p)
+      {
+        global::LtMsgPack.IO.MsgPackWriter w = c.W;
+        bool filter = p.FilterDefaults;
+        int count = 0;
+        global::System.Guid v0;
+        global::System.DateTime v1;
+        global::System.DateTime? v2;
+        global::Shop.InvoiceStatus v3;
+        decimal v4;
+        v0 = o.Id;
+        if (!filter || !(v0 == global::System.Guid.Empty))
+        {
+          w.Raw(keys[0]);
+          w.Guid(v0);
+          count++;
+        }
+        v1 = o.InvoiceDate;
+        if (!filter || !(v1.Ticks == 0))
+        {
+          w.Raw(keys[1]);
+          w.DateTime(global::LtMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          count++;
+        }
+        v2 = o.PaidDate;
+        if (!filter || !(!v2.HasValue))
+        {
+          w.Raw(keys[2]);
+          if (v2.HasValue)
+          {
+            v1 = v2.GetValueOrDefault();
+            w.DateTime(global::LtMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          }
+          else
+            w.Nil();
+          count++;
+        }
+        v3 = o.Status;
+        if (!filter || !(v3 == 0))
+        {
+          w.Raw(keys[3]);
+          w.Int32((int)v3);
+          count++;
+        }
+        if (p.Value<global::Shop.Customer>(4, c, o.Customer, keys[4], infos[4]))
+          count++;
+        if (p.Value<global::System.Collections.Generic.List<global::Shop.InvoiceLine>>(5, c, o.Lines, keys[5], infos[5]))
+          count++;
+        v4 = o.Total;
+        if (!filter || !(global::LtMsgPack.Generated.GeneratedIO.IsZero(v4)))
+        {
+          w.Raw(keys[6]);
+          global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v4, p.DecimalCode);
+          count++;
+        }
+        return count;
       }
 
       public override void ReadPositional(global::LtMsgPack.Reading.ReadContext c, global::Shop.Invoice o, global::LtMsgPack.Reading.PropReader[] props, int items, global::LtMsgPack.Generated.GeneratedReadPlan p)
@@ -529,7 +587,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "CustomerId", typeof(int), global::LtMsgPack.Generated.GeneratedKind.Int32, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "CompanyName", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "BillingAddress", typeof(global::Shop.Address), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
+      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
       {
       }
 
@@ -541,6 +599,8 @@ namespace Shop
         bool trim = p.Trim && keys == null;
         int count = 0;
         int last = 0;
+        int v0;
+        string v1;
         end = w.Pos;
         for (int t = 0; t < ids.Length; t++)
         {
@@ -551,32 +611,32 @@ namespace Shop
           {
             case 0:
             {
-              int v = o.CustomerId;
-              if (filter && v == 0)
+              v0 = o.CustomerId;
+              if (filter && v0 == 0)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              w.Int32(v);
+              w.Int32(v0);
               written = true;
               break;
             }
             case 1:
             {
-              string v = o.CompanyName;
-              if (filter && v == null)
+              v1 = o.CompanyName;
+              if (filter && v1 == null)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              if (v == null)
+              if (v1 == null)
                 w.Nil();
               else
-                w.String(v);
+                w.String(v1);
               written = true;
               break;
             }
@@ -604,29 +664,56 @@ namespace Shop
       {
         global::LtMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
+        int v0;
+        string v1;
+        v0 = o.CustomerId;
+        if (filter && v0 == 0)
+          w.Nil();
+        else
         {
-          int v = o.CustomerId;
-          if (filter && v == 0)
-            w.Nil();
-          else
-          {
-            w.Int32(v);
-          }
+          w.Int32(v0);
         }
+        v1 = o.CompanyName;
+        if (filter && v1 == null)
+          w.Nil();
+        else
         {
-          string v = o.CompanyName;
-          if (filter && v == null)
+          if (v1 == null)
             w.Nil();
           else
-          {
-            if (v == null)
-              w.Nil();
-            else
-              w.String(v);
-          }
+            w.String(v1);
         }
         if (!p.Value<global::Shop.Address>(2, c, o.BillingAddress, null, infos[2]))
           w.Nil();
+      }
+
+      public override int WriteUnrolledMap(global::LtMsgPack.Writing.WriteContext c, global::Shop.Customer o, byte[][] keys, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LtMsgPack.Generated.GeneratedWritePlan p)
+      {
+        global::LtMsgPack.IO.MsgPackWriter w = c.W;
+        bool filter = p.FilterDefaults;
+        int count = 0;
+        int v0;
+        string v1;
+        v0 = o.CustomerId;
+        if (!filter || !(v0 == 0))
+        {
+          w.Raw(keys[0]);
+          w.Int32(v0);
+          count++;
+        }
+        v1 = o.CompanyName;
+        if (!filter || !(v1 == null))
+        {
+          w.Raw(keys[1]);
+          if (v1 == null)
+            w.Nil();
+          else
+            w.String(v1);
+          count++;
+        }
+        if (p.Value<global::Shop.Address>(2, c, o.BillingAddress, keys[2], infos[2]))
+          count++;
+        return count;
       }
 
       public override void ReadPositional(global::LtMsgPack.Reading.ReadContext c, global::Shop.Customer o, global::LtMsgPack.Reading.PropReader[] props, int items, global::LtMsgPack.Generated.GeneratedReadPlan p)
@@ -750,7 +837,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "Street", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "City", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "PostalCode", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
+      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
       {
       }
 
@@ -762,6 +849,7 @@ namespace Shop
         bool trim = p.Trim && keys == null;
         int count = 0;
         int last = 0;
+        string v0;
         end = w.Pos;
         for (int t = 0; t < ids.Length; t++)
         {
@@ -772,52 +860,52 @@ namespace Shop
           {
             case 0:
             {
-              string v = o.Street;
-              if (filter && v == null)
+              v0 = o.Street;
+              if (filter && v0 == null)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              if (v == null)
+              if (v0 == null)
                 w.Nil();
               else
-                w.String(v);
+                w.String(v0);
               written = true;
               break;
             }
             case 1:
             {
-              string v = o.City;
-              if (filter && v == null)
+              v0 = o.City;
+              if (filter && v0 == null)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              if (v == null)
+              if (v0 == null)
                 w.Nil();
               else
-                w.String(v);
+                w.String(v0);
               written = true;
               break;
             }
             case 2:
             {
-              string v = o.PostalCode;
-              if (filter && v == null)
+              v0 = o.PostalCode;
+              if (filter && v0 == null)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              if (v == null)
+              if (v0 == null)
                 w.Nil();
               else
-                w.String(v);
+                w.String(v0);
               written = true;
               break;
             }
@@ -842,42 +930,76 @@ namespace Shop
       {
         global::LtMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
+        string v0;
+        v0 = o.Street;
+        if (filter && v0 == null)
+          w.Nil();
+        else
         {
-          string v = o.Street;
-          if (filter && v == null)
+          if (v0 == null)
             w.Nil();
           else
-          {
-            if (v == null)
-              w.Nil();
-            else
-              w.String(v);
-          }
+            w.String(v0);
         }
+        v0 = o.City;
+        if (filter && v0 == null)
+          w.Nil();
+        else
         {
-          string v = o.City;
-          if (filter && v == null)
+          if (v0 == null)
             w.Nil();
           else
-          {
-            if (v == null)
-              w.Nil();
-            else
-              w.String(v);
-          }
+            w.String(v0);
         }
+        v0 = o.PostalCode;
+        if (filter && v0 == null)
+          w.Nil();
+        else
         {
-          string v = o.PostalCode;
-          if (filter && v == null)
+          if (v0 == null)
             w.Nil();
           else
-          {
-            if (v == null)
-              w.Nil();
-            else
-              w.String(v);
-          }
+            w.String(v0);
         }
+      }
+
+      public override int WriteUnrolledMap(global::LtMsgPack.Writing.WriteContext c, global::Shop.Address o, byte[][] keys, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LtMsgPack.Generated.GeneratedWritePlan p)
+      {
+        global::LtMsgPack.IO.MsgPackWriter w = c.W;
+        bool filter = p.FilterDefaults;
+        int count = 0;
+        string v0;
+        v0 = o.Street;
+        if (!filter || !(v0 == null))
+        {
+          w.Raw(keys[0]);
+          if (v0 == null)
+            w.Nil();
+          else
+            w.String(v0);
+          count++;
+        }
+        v0 = o.City;
+        if (!filter || !(v0 == null))
+        {
+          w.Raw(keys[1]);
+          if (v0 == null)
+            w.Nil();
+          else
+            w.String(v0);
+          count++;
+        }
+        v0 = o.PostalCode;
+        if (!filter || !(v0 == null))
+        {
+          w.Raw(keys[2]);
+          if (v0 == null)
+            w.Nil();
+          else
+            w.String(v0);
+          count++;
+        }
+        return count;
       }
 
       public override void ReadPositional(global::LtMsgPack.Reading.ReadContext c, global::Shop.Address o, global::LtMsgPack.Reading.PropReader[] props, int items, global::LtMsgPack.Generated.GeneratedReadPlan p)
@@ -1019,7 +1141,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "Unit", typeof(global::Shop.UnitOfMeasure), global::LtMsgPack.Generated.GeneratedKind.Enum, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "UnitPrice", typeof(global::Shop.Money), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "_discountPercent", typeof(int), global::LtMsgPack.Generated.GeneratedKind.Int32, false, true, true)
-      }, new int[] { 0, 1, 2, 3, 4 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
+      }, new int[] { 0, 1, 2, 3, 4 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
       {
       }
 
@@ -1031,6 +1153,9 @@ namespace Shop
         bool trim = p.Trim && keys == null;
         int count = 0;
         int last = 0;
+        int v0;
+        decimal v1;
+        global::Shop.UnitOfMeasure v2;
         end = w.Pos;
         for (int t = 0; t < ids.Length; t++)
         {
@@ -1041,43 +1166,43 @@ namespace Shop
           {
             case 0:
             {
-              int v = o.LineNumber;
-              if (filter && v == 0)
+              v0 = o.LineNumber;
+              if (filter && v0 == 0)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              w.Int32(v);
+              w.Int32(v0);
               written = true;
               break;
             }
             case 1:
             {
-              decimal v = o.Quantity;
-              if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v))
+              v1 = o.Quantity;
+              if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v1))
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v, p.DecimalCode);
+              global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v1, p.DecimalCode);
               written = true;
               break;
             }
             case 2:
             {
-              global::Shop.UnitOfMeasure v = o.Unit;
-              if (filter && v == 0)
+              v2 = o.Unit;
+              if (filter && v2 == 0)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              w.UInt8((byte)v);
+              w.UInt8((byte)v2);
               written = true;
               break;
             }
@@ -1086,15 +1211,15 @@ namespace Shop
               break;
             case 4:
             {
-              int v = LtMsgPackField0(o);
-              if (filter && v == 0)
+              v0 = LtMsgPackField0(o);
+              if (filter && v0 == 0)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              w.Int32(v);
+              w.Int32(v0);
               written = true;
               break;
             }
@@ -1119,44 +1244,80 @@ namespace Shop
       {
         global::LtMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
+        int v0;
+        decimal v1;
+        global::Shop.UnitOfMeasure v2;
+        v0 = o.LineNumber;
+        if (filter && v0 == 0)
+          w.Nil();
+        else
         {
-          int v = o.LineNumber;
-          if (filter && v == 0)
-            w.Nil();
-          else
-          {
-            w.Int32(v);
-          }
+          w.Int32(v0);
         }
+        v1 = o.Quantity;
+        if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v1))
+          w.Nil();
+        else
         {
-          decimal v = o.Quantity;
-          if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v))
-            w.Nil();
-          else
-          {
-            global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v, p.DecimalCode);
-          }
+          global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v1, p.DecimalCode);
         }
+        v2 = o.Unit;
+        if (filter && v2 == 0)
+          w.Nil();
+        else
         {
-          global::Shop.UnitOfMeasure v = o.Unit;
-          if (filter && v == 0)
-            w.Nil();
-          else
-          {
-            w.UInt8((byte)v);
-          }
+          w.UInt8((byte)v2);
         }
         if (!p.Value<global::Shop.Money>(3, c, o.UnitPrice, null, infos[3]))
           w.Nil();
+        v0 = LtMsgPackField0(o);
+        if (filter && v0 == 0)
+          w.Nil();
+        else
         {
-          int v = LtMsgPackField0(o);
-          if (filter && v == 0)
-            w.Nil();
-          else
-          {
-            w.Int32(v);
-          }
+          w.Int32(v0);
         }
+      }
+
+      public override int WriteUnrolledMap(global::LtMsgPack.Writing.WriteContext c, global::Shop.InvoiceLine o, byte[][] keys, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LtMsgPack.Generated.GeneratedWritePlan p)
+      {
+        global::LtMsgPack.IO.MsgPackWriter w = c.W;
+        bool filter = p.FilterDefaults;
+        int count = 0;
+        int v0;
+        decimal v1;
+        global::Shop.UnitOfMeasure v2;
+        v0 = o.LineNumber;
+        if (!filter || !(v0 == 0))
+        {
+          w.Raw(keys[0]);
+          w.Int32(v0);
+          count++;
+        }
+        v1 = o.Quantity;
+        if (!filter || !(global::LtMsgPack.Generated.GeneratedIO.IsZero(v1)))
+        {
+          w.Raw(keys[1]);
+          global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v1, p.DecimalCode);
+          count++;
+        }
+        v2 = o.Unit;
+        if (!filter || !(v2 == 0))
+        {
+          w.Raw(keys[2]);
+          w.UInt8((byte)v2);
+          count++;
+        }
+        if (p.Value<global::Shop.Money>(3, c, o.UnitPrice, keys[3], infos[3]))
+          count++;
+        v0 = LtMsgPackField0(o);
+        if (!filter || !(v0 == 0))
+        {
+          w.Raw(keys[4]);
+          w.Int32(v0);
+          count++;
+        }
+        return count;
       }
 
       public override void ReadPositional(global::LtMsgPack.Reading.ReadContext c, global::Shop.InvoiceLine o, global::LtMsgPack.Reading.PropReader[] props, int items, global::LtMsgPack.Generated.GeneratedReadPlan p)
@@ -1342,7 +1503,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Amount", typeof(decimal), global::LtMsgPack.Generated.GeneratedKind.Decimal, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Currency", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Precision", typeof(byte), global::LtMsgPack.Generated.GeneratedKind.Byte, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LtMsgPack.Generated.GeneratedCapabilities.IsDefault)
+      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LtMsgPack.Generated.GeneratedCapabilities.IsDefault)
       {
       }
 
@@ -1359,6 +1520,9 @@ namespace Shop
         bool trim = p.Trim && keys == null;
         int count = 0;
         int last = 0;
+        decimal v0;
+        string v1;
+        byte v2;
         end = w.Pos;
         for (int t = 0; t < ids.Length; t++)
         {
@@ -1369,46 +1533,46 @@ namespace Shop
           {
             case 0:
             {
-              decimal v = o.Amount;
-              if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v))
+              v0 = o.Amount;
+              if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v0))
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v, p.DecimalCode);
+              global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v0, p.DecimalCode);
               written = true;
               break;
             }
             case 1:
             {
-              string v = o.Currency;
-              if (filter && v == null)
+              v1 = o.Currency;
+              if (filter && v1 == null)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              if (v == null)
+              if (v1 == null)
                 w.Nil();
               else
-                w.String(v);
+                w.String(v1);
               written = true;
               break;
             }
             case 2:
             {
-              byte v = o.Precision;
-              if (filter && v == 0)
+              v2 = o.Precision;
+              if (filter && v2 == 0)
               {
                 written = false;
                 break;
               }
               if (key != null)
                 w.Raw(key);
-              w.UInt8(v);
+              w.UInt8(v2);
               written = true;
               break;
             }
@@ -1433,36 +1597,68 @@ namespace Shop
       {
         global::LtMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
+        decimal v0;
+        string v1;
+        byte v2;
+        v0 = o.Amount;
+        if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v0))
+          w.Nil();
+        else
         {
-          decimal v = o.Amount;
-          if (filter && global::LtMsgPack.Generated.GeneratedIO.IsZero(v))
+          global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v0, p.DecimalCode);
+        }
+        v1 = o.Currency;
+        if (filter && v1 == null)
+          w.Nil();
+        else
+        {
+          if (v1 == null)
             w.Nil();
           else
-          {
-            global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v, p.DecimalCode);
-          }
+            w.String(v1);
         }
+        v2 = o.Precision;
+        if (filter && v2 == 0)
+          w.Nil();
+        else
         {
-          string v = o.Currency;
-          if (filter && v == null)
+          w.UInt8(v2);
+        }
+      }
+
+      public override int WriteUnrolledMap(global::LtMsgPack.Writing.WriteContext c, ref global::Shop.Money o, byte[][] keys, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LtMsgPack.Generated.GeneratedWritePlan p)
+      {
+        global::LtMsgPack.IO.MsgPackWriter w = c.W;
+        bool filter = p.FilterDefaults;
+        int count = 0;
+        decimal v0;
+        string v1;
+        byte v2;
+        v0 = o.Amount;
+        if (!filter || !(global::LtMsgPack.Generated.GeneratedIO.IsZero(v0)))
+        {
+          w.Raw(keys[0]);
+          global::LtMsgPack.Generated.GeneratedIO.WriteDecimal(w, v0, p.DecimalCode);
+          count++;
+        }
+        v1 = o.Currency;
+        if (!filter || !(v1 == null))
+        {
+          w.Raw(keys[1]);
+          if (v1 == null)
             w.Nil();
           else
-          {
-            if (v == null)
-              w.Nil();
-            else
-              w.String(v);
-          }
+            w.String(v1);
+          count++;
         }
+        v2 = o.Precision;
+        if (!filter || !(v2 == 0))
         {
-          byte v = o.Precision;
-          if (filter && v == 0)
-            w.Nil();
-          else
-          {
-            w.UInt8(v);
-          }
+          w.Raw(keys[2]);
+          w.UInt8(v2);
+          count++;
         }
+        return count;
       }
 
       public override void ReadPositional(global::LtMsgPack.Reading.ReadContext c, ref global::Shop.Money o, global::LtMsgPack.Reading.PropReader[] props, int items, global::LtMsgPack.Generated.GeneratedReadPlan p)

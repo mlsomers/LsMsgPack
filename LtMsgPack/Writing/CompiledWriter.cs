@@ -41,7 +41,7 @@ namespace LtMsgPack.Writing
     private CompiledWrite<T> _items;
     private CompiledWriteUnrolled<T> _unrolled;
 
-    public CompiledObjectCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled)
+    public CompiledObjectCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap)
     {
       _properties = properties;
     }
@@ -64,6 +64,12 @@ namespace LtMsgPack.Writing
       return write(c, value, keys, infos, p, out end);
     }
 
+    public override int WriteUnrolledMap(WriteContext c, T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p)
+    {
+      CompiledWrite<T> write = _map ?? (_map = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, p, true)); // also the maps of the array layout: a collection with SerializeProperties
+      return write(c, value, keys, infos, p, out int end);
+    }
+
     public override void WriteUnrolled(WriteContext c, T value, FullPropertyInfo[] infos, GeneratedWritePlan p)
     {
       _unrolled(c, value, infos, p); // compiled with the plan (only Unrolled plans call it)
@@ -80,7 +86,7 @@ namespace LtMsgPack.Writing
     private CompiledRefWrite<T> _items;
     private CompiledRefWriteUnrolled<T> _unrolled;
 
-    public CompiledStructCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled)
+    public CompiledStructCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap)
     {
       _properties = properties;
       Unboxer = new StructUnboxer<T, T>(); // what GeneratedValues.Struct gives the generated code: a struct written as an object
@@ -102,6 +108,12 @@ namespace LtMsgPack.Writing
         ? _map ?? (_map = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, p, true))
         : _items;
       return write(c, ref value, keys, infos, p, out end);
+    }
+
+    public override int WriteUnrolledMap(WriteContext c, ref T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p)
+    {
+      CompiledRefWrite<T> write = _map ?? (_map = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, p, true)); // also the maps of the array layout: a collection with SerializeProperties
+      return write(c, ref value, keys, infos, p, out int end);
     }
 
     public override void WriteUnrolled(WriteContext c, ref T value, FullPropertyInfo[] infos, GeneratedWritePlan p)
