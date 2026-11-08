@@ -171,16 +171,16 @@ The invoice model of the benchmarks (100 invoices × 20 rounds), one machine: on
 
 | .NET 10, JIT | write | read |
 |---|---|---|
-| LtMsgPack, default options (indexed schema, arrays) | 3.55 ms (4.6x) | 6.07 ms (4.7x) |
-| the same with the generated code | 3.58 ms (4.6x) | 5.07 ms (5.6x) |
-| LtMsgPack, arrays without the schema | 2.87 ms (5.7x) | 5.96 ms (4.7x) |
-| the same with the generated code | 2.90 ms (5.7x) | 4.94 ms (5.7x) |
-| LtMsgPack, maps with property names | 5.11 ms (3.2x) | 8.22 ms (3.4x) |
-| the same with the generated code | 5.44 ms (3.0x) | 6.72 ms (4.2x) |
+| LtMsgPack, default options (indexed schema, arrays) | 3.53 ms (4.6x) | 6.01 ms (4.7x) |
+| the same with the generated code | 3.31 ms (4.9x) | 4.93 ms (5.7x) |
+| LtMsgPack, arrays without the schema | 2.86 ms (5.7x) | 5.89 ms (4.8x) |
+| the same with the generated code | 3.01 ms (5.4x) | 4.81 ms (5.9x) |
+| LtMsgPack, maps with property names | 4.87 ms (3.3x) | 8.36 ms (3.4x) |
+| the same with the generated code | 4.62 ms (3.5x) | 6.64 ms (4.3x) |
 
 | .NET 10, WebAssembly (node) | interpreter write | read | AOT write | read |
 |---|---|---|---|---|
 | LtMsgPack, default options | 183 ms (3.0x) | 235 ms (3.5x) | 78 ms (2.8x) | 69 ms (3.1x) |
 | the same with the generated code | 92 ms (5.8x) | 196 ms (4.2x) | 10.5 ms (20x) | 24 ms (8.7x) |
 
-With a JIT, writing is as fast without the generated code once LtMsgPack has compiled its writers (after 1000 objects of a class, as in these rows). Reading gains about 1.2x: decoding strings takes most of the time, the same with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).
+With a JIT, writing is about as fast without the generated code (within 7% either way) once LtMsgPack has compiled its writers (after 1000 objects of a class, as in these rows). Reading gains about 1.2x: decoding strings takes most of the time, the same with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).
