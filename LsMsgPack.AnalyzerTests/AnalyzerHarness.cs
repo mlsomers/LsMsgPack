@@ -70,7 +70,9 @@ namespace LsMsgPack.AnalyzerTests
 
         List<CodeAction> actions = new List<CodeAction>();
         CodeFixContext context = new CodeFixContext(document, diagnostic, (action, _) => actions.Add(action), CancellationToken.None);
-        new DefaultValueCodeFix().RegisterCodeFixesAsync(context).GetAwaiter().GetResult();
+        CodeFixProvider provider = id == Rules.FieldLeftOut.Id ? new FieldCodeFix() : new DefaultValueCodeFix();
+        Assert.Contains(id, provider.FixableDiagnosticIds);
+        provider.RegisterCodeFixesAsync(context).GetAwaiter().GetResult();
         CodeAction chosen = actions.FirstOrDefault(a => a.Title == title);
         Assert.IsNotNull(chosen, "No fix \"" + title + "\", there are: " + string.Join(", ", actions.Select(a => a.Title)));
 

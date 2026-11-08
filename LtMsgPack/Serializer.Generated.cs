@@ -39,10 +39,10 @@ namespace LtMsgPack
       return generated;
     }
 
-    /// <returns>The generated accessors of the property, null when there are none</returns>
-    internal ILtGeneratedProperty GeneratedProperty(PropertyInfo property)
+    /// <returns>The generated accessors of the property or field, null when there are none</returns>
+    internal ILtGeneratedProperty GeneratedProperty(MemberInfo member)
     {
-      return Generated(property.DeclaringType)?.FindProperty(property) as ILtGeneratedProperty;
+      return Generated(member.DeclaringType)?.FindMember(member) as ILtGeneratedProperty;
     }
 
     /// <returns>The generated writer and reader of the type, null when there is none</returns>
@@ -97,12 +97,12 @@ namespace LtMsgPack
 
     private static int FindMember(GeneratedObjectCode code, FullPropertyInfo info)
     {
-      PropertyInfo property = info.PropertyInfo;
+      MemberInfo declared = info.Member; // a property or field (the runtime's compiled code describes both, the generator's code properties)
       GeneratedMember[] members = code.Members;
       for (int t = 0; t < members.Length; t++)
       {
         GeneratedMember member = members[t];
-        if (member.Name == property.Name && member.PropertyType == property.PropertyType && member.DeclaringType == property.DeclaringType)
+        if (member.Name == info.Name && member.PropertyType == info.DeclaredType && member.DeclaringType == declared.DeclaringType)
           return t;
       }
       return -1;

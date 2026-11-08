@@ -761,27 +761,30 @@ namespace LsMsgPack
 
   /// <summary>
   /// The order of the properties of an object (see <see cref="MsgPackOptions.PropertyOrder"/>). Decided once per type, it costs nothing per object.
+  /// <para>Serialized fields (<see cref="TypeResolving.Filters.SerializedFields"/>) come after the properties (per class in the orders that follow the declaration, all together by name in <see cref="Alphabetical"/>),
+  /// so the positions of data written before a class had serialized fields stay valid.</para>
   /// </summary>
   public enum PropertyOrder
   {
     /// <summary>
-    /// As <see cref="Type.GetProperties()"/> returns them (default). The runtime does not guarantee this order.
+    /// As <see cref="Type.GetProperties()"/> returns them (default), then the non-public properties, then the fields. The runtime does not guarantee this order.
     /// </summary>
-    [Description("As Type.GetProperties() returns them (default). The runtime does not guarantee this order.")]
+    [Description("As Type.GetProperties() returns them (default), then the fields. The runtime does not guarantee this order.")]
     Reflection = 0,
 
     /// <summary>
-    /// By name (ordinal, not culture-sensitive).
+    /// By name (ordinal, not culture-sensitive), properties and fields together.
     /// </summary>
     [Description("By name (ordinal, not culture-sensitive).")]
     Alphabetical = 1,
 
     /// <summary>
     /// In the order of the source code: the properties of base classes first, then per class in the order of their metadata tokens (the order the compiler emitted them).
+    /// The fields of a class follow its properties (properties and fields have separate metadata tables, the order between them in the source is not kept).
     /// An overridden property keeps the position of the property it overrides.
     /// <para>The compiler emits the members of a partial class in the order of its files, so moving code or adding a file can change the order.</para>
     /// </summary>
-    [Description("In the order of the source code: base classes first, then per class in the order the compiler emitted them. Partial classes follow the order of their files.")]
+    [Description("In the order of the source code: base classes first, then per class in the order the compiler emitted them, fields after properties. Partial classes follow the order of their files.")]
     Declaration = 2,
 
     /// <summary>

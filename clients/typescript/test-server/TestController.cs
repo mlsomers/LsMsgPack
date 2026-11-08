@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text.Json;
 
 namespace LsMsgPackTsTestServer
@@ -35,6 +36,12 @@ namespace LsMsgPackTsTestServer
     [HttpPost("echo/preferences")]
     public IActionResult EchoPreferences(Preferences preferences) => new JsonResult(preferences);
 
+    [HttpGet("motion")]
+    public Motion GetMotion() => Data.Motion();
+
+    [HttpPost("echo/motion")]
+    public IActionResult EchoMotion(Motion motion) => new JsonResult(motion);
+
     [HttpGet("nothing")]
     public Address GetNothing() => null;
 
@@ -51,11 +58,12 @@ namespace LsMsgPackTsTestServer
         "defaults" => new Kinds(),
         "values" => Data.KindValues(),
         "addresses" => GetAddresses(),
+        "motion" => Data.Motion(),
         _ => null
       };
       if (value is null)
         return NotFound();
-      return camel ? new JsonResult(value, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }) : new JsonResult(value);
+      return camel ? new JsonResult(value, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, IncludeFields = true }) : new JsonResult(value);
     }
 
     /// <summary>
@@ -71,13 +79,14 @@ namespace LsMsgPackTsTestServer
         "preferences" => GetPreferences(),
         "defaults" => new Kinds(),
         "values" => Data.KindValues(),
+        "motion" => Data.Motion(),
         _ => null
       };
       if (value is null)
         return NotFound();
       LtMsgPackSerializer serializer = new LtMsgPackSerializer(LtMsgPackPresets.LsMsgPack());
       object read = serializer.Deserialize(value.GetType(), serializer.Serialize(value, value.GetType()));
-      return camel ? new JsonResult(read, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }) : new JsonResult(read);
+      return camel ? new JsonResult(read, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, IncludeFields = true }) : new JsonResult(read);
     }
 
     /// <summary>
@@ -242,6 +251,15 @@ namespace LsMsgPackTsTestServer
       Names = new Dictionary<int, string> { { 1, "one" }, { 2, null } },
       Sound = "Meow",
       Seven = 0,
+    };
+
+    internal static Motion Motion() => new Motion
+    {
+      Position = new Vector3(1.5f, -2, 0.25f),
+      Color = new Vector4(0, 0.5f, 1, 0.75f),
+      Path = new List<Vector3> { new Vector3(0, 0, 0), new Vector3(1, 2, 3), new Vector3(-0.5f, 4, 8) },
+      Frame = 42,
+      Scale = new Vector2(2, 0.5f),
     };
 
     internal static Zoo Zoo() => new Zoo

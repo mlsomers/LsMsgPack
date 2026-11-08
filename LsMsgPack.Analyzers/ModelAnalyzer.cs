@@ -12,9 +12,9 @@ using System.Threading;
 namespace LsMsgPack.Analyzers
 {
   /// <summary>
-  /// The properties of the serialized types (<see cref="ModelTypes"/>): default values that are lost (LSMP001-003, LSMP006) and places where the data picks the type (LSMP004),
-  /// the calls and actions that read into such a place (LSMP005) or into a place without property names (LSMP007), classes of other projects that are not checked (LSMP008)
-  /// and JSON document types (LSMP009). See docs/Analyzers.md.
+  /// The properties and fields of the serialized types (<see cref="ModelTypes"/>): default values that are lost (LSMP001-003, LSMP006) and places where the data picks the type (LSMP004),
+  /// the calls and actions that read into such a place (LSMP005) or into a place without property names (LSMP007), classes of other projects that are not checked (LSMP008),
+  /// JSON document types (LSMP009) and public fields the serializers leave out (LSMP010). See docs/Analyzers.md.
   /// <para>Reported from symbol and operation actions (not at the end of the compilation), so the IDE shows them while typing and offers the code fixes.</para>
   /// </summary>
   [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -22,7 +22,7 @@ namespace LsMsgPack.Analyzers
   {
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
       ImmutableArray.Create(Rules.MissingDefaultValue, Rules.DefaultValueDiffers, Rules.DefaultValueType, Rules.OpenProperty, Rules.OpenRead,
-        Rules.NullReadAsInitial, Rules.UntypedRead, Rules.UncheckedModel, Rules.JsonDocument);
+        Rules.NullReadAsInitial, Rules.UntypedRead, Rules.UncheckedModel, Rules.JsonDocument, Rules.FieldLeftOut);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -33,9 +33,11 @@ namespace LsMsgPack.Analyzers
         KnownSymbols known = new KnownSymbols(start.Compilation);
         if (known.IsEmpty && !ModelTypes.AllTypes(start.Options))
           return; // neither serializer is referenced, and the project of models does not ask for its classes to be checked
-        Models models = new Models(start.Compilation, known, start.Options);
+        int fields = Fields.ModeOf(start.Compilation, start.Options);
+        Models models = new Models(start.Compilation, known, start.Options, fields);
         OtherAssemblies others = new OtherAssemblies(start.Compilation, start.Options);
         start.RegisterSymbolAction(c => AnalyzeProperty(c, known, models, others), SymbolKind.Property);
+        start.RegisterSymbolAction(c => AnalyzeField(c, known, models, others, fields), SymbolKind.Field);
         start.RegisterSymbolAction(c => AnalyzeBaseType(c, models, others), SymbolKind.NamedType);
         start.RegisterSymbolAction(c => AnalyzeAction(c, known, others), SymbolKind.Method);
         start.RegisterOperationAction(c => AnalyzeCall(c, known, others), OperationKind.Invocation, OperationKind.ObjectCreation);
@@ -52,14 +54,16 @@ namespace LsMsgPack.Analyzers
       private readonly Compilation _compilation;
       private readonly KnownSymbols _known;
       private readonly AnalyzerOptions _options;
+      private readonly int _fields;
       private readonly object _lock = new object();
       private volatile ModelTypes _types;
 
-      public Models(Compilation compilation, KnownSymbols known, AnalyzerOptions options)
+      public Models(Compilation compilation, KnownSymbols known, AnalyzerOptions options, int fields)
       {
         _compilation = compilation;
         _known = known;
         _options = options;
+        _fields = fields;
       }
 
       public ModelTypes Get(CancellationToken cancellation)
@@ -70,13 +74,13 @@ namespace LsMsgPack.Analyzers
         lock (_lock)
         {
           if (_types is null)
-            _types = ModelTypes.Find(_compilation, _known, _options, cancellation);
+            _types = ModelTypes.Find(_compilation, _known, _options, _fields, cancellation);
           return _types;
         }
       }
     }
 
-    #region Properties
+    #region Properties and fields
 
     private static void AnalyzeProperty(SymbolAnalysisContext context, KnownSymbols known, Models models, OtherAssemblies others)
     {
@@ -86,21 +90,62 @@ namespace LsMsgPack.Analyzers
         return; // what FilterNonSettable and FilterStatic leave out
       if (!models.Get(context.CancellationToken).Contains(property.ContainingType) || IsIgnored(property))
         return;
+      AnalyzeMember(context, property, property.Type, property.SetMethod != null, known, others);
+    }
 
-      string name = string.Concat(property.ContainingType.Name, ".", property.Name);
-      ITypeSymbol json = JsonPart(property.Type);
+    /// <summary>
+    /// A field the serializers write (with the mode of the project, <see cref="Fields.ModeOf"/>) is checked as a property: a readonly one as a property without a setter.
+    /// A public field they leave out with the default mode is LSMP010.
+    /// </summary>
+    private static void AnalyzeField(SymbolAnalysisContext context, KnownSymbols known, Models models, OtherAssemblies others, int mode)
+    {
+      IFieldSymbol field = (IFieldSymbol)context.Symbol;
+      if (!Fields.IsOfState(field) || !models.Get(context.CancellationToken).Contains(field.ContainingType) || IsIgnored(field))
+        return;
+      if (Fields.IsSerialized(field, mode))
+      {
+        AnalyzeMember(context, field, field.Type, !field.IsReadOnly, known, others);
+        return;
+      }
+      if (mode == Fields.Attributed && field.DeclaredAccessibility == Accessibility.Public && !Fields.MarksItsMembers(field.ContainingType) && WouldRoundTrip(field))
+        context.ReportDiagnostic(Diagnostic.Create(Rules.FieldLeftOut, field.Locations[0], string.Concat(field.ContainingType.Name, ".", field.Name)));
+    }
+
+    /// <summary>
+    /// Serialized, the field would be written and read back (LSMP010 is not reported where opting in changes nothing or makes writing throw): a mutable field not of a type that is never written
+    /// (Type, MemberInfo, delegates) nor a JSON document type; a readonly one only when a reader fills it (a collection) or the constructor it calls takes it (FilterNonSettable, ObjectConstructor).
+    /// </summary>
+    private static bool WouldRoundTrip(IFieldSymbol field)
+    {
+      if (Fields.IsNeverWritten(field.Type) || JsonPart(field.Type) != null)
+        return false;
+      if (!field.IsReadOnly || Fields.IsFillable(field.Type))
+        return true;
+      IMethodSymbol withValues = ValuesConstructor.Of(field.ContainingType);
+      return withValues != null && ValuesConstructor.Takes(withValues, field);
+    }
+
+    /// <summary>
+    /// The rules for a property or field the serializers write.
+    /// </summary>
+    /// <param name="settable">Set from the data (a public setter, a field that is not readonly); otherwise written only (GetOnlyProperties), and only LSMP009 applies</param>
+    private static void AnalyzeMember(SymbolAnalysisContext context, ISymbol member, ITypeSymbol type, bool settable, KnownSymbols known, OtherAssemblies others)
+    {
+      string name = string.Concat(member.ContainingType.Name, ".", member.Name);
+      Location location = member.Locations[0];
+      ITypeSymbol json = JsonPart(type);
       if (json != null)
-        context.ReportDiagnostic(Diagnostic.Create(Rules.JsonDocument, property.Locations[0], string.Concat("'", name, "' is declared as ", Display(property.Type)), Display(json)));
-      if (property.SetMethod is null)
-        return; // without a setter (GetOnlyProperties): written, but never set from the data
-      ITypeSymbol open = OpenPart(property.Type);
+        context.ReportDiagnostic(Diagnostic.Create(Rules.JsonDocument, location, string.Concat("'", name, "' is declared as ", Display(type)), Display(json)));
+      if (!settable)
+        return; // without a setter (GetOnlyProperties) or readonly: written, but never set from the data
+      ITypeSymbol open = OpenPart(type);
       if (open != null)
-        context.ReportDiagnostic(Diagnostic.Create(Rules.OpenProperty, property.Locations[0], name, Display(property.Type), Display(open)));
-      INamedTypeSymbol other = others.FindUnchecked(property.Type);
+        context.ReportDiagnostic(Diagnostic.Create(Rules.OpenProperty, location, name, Display(type), Display(open)));
+      INamedTypeSymbol other = others.FindUnchecked(type);
       if (other != null)
-        context.ReportDiagnostic(Diagnostic.Create(Rules.UncheckedModel, property.Locations[0], Display(other), other.ContainingAssembly.Name));
+        context.ReportDiagnostic(Diagnostic.Create(Rules.UncheckedModel, location, Display(other), other.ContainingAssembly.Name));
 
-      CheckDefaults(context, property, name, known);
+      CheckDefaults(context, member, type, name, known);
     }
 
     /// <summary>
@@ -117,14 +162,15 @@ namespace LsMsgPack.Analyzers
     }
 
     /// <summary>
-    /// The "ignore" attributes FilterIgnoredAttribute recognizes (by full name, as it does).
+    /// The "ignore" attributes FilterIgnoredAttribute recognizes (by full name, as it does; [NonSerialized] on fields).
     /// </summary>
-    private static bool IsIgnored(IPropertySymbol property)
+    internal static bool IsIgnored(ISymbol member)
     {
-      foreach (AttributeData attribute in property.GetAttributes())
+      foreach (AttributeData attribute in member.GetAttributes())
       {
         switch (attribute.AttributeClass?.ToDisplayString())
         {
+          case "System.NonSerializedAttribute":
           case "System.Xml.Serialization.XmlIgnoreAttribute":
           case "Newtonsoft.Json.JsonIgnoreAttribute":
           case "System.Runtime.Serialization.IgnoreDataMemberAttribute":
@@ -161,21 +207,24 @@ namespace LsMsgPack.Analyzers
 
     #region Defaults
 
-    private static void CheckDefaults(SymbolAnalysisContext context, IPropertySymbol property, string name, KnownSymbols known)
+    /// <param name="member">A property or field</param>
+    private static void CheckDefaults(SymbolAnalysisContext context, ISymbol member, ITypeSymbol type, string name, KnownSymbols known)
     {
-      IMethodSymbol withValues = ValuesConstructor.Of(property.ContainingType);
-      if (withValues is null && !IsConstructed(property.ContainingType))
+      IMethodSymbol withValues = ValuesConstructor.Of(member.ContainingType);
+      if (withValues is null && !IsConstructed(member.ContainingType))
         return; // created without a constructor (ObjectCreation.ConstructorOrUninitialized): a left out property keeps the type's default, as the writer assumes
-      if (withValues != null && ValuesConstructor.Takes(withValues, property))
+      if (withValues != null && ValuesConstructor.Takes(withValues, member))
         return; // the constructor gets the value the writer leaves out
       Compilation compilation = context.Compilation;
-      ITypeSymbol type = property.Type;
       ITypeSymbol underlying = UnderlyingType(type);
-      InitialValue initial = InitialValue.Find(property, compilation, context.CancellationToken, withValues);
-      Location location = property.Locations[0];
+      InitialValue initial = InitialValue.Find(member, compilation, context.CancellationToken, withValues);
+      Location location = member.Locations[0];
+      // int A = 1, B = 2: the attributes are the declaration's, so a fix of the attribute would change the other fields too
+      bool sharedAttributes = member is IFieldSymbol && member.DeclaringSyntaxReferences.Length == 1
+        && member.DeclaringSyntaxReferences[0].GetSyntax(context.CancellationToken).Parent is VariableDeclarationSyntax declaration && declaration.Variables.Count > 1;
 
       AttributeData defaultValue = null;
-      foreach (AttributeData attribute in property.GetAttributes())
+      foreach (AttributeData attribute in member.GetAttributes())
         if (SerializerUses.Same(attribute.AttributeClass, known.DefaultValueAttribute))
           defaultValue = attribute;
 
@@ -184,7 +233,7 @@ namespace LsMsgPack.Analyzers
         if (initial.IsConstant && !IsDefault(initial.Value, type) && !(initial.Value is string text && text.Length == 0))
         {
           string argument = Literal(initial.Value, underlying, initial.Expression, initial.Model, location);
-          context.ReportDiagnostic(Diagnostic.Create(Rules.MissingDefaultValue, location, Properties(argument, null), name, argument, DefaultText(type)));
+          context.ReportDiagnostic(Diagnostic.Create(Rules.MissingDefaultValue, location, Properties(sharedAttributes ? null : argument, null), name, argument, DefaultText(type)));
         }
         return;
       }
@@ -207,7 +256,7 @@ namespace LsMsgPack.Analyzers
           if (!Equals(parsed, initial.Value))
           {
             string argument = Literal(initial.Value, underlying, initial.Expression, initial.Model, location);
-            context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueDiffers, at, Properties(argument, null), name, attributeSyntax.ArgumentList?.Arguments.ToString(), argument));
+            context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueDiffers, at, Properties(sharedAttributes ? null : argument, null), name, attributeSyntax.ArgumentList?.Arguments.ToString(), argument));
           }
           else if (IsNullable(type))
             ReportNullReadAsInitial(context, name, initial, underlying, location);
@@ -224,7 +273,7 @@ namespace LsMsgPack.Analyzers
       if (!SameType(value.Type, underlying))
       {
         string converted = Convert(value.Value, underlying, out object convertedValue) ? Literal(convertedValue, underlying, null, null, location) : null;
-        context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueType, at, Properties(converted, null), name, string.Concat(written, " (", Display(value.Type), ")"), Display(type)));
+        context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueType, at, Properties(sharedAttributes ? null : converted, null), name, string.Concat(written, " (", Display(value.Type), ")"), Display(type)));
         return;
       }
 
@@ -234,7 +283,7 @@ namespace LsMsgPack.Analyzers
         {
           string argument = Literal(initial.Value, underlying, initial.Expression, initial.Model, location);
           string initializer = initial.CanReplace ? written : null;
-          context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueDiffers, at, Properties(argument, initializer), name, written, argument));
+          context.ReportDiagnostic(Diagnostic.Create(Rules.DefaultValueDiffers, at, Properties(sharedAttributes ? null : argument, initializer), name, written, argument));
         }
         else if (IsNullable(type))
           ReportNullReadAsInitial(context, name, initial, underlying, location);

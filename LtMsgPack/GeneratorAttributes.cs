@@ -48,7 +48,7 @@ namespace LtMsgPack
 
   /// <summary>
   /// The compile-time options of LtMsgPack's source generator for this assembly. The same can be set in the project file:
-  /// <c>&lt;LtMsgPackGenerate&gt;Serializable;DataContract&lt;/LtMsgPackGenerate&gt;</c>, <c>&lt;LtMsgPackContextName&gt;</c>, <c>&lt;LtMsgPackAutoRegister&gt;</c>, <c>&lt;LtMsgPackNonPublicProperties&gt;</c> (this attribute wins).
+  /// <c>&lt;LtMsgPackGenerate&gt;Serializable;DataContract&lt;/LtMsgPackGenerate&gt;</c>, <c>&lt;LtMsgPackContextName&gt;</c>, <c>&lt;LtMsgPackAutoRegister&gt;</c>, <c>&lt;LtMsgPackNonPublicProperties&gt;</c>, <c>&lt;LsMsgPackFields&gt;</c> (this attribute wins).
   /// <para>Only which types get code is decided at compile time: the format (layout, schema, filters, formats of values) stays a runtime option of <see cref="LtMsgPackOptions"/>,
   /// the generated code checks it when it is first used.</para>
   /// </summary>
@@ -77,5 +77,13 @@ namespace LtMsgPack
     /// The generated code calls non-public accessors through <c>UnsafeAccessor</c> (.NET 8 or later), otherwise the runtime uses reflection. Also the MSBuild property <c>&lt;LtMsgPackNonPublicProperties&gt;</c>.
     /// </summary>
     public LsMsgPack.TypeResolving.Filters.NonPublicProperties NonPublicProperties { get; set; } = LsMsgPack.TypeResolving.Filters.NonPublicProperties.Attributed;
+
+    /// <summary>
+    /// The fields the generated code covers (<see cref="LsMsgPack.TypeResolving.Filters.SerializedFields.Attributed"/> by default: those with an opt-in attribute such as <c>[DataMember]</c>), set it to the mode of the
+    /// runtime's <see cref="LsMsgPack.TypeResolving.Filters.FilterNonSettable"/> (e.g. <see cref="LsMsgPack.TypeResolving.Filters.SerializedFields.Public"/> with the MessagePack-CSharp and Nerdbank presets).
+    /// Which ones are serialized stays a runtime option, the others are read and set by reflection (or compiled delegates). Non-public fields are accessed through <c>UnsafeAccessor</c> (.NET 8 or later).
+    /// Also the MSBuild property <c>&lt;LsMsgPackFields&gt;</c>, which the analyzers read too.
+    /// </summary>
+    public LsMsgPack.TypeResolving.Filters.SerializedFields Fields { get; set; } = LsMsgPack.TypeResolving.Filters.SerializedFields.Attributed;
   }
 }

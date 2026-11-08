@@ -35,11 +35,11 @@ namespace LtMsgPack.Writing
   /// </summary>
   internal sealed class CompiledObjectCode<T> : GeneratedObjectCode<T>, ICompiledCode where T : class
   {
-    private readonly PropertyInfo[] _properties;
+    private readonly MemberInfo[] _properties; // properties and fields
     private CompiledWrite<T> _write;
     private CompiledWriteUnrolled<T> _unrolled;
 
-    public CompiledObjectCode(GeneratedMember[] members, PropertyInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled)
+    public CompiledObjectCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled)
     {
       _properties = properties;
     }
@@ -69,11 +69,11 @@ namespace LtMsgPack.Writing
   /// </summary>
   internal sealed class CompiledStructCode<T> : GeneratedStructCode<T>, ICompiledCode where T : struct
   {
-    private readonly PropertyInfo[] _properties;
+    private readonly MemberInfo[] _properties; // properties and fields
     private CompiledRefWrite<T> _write;
     private CompiledRefWriteUnrolled<T> _unrolled;
 
-    public CompiledStructCode(GeneratedMember[] members, PropertyInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled)
+    public CompiledStructCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled)
     {
       _properties = properties;
       Unboxer = new StructUnboxer<T, T>(); // what GeneratedValues.Struct gives the generated code: a struct written as an object
@@ -162,18 +162,24 @@ namespace LtMsgPack.Writing
         return null;
 
       GeneratedMember[] members = new GeneratedMember[infos.Length];
-      PropertyInfo[] properties = new PropertyInfo[infos.Length];
+      MemberInfo[] properties = new MemberInfo[infos.Length];
       for (int t = 0; t < infos.Length; t++)
       {
-        PropertyInfo property = infos[t].PropertyInfo;
-        Type propertyType = property.PropertyType;
-        MethodInfo get = property.GetGetMethod(true);
-        bool canWrite = get != null && !get.IsStatic && get.GetParameters().Length == 0 && property.DeclaringType.IsAssignableFrom(type)
-          && !propertyType.IsByRef && !propertyType.IsPointer && !IsByRefLike(propertyType);
+        MemberInfo member = infos[t].Member;
+        Type propertyType = infos[t].DeclaredType;
+        bool canWrite;
+        if (member is FieldInfo field)
+          canWrite = !field.IsStatic; // read directly (expressions skip visibility)
+        else
+        {
+          MethodInfo get = ((PropertyInfo)member).GetGetMethod(true);
+          canWrite = get != null && !get.IsStatic && get.GetParameters().Length == 0;
+        }
+        canWrite = canWrite && member.DeclaringType.IsAssignableFrom(type) && !propertyType.IsByRef && !propertyType.IsPointer && !IsByRefLike(propertyType);
         Type underlying = Nullable.GetUnderlyingType(propertyType);
         GeneratedKind kind = canWrite && !infos[t].CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)) ? KindOf(serializer, underlying ?? propertyType) : GeneratedKind.None;
-        members[t] = new GeneratedMember(property.DeclaringType, property.Name, propertyType, kind, underlying != null && kind != GeneratedKind.None, canWrite, false);
-        properties[t] = property;
+        members[t] = new GeneratedMember(member.DeclaringType, member.Name, propertyType, kind, underlying != null && kind != GeneratedKind.None, canWrite, false);
+        properties[t] = member;
       }
 
       Type codeType = (type.IsValueType ? typeof(CompiledStructCode<>) : typeof(CompiledObjectCode<>)).MakeGenericType(type);
@@ -215,7 +221,7 @@ namespace LtMsgPack.Writing
     /// </summary>
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
-    internal static TDelegate Write<TDelegate>(Type type, bool byRef, GeneratedMember[] members, PropertyInfo[] properties, GeneratedWritePlan plan) where TDelegate : Delegate
+    internal static TDelegate Write<TDelegate>(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, GeneratedWritePlan plan) where TDelegate : Delegate
     {
       Builder b = new Builder(type, byRef, members, properties, plan);
       ParameterExpression keys = Expression.Parameter(typeof(byte[][]), "keys");
@@ -270,7 +276,7 @@ namespace LtMsgPack.Writing
     /// </summary>
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
-    internal static TDelegate Unrolled<TDelegate>(Type type, bool byRef, GeneratedMember[] members, PropertyInfo[] properties, GeneratedWritePlan plan) where TDelegate : Delegate
+    internal static TDelegate Unrolled<TDelegate>(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, GeneratedWritePlan plan) where TDelegate : Delegate
     {
       Builder b = new Builder(type, byRef, members, properties, plan);
       List<Expression> body = new List<Expression>();
@@ -300,7 +306,7 @@ namespace LtMsgPack.Writing
       private readonly Type _type;
       private readonly bool _byRef;
       private readonly GeneratedMember[] _members;
-      private readonly PropertyInfo[] _properties;
+      private readonly MemberInfo[] _properties; // properties and fields
       private readonly bool _filter;
 
       /// <summary>
@@ -308,7 +314,7 @@ namespace LtMsgPack.Writing
       /// </summary>
       private readonly Dictionary<Type, ParameterExpression> _values = new Dictionary<Type, ParameterExpression>();
 
-      internal Builder(Type type, bool byRef, GeneratedMember[] members, PropertyInfo[] properties, GeneratedWritePlan plan)
+      internal Builder(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, GeneratedWritePlan plan)
       {
         _type = type;
         _byRef = byRef;
@@ -350,7 +356,7 @@ namespace LtMsgPack.Writing
 
       private Expression Get(int id)
       {
-        return Expression.Property(O, _properties[id]); // a struct by reference: no copy
+        return Expression.MakeMemberAccess(O, _properties[id]); // a property or field; a struct by reference: no copy
       }
 
       [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]

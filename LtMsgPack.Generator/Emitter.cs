@@ -14,7 +14,7 @@ namespace LtMsgPack.Generator
     /// <summary>
     /// The version of the generated code (LsMsgPack.Generated.GeneratedContract.Current of the runtime this generator is released with, checked by a test).
     /// </summary>
-    internal const int ContractVersion = 3;
+    internal const int ContractVersion = 4;
 
     private const string Values = "global::LtMsgPack.Generated.GeneratedValues";
 
@@ -127,9 +127,11 @@ namespace LtMsgPack.Generator
         {
           if (type.Kind == TypeModelKind.Factory) // the runtime finds CreateRange, ToFrozenSet... by reflection
             w.Line("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods, typeof(" + type.TypeName + "))]");
-          else if (type.KeepMetadata) // the runtime reads the properties and constructors by reflection: kept when trimming
+          else if (type.KeepMetadata) // the runtime reads the properties, fields and constructors by reflection: kept when trimming
             w.Line("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties"
               + (type.KeepNonPublic ? " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicProperties" : "")
+              + (type.KeepPublicFields ? " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields" : "")
+              + (type.KeepNonPublicFields ? " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields" : "")
               + " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof("
               + type.TypeName + "))]");
         }
@@ -242,13 +244,13 @@ namespace LtMsgPack.Generator
         string get, set;
         if (byRef) // the struct by reference (StructGetter, StructSetter): explicitly typed lambdas, C# 7.3 infers no ref parameters
         {
-          get = property.CanGet ? "(ref " + type.TypeName + " o) => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", true) : "null";
-          set = property.CanSet ? "(ref " + type.TypeName + " o, " + property.TypeName + " v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", true) : "null";
+          get = property.CanGet ? "(ref " + type.TypeName + " o) => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", true, property.Field) : "null";
+          set = property.CanSet ? "(ref " + type.TypeName + " o, " + property.TypeName + " v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", true, property.Field) : "null";
         }
         else
         {
-          get = property.CanGet ? "o => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", false) : "null";
-          set = property.CanSet ? "(o, v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", false) : "null";
+          get = property.CanGet ? "o => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", false, property.Field) : "null";
+          set = property.CanSet ? "(o, v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", false, property.Field) : "null";
         }
         w.Line(Values + (byRef ? ".StructProperty<" : ".Property<") + type.TypeName + ", " + property.TypeName + ">(\"" + property.Name + "\", " + get + ", " + set + ")" + (t < type.Properties.Length - 1 ? "," : ");"));
       }
@@ -271,7 +273,7 @@ namespace LtMsgPack.Generator
     private const string IO = "global::LtMsgPack.IO.";
 
     /// <summary>
-    /// The writer and reader of a class: the per property part of the runtime's ObjectPlan and ObjectReader, for the members of the kinds it writes and reads itself
+    /// The writer and reader of a class: the per property (and field) part of the runtime's ObjectPlan and ObjectReader, for the members of the kinds it writes and reads itself
     /// (the runtime does the others, and the ones its options write otherwise: see GeneratedWritePlan.Ids and PropReader.GeneratedId).
     /// A struct's is the same code on the struct by reference (GeneratedStructCode): <c>ref T o</c>, the runtime's writers and readers through the by reference helpers.
     /// </summary>
@@ -312,7 +314,13 @@ namespace LtMsgPack.Generator
         w.Line();
         w.Line("public override bool IsDefault(ref " + type.TypeName + " v)");
         w.Open();
-        w.Line("return " + type.IsDefault + ";");
+        string check = type.IsDefault;
+        for (int a = 0; a < type.DefaultAccessors.Length; a++) // private members of the struct, through UnsafeAccessors
+        {
+          PropertyModel member = type.DefaultAccessors[a];
+          check = check.Replace("\u0001" + a + "\u0001", accessors.Get(type.TypeName, member.Name, member.TypeName, member.Access, true, "v", true, member.Field));
+        }
+        w.Line("return " + check + ";");
         w.Close();
       }
 
@@ -696,7 +704,16 @@ namespace LtMsgPack.Generator
     /// </summary>
     private static string Get(Accessors accessors, MemberModel member)
     {
-      return accessors.Get(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeGet, "o", member.ByRef);
+      return accessors.Get(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeGet, Target(member), member.ByRef, member.Field);
+    }
+
+    /// <summary>
+    /// <c>o</c>, or for a member of a base class <c>o</c> cast to it: in C# a member of the derived class with the same name would hide it (the runtime may serialize the base class's member,
+    /// e.g. a property hidden by a public field that is not serialized). An UnsafeAccessor takes the declaring class anyway.
+    /// </summary>
+    private static string Target(MemberModel member)
+    {
+      return member.Inherited && !member.ByRef ? "((" + member.DeclaringType + ")o)" : "o";
     }
 
     /// <summary>
@@ -704,12 +721,12 @@ namespace LtMsgPack.Generator
     /// </summary>
     private static string Set(Accessors accessors, MemberModel member, string value)
     {
-      return accessors.Set(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeSet, "o", value, member.ByRef);
+      return accessors.Set(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeSet, Target(member), value, member.ByRef, member.Field);
     }
 
     /// <summary>
-    /// The UnsafeAccessor methods of a context (.NET 8): the non-public getters and setters and the init-only setters the generated code calls, declared once per property (written by <see cref="Write"/> at the end of the context class,
-    /// the generated writers and readers are nested in it).
+    /// The UnsafeAccessor methods of a context (.NET 8): the non-public getters and setters, the init-only setters and the non-public fields the generated code uses, declared once per member
+    /// (written by <see cref="Write"/> at the end of the context class, the generated writers and readers are nested in it).
     /// </summary>
     private sealed class Accessors
     {
@@ -717,19 +734,22 @@ namespace LtMsgPack.Generator
       private readonly List<string> _declarations = new List<string>();
 
       /// <param name="byRef">A struct: <paramref name="target"/> is a ref parameter, the accessor takes it by reference</param>
-      /// <returns>The value of the property of <paramref name="target"/> (an expression)</returns>
-      public string Get(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, bool byRef)
+      /// <param name="field">A field: its accessor returns it by reference</param>
+      /// <returns>The value of the property or field of <paramref name="target"/> (an expression)</returns>
+      public string Get(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, bool byRef, bool field)
       {
         if (!viaAccessor)
           return target + "." + access;
-        return Method(declaringType, name, typeName, true, byRef) + "(" + (byRef ? "ref " : "") + target + ")";
+        return (field ? Field(declaringType, name, typeName, byRef) : Method(declaringType, name, typeName, true, byRef)) + "(" + (byRef ? "ref " : "") + target + ")";
       }
 
-      /// <returns>The assignment of the property of <paramref name="target"/> (a statement without its semicolon, or a lambda body)</returns>
-      public string Set(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, string value, bool byRef)
+      /// <returns>The assignment of the property or field of <paramref name="target"/> (a statement without its semicolon, or a lambda body)</returns>
+      public string Set(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, string value, bool byRef, bool field)
       {
         if (!viaAccessor)
           return target + "." + access + " = " + value;
+        if (field)
+          return Field(declaringType, name, typeName, byRef) + "(" + (byRef ? "ref " : "") + target + ") = " + value;
         return Method(declaringType, name, typeName, false, byRef) + "(" + (byRef ? "ref " : "") + target + ", " + value + ")";
       }
 
@@ -750,12 +770,27 @@ namespace LtMsgPack.Generator
         return method;
       }
 
+      /// <summary>
+      /// The field by reference: one accessor reads and sets it (never declared for setting a readonly field: the generator describes no setter for one).
+      /// </summary>
+      private string Field(string declaringType, string name, string typeName, bool byRef)
+      {
+        string key = "field " + declaringType + " " + name;
+        if (_names.TryGetValue(key, out string method))
+          return method;
+        method = "LtMsgPackField" + _names.Count;
+        _names.Add(key, method);
+        _declarations.Add("[global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = \"" + name + "\")]");
+        _declarations.Add("private static extern ref " + typeName + " " + method + "(" + (byRef ? "ref " : "") + declaringType + " o);");
+        return method;
+      }
+
       public void Write(CodeWriter w)
       {
         if (_declarations.Count == 0)
           return;
         w.Line();
-        w.Line("// The init-only setters, and the non-public accessors of properties the runtime may serialize (FilterNonSettable's NonPublicProperties)");
+        w.Line("// The init-only setters, and the non-public accessors and fields of members the runtime may serialize (FilterNonSettable's NonPublicProperties and SerializedFields)");
         foreach (string line in _declarations)
           w.Line(line);
       }

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Numerics;
+using System.Runtime.Serialization;
 
 namespace LsMsgPackTsTestServer
 {
@@ -132,6 +134,17 @@ namespace LsMsgPackTsTestServer
     public Animal Favorite { get; set; }
     public object Anything { get; set; }
     public IEnumerable<Address> Addresses { get; set; } // a List: the collection gets a type id
+  }
+
+  // Fields: the System.Numerics structs are written by their public fields ([x, y, z] in the array layout, {X, Y, Z} in maps), the model's own fields when they opt in ([DataMember])
+
+  public class Motion
+  {
+    public Vector3 Position { get; set; }
+    public Vector4 Color { get; set; }
+    public List<Vector3> Path { get; set; }
+    [DataMember] public int Frame;
+    [DataMember] public Vector2 Scale;
   }
 
   // Constructor values: the generated classes start with them (a .NET reader keeps them for a property the data does not set)

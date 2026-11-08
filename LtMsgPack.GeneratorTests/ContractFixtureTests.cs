@@ -31,11 +31,21 @@ namespace LtMsgPack.GeneratorTests
     [TestMethod]
     public void GeneratedCodeOfSupportedVersions_IsUsedAndGivesTheSameData()
     {
+      // All versions are loaded first and their types registered: the fixtures share their class names (Invoice, Money...), and short type names are cached for the process
+      // when only one class has the name (TypeResolver), so a later version would read the schema's names as the classes of an earlier one. With all registered, every name is ambiguous
+      // and the readers pair the entries with their own classes (BindReaderTypes, entries found by the name of the class read), as with duplicate names in an application.
+      Assembly[] assemblies = new Assembly[GeneratedContract.Current + 1];
       for (int version = GeneratedContract.MinSupported; version <= GeneratedContract.Current; version++)
       {
         string directory = Path.Combine(FixtureDirectory, "v" + version);
         string[] sources = Directory.GetFiles(directory, "*.txt").OrderBy(f => f, StringComparer.Ordinal).Select(File.ReadAllText).ToArray();
-        Assembly assembly = GeneratorHarness.CompileAndLoad("FixtureV" + version, sources);
+        assemblies[version] = GeneratorHarness.CompileAndLoad("FixtureV" + version, sources);
+        MsgPackTypes.CacheAssemblyTypes(assemblies[version].GetType("Shop.Invoice"));
+      }
+
+      for (int version = GeneratedContract.MinSupported; version <= GeneratedContract.Current; version++)
+      {
+        Assembly assembly = assemblies[version];
 
         LtMsgPackContext context = (LtMsgPackContext)assembly.GetType("Shop.ShopMsgPackContext").GetProperty("Default").GetValue(null);
         Assert.AreEqual(version, context.ContractVersion);
@@ -56,17 +66,24 @@ namespace LtMsgPack.GeneratorTests
     }
 
     /// <summary>
-    /// An invoice of the fixture's model (GeneratorTests.InvoiceModel), filled by reflection (the struct Money only where the model has it).
+    /// An invoice of the fixture's model (GeneratorTests.InvoiceModel), filled by reflection (the struct Money and the fields only where the model has them).
     /// </summary>
     private static object Sample(Assembly assembly)
     {
-      object address = Create(assembly, "Shop.Address", ("Street", "Main street 1"), ("City", "Utrecht"));
+      bool fields = assembly.GetType("Shop.Address").GetField("PostalCode") != null; // version 4 and later
+      object address = fields
+        ? Create(assembly, "Shop.Address", ("Street", "Main street 1"), ("City", "Utrecht"), ("PostalCode", "3511 AB"))
+        : Create(assembly, "Shop.Address", ("Street", "Main street 1"), ("City", "Utrecht"));
       object customer = Create(assembly, "Shop.Customer", ("CustomerId", 7), ("CompanyName", "Infotopie"), ("BillingAddress", address));
       Type lineType = assembly.GetType("Shop.InvoiceLine");
       IList lines = (IList)Activator.CreateInstance(typeof(System.Collections.Generic.List<>).MakeGenericType(lineType));
       object first = Create(assembly, "Shop.InvoiceLine", ("LineNumber", 1), ("Quantity", 2.5m), ("Unit", Enum.ToObject(assembly.GetType("Shop.UnitOfMeasure"), 1)));
       if (assembly.GetType("Shop.Money") != null) // version 3 and later: a struct
-        lineType.GetProperty("UnitPrice").SetValue(first, Create(assembly, "Shop.Money", ("Amount", 100.99m), ("Currency", "EUR")));
+        lineType.GetProperty("UnitPrice").SetValue(first, fields
+          ? Create(assembly, "Shop.Money", ("Amount", 100.99m), ("Currency", "EUR"), ("Precision", (byte)2))
+          : Create(assembly, "Shop.Money", ("Amount", 100.99m), ("Currency", "EUR")));
+      if (fields)
+        Set(first, "_discountPercent", 15);
       lines.Add(first);
       lines.Add(Create(assembly, "Shop.InvoiceLine", ("LineNumber", 2)));
       return Create(assembly, "Shop.Invoice",
@@ -84,8 +101,20 @@ namespace LtMsgPack.GeneratorTests
       Type type = assembly.GetType(typeName);
       object instance = Activator.CreateInstance(type);
       foreach ((string name, object value) in values)
-        type.GetProperty(name).SetValue(instance, value);
+        Set(instance, name, value);
       return instance;
+    }
+
+    /// <summary>
+    /// Sets a property, or a field (also a private one).
+    /// </summary>
+    private static void Set(object instance, string name, object value)
+    {
+      PropertyInfo property = instance.GetType().GetProperty(name);
+      if (property != null)
+        property.SetValue(instance, value);
+      else
+        instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).SetValue(instance, value);
     }
   }
 }

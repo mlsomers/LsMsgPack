@@ -231,6 +231,95 @@ namespace LsMsgPackUnitTests
       }
     }
 
+    public struct LtsFieldVec { public float X; public float Y; public float Z; }
+    public class LtsFieldMover { public string Name; public LtsFieldVec Position; public System.Numerics.Vector3 Velocity; public int Count; public double Heading; public List<LtsFieldVec> Path; public System.Numerics.Vector3[] Points; }
+
+    /// <summary>
+    /// Fields are read and written by typed delegates compiled when the plan is built (structs by reference): nothing is boxed, as for properties.
+    /// The reflection path (BoxedPropWriter/BoxedPropReader) would box every int, float and struct.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void FieldStructs_NoAllocation(bool generated)
+    {
+      LtsFieldMover moving = new LtsFieldMover { Name = "m", Position = new LtsFieldVec { X = 1, Y = 2, Z = 3 }, Velocity = new System.Numerics.Vector3(4, 5, 6), Count = 7, Heading = 0.5,
+        Path = new List<LtsFieldVec> { new LtsFieldVec { X = 1 }, new LtsFieldVec { Y = 2 } }, Points = new[] { new System.Numerics.Vector3(7, 8, 9) } };
+      // The same objects with default values: the elements are written all the same (the nested objects of the schema cost the same), their fields are left out
+      LtsFieldMover resting = new LtsFieldMover { Name = "m", Position = moving.Position, Velocity = moving.Velocity, Count = 7, Heading = 0.5,
+        Path = new List<LtsFieldVec> { default(LtsFieldVec), default(LtsFieldVec) }, Points = new[] { default(System.Numerics.Vector3) } };
+      MemoryStream stream = new MemoryStream(1024);
+      bool optimized = IsOptimized(typeof(LtMsgPackSerializer)) && IsOptimized(typeof(LtStructTests));
+      foreach (bool schema in new[] { false, true })
+      {
+        foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+        {
+          LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
+            Contexts = generated ? new LtMsgPack.LtMsgPackContext[] { TestMsgPackContext.Default } : null,
+            StaticFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeStatically[] { new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All,
+              LsMsgPack.TypeResolving.Filters.NonPublicProperties.None, LsMsgPack.TypeResolving.Filters.SerializedFields.Public), new LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute(), new LsMsgPack.TypeResolving.Filters.FilterStatic() } });
+          string setting = $"schema {schema}, {layout}, generated {generated}";
+
+          for (int t = 0; t < 3; t++)
+          {
+            stream.SetLength(0);
+            lt.Serialize(moving, stream);
+          }
+          long before = GC.GetAllocatedBytesForCurrentThread();
+          stream.SetLength(0);
+          lt.Serialize(moving, stream);
+          long written = GC.GetAllocatedBytesForCurrentThread() - before;
+          if (optimized)
+            Assert.AreEqual(0L, written, setting + ": writing");
+
+          byte[] movingData = lt.Serialize(moving);
+          byte[] restingData = lt.Serialize(resting);
+          for (int t = 0; t < 3; t++)
+          {
+            lt.Deserialize<LtsFieldMover>(movingData);
+            lt.Deserialize<LtsFieldMover>(restingData);
+          }
+          before = GC.GetAllocatedBytesForCurrentThread();
+          LtsFieldMover read = lt.Deserialize<LtsFieldMover>(movingData);
+          long readMoving = GC.GetAllocatedBytesForCurrentThread() - before;
+          before = GC.GetAllocatedBytesForCurrentThread();
+          lt.Deserialize<LtsFieldMover>(restingData);
+          long readResting = GC.GetAllocatedBytesForCurrentThread() - before;
+          if (optimized)
+            Assert.AreEqual(readResting, readMoving, setting + ": reading the values");
+
+          Assert.AreEqual(moving.Position, read.Position, setting);
+          Assert.AreEqual(moving.Velocity, read.Velocity, setting);
+          Assert.AreEqual(7, read.Count, setting);
+          Assert.AreEqual(0.5, read.Heading, setting);
+          CollectionAssert.AreEqual(moving.Path, read.Path, setting);
+          CollectionAssert.AreEqual(moving.Points, read.Points, setting);
+        }
+      }
+    }
+
+    public class LtsVectorHolder { public System.Numerics.Vector3 V { get; set; } public System.Numerics.Quaternion Q { get; set; } public int N { get; set; } = 1; }
+
+    /// <summary>
+    /// The default check of a framework struct with its own typed Equals (StructDefault.TypedEquals) decides as Core's boxed Equals: the same values left out.
+    /// </summary>
+    [TestMethod]
+    public void DefaultCheck_FrameworkStructs_SameAsCore()
+    {
+      float nan = float.NaN;
+      System.Numerics.Vector3[] vectors = { default(System.Numerics.Vector3), new System.Numerics.Vector3(-0f, 0f, -0f), new System.Numerics.Vector3(nan, 0, 0), new System.Numerics.Vector3(0, 0, 1e-45f), System.Numerics.Vector3.One };
+      System.Numerics.Quaternion[] quaternions = { default(System.Numerics.Quaternion), new System.Numerics.Quaternion(-0f, 0, 0, 0), new System.Numerics.Quaternion(0, nan, 0, 0), System.Numerics.Quaternion.Identity };
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      for (int v = 0; v < vectors.Length; v++)
+      {
+        for (int q = 0; q < quaternions.Length; q++)
+        {
+          LtsVectorHolder holder = new LtsVectorHolder() { V = vectors[v], Q = quaternions[q] };
+          CollectionAssert.AreEqual(Serializers.Ls.Serialize(holder, settings), Serializers.Lt.Serialize(holder, settings), $"V {vectors[v]}, Q {quaternions[q]}");
+        }
+      }
+    }
+
     private static bool IsOptimized(Type type)
     {
       DebuggableAttribute debuggable = type.Assembly.GetCustomAttribute<DebuggableAttribute>();

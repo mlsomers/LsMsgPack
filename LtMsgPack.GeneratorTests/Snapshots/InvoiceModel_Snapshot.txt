@@ -27,17 +27,17 @@ namespace Shop
     public static ShopMsgPackContext Default { get; } = new ShopMsgPackContext();
 
     /// <summary>
-    /// Written by the generator (version 3 of the generated code).
+    /// Written by the generator (version 4 of the generated code).
     /// </summary>
-    public ShopMsgPackContext() : base(3)
+    public ShopMsgPackContext() : base(4)
     {
     }
 
     [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::Shop.Invoice))]
     [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::Shop.Customer))]
-    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::Shop.Address))]
-    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::Shop.InvoiceLine))]
-    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::Shop.Money))]
+    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::Shop.Address))]
+    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::Shop.InvoiceLine))]
+    [global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::Shop.Money))]
     protected override void AddTypes(global::LsMsgPack.Generated.GeneratedTypeSet types)
     {
       types.Add(typeof(global::Shop.Invoice), 0);
@@ -124,7 +124,8 @@ namespace Shop
       {
         return global::LtMsgPack.Generated.GeneratedValues.Object<global::Shop.Address>(() => new global::Shop.Address(), new LtMsgPackCode5(),
           global::LtMsgPack.Generated.GeneratedValues.Property<global::Shop.Address, string>("Street", o => o.Street, (o, v) => o.Street = v),
-          global::LtMsgPack.Generated.GeneratedValues.Property<global::Shop.Address, string>("City", o => o.City, (o, v) => o.City = v));
+          global::LtMsgPack.Generated.GeneratedValues.Property<global::Shop.Address, string>("City", o => o.City, (o, v) => o.City = v),
+          global::LtMsgPack.Generated.GeneratedValues.Property<global::Shop.Address, string>("PostalCode", o => o.PostalCode, (o, v) => o.PostalCode = v));
       }
     }
 
@@ -136,7 +137,8 @@ namespace Shop
           global::LtMsgPack.Generated.GeneratedValues.Property<global::Shop.InvoiceLine, int>("LineNumber", o => o.LineNumber, (o, v) => o.LineNumber = v),
           global::LtMsgPack.Generated.GeneratedValues.Property<global::Shop.InvoiceLine, decimal>("Quantity", o => o.Quantity, (o, v) => o.Quantity = v),
           global::LtMsgPack.Generated.GeneratedValues.Property<global::Shop.InvoiceLine, global::Shop.UnitOfMeasure>("Unit", o => o.Unit, (o, v) => o.Unit = v),
-          global::LtMsgPack.Generated.GeneratedValues.Property<global::Shop.InvoiceLine, global::Shop.Money>("UnitPrice", o => o.UnitPrice, (o, v) => o.UnitPrice = v));
+          global::LtMsgPack.Generated.GeneratedValues.Property<global::Shop.InvoiceLine, global::Shop.Money>("UnitPrice", o => o.UnitPrice, (o, v) => o.UnitPrice = v),
+          global::LtMsgPack.Generated.GeneratedValues.Property<global::Shop.InvoiceLine, int>("_discountPercent", o => LtMsgPackField0(o), (o, v) => LtMsgPackField0(o) = v));
       }
     }
 
@@ -154,7 +156,8 @@ namespace Shop
       {
         return global::LtMsgPack.Generated.GeneratedValues.Struct<global::Shop.Money>(null, new LtMsgPackCode8(),
           global::LtMsgPack.Generated.GeneratedValues.StructProperty<global::Shop.Money, decimal>("Amount", (ref global::Shop.Money o) => o.Amount, (ref global::Shop.Money o, decimal v) => o.Amount = v),
-          global::LtMsgPack.Generated.GeneratedValues.StructProperty<global::Shop.Money, string>("Currency", (ref global::Shop.Money o) => o.Currency, (ref global::Shop.Money o, string v) => o.Currency = v));
+          global::LtMsgPack.Generated.GeneratedValues.StructProperty<global::Shop.Money, string>("Currency", (ref global::Shop.Money o) => o.Currency, (ref global::Shop.Money o, string v) => o.Currency = v),
+          global::LtMsgPack.Generated.GeneratedValues.StructProperty<global::Shop.Money, byte>("Precision", (ref global::Shop.Money o) => o.Precision, (ref global::Shop.Money o, byte v) => o.Precision = v));
       }
     }
 
@@ -760,8 +763,9 @@ namespace Shop
       public LtMsgPackCode5() : base(new global::LtMsgPack.Generated.GeneratedMember[]
       {
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "Street", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
-        new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "City", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true)
-      }, new int[] { 0, 1 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
+        new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "City", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
+        new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "PostalCode", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true)
+      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
       {
       }
 
@@ -801,6 +805,23 @@ namespace Shop
             case 1:
             {
               string v = o.City;
+              if (filter && v == null)
+              {
+                written = false;
+                break;
+              }
+              if (key != null)
+                w.Raw(key);
+              if (v == null)
+                w.Nil();
+              else
+                w.String(v);
+              written = true;
+              break;
+            }
+            case 2:
+            {
+              string v = o.PostalCode;
               if (filter && v == null)
               {
                 written = false;
@@ -860,6 +881,18 @@ namespace Shop
               w.String(v);
           }
         }
+        {
+          string v = o.PostalCode;
+          if (filter && v == null)
+            w.Nil();
+          else
+          {
+            if (v == null)
+              w.Nil();
+            else
+              w.String(v);
+          }
+        }
       }
 
       public override void ReadPositional(global::LtMsgPack.Reading.ReadContext c, global::Shop.Address o, global::LtMsgPack.Reading.PropReader[] props, int items, global::LtMsgPack.Generated.GeneratedReadPlan p)
@@ -883,6 +916,9 @@ namespace Shop
               case 1:
                 o.City = default(string);
                 continue;
+              case 2:
+                o.PostalCode = default(string);
+                continue;
             }
             prop.ReadNil(o); // the value the writer leaves out (null, the default of the type or of [DefaultValue])
             continue;
@@ -903,6 +939,15 @@ namespace Shop
               if (r.TryReadString(out string v))
               {
                 o.City = v;
+                continue;
+              }
+              break;
+            }
+            case 2:
+            {
+              if (r.TryReadString(out string v))
+              {
+                o.PostalCode = v;
                 continue;
               }
               break;
@@ -956,6 +1001,20 @@ namespace Shop
               }
               break;
             }
+            case 2:
+            {
+              if (r.TryReadString(out string v))
+              {
+                o.PostalCode = v;
+                continue;
+              }
+              if (r.TryReadNil())
+              {
+                o.PostalCode = default(string);
+                continue;
+              }
+              break;
+            }
           }
           prop.Read(c, o); // another format: read as the runtime does
         }
@@ -973,8 +1032,9 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "LineNumber", typeof(int), global::LtMsgPack.Generated.GeneratedKind.Int32, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "Quantity", typeof(decimal), global::LtMsgPack.Generated.GeneratedKind.Decimal, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "Unit", typeof(global::Shop.UnitOfMeasure), global::LtMsgPack.Generated.GeneratedKind.Enum, false, true, true),
-        new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "UnitPrice", typeof(global::Shop.Money), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true)
-      }, new int[] { 0, 1, 2, 3 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
+        new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "UnitPrice", typeof(global::Shop.Money), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true),
+        new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "_discountPercent", typeof(int), global::LtMsgPack.Generated.GeneratedKind.Int32, false, true, true)
+      }, new int[] { 0, 1, 2, 3, 4 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
       {
       }
 
@@ -1039,6 +1099,20 @@ namespace Shop
             case 3:
               written = p.Value<global::Shop.Money>(t, c, o.UnitPrice, key, infos[t]);
               break;
+            case 4:
+            {
+              int v = LtMsgPackField0(o);
+              if (filter && v == 0)
+              {
+                written = false;
+                break;
+              }
+              if (key != null)
+                w.Raw(key);
+              w.Int32(v);
+              written = true;
+              break;
+            }
             default:
               written = p.Runtime(t, c, o, key, infos[t]);
               break;
@@ -1089,6 +1163,15 @@ namespace Shop
         }
         if (!p.Value<global::Shop.Money>(3, c, o.UnitPrice, null, infos[3]))
           w.Nil();
+        {
+          int v = LtMsgPackField0(o);
+          if (filter && v == 0)
+            w.Nil();
+          else
+          {
+            w.Int32(v);
+          }
+        }
       }
 
       public override void ReadPositional(global::LtMsgPack.Reading.ReadContext c, global::Shop.InvoiceLine o, global::LtMsgPack.Reading.PropReader[] props, int items, global::LtMsgPack.Generated.GeneratedReadPlan p)
@@ -1114,6 +1197,9 @@ namespace Shop
                 continue;
               case 2:
                 o.Unit = default(global::Shop.UnitOfMeasure);
+                continue;
+              case 4:
+                LtMsgPackField0(o) = default(int);
                 continue;
             }
             prop.ReadNil(o); // the value the writer leaves out (null, the default of the type or of [DefaultValue])
@@ -1150,6 +1236,20 @@ namespace Shop
               {
                 o.Unit = (global::Shop.UnitOfMeasure)unchecked((byte)v);
                 continue;
+              }
+              break;
+            }
+            case 4:
+            {
+              int start = r.Pos;
+              if (r.TryReadInt64(out long v))
+              {
+                if (v >= int.MinValue && v <= int.MaxValue)
+                {
+                  LtMsgPackField0(o) = (int)v;
+                  continue;
+                }
+                r.Pos = start;
               }
               break;
             }
@@ -1221,6 +1321,25 @@ namespace Shop
               }
               break;
             }
+            case 4:
+            {
+              int start = r.Pos;
+              if (r.TryReadInt64(out long v))
+              {
+                if (v >= int.MinValue && v <= int.MaxValue)
+                {
+                  LtMsgPackField0(o) = (int)v;
+                  continue;
+                }
+                r.Pos = start;
+              }
+              if (r.TryReadNil())
+              {
+                LtMsgPackField0(o) = default(int);
+                continue;
+              }
+              break;
+            }
           }
           prop.Read(c, o); // another format: read as the runtime does
         }
@@ -1236,14 +1355,15 @@ namespace Shop
       public LtMsgPackCode8() : base(new global::LtMsgPack.Generated.GeneratedMember[]
       {
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Amount", typeof(decimal), global::LtMsgPack.Generated.GeneratedKind.Decimal, false, true, true),
-        new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Currency", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true)
-      }, new int[] { 0, 1 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LtMsgPack.Generated.GeneratedCapabilities.IsDefault)
+        new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Currency", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
+        new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Precision", typeof(byte), global::LtMsgPack.Generated.GeneratedKind.Byte, false, true, true)
+      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LtMsgPack.Generated.GeneratedCapabilities.IsDefault)
       {
       }
 
       public override bool IsDefault(ref global::Shop.Money v)
       {
-        return v.Amount == 0m && (object)v.Currency == null;
+        return v.Amount == 0m && (object)v.Currency == null && v.Precision == default(byte);
       }
 
       public override int Write(global::LtMsgPack.Writing.WriteContext c, ref global::Shop.Money o, byte[][] keys, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LtMsgPack.Generated.GeneratedWritePlan p, out int end)
@@ -1293,6 +1413,20 @@ namespace Shop
               written = true;
               break;
             }
+            case 2:
+            {
+              byte v = o.Precision;
+              if (filter && v == 0)
+              {
+                written = false;
+                break;
+              }
+              if (key != null)
+                w.Raw(key);
+              w.UInt8(v);
+              written = true;
+              break;
+            }
             default:
               written = p.Runtime(t, c, ref o, key, infos[t]);
               break;
@@ -1335,6 +1469,15 @@ namespace Shop
               w.String(v);
           }
         }
+        {
+          byte v = o.Precision;
+          if (filter && v == 0)
+            w.Nil();
+          else
+          {
+            w.UInt8(v);
+          }
+        }
       }
 
       public override void ReadPositional(global::LtMsgPack.Reading.ReadContext c, ref global::Shop.Money o, global::LtMsgPack.Reading.PropReader[] props, int items, global::LtMsgPack.Generated.GeneratedReadPlan p)
@@ -1358,6 +1501,9 @@ namespace Shop
               case 1:
                 o.Currency = default(string);
                 continue;
+              case 2:
+                o.Precision = default(byte);
+                continue;
             }
             global::LtMsgPack.Generated.GeneratedIO.ReadNil(prop, ref o); // the value the writer leaves out (null, the default of the type or of [DefaultValue])
             continue;
@@ -1379,6 +1525,20 @@ namespace Shop
               {
                 o.Currency = v;
                 continue;
+              }
+              break;
+            }
+            case 2:
+            {
+              int start = r.Pos;
+              if (r.TryReadInt64(out long v))
+              {
+                if (v >= byte.MinValue && v <= byte.MaxValue)
+                {
+                  o.Precision = (byte)v;
+                  continue;
+                }
+                r.Pos = start;
               }
               break;
             }
@@ -1431,12 +1591,35 @@ namespace Shop
               }
               break;
             }
+            case 2:
+            {
+              int start = r.Pos;
+              if (r.TryReadInt64(out long v))
+              {
+                if (v >= byte.MinValue && v <= byte.MaxValue)
+                {
+                  o.Precision = (byte)v;
+                  continue;
+                }
+                r.Pos = start;
+              }
+              if (r.TryReadNil())
+              {
+                o.Precision = default(byte);
+                continue;
+              }
+              break;
+            }
           }
           global::LtMsgPack.Generated.GeneratedIO.Read(prop, c, ref o); // another format: read as the runtime does
         }
         return true;
       }
     }
+
+    // The init-only setters, and the non-public accessors and fields of members the runtime may serialize (FilterNonSettable's NonPublicProperties and SerializedFields)
+    [global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = "_discountPercent")]
+    private static extern ref int LtMsgPackField0(global::Shop.InvoiceLine o);
   }
 }
 

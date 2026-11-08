@@ -1,4 +1,5 @@
-﻿using LsMsgPack.TypeResolving.Interfaces;
+﻿using LsMsgPack.TypeResolving.Filters;
+using LsMsgPack.TypeResolving.Interfaces;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -196,7 +197,7 @@ namespace LsMsgPack.Meta
     {
       IMsgPackTypeGuard guard = settings?._typeGuard;
       if (guard != null && !guard.IsAllowed(type, assignedTo, prop, settings))
-        throw new MsgPackException($"The type id {DescribeTypeId(typeId)} resolves to {type.FullName}, which the {nameof(MsgPackOptions.TypeGuard)} ({guard.GetType().Name}) does not allow{(prop is null ? "" : $" for {prop.PropertyInfo.DeclaringType?.Name}.{prop.PropertyInfo.Name}")} (declared as {assignedTo.FullName}, see docs/security.md).");
+        throw new MsgPackException($"The type id {DescribeTypeId(typeId)} resolves to {type.FullName}, which the {nameof(MsgPackOptions.TypeGuard)} ({guard.GetType().Name}) does not allow{(prop is null ? "" : $" for {prop.Member.DeclaringType?.Name}.{prop.Name}")} (declared as {assignedTo.FullName}, see docs/security.md).");
     }
 
     private static string DescribeTypeId(object typeId)
@@ -589,7 +590,7 @@ namespace LsMsgPack.Meta
     private static readonly ConcurrentDictionary<Type, bool> ReachableCached = new ConcurrentDictionary<Type, bool>();
 
     /// <summary>
-    /// Caches the assemblies of the types that can be reached from <paramref name="root"/>: generic arguments, element types, base types and the types of public properties (not of framework types).
+    /// Caches the assemblies of the types that can be reached from <paramref name="root"/>: generic arguments, element types, base types and the types of public properties and of the public and attributed fields (not of framework types).
     /// <para>The names in a schema are resolved before the values are read: a type in another assembly (e.g. the T of List&lt;T&gt;) was not known yet.</para>
     /// </summary>
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
@@ -600,6 +601,7 @@ namespace LsMsgPack.Meta
 
       HashSet<Type> visited = new HashSet<Type>();
       Stack<Type> todo = new Stack<Type>();
+      List<MemberInfo> fields = new List<MemberInfo>();
       todo.Push(root);
       while (todo.Count > 0)
       {
@@ -624,6 +626,10 @@ namespace LsMsgPack.Meta
         PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
         for (int t = props.Length - 1; t >= 0; t--)
           todo.Push(props[t].PropertyType);
+        fields.Clear();
+        FullPropertyInfo.AddFieldCandidates(type, SerializedFields.Public, fields); // the public and the attributed fields, whatever the settings serialize
+        for (int t = fields.Count - 1; t >= 0; t--)
+          todo.Push(((FieldInfo)fields[t]).FieldType);
       }
       ReachableCached.TryAdd(root, true);
     }

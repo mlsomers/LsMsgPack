@@ -32,7 +32,6 @@ All three serialize .NET classes to MsgPack. This page compares their features, 
 - **You need a track record.** It has no known production users, and breaking changes are still allowed. Pin the version and check the release notes before upgrading.
 - **You target NativeAOT, WebAssembly AOT or iOS and don't want a source generator.** Without it, LtMsgPack fails under NativeAOT on the first object.
 - **The other side uses another library's polymorphism format.** LtMsgPack can't read or write their unions. See [what settings cannot match](Compatibility.md#what-settings-cannot-match).
-- **Your structs have public fields instead of properties**, like `System.Numerics.Vector3`. LtMsgPack refuses them with an exception; the other two write the fields.
 - **You need Unity:** LtMsgPack isn't tested there.
 
 **Whatever you pick,** LsMsgPack's debugging tools help you track down issues with any of these libraries: the standalone [MsgPack Explorer](../README.md#standalone-debugger-for-windows) for Windows, the [Fiddler inspector](../README.md#fiddler-integration), the [Visual Studio debugger visualizer](../README.md#visual-studio-integration), the [VS Code extension](../LsMsgPackVsCode/README.md) and the [MCP server](Mcp.md) for AI agents.

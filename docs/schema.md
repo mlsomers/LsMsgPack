@@ -295,7 +295,7 @@ Property names and filters
 These settings also affect the size and the contract of the data:
 
 - **Property names**: by default, the .NET property name is used. Add an `AttributePropertyNameResolver` to `MsgPackSettings.PropertyNameResolvers` to use the name from `[JsonPropertyName]` (System.Text.Json), `[JsonProperty]` (Json.NET), `[XmlAttribute]`, `[XmlElement]`, `[XmlArray]` or `[DataMember]` (only in a `[DataContract]` type, as DataContractSerializer reads it), in that order; an attribute without a name keeps the .NET name, as those serializers do. Or from a custom attribute of your own (`new AttributePropertyNameResolver(typeof(MyNameAttribute), nameof(MyNameAttribute.Name))`), which comes first. With the indexed schema, these names are the names in the schema and the keys are their indexes, as for the other properties (so short attribute names make the schema smaller, and readers without the attributes find the properties by these names); any string id a property id resolver gives is used this way, other ids (numbers) are written as the keys.
-- **Static filters** (`StaticFilters`) decide once per type which properties are serialized. By default, properties with a setter that is not public (`FilterNonSettable`) are skipped, except those a constructor takes ([immutable classes](#immutable-classes)). Properties without any setter are written: those of [anonymous types](#anonymous-types), those a constructor takes, and [computed properties and get-only collections](#computed-and-get-only-properties) (`GetOnlyProperties`). Non-public properties are left out unless you opt in ([non-public properties](#non-public-properties), `NonPublicProperties`). So are properties with an "ignore" attribute of another serializer (`FilterIgnoredAttribute`): `[XmlIgnore]`, `[JsonIgnore]` (System.Text.Json and Json.NET), `[IgnoreDataMember]`, `[IgnoreMember]` (MessagePack-CSharp), `[PropertyShape(Ignore = true)]` (Nerdbank.MessagePack) and any other attribute with "Ignore" in its name. And static properties are skipped (`FilterStatic`, see [Security](security.md#what-else-to-keep-in-mind)). Keep `FilterStatic` in the list if you set your own static filters.
+- **Static filters** (`StaticFilters`) decide once per type which properties are serialized. By default, properties with a setter that is not public (`FilterNonSettable`) are skipped, except those a constructor takes ([immutable classes](#immutable-classes)). Properties without any setter are written: those of [anonymous types](#anonymous-types), those a constructor takes, and [computed properties and get-only collections](#computed-and-get-only-properties) (`GetOnlyProperties`). Non-public properties are left out unless you opt in ([non-public properties](#non-public-properties), `NonPublicProperties`), and fields are serialized when an attribute opts them in ([fields](#fields), `SerializedFields`). Left out are also properties with an "ignore" attribute of another serializer (`FilterIgnoredAttribute`): `[XmlIgnore]`, `[JsonIgnore]` (System.Text.Json and Json.NET), `[IgnoreDataMember]`, `[IgnoreMember]` (MessagePack-CSharp), `[PropertyShape(Ignore = true)]` (Nerdbank.MessagePack) and any other attribute with "Ignore" in its name. And static properties are skipped (`FilterStatic`, see [Security](security.md#what-else-to-keep-in-mind)). Keep `FilterStatic` in the list if you set your own static filters.
 - **Dynamic filters** (`DynamicFilters`) decide per value. By default, `FilterDefaultValues` omits properties that are `null`, their type's default value, or the value of their `[DefaultValue]` attribute. An empty string is written, as the JSON serializers do (`new FilterDefaultValues(omitEmptyStrings: true)` omits it too, it is then read back as the value the constructor sets, often `null`). Use `FilterNullValues` instead to omit only `null` values, or use no dynamic filters to write every property.
 - **Collections**: `[SerializeEnumerable]` on a collection class or property sets the element type, and controls whether the collection's own properties and/or its elements are serialized.
 
@@ -417,6 +417,40 @@ settings.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNon
 - **Security**: with `All`, the data can set any property of the classes it's read into, including state the class keeps to itself. Use it for classes made for serialization. `Attributed` only sets what you marked.
 
 Readers need the same setting. A reader without it skips these properties with the indexed schema or the map layout; in the array layout without the schema the positions differ, as for any change of a class's properties.
+
+Fields
+------
+
+A field is serialized as a property: it has a property id (its name, or its index in the schema), a position in the array layout, and the same filters, names and default values. By default only fields that opt in with an attribute are serialized, as System.Text.Json does without `IncludeFields`:
+
+```csharp
+public class Order
+{
+  [DataMember] private int _id;                    // opted in: serialized
+  [DataMember] public string Customer;             // opted in
+  public decimal Total;                            // left out by default (analyzer LSMP010)
+  [NonSerialized, DataMember] public string Cache; // ignored: an ignore attribute wins
+}
+
+settings.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.None, SerializedFields.Public), new FilterIgnoredAttribute(), new FilterStatic() };
+```
+
+- **`SerializedFields.Attributed`** (the default): the fields, public or not, with an attribute that opts them in, the same attributes as for [non-public properties](#non-public-properties): `[JsonInclude]`, `[JsonProperty]`, `[DataMember]`, `[Key]`, `[PropertyShape]` and any other attribute with "Include" in its name. This covers the classic `[DataContract]` class with private `[DataMember]` fields.
+- **`SerializedFields.Public`**: every public instance field, and the attributed non-public ones. MessagePack-CSharp (contractless), Nerdbank.MessagePack, Json.NET, XmlSerializer and System.Text.Json with `IncludeFields` write public fields too; the presets `LtMsgPackPresets.MessagePackCSharp()` and `Nerdbank()` set this (see [Compatibility](Compatibility.md)).
+- **`SerializedFields.All`**: every instance field, private, protected and internal ones too, also those of base classes.
+- **`SerializedFields.None`**: no fields (except the framework structs below).
+- Without a `FilterNonSettable` in the static filters, the attributed fields are serialized.
+- Never: static and const fields (the data can't set shared state, see [security](security.md#what-else-to-keep-in-mind)), fields the compiler generates (the backing fields of auto-properties and events, the fields of VB's `Static` locals), fixed-size buffers, fields of pointer and ref struct types, and the fields of the framework's classes. A field with an ignore attribute is left out, as a property (`FilterIgnoredAttribute`); the default filter and `LikeNewtonsoft` also leave out `[NonSerialized]` fields.
+- **Order**: the fields come after the properties. With `PropertyOrder.Reflection` (the default) all properties come first, then the fields; with `Declaration`, `Explicit` and `TypeThenDeclaration` the properties of each class come before its fields (base classes first), because .NET keeps no order between a class's properties and fields. `Alphabetical` sorts them together. So adding fields to a class keeps the positions of the data written before. A member hides a member of the same name in a base class, field or property.
+- **Readonly fields** are serialized as properties without a setter ([computed and get-only properties](#computed-and-get-only-properties), `GetOnlyProperties`): written, read through a [constructor](#immutable-classes) that takes them, filled when they hold a collection with Add, and otherwise skipped when read. The serializers never change a readonly field behind the type's back.
+- **Constructors**: a constructor's parameters are bound to the public fields of the same name and type too, whatever the mode, as to properties ([immutable classes](#immutable-classes)).
+- A serialized field of a type the serializers never write (`Type`, `MemberInfo`, a delegate) makes writing throw, as a settable property of that type does: leave it out with an ignore attribute (a readonly one is left out, as a computed property).
+- Both serializers read the same fields with the same settings, and the [source generator](SourceGenerator.md) covers them (`LsMsgPackFields` tells it, and the [analyzers](Analyzers.md#which-fields-are-written), the mode). Field access is compiled as property access is, so fields are as fast as properties. Which fields are serialized is decided once per type and filter array: no cost per object.
+- **Security**: with `All`, the data can set any field of the classes it's read into, including state the class keeps to itself. Use it for classes made for serialization.
+
+**Framework structs with public fields**: `System.Numerics.Vector2`, `Vector3`, `Vector4`, `Quaternion`, `Plane`, `Matrix3x2` and `Matrix4x4` keep their state in public fields. They are always written by those fields, whatever `SerializedFields` says, and read by setting them: a `Vector3` is `[x, y, z]` in the array layout (MessagePack-CSharp's bytes) and `{"X": x, "Y": y, "Z": z}` in maps. Their computed properties (`Matrix4x4.Translation`) are not written. This holds for any framework struct whose state is public fields and that has no settable properties.
+
+Readers need the same setting. A reader without it skips these fields with the indexed schema or the map layout; in the array layout without the schema the positions differ, as for any change of a class's properties.
 
 Choosing your settings
 ----------------------

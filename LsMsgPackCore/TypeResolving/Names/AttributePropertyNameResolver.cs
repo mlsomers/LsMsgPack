@@ -30,7 +30,7 @@ namespace LsMsgPack.TypeResolving.Names
         {
             if (_customAttribute != null)
             {
-                Attribute attrib = assignedTo.PropertyInfo.GetCustomAttribute(_customAttribute, true);
+                Attribute attrib = assignedTo.Member.GetCustomAttribute(_customAttribute, true);
                 if (attrib != null)
                     return _customAttributePropertyInfo.GetValue(attrib);
             }
@@ -60,11 +60,11 @@ namespace LsMsgPack.TypeResolving.Names
         {
             PropertyAttributeSet attributes = assignedTo.Attributes;
             if (attributes is null || !ReferenceEquals(attributes.ByName, assignedTo.CustomAttributes)) // CustomAttributes may have been replaced
-                return ReadNames(assignedTo.CustomAttributes, assignedTo.PropertyInfo);
-            return attributes.Names ?? (attributes.Names = ReadNames(attributes.ByName, assignedTo.PropertyInfo));
+                return ReadNames(assignedTo.CustomAttributes, assignedTo.Member);
+            return attributes.Names ?? (attributes.Names = ReadNames(attributes.ByName, assignedTo.Member));
         }
 
-        private static AttributeNames ReadNames(Dictionary<string, object> byName, PropertyInfo property)
+        private static AttributeNames ReadNames(Dictionary<string, object> byName, MemberInfo property)
         {
             if (byName is null || byName.Count == 0)
                 return AttributeNames.None;
@@ -104,7 +104,7 @@ namespace LsMsgPack.TypeResolving.Names
             return null;
         }
 
-        private static string DataMemberName(Dictionary<string, object> byName, PropertyInfo property)
+        private static string DataMemberName(Dictionary<string, object> byName, MemberInfo property)
         {
             // DataContractSerializer only reads [DataMember] in a type with [DataContract] (not inherited: the type declaring the property)
             if (byName.TryGetValue(nameof(DataMemberAttribute), out object val) && val is DataMemberAttribute dataMember && !string.IsNullOrEmpty(dataMember.Name)

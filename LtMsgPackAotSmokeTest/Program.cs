@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Serialization;
 using System.Text;
 
 namespace LtMsgPackAotSmokeTest
@@ -162,8 +163,31 @@ namespace LtMsgPackAotSmokeTest
     public int Y { get; set; }
   }
 
+  /// <summary>
+  /// A struct of fields (opted in: serialized by default), a private one through the generated code's UnsafeAccessor, by reference.
+  /// </summary>
+  public struct FieldPoint
+  {
+    [DataMember] public float X;
+    [DataMember] public float Y;
+    [DataMember] private int _level;
+
+    public int Level { get { return _level; } }
+
+    public FieldPoint(float x, float y, int level)
+    {
+      X = x;
+      Y = y;
+      _level = level;
+    }
+  }
+
   public class Route
   {
+    [DataMember] public string Driver; // a field of a class
+    public int Stops; // not serialized by default (SerializedFields.Attributed), by the "public-fields" options (found by reflection: its metadata is kept)
+    public Vector3 Heading { get; set; } // a framework struct written by its fields
+    public FieldPoint Anchor { get; set; }
     public string Name { get; set; }
     public Vector Start { get; set; }
     public Vector? End { get; set; }
@@ -210,6 +234,13 @@ namespace LtMsgPackAotSmokeTest
   {
     private static readonly SchemaStore Store = new SchemaStore();
 
+    private static readonly LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeStatically[] PublicFields = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeStatically[]
+    {
+      new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All, LsMsgPack.TypeResolving.Filters.NonPublicProperties.None, LsMsgPack.TypeResolving.Filters.SerializedFields.Public),
+      new LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute(),
+      new LsMsgPack.TypeResolving.Filters.FilterStatic()
+    };
+
     private static IEnumerable<(string Name, Func<LtMsgPackOptions> Options)> OptionSets()
     {
       yield return ("default", () => new LtMsgPackOptions());
@@ -218,6 +249,7 @@ namespace LtMsgPackAotSmokeTest
       yield return ("inline-map", () => new LtMsgPackOptions() { ObjectLayout = ObjectLayout.Map });
       yield return ("reference", () => new LtMsgPackOptions() { SchemaStore = Store, WriteSchemaReference = true });
       yield return ("trimmed", () => new LtMsgPackOptions() { TrimTrailingNulls = true, DynamicallyCompact = false });
+      yield return ("public-fields", () => new LtMsgPackOptions() { StaticFilters = PublicFields });
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Deliberately without generated code: the JIT run writes the expected data with it, the NativeAOT run only reports how it does.")]
@@ -299,7 +331,8 @@ namespace LtMsgPackAotSmokeTest
 
         foreach ((string which, Func<LtMsgPackOptions, LtMsgPackSerializer> create) in new (string, Func<LtMsgPackOptions, LtMsgPackSerializer>)[] { ("explicit", Explicit), ("registered", Registered) })
         {
-          string problem = Problem(create(options()), sample, expected, values) ?? AllocationProblem(create(options())) ?? ReadAllocationProblem(create(options())) ?? CollectionAllocationProblem(create(options()));
+          // "public-fields": Route.Stops is not described (the generator's fields mode is Attributed), the runtime reads it by reflection (its metadata is kept): one boxed int per write
+          string problem = Problem(create(options()), sample, expected, values) ?? (name == "public-fields" ? null : AllocationProblem(create(options()))) ?? ReadAllocationProblem(create(options())) ?? CollectionAllocationProblem(create(options()));
           Console.WriteLine($"{name} {which}: {problem ?? "OK"}");
           if (problem != null)
             failures++;
@@ -403,6 +436,10 @@ namespace LtMsgPackAotSmokeTest
     {
       return new Route()
       {
+        Driver = "Kim",
+        Stops = 4,
+        Heading = new Vector3(0.5f, -1, 2),
+        Anchor = new FieldPoint(3, -4.5f, 2),
         Name = "delivery",
         Start = new Vector() { X = 1, Y = -2.5f, Z = 3, Tag = 4, Unit = Unit.Kilogram },
         End = new Vector() { Z = 9 },
@@ -478,7 +515,8 @@ namespace LtMsgPackAotSmokeTest
     {
       if (o is null)
         return "null";
-      return $"[{o.Name ?? "null"} {Dump(o.Start)} {(o.End.HasValue ? Dump(o.End.Value) : "null")} {(o.Points is null ? "null" : string.Join(",", o.Points.Select(Dump)))} "
+      return $"[{o.Driver ?? "null"} {o.Stops} {o.Heading.X.ToString("R", CultureInfo.InvariantCulture)},{o.Heading.Y.ToString("R", CultureInfo.InvariantCulture)},{o.Heading.Z.ToString("R", CultureInfo.InvariantCulture)} "
+        + $"{o.Anchor.X.ToString("R", CultureInfo.InvariantCulture)},{o.Anchor.Y.ToString("R", CultureInfo.InvariantCulture)},{o.Anchor.Level} {o.Name ?? "null"} {Dump(o.Start)} {(o.End.HasValue ? Dump(o.End.Value) : "null")} {(o.Points is null ? "null" : string.Join(",", o.Points.Select(Dump)))} "
         + $"{(o.Corners is null ? "null" : string.Join(",", o.Corners.Select(Dump)))} {o.Fee.Amount.ToString(CultureInfo.InvariantCulture)}/{o.Fee.Currency ?? "null"} {Dump(o.Limits)}]";
     }
 

@@ -3,6 +3,10 @@
        <LsMsgPackAnalyze>AllTypes</LsMsgPackAnalyze> checks every public class and struct of the project, e.g. a project of models that does not call the serializers itself -->
   <ItemGroup>
     <CompilerVisibleProperty Include="LsMsgPackAnalyze" />
+    <!-- The fields the runtime serializes: set it to the value of FilterNonSettable's SerializedFields in your static filters (None, Attributed (the default), Public or All),
+         e.g. <LsMsgPackFields>Public</LsMsgPackFields>. The analyzers (LSMP010) and LtMsgPack's source generator read it (the generator's [assembly: LtMsgPackGenerate(Fields = ...)] wins);
+         when it differs from the runtime's filters, the analyzers report fields that are written or not, and the generated code describes other fields than the runtime writes -->
+    <CompilerVisibleProperty Include="LsMsgPackFields" />
     <!-- LSMP008 leaves out the classes of NuGet packages (references in this folder) -->
     <CompilerVisibleProperty Include="NuGetPackageRoot" />
   </ItemGroup>

@@ -93,6 +93,39 @@ namespace LsMsgPackUnitTests
     // Structs as games use them (LtMsgPack writes and reads them with the object plans, boxed once): floats, nesting, defaults, nullables, collections, type ids
 
     public struct XlVec { public float X { get; set; } public float Y { get; set; } public float Z { get; set; } }
+
+    // Fields (SerializedFields): attributed ones by default, all public ones with Public; framework structs by their fields always
+    public struct XlFieldVec { public float X; public float Y; [System.Runtime.Serialization.DataMember] public float Z; }
+
+    public class XlFieldBase
+    {
+      public int BaseCount;
+      [System.Text.Json.Serialization.JsonInclude]
+      private string _baseSecret;
+      public void SetBaseSecret(string value) { _baseSecret = value; }
+    }
+
+    public class XlFields : XlFieldBase
+    {
+      public string Name { get; set; }
+      public int Count;
+      [System.Runtime.Serialization.DataMember]
+      public string Marked;
+      [System.Text.Json.Serialization.JsonInclude]
+      private int _pin;
+      public System.Numerics.Vector3 Position { get; set; }
+      public System.Numerics.Quaternion Rotation;
+      [System.Runtime.Serialization.DataMember]
+      public System.Numerics.Matrix4x4 Transform;
+      public XlFieldVec Velocity;
+      [System.Runtime.Serialization.DataMember]
+      public List<XlFieldVec> Path;
+      public readonly List<int> Items = new List<int>(); // filled
+      public readonly int Computed = 4; // written, skipped
+      [DefaultValue(3)]
+      public int Level = 3;
+      public void SetPin(int pin) { _pin = pin; }
+    }
     public struct XlLine { public XlVec From { get; set; } public XlVec To { get; set; } public string Label { get; set; } public XlVec? Hint { get; set; } public double Length { get; set; } }
 
     /// <summary>Equals of its own: 10 equals the default (0), so the default filter leaves it out</summary>
@@ -346,6 +379,19 @@ namespace LsMsgPackUnitTests
       cart.Totals.Add("a", 3);
       values.Add(cart);
       values.Add(new XlGeneric<object> { Value = new XlCart() });
+
+      // Fields: what each SerializedFields mode serializes of them (SameBytesAndValuesFields runs the corpus in the other modes)
+      XlFields fields = new XlFields { Name = "f", Count = 2, Marked = "m", Position = new System.Numerics.Vector3(1, -0f, float.NaN), Rotation = System.Numerics.Quaternion.Identity,
+        Transform = System.Numerics.Matrix4x4.CreateTranslation(1, 2, 3), Velocity = new XlFieldVec { X = 1, Y = 2, Z = 3 }, Path = new List<XlFieldVec> { new XlFieldVec { Z = 1 }, default(XlFieldVec) }, Level = 5, BaseCount = 6 };
+      fields.SetPin(1234);
+      fields.SetBaseSecret("s");
+      fields.Items.Add(9);
+      values.Add(fields);
+      values.Add(new XlFields());
+      values.Add(new XlGeneric<object> { Value = new XlFields { Count = 1, Marked = "x" } });
+      values.Add(new List<XlFieldVec> { new XlFieldVec { X = 1, Z = 2 }, default(XlFieldVec) });
+      values.Add(new System.Numerics.Vector3(1, 2, 3));
+      values.Add(new object[] { System.Numerics.Vector2.One, new System.Numerics.Vector4(1, 2, 3, 4), new System.Numerics.Plane(1, 0, 0, 2), System.Numerics.Matrix3x2.CreateRotation(1) });
       return values;
     }
 
@@ -479,6 +525,40 @@ namespace LsMsgPackUnitTests
       {
         Compare(which + " account", SerializingNonPublicProperties.NppAccount.Sample(), typeof(SerializingNonPublicProperties.NppAccount), ls, lt, differences);
         Compare(which + " private", GeneratedCodeTests.GcPrivate.Sample(), typeof(GeneratedCodeTests.GcPrivate), ls, lt, differences);
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences));
+    }
+
+    private static IEnumerable<object[]> FieldSettings()
+    {
+      foreach (SerializedFields fields in new[] { SerializedFields.None, SerializedFields.Public, SerializedFields.All })
+        foreach (SchemaMode mode in Enum.GetValues(typeof(SchemaMode)))
+          foreach (ObjectLayout layout in Enum.GetValues(typeof(ObjectLayout)))
+            yield return new object[] { fields, mode, layout };
+    }
+
+    /// <summary>
+    /// Fields (FilterNonSettable's SerializedFields, the default Attributed runs in the other tests): the corpus (its field classes), and the field classes of SerializingFields.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(FieldSettings))]
+    public void SameBytesAndValuesFields(SerializedFields fields, SchemaMode mode, ObjectLayout layout)
+    {
+      IMsgPackPropertyIncludeStatically[] filters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.None, fields), new FilterIgnoredAttribute(), new FilterStatic() };
+      MsgPackSettings ls = new MsgPackSettings() { StaticFilters = filters };
+      Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
+      LtMsgPackOptions ltOptions = new LtMsgPackOptions() { StaticFilters = filters };
+      Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
+      CompareCorpus(ls, ltOptions);
+
+      List<string> differences = new List<string>();
+      foreach ((string which, LtMsgPackSerializer lt) in LtAndGenerated(ltOptions))
+      {
+        Compare(which + " account", SerializingFields.FldAccount.Sample(), typeof(SerializingFields.FldAccount), ls, lt, differences);
+        Compare(which + " point", new SerializingFields.FldPoint() { X = 1, Y = -2, Label = "p" }, typeof(SerializingFields.FldPoint), ls, lt, differences);
+        SerializingFields.FldReadOnly readOnly = new SerializingFields.FldReadOnly(7) { Name = "r" };
+        readOnly.Items.Add(1);
+        Compare(which + " readonly", readOnly, typeof(SerializingFields.FldReadOnly), ls, lt, differences);
       }
       Assert.IsEmpty(differences, string.Join("\n", differences));
     }

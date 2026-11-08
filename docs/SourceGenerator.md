@@ -64,6 +64,20 @@ The runtime serializes [non-public properties](schema.md#non-public-properties) 
 
 or `[assembly: LtMsgPackGenerate(NonPublicProperties = NonPublicProperties.All)]`. The generated code calls the getters and setters it can't access through `[UnsafeAccessor]` (.NET 8 and later), not for generic or virtual properties. Without it (.NET Standard, .NET Framework) the runtime uses reflection for them (info `LTMP004` for the setters). For trimming and NativeAOT, the classes with such properties keep their non-public properties (`DynamicDependency`).
 
+### Fields
+
+The generated code covers the [fields](schema.md#fields) the runtime serializes (`SerializedFields` of `FilterNonSettable`), written after the properties like the runtime does. The mode of the generator is `Attributed` unless you set it: fields with an opt-in attribute (`[DataMember]`, `[JsonInclude]`...), public or not. It must be the mode of the runtime's static filters, otherwise the generated code describes other fields than the runtime writes (the [analyzers](Analyzers.md) read the same setting):
+
+```xml
+<LsMsgPackFields>Public</LsMsgPackFields> <!-- None, Attributed (the default), Public or All -->
+```
+
+or `[assembly: LtMsgPackGenerate(Fields = SerializedFields.Public)]`, which wins over the property. The property is declared by LsMsgPack.Core's build props, which the LtMsgPack package brings along.
+
+- Private fields are read and set through `[UnsafeAccessor]` (.NET 8 and later), not for fields of generic classes: reflection (the runtime's, as for non-public properties). A `readonly` field has no setter: it is written, not set (see [schema.md](schema.md#fields)).
+- Framework structs whose state is public fields (`Vector3`, `Quaternion`, `Matrix4x4`...) are always described by their public fields, whatever the mode, also for NativeAOT.
+- For trimming and NativeAOT, the classes with public fields keep their public fields, and those with described non-public fields keep them too (`DynamicDependency`).
+
 ## Using it
 
 Three ways, and they can be combined:

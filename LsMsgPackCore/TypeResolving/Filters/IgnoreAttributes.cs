@@ -45,6 +45,11 @@ namespace LsMsgPack.TypeResolving.Filters
         PolyType = 32,
 
         /// <summary>
+        /// <c>[System.NonSerialized]</c> on a field (BinaryFormatter, also honored by Json.NET).
+        /// </summary>
+        NonSerialized = 64,
+
+        /// <summary>
         /// Any other attribute with "Ignore" in its name (the attributes above are not "other", their own flags decide).
         /// </summary>
         OtherIgnore = 1 << 30,
@@ -52,6 +57,6 @@ namespace LsMsgPack.TypeResolving.Filters
         /// <summary>
         /// All of the above (the default of <see cref="FilterIgnoredAttribute"/>).
         /// </summary>
-        All = XmlIgnore | SystemTextJson | Newtonsoft | IgnoreDataMember | MessagePackCSharp | PolyType | OtherIgnore,
+        All = XmlIgnore | SystemTextJson | Newtonsoft | IgnoreDataMember | MessagePackCSharp | PolyType | NonSerialized | OtherIgnore,
     }
 }

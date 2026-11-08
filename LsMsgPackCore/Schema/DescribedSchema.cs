@@ -189,7 +189,7 @@ namespace LsMsgPack
         return;
       }
 
-      Type type = prop.PropertyInfo.PropertyType;
+      Type type = prop.DeclaredType;
       byte[] defaultValue = _leavesOutDefaults ? DefaultOf(prop) : null;
       _bytes.WriteArrayHeader(defaultValue is null ? 2 : 3, _byteOrder);
       WriteName(name);
@@ -209,7 +209,7 @@ namespace LsMsgPack
       object value = (attribute as DefaultValueAttribute)?.Value;
       if (value is null)
         return null;
-      Type type = prop.PropertyInfo.PropertyType;
+      Type type = prop.DeclaredType;
       Type valueType = Nullable.GetUnderlyingType(type) ?? type;
       if (value.GetType() != valueType)
         return null;

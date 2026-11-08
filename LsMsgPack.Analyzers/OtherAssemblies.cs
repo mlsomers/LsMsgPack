@@ -61,21 +61,26 @@ namespace LsMsgPack.Analyzers
       if ((type.TypeKind != TypeKind.Class && type.TypeKind != TypeKind.Struct) || type.IsStatic || type.IsAnonymousType || ModelTypes.IsInSource(type) || ModelAnalyzer.IsFramework(type))
         return false;
       IAssemblySymbol assembly = type.ContainingAssembly;
-      if (assembly is null || SymbolEqualityComparer.Default.Equals(assembly, _compilation.Assembly) || !HasSettableProperties(type))
+      if (assembly is null || SymbolEqualityComparer.Default.Equals(assembly, _compilation.Assembly) || !HasSettableState(type))
         return false;
       return _unchecked.GetOrAdd(assembly, IsUnchecked);
     }
 
     /// <summary>
-    /// The class has properties the serializers write (public, with a public setter), declared by it or a base class that is not the framework's.
+    /// The class has state the serializers may set: properties (public, with a public setter) or public fields that are not readonly (which fields are written depends on the other project's mode),
+    /// declared by it or a base class that is not the framework's.
     /// </summary>
-    private static bool HasSettableProperties(INamedTypeSymbol type)
+    private static bool HasSettableState(INamedTypeSymbol type)
     {
       for (INamedTypeSymbol t = type; t != null && !ModelAnalyzer.IsFramework(t); t = t.BaseType)
         foreach (ISymbol member in t.GetMembers())
+        {
           if (member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer && property.DeclaredAccessibility == Accessibility.Public
             && property.GetMethod != null && property.SetMethod != null && property.SetMethod.DeclaredAccessibility == Accessibility.Public)
             return true;
+          if (member is IFieldSymbol field && field.DeclaredAccessibility == Accessibility.Public && !field.IsReadOnly && Fields.IsOfState(field))
+            return true;
+        }
       return false;
     }
 

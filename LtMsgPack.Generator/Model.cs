@@ -141,17 +141,21 @@ namespace LtMsgPack.Generator
     Boxed
   }
 
+  /// <summary>
+  /// The accessors of a property or field the type declares (LsMsgPack.Generated.GeneratedProperty: the runtime matches it by declaring type, name and type).
+  /// </summary>
   internal sealed record PropertyModel(
-    string Name, // the name of the property (the string the runtime matches)
+    string Name, // the name of the property or field (the string the runtime matches)
     string Access, // the name in member access (escaped when it is a keyword)
     string TypeName, // fully qualified
     bool CanGet,
     bool CanSet,
-    bool UnsafeGet = false, // CanGet through an UnsafeAccessor (a non-public getter)
-    bool UnsafeSet = false);
+    bool UnsafeGet = false, // CanGet through an UnsafeAccessor (a non-public getter or field)
+    bool UnsafeSet = false,
+    bool Field = false); // a field: its UnsafeAccessor returns it by reference (get and set)
 
   /// <summary>
-  /// A member of the generated writer and reader of a class: the properties the runtime may serialize, inherited ones too (LtMsgPack.Generated.GeneratedMember).
+  /// A member of the generated writer and reader of a class: the properties and fields the runtime may serialize, inherited ones too (LtMsgPack.Generated.GeneratedMember).
   /// </summary>
   internal sealed record MemberModel(
     string DeclaringType, // fully qualified
@@ -168,7 +172,9 @@ namespace LtMsgPack.Generator
     bool HasDefaultValue, // [DefaultValue]: a nil in the array layout may be its value (PropReader.ReadNil), otherwise it is default(T)
     bool UnsafeGet = false, // CanGet through an UnsafeAccessor (a non-public getter)
     bool UnsafeSet = false,
-    bool ByRef = false); // declared by a struct: the generated code has it by reference
+    bool ByRef = false, // declared by a struct: the generated code has it by reference
+    bool Field = false, // a field (see PropertyModel.Field)
+    bool Inherited = false); // declared by a base class: accessed through a cast to it (a member of the derived class may hide it in C#, e.g. a public field that is not serialized)
 
   internal sealed record TypeModel(
     TypeModelKind Kind,
@@ -180,7 +186,10 @@ namespace LtMsgPack.Generator
     EquatableArray<MemberModel> Members, // the generated writer and reader (concrete classes, structs), empty when there is none
     string Factory = null, // Collection: the static method that creates the immutable or frozen collection from its elements (with its type arguments), null for others
     bool KeepNonPublic = false, // KeepMetadata also keeps its non-public properties (it declares some the runtime may serialize)
-    string IsDefault = null); // Struct: the default check of FilterDefaultValues over "v" (a C# expression), null when the runtime compares
+    string IsDefault = null, // Struct: the default check of FilterDefaultValues over "v" (a C# expression), null when the runtime compares
+    bool KeepPublicFields = false, // KeepMetadata also keeps its public fields (it declares some: the runtime finds them by reflection, in any mode that serializes them)
+    bool KeepNonPublicFields = false, // and its non-public fields (it declares some the runtime may serialize in GenerateOptions.Fields)
+    EquatableArray<PropertyModel> DefaultAccessors = default); // the members IsDefault reads through UnsafeAccessors (its placeholders \u0001n\u0001)
 
   /// <summary>
   /// A context class: one written by the user (with LtMsgPackSerializable attributes), or the one of the assembly (LtMsgPackGenerate, MSBuild properties).
@@ -208,6 +217,7 @@ namespace LtMsgPack.Generator
     bool HasDynamicDependency,
     bool Trimmed, // PublishTrimmed, PublishAot, IsAotCompatible or IsTrimmable: LTMP010 is reported
     int NonPublic, // LsMsgPack.TypeResolving.Filters.NonPublicProperties: the non-public properties described (the runtime decides which it serializes)
+    int Fields, // LsMsgPack.TypeResolving.Filters.SerializedFields: the fields described (the runtime decides which it serializes)
     bool UnsafeAccessors, // UnsafeAccessorAttribute (.NET 8): non-public accessors and init-only setters are called through it
     bool Unoptimized); // a Debug build: LTMP011 is reported
 }

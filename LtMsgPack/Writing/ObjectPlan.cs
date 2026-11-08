@@ -484,6 +484,8 @@ namespace LtMsgPack.Writing
     internal static PropWriter Create(Serializer serializer, FullPropertyInfo info)
     {
       PropertyInfo property = info.PropertyInfo;
+      if (property is null)
+        return CreateForField(serializer, info, info.FieldInfo);
       PropWriter generated = serializer.GeneratedProperty(property)?.CreateWriter(serializer, info); // the getter of the source generator
       if (generated != null)
         return generated;
@@ -502,10 +504,36 @@ namespace LtMsgPack.Writing
       }
       return new BoxedPropWriter(serializer, info);
     }
+
+    /// <summary>
+    /// A field: read by the getter of the source generator, or a typed delegate compiled from an expression when the plan is built (not after some uses: PGO then profiles the final code), as a property's getter is bound.
+    /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // as Create
+    [UnconditionalSuppressMessage("Trimming", "IL2076", Justification = TrimReasons.Fallback)]
+    private static PropWriter CreateForField(Serializer serializer, FullPropertyInfo info, FieldInfo field)
+    {
+      PropWriter generated = serializer.GeneratedProperty(field)?.CreateWriter(serializer, info);
+      if (generated != null)
+        return generated;
+      Type declaring = field.DeclaringType;
+      if (!field.IsStatic && !declaring.ContainsGenericParameters && serializer.CanBindDelegates)
+      {
+        try
+        {
+          Type writerType = (declaring.IsValueType ? typeof(StructPropWriter<,>) : typeof(PropWriter<,>)).MakeGenericType(declaring, field.FieldType);
+          return (PropWriter)Activator.CreateInstance(writerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, field }, null);
+        }
+        catch (Exception) // e.g. a runtime that cannot create the generic type or compile the expression, use reflection
+        {
+        }
+      }
+      return new BoxedPropWriter(serializer, info);
+    }
   }
 
   /// <summary>
-  /// A property read through a typed delegate, the value is not boxed.
+  /// A property (or field) read through a typed delegate, the value is not boxed.
   /// </summary>
   internal sealed class PropWriter<TTarget, TValue> : PropWriter where TTarget : class
   {
@@ -517,6 +545,11 @@ namespace LtMsgPack.Writing
     {
       _declared = info;
       _get = (Func<TTarget, TValue>)Delegate.CreateDelegate(typeof(Func<TTarget, TValue>), get);
+    }
+
+    /// <param name="field">Read by a delegate compiled from an expression</param>
+    public PropWriter(Serializer serializer, FullPropertyInfo info, FieldInfo field) : this(serializer, info, FieldDelegates.Getter<TTarget, TValue>(field))
+    {
     }
 
     /// <param name="get">The getter of the source generator</param>
@@ -594,6 +627,11 @@ namespace LtMsgPack.Writing
     {
       _declared = info;
       _get = (StructGetter<TTarget, TValue>)Delegate.CreateDelegate(typeof(StructGetter<TTarget, TValue>), get);
+    }
+
+    /// <param name="field">Read by reference by a delegate compiled from an expression</param>
+    public StructPropWriter(Serializer serializer, FullPropertyInfo info, FieldInfo field) : this(serializer, info, FieldDelegates.StructGetter<TTarget, TValue>(field))
+    {
     }
 
     /// <param name="get">The getter of the source generator</param>
