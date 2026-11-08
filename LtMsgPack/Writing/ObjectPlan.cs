@@ -346,7 +346,10 @@ namespace LtMsgPack.Writing
       int at = w.ReserveArrayHeader(props.Length);
       if (generated != null)
       {
-        int last = Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, null, infos, generated, out int after);
+        int after;
+        int last = generated.UnrolledTrimmed
+          ? Unsafe.As<GeneratedStructCode<T>>(generated.Code).WriteUnrolledTrimmed(c, ref value, infos, generated, out after)
+          : Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, null, infos, generated, out after);
         w.Pos = after;
         w.PatchArrayHeader(at, props.Length, last);
         return;

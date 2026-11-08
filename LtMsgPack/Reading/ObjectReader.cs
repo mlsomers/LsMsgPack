@@ -643,8 +643,27 @@ namespace LtMsgPack.Reading
         return props[next++];
       if (_caseInsensitive)
         return FindOrMatchIgnoringCase(buffer, offset, length, ref next);
+      return Search(buffer, offset, length, ref next);
+    }
 
-      for (int t = props.Length - 1; t >= 0; t--) // the names are unique
+    /// <summary>
+    /// FindByName after the next property did not have the name (apart, so FindByName stays small). The names are unique, so the order only decides the speed:
+    /// forward from the next property first, as the values FilterDefaultValues leaves out skip properties (from the last property backwards, a class of 120 properties
+    /// with 4 values left out read 1.6x slower).
+    /// </summary>
+    private PropReader Search(byte[] buffer, int offset, int length, ref int next)
+    {
+      PropReader[] props = Props;
+      for (int t = next + 1; t < props.Length; t++)
+      {
+        if (props[t].NameIs(buffer, offset, length))
+        {
+          next = t + 1;
+          return props[t];
+        }
+      }
+      int end = next < props.Length ? next : props.Length;
+      for (int t = 0; t < end; t++)
       {
         if (props[t].NameIs(buffer, offset, length))
         {
@@ -669,9 +688,18 @@ namespace LtMsgPack.Reading
       if (next < props.Length && length > 0 && props[next].FirstDiffersInCase(buffer[offset]) && _asciiNames && !_ambiguous[next] && props[next].NameIsIgnoringAsciiCase(buffer, offset, length))
         return props[next++]; // no other property equals the key ignoring case, so none has it as its name
 
-      for (int t = props.Length - 1; t >= 0; t--)
+      for (int t = next + 1; t < props.Length; t++) // forward from the next property first (see FindByName)
       {
         if (props[t].NameIs(buffer, offset, length) || props[t].CamelNameIs(buffer, offset, length)) // the camelCase name: no other property has it ignoring case
+        {
+          next = t + 1;
+          return props[t];
+        }
+      }
+      int end = next < props.Length ? next : props.Length; // the next property's name and camelCase name were compared
+      for (int t = 0; t < end; t++)
+      {
+        if (props[t].NameIs(buffer, offset, length) || props[t].CamelNameIs(buffer, offset, length))
         {
           next = t + 1;
           return props[t];

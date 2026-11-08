@@ -159,11 +159,17 @@ namespace LsMsgPackUnitTests
                   DynamicFilters = filter ? new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() } : new IMsgPackPropertyIncludeDynamically[0],
                   UnspecifiedDateTimeKind = trim ? DateTimeKind.Utc : DateTimeKind.Local
                 };
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map }) // the formats of the Generic() preset, written by the compiled code (GeneratedCapabilities.WriteFormats)
+        yield return new LtMsgPackOptions
+        {
+          UseInexedSchema = false, ObjectLayout = layout, TrimTrailingNulls = layout == ObjectLayout.Array, GuidFormat = GuidFormat.String, DecimalFormat = DecimalFormat.String,
+          DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() }
+        };
     }
 
     private static string Describe(LtMsgPackOptions o)
     {
-      return $"schema {o.UseInexedSchema}, reference {o.WriteSchemaReference}, {o.ObjectLayout}, filters {o.DynamicFilters.Length}, trim {o.TrimTrailingNulls}";
+      return $"schema {o.UseInexedSchema}, reference {o.WriteSchemaReference}, {o.ObjectLayout}, filters {o.DynamicFilters.Length}, trim {o.TrimTrailingNulls}, {o.GuidFormat}/{o.DecimalFormat}";
     }
 
     [TestMethod]

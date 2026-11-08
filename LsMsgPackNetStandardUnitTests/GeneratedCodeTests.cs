@@ -590,18 +590,52 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void OptionsTheGeneratedCodeDoesNotFit_AreLeftToTheRuntime()
     {
-      LtMsgPackOptions options = new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false, GuidFormat = GuidFormat.String };
+      LtMsgPackOptions options = new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false,
+        Extensions = new LtMsgPack.Extensions.LtExtension[] { new GcDecimalAsDouble() } };
       LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
       serializer.Serialize(AllKinds(false));
       LtMsgPack.Generated.GeneratedWritePlan plan = (LtMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcAllKinds), true);
-      Assert.IsFalse((bool)plan.GetType().GetField("Unrolled", Internal).GetValue(plan), "a Guid is a string with these options: not unrolled");
-      Assert.Contains(-1, plan.Ids, "the Guids are written by the runtime");
+      Assert.IsFalse((bool)plan.GetType().GetField("Unrolled", Internal).GetValue(plan), "a decimal is a custom extension with these options: not unrolled");
+      Assert.Contains(-1, plan.Ids, "the decimals are written by the runtime");
 
-      options.GuidFormat = GuidFormat.Binary;
+      options.Extensions = LtMsgPackOptions.Default_Extensions;
       options.DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new LsMsgPack.TypeResolving.Filters.FilterNullValues() };
       serializer = new LtMsgPackSerializer(options);
       serializer.Serialize(AllKinds(false));
       Assert.IsNull(WritePlan(serializer, typeof(GcAllKinds), true), "custom dynamic filters: the runtime writes");
+    }
+
+    [TestMethod]
+    public void OtherFormatsAndTrimming_AreWrittenByTheGeneratedCode()
+    {
+      LtMsgPackOptions options = LtMsgPackPresets.Generic();
+      options.Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default };
+      options.UseRegisteredContexts = false;
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+      serializer.Serialize(AllKinds(false));
+      LtMsgPack.Generated.GeneratedWritePlan plan = (LtMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcAllKinds), true);
+      Assert.IsTrue((bool)plan.GetType().GetField("UnrolledMap", Internal).GetValue(plan), "Guids and decimals as strings (the Generic() preset): maps unrolled");
+      Assert.DoesNotContain(-1, plan.Ids, "the generated code writes the Guids and decimals in these formats");
+      Assert.IsTrue(plan.GuidString && plan.DecimalString);
+
+      serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false, TrimTrailingNulls = true });
+      serializer.Serialize(AllKinds(false));
+      plan = (LtMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcAllKinds), true);
+      Assert.IsFalse((bool)plan.GetType().GetField("Unrolled", Internal).GetValue(plan));
+      Assert.IsTrue((bool)plan.GetType().GetField("UnrolledTrimmed", Internal).GetValue(plan), "trimmed arrays are written in sequence");
+      object code = plan.GetType().GetField("Code", Internal).GetValue(plan);
+      Assert.IsNotNull(code.GetType().GetMethod("WriteUnrolledTrimmedPart1", BindingFlags.Instance | BindingFlags.NonPublic), "by parts on a class of more than 16 members");
+    }
+
+    /// <summary>
+    /// A decimal extension the generated code does not write (only the built-in one).
+    /// </summary>
+    public sealed class GcDecimalAsDouble : LtMsgPack.Extensions.LtExtension<decimal>
+    {
+      public override sbyte TypeCode { get { return 9; } }
+      public override int GetMaxLength(decimal value) { return 8; }
+      public override int Write(decimal value, Span<byte> destination) { System.Buffers.Binary.BinaryPrimitives.WriteDoubleBigEndian(destination, (double)value); return 8; }
+      public override decimal Read(ReadOnlySpan<byte> data) { return (decimal)System.Buffers.Binary.BinaryPrimitives.ReadDoubleBigEndian(data); }
     }
 
     public class GcVersion1

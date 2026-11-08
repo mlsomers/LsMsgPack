@@ -66,9 +66,12 @@ namespace LtMsgPack
       bool unrolledIds = ids.Length == code.UnrolledIds.Length;
       for (int t = 0; unrolledIds && t < ids.Length; t++)
         unrolledIds = ids[t] == code.UnrolledIds[t];
-      bool unrolled = unrolledIds && (code.Capabilities & GeneratedCapabilities.WriteUnrolled) != 0 && !Options._trimTrailingNulls;
+      bool trim = Options._trimTrailingNulls;
+      bool unrolled = unrolledIds && (code.Capabilities & GeneratedCapabilities.WriteUnrolled) != 0 && !trim;
       bool unrolledMap = unrolledIds && (code.Capabilities & GeneratedCapabilities.WriteUnrolledMap) != 0;
-      return new GeneratedWritePlan(this, code, ids, Filters == FilterMode.DefaultValues, Options._unspecifiedIsUtc, Options._trimTrailingNulls, DecimalCode(), unrolled, unrolledMap, props);
+      bool unrolledTrimmed = unrolledIds && (code.Capabilities & GeneratedCapabilities.WriteUnrolledTrimmed) != 0 && trim;
+      return new GeneratedWritePlan(this, code, ids, Filters == FilterMode.DefaultValues, Options._unspecifiedIsUtc, trim, DecimalCode(),
+        GetTypeInfo(typeof(Guid)).Kind == TypeKind.GuidString, GetTypeInfo(typeof(decimal)).Kind == TypeKind.DecimalString, unrolled, unrolledMap, unrolledTrimmed, props);
     }
 
     /// <returns>The generated member of the property; -1 when there is none, or the generated code would write it otherwise than these options do (the runtime writes it)</returns>
@@ -80,7 +83,7 @@ namespace LtMsgPack
       GeneratedMember member = code.Members[id];
       if (member.Kind == GeneratedKind.None || !member.CanWrite)
         return id; // the generated code leaves it to the runtime (at this position)
-      if (info.CustomAttributes.ContainsKey(nameof(System.ComponentModel.DefaultValueAttribute)) || !Fits(member, false))
+      if (info.CustomAttributes.ContainsKey(nameof(System.ComponentModel.DefaultValueAttribute)) || !Fits(member, false, (code.Capabilities & GeneratedCapabilities.WriteFormats) != 0))
         return -1; // the generated code would write it otherwise than these options do
       return id;
     }
@@ -94,7 +97,7 @@ namespace LtMsgPack
       if (id < 0)
         return -1;
       GeneratedMember member = code.Members[id];
-      return member.Kind != GeneratedKind.None && member.CanRead && Fits(member, true) ? id : -1;
+      return member.Kind != GeneratedKind.None && member.CanRead && Fits(member, true, false) ? id : -1;
     }
 
     private static int FindMember(GeneratedObjectCode code, FullPropertyInfo info)
@@ -113,7 +116,8 @@ namespace LtMsgPack
     /// <summary>
     /// Whether these options write (and read) the member's type the way the generated code does (the same TypeKind, as the handlers and readers decide it).
     /// </summary>
-    private bool Fits(GeneratedMember member, bool reading)
+    /// <param name="formats">The code writes Guids and decimals in the plan's format (<see cref="GeneratedCapabilities.WriteFormats"/>)</param>
+    private bool Fits(GeneratedMember member, bool reading, bool formats)
     {
       Type type = member.Nullable ? Nullable.GetUnderlyingType(member.PropertyType) : member.PropertyType;
       if (type is null)
@@ -134,11 +138,13 @@ namespace LtMsgPack
         case GeneratedKind.Single: return info.Kind == TypeKind.Single;
         case GeneratedKind.Double: return info.Kind == TypeKind.Double;
         case GeneratedKind.Char: return info.Kind == TypeKind.Char;
-        case GeneratedKind.Guid: return info.Kind == TypeKind.Guid;
+        case GeneratedKind.Guid: return info.Kind == TypeKind.Guid || (formats && info.Kind == TypeKind.GuidString);
         case GeneratedKind.DateTime: return info.Kind == TypeKind.DateTime;
         case GeneratedKind.TimeSpan: return info.Kind == TypeKind.TimeSpan;
         case GeneratedKind.Enum: return info.Kind == TypeKind.Enum;
         case GeneratedKind.Decimal: // the built-in extension (DecimalHandler's and DecimalReader's fast paths)
+          if (formats && info.Kind == TypeKind.DecimalString) // whatever the extension (it only reads)
+            return true;
           return info.Kind == TypeKind.Extension && info.Extension != null && info.Extension.GetType() == typeof(DecimalExtension) && (!reading || info.Extension.TypeCode != -1);
         default: return false;
       }

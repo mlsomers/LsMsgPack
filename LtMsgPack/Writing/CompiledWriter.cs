@@ -41,7 +41,7 @@ namespace LtMsgPack.Writing
     private CompiledWrite<T> _items;
     private CompiledWriteUnrolled<T> _unrolled;
 
-    public CompiledObjectCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap)
+    public CompiledObjectCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap | GeneratedCapabilities.WriteFormats)
     {
       _properties = properties;
     }
@@ -86,7 +86,7 @@ namespace LtMsgPack.Writing
     private CompiledRefWrite<T> _items;
     private CompiledRefWriteUnrolled<T> _unrolled;
 
-    public CompiledStructCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap)
+    public CompiledStructCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap | GeneratedCapabilities.WriteFormats)
     {
       _properties = properties;
       Unboxer = new StructUnboxer<T, T>(); // what GeneratedValues.Struct gives the generated code: a struct written as an object
@@ -230,7 +230,9 @@ namespace LtMsgPack.Writing
         case TypeKind.Single: return GeneratedKind.Single;
         case TypeKind.Double: return GeneratedKind.Double;
         case TypeKind.Char: return GeneratedKind.Char;
-        case TypeKind.Guid: return GeneratedKind.Guid;
+        case TypeKind.Guid:
+        case TypeKind.GuidString: return GeneratedKind.Guid; // in the plan's format (GeneratedCapabilities.WriteFormats)
+        case TypeKind.DecimalString: return GeneratedKind.Decimal;
         case TypeKind.DateTime: return GeneratedKind.DateTime;
         case TypeKind.TimeSpan: return GeneratedKind.TimeSpan;
         case TypeKind.Enum: return GeneratedKind.Enum;
@@ -272,14 +274,23 @@ namespace LtMsgPack.Writing
           body.Add(Expression.IfThen(b.Member(t, ids[t], Expression.ArrayIndex(keys, Expression.Constant(t))), Expression.PreIncrementAssign(count)));
           continue;
         }
-        if (trim)
-          body.Add(Expression.Assign(start, pos));
-        body.Add(Expression.IfThenElse(b.Member(t, ids[t], noKey), Expression.PreIncrementAssign(count), b.Nil())); // nil for a value the filters leave out
-        if (trim) // nil is the only value of one byte 0xC0
-          body.Add(Expression.IfThen(Expression.OrElse(
-              Expression.NotEqual(pos, Expression.Add(start, Expression.Constant(1))),
-              Expression.NotEqual(Expression.ArrayIndex(Expression.Field(b.W, nameof(MsgPackWriter.Buf)), start), Expression.Constant((byte)0xC0))),
-            Expression.Block(Expression.Assign(last, Expression.Constant(t + 1)), Expression.Assign(end, pos))));
+        if (!trim)
+        {
+          body.Add(Expression.IfThenElse(b.Member(t, ids[t], noKey), Expression.PreIncrementAssign(count), b.Nil())); // nil for a value the filters leave out
+          continue;
+        }
+        Expression written = Expression.Block(Expression.Assign(last, Expression.Constant(t + 1)), Expression.Assign(end, pos)); // after a value that is not nil
+        if (b.WritesItself(ids[t]))
+        {
+          body.Add(b.Item(t, ids[t], written)); // the code knows where it writes a nil
+          continue;
+        }
+        body.Add(Expression.Assign(start, pos));
+        body.Add(Expression.IfThenElse(b.Member(t, ids[t], noKey), Expression.PreIncrementAssign(count), b.Nil()));
+        body.Add(Expression.IfThen(Expression.OrElse( // the runtime's writers may write a nil too: nil is the only value of one byte 0xC0
+            Expression.NotEqual(pos, Expression.Add(start, Expression.Constant(1))),
+            Expression.NotEqual(Expression.ArrayIndex(Expression.Field(b.W, nameof(MsgPackWriter.Buf)), start), Expression.Constant((byte)0xC0))),
+          written));
       }
       body.Add(trim ? last : count);
 
@@ -330,6 +341,8 @@ namespace LtMsgPack.Writing
       private readonly GeneratedMember[] _members;
       private readonly MemberInfo[] _properties; // properties and fields
       private readonly bool _filter;
+      private readonly bool _guidString;
+      private readonly bool _decimalString;
 
       /// <summary>
       /// One local per value type (not per property): the method's locals are zeroed per call.
@@ -343,6 +356,8 @@ namespace LtMsgPack.Writing
         _members = members;
         _properties = properties;
         _filter = plan.FilterDefaults;
+        _guidString = plan.GuidString;
+        _decimalString = plan.DecimalString;
         O = Expression.Parameter(byRef ? type.MakeByRefType() : type, "o");
       }
 
@@ -408,23 +423,32 @@ namespace LtMsgPack.Writing
 
         ParameterExpression v = Value(member.PropertyType);
         Expression written = key is ConstantExpression // the constant null: an array item
-          ? Expression.Block(WriteValue(member, v), Expression.Constant(true))
-          : Expression.Block(Expression.Call(W, nameof(MsgPackWriter.Raw), null, key), WriteValue(member, v), Expression.Constant(true));
+          ? Expression.Block(WriteValue(member, v, null), Expression.Constant(true))
+          : Expression.Block(Expression.Call(W, nameof(MsgPackWriter.Raw), null, key), WriteValue(member, v, null), Expression.Constant(true));
         if (_filter)
           written = Expression.Condition(Omitted(member, v), Expression.Constant(false), written);
         return Expression.Block(Expression.Assign(v, Get(id)), written);
       }
 
       /// <summary>
-      /// The array item at the position, as the generated WriteUnrolled does.
+      /// The member's value is written by this code (not by the runtime's writers).
       /// </summary>
-      internal Expression Item(int position, int id)
+      internal bool WritesItself(int id)
       {
-        if (id < 0 || !_members[id].CanWrite || _members[id].Kind == GeneratedKind.None)
+        return id >= 0 && _members[id].CanWrite && _members[id].Kind != GeneratedKind.None;
+      }
+
+      /// <summary>
+      /// The array item at the position, as the generated WriteUnrolled does (and WriteUnrolledTrimmed, with <paramref name="written"/>).
+      /// </summary>
+      /// <param name="written">After a value that is not nil, null for nothing (only for <see cref="WritesItself"/>)</param>
+      internal Expression Item(int position, int id, Expression written = null)
+      {
+        if (!WritesItself(id))
           return Expression.IfThen(Expression.Not(Member(position, id, Expression.Constant(null, typeof(byte[])))), Nil());
         GeneratedMember member = _members[id];
         ParameterExpression v = Value(member.PropertyType);
-        Expression write = WriteValue(member, v);
+        Expression write = WriteValue(member, v, written);
         if (_filter)
           write = Expression.IfThenElse(Omitted(member, v), Nil(), write);
         return Expression.Block(Expression.Assign(v, Get(id)), write);
@@ -456,26 +480,41 @@ namespace LtMsgPack.Writing
       /// <summary>
       /// The value as the runtime's handler of its type writes it (Emitter.WriteValue).
       /// </summary>
+      /// <param name="written">After a value that is not nil, null for nothing</param>
       [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
       [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
-      private Expression WriteValue(GeneratedMember member, Expression v)
+      private Expression WriteValue(GeneratedMember member, Expression v, Expression written)
       {
         if (member.Nullable)
         {
           ParameterExpression u = Value(Nullable.GetUnderlyingType(member.PropertyType));
           return Expression.IfThenElse(Expression.Property(v, "HasValue"),
-            Expression.Block(Expression.Assign(u, Expression.Call(v, "GetValueOrDefault", null)), WriteValue(member.Kind, u)),
+            Expression.Block(Expression.Assign(u, Expression.Call(v, "GetValueOrDefault", null)), WriteValue(member.Kind, u, written)),
             Nil());
         }
-        return WriteValue(member.Kind, v);
+        return WriteValue(member.Kind, v, written);
       }
 
       [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
-      private Expression WriteValue(GeneratedKind kind, Expression v)
+      private Expression WriteValue(GeneratedKind kind, Expression v, Expression written)
+      {
+        if (kind == GeneratedKind.String)
+        {
+          Expression write = Writer(nameof(MsgPackWriter.String), v);
+          return Expression.IfThenElse(Expression.Equal(v, Expression.Constant(null, typeof(string))), Nil(), written is null ? write : Expression.Block(write, written));
+        }
+        Expression value = WriteNotNil(kind, v);
+        return written is null ? value : Expression.Block(value, written);
+      }
+
+      /// <summary>
+      /// A value of the kind (never nil).
+      /// </summary>
+      [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
+      private Expression WriteNotNil(GeneratedKind kind, Expression v)
       {
         switch (kind)
         {
-          case GeneratedKind.String: return Expression.IfThenElse(Expression.Equal(v, Expression.Constant(null, typeof(string))), Nil(), Writer(nameof(MsgPackWriter.String), v));
           case GeneratedKind.Boolean: return Writer(nameof(MsgPackWriter.Bool), v);
           case GeneratedKind.SByte: return Writer(nameof(MsgPackWriter.SByte), v);
           case GeneratedKind.Int16: return Writer(nameof(MsgPackWriter.Int16), v);
@@ -488,8 +527,11 @@ namespace LtMsgPack.Writing
           case GeneratedKind.Single: return Writer(nameof(MsgPackWriter.Single), v);
           case GeneratedKind.Double: return Writer(nameof(MsgPackWriter.Double), v);
           case GeneratedKind.Char: return Writer(nameof(MsgPackWriter.UInt16), Expression.Convert(v, typeof(ushort))); // as an unsigned 16 bit integer, like MessagePack-CSharp
-          case GeneratedKind.Decimal: return Expression.Call(typeof(GeneratedIO), nameof(GeneratedIO.WriteDecimal), null, W, v, Expression.Field(P, nameof(GeneratedWritePlan.DecimalCode)));
-          case GeneratedKind.Guid: return Writer(nameof(MsgPackWriter.Guid), v);
+          case GeneratedKind.Decimal:
+            if (_decimalString)
+              return Writer(nameof(MsgPackWriter.DecimalString), v);
+            return Expression.Call(typeof(GeneratedIO), nameof(GeneratedIO.WriteDecimal), null, W, v, Expression.Field(P, nameof(GeneratedWritePlan.DecimalCode)));
+          case GeneratedKind.Guid: return Writer(_guidString ? nameof(MsgPackWriter.GuidString) : nameof(MsgPackWriter.Guid), v);
           case GeneratedKind.DateTime: return Writer(nameof(MsgPackWriter.DateTime), Expression.Call(typeof(GeneratedIO), nameof(GeneratedIO.Utc), null, v, P));
           case GeneratedKind.TimeSpan: return Writer(nameof(MsgPackWriter.Int64), Expression.Property(v, "Ticks"));
           case GeneratedKind.Enum: return EnumWriter(v);
@@ -514,7 +556,7 @@ namespace LtMsgPack.Writing
 
       private Expression Writer(string method, Expression v)
       {
-        return Expression.Call(W, typeof(MsgPackWriter).GetMethod(method, new Type[] { v.Type }), v);
+        return Expression.Call(W, typeof(MsgPackWriter).GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new Type[] { v.Type }, null), v); // GuidString and DecimalString are internal
       }
     }
   }

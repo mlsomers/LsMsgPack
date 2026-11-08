@@ -105,11 +105,11 @@ The context of the constructor is asked first, then the options' contexts, then 
 For each class and struct:
 
 1. **Accessors and creators:** a typed getter and setter per property, `new T()` for an accessible parameterless constructor, and the generic handlers and readers of each type (enums, nullables, lists, arrays, objects) created without `MakeGenericType`. The runtime uses them wherever it would have used reflection, with every option.
-2. **Writers and readers per class and struct:** the loop over the properties, with the values of simple types written and read inline: strings, numbers, `bool`, `char`, enums, `Guid`, `DateTime`, `TimeSpan`, `decimal`, and nullables of those. When the runtime's property order is the one the generator predicted (the default `PropertyOrder.Reflection`), objects are written by straight-line code, in the array and in the map layout. Otherwise a loop maps each property position to its generated member, so every `PropertyOrder` works.
+2. **Writers and readers per class and struct:** the loop over the properties, with the values of simple types written and read inline: strings, numbers, `bool`, `char`, enums, `Guid`, `DateTime`, `TimeSpan`, `decimal`, and nullables of those. When the runtime's property order is the one the generator predicted (the default `PropertyOrder.Reflection`), objects are written by straight-line code, in the array and in the map layout (also with `TrimTrailingNulls`). `Guid`s and `decimal`s are written in the format of the options (`GuidFormat.String` and `DecimalFormat.String` too, as the `Generic()` preset sets them), read only in the default formats. Otherwise a loop maps each property position to its generated member, so every `PropertyOrder` works.
 
 The runtime checks once per class and serializer whether the generated code fits the options. Where it doesn't, the runtime does that part itself, as it does without the generator:
 
-- Formats of other libraries: `GuidFormat.String`, `DecimalFormat.String`, and custom extensions for a type. These affect only the properties of that type.
+- Formats of other libraries when reading (`GuidFormat.String`, `DecimalFormat.String`), and custom extensions for a type. These affect only the properties of that type.
 - Custom dynamic filters, `AddTypeIdOption.Always`, and custom property id or type resolvers (the whole class).
 - Properties with `[DefaultValue]`, nested objects and collections (written and read by the runtime, which then uses the generated code of their class).
 - Values in another format than expected (an `int` written as a string, a number out of range): the runtime converts them, or throws, exactly as without the generator.

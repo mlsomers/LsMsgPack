@@ -92,7 +92,18 @@ namespace LtMsgPack.Generated
     /// <summary>
     /// <see cref="GeneratedObjectCode{T}.WriteUnrolledMap"/> (version 4): the map layout written in sequence, when the runtime's properties are <see cref="GeneratedObjectCode.UnrolledIds"/>.
     /// </summary>
-    WriteUnrolledMap = 128
+    WriteUnrolledMap = 128,
+
+    /// <summary>
+    /// The writers write Guids and decimals in the format of the plan (<see cref="GeneratedWritePlan.GuidString"/>, <see cref="GeneratedWritePlan.DecimalString"/>; version 4). Without it the runtime writes
+    /// the members of a serializer with <c>GuidFormat.String</c> or <c>DecimalFormat.String</c>.
+    /// </summary>
+    WriteFormats = 256,
+
+    /// <summary>
+    /// <see cref="GeneratedObjectCode{T}.WriteUnrolledTrimmed"/> (version 4): the array layout with TrimTrailingNulls in sequence, when the runtime's properties are <see cref="GeneratedObjectCode.UnrolledIds"/>.
+    /// </summary>
+    WriteUnrolledTrimmed = 512
   }
 
   /// <summary>
@@ -174,6 +185,17 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
+    /// The array layout with <see cref="GeneratedWritePlan.Trim"/> in sequence (<see cref="Write"/> without keys, without its loop and switch over the ids), when the runtime's properties are
+    /// <see cref="GeneratedObjectCode.UnrolledIds"/> (<see cref="GeneratedWritePlan.UnrolledTrimmed"/>): nil for a value the filters leave out.
+    /// </summary>
+    /// <param name="end">The position after the last value that is not nil (the position at the call when there is none)</param>
+    /// <returns>The number of values up to the last one that is not nil</returns>
+    public virtual int WriteUnrolledTrimmed(WriteContext c, T value, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
+    {
+      throw new NotSupportedException();
+    }
+
+    /// <summary>
     /// The values of an array (the header is read, the instance created): by position, a nil sets the value the writer leaves out (<see cref="Reading.PropReader.ReadNil"/>),
     /// positions without a property are skipped (as ObjectReader.ReadPositional).
     /// </summary>
@@ -203,11 +225,16 @@ namespace LtMsgPack.Generated
 
     internal sealed override int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
-      if (p.UnrolledMap && keys != null)
+      if (keys != null)
       {
-        end = 0; // only for trimmed arrays
-        return WriteUnrolledMap(c, (T)value, keys, infos, p);
+        if (p.UnrolledMap)
+        {
+          end = 0; // only for trimmed arrays
+          return WriteUnrolledMap(c, (T)value, keys, infos, p);
+        }
       }
+      else if (p.UnrolledTrimmed) // ObjectPlan.WriteTrimmed (arrays without trimming that are not unrolled call Write)
+        return WriteUnrolledTrimmed(c, (T)value, infos, p, out end);
       return Write(c, (T)value, keys, infos, p, out end);
     }
 
@@ -267,6 +294,12 @@ namespace LtMsgPack.Generated
       throw new NotSupportedException();
     }
 
+    /// <inheritdoc cref="GeneratedObjectCode{T}.WriteUnrolledTrimmed"/>
+    public virtual int WriteUnrolledTrimmed(WriteContext c, ref T value, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
+    {
+      throw new NotSupportedException();
+    }
+
     /// <inheritdoc cref="GeneratedObjectCode{T}.ReadPositional"/>
     public virtual void ReadPositional(ReadContext c, ref T target, PropReader[] props, int items, GeneratedReadPlan p)
     {
@@ -296,11 +329,16 @@ namespace LtMsgPack.Generated
 
     internal sealed override int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
-      if (p.UnrolledMap && keys != null)
+      if (keys != null)
       {
-        end = 0; // only for trimmed arrays
-        return WriteUnrolledMap(c, ref Unboxer.Unbox(value), keys, infos, p);
+        if (p.UnrolledMap)
+        {
+          end = 0; // only for trimmed arrays
+          return WriteUnrolledMap(c, ref Unboxer.Unbox(value), keys, infos, p);
+        }
       }
+      else if (p.UnrolledTrimmed)
+        return WriteUnrolledTrimmed(c, ref Unboxer.Unbox(value), infos, p, out end);
       return Write(c, ref Unboxer.Unbox(value), keys, infos, p, out end);
     }
 
@@ -372,7 +410,22 @@ namespace LtMsgPack.Generated
     /// </summary>
     public readonly byte DecimalCode;
 
+    /// <summary>
+    /// Guids are written as strings of 36 characters (<see cref="GuidFormat.String"/>), otherwise as bin 16. Only for code with <see cref="GeneratedCapabilities.WriteFormats"/>.
+    /// </summary>
+    public readonly bool GuidString;
+
+    /// <summary>
+    /// Decimals are written as strings (<see cref="DecimalFormat.String"/>), otherwise with the built-in extension (<see cref="DecimalCode"/>). Only for code with <see cref="GeneratedCapabilities.WriteFormats"/>.
+    /// </summary>
+    public readonly bool DecimalString;
+
     internal readonly bool Unrolled;
+
+    /// <summary>
+    /// The array layout with trimming is written by <see cref="GeneratedObjectCode{T}.WriteUnrolledTrimmed"/>: the ids are the unrolled ones.
+    /// </summary>
+    internal readonly bool UnrolledTrimmed;
 
     /// <summary>
     /// Maps (also of the array layout: a collection with SerializeProperties) are written by <see cref="GeneratedObjectCode{T}.WriteUnrolledMap"/>: the ids are the unrolled ones (trimming does not apply to maps).
@@ -391,7 +444,8 @@ namespace LtMsgPack.Generated
     /// </summary>
     private readonly object[] _handlers;
 
-    internal GeneratedWritePlan(Serializer serializer, GeneratedObjectCode code, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool unrolled, bool unrolledMap, PropWriter[] props)
+    internal GeneratedWritePlan(Serializer serializer, GeneratedObjectCode code, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool guidString, bool decimalString,
+      bool unrolled, bool unrolledMap, bool unrolledTrimmed, PropWriter[] props)
     {
       _serializer = serializer;
       Code = code;
@@ -401,8 +455,11 @@ namespace LtMsgPack.Generated
       UnspecifiedIsUtc = unspecifiedIsUtc;
       Trim = trim;
       DecimalCode = decimalCode;
+      GuidString = guidString;
+      DecimalString = decimalString;
       Unrolled = unrolled;
       UnrolledMap = unrolledMap;
+      UnrolledTrimmed = unrolledTrimmed;
       _props = props;
     }
 
@@ -564,6 +621,22 @@ namespace LtMsgPack.Generated
       b[at + 1] = typeCode;
       Unsafe.WriteUnaligned(ref b[at + 2], value);
       w.Pos = at + 18;
+    }
+
+    /// <summary>
+    /// A decimal as a string (<see cref="GeneratedWritePlan.DecimalString"/>, <see cref="GeneratedCapabilities.WriteFormats"/>).
+    /// </summary>
+    public static void DecimalString(MsgPackWriter w, decimal value)
+    {
+      w.DecimalString(value);
+    }
+
+    /// <summary>
+    /// A Guid as a string of 36 characters (<see cref="GeneratedWritePlan.GuidString"/>, <see cref="GeneratedCapabilities.WriteFormats"/>).
+    /// </summary>
+    public static void GuidString(MsgPackWriter w, Guid value)
+    {
+      w.GuidString(value);
     }
 
     /// <summary>
