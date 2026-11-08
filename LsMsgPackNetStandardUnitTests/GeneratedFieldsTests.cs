@@ -7,6 +7,7 @@ using LtMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
@@ -258,7 +259,8 @@ namespace LsMsgPackUnitTests
 
     private static string Values(GfItem item)
     {
-      return string.Join("|", item.Name, item.Amount, item.When.ToUniversalTime().Ticks, item.Kind, item.Maybe, item.Tags is null ? "-" : string.Join(",", item.Tags), string.Join(",", item.Filled), item.Computed, item.GetSecret(), item.Opted,
+      // Invariant: string.Join formats with the current culture ("2,5" on a Dutch Windows)
+      return string.Join("|", item.Name, item.Amount.ToString(CultureInfo.InvariantCulture), item.When.ToUniversalTime().Ticks, item.Kind, item.Maybe, item.Tags is null ? "-" : string.Join(",", item.Tags), string.Join(",", item.Filled), item.Computed, item.GetSecret(), item.Opted,
         item.Skipped, item.Title, item.BaseField, item.GetBaseSecret(), item.BaseProperty);
     }
 
