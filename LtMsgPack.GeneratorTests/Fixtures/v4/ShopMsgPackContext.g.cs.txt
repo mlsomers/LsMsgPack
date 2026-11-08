@@ -160,7 +160,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Customer", typeof(global::Shop.Customer), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Lines", typeof(global::System.Collections.Generic.List<global::Shop.InvoiceLine>), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Total", typeof(decimal), global::LtMsgPack.Generated.GeneratedKind.Decimal, false, true, true)
-      }, new int[] { 0, 1, 2, 3, 4, 5, 6 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LtMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
+      }, new int[] { 0, 1, 2, 3, 4, 5, 6 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LtMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LtMsgPack.Generated.GeneratedCapabilities.ReadFormats)
       {
       }
 
@@ -730,7 +730,7 @@ namespace Shop
           {
             case 0:
             {
-              if (r.TryReadGuid(out global::System.Guid v))
+              if (global::LtMsgPack.Generated.GeneratedIO.TryReadGuid(r, p, out global::System.Guid v))
               {
                 o.Id = v;
                 continue;
@@ -766,7 +766,7 @@ namespace Shop
             }
             case 6:
             {
-              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v))
+              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p, out decimal v))
               {
                 o.Total = v;
                 continue;
@@ -796,7 +796,7 @@ namespace Shop
           {
             case 0:
             {
-              if (r.TryReadGuid(out global::System.Guid v))
+              if (global::LtMsgPack.Generated.GeneratedIO.TryReadGuid(r, p, out global::System.Guid v))
               {
                 o.Id = v;
                 continue;
@@ -852,7 +852,7 @@ namespace Shop
             }
             case 6:
             {
-              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v))
+              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p, out decimal v))
               {
                 o.Total = v;
                 continue;
@@ -881,7 +881,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "CustomerId", typeof(int), global::LtMsgPack.Generated.GeneratedKind.Int32, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "CompanyName", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "BillingAddress", typeof(global::Shop.Address), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LtMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
+      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LtMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LtMsgPack.Generated.GeneratedCapabilities.ReadFormats)
       {
       }
 
@@ -1166,7 +1166,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "Street", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "City", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "PostalCode", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LtMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
+      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LtMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LtMsgPack.Generated.GeneratedCapabilities.ReadFormats)
       {
       }
 
@@ -1510,7 +1510,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "Unit", typeof(global::Shop.UnitOfMeasure), global::LtMsgPack.Generated.GeneratedKind.Enum, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "UnitPrice", typeof(global::Shop.Money), global::LtMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "_discountPercent", typeof(int), global::LtMsgPack.Generated.GeneratedKind.Int32, false, true, true)
-      }, new int[] { 0, 1, 2, 3, 4 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LtMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap)
+      }, new int[] { 0, 1, 2, 3, 4 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LtMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LtMsgPack.Generated.GeneratedCapabilities.ReadFormats)
       {
       }
 
@@ -1940,7 +1940,7 @@ namespace Shop
             }
             case 1:
             {
-              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v))
+              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p, out decimal v))
               {
                 o.Quantity = v;
                 continue;
@@ -2012,7 +2012,7 @@ namespace Shop
             }
             case 1:
             {
-              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v))
+              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p, out decimal v))
               {
                 o.Quantity = v;
                 continue;
@@ -2074,7 +2074,7 @@ namespace Shop
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Amount", typeof(decimal), global::LtMsgPack.Generated.GeneratedKind.Decimal, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Currency", typeof(string), global::LtMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LtMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Precision", typeof(byte), global::LtMsgPack.Generated.GeneratedKind.Byte, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LtMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LtMsgPack.Generated.GeneratedCapabilities.IsDefault)
+      }, new int[] { 0, 1, 2 }, global::LtMsgPack.Generated.GeneratedCapabilities.Write | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LtMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LtMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LtMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LtMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LtMsgPack.Generated.GeneratedCapabilities.ReadFormats | global::LtMsgPack.Generated.GeneratedCapabilities.IsDefault)
       {
       }
 
@@ -2430,7 +2430,7 @@ namespace Shop
           {
             case 0:
             {
-              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v))
+              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p, out decimal v))
               {
                 o.Amount = v;
                 continue;
@@ -2483,7 +2483,7 @@ namespace Shop
           {
             case 0:
             {
-              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v))
+              if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p, out decimal v))
               {
                 o.Amount = v;
                 continue;

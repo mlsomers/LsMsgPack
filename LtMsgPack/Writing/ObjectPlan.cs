@@ -58,6 +58,11 @@ namespace LtMsgPack.Writing
     internal readonly bool ByRef;
 
     /// <summary>
+    /// The options' layout is <see cref="ObjectLayout.Array"/>, and <see cref="MsgPackOptions.TrimTrailingNulls"/> (a plan is per serializer): one load per object instead of three (c.Serializer.Options._objectLayout).
+    /// </summary>
+    private readonly bool _array, _trim;
+
+    /// <summary>
     /// <see cref="IdMode.Session"/>: the ids of the frozen session used last (see <see cref="WriteContext.BeginObject"/>).
     /// </summary>
     internal volatile SessionIds LastSession;
@@ -81,6 +86,8 @@ namespace LtMsgPack.Writing
       Type = type;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
       LtMsgPackOptions options = serializer.Options;
+      _array = options._objectLayout == ObjectLayout.Array;
+      _trim = options._trimTrailingNulls;
       Infos = names ? FullPropertyInfo.GetSerializedProps(type, options) : FullPropertyInfo.GetStaticallyIncludedProps(type, options);
 
       Props = new PropWriter[Infos.Length];
@@ -110,13 +117,39 @@ namespace LtMsgPack.Writing
         Schema = serializer.GetSchemaInfo(type);
       }
 
-      if (GeneratedPlan is null && serializer.CompileWritersAfter >= 0)
+      if (serializer.CompileWritersAfter >= 0)
       {
-        if (serializer.CompileWritersAfter == 0)
-          Compile(serializer);
-        else
-          _untilCompiled = serializer.CompileWritersAfter;
+        if (GeneratedPlan is null)
+        {
+          if (serializer.CompileWritersAfter == 0)
+            Compile(serializer);
+          else
+            _untilCompiled = serializer.CompileWritersAfter;
+        }
+        else // generated code: counted only where it writes by its loop over the ids (GeneratedWritePlan.CountLoop)
+        {
+          if (serializer.CompileWritersAfter == 0)
+          {
+            if (!UnrolledFor(GeneratedPlan, options))
+              Compile(serializer);
+          }
+          else
+          {
+            GeneratedPlan.LoopPlan = this;
+            GeneratedPlan.UntilCompiled = serializer.CompileWritersAfter;
+          }
+        }
       }
+    }
+
+    /// <summary>
+    /// Whether the generated code writes the layout of the options without its loop over the ids (maps of a collection with SerializeProperties in the array layout aside).
+    /// </summary>
+    private static bool UnrolledFor(GeneratedWritePlan plan, LtMsgPackOptions options)
+    {
+      if (options._objectLayout != ObjectLayout.Array)
+        return plan.UnrolledMap;
+      return options._trimTrailingNulls ? plan.UnrolledTrimmed : plan.Unrolled;
     }
 
     /// <summary>
@@ -134,7 +167,7 @@ namespace LtMsgPack.Writing
     /// at once and inlines the writer's methods for every property), which the call that reaches the count should not wait for. The generated code is optimized in the background too (tiered JIT).
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void CompileInBackground(Serializer serializer)
+    internal void CompileInBackground(Serializer serializer)
     {
       ThreadPool.UnsafeQueueUserWorkItem(plan => ((ObjectPlan)plan).Compile(serializer), this); // no ExecutionContext: nothing of the caller's (AsyncLocal values) is needed or kept
     }
@@ -170,7 +203,7 @@ namespace LtMsgPack.Writing
       GeneratedWritePlan generated = GeneratedPlan;
       if (generated is null)
         CountWrite(c.Serializer);
-      if (c.Serializer.Options._objectLayout == ObjectLayout.Array)
+      if (_array)
       {
         WriteArray(c, value, typeId, assignedTo, infos, generated);
         return;
@@ -220,7 +253,7 @@ namespace LtMsgPack.Writing
 
       c.EnterContainer();
       PropWriter[] props = Props;
-      if (c.Serializer.Options._trimTrailingNulls)
+      if (_trim)
         WriteTrimmed(c, value, infos, generated);
       else
       {
@@ -287,11 +320,11 @@ namespace LtMsgPack.Writing
       GeneratedWritePlan generated = GeneratedPlan;
       if (generated is null)
         CountWrite(c.Serializer);
-      if (c.Serializer.Options._objectLayout == ObjectLayout.Array)
+      if (_array)
       {
         SerializationRules.ThrowIfUnresolvableAsArray(Type, assignedTo);
         c.EnterContainer();
-        if (c.Serializer.Options._trimTrailingNulls)
+        if (_trim)
           WriteStructTrimmed(c, ref value, infos, generated);
         else
         {
@@ -301,7 +334,11 @@ namespace LtMsgPack.Writing
             if (generated.Unrolled)
               Unsafe.As<GeneratedStructCode<T>>(generated.Code).WriteUnrolled(c, ref value, infos, generated); // the code of the plan's type
             else
+            {
+              if (generated.UntilCompiled > 0)
+                generated.CountLoop();
               Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, null, infos, generated, out int end);
+            }
           }
           else
           {
@@ -324,7 +361,11 @@ namespace LtMsgPack.Writing
         if (generated.UnrolledMap)
           count += Unsafe.As<GeneratedStructCode<T>>(generated.Code).WriteUnrolledMap(c, ref value, keys, infos, generated);
         else
+        {
+          if (generated.UntilCompiled > 0)
+            generated.CountLoop();
           count += Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, keys, infos, generated, out int end);
+        }
       }
       else
       {
@@ -347,9 +388,15 @@ namespace LtMsgPack.Writing
       if (generated != null)
       {
         int after;
-        int last = generated.UnrolledTrimmed
-          ? Unsafe.As<GeneratedStructCode<T>>(generated.Code).WriteUnrolledTrimmed(c, ref value, infos, generated, out after)
-          : Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, null, infos, generated, out after);
+        int last;
+        if (generated.UnrolledTrimmed)
+          last = Unsafe.As<GeneratedStructCode<T>>(generated.Code).WriteUnrolledTrimmed(c, ref value, infos, generated, out after);
+        else
+        {
+          if (generated.UntilCompiled > 0)
+            generated.CountLoop();
+          last = Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, null, infos, generated, out after);
+        }
         w.Pos = after;
         w.PatchArrayHeader(at, props.Length, last);
         return;

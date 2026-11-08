@@ -284,7 +284,17 @@ namespace LtMsgPack.Reading
     internal override Guid Read(ReadContext c, FullPropertyInfo assignedTo)
     {
       int start = c.R.Pos;
-      if (c.R.TryReadGuid(out Guid value)) return value;
+      if (c.R.TryReadGuid(out Guid value) || c.R.TryReadGuidString(out value)) return value;
+      return ReadText(c, start, assignedTo);
+    }
+
+    /// <summary>
+    /// Any other text: decoded and parsed by .NET. Not inlined: the <c>stackalloc</c> gives a method a stack cookie and a larger frame.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private Guid ReadText(ReadContext c, int start, FullPropertyInfo assignedTo)
+    {
+      Guid value;
 #if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[64];
       if (c.R.TryReadShortString(chars, out int count))
@@ -319,14 +329,9 @@ namespace LtMsgPack.Reading
     {
       MsgPackReader r = c.R;
       int start = r.Pos;
-      int length = r.TryReadStringHeader();
-      if (length >= 0 && MsgPackOptions.StringEncoding is UTF8Encoding && DecimalText.TryParse(r.Buf, r.Pos, length, out decimal simple)) // ASCII, the same bytes in UTF-8
-      {
-        r.Pos += length;
+      if (r.TryReadDecimalString(out decimal simple))
         return simple;
-      }
-      r.Pos = start;
-      if (length < 0 && r.End - start >= 18 && r.Buf[start] == 0xD8 && r.Buf[start + 1] == _extensionCode)
+      if (r.End - start >= 18 && r.Buf[start] == 0xD8 && r.Buf[start + 1] == _extensionCode)
       {
         decimal value = Unsafe.ReadUnaligned<decimal>(ref r.Buf[start + 2]); // as DecimalReader
         r.Pos = start + 18;

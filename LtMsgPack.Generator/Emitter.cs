@@ -305,7 +305,7 @@ namespace LtMsgPack.Generator
       bool isDefault = byRef && type.IsDefault != null;
       w.Line("}, new int[] { " + string.Join(", ", unrolled) + " }, " + Generated + "GeneratedCapabilities.Write | " + Generated + "GeneratedCapabilities.WriteUnrolled | " + Generated + "GeneratedCapabilities.WriteUnrolledMap | "
         + Generated + "GeneratedCapabilities.WriteUnrolledTrimmed | " + Generated + "GeneratedCapabilities.WriteFormats | "
-        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadMap"
+        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadMap | " + Generated + "GeneratedCapabilities.ReadFormats"
         + (isDefault ? " | " + Generated + "GeneratedCapabilities.IsDefault" : "") + ")");
       w.Open();
       w.Close();
@@ -907,8 +907,8 @@ namespace LtMsgPack.Generator
         case "UInt16": Ranged(w, "ushort", "ushort.MinValue", "ushort.MaxValue", accessors, member, done); return;
         case "UInt32": Ranged(w, "uint", "uint.MinValue", "uint.MaxValue", accessors, member, done); return;
         case "Char": Ranged(w, "char", "char.MinValue", "char.MaxValue", accessors, member, done); return;
-        case "Decimal": Fast(w, Generated + "GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v)", set, done); return;
-        case "Guid": Fast(w, "r.TryReadGuid(out global::System.Guid v)", set, done); return;
+        case "Decimal": Fast(w, Generated + "GeneratedIO.TryReadDecimal(r, p, out decimal v)", set, done); return; // the extension, or the strings of DecimalFormat.String (GeneratedCapabilities.ReadFormats)
+        case "Guid": Fast(w, Generated + "GeneratedIO.TryReadGuid(r, p, out global::System.Guid v)", set, done); return; // bin 16, or also the strings of GuidFormat.String
         case "DateTime": Fast(w, "r.TryReadDateTime(out global::System.DateTime v)", set, done); return;
         case "TimeSpan": Fast(w, "r.TryReadInt64(out long v)", Set(accessors, member, "new global::System.TimeSpan(v)") + ";", done); return;
         case "Enum": Fast(w, "r.TryReadInt64(out long v)", Set(accessors, member, "(" + member.ValueType + ")unchecked((" + member.EnumUnderlying + ")v)") + ";", done); return; // values out of range wrap around (EnumReader)

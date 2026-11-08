@@ -627,6 +627,60 @@ namespace LsMsgPackUnitTests
       Assert.IsNotNull(code.GetType().GetMethod("WriteUnrolledTrimmedPart1", BindingFlags.Instance | BindingFlags.NonPublic), "by parts on a class of more than 16 members");
     }
 
+    [TestMethod]
+    public void OtherFormats_AreReadByTheGeneratedCode()
+    {
+      LtMsgPackOptions options = LtMsgPackPresets.Generic();
+      options.Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default };
+      options.UseRegisteredContexts = false;
+      LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+      serializer.Deserialize<GcAllKinds>(serializer.Serialize(AllKinds(false)));
+      object inner = Inner(serializer);
+      object readPlan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { typeof(GcAllKinds) });
+      foreach (LtMsgPack.Reading.PropReader reader in (LtMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
+      {
+        string name = ((FullPropertyInfo)typeof(LtMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader)).PropertyInfo.Name;
+        if (name == nameof(GcAllKinds.Id) || name == nameof(GcAllKinds.MaybeId) || name == nameof(GcAllKinds.Money) || name == nameof(GcAllKinds.MaybeMoney))
+          Assert.IsGreaterThanOrEqualTo(0, reader.GeneratedId, name + ": Guids and decimals as strings (GeneratedCapabilities.ReadFormats)");
+      }
+    }
+
+    /// <summary>
+    /// Texts the generated readers parse themselves (Guids in the format "D", decimals DecimalText takes) and all others (left to the runtime's readers): the same values and errors.
+    /// </summary>
+    [TestMethod]
+    public void OtherFormats_TextsOfOtherWriters_ReadAsTheRuntime()
+    {
+      string[] guids =
+      {
+        "0f8fad5b-d9cb-469f-a165-70867728950e", "0F8FAD5B-D9CB-469F-A165-70867728950E", "0f8FaD5b-d9Cb-469f-A165-70867728950e", "00000000-0000-0000-0000-000000000000",
+        "ffffffff-ffff-ffff-ffff-ffffffffffff", "{0f8fad5b-d9cb-469f-a165-70867728950e}", "(0f8fad5b-d9cb-469f-a165-70867728950e)", "0f8fad5bd9cb469fa16570867728950e",
+        " 0f8fad5b-d9cb-469f-a165-70867728950e", "0f8fad5b-d9cb-469f-a165-70867728950e ", "+f8fad5b-d9cb-469f-a165-70867728950e", "0f8fad5b-+9cb-469f-a165-70867728950e",
+        "0f8fad5b-0xcb-469f-a165-70867728950e", "0f8fad5b-d9cb-469f-a165-70867728950g", "0f8fad5b-d9cb-469f-a165-70867728950", "0f8fad5bd-9cb-469f-a165-70867728950e",
+        "0f8fad5b-d9cb-469f-a165-7086772895\u00e9", "{0x0f8fad5b,0xd9cb,0x469f,{0xa1,0x65,0x70,0x86,0x77,0x28,0x95,0x0e}}", "", "not a guid"
+      };
+      string[] decimals = { "12.50", "-0", "0.0000000000000000000000000001", "79228162514264337593543950335", "1e3", " 5", "5 ", "1,000.5", "12.5.1", "", "x" };
+      LtMsgPackOptions options = LtMsgPackPresets.Generic();
+      LtMsgPackSerializer plain = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      LtMsgPackSerializer dumper = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      List<string> differences = new List<string>();
+      List<Dictionary<string, object>> values = new List<Dictionary<string, object>>();
+      for (int t = 0; t < guids.Length; t++)
+        values.Add(new Dictionary<string, object>() { { nameof(GcAllKinds.Id), guids[t] }, { nameof(GcAllKinds.MaybeId), guids[t] } });
+      for (int t = 0; t < decimals.Length; t++)
+        values.Add(new Dictionary<string, object>() { { nameof(GcAllKinds.Money), decimals[t] }, { nameof(GcAllKinds.MaybeMoney), decimals[t] } });
+      for (int t = 0; t < values.Count; t++)
+      {
+        byte[] data = plain.Serialize(values[t]);
+        string expected = Read(WithCode(options, false), data, dumper);
+        string actual = Read(WithCode(options, true), data, dumper);
+        if (expected != actual)
+          differences.Add($"{string.Join(", ", values[t].Values)}:\n  runtime   {expected}\n  generated {actual}");
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences));
+      Assert.AreEqual(new Guid("0f8fad5b-d9cb-469f-a165-70867728950e"), WithCode(options, true).Deserialize<GcAllKinds>(plain.Serialize(values[1])).Id, "upper case");
+    }
+
     /// <summary>
     /// A decimal extension the generated code does not write (only the built-in one).
     /// </summary>

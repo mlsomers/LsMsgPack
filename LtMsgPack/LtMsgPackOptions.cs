@@ -106,7 +106,7 @@ namespace LtMsgPack
     /// After how many objects of a type a writer compiled for that type takes over (default 1000): the code the source generator writes (see <see cref="LtMsgPackContext"/>),
     /// built at runtime for the type's properties and these options. Compiling costs 1-7 ms per type (most of it the JIT), done on the thread pool while the plans of the runtime keep writing,
     /// so types written only a few times are not compiled at all. 0 compiles when the type is first written (on the calling thread, so its first object is written by the compiled writer), a negative number never.
-    /// <para>Only where the runtime compiles dynamic code (not under NativeAOT or on WebAssembly), not for types the source generator covers (its code is used), and not with custom dynamic filters
+    /// <para>Only where the runtime compiles dynamic code (not under NativeAOT or on WebAssembly), not for types the source generator covers (its code is used; but where it writes another property order than it predicted, by a loop over the properties, after this many objects the compiled writer takes over), and not with custom dynamic filters
     /// or <see cref="LsMsgPack.AddTypeIdOption.Always"/>. The data is the same either way.</para>
     /// </summary>
     [IgnoreDataMember]

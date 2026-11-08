@@ -428,6 +428,40 @@ namespace LtMsgPack.IO
     }
 
     /// <summary>
+    /// A Guid as a string of 36 characters in the format "D" (<see cref="GuidFormat.String"/>, what the writers write), parsed from UTF-8 (<see cref="GuidText"/>).
+    /// </summary>
+    /// <returns>false for any other value or text (the position is unchanged): left to <c>Guid.TryParse</c> (GuidStringReader), which takes other formats and reports what is not a Guid</returns>
+    internal bool TryReadGuidString(out Guid value)
+    {
+      int at = Pos;
+      if (End - at >= 2 + GuidText.Length && Buf[at] == 0xD9 && Buf[at + 1] == GuidText.Length && MsgPackWriter.IsUtf8(MsgPackOptions.StringEncoding) && GuidText.TryParse(Buf, at + 2, out value)) // str 8, as the writers write it
+      {
+        Pos = at + 2 + GuidText.Length;
+        return true;
+      }
+      value = default(Guid);
+      return false;
+    }
+
+    /// <summary>
+    /// A decimal as a string (<see cref="DecimalFormat.String"/>) that <see cref="DecimalText"/> parses (a mantissa of 64 bits, the text of the invariant culture).
+    /// </summary>
+    /// <returns>false for any other value or text (the position is unchanged): left to DecimalStringReader</returns>
+    internal bool TryReadDecimalString(out decimal value)
+    {
+      int start = Pos;
+      int length = TryReadStringHeader();
+      if (length >= 0 && MsgPackWriter.IsUtf8(MsgPackOptions.StringEncoding) && DecimalText.TryParse(Buf, Pos, length, out value)) // ASCII, the same bytes in UTF-8
+      {
+        Pos += length;
+        return true;
+      }
+      Pos = start;
+      value = 0m;
+      return false;
+    }
+
+    /// <summary>
     /// The header of an extension.
     /// </summary>
     /// <returns>false when the next value is not an extension (the position is unchanged)</returns>

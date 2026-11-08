@@ -97,7 +97,7 @@ namespace LtMsgPack
       if (id < 0)
         return -1;
       GeneratedMember member = code.Members[id];
-      return member.Kind != GeneratedKind.None && member.CanRead && Fits(member, true, false) ? id : -1;
+      return member.Kind != GeneratedKind.None && member.CanRead && Fits(member, true, (code.Capabilities & GeneratedCapabilities.ReadFormats) != 0) ? id : -1;
     }
 
     private static int FindMember(GeneratedObjectCode code, FullPropertyInfo info)
@@ -116,7 +116,7 @@ namespace LtMsgPack
     /// <summary>
     /// Whether these options write (and read) the member's type the way the generated code does (the same TypeKind, as the handlers and readers decide it).
     /// </summary>
-    /// <param name="formats">The code writes Guids and decimals in the plan's format (<see cref="GeneratedCapabilities.WriteFormats"/>)</param>
+    /// <param name="formats">The code writes (reads) Guids and decimals in the plan's format (<see cref="GeneratedCapabilities.WriteFormats"/>, <see cref="GeneratedCapabilities.ReadFormats"/>)</param>
     private bool Fits(GeneratedMember member, bool reading, bool formats)
     {
       Type type = member.Nullable ? Nullable.GetUnderlyingType(member.PropertyType) : member.PropertyType;
@@ -143,11 +143,19 @@ namespace LtMsgPack
         case GeneratedKind.TimeSpan: return info.Kind == TypeKind.TimeSpan;
         case GeneratedKind.Enum: return info.Kind == TypeKind.Enum;
         case GeneratedKind.Decimal: // the built-in extension (DecimalHandler's and DecimalReader's fast paths)
-          if (formats && info.Kind == TypeKind.DecimalString) // whatever the extension (it only reads)
-            return true;
+          if (formats && info.Kind == TypeKind.DecimalString)
+            return !reading || IsBuiltInDecimal(info.Extension); // writing: whatever the extension; reading: the built-in one, which DecimalStringReader reads in place too (GeneratedIO.TryReadDecimal)
           return info.Kind == TypeKind.Extension && info.Extension != null && info.Extension.GetType() == typeof(DecimalExtension) && (!reading || info.Extension.TypeCode != -1);
         default: return false;
       }
+    }
+
+    /// <summary>
+    /// The built-in decimal extension with a type code it reads (-1 is the timestamp, read as such).
+    /// </summary>
+    private static bool IsBuiltInDecimal(LtExtension extension)
+    {
+      return extension != null && extension.GetType() == typeof(DecimalExtension) && extension.TypeCode != -1;
     }
 
     private byte DecimalCode()
@@ -160,7 +168,10 @@ namespace LtMsgPack
 
     internal GeneratedReadPlan GeneratedReadPlan
     {
-      get { return _generatedReadPlan ?? (_generatedReadPlan = new GeneratedReadPlan(DecimalCode())); }
+      get
+      {
+        return _generatedReadPlan ?? (_generatedReadPlan = new GeneratedReadPlan(DecimalCode(), GetTypeInfo(typeof(Guid)).Kind == TypeKind.GuidString, GetTypeInfo(typeof(decimal)).Kind == TypeKind.DecimalString));
+      }
     }
 
     /// <summary>

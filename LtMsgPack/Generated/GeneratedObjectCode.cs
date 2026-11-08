@@ -103,7 +103,14 @@ namespace LtMsgPack.Generated
     /// <summary>
     /// <see cref="GeneratedObjectCode{T}.WriteUnrolledTrimmed"/> (version 4): the array layout with TrimTrailingNulls in sequence, when the runtime's properties are <see cref="GeneratedObjectCode.UnrolledIds"/>.
     /// </summary>
-    WriteUnrolledTrimmed = 512
+    WriteUnrolledTrimmed = 512,
+
+    /// <summary>
+    /// The readers read Guids and decimals as strings themselves when the serializer reads them as such (<see cref="GeneratedReadPlan.GuidString"/>, <see cref="GeneratedReadPlan.DecimalString"/>;
+    /// <see cref="GeneratedIO.TryReadGuid(MsgPackReader, GeneratedReadPlan, out Guid)"/>, <see cref="GeneratedIO.TryReadDecimal(MsgPackReader, GeneratedReadPlan, out decimal)"/>; version 4).
+    /// Without it the runtime reads the members of a serializer with <c>GuidFormat.String</c> or <c>DecimalFormat.String</c>.
+    /// </summary>
+    ReadFormats = 1024
   }
 
   /// <summary>
@@ -235,6 +242,8 @@ namespace LtMsgPack.Generated
       }
       else if (p.UnrolledTrimmed) // ObjectPlan.WriteTrimmed (arrays without trimming that are not unrolled call Write)
         return WriteUnrolledTrimmed(c, (T)value, infos, p, out end);
+      if (p.UntilCompiled > 0)
+        p.CountLoop();
       return Write(c, (T)value, keys, infos, p, out end);
     }
 
@@ -339,6 +348,8 @@ namespace LtMsgPack.Generated
       }
       else if (p.UnrolledTrimmed)
         return WriteUnrolledTrimmed(c, ref Unboxer.Unbox(value), infos, p, out end);
+      if (p.UntilCompiled > 0)
+        p.CountLoop();
       return Write(c, ref Unboxer.Unbox(value), keys, infos, p, out end);
     }
 
@@ -436,6 +447,18 @@ namespace LtMsgPack.Generated
     /// The code this plan is for (one field, so ObjectPlan can switch to a compiled writer with one store).
     /// </summary>
     internal readonly GeneratedObjectCode Code;
+
+    /// <summary>
+    /// The objects still to write by <see cref="GeneratedObjectCode{T}.Write"/>'s loop (the generated code of an order or properties other than it predicted, <see cref="Unrolled"/> and the others false)
+    /// before the plan compiles its own writer (<see cref="Serializer.CompileWritersAfter"/>, <see cref="CountLoop"/>); 0 when it does not (any more), and for compiled code.
+    /// Not exact with several threads, which is all right.
+    /// </summary>
+    internal int UntilCompiled;
+
+    /// <summary>
+    /// The plan that compiles the writer after <see cref="UntilCompiled"/>.
+    /// </summary>
+    internal ObjectPlan LoopPlan;
     private readonly PropWriter[] _props;
     private readonly Serializer _serializer;
 
@@ -461,6 +484,18 @@ namespace LtMsgPack.Generated
       UnrolledMap = unrolledMap;
       UnrolledTrimmed = unrolledTrimmed;
       _props = props;
+    }
+
+    /// <summary>
+    /// Counts an object written by the generated code's loop over the ids, and has the plan compile a writer for its properties after <see cref="Serializer.CompileWritersAfter"/> of them
+    /// (on a JIT the compiled writer is straight-line for any order: a class of 120 properties in alphabetical order 1643 -> 1011 ns).
+    /// Here, not in ObjectPlan.Write: counting there made it too large to be inlined into the loops of collections.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal void CountLoop()
+    {
+      if (--UntilCompiled == 0)
+        LoopPlan.CompileInBackground(_serializer);
     }
 
     /// <summary>
@@ -530,9 +565,21 @@ namespace LtMsgPack.Generated
     /// </summary>
     public readonly byte DecimalCode;
 
-    internal GeneratedReadPlan(byte decimalCode)
+    /// <summary>
+    /// Guids are read as strings (<see cref="GuidFormat.String"/>; bin 16 too). Only for code with <see cref="GeneratedCapabilities.ReadFormats"/>.
+    /// </summary>
+    public readonly bool GuidString;
+
+    /// <summary>
+    /// Decimals are read as strings (<see cref="DecimalFormat.String"/>), otherwise from the built-in extension (<see cref="DecimalCode"/>). Only for code with <see cref="GeneratedCapabilities.ReadFormats"/>.
+    /// </summary>
+    public readonly bool DecimalString;
+
+    internal GeneratedReadPlan(byte decimalCode, bool guidString, bool decimalString)
     {
       DecimalCode = decimalCode;
+      GuidString = guidString;
+      DecimalString = decimalString;
     }
   }
 
@@ -654,6 +701,27 @@ namespace LtMsgPack.Generated
       }
       value = 0m;
       return false;
+    }
+
+    /// <summary>
+    /// A Guid as the serializer's reader of Guids reads it directly: bin 16, with <see cref="GeneratedReadPlan.GuidString"/> also a string of the format the writers write
+    /// (GuidStringReader; any other text is left to it). <see cref="GeneratedCapabilities.ReadFormats"/>.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryReadGuid(MsgPackReader r, GeneratedReadPlan p, out Guid value)
+    {
+      return r.TryReadGuid(out value) || (p.GuidString && r.TryReadGuidString(out value));
+    }
+
+    /// <summary>
+    /// A decimal as the serializer's reader of decimals reads it directly: the built-in extension, with <see cref="GeneratedReadPlan.DecimalString"/> also a string DecimalText parses
+    /// (DecimalStringReader, which reads the built-in extension in place too; any other text is left to it). <see cref="GeneratedCapabilities.ReadFormats"/>.
+    /// The extension first: the default format has no test per value (a value is never both).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryReadDecimal(MsgPackReader r, GeneratedReadPlan p, out decimal value)
+    {
+      return TryReadDecimal(r, p.DecimalCode, out value) || (p.DecimalString && r.TryReadDecimalString(out value));
     }
 
     /// <summary>
