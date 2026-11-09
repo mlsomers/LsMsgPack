@@ -12,7 +12,9 @@ All three serialize .NET classes to MsgPack. This page compares their features, 
 - **A schema in the payload.** The default [indexed schema](schema.md) lists property names once per message, so data from older or newer versions of your classes loads by name. With the other two you choose between arrays (the `[Key]` order is the contract) and maps (every name in every object).
 - **A TypeScript client** for your ASP.NET backend: [@lsmsgpack/client](TypeScriptClient.md) with generated [models](TypeScriptModels.md).
 - **Plain classes on a JIT:** no attributes, `partial` classes or source generator. The [generator](SourceGenerator.md) is optional there: LtMsgPack compiles the same writers at runtime, so it writes as fast without it, and the generator mainly speeds up reading (about 1.2x).
-- Also: [ReadDifferences](ReadDifferences.md), [streaming](Streaming.md) with an index for seeking, [ADO.NET data readers](DataReader.md), and [presets](Compatibility.md#ltmsgpack-presets) for exchanging data with the other two.
+- **[ReadDifferences](ReadDifferences.md)** to relieve your helpdesk: show the detailed differences, such as misspelled or missing fields, in a customer portal or in the logs.
+- **[Streaming](Streaming.md)** of large datasets (such as daily stock or turnover reports), also to a file with indexes for random access seeking.
+- Also: [ADO.NET data readers](DataReader.md), and [presets](Compatibility.md#ltmsgpack-presets) for exchanging data with the other two.
 
 **[MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp)** when you want:
 
