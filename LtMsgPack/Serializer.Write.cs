@@ -223,7 +223,7 @@ namespace LtMsgPack
         FullPropertyInfo[] props = FullPropertyInfo.GetStaticallyIncludedProps(t, Options);
         string[] names = new string[props.Length];
         for (int p = 0; p < props.Length; p++)
-          names[p] = props[p].PropertyInfo.Name;
+          names[p] = props[p].Name;
         return new SchemaTypeInfo() { Type = t, Name = def.TypeName, IsCollection = t != typeof(string) && typeof(IEnumerable).IsAssignableFrom(t), PropertyNames = names };
       });
     }

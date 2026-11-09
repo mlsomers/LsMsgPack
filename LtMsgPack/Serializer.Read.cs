@@ -190,7 +190,9 @@ namespace LtMsgPack
             return entries;
           break;
         case TypeKind.Complex:
-          if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.ContainsGenericParameters)
+          if (type == typeof(object)) // an object with a type id is read by the plan of its type (ObjectReader.Derived), anything else as LsMsgPack does (Slow)
+            return new ObjectReader<object>(this);
+          if (type.IsValueType ? StructPlans(type) : !type.ContainsGenericParameters)
             return (ValueReader)Instantiate(type, typeof(ObjectReader<>), type, this);
           break;
       }
@@ -229,6 +231,8 @@ namespace LtMsgPack
     /// <returns>null when the type is not an object with properties that can be created</returns>
     internal ReadPlan GetReadPlan(Type type)
     {
+      if (type == typeof(object)) // a map or array without a type id stays plain (Core: ValueConverter.ConvertMap keeps the raw map), never an instance of object
+        return null;
       if (_readPlans.TryGetValue(type, out ReadPlan plan))
         return plan;
 

@@ -84,7 +84,7 @@ namespace LsMsgPack.TypeResolving.Types
         if (def.IsCollection || names.Count != props.Length)
           return false;
         for (int t = 0; t < props.Length; t++)
-          if (!string.Equals(names[t], props[t].PropertyInfo.Name, StringComparison.Ordinal))
+          if (!string.Equals(names[t], props[t].Name, StringComparison.Ordinal))
             return false;
       }
 
@@ -233,9 +233,9 @@ namespace LsMsgPack.TypeResolving.Types
     /// <para>Once per root type and schema. A class that would get two different entries gets none (it is remembered for the report, see <see cref="SkipIfNoEntry"/>).</para>
     /// </summary>
     /// <param name="ignoreCase"><see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: a property of the reader without the exact name of one of the writer's follows the one whose name equals its name ignoring case</param>
-    /// <param name="nonPublic">The non-public properties the settings serialize (<see cref="FullPropertyInfo.NonPublicOf"/>): followed too</param>
+    /// <param name="selection">The non-public properties and the fields the settings serialize (<see cref="FullPropertyInfo.SelectionOf"/>): followed too</param>
     /// <exception cref="SchemaGrowthException">When a frozen schema would get an entry (a copy remembers it)</exception>
-    internal void BindReaderTypes(Type root, bool ignoreCase, NonPublicProperties nonPublic)
+    internal void BindReaderTypes(Type root, bool ignoreCase, MemberSelection selection)
     {
       if (_lastBoundRoot == root)
         return;
@@ -245,7 +245,7 @@ namespace LsMsgPack.TypeResolving.Types
         return;
       }
 
-      Dictionary<Type, ComplexTypeDef> aliases = ReaderAliases(root, ignoreCase, nonPublic, out Dictionary<Type, Type[]> ambiguous);
+      Dictionary<Type, ComplexTypeDef> aliases = ReaderAliases(root, ignoreCase, selection, out Dictionary<Type, Type[]> ambiguous);
       bool newAmbiguous = false;
       foreach (Type read in ambiguous.Keys)
         newAmbiguous |= _ambiguous is null || !_ambiguous.ContainsKey(read);
@@ -271,7 +271,7 @@ namespace LsMsgPack.TypeResolving.Types
 
     /// <param name="ambiguous">The reader classes found for more than one writer class, with those writer classes</param>
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
-    private Dictionary<Type, ComplexTypeDef> ReaderAliases(Type root, bool ignoreCase, NonPublicProperties nonPublic, out Dictionary<Type, Type[]> ambiguous)
+    private Dictionary<Type, ComplexTypeDef> ReaderAliases(Type root, bool ignoreCase, MemberSelection selection, out Dictionary<Type, Type[]> ambiguous)
     {
       Dictionary<Type, ComplexTypeDef> aliases = new Dictionary<Type, ComplexTypeDef>();
       ambiguous = new Dictionary<Type, Type[]>();
@@ -308,14 +308,13 @@ namespace LsMsgPack.TypeResolving.Types
         }
         aliases[read] = def;
 
-        PropertyInfo[] readProps = PropertiesOf(read, nonPublic);
+        MemberInfo[] readProps = FullPropertyInfo.GetMembers(read, selection);
         for (int t = 0; t < readProps.Length; t++)
         {
-          PropertyInfo readProp = readProps[t];
-          if (readProp.GetIndexParameters().Length > 0)
-            continue;
-          Type readValue = ObjectTypeOf(readProp.PropertyType, 0);
-          ComplexTypeDef next = readValue is null ? null : HeldBy(ValueDef(def, readProp.Name, ignoreCase, nonPublic), readProp.PropertyType, readValue);
+          MemberInfo readProp = readProps[t];
+          Type readType = FullPropertyInfo.TypeOf(readProp);
+          Type readValue = ObjectTypeOf(readType, 0);
+          ComplexTypeDef next = readValue is null ? null : HeldBy(ValueDef(def, readProp.Name, ignoreCase, selection), readType, readValue);
           if (next != null)
             pairs.Enqueue(new KeyValuePair<Type, ComplexTypeDef>(readValue, next));
         }
@@ -363,12 +362,12 @@ namespace LsMsgPack.TypeResolving.Types
     /// The entry of the objects the property <paramref name="name"/> of the writer's class of <paramref name="def"/> holds: by the declared type of the writer's property (its class was found),
     /// or by the type a schema of version 2 describes. Null when there is none.
     /// </summary>
-    private ComplexTypeDef ValueDef(ComplexTypeDef def, string name, bool ignoreCase, NonPublicProperties nonPublic)
+    private ComplexTypeDef ValueDef(ComplexTypeDef def, string name, bool ignoreCase, MemberSelection selection)
     {
       if (def.Type != null)
       {
-        PropertyInfo writtenProp = NonIndexedProperty(def.Type, name, ignoreCase, nonPublic);
-        Type writtenValue = writtenProp is null ? null : ObjectTypeOf(writtenProp.PropertyType, 0);
+        MemberInfo writtenProp = MemberNamed(def.Type, name, ignoreCase, selection);
+        Type writtenValue = writtenProp is null ? null : ObjectTypeOf(FullPropertyInfo.TypeOf(writtenProp), 0);
         return writtenValue != null && ByType.TryGetValue(writtenValue, out ComplexTypeDef next) ? next : null;
       }
       if (def.ValueEntries is null)
@@ -397,34 +396,21 @@ namespace LsMsgPack.TypeResolving.Types
       return position;
     }
 
-    /// <summary>
-    /// The public instance properties of the type, and the non-public ones the settings serialize (after them).
-    /// </summary>
-    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
-    private static PropertyInfo[] PropertiesOf(Type type, NonPublicProperties nonPublic)
-    {
-      PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
-      if (nonPublic == NonPublicProperties.None)
-        return props;
-      List<PropertyInfo> all = new List<PropertyInfo>(props);
-      all.AddRange(FullPropertyInfo.NonPublicCandidates(type, nonPublic));
-      return all.ToArray();
-    }
-
     private bool HasOwnEntry(Type type)
     {
       return ByType.ContainsKey(type) || (_unresolved > 0 && (FindUnresolved(TypeResolver.GetTypeName(type, true)) ?? FindUnresolved(TypeResolver.GetTypeName(type, false))) != null);
     }
 
-    private static PropertyInfo NonIndexedProperty(Type type, string name, bool ignoreCase, NonPublicProperties nonPublic)
+    /// <summary>
+    /// The candidate (FullPropertyInfo.GetMembers: properties, then fields) with the name, or with <paramref name="ignoreCase"/> the only one whose name equals it ignoring case.
+    /// </summary>
+    private static MemberInfo MemberNamed(Type type, string name, bool ignoreCase, MemberSelection selection)
     {
-      PropertyInfo[] props = PropertiesOf(type, nonPublic);
-      PropertyInfo found = null;
+      MemberInfo[] props = FullPropertyInfo.GetMembers(type, selection);
+      MemberInfo found = null;
       int matches = 0;
       for (int t = 0; t < props.Length; t++)
       {
-        if (props[t].GetIndexParameters().Length > 0)
-          continue;
         if (string.Equals(props[t].Name, name, StringComparison.Ordinal))
           return props[t];
         if (ignoreCase && string.Equals(props[t].Name, name, StringComparison.OrdinalIgnoreCase))
@@ -556,15 +542,15 @@ namespace LsMsgPack.TypeResolving.Types
     object IMsgPackPropertyIdResolver.GetId(FullPropertyInfo assignedTo, MsgPackOptions settings)
     {
       ComplexTypeDef def;
-      if (!TryGetDef(assignedTo.PropertyInfo.ReflectedType, out def))
+      if (!TryGetDef(assignedTo.Member.ReflectedType, out def))
       {
         if (assignedTo.AssignedToType is null)
           return null;
 
-        def = GetComplex(assignedTo.PropertyInfo.ReflectedType, settings); // does not resolve property ids, so no recursion
+        def = GetComplex(assignedTo.Member.ReflectedType, settings); // does not resolve property ids, so no recursion
       }
 
-      object found = IdIn(def, assignedTo.PropertyInfo.Name);
+      object found = IdIn(def, assignedTo.Name);
       if (found is null && settings._propertyNameCaseInsensitive && IdIgnoringCase(def, assignedTo, settings, out int id))
         return BoxedId(id);
       return found;
@@ -577,11 +563,11 @@ namespace LsMsgPack.TypeResolving.Types
     internal object IdOfSchemaName(FullPropertyInfo assignedTo, string name, MsgPackOptions settings)
     {
       ComplexTypeDef def;
-      if (!TryGetDef(assignedTo.PropertyInfo.ReflectedType, out def))
+      if (!TryGetDef(assignedTo.Member.ReflectedType, out def))
       {
         if (assignedTo.AssignedToType is null)
           return null;
-        def = GetComplex(assignedTo.PropertyInfo.ReflectedType, settings);
+        def = GetComplex(assignedTo.Member.ReflectedType, settings);
       }
       return IdIn(def, name);
     }
@@ -605,17 +591,17 @@ namespace LsMsgPack.TypeResolving.Types
     /// </summary>
     private static bool IdIgnoringCase(ComplexTypeDef def, FullPropertyInfo assignedTo, MsgPackOptions settings, out int id)
     {
-      Type reader = assignedTo.PropertyInfo.ReflectedType;
+      Type reader = assignedTo.Member.ReflectedType;
       ComplexTypeDef.CaseInsensitiveIds known = def.IgnoringCase;
       if (known is null || known.Reader != reader)
       {
         FullPropertyInfo[] props = FullPropertyInfo.GetStaticallyIncludedProps(reader, settings);
         string[] names = new string[props.Length];
         for (int t = 0; t < props.Length; t++)
-          names[t] = props[t].PropertyInfo.Name; // GetId is only asked for the properties without a name of another resolver
+          names[t] = props[t].Name; // GetId is only asked for the properties without a name of another resolver
         def.IgnoringCase = known = new ComplexTypeDef.CaseInsensitiveIds(reader, def.IdsIgnoringCase(names));
       }
-      return known.Ids.TryGetValue(assignedTo.PropertyInfo.Name, out id);
+      return known.Ids.TryGetValue(assignedTo.Name, out id);
     }
 
     private void ResolveDeserializedTypes(MsgPackOptions settings)
@@ -816,7 +802,7 @@ namespace LsMsgPack.TypeResolving.Types
         {
           int other = Props.IndexOf(name);
           if (other >= 0)
-            throw new MsgPackException($"The properties {Type.Name}.{props[other].PropertyInfo.Name} and {Type.Name}.{props[t].PropertyInfo.Name} have the same id \"{name}\", the keys of a map must be unique.");
+            throw new MsgPackException($"The {props[other].Kind} {Type.Name}.{props[other].Name} and the {props[t].Kind} {Type.Name}.{props[t].Name} have the same id \"{name}\", the keys of a map must be unique.");
         }
         Props.Add(name);
       }

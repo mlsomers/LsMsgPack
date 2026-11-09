@@ -40,15 +40,17 @@ namespace LsMsgPack.Generated
     }
 
     /// <summary>
-    /// The generated accessors of the property, when they were generated for this property (the same declaring type, name and property type: a model in another assembly may have changed since).
+    /// The generated accessors of the property or field, when they were generated for this member (the same declaring type, name and type: a model in another assembly may have changed since).
+    /// A type cannot declare a property and a field of the same name, so the description does not say which it is (contract version 4 describes fields too, with the same factories).
     /// </summary>
-    internal GeneratedProperty FindProperty(PropertyInfo property)
+    internal GeneratedProperty FindMember(MemberInfo member)
     {
+      Type memberType = Meta.FullPropertyInfo.TypeOf(member);
       GeneratedProperty[] properties = Properties;
       for (int t = 0; t < properties.Length; t++)
       {
         GeneratedProperty generated = properties[t];
-        if (generated.Name == property.Name && generated.PropertyType == property.PropertyType && generated.DeclaringType == property.DeclaringType)
+        if (generated.Name == member.Name && generated.PropertyType == memberType && generated.DeclaringType == member.DeclaringType)
           return generated;
       }
       return null;
@@ -56,7 +58,7 @@ namespace LsMsgPack.Generated
   }
 
   /// <summary>
-  /// The generated accessors of one property.
+  /// The generated accessors of one property (or field).
   /// </summary>
   [EditorBrowsable(EditorBrowsableState.Never)]
   public abstract class GeneratedProperty
@@ -81,9 +83,20 @@ namespace LsMsgPack.Generated
     /// </summary>
     internal abstract Func<object, object> BoxedGetter { get; }
 
-    /// <param name="reflection">Sets values that are not of the property type (conversions of reflection), the property</param>
+    /// <param name="reflection">Sets values that are not of the member's type (conversions of reflection), the property or field</param>
     /// <returns>null without a generated setter</returns>
-    internal abstract Action<object, object> BoxedSetter(PropertyInfo reflection);
+    internal abstract Action<object, object> BoxedSetter(MemberInfo reflection);
+
+    /// <summary>
+    /// Sets a value by reflection, which also converts values of other types (e.g. null to the default of a value type, primitive widening).
+    /// </summary>
+    internal static void SetByReflection(MemberInfo member, object instance, object value)
+    {
+      if (member is FieldInfo field)
+        field.SetValue(instance, value);
+      else
+        ((PropertyInfo)member).SetValue(instance, value, null);
+    }
   }
 
   /// <summary>
@@ -127,7 +140,7 @@ namespace LsMsgPack.Generated
       }
     }
 
-    internal override Action<object, object> BoxedSetter(PropertyInfo reflection)
+    internal override Action<object, object> BoxedSetter(MemberInfo reflection)
     {
       Action<TTarget, TValue> set = Set;
       if (set is null)
@@ -140,7 +153,7 @@ namespace LsMsgPack.Generated
         else if (value is null && (object)default(TValue) is null) // reference types and Nullable<T>
           set((TTarget)instance, default(TValue));
         else
-          reflection.SetValue(instance, value, null); // reflection also converts other values (e.g. null to the default of a value type, primitive widening)
+          SetByReflection(reflection, instance, value);
       };
     }
   }
@@ -198,7 +211,7 @@ namespace LsMsgPack.Generated
       }
     }
 
-    internal override Action<object, object> BoxedSetter(PropertyInfo reflection)
+    internal override Action<object, object> BoxedSetter(MemberInfo reflection)
     {
       StructSetter<TTarget, TValue> set = Set;
       if (set is null)
@@ -211,7 +224,7 @@ namespace LsMsgPack.Generated
         else if (value is null && (object)default(TValue) is null) // reference types and Nullable<T>
           set(ref Unsafe.Unbox<TTarget>(instance), default(TValue));
         else
-          reflection.SetValue(instance, value, null); // reflection also converts other values (e.g. null to the default of a value type, primitive widening)
+          SetByReflection(reflection, instance, value);
       };
     }
   }

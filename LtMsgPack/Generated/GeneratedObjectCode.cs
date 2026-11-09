@@ -87,7 +87,30 @@ namespace LtMsgPack.Generated
     /// <summary>
     /// <see cref="GeneratedObjectCode{T}.ReadMap"/> (version 3): the loop over the values of a map, instead of a call to <see cref="GeneratedObjectCode{T}.ReadValue"/> per value.
     /// </summary>
-    ReadMap = 64
+    ReadMap = 64,
+
+    /// <summary>
+    /// <see cref="GeneratedObjectCode{T}.WriteUnrolledMap"/> (version 4): the map layout written in sequence, when the runtime's properties are <see cref="GeneratedObjectCode.UnrolledIds"/>.
+    /// </summary>
+    WriteUnrolledMap = 128,
+
+    /// <summary>
+    /// The writers write Guids and decimals in the format of the plan (<see cref="GeneratedWritePlan.GuidString"/>, <see cref="GeneratedWritePlan.DecimalString"/>; version 4). Without it the runtime writes
+    /// the members of a serializer with <c>GuidFormat.String</c> or <c>DecimalFormat.String</c>.
+    /// </summary>
+    WriteFormats = 256,
+
+    /// <summary>
+    /// <see cref="GeneratedObjectCode{T}.WriteUnrolledTrimmed"/> (version 4): the array layout with TrimTrailingNulls in sequence, when the runtime's properties are <see cref="GeneratedObjectCode.UnrolledIds"/>.
+    /// </summary>
+    WriteUnrolledTrimmed = 512,
+
+    /// <summary>
+    /// The readers read Guids and decimals as strings themselves when the serializer reads them as such (<see cref="GeneratedReadPlan.GuidString"/>, <see cref="GeneratedReadPlan.DecimalString"/>;
+    /// <see cref="GeneratedIO.TryReadGuid(MsgPackReader, GeneratedReadPlan, out Guid)"/>, <see cref="GeneratedIO.TryReadDecimal(MsgPackReader, GeneratedReadPlan, out decimal)"/>; version 4).
+    /// Without it the runtime reads the members of a serializer with <c>GuidFormat.String</c> or <c>DecimalFormat.String</c>.
+    /// </summary>
+    ReadFormats = 1024
   }
 
   /// <summary>
@@ -111,6 +134,10 @@ namespace LtMsgPack.Generated
       Capabilities = capabilities;
     }
 
+    /// <summary>
+    /// <see cref="GeneratedObjectCode{T}.Write"/>, or for a map (<paramref name="keys"/> given) <see cref="GeneratedObjectCode{T}.WriteUnrolledMap"/> when <see cref="GeneratedWritePlan.UnrolledMap"/>.
+    /// Decided here, not in ObjectPlan.Write, whose size decides whether it is inlined into the loops of collections (a dictionary of objects with compiled writers 7% slower).
+    /// </summary>
     internal abstract int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end);
 
     internal abstract void WriteUnrolledBoxed(WriteContext c, object value, FullPropertyInfo[] infos, GeneratedWritePlan p);
@@ -154,6 +181,28 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
+    /// The map entries in sequence (<see cref="Write"/> with keys, without its loop and switch over the ids), when the runtime's properties are <see cref="GeneratedObjectCode.UnrolledIds"/>
+    /// (<see cref="GeneratedWritePlan.UnrolledMap"/>): a value the filters leave out is not written.
+    /// </summary>
+    /// <param name="keys">The encoded property ids per position</param>
+    /// <returns>The number of entries</returns>
+    public virtual int WriteUnrolledMap(WriteContext c, T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p)
+    {
+      throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// The array layout with <see cref="GeneratedWritePlan.Trim"/> in sequence (<see cref="Write"/> without keys, without its loop and switch over the ids), when the runtime's properties are
+    /// <see cref="GeneratedObjectCode.UnrolledIds"/> (<see cref="GeneratedWritePlan.UnrolledTrimmed"/>): nil for a value the filters leave out.
+    /// </summary>
+    /// <param name="end">The position after the last value that is not nil (the position at the call when there is none)</param>
+    /// <returns>The number of values up to the last one that is not nil</returns>
+    public virtual int WriteUnrolledTrimmed(WriteContext c, T value, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
+    {
+      throw new NotSupportedException();
+    }
+
+    /// <summary>
     /// The values of an array (the header is read, the instance created): by position, a nil sets the value the writer leaves out (<see cref="Reading.PropReader.ReadNil"/>),
     /// positions without a property are skipped (as ObjectReader.ReadPositional).
     /// </summary>
@@ -183,6 +232,18 @@ namespace LtMsgPack.Generated
 
     internal sealed override int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
+      if (keys != null)
+      {
+        if (p.UnrolledMap)
+        {
+          end = 0; // only for trimmed arrays
+          return WriteUnrolledMap(c, (T)value, keys, infos, p);
+        }
+      }
+      else if (p.UnrolledTrimmed) // ObjectPlan.WriteTrimmed (arrays without trimming that are not unrolled call Write)
+        return WriteUnrolledTrimmed(c, (T)value, infos, p, out end);
+      if (p.UntilCompiled > 0)
+        p.CountLoop();
       return Write(c, (T)value, keys, infos, p, out end);
     }
 
@@ -236,6 +297,18 @@ namespace LtMsgPack.Generated
       throw new NotSupportedException();
     }
 
+    /// <inheritdoc cref="GeneratedObjectCode{T}.WriteUnrolledMap"/>
+    public virtual int WriteUnrolledMap(WriteContext c, ref T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p)
+    {
+      throw new NotSupportedException();
+    }
+
+    /// <inheritdoc cref="GeneratedObjectCode{T}.WriteUnrolledTrimmed"/>
+    public virtual int WriteUnrolledTrimmed(WriteContext c, ref T value, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
+    {
+      throw new NotSupportedException();
+    }
+
     /// <inheritdoc cref="GeneratedObjectCode{T}.ReadPositional"/>
     public virtual void ReadPositional(ReadContext c, ref T target, PropReader[] props, int items, GeneratedReadPlan p)
     {
@@ -265,6 +338,18 @@ namespace LtMsgPack.Generated
 
     internal sealed override int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
+      if (keys != null)
+      {
+        if (p.UnrolledMap)
+        {
+          end = 0; // only for trimmed arrays
+          return WriteUnrolledMap(c, ref Unboxer.Unbox(value), keys, infos, p);
+        }
+      }
+      else if (p.UnrolledTrimmed)
+        return WriteUnrolledTrimmed(c, ref Unboxer.Unbox(value), infos, p, out end);
+      if (p.UntilCompiled > 0)
+        p.CountLoop();
       return Write(c, ref Unboxer.Unbox(value), keys, infos, p, out end);
     }
 
@@ -336,12 +421,44 @@ namespace LtMsgPack.Generated
     /// </summary>
     public readonly byte DecimalCode;
 
+    /// <summary>
+    /// Guids are written as strings of 36 characters (<see cref="GuidFormat.String"/>), otherwise as bin 16. Only for code with <see cref="GeneratedCapabilities.WriteFormats"/>.
+    /// </summary>
+    public readonly bool GuidString;
+
+    /// <summary>
+    /// Decimals are written as strings (<see cref="DecimalFormat.String"/>), otherwise with the built-in extension (<see cref="DecimalCode"/>). Only for code with <see cref="GeneratedCapabilities.WriteFormats"/>.
+    /// </summary>
+    public readonly bool DecimalString;
+
     internal readonly bool Unrolled;
+
+    /// <summary>
+    /// The array layout with trimming is written by <see cref="GeneratedObjectCode{T}.WriteUnrolledTrimmed"/>: the ids are the unrolled ones.
+    /// </summary>
+    internal readonly bool UnrolledTrimmed;
+
+    /// <summary>
+    /// Maps (also of the array layout: a collection with SerializeProperties) are written by <see cref="GeneratedObjectCode{T}.WriteUnrolledMap"/>: the ids are the unrolled ones (trimming does not apply to maps).
+    /// </summary>
+    internal readonly bool UnrolledMap;
 
     /// <summary>
     /// The code this plan is for (one field, so ObjectPlan can switch to a compiled writer with one store).
     /// </summary>
     internal readonly GeneratedObjectCode Code;
+
+    /// <summary>
+    /// The objects still to write by <see cref="GeneratedObjectCode{T}.Write"/>'s loop (the generated code of an order or properties other than it predicted, <see cref="Unrolled"/> and the others false)
+    /// before the plan compiles its own writer (<see cref="Serializer.CompileWritersAfter"/>, <see cref="CountLoop"/>); 0 when it does not (any more), and for compiled code.
+    /// Not exact with several threads, which is all right.
+    /// </summary>
+    internal int UntilCompiled;
+
+    /// <summary>
+    /// The plan that compiles the writer after <see cref="UntilCompiled"/>.
+    /// </summary>
+    internal ObjectPlan LoopPlan;
     private readonly PropWriter[] _props;
     private readonly Serializer _serializer;
 
@@ -350,7 +467,8 @@ namespace LtMsgPack.Generated
     /// </summary>
     private readonly object[] _handlers;
 
-    internal GeneratedWritePlan(Serializer serializer, GeneratedObjectCode code, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool unrolled, PropWriter[] props)
+    internal GeneratedWritePlan(Serializer serializer, GeneratedObjectCode code, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool guidString, bool decimalString,
+      bool unrolled, bool unrolledMap, bool unrolledTrimmed, PropWriter[] props)
     {
       _serializer = serializer;
       Code = code;
@@ -360,8 +478,24 @@ namespace LtMsgPack.Generated
       UnspecifiedIsUtc = unspecifiedIsUtc;
       Trim = trim;
       DecimalCode = decimalCode;
+      GuidString = guidString;
+      DecimalString = decimalString;
       Unrolled = unrolled;
+      UnrolledMap = unrolledMap;
+      UnrolledTrimmed = unrolledTrimmed;
       _props = props;
+    }
+
+    /// <summary>
+    /// Counts an object written by the generated code's loop over the ids, and has the plan compile a writer for its properties after <see cref="Serializer.CompileWritersAfter"/> of them
+    /// (on a JIT the compiled writer is straight-line for any order: a class of 120 properties in alphabetical order 1643 -> 1011 ns).
+    /// Here, not in ObjectPlan.Write: counting there made it too large to be inlined into the loops of collections.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal void CountLoop()
+    {
+      if (--UntilCompiled == 0)
+        LoopPlan.CompileInBackground(_serializer);
     }
 
     /// <summary>
@@ -374,7 +508,7 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
-    /// A value the generated code read itself but does not write itself (objects, collections...): what the runtime's <see cref="PropWriter{TTarget, TValue}"/> does after its getter.
+    /// A value the generated code read itself but does not write itself (objects, collections...): what the runtime's <see cref="PropWriter{TTarget, TValue, TFilter}"/> does after its getter.
     /// </summary>
     /// <typeparam name="T">The type of the property at <paramref name="position"/></typeparam>
     /// <returns>false when the filters left the value out (nothing was written)</returns>
@@ -431,9 +565,21 @@ namespace LtMsgPack.Generated
     /// </summary>
     public readonly byte DecimalCode;
 
-    internal GeneratedReadPlan(byte decimalCode)
+    /// <summary>
+    /// Guids are read as strings (<see cref="GuidFormat.String"/>; bin 16 too). Only for code with <see cref="GeneratedCapabilities.ReadFormats"/>.
+    /// </summary>
+    public readonly bool GuidString;
+
+    /// <summary>
+    /// Decimals are read as strings (<see cref="DecimalFormat.String"/>), otherwise from the built-in extension (<see cref="DecimalCode"/>). Only for code with <see cref="GeneratedCapabilities.ReadFormats"/>.
+    /// </summary>
+    public readonly bool DecimalString;
+
+    internal GeneratedReadPlan(byte decimalCode, bool guidString, bool decimalString)
     {
       DecimalCode = decimalCode;
+      GuidString = guidString;
+      DecimalString = decimalString;
     }
   }
 
@@ -525,6 +671,22 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
+    /// A decimal as a string (<see cref="GeneratedWritePlan.DecimalString"/>, <see cref="GeneratedCapabilities.WriteFormats"/>).
+    /// </summary>
+    public static void DecimalString(MsgPackWriter w, decimal value)
+    {
+      w.DecimalString(value);
+    }
+
+    /// <summary>
+    /// A Guid as a string of 36 characters (<see cref="GeneratedWritePlan.GuidString"/>, <see cref="GeneratedCapabilities.WriteFormats"/>).
+    /// </summary>
+    public static void GuidString(MsgPackWriter w, Guid value)
+    {
+      w.GuidString(value);
+    }
+
+    /// <summary>
     /// The built-in decimal extension (DecimalReader's fast path).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -539,6 +701,27 @@ namespace LtMsgPack.Generated
       }
       value = 0m;
       return false;
+    }
+
+    /// <summary>
+    /// A Guid as the serializer's reader of Guids reads it directly: bin 16, with <see cref="GeneratedReadPlan.GuidString"/> also a string of the format the writers write
+    /// (GuidStringReader; any other text is left to it). <see cref="GeneratedCapabilities.ReadFormats"/>.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryReadGuid(MsgPackReader r, GeneratedReadPlan p, out Guid value)
+    {
+      return r.TryReadGuid(out value) || (p.GuidString && r.TryReadGuidString(out value));
+    }
+
+    /// <summary>
+    /// A decimal as the serializer's reader of decimals reads it directly: the built-in extension, with <see cref="GeneratedReadPlan.DecimalString"/> also a string DecimalText parses
+    /// (DecimalStringReader, which reads the built-in extension in place too; any other text is left to it). <see cref="GeneratedCapabilities.ReadFormats"/>.
+    /// The extension first: the default format has no test per value (a value is never both).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryReadDecimal(MsgPackReader r, GeneratedReadPlan p, out decimal value)
+    {
+      return TryReadDecimal(r, p.DecimalCode, out value) || (p.DecimalString && r.TryReadDecimalString(out value));
     }
 
     /// <summary>

@@ -323,6 +323,25 @@ test('request bodies with models: every kind as the server reads it', { skip }, 
   assert.deepStrictEqual(echoed.Home, { Street: null, HouseNumber: null, PostalCode: null, City: 'Utrecht', Region: null, CountryCode: null });
 });
 
+test('fields with models: a class per System.Numerics vector, read and written by their fields', { skip }, async () => {
+  const { models, schemas, Motion, Vector2, Vector3, Vector4 } = generated;
+  const client = new LsMsgPackClient({ baseUrl: server.url, models, schemas });
+  const first = await client.send('/motion');
+  assert.strictEqual(first.reference, true, 'the server wrote the schema the generator made');
+  const motion = first.value;
+  assert.ok(motion instanceof Motion);
+  assert.ok(motion.Position instanceof Vector3 && motion.Color instanceof Vector4 && motion.Scale instanceof Vector2 && motion.Path[2] instanceof Vector3);
+  assertLikeJson(motion, await json('/dotnet/motion'));
+  assert.deepStrictEqual({ ...new Vector3() }, { X: 0, Y: 0, Z: 0 });
+  assertLikeJson(await client.post('/echo/motion', motion), await json('/expected/motion'));
+  const made = new Motion();
+  made.Frame = 7;
+  made.Position = Object.assign(new Vector3(), { X: 1, Y: 2, Z: 3 });
+  const echoed = await client.post('/echo/motion', made);
+  assert.strictEqual(echoed.Frame, 7);
+  assert.deepStrictEqual(echoed.Position, { X: 1, Y: 2, Z: 3 });
+});
+
 test('the generated models by default: camelCase field names (--property-names camelCase)', { skip }, async () => {
   const camel = await generateModels();
   assert.strictEqual(camel.models.propertyNames, 'camelCase');

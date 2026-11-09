@@ -14,7 +14,7 @@ Project-specific notes live in a `CLAUDE.md` next to each project (loaded when y
 | `LtMsgPack.Data/` | `LtMsgPack.Data`: add-on for ADO.NET data readers (result sets and table dumps as streams, `MsgPackDataReader`, the row mapper); tests in `LtMsgPack.DataTests` |
 | `LsMsgPackFormatters/`, `LsMsgPackWebApiFormatters/`, `LsMsgPackMvc/` | ASP.NET Core, Web API 2 + HttpClient, MVC 5 formatters (on LtMsgPack) |
 | `LtMsgPack.Generator/` | source generator (contexts, generated readers/writers) |
-| `LsMsgPack.Analyzers/` (+ `.CodeFixes`) | analyzers LSMP001-009, packed into LsMsgPack.Core |
+| `LsMsgPack.Analyzers/` (+ `.CodeFixes`) | analyzers LSMP001-010, packed into LsMsgPack.Core |
 | `ObjectDebugger/` | rebuilds object trees from payloads without the types; validation; search |
 | `MsgPackExplorer/`, `LsMsgPackFiddlerInspector/`, `LsMsgPackVisualStudioPlugin/` | Windows-only tools (old-style .NET Framework projects) |
 | `LsMsgPackVsCode/` | VS Code extension "MsgPack Explorer" + `Server/` (LsMsgPackInspector) |
@@ -40,6 +40,7 @@ cd clients/typescript && npm install && npm test        # live tests need dotnet
 bash LtMsgPackAotSmokeTest/run.sh                       # NativeAOT with the generated code (clang, or gcc when clang is missing)
 ```
 
+- `-c DEBUG` only for the solution filter (the solution maps it to `Debug`): per project write `-c Debug`, since `-c DEBUG` builds into separate `bin/DEBUG` folders (Linux paths are case-sensitive) and `--no-build` then runs whatever old build is there.
 - The test projects, the test server and the AOT smoke test target `net10.0`, so building them takes the .NET 10 SDK. The tools (`lsmsgpack-mcp`, `lsmsgpack-ts`, `LsMsgPackInspector`) stay `net8.0`: `RollForward=Major`, and `LatestMajor` where they load the user's assemblies (all of `lsmsgpack-ts`, the read-as worker of `lsmsgpack-mcp`).
 - `LsMsgPack.sln` also has the Windows-only projects: they reference the library projects but cannot be built on Linux, mention it when a change could affect them (target frameworks, public API). They do not get transitive project references (they reference both `LsMsgPack.csproj` and `LsMsgPack.Core.csproj`), and the `App.config` of MsgPackExplorer and LsMsgPackFiddlerInspector has hand-written binding redirects for System.Memory, System.Buffers, System.Numerics.Vectors and System.Runtime.CompilerServices.Unsafe: update them to the packages' assembly versions when those change (stale ones give a FileLoadException). LsMsgPack and Core only load System.Memory where they need it (the schema cache; `FrameworkTypeInfo`'s `Memory<byte>` methods are `NoInlining` and only called for those types), so hosts without the redirects keep working.
 - Configurations: `Debug`, `Release`, `DebugKeepTrack`, `ReleaseKeepTrack`. KeepTrack defines `KEEPTRACK`: items remember offsets and lengths, errors become `MpError` items instead of exceptions (`ContinueProcessingOnBreakingError`), `PreservePackages` keeps the item trees. The explorer tools use it. `#if KEEPTRACK` code must keep compiling: build a KeepTrack configuration after touching `MsgPackItem` or `Types/`. The `.sln` builds the MCP projects only in the KeepTrack configurations.

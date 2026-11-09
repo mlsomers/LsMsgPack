@@ -60,12 +60,14 @@ namespace LtMsgPack.GeneratorTests
 
     /// <param name="netStandard20">Compile against .NET Standard 2.0 (and LtMsgPack's .NET Standard 2.0 build) instead of .NET 8</param>
     /// <param name="msbuild">MSBuild properties the generator sees (build_property.Name)</param>
-    public static Result Run(string source, LanguageVersion language = LanguageVersion.Latest, bool netStandard20 = false, IDictionary<string, string> msbuild = null, string assemblyName = "TestModels", OptimizationLevel optimization = OptimizationLevel.Debug)
+    /// <param name="references">More references (.NET 8 only), e.g. models compiled from another language</param>
+    public static Result Run(string source, LanguageVersion language = LanguageVersion.Latest, bool netStandard20 = false, IDictionary<string, string> msbuild = null, string assemblyName = "TestModels", OptimizationLevel optimization = OptimizationLevel.Debug,
+      IEnumerable<MetadataReference> references = null)
     {
       CSharpParseOptions parse = new CSharpParseOptions(language);
       CSharpCompilation compilation = CSharpCompilation.Create(assemblyName,
         new[] { CSharpSyntaxTree.ParseText(source, parse, "Model.cs") },
-        netStandard20 ? NetStandard20References() : Net8References(),
+        netStandard20 ? NetStandard20References() : Net8References().Concat(references ?? Enumerable.Empty<MetadataReference>()),
         new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: language >= LanguageVersion.CSharp8 ? NullableContextOptions.Enable : NullableContextOptions.Disable, optimizationLevel: optimization));
 
       Diagnostic[] syntaxErrors = compilation.SyntaxTrees[0].GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error).ToArray(); // the contexts only compile with the generated code
@@ -118,7 +120,7 @@ namespace LtMsgPack.GeneratorTests
       }
     }
 
-    private static IEnumerable<MetadataReference> Net8References()
+    internal static IEnumerable<MetadataReference> Net8References()
     {
       string[] platform = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")).Split(Path.PathSeparator);
       List<MetadataReference> references = new List<MetadataReference>();

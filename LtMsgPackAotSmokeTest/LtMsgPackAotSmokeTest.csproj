@@ -17,6 +17,7 @@
     <ProjectReference Include="..\LtMsgPack.Generator\LtMsgPack.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
+  <Import Project="..\LsMsgPackCore\buildTransitive\LsMsgPack.Core.props" />
   <Import Project="..\LtMsgPack\buildTransitive\LtMsgPack.props" />
 
 </Project>

@@ -13,7 +13,7 @@ namespace LsMsgPack.Meta
   /// the values of properties, as System.Text.Json calls it (immutable classes and structs: <c>Money(decimal amount, string currency)</c> with get-only <c>Amount</c> and <c>Currency</c>,
   /// records with positional parameters, a class with only <c>Owner(string name)</c> whose fields are initialized by it).
   /// <para>The constructor (<see cref="WithValues"/>): the one with [JsonConstructor] (System.Text.Json, Json.NET) or [SerializationConstructor] (MessagePack-CSharp), otherwise the only public one when there is no public parameterless constructor.
-  /// A parameter takes the property with its name (ignoring case, the exact name first) and its type. It is used when it takes a property without a public setter (<see cref="Required"/>,
+  /// A parameter takes the property or public field with its name (ignoring case, the exact name first) and its type. It is used when it takes a property without a public setter or a readonly field (<see cref="Required"/>,
   /// FilterNonSettable keeps those), or when every parameter takes a property or has a default value and the type is a class or the constructor is marked (a struct is otherwise created
   /// by its default constructor, as System.Text.Json does). Until October 2026 only the first: a class with only <c>Owner(string name)</c> and a settable <c>Name</c> was created uninitialized.</para>
   /// <para>Not for framework types (refused or written as their plain value, see SerializationRules.ThrowIfUnsupportedFrameworkType), collections and anonymous types (their fields are set, see PropertyAccessor).</para>
@@ -33,7 +33,7 @@ namespace LsMsgPack.Meta
     internal readonly ConstructorInfo WithValues;
 
     /// <summary>
-    /// The constructor takes a property without a public setter: its values can't be set otherwise, so it is called also with <see cref="ObjectCreation.Uninitialized"/>.
+    /// The constructor takes a property without a public setter or a readonly field: its values can't be set otherwise, so it is called also with <see cref="ObjectCreation.Uninitialized"/>.
     /// </summary>
     internal readonly bool Required;
 
@@ -47,7 +47,7 @@ namespace LsMsgPack.Meta
     private readonly Type _type;
 
     /// <summary>
-    /// The parameter of each property name.
+    /// The parameter of each property (or field) name.
     /// </summary>
     private readonly Dictionary<string, int> _parameterOf;
 
@@ -64,15 +64,15 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// Whether a constructor of the type the property was found on sets it (for FilterNonSettable).
+    /// Whether a constructor of the type the property or field was found on sets it (for FilterNonSettable).
     /// </summary>
-    internal static bool Sets(PropertyInfo property)
+    internal static bool Sets(MemberInfo member)
     {
-      Type type = property.ReflectedType;
+      Type type = member.ReflectedType;
       if (type is null)
         return false;
       ObjectConstructor constructor = Of(type);
-      return constructor._parameterOf != null && constructor._parameterOf.ContainsKey(property.Name);
+      return constructor._parameterOf != null && constructor._parameterOf.ContainsKey(member.Name);
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
@@ -88,7 +88,7 @@ namespace LsMsgPack.Meta
         return;
 
       ParameterInfo[] parameters = constructor.GetParameters();
-      PropertyInfo[] props = FullPropertyInfo.GetProperties(type);
+      MemberInfo[] members = FullPropertyInfo.GetMembers(type, FullPropertyInfo.PublicMembers); // whatever the settings serialize: the constructor is per type
       Dictionary<string, int> parameterOf = new Dictionary<string, int>(StringComparer.Ordinal);
       bool setsReadOnly = false;
       bool allTaken = true; // every parameter takes a property or has a default value
@@ -99,14 +99,14 @@ namespace LsMsgPack.Meta
         bool hasDefault = parameter.HasDefaultValue && !(parameter.DefaultValue is DBNull) && !(parameter.DefaultValue is Missing);
         if (hasDefault)
           defaults[t] = parameter.DefaultValue;
-        PropertyInfo prop = Find(props, parameter);
-        if (prop is null || parameterOf.ContainsKey(prop.Name))
+        MemberInfo member = Find(members, parameter);
+        if (member is null || parameterOf.ContainsKey(member.Name))
         {
           allTaken &= hasDefault || parameter.IsOptional;
           continue;
         }
-        parameterOf.Add(prop.Name, t);
-        setsReadOnly |= prop.GetSetMethod() is null;
+        parameterOf.Add(member.Name, t);
+        setsReadOnly |= member is FieldInfo field ? field.IsInitOnly : ((PropertyInfo)member).GetSetMethod() is null;
       }
       // Otherwise created and set as before: a constructor taking anything else (a service, a parameter for no property) would get nulls, a struct has its default constructor
       if (!setsReadOnly && !(allTaken && (marked || !type.IsValueType)))
@@ -231,22 +231,26 @@ namespace LsMsgPack.Meta
       return false;
     }
 
-    /// <returns>The property the parameter sets: of the same type, the same name or (when that is not there) the only one with the name ignoring case. Null when none.</returns>
-    private static PropertyInfo Find(PropertyInfo[] props, ParameterInfo parameter)
+    /// <returns>The property (with a public getter) or public field the parameter sets: of the same type, the same name or (when that is not there) the only one with the name ignoring case. Null when none.</returns>
+    private static MemberInfo Find(MemberInfo[] members, ParameterInfo parameter)
     {
       if (string.IsNullOrEmpty(parameter.Name))
         return null;
-      PropertyInfo found = null;
+      MemberInfo found = null;
       bool ambiguous = false;
-      for (int t = 0; t < props.Length; t++)
+      for (int t = 0; t < members.Length; t++)
       {
-        PropertyInfo prop = props[t];
-        if (prop.PropertyType != parameter.ParameterType || prop.GetGetMethod() is null || !string.Equals(prop.Name, parameter.Name, StringComparison.OrdinalIgnoreCase))
+        MemberInfo member = members[t];
+        PropertyInfo prop = member as PropertyInfo;
+        FieldInfo field = member as FieldInfo;
+        if (prop != null ? prop.PropertyType != parameter.ParameterType || prop.GetGetMethod() is null : field.FieldType != parameter.ParameterType || !field.IsPublic)
           continue;
-        if (string.Equals(prop.Name, parameter.Name, StringComparison.Ordinal))
-          return prop;
+        if (!string.Equals(member.Name, parameter.Name, StringComparison.OrdinalIgnoreCase))
+          continue;
+        if (string.Equals(member.Name, parameter.Name, StringComparison.Ordinal))
+          return member;
         ambiguous = found != null;
-        found = prop;
+        found = member;
       }
       return ambiguous ? null : found;
     }
@@ -285,7 +289,7 @@ namespace LsMsgPack.Meta
 
       internal void Set(FullPropertyInfo prop, object value)
       {
-        if (_constructor._parameterOf.TryGetValue(prop.PropertyInfo.Name, out int index))
+        if (_constructor._parameterOf.TryGetValue(prop.Name, out int index))
         {
           _values[index] = value;
           _set[index] = true;
@@ -307,7 +311,7 @@ namespace LsMsgPack.Meta
           if (!_set[t])
             values[t] = _constructor._defaults[t];
         for (int t = props.Length - 1; t >= 0; t--)
-          if (_constructor._parameterOf.TryGetValue(props[t].PropertyInfo.Name, out int index) && !_set[index])
+          if (_constructor._parameterOf.TryGetValue(props[t].Name, out int index) && !_set[index])
             values[index] = props[t].NilValue(settings);
 
         object result = _constructor.Invoke(values);

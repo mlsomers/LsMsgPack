@@ -14,7 +14,7 @@ namespace LtMsgPack.Generator
     /// <summary>
     /// The version of the generated code (LsMsgPack.Generated.GeneratedContract.Current of the runtime this generator is released with, checked by a test).
     /// </summary>
-    internal const int ContractVersion = 3;
+    internal const int ContractVersion = 4;
 
     private const string Values = "global::LtMsgPack.Generated.GeneratedValues";
 
@@ -127,9 +127,11 @@ namespace LtMsgPack.Generator
         {
           if (type.Kind == TypeModelKind.Factory) // the runtime finds CreateRange, ToFrozenSet... by reflection
             w.Line("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods, typeof(" + type.TypeName + "))]");
-          else if (type.KeepMetadata) // the runtime reads the properties and constructors by reflection: kept when trimming
+          else if (type.KeepMetadata) // the runtime reads the properties, fields and constructors by reflection: kept when trimming
             w.Line("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicProperties"
               + (type.KeepNonPublic ? " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicProperties" : "")
+              + (type.KeepPublicFields ? " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicFields" : "")
+              + (type.KeepNonPublicFields ? " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields" : "")
               + " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof("
               + type.TypeName + "))]");
         }
@@ -242,13 +244,13 @@ namespace LtMsgPack.Generator
         string get, set;
         if (byRef) // the struct by reference (StructGetter, StructSetter): explicitly typed lambdas, C# 7.3 infers no ref parameters
         {
-          get = property.CanGet ? "(ref " + type.TypeName + " o) => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", true) : "null";
-          set = property.CanSet ? "(ref " + type.TypeName + " o, " + property.TypeName + " v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", true) : "null";
+          get = property.CanGet ? "(ref " + type.TypeName + " o) => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", true, property.Field) : "null";
+          set = property.CanSet ? "(ref " + type.TypeName + " o, " + property.TypeName + " v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", true, property.Field) : "null";
         }
         else
         {
-          get = property.CanGet ? "o => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", false) : "null";
-          set = property.CanSet ? "(o, v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", false) : "null";
+          get = property.CanGet ? "o => " + accessors.Get(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeGet, "o", false, property.Field) : "null";
+          set = property.CanSet ? "(o, v) => " + accessors.Set(type.TypeName, property.Name, property.TypeName, property.Access, property.UnsafeSet, "o", "v", false, property.Field) : "null";
         }
         w.Line(Values + (byRef ? ".StructProperty<" : ".Property<") + type.TypeName + ", " + property.TypeName + ">(\"" + property.Name + "\", " + get + ", " + set + ")" + (t < type.Properties.Length - 1 ? "," : ");"));
       }
@@ -271,7 +273,7 @@ namespace LtMsgPack.Generator
     private const string IO = "global::LtMsgPack.IO.";
 
     /// <summary>
-    /// The writer and reader of a class: the per property part of the runtime's ObjectPlan and ObjectReader, for the members of the kinds it writes and reads itself
+    /// The writer and reader of a class: the per property (and field) part of the runtime's ObjectPlan and ObjectReader, for the members of the kinds it writes and reads itself
     /// (the runtime does the others, and the ones its options write otherwise: see GeneratedWritePlan.Ids and PropReader.GeneratedId).
     /// A struct's is the same code on the struct by reference (GeneratedStructCode): <c>ref T o</c>, the runtime's writers and readers through the by reference helpers.
     /// </summary>
@@ -301,8 +303,9 @@ namespace LtMsgPack.Generator
       }
       w.Indent--;
       bool isDefault = byRef && type.IsDefault != null;
-      w.Line("}, new int[] { " + string.Join(", ", unrolled) + " }, " + Generated + "GeneratedCapabilities.Write | " + Generated + "GeneratedCapabilities.WriteUnrolled | "
-        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadMap"
+      w.Line("}, new int[] { " + string.Join(", ", unrolled) + " }, " + Generated + "GeneratedCapabilities.Write | " + Generated + "GeneratedCapabilities.WriteUnrolled | " + Generated + "GeneratedCapabilities.WriteUnrolledMap | "
+        + Generated + "GeneratedCapabilities.WriteUnrolledTrimmed | " + Generated + "GeneratedCapabilities.WriteFormats | "
+        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadMap | " + Generated + "GeneratedCapabilities.ReadFormats"
         + (isDefault ? " | " + Generated + "GeneratedCapabilities.IsDefault" : "") + ")");
       w.Open();
       w.Close();
@@ -312,7 +315,13 @@ namespace LtMsgPack.Generator
         w.Line();
         w.Line("public override bool IsDefault(ref " + type.TypeName + " v)");
         w.Open();
-        w.Line("return " + type.IsDefault + ";");
+        string check = type.IsDefault;
+        for (int a = 0; a < type.DefaultAccessors.Length; a++) // private members of the struct, through UnsafeAccessors
+        {
+          PropertyModel member = type.DefaultAccessors[a];
+          check = check.Replace("\u0001" + a + "\u0001", accessors.Get(type.TypeName, member.Name, member.TypeName, member.Access, true, "v", true, member.Field));
+        }
+        w.Line("return " + check + ";");
         w.Close();
       }
 
@@ -326,6 +335,8 @@ namespace LtMsgPack.Generator
       w.Line("bool trim = p.Trim && keys == null;");
       w.Line("int count = 0;");
       w.Line("int last = 0;");
+      Dictionary<string, string> locals = ValueLocals(w, type, Range(0, type.Members.Length));
+      FormatLocals(w, type, Range(0, type.Members.Length));
       w.Line("end = w.Pos;");
       w.Line("for (int t = 0; t < ids.Length; t++)");
       w.Open();
@@ -348,15 +359,16 @@ namespace LtMsgPack.Generator
         }
         w.Line("case " + m + ":");
         w.Open();
-        w.Line(member.TypeName + " v = " + Get(accessors, member) + ";");
-        w.Line("if (filter && " + Omitted(member, "v") + ")");
+        string v = locals[member.TypeName];
+        w.Line(v + " = " + Get(accessors, member) + ";");
+        w.Line("if (filter && " + Omitted(member, v) + ")");
         w.Open();
         w.Line("written = false;");
         w.Line("break;");
         w.Close();
         w.Line("if (key != null)");
         w.Line("  w.Raw(key);");
-        WriteValue(w, member, "v");
+        WriteValue(w, member, v, locals, null, true);
         w.Line("written = true;");
         w.Line("break;");
         w.Close();
@@ -378,38 +390,12 @@ namespace LtMsgPack.Generator
       w.Line("return trim ? last : count;");
       w.Close();
 
-      // WriteUnrolled: the array layout when the runtime's properties are the unrolled ones
-      w.Line();
-      w.Line("public override void WriteUnrolled(" + Writing + "WriteContext c, " + t + " o, global::LsMsgPack.Meta.FullPropertyInfo[] infos, " + Generated + "GeneratedWritePlan p)");
-      w.Open();
-      w.Line(IO + "MsgPackWriter w = c.W;");
-      w.Line("bool filter = p.FilterDefaults;");
-      for (int position = 0; position < unrolled.Count; position++)
-      {
-        MemberModel member = type.Members[unrolled[position]];
-        if (!member.CanGet)
-        {
-          w.Line("if (!p.Runtime(" + position + ", c, " + o + ", null, infos[" + position + "]))");
-          w.Line("  w.Nil();");
-          continue;
-        }
-        if (member.Kind == "None")
-        {
-          w.Line("if (!p.Value<" + member.TypeName + ">(" + position + ", c, " + Get(accessors, member) + ", null, infos[" + position + "]))");
-          w.Line("  w.Nil();");
-          continue;
-        }
-        w.Open();
-        w.Line(member.TypeName + " v = " + Get(accessors, member) + ";");
-        w.Line("if (filter && " + Omitted(member, "v") + ")");
-        w.Line("  w.Nil();");
-        w.Line("else");
-        w.Open();
-        WriteValue(w, member, "v");
-        w.Close();
-        w.Close();
-      }
-      w.Close();
+      // WriteUnrolled: the array layout when the runtime's properties are the unrolled ones;
+      // WriteUnrolledMap: the map layout in sequence when the runtime's properties are the unrolled ones (Write's loop and switch over the ids made maps 10-20% slower)
+      // WriteUnrolledTrimmed: the array layout with TrimTrailingNulls in sequence (Write's loop checked the bytes of every value for a nil, here the code knows where it writes one)
+      Unrolled(w, type, unrolled, accessors, t, o, UnrolledLayout.Array);
+      Unrolled(w, type, unrolled, accessors, t, o, UnrolledLayout.Map);
+      Unrolled(w, type, unrolled, accessors, t, o, UnrolledLayout.Trimmed);
 
       // ReadPositional: the array layout (ObjectReader.ReadPositional's loop)
       w.Line();
@@ -574,31 +560,276 @@ namespace LtMsgPack.Generator
       }
     }
 
+    private static List<int> Range(int from, int to)
+    {
+      List<int> ids = new List<int>(to - from);
+      for (int m = from; m < to; m++)
+        ids.Add(m);
+      return ids;
+    }
+
+    /// <summary>
+    /// Members per method of the unrolled writers: with tiered PGO the JIT inlined the writer's calls of the first ~22 members of a wide class and then stopped (its inline budget per method),
+    /// so the getters, nullables and the writers of the other members were calls and a class of 120 properties was written 20-30% slower than by the runtime's compiled writers.
+    /// A wider class is written by parts of this many members, each a method of its own. (Not Write's switch: a call per value to parts of it made it slower.)
+    /// </summary>
+    private const int UnrolledPart = 16;
+
+    private enum UnrolledLayout
+    {
+      /// <summary>WriteUnrolled: array items, nil for a value left out</summary>
+      Array,
+
+      /// <summary>WriteUnrolledMap: map entries with their keys, the count returned</summary>
+      Map,
+
+      /// <summary>WriteUnrolledTrimmed: array items as Array, the count up to the last value that is not nil returned, the position after it in <c>end</c></summary>
+      Trimmed
+    }
+
+    /// <summary>
+    /// WriteUnrolled, WriteUnrolledMap or WriteUnrolledTrimmed: the unrolled members in sequence, by parts for a wide class.
+    /// A type with Guids or decimals gets a second copy for the plans that write them as strings (<c>...Formats</c>, chosen once per object): a test of the format per value
+    /// made the invoices (Guids and decimals in the default binary formats) 2% slower.
+    /// </summary>
+    /// <param name="t">The type of the object parameter (<c>ref T</c> for a struct)</param>
+    /// <param name="o">The object argument (<c>ref o</c> for a struct)</param>
+    private static void Unrolled(CodeWriter w, TypeModel type, List<int> unrolled, Accessors accessors, string t, string o, UnrolledLayout layout)
+    {
+      bool formats = false;
+      for (int i = 0; i < unrolled.Count; i++)
+      {
+        MemberModel member = type.Members[unrolled[i]];
+        formats |= member.CanGet && (member.Kind == "Guid" || member.Kind == "Decimal");
+      }
+      string name = layout == UnrolledLayout.Map ? "WriteUnrolledMap" : layout == UnrolledLayout.Trimmed ? "WriteUnrolledTrimmed" : "WriteUnrolled";
+      UnrolledMethod(w, type, unrolled, accessors, t, o, layout, name, false, formats ? name + "Formats" : null);
+      if (formats)
+        UnrolledMethod(w, type, unrolled, accessors, t, o, layout, name + "Formats", true, null);
+    }
+
+    /// <param name="formats">The private copy for Guids and decimals in the plan's formats, otherwise the override (binary formats)</param>
+    /// <param name="formatsMethod">The name of the copy the override calls when the plan has other formats, null when there is none</param>
+    private static void UnrolledMethod(CodeWriter w, TypeModel type, List<int> unrolled, Accessors accessors, string t, string o, UnrolledLayout layout, string name, bool formats, string formatsMethod)
+    {
+      bool map = layout == UnrolledLayout.Map;
+      bool trimmed = layout == UnrolledLayout.Trimmed;
+      string parameters = "(" + Writing + "WriteContext c, " + t + " o, " + (map ? "byte[][] keys, " : "") + "global::LsMsgPack.Meta.FullPropertyInfo[] infos, " + Generated + "GeneratedWritePlan p";
+      string returns = map || trimmed ? "int " : "void ";
+      w.Line();
+      w.Line((formats ? "private " : "public override ") + returns + name + parameters + (trimmed ? ", out int end)" : ")"));
+      w.Open();
+      if (formatsMethod != null)
+      {
+        string call = formatsMethod + "(c, " + o + (map ? ", keys" : "") + ", infos, p" + (trimmed ? ", out end)" : ")");
+        w.Line("if (p.GuidString || p.DecimalString)");
+        w.Line(returns == "void " ? "{ " + call + "; return; }" : "  return " + call + ";");
+      }
+      if (unrolled.Count <= UnrolledPart)
+      {
+        if (trimmed)
+          w.Line("int last = 0;");
+        UnrolledBody(w, type, unrolled, 0, unrolled.Count, accessors, o, layout, trimmed, formats);
+      }
+      else
+      {
+        string arguments = "(c, " + o + (map ? ", keys" : "") + ", infos, p" + (trimmed ? ", ref last, ref end)" : ")");
+        if (map)
+          w.Line("int count = 0;");
+        if (trimmed)
+        {
+          w.Line("int last = 0;");
+          w.Line("end = c.W.Pos;");
+        }
+        for (int from = 0; from < unrolled.Count; from += UnrolledPart)
+          w.Line((map ? "count += " : "") + name + "Part" + (from / UnrolledPart) + arguments + ";");
+        if (map)
+          w.Line("return count;");
+        if (trimmed)
+          w.Line("return last;");
+      }
+      w.Close();
+      if (unrolled.Count <= UnrolledPart)
+        return;
+
+      for (int from = 0; from < unrolled.Count; from += UnrolledPart)
+      {
+        w.Line();
+        w.Line("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)] // its own inline budget");
+        w.Line("private " + (trimmed ? "void " : returns) + name + "Part" + (from / UnrolledPart) + parameters + (trimmed ? ", ref int last, ref int end)" : ")"));
+        w.Open();
+        UnrolledBody(w, type, unrolled, from, System.Math.Min(from + UnrolledPart, unrolled.Count), accessors, o, layout, false, formats);
+        w.Close();
+      }
+    }
+
+    /// <summary>
+    /// The unrolled members at the positions from..to.
+    /// </summary>
+    /// <param name="whole">Trimmed: the method itself (not a part), which starts <c>end</c> and returns <c>last</c></param>
+    /// <param name="formats">Guids and decimals in the plan's formats, otherwise binary</param>
+    private static void UnrolledBody(CodeWriter w, TypeModel type, List<int> unrolled, int from, int to, Accessors accessors, string o, UnrolledLayout layout, bool whole, bool formats)
+    {
+      bool map = layout == UnrolledLayout.Map;
+      bool trimmed = layout == UnrolledLayout.Trimmed;
+      w.Line(IO + "MsgPackWriter w = c.W;");
+      w.Line("bool filter = p.FilterDefaults;");
+      if (map)
+        w.Line("int count = 0;");
+      if (whole)
+        w.Line("end = w.Pos;");
+      bool start = false;
+      for (int position = from; position < to && trimmed; position++)
+        start |= !type.Members[unrolled[position]].CanGet || type.Members[unrolled[position]].Kind == "None";
+      if (start)
+        w.Line("int start;");
+      Dictionary<string, string> locals = ValueLocals(w, type, unrolled.GetRange(from, to - from));
+      if (formats)
+        FormatLocals(w, type, unrolled.GetRange(from, to - from));
+      for (int position = from; position < to; position++)
+      {
+        MemberModel member = type.Members[unrolled[position]];
+        string key = map ? "keys[" + position + "]" : "null";
+        string written = trimmed ? "last = " + (position + 1) + "; end = w.Pos;" : null; // after a value that is not nil
+        if (!member.CanGet || member.Kind == "None")
+        {
+          string call = !member.CanGet
+            ? "p.Runtime(" + position + ", c, " + o + ", " + key + ", infos[" + position + "])"
+            : "p.Value<" + member.TypeName + ">(" + position + ", c, " + Get(accessors, member) + ", " + key + ", infos[" + position + "])"; // written by the runtime's handler of its type
+          if (trimmed) // the runtime's writers may write a nil too: nil is the only value of one byte 0xC0
+          {
+            w.Line("start = w.Pos;");
+            w.Line("if (!" + call + ")");
+            w.Line("  w.Nil();");
+            w.Line("else if (w.Pos != start + 1 || w.Buf[start] != 0xC0)");
+            w.Line("{ " + written + " }");
+            continue;
+          }
+          w.Line(map ? "if (" + call + ")" : "if (!" + call + ")");
+          w.Line(map ? "  count++;" : "  w.Nil();");
+          continue;
+        }
+        string v = locals[member.TypeName];
+        w.Line(v + " = " + Get(accessors, member) + ";");
+        if (map)
+        {
+          w.Line("if (!filter || !(" + Omitted(member, v) + "))");
+          w.Open();
+          w.Line("w.Raw(" + key + ");");
+          WriteValue(w, member, v, locals, null, formats);
+          w.Line("count++;");
+          w.Close();
+        }
+        else
+        {
+          w.Line("if (filter && " + Omitted(member, v) + ")");
+          w.Line("  w.Nil();");
+          w.Line("else");
+          w.Open();
+          WriteValue(w, member, v, locals, written, formats);
+          w.Close();
+        }
+      }
+      if (map)
+        w.Line("return count;");
+      if (whole)
+        w.Line("return last;");
+    }
+
+    /// <summary>
+    /// Declares one local per type of the values a writer writes itself (and the value type of a nullable), shared by the members of that type: a local per member in a block of its own is still an IL local
+    /// of its own (136 in the writers of a class of 120 properties), and with the temporaries of the inlined calls the JIT went past its limits on such a method (no more inlining past 512 locals):
+    /// generated writers were slower than the runtime's plans on wide classes. The runtime's compiled writers do the same.
+    /// </summary>
+    /// <returns>The name of the local per type</returns>
+    private static Dictionary<string, string> ValueLocals(CodeWriter w, TypeModel type, List<int> ids)
+    {
+      Dictionary<string, string> locals = new Dictionary<string, string>();
+      for (int i = 0; i < ids.Count; i++)
+      {
+        MemberModel member = type.Members[ids[i]];
+        if (!member.CanGet || member.Kind == "None")
+          continue;
+        AddLocal(w, locals, member.TypeName);
+        if (member.Nullable)
+          AddLocal(w, locals, member.ValueType);
+      }
+      return locals;
+    }
+
+    /// <summary>
+    /// The formats of the plan in locals (<c>guidString</c>, <c>decimalString</c>) where the writer writes such members: read once per call, as <c>filter</c>
+    /// (a field of the plan is read again after every store into the buffer).
+    /// </summary>
+    private static void FormatLocals(CodeWriter w, TypeModel type, List<int> ids)
+    {
+      bool guid = false, money = false;
+      for (int i = 0; i < ids.Count; i++)
+      {
+        MemberModel member = type.Members[ids[i]];
+        if (!member.CanGet)
+          continue;
+        guid |= member.Kind == "Guid";
+        money |= member.Kind == "Decimal";
+      }
+      if (guid)
+        w.Line("bool guidString = p.GuidString;");
+      if (money)
+        w.Line("bool decimalString = p.DecimalString;");
+    }
+
+    private static void AddLocal(CodeWriter w, Dictionary<string, string> locals, string typeName)
+    {
+      if (locals.ContainsKey(typeName))
+        return;
+      string name = "v" + locals.Count;
+      locals.Add(typeName, name);
+      w.Line(typeName + " " + name + ";");
+    }
+
     /// <summary>
     /// The value as the runtime's handler of its type writes it.
     /// </summary>
-    private static void WriteValue(CodeWriter w, MemberModel member, string v)
+    /// <param name="written">A statement after a value that is not nil (WriteUnrolledTrimmed), null for none</param>
+    /// <param name="formats">Guids and decimals in the plan's formats (the locals of <see cref="FormatLocals"/>), otherwise binary</param>
+    private static void WriteValue(CodeWriter w, MemberModel member, string v, Dictionary<string, string> locals, string written, bool formats)
     {
       if (member.Nullable)
       {
         w.Line("if (" + v + ".HasValue)");
         w.Open();
-        w.Line(member.ValueType + " u = " + v + ".GetValueOrDefault();");
-        WriteValue(w, member with { Nullable = false }, "u");
+        string u = locals[member.ValueType];
+        w.Line(u + " = " + v + ".GetValueOrDefault();");
+        WriteValue(w, member with { Nullable = false }, u, locals, written, formats);
         w.Close();
         w.Line("else");
         w.Line("  w.Nil();");
         return;
       }
 
+      if (member.Kind == "String")
+      {
+        w.Line("if (" + v + " == null)");
+        w.Line("  w.Nil();");
+        w.Line("else");
+        if (written is null)
+          w.Line("  w.String(" + v + ");");
+        else
+          w.Line("{ w.String(" + v + "); " + written + " }");
+        return;
+      }
+      WriteNotNil(w, member, v, formats);
+      if (written != null)
+        w.Line(written);
+    }
+
+    /// <summary>
+    /// A value of the member's kind (never nil).
+    /// </summary>
+    private static void WriteNotNil(CodeWriter w, MemberModel member, string v, bool formats)
+    {
       switch (member.Kind)
       {
-        case "String":
-          w.Line("if (" + v + " == null)");
-          w.Line("  w.Nil();");
-          w.Line("else");
-          w.Line("  w.String(" + v + ");");
-          return;
         case "Boolean": w.Line("w.Bool(" + v + ");"); return;
         case "SByte": w.Line("w.SByte(" + v + ");"); return;
         case "Int16": w.Line("w.Int16(" + v + ");"); return;
@@ -611,8 +842,28 @@ namespace LtMsgPack.Generator
         case "Single": w.Line("w.Single(" + v + ");"); return;
         case "Double": w.Line("w.Double(" + v + ");"); return;
         case "Char": w.Line("w.UInt16(" + v + ");"); return; // as an unsigned 16 bit integer, like MessagePack-CSharp
-        case "Decimal": w.Line(Generated + "GeneratedIO.WriteDecimal(w, " + v + ", p.DecimalCode);"); return;
-        case "Guid": w.Line("w.Guid(" + v + ");"); return;
+        case "Decimal":
+          if (!formats)
+          {
+            w.Line(Generated + "GeneratedIO.WriteDecimal(w, " + v + ", p.DecimalCode);");
+            return;
+          }
+          w.Line("if (decimalString) // the plan's format (GeneratedCapabilities.WriteFormats, FormatLocals)");
+          w.Line("  " + Generated + "GeneratedIO.DecimalString(w, " + v + ");");
+          w.Line("else");
+          w.Line("  " + Generated + "GeneratedIO.WriteDecimal(w, " + v + ", p.DecimalCode);");
+          return;
+        case "Guid":
+          if (!formats)
+          {
+            w.Line("w.Guid(" + v + ");");
+            return;
+          }
+          w.Line("if (guidString)");
+          w.Line("  " + Generated + "GeneratedIO.GuidString(w, " + v + ");");
+          w.Line("else");
+          w.Line("  w.Guid(" + v + ");");
+          return;
         case "DateTime": w.Line("w.DateTime(" + Generated + "GeneratedIO.Utc(" + v + ", p));"); return;
         case "TimeSpan": w.Line("w.Int64(" + v + ".Ticks);"); return;
         case "Enum": w.Line("w." + EnumWriter(member.EnumUnderlying) + "((" + member.EnumUnderlying + ")" + v + ");"); return;
@@ -656,8 +907,8 @@ namespace LtMsgPack.Generator
         case "UInt16": Ranged(w, "ushort", "ushort.MinValue", "ushort.MaxValue", accessors, member, done); return;
         case "UInt32": Ranged(w, "uint", "uint.MinValue", "uint.MaxValue", accessors, member, done); return;
         case "Char": Ranged(w, "char", "char.MinValue", "char.MaxValue", accessors, member, done); return;
-        case "Decimal": Fast(w, Generated + "GeneratedIO.TryReadDecimal(r, p.DecimalCode, out decimal v)", set, done); return;
-        case "Guid": Fast(w, "r.TryReadGuid(out global::System.Guid v)", set, done); return;
+        case "Decimal": Fast(w, Generated + "GeneratedIO.TryReadDecimal(r, p, out decimal v)", set, done); return; // the extension, or the strings of DecimalFormat.String (GeneratedCapabilities.ReadFormats)
+        case "Guid": Fast(w, Generated + "GeneratedIO.TryReadGuid(r, p, out global::System.Guid v)", set, done); return; // bin 16, or also the strings of GuidFormat.String
         case "DateTime": Fast(w, "r.TryReadDateTime(out global::System.DateTime v)", set, done); return;
         case "TimeSpan": Fast(w, "r.TryReadInt64(out long v)", Set(accessors, member, "new global::System.TimeSpan(v)") + ";", done); return;
         case "Enum": Fast(w, "r.TryReadInt64(out long v)", Set(accessors, member, "(" + member.ValueType + ")unchecked((" + member.EnumUnderlying + ")v)") + ";", done); return; // values out of range wrap around (EnumReader)
@@ -696,7 +947,16 @@ namespace LtMsgPack.Generator
     /// </summary>
     private static string Get(Accessors accessors, MemberModel member)
     {
-      return accessors.Get(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeGet, "o", member.ByRef);
+      return accessors.Get(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeGet, Target(member), member.ByRef, member.Field);
+    }
+
+    /// <summary>
+    /// <c>o</c>, or for a member of a base class <c>o</c> cast to it: in C# a member of the derived class with the same name would hide it (the runtime may serialize the base class's member,
+    /// e.g. a property hidden by a public field that is not serialized). An UnsafeAccessor takes the declaring class anyway.
+    /// </summary>
+    private static string Target(MemberModel member)
+    {
+      return member.Inherited && !member.ByRef ? "((" + member.DeclaringType + ")o)" : "o";
     }
 
     /// <summary>
@@ -704,12 +964,12 @@ namespace LtMsgPack.Generator
     /// </summary>
     private static string Set(Accessors accessors, MemberModel member, string value)
     {
-      return accessors.Set(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeSet, "o", value, member.ByRef);
+      return accessors.Set(member.DeclaringType, member.Name, member.TypeName, member.Access, member.UnsafeSet, Target(member), value, member.ByRef, member.Field);
     }
 
     /// <summary>
-    /// The UnsafeAccessor methods of a context (.NET 8): the non-public getters and setters and the init-only setters the generated code calls, declared once per property (written by <see cref="Write"/> at the end of the context class,
-    /// the generated writers and readers are nested in it).
+    /// The UnsafeAccessor methods of a context (.NET 8): the non-public getters and setters, the init-only setters and the non-public fields the generated code uses, declared once per member
+    /// (written by <see cref="Write"/> at the end of the context class, the generated writers and readers are nested in it).
     /// </summary>
     private sealed class Accessors
     {
@@ -717,19 +977,22 @@ namespace LtMsgPack.Generator
       private readonly List<string> _declarations = new List<string>();
 
       /// <param name="byRef">A struct: <paramref name="target"/> is a ref parameter, the accessor takes it by reference</param>
-      /// <returns>The value of the property of <paramref name="target"/> (an expression)</returns>
-      public string Get(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, bool byRef)
+      /// <param name="field">A field: its accessor returns it by reference</param>
+      /// <returns>The value of the property or field of <paramref name="target"/> (an expression)</returns>
+      public string Get(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, bool byRef, bool field)
       {
         if (!viaAccessor)
           return target + "." + access;
-        return Method(declaringType, name, typeName, true, byRef) + "(" + (byRef ? "ref " : "") + target + ")";
+        return (field ? Field(declaringType, name, typeName, byRef) : Method(declaringType, name, typeName, true, byRef)) + "(" + (byRef ? "ref " : "") + target + ")";
       }
 
-      /// <returns>The assignment of the property of <paramref name="target"/> (a statement without its semicolon, or a lambda body)</returns>
-      public string Set(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, string value, bool byRef)
+      /// <returns>The assignment of the property or field of <paramref name="target"/> (a statement without its semicolon, or a lambda body)</returns>
+      public string Set(string declaringType, string name, string typeName, string access, bool viaAccessor, string target, string value, bool byRef, bool field)
       {
         if (!viaAccessor)
           return target + "." + access + " = " + value;
+        if (field)
+          return Field(declaringType, name, typeName, byRef) + "(" + (byRef ? "ref " : "") + target + ") = " + value;
         return Method(declaringType, name, typeName, false, byRef) + "(" + (byRef ? "ref " : "") + target + ", " + value + ")";
       }
 
@@ -750,12 +1013,27 @@ namespace LtMsgPack.Generator
         return method;
       }
 
+      /// <summary>
+      /// The field by reference: one accessor reads and sets it (never declared for setting a readonly field: the generator describes no setter for one).
+      /// </summary>
+      private string Field(string declaringType, string name, string typeName, bool byRef)
+      {
+        string key = "field " + declaringType + " " + name;
+        if (_names.TryGetValue(key, out string method))
+          return method;
+        method = "LtMsgPackField" + _names.Count;
+        _names.Add(key, method);
+        _declarations.Add("[global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = \"" + name + "\")]");
+        _declarations.Add("private static extern ref " + typeName + " " + method + "(" + (byRef ? "ref " : "") + declaringType + " o);");
+        return method;
+      }
+
       public void Write(CodeWriter w)
       {
         if (_declarations.Count == 0)
           return;
         w.Line();
-        w.Line("// The init-only setters, and the non-public accessors of properties the runtime may serialize (FilterNonSettable's NonPublicProperties)");
+        w.Line("// The init-only setters, and the non-public accessors and fields of members the runtime may serialize (FilterNonSettable's NonPublicProperties and SerializedFields)");
         foreach (string line in _declarations)
           w.Line(line);
       }

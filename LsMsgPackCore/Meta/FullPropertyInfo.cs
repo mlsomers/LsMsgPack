@@ -15,25 +15,26 @@ namespace LsMsgPack.Meta
   public class FullPropertyInfo
   {
     // Type is a IMsgPackPropertyIdResolver Type
-    private static readonly ConcurrentDictionary<PropertyInfo, FullPropertyInfo> Cache = new ConcurrentDictionary<PropertyInfo, FullPropertyInfo>();
+    private static readonly ConcurrentDictionary<MemberInfo, FullPropertyInfo> Cache = new ConcurrentDictionary<MemberInfo, FullPropertyInfo>();
     private Dictionary<Type, ConstructorInfo> _constructorTakingType; // per instance (created when first used), constructors differ per AssignedToType
 
-    public static FullPropertyInfo GetFullPropInfo(PropertyInfo propertyInfo, MsgPackOptions settings)
+    /// <param name="member">A property or a field</param>
+    public static FullPropertyInfo GetFullPropInfo(MemberInfo member, MsgPackOptions settings)
     {
-      if (propertyInfo == null)
+      if (member == null)
         return null;
 
       FullPropertyInfo full;
       if (settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0){ // Only cache for default resolver, Implemented resolvers must have their own cache (or not)
-        if (Cache.TryGetValue(propertyInfo, out full))
+        if (Cache.TryGetValue(member, out full))
           return full;
       }
 
-      full = new FullPropertyInfo(propertyInfo);
+      full = new FullPropertyInfo(member);
       ResolvePropertyId(full, settings);
 
       if (settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0)
-        return Cache.GetOrAdd(propertyInfo, full); // another thread may have been first
+        return Cache.GetOrAdd(member, full); // another thread may have been first
       return full;
     }
 
@@ -54,7 +55,7 @@ namespace LsMsgPack.Meta
 
       if (full.PropertyId == null)
       {
-        full.PropertyId = full.PropertyInfo.Name;
+        full.PropertyId = full.Name;
         return;
       }
 
@@ -105,18 +106,30 @@ namespace LsMsgPack.Meta
           return full.SchemaName = name;
         break;
       }
-      return full.PropertyInfo.Name;
+      return full.Name;
     }
 
-    // Attributes are static metadata, so they are read once per property (even when the FullPropertyInfo itself cannot be cached because of custom property id resolvers)
-    private static readonly ConcurrentDictionary<PropertyInfo, PropertyAttributeSet> AttributesCache = new ConcurrentDictionary<PropertyInfo, PropertyAttributeSet>();
+    // Attributes are static metadata, so they are read once per member (even when the FullPropertyInfo itself cannot be cached because of custom property id resolvers)
+    private static readonly ConcurrentDictionary<MemberInfo, PropertyAttributeSet> AttributesCache = new ConcurrentDictionary<MemberInfo, PropertyAttributeSet>();
 
-    private FullPropertyInfo(PropertyInfo prop)
+    internal static PropertyAttributeSet AttributesOf(MemberInfo member)
     {
-      PropertyInfo = prop;
-      Attributes = AttributesCache.GetOrAdd(prop, p => new PropertyAttributeSet(p));
+      return AttributesCache.GetOrAdd(member, m => new PropertyAttributeSet(m));
+    }
+
+    /// <param name="member">A property or a field</param>
+    private FullPropertyInfo(MemberInfo member)
+    {
+      Member = member;
+      PropertyInfo = member as PropertyInfo;
+      FieldInfo = member as FieldInfo;
+      if (PropertyInfo is null && FieldInfo is null)
+        throw new ArgumentException($"{member.MemberType} {member.Name} is not a property or a field.", nameof(member));
+      Name = member.Name;
+      DeclaredType = PropertyInfo?.PropertyType ?? FieldInfo.FieldType;
+      Attributes = AttributesOf(member);
       CustomAttributes = Attributes.ByName;
-      AssignedToType = prop.PropertyType;
+      AssignedToType = DeclaredType;
     }
 
     /// <summary>
@@ -124,19 +137,23 @@ namespace LsMsgPack.Meta
     /// </summary>
     private FullPropertyInfo(FullPropertyInfo kept)
     {
+      Member = kept.Member;
       PropertyInfo = kept.PropertyInfo;
+      FieldInfo = kept.FieldInfo;
+      Name = kept.Name;
+      DeclaredType = kept.DeclaredType;
       Attributes = kept.Attributes;
       CustomAttributes = kept.CustomAttributes;
       _assignedToType = kept._assignedToType;
       _accessor = kept._accessor;
       _uniqueName = kept._uniqueName;
-      PropertyId = kept.PropertyInfo.Name;
+      PropertyId = kept.Name;
       SchemaName = null;
       StaticallyIgnored = false;
     }
 
     /// <summary>
-    /// The attributes of the property, also the ones it may inherit (shared by all FullPropertyInfo of the property). Null without a property.
+    /// The attributes of the property or field, also the ones a property may inherit (shared by all FullPropertyInfo of the member). Null without a member.
     /// </summary>
     internal readonly PropertyAttributeSet Attributes;
 
@@ -162,7 +179,31 @@ namespace LsMsgPack.Meta
       }
     }
 
-    public PropertyInfo PropertyInfo { get; set; }
+    /// <summary>
+    /// The serialized member: a <see cref="System.Reflection.PropertyInfo"/> or a <see cref="System.Reflection.FieldInfo"/> (see <see cref="TypeResolving.Filters.SerializedFields"/>).
+    /// Null for the info of a root value, an element, a key or a value of a collection (only the type it is assigned to).
+    /// </summary>
+    public MemberInfo Member { get; }
+
+    /// <summary>
+    /// The property, null for a field (see <see cref="FieldInfo"/>) and without a member (see <see cref="Member"/>).
+    /// </summary>
+    public PropertyInfo PropertyInfo { get; }
+
+    /// <summary>
+    /// The field, null for a property (see <see cref="PropertyInfo"/>) and without a member (see <see cref="Member"/>).
+    /// </summary>
+    public FieldInfo FieldInfo { get; }
+
+    /// <summary>
+    /// The .NET name of the property or field (also the default property id), null without a member.
+    /// </summary>
+    public string Name { get; }
+
+    /// <summary>
+    /// The type of the property or field as declared (a <see cref="Nullable{T}"/> stays one, <see cref="AssignedToType"/> is its underlying type), null without a member.
+    /// </summary>
+    public Type DeclaredType { get; }
 
     private PropertyAccessor _accessor;
 
@@ -176,7 +217,7 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal object GetValue(object instance)
     {
-      PropertyAccessor accessor = _accessor ?? (_accessor = PropertyAccessor.Get(PropertyInfo));
+      PropertyAccessor accessor = _accessor ?? (_accessor = PropertyAccessor.Get(Member));
       return accessor.GetValue(instance);
     }
 
@@ -185,7 +226,7 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal bool IsComputed
     {
-      get { return (_accessor ?? (_accessor = PropertyAccessor.Get(PropertyInfo))).Computed; }
+      get { return (_accessor ?? (_accessor = PropertyAccessor.Get(Member))).Computed; }
     }
 
     /// <summary>
@@ -194,7 +235,7 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal void SetValue(object instance, object value)
     {
-      PropertyAccessor accessor = _accessor ?? (_accessor = PropertyAccessor.Get(PropertyInfo));
+      PropertyAccessor accessor = _accessor ?? (_accessor = PropertyAccessor.Get(Member));
       accessor.SetValue(instance, value);
     }
 
@@ -253,66 +294,81 @@ namespace LsMsgPack.Meta
     public override string ToString()
     {
       string ignored = (StaticallyIgnored.HasValue && StaticallyIgnored.Value) ? " (ignored)" : string.Empty;
-      string propInfo = (PropertyInfo is null) ? " not a property" : $" property: {PropertyInfo.Name}";
+      string propInfo = Member is null ? " not a member" : FieldInfo is null ? $" property: {Name}" : $" field: {Name}";
       return $"{AssignedToType}{ignored}{propInfo}";
     }
 
 
-    // One cache per NonPublicProperties (the enum values are indexes, checked by FilterNonSettable)
-    private const int NonPublicModes = (int)NonPublicProperties.All + 1;
-    private static readonly ConcurrentDictionary<Type, PropertyInfo[]>[] PropertiesCache = CachePer<PropertyInfo[]>(NonPublicModes);
-
     /// <summary>
-    /// Public properties excluding indexers and properties hidden by a property with the same name in a derived class ("new" modifier).
+    /// The type of a property or field as declared.
     /// </summary>
-    internal static PropertyInfo[] GetProperties(Type type)
+    internal static Type TypeOf(MemberInfo member)
     {
-      return GetProperties(type, NonPublicProperties.None);
+      return member is FieldInfo field ? field.FieldType : ((PropertyInfo)member).PropertyType;
     }
 
     /// <summary>
-    /// Public properties and the non-public properties of <paramref name="nonPublic"/> (after the public ones, see <see cref="NonPublicCandidates"/>),
-    /// excluding indexers and properties hidden by a property with the same name in a derived class ("new" modifier, or an override of a non-public property).
+    /// "property" or "field", for messages.
     /// </summary>
-    internal static PropertyInfo[] GetProperties(Type type, NonPublicProperties nonPublic)
+    internal string Kind
     {
-      return PropertiesCache[(int)nonPublic].GetOrAdd(type, t =>
+      get { return FieldInfo is null ? "property" : "field"; }
+    }
+
+    // One cache per MemberSelection (its Index)
+    private static readonly ConcurrentDictionary<Type, MemberInfo[]>[] MembersCache = CachePer<MemberInfo[]>(MemberSelection.Count);
+
+    /// <summary>
+    /// What an <see cref="ObjectConstructor"/> binds its parameters to, for any settings: the public properties and the public fields.
+    /// </summary>
+    internal static readonly MemberSelection PublicMembers = new MemberSelection(NonPublicProperties.None, SerializedFields.Public);
+
+    /// <summary>
+    /// The candidates for serialization: the public properties, the non-public properties of <see cref="MemberSelection.NonPublic"/> (see <see cref="NonPublicCandidates"/>), then the fields of
+    /// <see cref="MemberSelection.Fields"/> (see <see cref="AddFieldCandidates"/>; after the properties, so the positions of the properties do not depend on the fields),
+    /// excluding indexers and members hidden by a member with the same name in a derived class ("new" modifier, or an override of a non-public property).
+    /// </summary>
+    internal static MemberInfo[] GetMembers(Type type, MemberSelection selection)
+    {
+      ConcurrentDictionary<Type, MemberInfo[]> cache = MembersCache[selection.Index];
+      if (cache.TryGetValue(type, out MemberInfo[] members))
+        return members;
+      return cache.GetOrAdd(type, FindMembers(type, selection));
+    }
+
+    private static MemberInfo[] FindMembers(Type type, MemberSelection selection)
+    {
+      List<MemberInfo> all = new List<MemberInfo>();
+      bool fieldStruct = SerializationRules.IsFieldStruct(type);
+      if (!fieldStruct) // the fields are its state, its properties are computed from them (Matrix4x4.Translation)
       {
-        PropertyInfo[] all = AllProperties(t);
-        if (nonPublic != NonPublicProperties.None)
+        all.AddRange(AllProperties(type));
+        if (selection.NonPublic != NonPublicProperties.None)
+          all.AddRange(NonPublicCandidates(type, selection.NonPublic));
+      }
+      AddFieldCandidates(type, fieldStruct ? SerializedFields.Public : selection.Fields, all);
+
+      List<MemberInfo> kept = new List<MemberInfo>(all.Count);
+      for (int i = 0; i < all.Count; i++)
+      {
+        MemberInfo member = all[i];
+        if (member is PropertyInfo property && property.GetIndexParameters().Length > 0)
+          continue;
+
+        bool hidden = false;
+        for (int j = 0; j < all.Count; j++)
         {
-          List<PropertyInfo> more = NonPublicCandidates(t, nonPublic);
-          if (more.Count > 0)
+          if (j != i && all[j].Name == member.Name && all[j].DeclaringType != member.DeclaringType && member.DeclaringType.IsAssignableFrom(all[j].DeclaringType))
           {
-            PropertyInfo[] both = new PropertyInfo[all.Length + more.Count];
-            all.CopyTo(both, 0);
-            more.CopyTo(both, all.Length);
-            all = both;
+            hidden = true;
+            break;
           }
         }
 
-        List<PropertyInfo> kept = new List<PropertyInfo>(all.Length);
-        for (int i = 0; i < all.Length; i++)
-        {
-          PropertyInfo prop = all[i];
-          if (prop.GetIndexParameters().Length > 0)
-            continue;
-
-          bool hidden = false;
-          for (int j = 0; j < all.Length; j++)
-          {
-            if (j != i && all[j].Name == prop.Name && all[j].DeclaringType != prop.DeclaringType && prop.DeclaringType.IsAssignableFrom(all[j].DeclaringType))
-            {
-              hidden = true;
-              break;
-            }
-          }
-
-          if (!hidden)
-            kept.Add(prop);
-        }
-        return kept.ToArray();
-      });
+        if (!hidden)
+          kept.Add(member);
+      }
+      return kept.ToArray();
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
@@ -342,7 +398,7 @@ namespace LsMsgPack.Meta
         {
           PropertyInfo prop = declared[t];
           if (prop.Name.IndexOf('.') >= 0 || prop.IsDefined(typeof(CompilerGeneratedAttribute), false)
-            || (nonPublic == NonPublicProperties.Attributed && !AttributesCache.GetOrAdd(prop, p => new PropertyAttributeSet(p)).OptsIn))
+            || (nonPublic == NonPublicProperties.Attributed && !AttributesOf(prop).OptsIn))
             continue;
           found.Add(prop);
         }
@@ -351,15 +407,88 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// The non-public properties the settings serialize: those of the <see cref="FilterNonSettable"/> of their static filters, none without one.
+    /// Adds the instance fields of the type and its base classes that <paramref name="fields"/> includes (see <see cref="SerializedFields"/>): first the public ones, then the non-public ones
+    /// (as the properties), each pass the class's own first, in the order of reflection (metadata order).
+    /// Not the fields the compiler generates (backing fields of auto-properties and events, <c>&lt;X&gt;k__BackingField</c>, VB's static locals and anonymous types: <see cref="IsCompilerName"/>), fixed-size buffers, pointers, ref structs and fields declared by the framework
+    /// (except those of a framework struct whose state they are, <see cref="SerializationRules.IsFieldStruct"/>: the caller passes <see cref="SerializedFields.Public"/> for it).
     /// </summary>
-    internal static NonPublicProperties NonPublicOf(MsgPackOptions settings)
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
+    internal static void AddFieldCandidates(Type type, SerializedFields fields, List<MemberInfo> found)
     {
-      return GetSharedPropsCaches(settings).NonPublic;
+      if (fields == SerializedFields.None)
+        return;
+      bool fieldStruct = SerializationRules.IsFieldStruct(type);
+      for (int pass = 0; pass < 2; pass++)
+      {
+        bool publicPass = pass == 0;
+        for (Type declaring = type; declaring != null && declaring != typeof(object) && declaring != typeof(ValueType); declaring = declaring.BaseType) // private fields of base classes are not returned for the derived class
+        {
+          if (!fieldStruct && TypeResolver.IsFrameworkAssembly(declaring.Assembly))
+            continue;
+          FieldInfo[] declared = declaring.GetFields(BindingFlags.Instance | (publicPass ? BindingFlags.Public : BindingFlags.NonPublic) | BindingFlags.DeclaredOnly);
+          for (int t = 0; t < declared.Length; t++)
+          {
+            FieldInfo field = declared[t];
+            if (IsFieldCandidate(field, fieldStruct ? SerializedFields.Public : fields))
+              found.Add(field);
+          }
+          if (fieldStruct)
+            return; // only its own public fields (a struct has no base class with fields)
+        }
+      }
     }
 
-    // One cache per PropertyOrder and NonPublicProperties (the enum values are indexes, checked by MsgPackOptions.PropertyOrder and FilterNonSettable), Reflection uses PropertiesCache
-    private static readonly ConcurrentDictionary<Type, PropertyInfo[]>[] OrderedPropertiesCache = CachePer<PropertyInfo[]>(((int)MsgPackOptions.LastPropertyOrder + 1) * NonPublicModes);
+    private static bool IsFieldCandidate(FieldInfo field, SerializedFields fields)
+    {
+      if (field.IsStatic || field.IsLiteral || IsCompilerName(field.Name) || field.IsDefined(typeof(CompilerGeneratedAttribute), false) || field.IsDefined(typeof(FixedBufferAttribute), false))
+        return false;
+      Type type = field.FieldType;
+      if (type.IsPointer || type.IsByRef || SerializationRules.IsByRefLike(type) || IsEventField(field))
+        return false;
+
+      switch (fields)
+      {
+        case SerializedFields.All:
+          return true;
+        case SerializedFields.Public:
+          return field.IsPublic || AttributesOf(field).OptsIn;
+        case SerializedFields.Attributed:
+          return AttributesOf(field).OptsIn;
+        default:
+          return false;
+      }
+    }
+
+    /// <summary>
+    /// A name no source can declare, which only the compiler gives: C#'s have &lt; (<c>&lt;X&gt;k__BackingField</c>, <c>&lt;X&gt;i__Field</c>), VB's $ (a <c>Static</c> local of an instance method is the field
+    /// <c>$STATIC$Method$2008$x</c>, with an initializer also <c>...$x$Init</c> of the type StaticLocalInitFlag; anonymous types' <c>$X</c>), neither marked [CompilerGenerated].
+    /// </summary>
+    internal static bool IsCompilerName(string name)
+    {
+      return name.IndexOf('<') >= 0 || name.IndexOf('$') >= 0;
+    }
+
+    /// <summary>
+    /// The field of a field-like event (<c>public event EventHandler Changed;</c>): a field of the delegate type with the name of the event (the compiler does not always mark it as generated).
+    /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
+    private static bool IsEventField(FieldInfo field)
+    {
+      return typeof(Delegate).IsAssignableFrom(field.FieldType)
+        && field.DeclaringType.GetEvent(field.Name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly) != null;
+    }
+
+    /// <summary>
+    /// The non-public properties and the fields the settings serialize: those of the <see cref="FilterNonSettable"/> of their static filters, <see cref="MemberSelection.Default"/> without one.
+    /// </summary>
+    internal static MemberSelection SelectionOf(MsgPackOptions settings)
+    {
+      return GetSharedPropsCaches(settings).Selection;
+    }
+
+    // One cache per PropertyOrder and MemberSelection (the enum values are indexes, checked by MsgPackOptions.PropertyOrder and FilterNonSettable), Reflection uses MembersCache
+    private static readonly ConcurrentDictionary<Type, MemberInfo[]>[] OrderedMembersCache = CachePer<MemberInfo[]>(((int)MsgPackOptions.LastPropertyOrder + 1) * MemberSelection.Count);
 
     private static ConcurrentDictionary<Type, T>[] CachePerOrder<T>()
     {
@@ -375,53 +504,60 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// The properties of <see cref="GetProperties(Type, NonPublicProperties)"/> in the order of the settings (see <see cref="PropertyOrder"/>), with the non-public properties of their static filters.
+    /// The members of <see cref="GetMembers(Type, MemberSelection)"/> in the order of the settings (see <see cref="PropertyOrder"/>), with the non-public properties and the fields of their static filters.
     /// </summary>
-    internal static PropertyInfo[] GetProperties(Type type, MsgPackOptions settings)
+    internal static MemberInfo[] GetMembers(Type type, MsgPackOptions settings)
     {
       PropertyOrder order = settings._propertyOrder;
-      NonPublicProperties nonPublic = NonPublicOf(settings);
+      MemberSelection selection = SelectionOf(settings);
       if (order == PropertyOrder.Reflection)
-        return GetProperties(type, nonPublic);
+        return GetMembers(type, selection);
 
-      return OrderedPropertiesCache[(int)order * NonPublicModes + (int)nonPublic].GetOrAdd(type, t => Sort(GetProperties(t, nonPublic), order));
+      ConcurrentDictionary<Type, MemberInfo[]> cache = OrderedMembersCache[(int)order * MemberSelection.Count + selection.Index];
+      if (cache.TryGetValue(type, out MemberInfo[] sorted))
+        return sorted;
+      return cache.GetOrAdd(type, Sort(GetMembers(type, selection), order));
     }
 
-    private static PropertyInfo[] Sort(PropertyInfo[] props, PropertyOrder order)
+    private static MemberInfo[] Sort(MemberInfo[] members, PropertyOrder order)
     {
-      OrderKey[] keys = new OrderKey[props.Length];
-      for (int t = 0; t < props.Length; t++)
-        keys[t] = new OrderKey(props[t], t, order);
+      OrderKey[] keys = new OrderKey[members.Length];
+      for (int t = 0; t < members.Length; t++)
+        keys[t] = new OrderKey(members[t], t, order);
 
       Array.Sort(keys);
 
-      PropertyInfo[] sorted = new PropertyInfo[props.Length];
+      MemberInfo[] sorted = new MemberInfo[members.Length];
       for (int t = 0; t < keys.Length; t++)
-        sorted[t] = keys[t].Property;
+        sorted[t] = keys[t].Member;
       return sorted;
     }
 
     /// <summary>
-    /// The position of a property for a <see cref="PropertyOrder"/>, compared field by field. The reflection index comes last so the sort is stable.
+    /// The position of a member for a <see cref="PropertyOrder"/>, compared field by field. The reflection index comes last so the sort is stable.
+    /// <para>Within a class the properties come before the fields: properties and fields are numbered in separate metadata tables, so the order of the source between them cannot be known.</para>
     /// </summary>
     private struct OrderKey : IComparable<OrderKey>
     {
-      internal readonly PropertyInfo Property;
+      internal readonly MemberInfo Member;
       private readonly bool _byName;
       private readonly int _explicitOrder; // int.MaxValue: none (after the ones that have one)
       private readonly string _typeName; // TypeThenDeclaration, null otherwise
       private readonly int _depth; // of the class declaring the (overridden) property, base classes first
+      private readonly int _kind; // 0: property, 1: field
       private readonly int _token;
       private readonly int _index;
 
-      internal OrderKey(PropertyInfo property, int index, PropertyOrder order)
+      internal OrderKey(MemberInfo member, int index, PropertyOrder order)
       {
-        Property = property;
+        Member = member;
         _index = index;
         _byName = order == PropertyOrder.Alphabetical;
         _explicitOrder = int.MaxValue;
-        _typeName = order == PropertyOrder.TypeThenDeclaration ? property.PropertyType.ToString() : null; // FullName would contain the assemblies of generic arguments, which differ per runtime
+        PropertyInfo property = member as PropertyInfo;
+        _typeName = order == PropertyOrder.TypeThenDeclaration ? (property?.PropertyType ?? ((FieldInfo)member).FieldType).ToString() : null; // FullName would contain the assemblies of generic arguments, which differ per runtime
         _depth = 0;
+        _kind = 0;
         _token = 0;
 
         if (_byName)
@@ -430,13 +566,14 @@ namespace LsMsgPack.Meta
         if (order == PropertyOrder.Explicit)
         {
           // Attribute.GetCustomAttribute also looks at the overridden properties (PropertyInfo.GetCustomAttributes ignores inherit)
-          DataMemberAttribute member = (DataMemberAttribute)Attribute.GetCustomAttribute(property, typeof(DataMemberAttribute), true);
-          if (member != null && member.Order >= 0)
-            _explicitOrder = member.Order;
+          DataMemberAttribute dataMember = (DataMemberAttribute)Attribute.GetCustomAttribute(member, typeof(DataMemberAttribute), true);
+          if (dataMember != null && dataMember.Order >= 0)
+            _explicitOrder = dataMember.Order;
         }
 
-        PropertyInfo declared = OriginalDeclaration(property);
+        MemberInfo declared = property is null ? member : OriginalDeclaration(property); // a field overrides nothing
         _depth = Depth(declared.DeclaringType);
+        _kind = property is null ? 1 : 0;
         try
         {
           _token = declared.MetadataToken;
@@ -459,11 +596,13 @@ namespace LsMsgPack.Meta
         }
         if (_depth != other._depth)
           return _depth.CompareTo(other._depth);
+        if (_kind != other._kind)
+          return _kind.CompareTo(other._kind);
         if (_token != other._token)
           return _token.CompareTo(other._token);
         if (_byName)
         {
-          int byName = string.CompareOrdinal(Property.Name, other.Property.Name);
+          int byName = string.CompareOrdinal(Member.Name, other.Member.Name);
           if (byName != 0)
             return byName;
         }
@@ -559,16 +698,16 @@ namespace LsMsgPack.Meta
       internal readonly ConcurrentDictionary<Type, FullPropertyInfo[]>[] IndexedPerOrder = CachePerOrder<FullPropertyInfo[]>();
 
       /// <summary>
-      /// The non-public properties of the <see cref="FilterNonSettable"/> among the filters (the last one, as the filters are asked from last to first), none without one.
+      /// The non-public properties and the fields of the <see cref="FilterNonSettable"/> among the filters (the last one, as the filters are asked from last to first), <see cref="MemberSelection.Default"/> without one.
       /// </summary>
-      internal readonly NonPublicProperties NonPublic;
+      internal readonly MemberSelection Selection = MemberSelection.Default;
 
       internal SharedPropsCache(IMsgPackPropertyIncludeStatically[] filters)
       {
         Filters = filters;
         for (int t = 0; t < filters.Length; t++)
           if (filters[t] is FilterNonSettable nonSettable)
-            NonPublic = nonSettable.NonPublicProperties;
+            Selection = new MemberSelection(nonSettable.NonPublicProperties, nonSettable.Fields);
       }
     }
 
@@ -602,7 +741,7 @@ namespace LsMsgPack.Meta
           return cached;
       }
 
-      PropertyInfo[] props = GetProperties(type, settings);
+      MemberInfo[] props = GetMembers(type, settings);
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
       for (int t = 0; t < props.Length; t++)
       {
@@ -632,12 +771,12 @@ namespace LsMsgPack.Meta
       {
         object id = props[t].PropertyId;
         if (MsgPackOptions.TypeIdKey.Equals(id) || MsgPackOptions.ContentKey.Equals(id))
-          throw new MsgPackException($"The id \"{id}\" of property {type.Name}.{props[t].PropertyInfo.Name} is reserved, the serializer uses it for the type id or the content of a collection.");
+          throw new MsgPackException($"The id \"{id}\" of {props[t].Kind} {type.Name}.{props[t].Name} is reserved, the serializer uses it for the type id or the content of a collection.");
 
         for (int i = 0; i < t; i++)
         {
           if (Equals(props[i].PropertyId, id))
-            throw new MsgPackException($"The properties {type.Name}.{props[i].PropertyInfo.Name} and {type.Name}.{props[t].PropertyInfo.Name} have the same id \"{id}\", the keys of a map must be unique.");
+            throw new MsgPackException($"The {props[i].Kind} {type.Name}.{props[i].Name} and the {props[t].Kind} {type.Name}.{props[t].Name} have the same id \"{id}\", the keys of a map must be unique.");
         }
       }
     }
@@ -740,7 +879,7 @@ namespace LsMsgPack.Meta
 
     private static FullPropertyInfo[] FilterStatically(Type type, MsgPackOptions settings)
     {
-      PropertyInfo[] props = GetProperties(type, settings);
+      MemberInfo[] props = GetMembers(type, settings);
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
       for (int t = 0; t < props.Length; t++)
       {
@@ -756,7 +895,7 @@ namespace LsMsgPack.Meta
       {
         bool unique = true;
         for (int i = 0; i < keptProps.Count && unique; i++)
-          unique = i == t || !string.Equals(keptProps[i].PropertyInfo.Name, keptProps[t].PropertyInfo.Name, StringComparison.Ordinal);
+          unique = i == t || !string.Equals(keptProps[i].Name, keptProps[t].Name, StringComparison.Ordinal);
         keptProps[t]._uniqueName = unique;
       }
       return keptProps.ToArray();

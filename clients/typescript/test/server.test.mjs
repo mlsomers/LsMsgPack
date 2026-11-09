@@ -122,6 +122,19 @@ test('request bodies: plain MsgPack the server reads', { skip }, async () => {
   assertLikeJson(echoed, await expected('invoice'));
 });
 
+test('fields: System.Numerics vectors (arrays of their fields) and fields that opt in', { skip }, async () => {
+  const client = new LsMsgPackClient({ ...dotnet, baseUrl: server.url });
+  const motion = await client.get('/motion');
+  assertLikeJson(motion, await expected('motion'));
+  assert.deepStrictEqual(motion.Position, { X: 1.5, Y: -2, Z: 0.25 });
+  assert.strictEqual(motion.Frame, 42);
+  // a request body is a map: the vectors {X, Y, Z}, read by the server's field readers
+  assertLikeJson(await client.post('/echo/motion', motion), await expected('motion'));
+  const camel = new LsMsgPackClient({ baseUrl: server.url });
+  assertLikeJson(await camel.get('/motion'), await expected('motion', '?camel=true'));
+  assertLikeJson(await camel.post('/echo/motion', await camel.get('/motion')), await expected('motion'), 'camelCase keys read ignoring case');
+});
+
 test("by default the objects of System.Text.Json with ASP.NET Core's defaults (camelCase), request bodies read ignoring case", { skip }, async () => {
   const client = new LsMsgPackClient({ baseUrl: server.url });
   assertLikeJson(await client.get('/invoices?count=20'), await expected('invoices', '?count=20&camel=true'));

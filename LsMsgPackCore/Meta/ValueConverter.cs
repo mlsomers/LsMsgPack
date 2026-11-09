@@ -67,7 +67,7 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static void SetValue(FullPropertyInfo prop, object instance, object value, MsgPackOptions settings)
     {
-      if (settings._differences is null || value is null || Fits(prop.PropertyInfo.PropertyType, value))
+      if (settings._differences is null || value is null || Fits(prop.DeclaredType, value))
       {
         Assign(prop, instance, value);
         return;
@@ -173,7 +173,7 @@ namespace LsMsgPack.Meta
       int depth = differences.Depth;
       try
       {
-        SetValue(prop, instance, ConvertDeserializeValue(val, prop.PropertyInfo.PropertyType, settings, prop), settings);
+        SetValue(prop, instance, ConvertDeserializeValue(val, prop.DeclaredType, settings, prop), settings);
       }
       catch (Exception ex) when (differences.SkipInvalidValue(instance, prop, ex))
       {
@@ -339,7 +339,7 @@ namespace LsMsgPack.Meta
           if (prop.IsComputed) // written only
             continue;
           if (differences is null)
-            Assign(prop, instance, ConvertDeserializeValue(propval, prop.PropertyInfo.PropertyType, settings, prop));
+            Assign(prop, instance, ConvertDeserializeValue(propval, prop.DeclaredType, settings, prop));
           else
             ReadProperty(prop, instance, propval, settings, differences);
         }
@@ -360,7 +360,7 @@ namespace LsMsgPack.Meta
         if (prop is null || prop.IsComputed)
           continue;
         if (differences is null)
-          Assign(prop, instance, ConvertDeserializeValue(entry.Value, prop.PropertyInfo.PropertyType, settings, prop));
+          Assign(prop, instance, ConvertDeserializeValue(entry.Value, prop.DeclaredType, settings, prop));
         else
           ReadProperty(prop, instance, entry.Value, settings, differences);
       }
@@ -555,7 +555,7 @@ namespace LsMsgPack.Meta
         if (items[t] is null)
           Assign(prop, result, prop.NilValue(settings));
         else if (differences is null)
-          Assign(prop, result, ConvertDeserializeValue(items[t], prop.PropertyInfo.PropertyType, settings, prop));
+          Assign(prop, result, ConvertDeserializeValue(items[t], prop.DeclaredType, settings, prop));
         else
           ReadProperty(prop, result, items[t], settings, differences);
       }
@@ -576,7 +576,7 @@ namespace LsMsgPack.Meta
     {
       for (int p = 0; p < props.Length; p++)
       {
-        if (props[p].SchemaName is null || !def.IdByName.TryGetValue(props[p].PropertyInfo.Name, out int position) || byPosition[position] != null || Array.IndexOf(byPosition, props[p]) >= 0)
+        if (props[p].SchemaName is null || !def.IdByName.TryGetValue(props[p].Name, out int position) || byPosition[position] != null || Array.IndexOf(byPosition, props[p]) >= 0)
           continue;
         byPosition[position] = props[p];
       }
@@ -589,7 +589,7 @@ namespace LsMsgPack.Meta
     {
       string[] names = new string[props.Length];
       for (int t = 0; t < props.Length; t++)
-        names[t] = props[t].SchemaName ?? props[t].PropertyInfo.Name;
+        names[t] = props[t].SchemaName ?? props[t].Name;
       Dictionary<string, int> ids = def.IdsIgnoringCase(names);
       if (ids.Count == 0)
         return;
@@ -622,7 +622,7 @@ namespace LsMsgPack.Meta
         if (name is null)
           continue;
 
-        if (next < props.Length && (props[next].SchemaName ?? props[next].PropertyInfo.Name) == name)
+        if (next < props.Length && (props[next].SchemaName ?? props[next].Name) == name)
         {
           byPosition[t] = props[next++];
           continue;
@@ -630,7 +630,7 @@ namespace LsMsgPack.Meta
 
         for (int p = 0; p < props.Length; p++)
         {
-          if ((props[p].SchemaName ?? props[p].PropertyInfo.Name) == name)
+          if ((props[p].SchemaName ?? props[p].Name) == name)
           {
             byPosition[t] = props[p];
             next = p + 1;

@@ -392,7 +392,14 @@ namespace LtMsgPack.Generated
 
     public PropWriter CreateWriter(Serializer serializer, FullPropertyInfo info)
     {
-      return Get is null ? null : new PropWriter<TTarget, TValue>(serializer, info, Get);
+      if (Get is null)
+        return null;
+      Type filter = PropWriter.FilterType(serializer, info);
+      if (filter == typeof(NoFilter))
+        return new PropWriter<TTarget, TValue, NoFilter>(serializer, info, Get);
+      if (filter == typeof(DefaultValuesFilter))
+        return new PropWriter<TTarget, TValue, DefaultValuesFilter>(serializer, info, Get);
+      return new PropWriter<TTarget, TValue, BoxedFilter>(serializer, info, Get);
     }
 
     public PropReader CreateReader(Serializer serializer, FullPropertyInfo info)
@@ -412,7 +419,14 @@ namespace LtMsgPack.Generated
 
     public PropWriter CreateWriter(Serializer serializer, FullPropertyInfo info)
     {
-      return Get is null ? null : new StructPropWriter<TTarget, TValue>(serializer, info, Get);
+      if (Get is null)
+        return null;
+      Type filter = PropWriter.FilterType(serializer, info);
+      if (filter == typeof(NoFilter))
+        return new StructPropWriter<TTarget, TValue, NoFilter>(serializer, info, Get);
+      if (filter == typeof(DefaultValuesFilter))
+        return new StructPropWriter<TTarget, TValue, DefaultValuesFilter>(serializer, info, Get);
+      return new StructPropWriter<TTarget, TValue, BoxedFilter>(serializer, info, Get);
     }
 
     public PropReader CreateReader(Serializer serializer, FullPropertyInfo info)

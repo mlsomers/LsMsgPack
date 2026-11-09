@@ -54,7 +54,7 @@ namespace LsMsgPack.TypeResolving.Filters
 
             Type type = value.GetType();
             PropertyAttributeSet set = propertyInfo.Attributes;
-            bool own = set != null && ReferenceEquals(set.Property, propertyInfo.PropertyInfo); // decided once per property (PropertyInfo can be replaced)
+            bool own = set != null && ReferenceEquals(set.Member, propertyInfo.Member); // decided once per member
             if (own && type == set.ValueType)
                 return IsNotDefault(set, value);
 
@@ -64,7 +64,7 @@ namespace LsMsgPack.TypeResolving.Filters
                 return true;
             }
 
-            Type propertyType = propertyInfo.PropertyInfo.PropertyType;
+            Type propertyType = propertyInfo.DeclaredType;
             if (own ? set.IsNullable : propertyType.IsGenericType && !propertyType.IsGenericTypeDefinition && propertyType.GetGenericTypeDefinition() == typeof(Nullable<>)) // Nullable.GetUnderlyingType(propertyType) != null, without allocating the generic arguments
                 return true; // type is nullable, value is not null but default...
 

@@ -568,7 +568,9 @@ namespace LtMsgPack.IO
 
     /// <summary>
     /// A decimal as a string in the invariant culture (<see cref="DecimalFormat.String"/>), formatted in place.
+    /// Not inlined: its stackalloc would give the generated and compiled writers, which call it in a branch, a larger frame and a stack cookie check on every call.
     /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     internal void DecimalString(decimal value)
     {
       if (IsUtf8(MsgPackOptions.StringEncoding)) // ASCII, the same bytes in UTF-8
@@ -595,9 +597,24 @@ namespace LtMsgPack.IO
 
     /// <summary>
     /// A Guid as a string of 36 characters (<see cref="GuidFormat.String"/>), formatted in place.
+    /// Not inlined: its stackalloc would give the generated and compiled writers, which call it in a branch, a larger frame and a stack cookie check on every call.
     /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
     internal void GuidString(Guid value)
     {
+#if NET8_0_OR_GREATER
+      if (IsUtf8(MsgPackOptions.StringEncoding)) // ASCII, formatted as UTF-8 in place (str 8 of 36 bytes)
+      {
+        Ensure(38);
+        if (value.TryFormat(new Span<byte>(Buf, Pos + 2, 36), out int written, "D") && written == 36)
+        {
+          Buf[Pos] = 0xD9;
+          Buf[Pos + 1] = 36;
+          Pos += 38;
+          return;
+        }
+      }
+#endif
 #if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[36];
       if (IsUtf8(MsgPackOptions.StringEncoding) && value.TryFormat(chars, out int length, "D")) // ASCII, the same bytes in UTF-8

@@ -5,8 +5,9 @@ namespace LsMsgPack.Analyzers
 {
   /// <summary>
   /// The constructor a reader calls with the values of properties, as LsMsgPack.Core's ObjectConstructor chooses it: the one with [JsonConstructor] or [SerializationConstructor],
-  /// otherwise the only public one when there is no public parameterless constructor; used when it takes a property without a public setter, or when every parameter takes a property
-  /// or has a default value and the type is a class or the constructor is marked. Its parameters take the property with their name (ignoring case, the exact name first) and type.
+  /// otherwise the only public one when there is no public parameterless constructor; used when it takes a property without a public setter or a readonly field, or when every parameter takes a property
+  /// (or public field) or has a default value and the type is a class or the constructor is marked. Its parameters take the property or public field with their name (ignoring case, the exact name first)
+  /// and type, whatever fields the serializers write (ObjectConstructor is per type).
   /// </summary>
   internal static class ValuesConstructor
   {
@@ -46,47 +47,60 @@ namespace LsMsgPack.Analyzers
       bool setsReadOnly = false, allTaken = true;
       foreach (IParameterSymbol parameter in chosen.Parameters)
       {
-        IPropertySymbol property = Find(type, parameter);
-        if (property is null)
+        ISymbol member = Find(type, parameter);
+        if (member is null)
         {
           allTaken &= parameter.HasExplicitDefaultValue || parameter.IsOptional;
           continue;
         }
-        setsReadOnly |= property.SetMethod is null || property.SetMethod.DeclaredAccessibility != Accessibility.Public;
+        if (member is IFieldSymbol field)
+          setsReadOnly |= field.IsReadOnly;
+        else
+        {
+          IPropertySymbol property = (IPropertySymbol)member;
+          setsReadOnly |= property.SetMethod is null || property.SetMethod.DeclaredAccessibility != Accessibility.Public;
+        }
       }
       return setsReadOnly || (allTaken && (markedCount > 0 || type.TypeKind == TypeKind.Class)) ? chosen : null;
     }
 
     /// <summary>
-    /// A parameter of the constructor takes the property.
+    /// A parameter of the constructor takes the property or field.
     /// </summary>
-    public static bool Takes(IMethodSymbol constructor, IPropertySymbol property)
+    public static bool Takes(IMethodSymbol constructor, ISymbol member)
     {
       foreach (IParameterSymbol parameter in constructor.Parameters)
-        if (SymbolEqualityComparer.Default.Equals(Find(constructor.ContainingType, parameter), property))
+        if (SymbolEqualityComparer.Default.Equals(Find(constructor.ContainingType, parameter), member))
           return true;
       return false;
     }
 
-    /// <returns>The public instance property with a getter that the parameter takes, null when none (or several with the name ignoring case)</returns>
-    private static IPropertySymbol Find(INamedTypeSymbol type, IParameterSymbol parameter)
+    /// <returns>The public instance property with a getter or the public field (FullPropertyInfo.PublicMembers, not of the framework's types) that the parameter takes, null when none
+    /// (or several with the name ignoring case)</returns>
+    private static ISymbol Find(INamedTypeSymbol type, IParameterSymbol parameter)
     {
       if (string.IsNullOrEmpty(parameter.Name))
         return null;
-      IPropertySymbol found = null;
+      ISymbol found = null;
       bool ambiguous = false;
       for (INamedTypeSymbol at = type; at != null; at = at.BaseType)
       {
         foreach (ISymbol member in at.GetMembers())
         {
-          if (!(member is IPropertySymbol property) || property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public || property.GetMethod is null
-            || !SymbolEqualityComparer.Default.Equals(property.Type, parameter.Type) || !string.Equals(property.Name, parameter.Name, StringComparison.OrdinalIgnoreCase))
+          ITypeSymbol memberType;
+          if (member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer && property.DeclaredAccessibility == Accessibility.Public && property.GetMethod != null)
+            memberType = property.Type;
+          else if (member is IFieldSymbol field && field.DeclaredAccessibility == Accessibility.Public && Fields.IsOfState(field) && !ModelAnalyzer.IsFramework(at))
+            memberType = field.Type;
+          else
             continue;
-          if (string.Equals(property.Name, parameter.Name, StringComparison.Ordinal))
-            return property;
-          if (found != null && found.Name != property.Name)
+          if (!SymbolEqualityComparer.Default.Equals(memberType, parameter.Type) || !string.Equals(member.Name, parameter.Name, StringComparison.OrdinalIgnoreCase))
+            continue;
+          if (string.Equals(member.Name, parameter.Name, StringComparison.Ordinal))
+            return member;
+          if (found != null && found.Name != member.Name)
             ambiguous = true;
-          found = found ?? property;
+          found = found ?? member;
         }
       }
       return ambiguous ? null : found;

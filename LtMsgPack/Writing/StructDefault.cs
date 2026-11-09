@@ -13,7 +13,9 @@ namespace LtMsgPack.Writing
   /// Whether a struct value is the default value FilterDefaultValues leaves out: LsMsgPack.Core compares it with <c>Activator.CreateInstance(type).Equals(value)</c>,
   /// which for a struct without its own Equals is ValueType.Equals. That compares the fields by reflection, boxing each of them, whenever the struct has float or double fields,
   /// references or padding (otherwise it compares the bytes). This is the same comparison compiled once per type: each field with the Equals of its type against its default.
-  /// <para>A struct with its own Equals or a declared parameterless constructor (its "default" is what the constructor makes), or one the expression cannot describe, is compared as Core does.</para>
+  /// <para>A framework struct with its own Equals that implements IEquatable&lt;T&gt; (System.Numerics.Vector3, Quaternion, the matrices: written by their fields) is compared by its typed Equals with the default,
+  /// what its Equals(object) does, without the box (as the source generator's IsDefault).
+  /// Any other struct with its own Equals or a declared parameterless constructor (its "default" is what the constructor makes), or one the expression cannot describe, is compared as Core does.</para>
   /// </summary>
   internal static class StructDefault<T>
   {
@@ -46,6 +48,8 @@ namespace LtMsgPack.Writing
       Type type = typeof(T);
       if (!PropertyAccessor.CanCompile) // without dynamic code (NativeAOT, a generated struct) expressions are interpreted: compare as Core does
         return IsDefaultBoxed;
+      if (type.IsValueType && OwnEquals(type))
+        return TypedEquals(type) ?? IsDefaultBoxed;
       if (!type.IsValueType || OwnEquals(type) || type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null) // Core's default is what that constructor makes
         return IsDefaultBoxed;
       try
@@ -114,6 +118,30 @@ namespace LtMsgPack.Writing
         return Expression.Call(Expression.Constant(defaultField), typeof(object).GetMethod(nameof(Equals), new Type[] { typeof(object) }), Expression.Convert(value, typeof(object)));
       }
       return FieldsAreDefault(value, type, depth + 1);
+    }
+
+    /// <summary>
+    /// <c>default(T).Equals(value)</c> through IEquatable&lt;T&gt; for a framework struct (whose Equals(object) calls it), null for other structs: their Equals(object) may differ from Equals(T).
+    /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only compiled where the runtime supports dynamic code (PropertyAccessor.CanCompile), a failure compares boxed.")]
+    private static RefPredicate<T> TypedEquals(Type type)
+    {
+      if (!TypeResolver.IsFrameworkAssembly(type.Assembly) || !typeof(IEquatable<T>).IsAssignableFrom(type)
+        || type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null)
+        return null;
+      MethodInfo equals = type.GetMethod(nameof(Equals), BindingFlags.Instance | BindingFlags.Public, null, new Type[] { type }, null);
+      if (equals is null)
+        return null;
+      try
+      {
+        ParameterExpression value = Expression.Parameter(type.MakeByRefType(), "value");
+        return Expression.Lambda<RefPredicate<T>>(Expression.Call(Expression.Default(type), equals, value), value).Compile();
+      }
+      catch (Exception)
+      {
+        return null;
+      }
     }
 
     /// <summary>

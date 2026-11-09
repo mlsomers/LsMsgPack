@@ -5,7 +5,7 @@ The `LtMsgPack.Data` package connects ADO.NET data readers (SqlClient, Npgsql, S
 - **Result sets and table dumps as streams**: `WriteTable` and `WriteResultSets` write the rows of a data reader to a `MsgPackStreamWriter` while they are read. Each result set gets one schema. With an index, a file of dumps lets a reader go to a table or a row directly.
 - **Dumps read back as a data reader**: `MsgPackDataReader` is a `DbDataReader` over the tables of a stream, e.g. for `SqlBulkCopy.WriteToServer(reader)`.
 - **One payload**: `SerializeRows` writes a result set as the bytes of a `List<T>`, for any reader of that list.
-- **Rows into objects**: `ReadRows<T>` maps rows to objects like Dapper's `Query<T>`, with the serializer's rules for properties, names and object creation.
+- **Rows into objects**: `ReadRows<T>` maps rows to objects like Dapper's `Query<T>`, with the serializer's rules for properties and serialized fields, names and object creation.
 
 It's an add-on to [LtMsgPack](Streaming.md), in its own package so applications without databases don't carry it. It depends on exactly the LtMsgPack version it was built with. ADO.NET is part of .NET Standard 2.0, so there are no other dependencies.
 
@@ -116,10 +116,10 @@ List<Order> orders = serializer.ReadRows<Order>(reader);
 foreach (Order order in serializer.EnumerateRows<Order>(reader)) { ... }
 ```
 
-- **Properties**: the ones the serializer reads (its static filters, `[IgnoreDataMember]`, `[JsonIgnore]`...), except those with `[NotMapped]`.
-- **Column names**: `[Column("customer_name")]` (System.ComponentModel.DataAnnotations.Schema, as Entity Framework and linq2db use it; found by its name, so no reference is needed), otherwise the property id (the name, or what the options' property id resolvers return). Then the name ignoring case, then ignoring case and underscores (`first_name` sets `FirstName`). A column that matches no property, or several equally, is not read.
+- **Properties and serialized fields**: the ones the serializer reads (its static filters, with the `SerializedFields` option for fields, `[IgnoreDataMember]`, `[JsonIgnore]`...), except those with `[NotMapped]`.
+- **Column names**: `[Column("customer_name")]` (System.ComponentModel.DataAnnotations.Schema, as Entity Framework and linq2db use it; found by its name, so no reference is needed), otherwise the property id (the name, or what the options' property id resolvers return). Then the name ignoring case, then ignoring case and underscores (`first_name` sets `FirstName`). A column that matches no property or field, or several equally, is not read.
 - **Values**: a column of the property's type is read with the typed getter (`GetInt32`, `GetString`..., no boxing). For a column of another type, the getter of the property's type is tried on the first row: SQLite, for example, reads `GetInt32` from INTEGER and `GetDateTime`, `GetDecimal` and `GetGuid` from TEXT. If that fails, the boxed value is converted as the serializer converts values (numbers, enums from integers or names, Guids from strings...).
-- **DBNull** leaves the property as the constructor made it.
+- **DBNull** leaves the property or field as the constructor made it.
 - **Objects** are created as `ObjectCreation` says, with the generated creators and setters when the class has generated code. Immutable classes are created by the constructor that takes their values, as the serializer creates them.
 - Dapper reads a Guid stored as TEXT in SQLite only with a type handler. `ReadRows` reads it through SQLite's `GetGuid`.
 

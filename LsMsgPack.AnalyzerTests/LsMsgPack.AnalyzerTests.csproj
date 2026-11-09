@@ -15,6 +15,8 @@
     <PackageReference Include="MSTest.TestFramework" Version="4.5.2" />
     <!-- newer than the analyzers' 4.8: a newer compiler and IDE load them, as in a newer SDK -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" />
+    <!-- compiles VB models: the fields VB generates, as C# projects referencing them see them -->
+    <PackageReference Include="Microsoft.CodeAnalysis.VisualBasic" Version="4.11.0" />
   </ItemGroup>
 
   <ItemGroup>

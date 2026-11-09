@@ -14,7 +14,11 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://127.0.0.1:0");
 builder.Logging.ClearProviders();
 builder.Services.AddControllers()
-  .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNamingPolicy = null) // the names of the classes, as the schema has them
+  .AddJsonOptions(o =>
+  {
+    o.JsonSerializerOptions.PropertyNamingPolicy = null; // the names of the classes, as the schema has them
+    o.JsonSerializerOptions.IncludeFields = true; // Motion: the fields of Vector3 and the opted in ones (no model has other public fields)
+  })
   .AddLsMsgPackSerializerFormatters();
 
 WebApplication app = builder.Build();

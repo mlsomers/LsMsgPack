@@ -9,9 +9,10 @@ using System.Threading;
 namespace LsMsgPack.Meta
 {
   /// <summary>
-  /// Gets and sets the value of one property, shared by all <see cref="FullPropertyInfo"/> instances of that property (they can be per session).
+  /// Gets and sets the value of one property or field, shared by all <see cref="FullPropertyInfo"/> instances of that member (they can be per session).
   /// <para>Uses the accessors of the source generator when they are registered (<see cref="GeneratedTypes"/>).
-  /// Otherwise starts with reflection, once a property has been used <see cref="CompileAfterCalls"/> times, typed delegates bound to its get and set methods take over (when the runtime supports dynamic code, see <see cref="CanCompile"/>).</para>
+  /// Otherwise starts with reflection, once a member has been used <see cref="CompileAfterCalls"/> times, typed delegates take over (when the runtime supports dynamic code, see <see cref="CanCompile"/>):
+  /// bound to the get and set methods of a property, compiled from expression trees for a field (a field has no methods to bind to).</para>
   /// <para>Exceptions thrown by the getter or setter are rethrown as they are, not wrapped in a <see cref="TargetInvocationException"/> (as reflection does), so they do not depend on whether the delegates are bound yet.</para>
   /// </summary>
   internal sealed class PropertyAccessor
@@ -22,29 +23,56 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal const int CompileAfterCalls = 100;
 
-    private static readonly ConcurrentDictionary<PropertyInfo, PropertyAccessor> Cache = new ConcurrentDictionary<PropertyInfo, PropertyAccessor>();
+    private static readonly ConcurrentDictionary<MemberInfo, PropertyAccessor> Cache = new ConcurrentDictionary<MemberInfo, PropertyAccessor>();
 
-    public static PropertyAccessor Get(PropertyInfo property)
+    /// <param name="member">A property or a field</param>
+    public static PropertyAccessor Get(MemberInfo member)
     {
-      return Cache.GetOrAdd(property, p => new PropertyAccessor(p));
+      if (Cache.TryGetValue(member, out PropertyAccessor accessor))
+        return accessor;
+      return Cache.GetOrAdd(member, m => m is FieldInfo field ? new PropertyAccessor(field) : new PropertyAccessor((PropertyInfo)m));
     }
 
-    private readonly PropertyInfo _property;
+    private readonly PropertyInfo _property; // null for a field
+    private readonly FieldInfo _field; // null for a property
     private Func<object, object> _getter;
     private Action<object, object> _setter;
     private int _getCalls;
     private int _setCalls;
 
     /// <summary>
-    /// A property without a setter whose value reading skips (a computed property, see <see cref="TypeResolving.Filters.GetOnlyProperties.Computed"/>):
+    /// A property without a setter or a readonly field whose value reading skips (a computed property, see <see cref="TypeResolving.Filters.GetOnlyProperties.Computed"/>):
     /// not of an anonymous type (its field is set), not taken by a constructor (see <see cref="ObjectConstructor"/>) and not a collection that can be filled (see <see cref="GetOnlyCollection"/>).
     /// </summary>
     internal readonly bool Computed;
 
+    /// <summary>
+    /// A field: read and set by reflection until the typed delegates are compiled, never set when it is readonly (only through a constructor, as a property without a setter).
+    /// </summary>
+    private PropertyAccessor(FieldInfo field)
+    {
+      _field = field;
+      GeneratedProperty generated = GeneratedTypes.FindMember(field); // the accessors of the source generator (contract version 4), registered for the process
+      if (generated != null)
+      {
+        _getter = generated.BoxedGetter;
+        _setter = generated.BoxedSetter(field); // null for a readonly field
+      }
+      if (field.IsInitOnly)
+      {
+        if (GetOnlyCollection.IsFillable(field.FieldType))
+          _setter = Fill;
+        else if (ObjectConstructor.Sets(field))
+          _setter = (obj, val) => throw new InvalidOperationException($"The readonly field {field.DeclaringType.Name}.{field.Name} is set by the constructor only."); // its values are collected for it (ObjectConstructor.Arguments)
+        else
+          Computed = true;
+      }
+    }
+
     private PropertyAccessor(PropertyInfo property)
     {
       _property = property;
-      GeneratedProperty generated = GeneratedTypes.FindProperty(property); // the accessors of the source generator, registered for the process
+      GeneratedProperty generated = GeneratedTypes.FindMember(property); // the accessors of the source generator, registered for the process
       if (generated != null)
       {
         _getter = generated.BoxedGetter;
@@ -96,9 +124,9 @@ namespace LsMsgPack.Meta
           return getter(instance);
 
         if (Interlocked.Increment(ref _getCalls) == CompileAfterCalls)
-          _getter = Compile(_property)?.Getter ?? (obj => _property.GetValue(obj, null));
+          _getter = Compile()?.Getter ?? ReflectionGetter();
 
-        return _property.GetValue(instance, null);
+        return _field is null ? _property.GetValue(instance, null) : _field.GetValue(instance);
       }
       catch (TargetInvocationException ex) when (ex.InnerException != null)
       {
@@ -121,15 +149,41 @@ namespace LsMsgPack.Meta
         }
 
         if (Interlocked.Increment(ref _setCalls) == CompileAfterCalls)
-          _setter = Compile(_property)?.Setter ?? ((obj, val) => _property.SetValue(obj, val, null));
+          _setter = Compile()?.Setter ?? ReflectionSetter();
 
-        _property.SetValue(instance, value, null);
+        if (_field is null)
+          _property.SetValue(instance, value, null);
+        else
+          _field.SetValue(instance, value);
       }
       catch (TargetInvocationException ex) when (ex.InnerException != null) // also from the reflection fallback of a bound setter
       {
         ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
         throw; // not reached
       }
+    }
+
+    private Func<object, object> ReflectionGetter()
+    {
+      FieldInfo field = _field;
+      if (field != null)
+        return obj => field.GetValue(obj);
+      PropertyInfo property = _property;
+      return obj => property.GetValue(obj, null);
+    }
+
+    private Action<object, object> ReflectionSetter()
+    {
+      FieldInfo field = _field;
+      if (field != null)
+        return (obj, val) => field.SetValue(obj, val);
+      PropertyInfo property = _property;
+      return (obj, val) => property.SetValue(obj, val, null);
+    }
+
+    private ITypedAccessor Compile()
+    {
+      return _field is null ? Compile(_property) : Compile(_field);
     }
 
     /// <summary>
@@ -184,6 +238,32 @@ namespace LsMsgPack.Meta
       }
     }
 
+    /// <returns>null when the field cannot (or should not) get typed delegates, reflection is used instead</returns>
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(TypedAccessor<,>))]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only called when the runtime supports dynamic code (CanCompile), a failure falls back to reflection.")]
+    internal static ITypedAccessor Compile(FieldInfo field)
+    {
+      Type declaringType = field.DeclaringType;
+      Type type = field.FieldType;
+      if (!CanCompile
+        || declaringType.IsValueType // setting a field of a boxed struct needs the box itself (FieldInfo.SetValue sets it in the box)
+        || declaringType.ContainsGenericParameters
+        || field.IsStatic
+        || type.IsByRef
+        || type.IsPointer)
+        return null;
+
+      try
+      {
+        Type accessorType = typeof(TypedAccessor<,>).MakeGenericType(declaringType, type);
+        return (ITypedAccessor)Activator.CreateInstance(accessorType, field);
+      }
+      catch (Exception) // e.g. a runtime that cannot create the generic type, or compile the expressions
+      {
+        return null;
+      }
+    }
+
     internal interface ITypedAccessor
     {
       /// <summary>null when the property has no getter</summary>
@@ -194,11 +274,13 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// Delegates bound to the get and set methods of a property of <typeparamref name="TTarget"/> (a class), called like any other method (virtual properties call the override).
+    /// Typed delegates for a property or field of <typeparamref name="TTarget"/> (a class): bound to the get and set methods of a property (called like any other method, virtual properties call the override),
+    /// compiled from expression trees for a field (no setter for a readonly field).
     /// </summary>
     private sealed class TypedAccessor<TTarget, TValue> : ITypedAccessor where TTarget : class
     {
       private readonly PropertyInfo _property;
+      private readonly FieldInfo _field;
       private readonly Func<TTarget, TValue> _get;
       private readonly Action<TTarget, TValue> _set;
 
@@ -209,6 +291,13 @@ namespace LsMsgPack.Meta
           _get = (Func<TTarget, TValue>)Delegate.CreateDelegate(typeof(Func<TTarget, TValue>), get);
         if (set != null)
           _set = (Action<TTarget, TValue>)Delegate.CreateDelegate(typeof(Action<TTarget, TValue>), set);
+      }
+
+      public TypedAccessor(FieldInfo field)
+      {
+        _field = field;
+        _get = FieldDelegates.Getter<TTarget, TValue>(field);
+        _set = FieldDelegates.Setter<TTarget, TValue>(field); // null when readonly
       }
 
       public Func<object, object> Getter { get { return _get is null ? null : (Func<object, object>)GetValue; } }
@@ -226,8 +315,10 @@ namespace LsMsgPack.Meta
           _set((TTarget)instance, typed);
         else if (value is null && (object)default(TValue) is null) // reference types and Nullable<T>
           _set((TTarget)instance, default(TValue));
-        else
+        else if (_field is null)
           _property.SetValue(instance, value, null); // reflection also converts other values (e.g. null to the default of a value type, primitive widening)
+        else
+          _field.SetValue(instance, value);
       }
     }
   }

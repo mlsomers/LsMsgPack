@@ -159,11 +159,17 @@ namespace LsMsgPackUnitTests
                   DynamicFilters = filter ? new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() } : new IMsgPackPropertyIncludeDynamically[0],
                   UnspecifiedDateTimeKind = trim ? DateTimeKind.Utc : DateTimeKind.Local
                 };
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map }) // the formats of the Generic() preset, written by the compiled code (GeneratedCapabilities.WriteFormats)
+        yield return new LtMsgPackOptions
+        {
+          UseInexedSchema = false, ObjectLayout = layout, TrimTrailingNulls = layout == ObjectLayout.Array, GuidFormat = GuidFormat.String, DecimalFormat = DecimalFormat.String,
+          DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() }
+        };
     }
 
     private static string Describe(LtMsgPackOptions o)
     {
-      return $"schema {o.UseInexedSchema}, reference {o.WriteSchemaReference}, {o.ObjectLayout}, filters {o.DynamicFilters.Length}, trim {o.TrimTrailingNulls}";
+      return $"schema {o.UseInexedSchema}, reference {o.WriteSchemaReference}, {o.ObjectLayout}, filters {o.DynamicFilters.Length}, trim {o.TrimTrailingNulls}, {o.GuidFormat}/{o.DecimalFormat}";
     }
 
     [TestMethod]
@@ -382,6 +388,50 @@ namespace LsMsgPackUnitTests
         CollectionAssert.AreEqual(Create(options, -1).Serialize(value), compiled.Serialize(value));
         Assert.IsNull(WriterOf(compiled, typeof(CwAllKinds), true));
       }
+    }
+
+    /// <summary>
+    /// Generated code writes another order than it predicted (here alphabetical) by its loop over the ids: after the number of objects the plan compiles a writer for its order.
+    /// </summary>
+    [TestMethod]
+    public void TheGeneratedCodesLoop_IsReplacedByACompiledWriter()
+    {
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+        foreach (bool trim in layout == ObjectLayout.Array ? new[] { false, true } : new[] { false })
+        {
+          LtMsgPackOptions options = new LtMsgPackOptions
+          {
+            UseInexedSchema = false, ObjectLayout = layout, TrimTrailingNulls = trim, PropertyOrder = PropertyOrder.Alphabetical, Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }
+          };
+          string name = layout + (trim ? " trimmed" : "");
+          LtMsgPackOptions withoutCode = options.Clone();
+          withoutCode.Contexts = null;
+          CwAllKinds value = Full();
+          byte[] expected = Create(withoutCode, -1).Serialize(value);
+
+          LtMsgPackSerializer serializer = Create(options, 3);
+          for (int t = 1; t <= 2; t++)
+          {
+            CollectionAssert.AreEqual(expected, serializer.Serialize(value), name + ", object " + t);
+            Assert.AreNotEqual("CompiledObjectCode", WriterOf(serializer, typeof(CwAllKinds), true), name + ", the generated code after object " + t);
+          }
+          CollectionAssert.AreEqual(expected, serializer.Serialize(value), name + ", object 3: compiles in the background");
+          Stopwatch waited = Stopwatch.StartNew();
+          while (WriterOf(serializer, typeof(CwAllKinds), true) != "CompiledObjectCode" && waited.ElapsedMilliseconds < 10000)
+            System.Threading.Thread.Sleep(5);
+          Assert.AreEqual("CompiledObjectCode", WriterOf(serializer, typeof(CwAllKinds), true), name);
+          CollectionAssert.AreEqual(expected, serializer.Serialize(value), name + ", object 4");
+
+          serializer = Create(options, 0);
+          CollectionAssert.AreEqual(expected, serializer.Serialize(value), name + ", compiled at once");
+          Assert.AreEqual("CompiledObjectCode", WriterOf(serializer, typeof(CwAllKinds), true), name + ", 0: compiled with the plan");
+
+          options.PropertyOrder = PropertyOrder.Reflection; // the order the generated code writes in sequence: it stays
+          serializer = Create(options, 0);
+          serializer.Serialize(value);
+          Assert.AreNotEqual("CompiledObjectCode", WriterOf(serializer, typeof(CwAllKinds), true), name + ", the predicted order");
+          Assert.IsNotNull(WriterOf(serializer, typeof(CwAllKinds), true), name + ", the predicted order: the generated code");
+        }
     }
 
     [TestMethod]

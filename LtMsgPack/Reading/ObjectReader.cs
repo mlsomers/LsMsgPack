@@ -47,8 +47,8 @@ namespace LtMsgPack.Reading
       if (c.R.TryReadNil())
         return default(T); // null, a struct's default as Core converts a nil
 
-      if (c.Unusual) // objects read as LsMsgPack does, or the differences are collected
-        return _serializer.SlowObjects ? Slow(c, start, assignedTo) : ReadReporting(c, start, assignedTo);
+      if (c.Unusual) // objects read as LsMsgPack does, or the differences are collected (values declared as object: Core reports them)
+        return _serializer.SlowObjects || typeof(T) == typeof(object) ? Slow(c, start, assignedTo) : ReadReporting(c, start, assignedTo);
 
       int count = c.R.TryReadMapHeader();
       if (count < 0)
@@ -90,7 +90,7 @@ namespace LtMsgPack.Reading
       }
 
       PropReader[] bound = null;
-      if (c.Schema)
+      if (c.Schema && count > 0) // no keys, nothing to bind: a type without serialized members has no schema entry (Core's ValueConverter.ConvertMap creates it without looking)
       {
         bound = c.Bound.Binding(plan);
         if (bound is null)
@@ -350,7 +350,7 @@ namespace LtMsgPack.Reading
       }
 
       PropReader[] bound = null;
-      if (c.Schema)
+      if (c.Schema && count > 0) // no keys, nothing to bind: a type without serialized members has no schema entry (Core's ValueConverter.ConvertMap creates it without looking)
       {
         bound = c.Bound.Binding(plan);
         if (bound is null)
@@ -643,8 +643,27 @@ namespace LtMsgPack.Reading
         return props[next++];
       if (_caseInsensitive)
         return FindOrMatchIgnoringCase(buffer, offset, length, ref next);
+      return Search(buffer, offset, length, ref next);
+    }
 
-      for (int t = props.Length - 1; t >= 0; t--) // the names are unique
+    /// <summary>
+    /// FindByName after the next property did not have the name (apart, so FindByName stays small). The names are unique, so the order only decides the speed:
+    /// forward from the next property first, as the values FilterDefaultValues leaves out skip properties (from the last property backwards, a class of 120 properties
+    /// with 4 values left out read 1.6x slower).
+    /// </summary>
+    private PropReader Search(byte[] buffer, int offset, int length, ref int next)
+    {
+      PropReader[] props = Props;
+      for (int t = next + 1; t < props.Length; t++)
+      {
+        if (props[t].NameIs(buffer, offset, length))
+        {
+          next = t + 1;
+          return props[t];
+        }
+      }
+      int end = next < props.Length ? next : props.Length;
+      for (int t = 0; t < end; t++)
       {
         if (props[t].NameIs(buffer, offset, length))
         {
@@ -669,9 +688,18 @@ namespace LtMsgPack.Reading
       if (next < props.Length && length > 0 && props[next].FirstDiffersInCase(buffer[offset]) && _asciiNames && !_ambiguous[next] && props[next].NameIsIgnoringAsciiCase(buffer, offset, length))
         return props[next++]; // no other property equals the key ignoring case, so none has it as its name
 
-      for (int t = props.Length - 1; t >= 0; t--)
+      for (int t = next + 1; t < props.Length; t++) // forward from the next property first (see FindByName)
       {
         if (props[t].NameIs(buffer, offset, length) || props[t].CamelNameIs(buffer, offset, length)) // the camelCase name: no other property has it ignoring case
+        {
+          next = t + 1;
+          return props[t];
+        }
+      }
+      int end = next < props.Length ? next : props.Length; // the next property's name and camelCase name were compared
+      for (int t = 0; t < end; t++)
+      {
+        if (props[t].NameIs(buffer, offset, length) || props[t].CamelNameIs(buffer, offset, length))
         {
           next = t + 1;
           return props[t];
@@ -887,7 +915,7 @@ namespace LtMsgPack.Reading
     internal PropReader(FullPropertyInfo info)
     {
       Info = info;
-      Name = info.PropertyInfo.Name;
+      Name = info.Name;
       _nameBytes = MsgPackOptions.StringEncoding.GetBytes(Name);
     }
 
@@ -983,7 +1011,9 @@ namespace LtMsgPack.Reading
     {
       PropertyInfo property = info.PropertyInfo;
       if (info.IsComputed) // written only (a collection without a setter is filled by its accessor, see BoxedPropReader)
-        return ComputedReader(serializer, info, property.DeclaringType);
+        return ComputedReader(serializer, info, info.Member.DeclaringType);
+      if (property is null)
+        return CreateForField(serializer, info, info.FieldInfo);
 
       PropReader generated = serializer.GeneratedProperty(property)?.CreateReader(serializer, info); // the setter of the source generator
       if (generated != null)
@@ -998,6 +1028,36 @@ namespace LtMsgPack.Reading
           return (PropReader)Activator.CreateInstance(readerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, set }, null);
         }
         catch (Exception) // use reflection
+        {
+        }
+      }
+      return new BoxedPropReader(serializer, info);
+    }
+
+    /// <summary>
+    /// A field: set by the setter of the source generator, or a typed delegate compiled from an expression when the plan is built (not after some uses: PGO then profiles the final code), as a property's setter is bound.
+    /// A readonly field (a collection that is filled, or one a constructor takes) through its accessor, as a property without a setter.
+    /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // as Create
+    [UnconditionalSuppressMessage("Trimming", "IL2076", Justification = TrimReasons.Fallback)]
+    private static PropReader CreateForField(Serializer serializer, FullPropertyInfo info, FieldInfo field)
+    {
+      if (!field.IsInitOnly)
+      {
+        PropReader generated = serializer.GeneratedProperty(field)?.CreateReader(serializer, info);
+        if (generated != null)
+          return generated;
+      }
+      Type declaring = field.DeclaringType;
+      if (!field.IsInitOnly && !field.IsStatic && !declaring.ContainsGenericParameters && serializer.CanBindDelegates)
+      {
+        try
+        {
+          Type readerType = (declaring.IsValueType ? typeof(StructPropReader<,>) : typeof(PropReader<,>)).MakeGenericType(declaring, field.FieldType);
+          return (PropReader)Activator.CreateInstance(readerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, field }, null);
+        }
+        catch (Exception) // e.g. a runtime that cannot create the generic type or compile the expression, use reflection
         {
         }
       }
@@ -1062,6 +1122,11 @@ namespace LtMsgPack.Reading
       _nil = NilOf<TValue>(serializer, info);
     }
 
+    /// <param name="field">Set by a delegate compiled from an expression (not readonly)</param>
+    public PropReader(Serializer serializer, FullPropertyInfo info, FieldInfo field) : this(serializer, info, FieldDelegates.Setter<TTarget, TValue>(field))
+    {
+    }
+
     /// <param name="set">The setter of the source generator</param>
     internal PropReader(Serializer serializer, FullPropertyInfo info, Action<TTarget, TValue> set) : base(info)
     {
@@ -1104,6 +1169,11 @@ namespace LtMsgPack.Reading
       _serializer = serializer;
       _set = (StructSetter<TTarget, TValue>)Delegate.CreateDelegate(typeof(StructSetter<TTarget, TValue>), set);
       _nil = NilOf<TValue>(serializer, info);
+    }
+
+    /// <param name="field">Set by reference by a delegate compiled from an expression (not readonly)</param>
+    public StructPropReader(Serializer serializer, FullPropertyInfo info, FieldInfo field) : this(serializer, info, FieldDelegates.StructSetter<TTarget, TValue>(field))
+    {
     }
 
     /// <param name="set">The setter of the source generator</param>
@@ -1156,7 +1226,7 @@ namespace LtMsgPack.Reading
 
     public override void Read(ReadContext c, object target)
     {
-      ValueReader reader = _reader ?? (_reader = _serializer.Reader(Info.PropertyInfo.PropertyType));
+      ValueReader reader = _reader ?? (_reader = _serializer.Reader(Info.DeclaredType));
       Info.SetValue(target, reader.ReadBoxed(c, Info));
     }
 
@@ -1262,7 +1332,7 @@ namespace LtMsgPack.Reading
           continue;
         }
         object nil = info.NilValue(serializer.Options);
-        if (constructor.TryGetParameter(info.PropertyInfo.Name, out int index))
+        if (constructor.TryGetParameter(info.Name, out int index))
         {
           initial[index] = nil;
           ArgumentReader parameter = new ArgumentReader(serializer, this, info, index, nil, null);
@@ -1392,7 +1462,7 @@ namespace LtMsgPack.Reading
           _setter.Read(c, values.Created);
         return;
       }
-      ValueReader reader = _reader ?? (_reader = _serializer.Reader(Info.PropertyInfo.PropertyType));
+      ValueReader reader = _reader ?? (_reader = _serializer.Reader(Info.DeclaredType));
       values.Values[_index] = reader.ReadBoxed(c, Info);
       Received(values);
     }
