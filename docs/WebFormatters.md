@@ -89,7 +89,7 @@ builder.Services.AddControllers()
     o.XLsMsgPack.DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(), new FilterShouldSerialize() };
 ```
 
-See [Property names and filters](schema.md#property-names-and-filters) for the other presets, empty strings, default values and [ShouldSerialize methods](schema.md#shouldserialize-methods).
+See [Property names and filters](schema.md#property-names-and-filters) for the other presets, empty strings, default values and [ShouldSerialize methods](schema.md#shouldserialize-methods). A model with cycles (an object referring back to its parent) fails at `MaxDepth`, unless the references are left out or `IgnoreCycles` is set ([Cycles](schema.md#cycles)).
 
 Alternatively, add them to `MvcOptions` directly, with or without an `LtMsgPackHttpOptions` instance:
 

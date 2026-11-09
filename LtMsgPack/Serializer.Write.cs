@@ -35,6 +35,11 @@ namespace LtMsgPack
     /// A dynamic filter takes the owner (<see cref="IMsgPackPropertyIncludeWithOwner"/>): a struct is boxed for it.
     /// </summary>
     internal readonly bool OwnerFilters;
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.IgnoreCycles"/>: the object handlers of classes are <see cref="CycleHandler{T}"/>s, <see cref="WriteBoxed"/> tracks the objects too.
+    /// </summary>
+    internal readonly bool IgnoreCycles;
     internal readonly bool CanBindDelegates;
 
     /// <summary>
@@ -62,6 +67,7 @@ namespace LtMsgPack
       IMsgPackPropertyIncludeDynamicallyArray(options, out Filters);
       _shouldSerialize = options.CallsShouldSerialize;
       OwnerFilters = HasOwnerFilters(options._dynamicFilters);
+      IgnoreCycles = options._ignoreCycles;
       CanBindDelegates = PropertyAccessor.CanCompile;
       _alwaysTypeId = (options._addTypeIdOptions & AddTypeIdOption.Always) != 0;
       _customTypeResolvers = options._typeResolvers.Length > 0;
@@ -186,7 +192,10 @@ namespace LtMsgPack
           return Boxed(type);
         case TypeKind.Complex:
           if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
-            return Instantiate(type, typeof(ObjectHandler<>), type, this);
+          {
+            object handler = Instantiate(type, typeof(ObjectHandler<>), type, this);
+            return IgnoreCycles && !type.IsValueType ? ((ICycleTracking)handler).Tracked() : handler; // apart, so the handler without the option stays as it is
+          }
           return Boxed(type);
         default:
           return Boxed(type);
@@ -376,12 +385,37 @@ namespace LtMsgPack
       bool isObject = info.Kind == TypeKind.Complex;
       if (isObject && SerializationRules.WritesByNames(type, assignedTo, byNames))
       {
+        if (IgnoreCycles)
+        {
+          if (!c.EnterObject(value))
+          {
+            c.W.Nil();
+            return;
+          }
+          ByNamesPlan(type).Write(c, value);
+          c.LeaveObject();
+          return;
+        }
         ByNamesPlan(type).Write(c, value);
         return;
       }
       c.ByNames = SerializationRules.EntersByNames(type, assignedTo, byNames, isObject);
       WriteBoxed(c, value, type, info, assignedTo);
       c.ByNames = byNames;
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.IgnoreCycles"/>: an object with properties of a type that is not declared there (LsMsgPack: SerializeTracked), nil when it is already being written.
+    /// </summary>
+    private void WriteTracked(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
+    {
+      if (!c.EnterObject(value))
+      {
+        c.W.Nil();
+        return;
+      }
+      PlanOf(info, c.Mode == IdMode.Names).Write(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId), assignedTo);
+      c.LeaveObject();
     }
 
     private void WriteBoxed(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
@@ -394,6 +428,11 @@ namespace LtMsgPack
           return;
 
         case TypeKind.Complex:
+          if (IgnoreCycles && !type.IsValueType)
+          {
+            WriteTracked(c, value, type, info, assignedTo);
+            return;
+          }
           PlanOf(info, c.Mode == IdMode.Names).Write(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId), assignedTo);
           return;
 

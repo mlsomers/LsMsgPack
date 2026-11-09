@@ -320,6 +320,16 @@ MsgPackSettings settings = new MsgPackSettings()
 
 The methods are looked up once per property, and only the properties that have one are checked per object: LtMsgPack writes the others with its usual code (generated or compiled). The source generator keeps the methods of the classes it describes when the application is trimmed.
 
+### Cycles
+
+An object that refers back to an object containing it (a parent, the object itself) is a cycle: by default writing it throws a `MsgPackException` at `MaxDepth` (256 levels). Break it where it starts with `[JsonIgnore]` or a [ShouldSerialize method](#shouldserialize-methods), or set `IgnoreCycles`: a reference to an object that is being written is then written as nil, as System.Text.Json's `ReferenceHandler.IgnoreCycles` does (also in maps: the key stays, with nil). Read back, that reference is null.
+
+```csharp
+MsgPackSettings settings = new MsgPackSettings() { IgnoreCycles = true }; // LtMsgPackOptions too
+```
+
+Only the objects on the current path count: an object referenced from two places side by side (not containing each other) is written twice, there are no references in the data. Objects with properties are tracked (not structs and collections). The option costs time per object written (LtMsgPack, small objects of 3-6 properties: about 10% more in the map layout, 20-30% in the array layout), so it is off by default.
+
 ### Ignoring the same properties as another serializer
 
 To leave out the same properties as the serializer your classes were made for, replace `FilterIgnoredAttribute` by one of its presets: `LikeNewtonsoft` (`[Newtonsoft.Json.JsonIgnore]` and `[IgnoreDataMember]`), `LikeSystemTextJson`, `LikeXmlSerializer`, `LikeDataContract`, `LikeMessagePackCSharp` or `LikeNerdbank` (tested against those libraries). Or pick the attributes yourself with `IgnoreAttributes` flags, and add the names of your own attributes:

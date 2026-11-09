@@ -153,6 +153,12 @@ namespace LsMsgPack
     public static int Default_MaxDepth { get; set; } = 256;
 
     /// <summary>
+    /// The <see cref="IgnoreCycles"/> of new settings (false by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static bool Default_IgnoreCycles { get; set; } = false;
+
+    /// <summary>
     /// The <see cref="ObjectCreation"/> of new settings (<see cref="LsMsgPack.ObjectCreation.ConstructorOrUninitialized"/> by default).
     /// </summary>
     [IgnoreDataMember]
@@ -212,6 +218,7 @@ namespace LsMsgPack
     internal bool _propertyNameCaseInsensitive = Default_PropertyNameCaseInsensitive;
     internal SchemaVersion _schemaVersion = Default_SchemaVersion;
     internal int _maxDepth = Default_MaxDepth;
+    internal bool _ignoreCycles = Default_IgnoreCycles;
     internal ObjectCreation _objectCreation = Default_ObjectCreation;
     internal ReadErrorHandling _readErrors = Default_ReadErrors;
     internal bool _unspecifiedIsUtc = Default_UnspecifiedDateTimeKind == DateTimeKind.Utc;
@@ -556,6 +563,23 @@ namespace LsMsgPack
     {
       get { return _maxDepth; }
       set { _maxDepth = value; }
+    }
+
+    /// <summary>
+    /// Writing: a reference to an object that is being written (the object itself or one that contains it, a cycle) is written as nil, as System.Text.Json's <c>ReferenceHandler.IgnoreCycles</c> does.
+    /// Off by default: a cycle then ends at <see cref="MaxDepth"/> with a <see cref="MsgPackException"/>.
+    /// <para>Objects with properties are tracked (not structs, collections, pairs and tuples): every object being written is compared with the ones containing it. That costs LtMsgPack
+    /// a part of writing per object: small objects (3-6 properties) about 10% more time in the map layout, 20-30% in the array layout. Only the current path counts:
+    /// an object referenced twice side by side is written twice. Read back, the reference is null.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Ignore Cycles")]
+    [Description("Writes a reference to an object that is being written (a cycle) as nil, as System.Text.Json's IgnoreCycles does, instead of failing at Max Depth.")]
+    [DefaultValue(false)]
+    public bool IgnoreCycles
+    {
+      get { return _ignoreCycles; }
+      set { _ignoreCycles = value; }
     }
 
     /// <summary>

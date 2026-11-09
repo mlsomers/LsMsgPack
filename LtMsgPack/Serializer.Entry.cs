@@ -72,6 +72,8 @@ namespace LtMsgPack
         WriteContext c = state.Context;
         c.Root = value;
         c.Depth = 0;
+        if (c.PathCount != 0)
+          c.ClearPath();
         c.ByNames = false;
         if (!ReferenceEquals(c.W, state.Body)) // the fields of the context mostly keep their values: a comparison is cheaper than storing a reference (a write barrier)
           c.W = state.Body;
@@ -162,6 +164,8 @@ namespace LtMsgPack
       store.RunWriter(assignedTo, Options, (s, sessionSettings) =>
       {
         c.Depth = 0;
+        if (c.PathCount != 0)
+          c.ClearPath();
         c.ByNames = false;
         c.W.Reset(Options);
         c.Mode = IdMode.Session;
@@ -287,6 +291,8 @@ namespace LtMsgPack
     private static void WriteBody(WriteContext c, WriteState state, int depth, MsgPackOptions sessionSettings, Action<WriteContext, FullPropertyInfo> write, FullPropertyInfo root)
     {
       c.Depth = depth;
+      if (c.PathCount != 0)
+        c.ClearPath();
       c.ByNames = false;
       if (!ReferenceEquals(c.W, state.Body))
         c.W = state.Body;
