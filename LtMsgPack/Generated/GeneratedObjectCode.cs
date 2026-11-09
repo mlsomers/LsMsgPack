@@ -519,7 +519,7 @@ namespace LtMsgPack.Generated
       {
         if (_props[position].BoxedFilters)
         {
-          if (!_props[position].IncludeBoxed(value, info))
+          if (!_props[position].IncludeBoxed(value, info, null)) // a [DefaultValue]: the properties a filter decides by their owner have no generated member (Serializer.WriteMember)
             return false;
         }
         else if (!handler.IncludeByDefault(value, info))

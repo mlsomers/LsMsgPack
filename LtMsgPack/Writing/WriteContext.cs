@@ -63,6 +63,48 @@ namespace LtMsgPack.Writing
     internal int Depth;
 
     /// <summary>
+    /// <see cref="MsgPackOptions.IgnoreCycles"/>: the objects with properties being written, the root first (LsMsgPack: CyclePath). Null until the first.
+    /// </summary>
+    private object[] _path;
+    internal int PathCount;
+
+    /// <returns>false when the object is already being written (a cycle: write nil instead), otherwise it is on the path until <see cref="LeaveObject"/></returns>
+    internal bool EnterObject(object value)
+    {
+      object[] path = _path;
+      int count = PathCount;
+      for (int t = count - 1; t >= 0; t--)
+        if (ReferenceEquals(path[t], value))
+          return false;
+      if (path is null || count == path.Length)
+        path = GrowPath();
+      path[count] = value;
+      PathCount = count + 1;
+      return true;
+    }
+
+    private object[] GrowPath()
+    {
+      object[] path = _path;
+      Array.Resize(ref path, path is null ? 16 : path.Length * 2);
+      return _path = path;
+    }
+
+    internal void LeaveObject()
+    {
+      _path[--PathCount] = null; // not kept alive after the call
+    }
+
+    /// <summary>
+    /// At the start of a call: a call that failed left its path.
+    /// </summary>
+    internal void ClearPath()
+    {
+      Array.Clear(_path, 0, PathCount);
+      PathCount = 0;
+    }
+
+    /// <summary>
     /// Below an object with an anonymous type, or a value with one that is not written as its declared type: objects with anonymous types are written by names (LsMsgPack: the byNames parameter of SerializeObject, see SerializationRules.WritesByNames).
     /// </summary>
     internal bool ByNames;

@@ -13,7 +13,73 @@ namespace LsMsgPack
 
     public static MsgPackItem SerializeObject(object item, MsgPackSettings settings, FullPropertyInfo assignedTo = null)
     {
-      return SerializeObject(item, settings, assignedTo, 0, false);
+      if (!settings._ignoreCycles)
+        return SerializeObject(item, settings, assignedTo, 0, false);
+
+      // A call of its own (also one inside another, e.g. from a custom extension): the objects of the caller are not on its path
+      CyclePath path = _cyclePath ?? (_cyclePath = new CyclePath());
+      int outer = path.Start;
+      path.Start = path.Count;
+      try
+      {
+        return SerializeObject(item, settings, assignedTo, 0, false);
+      }
+      finally
+      {
+        path.Start = outer;
+      }
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.IgnoreCycles"/>: the objects with properties being written on this thread, from the root of the call (<see cref="Start"/>) to the current one.
+    /// </summary>
+    private sealed class CyclePath
+    {
+      private object[] _objects = new object[16];
+      internal int Count;
+      internal int Start;
+
+      internal bool Contains(object item)
+      {
+        for (int t = Count - 1; t >= Start; t--)
+          if (ReferenceEquals(_objects[t], item))
+            return true;
+        return false;
+      }
+
+      internal void Push(object item)
+      {
+        if (Count == _objects.Length)
+          Array.Resize(ref _objects, Count * 2);
+        _objects[Count++] = item;
+      }
+
+      internal void Pop()
+      {
+        _objects[--Count] = null;
+      }
+    }
+
+    [ThreadStatic]
+    private static CyclePath _cyclePath;
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.IgnoreCycles"/>: an object that contains itself is nil where it is met again (LtMsgPack: CycleHandler, Serializer.WriteBoxed).
+    /// </summary>
+    private static MsgPackItem SerializeTracked(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
+    {
+      CyclePath path = _cyclePath ?? (_cyclePath = new CyclePath()); // SerializeObject with the settings creates it, a nested call of the private one may not
+      if (path.Contains(item))
+        return new MpNull(settings);
+      path.Push(item);
+      try
+      {
+        return SerializeComplex(item, tType, settings, assignedTo, depth, byNames);
+      }
+      finally
+      {
+        path.Pop();
+      }
     }
 
     /// <param name="depth">The nesting level of the object (0 for the root): objects and collections at <see cref="MsgPackOptions.MaxDepth"/> are refused (a cycle would otherwise end in a stack overflow)</param>
@@ -62,6 +128,13 @@ namespace LsMsgPack
         return SerializeTuple(item, tType, settings, assignedTo, depth, SerializationRules.EntersByNames(tType, assignedTo, byNames, false));
 
       // Any complex object with properties
+      if (settings._ignoreCycles && !tType.IsValueType)
+        return SerializeTracked(item, tType, settings, assignedTo, depth, byNames);
+      return SerializeComplex(item, tType, settings, assignedTo, depth, byNames);
+    }
+
+    private static MsgPackItem SerializeComplex(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
+    {
       ThrowIfTooDeep(depth, settings);
       if (SerializationRules.WritesByNames(tType, assignedTo, byNames))
         return SerializeByNames(item, tType, settings, depth);
@@ -195,12 +268,13 @@ namespace LsMsgPack
       {
         FullPropertyInfo prop = props[t];
         object value = prop.GetValue(item);
-        if (value is null || !IncludeDynamically(prop, value, settings))
+        if (value is null || !MsgPackOptions.IncludeDynamically(settings._dynamicFilters, prop, item, value))
           values[t] = new MpNull(settings);
         else
         {
           values[t] = SerializeObject(value, settings, prop, depth + 1, byNames);
-          count = t + 1;
+          if (!(values[t] is MpNull)) // a cycle (IgnoreCycles) is nil too: trimmed like the others (LtMsgPack checks the byte written)
+            count = t + 1;
         }
       }
 
@@ -216,14 +290,6 @@ namespace LsMsgPack
         new KeyValuePair<object, object>(TypeIdKey, typeId),
         new KeyValuePair<object, object>(ContentKey, array)
       }, settings);
-    }
-
-    private static bool IncludeDynamically(FullPropertyInfo prop, object value, MsgPackSettings settings)
-    {
-      for (int i = settings._dynamicFilters.Length - 1; i >= 0; i--)
-        if (!settings._dynamicFilters[i].IncludeProperty(prop, value))
-          return false;
-      return true;
     }
 
     /// <summary>
@@ -305,11 +371,7 @@ namespace LsMsgPack
         FullPropertyInfo prop = props[t];
         object value = prop.GetValue(item);
 
-        bool exclude = false;
-        for (int i = settings._dynamicFilters.Length - 1; i >= 0; i--)
-          if (!settings._dynamicFilters[i].IncludeProperty(prop, value)) { exclude = true; break; }
-
-        if (exclude)
+        if (!MsgPackOptions.IncludeDynamically(settings._dynamicFilters, prop, item, value))
           continue;
 
         if (value is null)

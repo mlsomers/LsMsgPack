@@ -281,7 +281,8 @@ namespace LtMsgPack.Generator
       {
         List<PropertyModel> accessors = GetProperties(named, fieldStruct, out Kept kept);
         string isDefault = DefaultCheck(named, out List<PropertyModel> defaultAccessors);
-        Add(TypeModelKind.Struct, name, null, HasCreator(named), true, accessors, GetMembers(named, fieldStruct), kept: kept, isDefault: isDefault, defaultAccessors: defaultAccessors);
+        Add(TypeModelKind.Struct, name, null, HasCreator(named), true, accessors, GetMembers(named, fieldStruct), kept: kept, isDefault: isDefault, defaultAccessors: defaultAccessors,
+          keptMethods: fieldStruct ? null : ShouldSerializeMethods(named));
         return;
       }
 
@@ -299,7 +300,24 @@ namespace LtMsgPack.Generator
 
       bool creator = HasCreator(named);
       List<PropertyModel> properties = GetProperties(named, false, out Kept found);
-      Add(TypeModelKind.Object, name, null, creator, true, properties, named.IsAbstract ? null : GetMembers(named, false), kept: found);
+      Add(TypeModelKind.Object, name, null, creator, true, properties, named.IsAbstract ? null : GetMembers(named, false), kept: found, keptMethods: ShouldSerializeMethods(named));
+    }
+
+    /// <summary>
+    /// The <c>ShouldSerialize{Name}()</c> methods the type declares, as LsMsgPack.Core's ShouldSerializeMethod finds them by name (public, parameterless, returning bool, not generic):
+    /// FilterShouldSerialize calls them by reflection, so the trimmer has to keep them. Any such name, the runtime decides which members they belong to.
+    /// </summary>
+    /// <returns>null when there are none</returns>
+    private static List<StringValue> ShouldSerializeMethods(INamedTypeSymbol type)
+    {
+      List<StringValue> names = null;
+      foreach (ISymbol member in type.GetMembers())
+      {
+        if (member is IMethodSymbol method && method.MethodKind == MethodKind.Ordinary && method.DeclaredAccessibility == Accessibility.Public && method.Parameters.Length == 0
+          && !method.IsGenericMethod && method.ReturnType.SpecialType == SpecialType.System_Boolean && method.Name.Length > 15 && method.Name.StartsWith("ShouldSerialize", System.StringComparison.Ordinal))
+          (names ?? (names = new List<StringValue>())).Add(new StringValue(method.Name));
+      }
+      return names;
     }
 
     /// <returns>Whether the type is exactly this generic class of System.Collections.Generic</returns>
@@ -436,11 +454,12 @@ namespace LtMsgPack.Generator
     }
 
     private void Add(TypeModelKind kind, string name, string argument = null, bool creator = false, bool keep = false, List<PropertyModel> properties = null, List<MemberModel> members = null, string factory = null,
-      Kept kept = Kept.None, string isDefault = null, List<PropertyModel> defaultAccessors = null)
+      Kept kept = Kept.None, string isDefault = null, List<PropertyModel> defaultAccessors = null, List<StringValue> keptMethods = null)
     {
       _types.Add(new TypeModel(kind, name, argument, creator, keep, (properties ?? new List<PropertyModel>()).ToEquatable(), (members ?? new List<MemberModel>()).ToEquatable(), factory,
         (kept & Kept.NonPublicProperties) != 0, isDefault, (kept & Kept.PublicFields) != 0, (kept & Kept.NonPublicFields) != 0,
-        isDefault is null || defaultAccessors is null ? EquatableArray<PropertyModel>.Empty : defaultAccessors.ToEquatable()));
+        isDefault is null || defaultAccessors is null ? EquatableArray<PropertyModel>.Empty : defaultAccessors.ToEquatable(),
+        keptMethods is null ? EquatableArray<StringValue>.Empty : keptMethods.ToEquatable()));
     }
 
     /// <summary>

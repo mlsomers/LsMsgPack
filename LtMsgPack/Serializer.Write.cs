@@ -2,6 +2,7 @@
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Filters;
+using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.TypeResolving.Types;
 using LtMsgPack.Extensions;
 using LtMsgPack.IO;
@@ -24,6 +25,21 @@ namespace LtMsgPack
   {
     internal readonly LtMsgPackOptions Options;
     internal readonly FilterMode Filters;
+
+    /// <summary>
+    /// The dynamic filters have a <see cref="FilterShouldSerialize"/>: the properties with a ShouldSerialize method take the boxed filters (<see cref="CallsShouldSerialize"/>).
+    /// </summary>
+    private readonly bool _shouldSerialize;
+
+    /// <summary>
+    /// A dynamic filter takes the owner (<see cref="IMsgPackPropertyIncludeWithOwner"/>): a struct is boxed for it.
+    /// </summary>
+    internal readonly bool OwnerFilters;
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.IgnoreCycles"/>: the object handlers of classes are <see cref="CycleHandler{T}"/>s, <see cref="WriteBoxed"/> tracks the objects too.
+    /// </summary>
+    internal readonly bool IgnoreCycles;
     internal readonly bool CanBindDelegates;
 
     /// <summary>
@@ -49,6 +65,9 @@ namespace LtMsgPack
     {
       Options = options;
       IMsgPackPropertyIncludeDynamicallyArray(options, out Filters);
+      _shouldSerialize = options.CallsShouldSerialize;
+      OwnerFilters = HasOwnerFilters(options._dynamicFilters);
+      IgnoreCycles = options._ignoreCycles;
       CanBindDelegates = PropertyAccessor.CanCompile;
       _alwaysTypeId = (options._addTypeIdOptions & AddTypeIdOption.Always) != 0;
       _customTypeResolvers = options._typeResolvers.Length > 0;
@@ -61,13 +80,41 @@ namespace LtMsgPack
 
     private static void IMsgPackPropertyIncludeDynamicallyArray(LtMsgPackOptions options, out FilterMode mode)
     {
-      if (options._dynamicFilters is null || options._dynamicFilters.Length == 0)
-        mode = FilterMode.None;
-      else if (options._dynamicFilters.Length == 1 && options._dynamicFilters[0] != null && options._dynamicFilters[0].GetType() == typeof(FilterDefaultValues)
-        && !((FilterDefaultValues)options._dynamicFilters[0]).OmitEmptyStrings) // the typed handlers decide as the default filter (DefaultFilter.Instance)
-        mode = FilterMode.DefaultValues;
-      else
-        mode = FilterMode.Custom;
+      IMsgPackPropertyIncludeDynamically[] filters = options._dynamicFilters;
+      mode = FilterMode.None;
+      if (filters is null)
+        return;
+      for (int t = 0; t < filters.Length; t++)
+      {
+        Type type = filters[t]?.GetType();
+        if (type == typeof(FilterShouldSerialize))
+          continue; // only the properties with a ShouldSerialize method take the boxed filters (CallsShouldSerialize)
+        if (type == typeof(FilterDefaultValues) && !((FilterDefaultValues)filters[t]).OmitEmptyStrings) // the typed handlers decide as the default filter (DefaultFilter.Instance)
+          mode = FilterMode.DefaultValues;
+        else
+        {
+          mode = FilterMode.Custom;
+          return;
+        }
+      }
+    }
+
+    private static bool HasOwnerFilters(IMsgPackPropertyIncludeDynamically[] filters)
+    {
+      if (filters is null)
+        return false;
+      for (int t = filters.Length - 1; t >= 0; t--)
+        if (filters[t] is IMsgPackPropertyIncludeWithOwner)
+          return true;
+      return false;
+    }
+
+    /// <summary>
+    /// <see cref="FilterShouldSerialize"/> calls a method of the owner for this property: its writer takes the boxed filters with the owner, the generated and compiled code leave it to that writer.
+    /// </summary>
+    internal bool CallsShouldSerialize(FullPropertyInfo info)
+    {
+      return _shouldSerialize && info.Attributes?.ShouldSerialize != null;
     }
 
     #region Handlers and plans
@@ -145,7 +192,10 @@ namespace LtMsgPack
           return Boxed(type);
         case TypeKind.Complex:
           if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
-            return Instantiate(type, typeof(ObjectHandler<>), type, this);
+          {
+            object handler = Instantiate(type, typeof(ObjectHandler<>), type, this);
+            return IgnoreCycles && !type.IsValueType ? ((ICycleTracking)handler).Tracked() : handler; // apart, so the handler without the option stays as it is
+          }
           return Boxed(type);
         default:
           return Boxed(type);
@@ -335,12 +385,37 @@ namespace LtMsgPack
       bool isObject = info.Kind == TypeKind.Complex;
       if (isObject && SerializationRules.WritesByNames(type, assignedTo, byNames))
       {
+        if (IgnoreCycles)
+        {
+          if (!c.EnterObject(value))
+          {
+            c.W.Nil();
+            return;
+          }
+          ByNamesPlan(type).Write(c, value);
+          c.LeaveObject();
+          return;
+        }
         ByNamesPlan(type).Write(c, value);
         return;
       }
       c.ByNames = SerializationRules.EntersByNames(type, assignedTo, byNames, isObject);
       WriteBoxed(c, value, type, info, assignedTo);
       c.ByNames = byNames;
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.IgnoreCycles"/>: an object with properties of a type that is not declared there (LsMsgPack: SerializeTracked), nil when it is already being written.
+    /// </summary>
+    private void WriteTracked(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
+    {
+      if (!c.EnterObject(value))
+      {
+        c.W.Nil();
+        return;
+      }
+      PlanOf(info, c.Mode == IdMode.Names).Write(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId), assignedTo);
+      c.LeaveObject();
     }
 
     private void WriteBoxed(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
@@ -353,6 +428,11 @@ namespace LtMsgPack
           return;
 
         case TypeKind.Complex:
+          if (IgnoreCycles && !type.IsValueType)
+          {
+            WriteTracked(c, value, type, info, assignedTo);
+            return;
+          }
           PlanOf(info, c.Mode == IdMode.Names).Write(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId), assignedTo);
           return;
 

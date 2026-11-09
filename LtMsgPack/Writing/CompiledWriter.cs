@@ -198,7 +198,8 @@ namespace LtMsgPack.Writing
           MethodInfo get = ((PropertyInfo)member).GetGetMethod(true);
           canWrite = get != null && !get.IsStatic && get.GetParameters().Length == 0;
         }
-        canWrite = canWrite && member.DeclaringType.IsAssignableFrom(type) && !propertyType.IsByRef && !propertyType.IsPointer && !IsByRefLike(propertyType);
+        canWrite = canWrite && member.DeclaringType.IsAssignableFrom(type) && !propertyType.IsByRef && !propertyType.IsPointer && !IsByRefLike(propertyType)
+          && !serializer.CallsShouldSerialize(infos[t]); // the runtime's PropWriter calls the owner's method (FilterShouldSerialize)
         Type underlying = Nullable.GetUnderlyingType(propertyType);
         GeneratedKind kind = canWrite && !infos[t].CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)) ? KindOf(serializer, underlying ?? propertyType) : GeneratedKind.None;
         members[t] = new GeneratedMember(member.DeclaringType, member.Name, propertyType, kind, underlying != null && kind != GeneratedKind.None, canWrite, false);

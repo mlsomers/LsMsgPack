@@ -33,6 +33,11 @@
     internal const string ImmutableFactories = "Immutable and frozen collections are created by the static factory of their framework class (CreateRange, ToFrozenSet...), found by name: the generated code keeps the factory classes of the collections it describes.";
 
     /// <summary>
+    /// The ShouldSerialize{Name} methods of FilterShouldSerialize, found by name on the type declaring the member.
+    /// </summary>
+    internal const string ShouldSerializeMethods = "Finds the ShouldSerialize{Name} methods of the members by name: the generated code keeps those of the classes it describes (DynamicDependency); a method that was trimmed is not called.";
+
+    /// <summary>
     /// A fallback for types without generated code.
     /// </summary>
     internal const string Fallback = "Only used for types without generated code: without a context the serializer's constructor requires unreferenced and dynamic code, with one LTMP010 names the types it does not cover.";

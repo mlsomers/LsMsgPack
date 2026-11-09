@@ -508,7 +508,7 @@ namespace LtMsgPack.Writing
     protected PropWriter(Serializer serializer, FullPropertyInfo info)
     {
       Serializer = serializer;
-      NoFilters = serializer.Filters == FilterMode.None;
+      NoFilters = serializer.Filters == FilterMode.None && !serializer.CallsShouldSerialize(info);
       BoxedFilters = IsBoxed(serializer, info);
     }
 
@@ -530,6 +530,8 @@ namespace LtMsgPack.Writing
     /// </summary>
     internal static Type FilterType(Serializer serializer, FullPropertyInfo info)
     {
+      if (serializer.CallsShouldSerialize(info))
+        return typeof(BoxedFilter);
       if (serializer.Filters == FilterMode.None)
         return typeof(NoFilter);
       return IsBoxed(serializer, info) ? typeof(BoxedFilter) : typeof(DefaultValuesFilter);
@@ -537,16 +539,13 @@ namespace LtMsgPack.Writing
 
     private static bool IsBoxed(Serializer serializer, FullPropertyInfo info)
     {
-      return serializer.Filters == FilterMode.Custom || info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute));
+      return serializer.Filters == FilterMode.Custom || info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)) || serializer.CallsShouldSerialize(info);
     }
 
-    internal bool IncludeBoxed(object value, FullPropertyInfo info)
+    /// <param name="owner">The object owning the property, for the filters that take it (<see cref="IMsgPackPropertyIncludeWithOwner"/>; a struct boxed, see <see cref="Serializer.OwnerFilters"/>)</param>
+    internal bool IncludeBoxed(object value, FullPropertyInfo info, object owner)
     {
-      IMsgPackPropertyIncludeDynamically[] filters = Serializer.Options._dynamicFilters;
-      for (int t = filters.Length - 1; t >= 0; t--)
-        if (!filters[t].IncludeProperty(info, value))
-          return false;
-      return true;
+      return MsgPackOptions.IncludeDynamically(Serializer.Options._dynamicFilters, info, owner, value);
     }
 
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
@@ -667,7 +666,7 @@ namespace LtMsgPack.Writing
       ValueHandler<TValue> handler = _handler ?? (_handler = Serializer.Handler<TValue>(_declared));
       if (typeof(TFilter) == typeof(BoxedFilter))
       {
-        if (!IncludeBoxed(value, info))
+        if (!IncludeBoxed(value, info, target))
           return false;
       }
       else if (typeof(TFilter) == typeof(DefaultValuesFilter))
@@ -745,7 +744,7 @@ namespace LtMsgPack.Writing
       ValueHandler<TValue> handler = _handler ?? (_handler = Serializer.Handler<TValue>(_declared));
       if (typeof(TFilter) == typeof(BoxedFilter))
       {
-        if (!IncludeBoxed(value, info))
+        if (!IncludeBoxed(value, info, Serializer.OwnerFilters ? (object)target : null)) // a copy in a box, only for the filters that take the owner
           return false;
       }
       else if (typeof(TFilter) == typeof(DefaultValuesFilter))
@@ -779,7 +778,7 @@ namespace LtMsgPack.Writing
     internal override bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info)
     {
       object value = _declared.GetValue(target);
-      if (!NoFilters && !IncludeBoxed(value, info))
+      if (!NoFilters && !IncludeBoxed(value, info, target))
         return false;
 
       if (key != null)

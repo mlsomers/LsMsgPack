@@ -141,6 +141,23 @@ namespace LsMsgPack.Meta
       }
     }
 
+    private static readonly object NoMethod = new object();
+    private volatile object _shouldSerialize; // null: not looked up yet, NoMethod: none
+
+    /// <summary>
+    /// The member's <c>ShouldSerialize{Name}()</c> method (<see cref="TypeResolving.Filters.FilterShouldSerialize"/>), null when it has none. Looked up when first asked.
+    /// </summary>
+    internal ShouldSerializeMethod ShouldSerialize
+    {
+      get
+      {
+        object found = _shouldSerialize;
+        if (found is null)
+          _shouldSerialize = found = (object)ShouldSerializeMethod.Find(_member) ?? NoMethod; // an equal result by any thread that computes it
+        return found as ShouldSerializeMethod;
+      }
+    }
+
     private volatile NilValues _nil;
 
     /// <summary>

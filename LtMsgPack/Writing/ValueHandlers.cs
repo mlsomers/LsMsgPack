@@ -444,7 +444,7 @@ namespace LtMsgPack.Writing
   /// <summary>
   /// A class, or a struct (by reference when the plan allows it, see ObjectPlan.WriteStruct, otherwise boxed once: the plans read the properties of the box, see StructPropWriter).
   /// </summary>
-  internal sealed class ObjectHandler<T> : ValueHandler<T>
+  internal sealed class ObjectHandler<T> : ValueHandler<T>, ICycleTracking
   {
     private readonly Serializer _serializer;
     private ObjectPlan _names;
@@ -480,6 +480,14 @@ namespace LtMsgPack.Writing
         plan.Write(c, value, false, assignedTo);
     }
 
+    /// <summary>
+    /// Created here, so NativeAOT has the instantiation wherever it has this one.
+    /// </summary>
+    public object Tracked()
+    {
+      return new CycleHandler<T>(this, _serializer);
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)] // keeps Write small
     private void WriteDerived(WriteContext c, object value, FullPropertyInfo assignedTo)
     {
@@ -497,6 +505,58 @@ namespace LtMsgPack.Writing
         return !StructDefault<T>.IsDefault(ref value);
       }
       return value != null;
+    }
+  }
+
+  /// <summary>
+  /// An object handler that tracks the objects it writes (<see cref="Serializer.IgnoreCycles"/>, <see cref="CycleHandler{T}"/>).
+  /// </summary>
+  internal interface ICycleTracking
+  {
+    /// <returns>A <see cref="CycleHandler{T}"/> around this handler</returns>
+    object Tracked();
+  }
+
+  /// <summary>
+  /// <see cref="MsgPackOptions.IgnoreCycles"/>: the handler of a class, an object that is already being written is nil (LsMsgPack: SerializeTracked).
+  /// A handler of its own around <see cref="ObjectHandler{T}"/>, so the one without the option keeps its size (whether it is inlined into the loops of collections decides their speed).
+  /// </summary>
+  internal sealed class CycleHandler<T> : ValueHandler<T>
+  {
+    private readonly ObjectHandler<T> _inner;
+    private readonly Serializer _serializer;
+    private ObjectPlan _names;
+    private ObjectPlan _schema;
+
+    internal CycleHandler(ObjectHandler<T> inner, Serializer serializer)
+    {
+      _inner = inner;
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
+    {
+      object item = value; // a class: no box
+      if (item.GetType() != typeof(T)) // a derived type goes through Serializer.WriteBoxed, which tracks it
+      {
+        _inner.Write(c, value, assignedTo);
+        return;
+      }
+      if (!c.EnterObject(item))
+      {
+        c.W.Nil();
+        return;
+      }
+      ObjectPlan plan = c.Mode == IdMode.Names // as ObjectHandler.Write: the plan here, not a call of that handler per object (one virtual call less: small objects in arrays wrote about 10% faster)
+        ? _names ?? (_names = _serializer.Plan(typeof(T), true))
+        : _schema ?? (_schema = _serializer.Plan(typeof(T), false));
+      plan.Write(c, item, false, assignedTo);
+      c.LeaveObject();
+    }
+
+    internal override bool IncludeByDefault(T value, FullPropertyInfo info)
+    {
+      return _inner.IncludeByDefault(value, info);
     }
   }
 

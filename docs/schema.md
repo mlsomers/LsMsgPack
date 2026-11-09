@@ -296,8 +296,39 @@ These settings also affect the size and the contract of the data:
 
 - **Property names**: by default, the .NET property name is used. Add an `AttributePropertyNameResolver` to `MsgPackSettings.PropertyNameResolvers` to use the name from `[JsonPropertyName]` (System.Text.Json), `[JsonProperty]` (Json.NET), `[XmlAttribute]`, `[XmlElement]`, `[XmlArray]` or `[DataMember]` (only in a `[DataContract]` type, as DataContractSerializer reads it), in that order; an attribute without a name keeps the .NET name, as those serializers do. Or from a custom attribute of your own (`new AttributePropertyNameResolver(typeof(MyNameAttribute), nameof(MyNameAttribute.Name))`), which comes first. With the indexed schema, these names are the names in the schema and the keys are their indexes, as for the other properties (so short attribute names make the schema smaller, and readers without the attributes find the properties by these names); any string id a property id resolver gives is used this way, other ids (numbers) are written as the keys.
 - **Static filters** (`StaticFilters`) decide once per type which properties are serialized. By default, properties with a setter that is not public (`FilterNonSettable`) are skipped, except those a constructor takes ([immutable classes](#immutable-classes)). Properties without any setter are written: those of [anonymous types](#anonymous-types), those a constructor takes, and [computed properties and get-only collections](#computed-and-get-only-properties) (`GetOnlyProperties`). Non-public properties are left out unless you opt in ([non-public properties](#non-public-properties), `NonPublicProperties`), and fields are serialized when an attribute opts them in ([fields](#fields), `SerializedFields`). Left out are also properties with an "ignore" attribute of another serializer (`FilterIgnoredAttribute`): `[XmlIgnore]`, `[JsonIgnore]` (System.Text.Json and Json.NET), `[IgnoreDataMember]`, `[IgnoreMember]` (MessagePack-CSharp), `[PropertyShape(Ignore = true)]` (Nerdbank.MessagePack) and any other attribute with "Ignore" in its name. And static properties are skipped (`FilterStatic`, see [Security](security.md#what-else-to-keep-in-mind)). Keep `FilterStatic` in the list if you set your own static filters.
-- **Dynamic filters** (`DynamicFilters`) decide per value. By default, `FilterDefaultValues` omits properties that are `null`, their type's default value, or the value of their `[DefaultValue]` attribute. An empty string is written, as the JSON serializers do (`new FilterDefaultValues(omitEmptyStrings: true)` omits it too, it is then read back as the value the constructor sets, often `null`). Use `FilterNullValues` instead to omit only `null` values, or use no dynamic filters to write every property.
+- **Dynamic filters** (`DynamicFilters`) decide per value. By default, `FilterDefaultValues` omits properties that are `null`, their type's default value, or the value of their `[DefaultValue]` attribute. An empty string is written, as the JSON serializers do (`new FilterDefaultValues(omitEmptyStrings: true)` omits it too, it is then read back as the value the constructor sets, often `null`). Use `FilterNullValues` instead to omit only `null` values, or use no dynamic filters to write every property. Add `FilterShouldSerialize` to call the `bool ShouldSerialize{Name}()` methods of the classes, as Json.NET does: a value is left out when its method returns false (see [below](#shouldserialize-methods)). A filter of your own that implements `IMsgPackPropertyIncludeWithOwner` also gets the object that owns the property.
 - **Collections**: `[SerializeEnumerable]` on a collection class or property sets the element type, and controls whether the collection's own properties and/or its elements are serialized.
+
+### ShouldSerialize methods
+
+Models made for Json.NET may decide per object whether a property is written, with a public method `bool ShouldSerialize{Name}()` (instance or static, no parameters; `{Name}` is the .NET name of the property or field). `FilterShouldSerialize` calls them as Json.NET does: the method of the class that declares the property (declared there or inherited; an override is called, a method of a derived class for an inherited property is not). A value it leaves out has no key in a map and is a nil in the array layout, as for the other dynamic filters. Only writing is affected.
+
+```csharp
+public class CustomerGroupDiscount
+{
+  public decimal Percentage { get; set; }
+  public Group Group { get; set; } // the group refers to its discounts: without the method the loop is too deep to write
+
+  public bool ShouldSerializeGroup() { return false; }
+}
+
+MsgPackSettings settings = new MsgPackSettings()
+{
+  DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(), new FilterShouldSerialize() }
+};
+```
+
+The methods are looked up once per property, and only the properties that have one are checked per object: LtMsgPack writes the others with its usual code (generated or compiled). The source generator keeps the methods of the classes it describes when the application is trimmed.
+
+### Cycles
+
+An object that refers back to an object containing it (a parent, the object itself) is a cycle: by default writing it throws a `MsgPackException` at `MaxDepth` (256 levels). Break it where it starts with `[JsonIgnore]` or a [ShouldSerialize method](#shouldserialize-methods), or set `IgnoreCycles`: a reference to an object that is being written is then written as nil, as System.Text.Json's `ReferenceHandler.IgnoreCycles` does (also in maps: the key stays, with nil). Read back, that reference is null.
+
+```csharp
+MsgPackSettings settings = new MsgPackSettings() { IgnoreCycles = true }; // LtMsgPackOptions too
+```
+
+Only the objects on the current path count: an object referenced from two places side by side (not containing each other) is written twice, there are no references in the data. Objects with properties are tracked (not structs and collections). The option costs time per object written (LtMsgPack, small objects of 3-6 properties: about 10% more in the map layout, 20-30% in the array layout), so it is off by default.
 
 ### Ignoring the same properties as another serializer
 
