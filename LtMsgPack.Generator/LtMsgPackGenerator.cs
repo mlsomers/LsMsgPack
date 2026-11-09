@@ -33,6 +33,12 @@ namespace LtMsgPack.Generator
     internal const int NonPublicAttributed = 1;
     internal const int NonPublicAll = 2;
 
+    // LsMsgPack.TypeResolving.Filters.SerializedFields
+    internal const int FieldsNone = 0;
+    internal const int FieldsAttributed = 1;
+    internal const int FieldsPublic = 2;
+    internal const int FieldsAll = 3;
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
       IncrementalValueProvider<GenerateOptions> options = context.CompilationProvider
@@ -69,6 +75,9 @@ namespace LtMsgPack.Generator
       int nonPublic = NonPublicAttributed;
       if (global.TryGetValue("build_property.LtMsgPackNonPublicProperties", out string nonPublicText) && !string.IsNullOrWhiteSpace(nonPublicText))
         nonPublic = ParseNonPublic(nonPublicText, nonPublic);
+      int fields = FieldsAttributed;
+      if (global.TryGetValue("build_property.LsMsgPackFields", out string fieldsText) && !string.IsNullOrWhiteSpace(fieldsText)) // LsMsgPack.Core's props: the analyzers read it too
+        fields = ParseFields(fieldsText, fields);
 
       foreach (AttributeData attribute in compilation.Assembly.GetAttributes()) // the assembly attribute wins
       {
@@ -82,6 +91,7 @@ namespace LtMsgPack.Generator
             case "ContextName": contextName = argument.Value.Value as string ?? contextName; break;
             case "AutoRegister": autoRegister = argument.Value.Value is bool on ? on : autoRegister; break;
             case "NonPublicProperties": nonPublic = argument.Value.Value is int value && value >= NonPublicNone && value <= NonPublicAll ? value : nonPublic; break;
+            case "Fields": fields = argument.Value.Value is int mode && mode >= FieldsNone && mode <= FieldsAll ? mode : fields; break;
           }
         }
       }
@@ -93,7 +103,7 @@ namespace LtMsgPack.Generator
       bool trimmed = IsTrue(global, "PublishTrimmed") || IsTrue(global, "PublishAot") || IsTrue(global, "IsAotCompatible") || IsTrue(global, "IsTrimmable");
       return new GenerateOptions(include, contextName, autoRegister, rootNamespace, csharp9,
         initializer != null && compilation.IsSymbolAccessibleWithin(initializer, compilation.Assembly),
-        dependency != null && compilation.IsSymbolAccessibleWithin(dependency, compilation.Assembly), trimmed, nonPublic,
+        dependency != null && compilation.IsSymbolAccessibleWithin(dependency, compilation.Assembly), trimmed, nonPublic, fields,
         unsafeAccessor != null && compilation.IsSymbolAccessibleWithin(unsafeAccessor, compilation.Assembly),
         compilation.Options.OptimizationLevel == OptimizationLevel.Debug);
     }
@@ -138,6 +148,22 @@ namespace LtMsgPack.Generator
         case "attributed": return NonPublicAttributed;
         case "all":
         case "true": return NonPublicAll;
+        default: return fallback;
+      }
+    }
+
+    /// <summary>
+    /// "None", "Attributed", "Public" or "All" (ignoring case), <paramref name="fallback"/> for anything else.
+    /// </summary>
+    internal static int ParseFields(string text, int fallback)
+    {
+      switch (text.Trim().ToLowerInvariant())
+      {
+        case "none":
+        case "false": return FieldsNone;
+        case "attributed": return FieldsAttributed;
+        case "public": return FieldsPublic;
+        case "all": return FieldsAll;
         default: return fallback;
       }
     }
@@ -295,7 +321,7 @@ namespace LtMsgPack.Generator
 
         bool root = false;
         if ((options.Include & IncludeAllTypes) != 0)
-          root = HasProperties(type, options.NonPublic);
+          root = HasMembers(type, options.NonPublic, options.Fields);
         if ((options.Include & IncludeSerializable) != 0 && (type.IsSerializable || HasAttribute(type, "System.SerializableAttribute")))
           root = true;
         if ((options.Include & IncludeDataContract) != 0 && HasAttribute(type, "System.Runtime.Serialization.DataContractAttribute"))
@@ -345,15 +371,21 @@ namespace LtMsgPack.Generator
     }
 
     /// <summary>
-    /// Public instance properties, or non-public ones the runtime may serialize (<see cref="TypeWalker.IsNonPublicCandidate"/>).
+    /// Public instance properties, or non-public ones the runtime may serialize (<see cref="TypeWalker.IsNonPublicCandidate"/>), or fields it may serialize (<see cref="TypeWalker.IsFieldCandidate"/>).
     /// </summary>
-    private static bool HasProperties(INamedTypeSymbol type, int nonPublic)
+    private static bool HasMembers(INamedTypeSymbol type, int nonPublic, int fields)
     {
-      for (INamedTypeSymbol t = type; t != null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+      for (INamedTypeSymbol t = type; t != null && t.SpecialType != SpecialType.System_Object && t.SpecialType != SpecialType.System_ValueType; t = t.BaseType)
+      {
         foreach (ISymbol member in t.GetMembers())
+        {
           if (member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer
             && (property.DeclaredAccessibility == Accessibility.Public || TypeWalker.IsNonPublicCandidate(property, nonPublic)))
             return true;
+          if (member is IFieldSymbol field && TypeWalker.IsFieldCandidate(field, fields))
+            return true;
+        }
+      }
       return false;
     }
 

@@ -11,7 +11,7 @@ using System.Threading;
 namespace LsMsgPack.Analyzers
 {
   /// <summary>
-  /// The types a project serializes: those reachable from what it hands to the serializers (the roots, see <see cref="SerializerUses"/>), through the types of their properties,
+  /// The types a project serializes: those reachable from what it hands to the serializers (the roots, see <see cref="SerializerUses"/>), through the types of their properties and serialized fields,
   /// the elements of collections, generic arguments, base classes and the classes of the project that derive from them (a type id can name those).
   /// <para>Made once per compilation, when the first property is analyzed. The rules only look at these types, so classes that are never serialized (e.g. options classes) are left alone.
   /// With the MSBuild property <c>LsMsgPackAnalyze</c> = <c>AllTypes</c> every public class and struct of the project is one (for a project of models that does not call the serializers itself).</para>
@@ -22,6 +22,12 @@ namespace LsMsgPack.Analyzers
     private readonly HashSet<INamedTypeSymbol> _definitions = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
     private readonly List<INamedTypeSymbol> _sourceTypes = new List<INamedTypeSymbol>();
     private readonly Queue<ITypeSymbol> _pending = new Queue<ITypeSymbol>();
+    private readonly int _fields;
+
+    private ModelTypes(int fields)
+    {
+      _fields = fields;
+    }
 
     /// <summary>
     /// A serialized type of this project (the definition of a generic type counts for all its constructed types).
@@ -31,9 +37,10 @@ namespace LsMsgPack.Analyzers
       return _definitions.Contains(type.OriginalDefinition);
     }
 
-    public static ModelTypes Find(Compilation compilation, KnownSymbols known, AnalyzerOptions options, CancellationToken cancellation)
+    /// <param name="fields">The fields the serializers write (<see cref="Fields.ModeOf"/>)</param>
+    public static ModelTypes Find(Compilation compilation, KnownSymbols known, AnalyzerOptions options, int fields, CancellationToken cancellation)
     {
-      ModelTypes types = new ModelTypes();
+      ModelTypes types = new ModelTypes(fields);
       types.CollectSourceTypes(compilation.Assembly.GlobalNamespace, cancellation);
 
       if (AllTypes(options))
@@ -66,7 +73,7 @@ namespace LsMsgPack.Analyzers
     /// </summary>
     public static List<SerializedUse> FindUses(Compilation compilation, KnownSymbols known, CancellationToken cancellation)
     {
-      ModelTypes types = new ModelTypes();
+      ModelTypes types = new ModelTypes(Fields.None);
       types.CollectSourceTypes(compilation.Assembly.GlobalNamespace, cancellation);
       return types.CollectUses(compilation, known, cancellation);
     }
@@ -217,6 +224,8 @@ namespace LsMsgPack.Analyzers
         {
           if (member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer && property.DeclaredAccessibility == Accessibility.Public && property.GetMethod != null)
             Add(property.Type);
+          else if (member is IFieldSymbol field && Fields.IsSerialized(field, _fields))
+            Add(field.Type);
         }
 
         // A value of a derived class has a type id where the base class (or interface) is declared

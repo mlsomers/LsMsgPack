@@ -10,6 +10,8 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Numerics;
+using System.Runtime.Serialization;
 using System.Text;
 using System.Text.Json;
 using NB = Nerdbank.MessagePack;
@@ -72,6 +74,55 @@ namespace LsMsgPackInteropTests
     public uint Tick { get; set; }
     public uint LastProcessedSequence { get; set; }
     public List<PlayerStateC> Players { get; set; }
+  }
+
+  // The same model with System.Numerics.Vector3 (always written by its public fields)
+
+  public class PlayerStateV
+  {
+    public int PlayerId { get; set; }
+    public uint Sequence { get; set; }
+    public Vector3 Position { get; set; }
+    public Vector3 Velocity { get; set; }
+    public float Yaw { get; set; }
+    public float Pitch { get; set; }
+    public PlayerAction Action { get; set; }
+    public byte Health { get; set; }
+  }
+
+  public class WorldSnapshotV
+  {
+    public uint Tick { get; set; }
+    public uint LastProcessedSequence { get; set; }
+    public List<PlayerStateV> Players { get; set; }
+  }
+
+  // The same model with fields instead of properties, opted in with [DataMember] (the default SerializedFields.Attributed): fields should be as fast as properties
+
+  public struct Vec3F
+  {
+    [DataMember] public float X;
+    [DataMember] public float Y;
+    [DataMember] public float Z;
+  }
+
+  public class PlayerStateF
+  {
+    [DataMember] public int PlayerId;
+    [DataMember] public uint Sequence;
+    [DataMember] public Vec3F Position;
+    [DataMember] public Vec3F Velocity;
+    [DataMember] public float Yaw;
+    [DataMember] public float Pitch;
+    [DataMember] public PlayerAction Action;
+    [DataMember] public byte Health;
+  }
+
+  public class WorldSnapshotF
+  {
+    [DataMember] public uint Tick;
+    [DataMember] public uint LastProcessedSequence;
+    [DataMember] public List<PlayerStateF> Players;
   }
 
   // MessagePack-CSharp's models: integer keys (arrays) and keyAsPropertyName (maps)
@@ -469,6 +520,13 @@ namespace LsMsgPackInteropTests
         Lt<PlayerStateC, WorldSnapshotC>("LtMsgPack default, Vec3 class", new LtMsgPackOptions(), false),
         Lt<PlayerStateC, WorldSnapshotC>("LtMsgPack default, generated, Vec3 class", new LtMsgPackOptions(), true),
 
+        // LtMsgPack with System.Numerics.Vector3, and with fields instead of properties
+        Lt<PlayerStateV, WorldSnapshotV>("LtMsgPack default, Vector3", new LtMsgPackOptions(), false),
+        Lt<PlayerStateV, WorldSnapshotV>("LtMsgPack default, generated, Vector3", new LtMsgPackOptions(), true),
+        Lt<PlayerStateF, WorldSnapshotF>("LtMsgPack default, fields", new LtMsgPackOptions(), false),
+        Lt<PlayerStateF, WorldSnapshotF>("LtMsgPack default, generated, fields", new LtMsgPackOptions(), true),
+        Lt<PlayerStateF, WorldSnapshotF>("LtMsgPack names, fields", new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, false),
+
         // Objects as maps keyed by property names
         MessagePackCSharp<PlayerStateN, WorldSnapshotN>("MessagePack-CSharp names, generated", mpGenerated),
         Nerdbank("Nerdbank names, shapes", new NB.MessagePackSerializer()),
@@ -489,6 +547,8 @@ namespace LsMsgPackInteropTests
         candidates[c].Prepare();
       AssertSameBytes(candidates, "MessagePack-CSharp [Key(n)], generated", "LtMsgPack MessagePackCSharp preset, arrays");
       AssertSameBytes(candidates, "MessagePack-CSharp [Key(n)], generated", "LtMsgPack MessagePackCSharp preset, Vec3 class");
+      // Fields and Vector3's fields are written as the properties (by name: the schema names the classes)
+      AssertSameBytes(candidates, "LtMsgPack names", "LtMsgPack names, fields");
 
       for (int c = 0; c < candidates.Length; c++)
       {

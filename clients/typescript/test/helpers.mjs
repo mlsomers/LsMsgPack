@@ -20,7 +20,7 @@ export const generatorAssembly = ['Debug', 'DEBUG', 'Release', 'RELEASE']
   .find((p) => existsSync(p));
 
 /** The response types of the test server (as --solution finds them in its controllers). */
-const roots = ['Invoice[]', 'Invoice', 'Kinds', 'Zoo', 'List<LsMsgPackTsTestServer.Address>', 'Preferences', 'Address'];
+const roots = ['Invoice[]', 'Invoice', 'Kinds', 'Zoo', 'List<LsMsgPackTsTestServer.Address>', 'Preferences', 'Address', 'Motion'];
 
 /**
  * Generates the models and the schema set of the test server with lsmsgpack-ts into test/generated/, compiles them with tsc (strict: the generated code must compile)

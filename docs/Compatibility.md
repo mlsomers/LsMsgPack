@@ -21,9 +21,9 @@ LtMsgPack has ready-made options that match the **default settings** of other li
 
 | Preset | Writes | Tested |
 |---|---|---|
-| `LtMsgPackPresets.MessagePackCSharp()` | names, every value, no type ids, Guid and decimal as strings, `DateTimeOffset` as `[clock time, offset in minutes]` (the offset is kept), `DateTimeKind.Unspecified` taken as UTC, `BigInteger`, `Int128` and `UInt128` as bin (little-endian) | the same bytes as `ContractlessStandardResolver.Options` for the 100 invoices, a class with `DateTimeOffset`, `Guid`, `decimal`, and one with big integers; both directions |
-| `LtMsgPackPresets.Nerdbank()` | names, every value, no type ids, decimal as extension type 4, reads Nerdbank's Guid (extension type 2); Guids are written as bin 16, which Nerdbank reads. `DateTimeOffset` is LsMsgPack's default, the same as Nerdbank's | the invoices with a default `MessagePackSerializer`, both directions |
-| `LtMsgPackPresets.Generic()` | Python, JavaScript, Go, Rust...: names, every value, no type ids, Guid and decimal as strings, dates as timestamps (also `DateTimeOffset`, the offset is lost) | the values as MessagePack-CSharp reads them untyped |
+| `LtMsgPackPresets.MessagePackCSharp()` | names, every value, no type ids, public fields (after the properties), Guid and decimal as strings, `DateTimeOffset` as `[clock time, offset in minutes]` (the offset is kept), `DateTimeKind.Unspecified` taken as UTC, `BigInteger`, `Int128` and `UInt128` as bin (little-endian) | the same bytes as `ContractlessStandardResolver.Options` for the 100 invoices, a class with `DateTimeOffset`, `Guid`, `decimal`, and one with big integers; a class with public fields (`PresetFieldTests`); both directions |
+| `LtMsgPackPresets.Nerdbank()` | names, every value, no type ids, public fields (after the properties), decimal as extension type 4, reads Nerdbank's Guid (extension type 2); Guids are written as bin 16, which Nerdbank reads. `DateTimeOffset` is LsMsgPack's default, the same as Nerdbank's | the invoices and a class with public fields with a default `MessagePackSerializer`, both directions |
+| `LtMsgPackPresets.Generic()` | Python, JavaScript, Go, Rust...: names, every value, no type ids, only the fields that opt in (`[DataMember]`, `[JsonInclude]`...), Guid and decimal as strings, dates as timestamps (also `DateTimeOffset`, the offset is lost) | the values as MessagePack-CSharp reads them untyped |
 | `LtMsgPackPresets.LsMsgPack()` | LsMsgPack's defaults (the indexed schema) | `CrossLibraryTests` |
 
 ```csharp
@@ -328,6 +328,14 @@ The same rules apply: read and write objects as maps keyed by the property names
 - Go, [vmihailenco/msgpack](https://github.com/vmihailenco/msgpack): writes structs as maps keyed by field names (or `msgpack` tags) by default. `UseArrayEncodedStructs` and the `as_array` tag write arrays, which LsMsgPack reads by position (`ObjectLayout.Array` is LsMsgPack's default for writing) when its `PropertyOrder` puts the properties in the order of the fields.
 - Rust, [rmp-serde](https://github.com/3Hren/msgpack-rust): `to_vec` writes structs as arrays, use `to_vec_named` (maps).
 - [MsgPack.Cli](https://github.com/msgpack/msgpack-cli), the older .NET library: writes arrays and enums by name by default. Use `SerializationMethod.Map` and `EnumSerializationMethod.ByUnderlyingValue`.
+
+## Fields
+
+[Fields](schema.md#fields) are written after the properties. `SerializedFields.Public` writes the public ones, the default `Attributed` only those with an attribute that opts them in.
+
+- MessagePack-CSharp (contractless) and Nerdbank.MessagePack write public fields after the properties: `LtMsgPackPresets.MessagePackCSharp()` and `Nerdbank()` set `SerializedFields.Public` and write the same bytes (`PresetFieldTests`). `Generic()` keeps `Attributed`.
+- Json.NET writes public fields too, but **before** the properties and `PropertyOrder` can't put fields first: with `SerializedFields.Public` maps have the same names, arrays differ in their positions. `[NonSerialized]` fields are left out by `FilterIgnoredAttribute.LikeNewtonsoft` (`PresetFieldTests.Newtonsoft_*`).
+- System.Text.Json writes fields only with `IncludeFields` (the public ones: `Public`) or `[JsonInclude]` (also non-public ones, since .NET 8: `Attributed`), after the properties, in the same order as LsMsgPack (`PresetFieldTests.SystemTextJson_IncludeFieldsAndJsonInclude`).
 
 ## What settings cannot match
 

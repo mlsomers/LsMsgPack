@@ -64,6 +64,20 @@ The runtime serializes [non-public properties](schema.md#non-public-properties) 
 
 or `[assembly: LtMsgPackGenerate(NonPublicProperties = NonPublicProperties.All)]`. The generated code calls the getters and setters it can't access through `[UnsafeAccessor]` (.NET 8 and later), not for generic or virtual properties. Without it (.NET Standard, .NET Framework) the runtime uses reflection for them (info `LTMP004` for the setters). For trimming and NativeAOT, the classes with such properties keep their non-public properties (`DynamicDependency`).
 
+### Fields
+
+The generated code covers the [fields](schema.md#fields) the runtime serializes (`SerializedFields` of `FilterNonSettable`), written after the properties like the runtime does. The mode of the generator is `Attributed` unless you set it: fields with an opt-in attribute (`[DataMember]`, `[JsonInclude]`...), public or not. It must be the mode of the runtime's static filters, otherwise the generated code describes other fields than the runtime writes (the [analyzers](Analyzers.md) read the same setting):
+
+```xml
+<LsMsgPackFields>Public</LsMsgPackFields> <!-- None, Attributed (the default), Public or All -->
+```
+
+or `[assembly: LtMsgPackGenerate(Fields = SerializedFields.Public)]`, which wins over the property. The property is declared by LsMsgPack.Core's build props, which the LtMsgPack package brings along.
+
+- Private fields are read and set through `[UnsafeAccessor]` (.NET 8 and later), not for fields of generic classes: reflection (the runtime's, as for non-public properties). A `readonly` field has no setter: it is written, not set (see [schema.md](schema.md#fields)).
+- Framework structs whose state is public fields (`Vector3`, `Quaternion`, `Matrix4x4`...) are always described by their public fields, whatever the mode, also for NativeAOT.
+- For trimming and NativeAOT, the classes with public fields keep their public fields, and those with described non-public fields keep them too (`DynamicDependency`).
+
 ## Using it
 
 Three ways, and they can be combined:
@@ -91,11 +105,11 @@ The context of the constructor is asked first, then the options' contexts, then 
 For each class and struct:
 
 1. **Accessors and creators:** a typed getter and setter per property, `new T()` for an accessible parameterless constructor, and the generic handlers and readers of each type (enums, nullables, lists, arrays, objects) created without `MakeGenericType`. The runtime uses them wherever it would have used reflection, with every option.
-2. **Writers and readers per class and struct:** the loop over the properties, with the values of simple types written and read inline: strings, numbers, `bool`, `char`, enums, `Guid`, `DateTime`, `TimeSpan`, `decimal`, and nullables of those. When the runtime's property order is the one the generator predicted (the default `PropertyOrder.Reflection`), objects in the array layout are written by straight-line code. Otherwise a loop maps each property position to its generated member, so every `PropertyOrder` works.
+2. **Writers and readers per class and struct:** the loop over the properties, with the values of simple types written and read inline: strings, numbers, `bool`, `char`, enums, `Guid`, `DateTime`, `TimeSpan`, `decimal`, and nullables of those. When the runtime's property order is the one the generator predicted (the default `PropertyOrder.Reflection`), objects are written by straight-line code, in the array and in the map layout (also with `TrimTrailingNulls`). `Guid`s and `decimal`s are written and read in the format of the options (`GuidFormat.String` and `DecimalFormat.String` too, as the `Generic()` preset sets them). Otherwise a loop maps each property position to its generated member, so every `PropertyOrder` works; where the runtime compiles code (not NativeAOT or WebAssembly) it replaces that loop by a writer compiled for the order after `CompileWritersAfter` objects of the class.
 
 The runtime checks once per class and serializer whether the generated code fits the options. Where it doesn't, the runtime does that part itself, as it does without the generator:
 
-- Formats of other libraries: `GuidFormat.String`, `DecimalFormat.String`, and custom extensions for a type. These affect only the properties of that type.
+- Formats of other libraries when reading (`GuidFormat.String`, `DecimalFormat.String`), and custom extensions for a type. These affect only the properties of that type.
 - Custom dynamic filters, `AddTypeIdOption.Always`, and custom property id or type resolvers (the whole class).
 - Properties with `[DefaultValue]`, nested objects and collections (written and read by the runtime, which then uses the generated code of their class).
 - Values in another format than expected (an `int` written as a string, a number out of range): the runtime converts them, or throws, exactly as without the generator.
@@ -157,16 +171,16 @@ The invoice model of the benchmarks (100 invoices × 20 rounds), one machine: on
 
 | .NET 10, JIT | write | read |
 |---|---|---|
-| LtMsgPack, default options (indexed schema, arrays) | 3.55 ms (4.6x) | 6.07 ms (4.7x) |
-| the same with the generated code | 3.58 ms (4.6x) | 5.07 ms (5.6x) |
-| LtMsgPack, arrays without the schema | 2.87 ms (5.7x) | 5.96 ms (4.7x) |
-| the same with the generated code | 2.90 ms (5.7x) | 4.94 ms (5.7x) |
-| LtMsgPack, maps with property names | 5.11 ms (3.2x) | 8.22 ms (3.4x) |
-| the same with the generated code | 5.44 ms (3.0x) | 6.72 ms (4.2x) |
+| LtMsgPack, default options (indexed schema, arrays) | 3.53 ms (4.6x) | 6.01 ms (4.7x) |
+| the same with the generated code | 3.31 ms (4.9x) | 4.93 ms (5.7x) |
+| LtMsgPack, arrays without the schema | 2.86 ms (5.7x) | 5.89 ms (4.8x) |
+| the same with the generated code | 3.01 ms (5.4x) | 4.81 ms (5.9x) |
+| LtMsgPack, maps with property names | 4.87 ms (3.3x) | 8.36 ms (3.4x) |
+| the same with the generated code | 4.62 ms (3.5x) | 6.64 ms (4.3x) |
 
 | .NET 10, WebAssembly (node) | interpreter write | read | AOT write | read |
 |---|---|---|---|---|
 | LtMsgPack, default options | 183 ms (3.0x) | 235 ms (3.5x) | 78 ms (2.8x) | 69 ms (3.1x) |
 | the same with the generated code | 92 ms (5.8x) | 196 ms (4.2x) | 10.5 ms (20x) | 24 ms (8.7x) |
 
-With a JIT, writing is as fast without the generated code once LtMsgPack has compiled its writers (after 1000 objects of a class, as in these rows). Reading gains about 1.2x: decoding strings takes most of the time, the same with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).
+With a JIT, writing is about as fast without the generated code (within 7% either way) once LtMsgPack has compiled its writers (after 1000 objects of a class, as in these rows). Reading gains about 1.2x: decoding strings takes most of the time, the same with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).

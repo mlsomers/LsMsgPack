@@ -36,8 +36,8 @@ Options:
 | `--out <file.ts>` | The models. |
 | `--schemas <file.ts>` | The schema set, by default next to `--out` with `.schemas.ts`. `--no-schemas`: none. |
 | `--int64 number\|bigint`, `--dates date\|iso`, `--decimal number\|string` | How the client reads `long`, `DateTime`/`DateTimeOffset` and `decimal` (the TypeScript types depend on it). The client checks that it reads with the same options. |
-| `--property-names camelCase\|dotnet` | The field names: camelCase as System.Text.Json's `JsonNamingPolicy.CamelCase` writes them (default: `invoiceDate`, `id` for `ID`; also `key`/`value` of a `KeyValuePair`), or the names of the .NET properties. `defineModels` gets `propertyNames`, the client reads with the same and writes request bodies with the .NET names. Two properties of a class with the same camelCase name (`Id` and `ID`) are refused. |
-| `--options <Type.Member>` | A static property, field or method of the assemblies that returns the server's `LtMsgPackHttpOptions` (or the `LtMsgPackOptions` of `application/x-lsmsgpack`). The static filters, `PropertyOrder` and `AddTypeIdOptions` decide which properties the models have and what the schemas are. Default: the defaults of the formatters. |
+| `--property-names camelCase\|dotnet` | The field names: camelCase as System.Text.Json's `JsonNamingPolicy.CamelCase` writes them (default: `invoiceDate`, `id` for `ID`; also `key`/`value` of a `KeyValuePair`), or the names of the .NET properties and fields. `defineModels` gets `propertyNames`, the client reads with the same and writes request bodies with the .NET names. Two properties of a class with the same camelCase name (`Id` and `ID`) are refused. |
+| `--options <Type.Member>` | A static property, field or method of the assemblies that returns the server's `LtMsgPackHttpOptions` (or the `LtMsgPackOptions` of `application/x-lsmsgpack`). The static filters, `PropertyOrder` and `AddTypeIdOptions` decide which properties and fields the models have and what the schemas are. Default: the defaults of the formatters. |
 | `--import <module>` | Where the models import `defineModels` from (default `@lsmsgpack/client`). |
 
 Warnings go to the standard error: e.g. a constructor that sets another value each time (`DateTime.Now`, `Guid.NewGuid()`), whose field gets the default of its type.
@@ -76,13 +76,13 @@ export const models = defineModels({ int64: 'number', dates: 'date', decimal: 'n
 ] });
 ```
 
-- **Properties**: the ones the server writes (its static filters: settable or taken by a constructor, not ignored, not static), camelCase by default (`--property-names`); `defineModels` has the .NET names.
+- **Properties**: the properties and serialized fields the server writes (its static filters: settable or taken by a constructor, not ignored, not static; fields per the `SerializedFields` option), camelCase by default (`--property-names`); `defineModels` has the .NET names.
 - **Types**: as the client reads them, the same rules as System.Text.Json except dates (`Date`) and bytes (`Uint8Array`): see the [client's table of values](TypeScriptClient.md#values). Reference types are `| null`. With nullable reference types enabled in the .NET project, the annotations decide (`string?` or `string`); without them a property can be null, the elements of a collection and values of a dictionary are taken as not null.
 - **Initial values**: what the constructor sets (the class is created as the serializer creates it: its parameterless constructor, otherwise uninitialized), as TypeScript. Nested objects are `new X()` with the values that differ from what `X` sets. A value the constructor sets differently each time gets the default of its type, with a warning.
 - **`$type`**: the type name the server writes as the type id (the short name, or the full name with `AddTypeIdOption.FullName`). It is not a field: `defineModels` puts it on the prototype, so it costs nothing per object and `JSON.stringify` leaves it out. A base class declares the names of its classes, so `switch (animal.$type)` narrows.
 - **Inheritance**: `extends`, base classes first. A derived class that sets an inherited property in its constructor overrides the field.
 - **`defineModels`**: the type name and the declared type of every property (in the form of the [described schema](schema.md#version-2-the-declared-types), classes by their type name). The client uses it to read payloads whose schema has only names (a server without `DescribeSchemas`), and to write request bodies (the kinds, and `$type` only where the declared type is not the class).
-- Structs are classes as well (their default is an object, `new Point()`), interfaces are TypeScript interfaces with their properties optional.
+- Structs are classes as well (their default is an object, `new Point()`), also the `System.Numerics` structs the serializer writes by their public fields (`Vector2`, `Vector3`, `Vector4`, `Quaternion`, `Plane`, `Matrix3x2`, `Matrix4x4`: `X`, `Y`, `Z` as `number`), interfaces are TypeScript interfaces with their properties optional.
 
 ## The schema set
 

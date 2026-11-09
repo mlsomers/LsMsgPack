@@ -14,6 +14,8 @@
     <PackageReference Include="MSTest.TestFramework" Version="4.5.2" />
     <!-- newer than the generator's 4.8: a newer compiler loads the generator, as in a newer SDK -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+    <!-- compiles VB models: the fields VB generates, as C# projects referencing them see them -->
+    <PackageReference Include="Microsoft.CodeAnalysis.VisualBasic" Version="4.11.0" />
     <PackageReference Include="Basic.Reference.Assemblies.NetStandard20" Version="1.8.14" />
   </ItemGroup>
 

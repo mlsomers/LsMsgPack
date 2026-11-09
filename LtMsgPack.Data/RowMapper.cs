@@ -172,7 +172,7 @@ namespace LtMsgPack.Data
         if (!string.IsNullOrEmpty(name))
           return name;
       }
-      return info.PropertyId as string ?? info.PropertyInfo.Name;
+      return info.PropertyId as string ?? info.Name;
     }
   }
 
@@ -197,13 +197,13 @@ namespace LtMsgPack.Data
     /// <param name="record">On the first row: a column of another type than the property is read with the property type's getter when the provider converts its value (e.g. SQLite's GetInt32 of an INTEGER, GetDateTime of a TEXT)</param>
     internal static ColumnSetter<T> Create(Serializer serializer, FullPropertyInfo info, IDataRecord record, Type column, int ordinal)
     {
-      PropertyInfo property = info.PropertyInfo;
-      Type type = property.PropertyType;
+      MemberInfo member = info.Member; // a property or a field
+      Type type = info.DeclaredType;
       Type underlying = Nullable.GetUnderlyingType(type);
       bool same = type == column || underlying == column;
-      if ((same || ProviderConverts(record, ordinal, underlying ?? type)) && !property.DeclaringType.IsValueType)
+      if ((same || ProviderConverts(record, ordinal, underlying ?? type)) && !member.DeclaringType.IsValueType)
       {
-        ColumnSetter<T> typed = CreateTyped(serializer, property, type, underlying, ordinal, same && record is DbDataReader);
+        ColumnSetter<T> typed = CreateTyped(serializer, member, type, underlying, ordinal, same && record is DbDataReader);
         if (typed != null)
           return typed;
       }
@@ -248,7 +248,7 @@ namespace LtMsgPack.Data
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.Fallback)]
     [UnconditionalSuppressMessage("Trimming", "IL2071", Justification = TrimReasons.Fallback)] // the struct constraint of NullableOf (reported by the .NET 10 tools), a failure converts the value boxed
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
-    private static ColumnSetter<T> CreateTyped(Serializer serializer, PropertyInfo property, Type type, Type underlying, int ordinal, bool dbReader)
+    private static ColumnSetter<T> CreateTyped(Serializer serializer, MemberInfo property, Type type, Type underlying, int ordinal, bool dbReader)
     {
       try
       {
@@ -262,27 +262,30 @@ namespace LtMsgPack.Data
       }
     }
 
-    private static ColumnSetter<T> Typed<TValue>(Serializer serializer, PropertyInfo property, int ordinal, bool dbReader)
+    private static ColumnSetter<T> Typed<TValue>(Serializer serializer, MemberInfo property, int ordinal, bool dbReader)
     {
       Action<T, TValue> set = Setter<TValue>(serializer, property);
       return set is null ? null : new TypedColumnSetter<T, TValue>(ordinal, Getter<TValue>(dbReader), set);
     }
 
-    private static ColumnSetter<T> NullableOf<TValue>(Serializer serializer, PropertyInfo property, int ordinal, bool dbReader) where TValue : struct
+    private static ColumnSetter<T> NullableOf<TValue>(Serializer serializer, MemberInfo property, int ordinal, bool dbReader) where TValue : struct
     {
       Action<T, TValue?> set = Setter<TValue?>(serializer, property);
       return set is null ? null : new NullableColumnSetter<T, TValue>(ordinal, Getter<TValue>(dbReader), set);
     }
 
     /// <summary>
-    /// The setter of the source generator, otherwise a delegate bound to the set method, null when there is none.
+    /// The setter of the source generator, otherwise a delegate bound to the set method (a field: compiled from an expression), null when there is none (a readonly field).
     /// </summary>
-    private static Action<T, TValue> Setter<TValue>(Serializer serializer, PropertyInfo property)
+    private static Action<T, TValue> Setter<TValue>(Serializer serializer, MemberInfo member)
     {
-      if (!property.DeclaringType.IsAssignableFrom(typeof(T)))
+      if (!member.DeclaringType.IsAssignableFrom(typeof(T)))
         return null;
-      if (serializer.Generated(property.DeclaringType)?.FindProperty(property) is GeneratedProperty<T, TValue> generated && generated.Set != null)
+      if (serializer.Generated(member.DeclaringType)?.FindMember(member) is GeneratedProperty<T, TValue> generated && generated.Set != null)
         return generated.Set;
+      if (member is FieldInfo field)
+        return serializer.CanBindDelegates && !field.IsStatic ? FieldDelegates.Setter<T, TValue>(field) : null;
+      PropertyInfo property = (PropertyInfo)member;
       if (!serializer.CanBindDelegates)
         return null;
       MethodInfo set = property.GetSetMethod(true);
@@ -438,7 +441,7 @@ namespace LtMsgPack.Data
     internal BoxedColumnSetter(Serializer serializer, FullPropertyInfo info, int ordinal) : base(ordinal)
     {
       Info = info;
-      _type = info.PropertyInfo.PropertyType;
+      _type = info.DeclaredType;
       _options = serializer.Options;
     }
 

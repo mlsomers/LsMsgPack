@@ -92,7 +92,7 @@ namespace LsMsgPack
 
       if (concrete)
         for (int t = 0; t < props.Length; t++)
-          Visit(props[t].PropertyInfo.PropertyType, false, depth + 1, byNames || anonymous);
+          Visit(props[t].DeclaredType, false, depth + 1, byNames || anonymous);
 
       if (!type.IsSealed && !type.IsValueType && !TypeResolver.IsFrameworkAssembly(type.Assembly))
       {
@@ -166,14 +166,16 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// The assemblies (not the framework's) of the types the root reaches through generic arguments, element types, base types and the types of public properties, as TypeResolver.CacheReachableAssemblies.
+    /// The assemblies (not the framework's) of the types the root reaches through generic arguments, element types, base types and the types of public properties, as TypeResolver.CacheReachableAssemblies
+    /// (and of the non-public properties and the fields the settings serialize).
     /// </summary>
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
     private void FindAssemblies(Type root)
     {
       HashSet<Type> visited = new HashSet<Type>();
       Stack<Type> todo = new Stack<Type>();
-      NonPublicProperties nonPublic = FullPropertyInfo.NonPublicOf(_settings);
+      MemberSelection selection = FullPropertyInfo.SelectionOf(_settings);
+      List<MemberInfo> fields = new List<MemberInfo>();
       todo.Push(root);
       while (todo.Count > 0)
       {
@@ -199,9 +201,13 @@ namespace LsMsgPack
         PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
         for (int t = props.Length - 1; t >= 0; t--)
           todo.Push(props[t].PropertyType);
-        List<PropertyInfo> nonPublicProps = FullPropertyInfo.NonPublicCandidates(type, nonPublic);
+        List<PropertyInfo> nonPublicProps = FullPropertyInfo.NonPublicCandidates(type, selection.NonPublic);
         for (int t = nonPublicProps.Count - 1; t >= 0; t--)
           todo.Push(nonPublicProps[t].PropertyType);
+        fields.Clear();
+        FullPropertyInfo.AddFieldCandidates(type, selection.Fields, fields);
+        for (int t = fields.Count - 1; t >= 0; t--)
+          todo.Push(((FieldInfo)fields[t]).FieldType);
       }
     }
   }

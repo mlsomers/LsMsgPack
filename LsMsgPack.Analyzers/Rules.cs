@@ -3,7 +3,7 @@
 namespace LsMsgPack.Analyzers
 {
   /// <summary>
-  /// The diagnostics of the analyzers (docs/Analyzers.md). They are reported for the properties of serialized types only (see <see cref="ModelTypes"/>).
+  /// The diagnostics of the analyzers (docs/Analyzers.md). They are reported for the properties and fields of serialized types only (see <see cref="ModelTypes"/>).
   /// </summary>
   internal static class Rules
   {
@@ -12,6 +12,7 @@ namespace LsMsgPack.Analyzers
     private const string ReadingCategory = "LsMsgPack.Reading";
     private const string CoverageCategory = "LsMsgPack.Coverage";
     private const string SupportCategory = "LsMsgPack.Support";
+    private const string FieldsCategory = "LsMsgPack.Fields";
     private const string DocsUrl = "https://github.com/mlsomers/LsMsgPack/blob/master/docs/Analyzers.md#";
 
     /// <summary>
@@ -81,5 +82,13 @@ namespace LsMsgPack.Analyzers
       + "(for a JsonElement in an ASP.NET Core response a 500, as a request body a 400). Json.NET's JToken types (JObject, JArray, JValue...) are written as their own properties and read back empty or with an exception. "
       + "A string with the JSON text, or a class with the values, works both ways.",
       DocsUrl + "lsmp009-json-document-type-is-not-serialized");
+
+    public static readonly DiagnosticDescriptor FieldLeftOut = new DiagnosticDescriptor("LSMP010", "Public field is not serialized",
+      "'{0}' is a public field, which the serializers leave out: by default they only write fields with an attribute that opts them in, such as [DataMember] or [JsonInclude]. "
+      + "Add [DataMember], make it a property, or ignore it ([IgnoreDataMember]). If your serializers write public fields (FilterNonSettable with SerializedFields.Public), set <LsMsgPackFields>Public</LsMsgPackFields>.",
+      FieldsCategory, DiagnosticSeverity.Warning, true,
+      "The serializers write properties, and fields only when they opt in (SerializedFields.Attributed, the default of FilterNonSettable, as System.Text.Json without IncludeFields): a public field without such an attribute "
+      + "is lost without a warning, both ways. The MSBuild property LsMsgPackFields (None, Attributed, Public, All) tells the analyzers and the source generator which fields the serializers' static filters select.",
+      DocsUrl + "lsmp010-public-field-is-not-serialized");
   }
 }

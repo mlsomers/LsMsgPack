@@ -58,6 +58,11 @@ namespace LtMsgPack.Writing
     internal readonly bool ByRef;
 
     /// <summary>
+    /// The options' layout is <see cref="ObjectLayout.Array"/>, and <see cref="MsgPackOptions.TrimTrailingNulls"/> (a plan is per serializer): one load per object instead of three (c.Serializer.Options._objectLayout).
+    /// </summary>
+    private readonly bool _array, _trim;
+
+    /// <summary>
     /// <see cref="IdMode.Session"/>: the ids of the frozen session used last (see <see cref="WriteContext.BeginObject"/>).
     /// </summary>
     internal volatile SessionIds LastSession;
@@ -81,6 +86,8 @@ namespace LtMsgPack.Writing
       Type = type;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
       LtMsgPackOptions options = serializer.Options;
+      _array = options._objectLayout == ObjectLayout.Array;
+      _trim = options._trimTrailingNulls;
       Infos = names ? FullPropertyInfo.GetSerializedProps(type, options) : FullPropertyInfo.GetStaticallyIncludedProps(type, options);
 
       Props = new PropWriter[Infos.Length];
@@ -110,13 +117,39 @@ namespace LtMsgPack.Writing
         Schema = serializer.GetSchemaInfo(type);
       }
 
-      if (GeneratedPlan is null && serializer.CompileWritersAfter >= 0)
+      if (serializer.CompileWritersAfter >= 0)
       {
-        if (serializer.CompileWritersAfter == 0)
-          Compile(serializer);
-        else
-          _untilCompiled = serializer.CompileWritersAfter;
+        if (GeneratedPlan is null)
+        {
+          if (serializer.CompileWritersAfter == 0)
+            Compile(serializer);
+          else
+            _untilCompiled = serializer.CompileWritersAfter;
+        }
+        else // generated code: counted only where it writes by its loop over the ids (GeneratedWritePlan.CountLoop)
+        {
+          if (serializer.CompileWritersAfter == 0)
+          {
+            if (!UnrolledFor(GeneratedPlan, options))
+              Compile(serializer);
+          }
+          else
+          {
+            GeneratedPlan.LoopPlan = this;
+            GeneratedPlan.UntilCompiled = serializer.CompileWritersAfter;
+          }
+        }
       }
+    }
+
+    /// <summary>
+    /// Whether the generated code writes the layout of the options without its loop over the ids (maps of a collection with SerializeProperties in the array layout aside).
+    /// </summary>
+    private static bool UnrolledFor(GeneratedWritePlan plan, LtMsgPackOptions options)
+    {
+      if (options._objectLayout != ObjectLayout.Array)
+        return plan.UnrolledMap;
+      return options._trimTrailingNulls ? plan.UnrolledTrimmed : plan.Unrolled;
     }
 
     /// <summary>
@@ -134,7 +167,7 @@ namespace LtMsgPack.Writing
     /// at once and inlines the writer's methods for every property), which the call that reaches the count should not wait for. The generated code is optimized in the background too (tiered JIT).
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void CompileInBackground(Serializer serializer)
+    internal void CompileInBackground(Serializer serializer)
     {
       ThreadPool.UnsafeQueueUserWorkItem(plan => ((ObjectPlan)plan).Compile(serializer), this); // no ExecutionContext: nothing of the caller's (AsyncLocal values) is needed or kept
     }
@@ -153,7 +186,7 @@ namespace LtMsgPack.Writing
         GeneratedWritePlan plan = code is null ? null : serializer.GeneratedWritePlan(code, Infos, Props);
         if (plan is null)
           return;
-        ((ICompiledCode)code).Compile(plan);
+        ((ICompiledCode)code).Compile(plan, serializer.Options._objectLayout != ObjectLayout.Array);
         Volatile.Write(ref GeneratedPlan, plan);
       }
       catch (Exception) // a type or runtime the expressions do not handle: the runtime's plan writes it, as before (CompiledWriterTests check that the writers are used)
@@ -170,7 +203,7 @@ namespace LtMsgPack.Writing
       GeneratedWritePlan generated = GeneratedPlan;
       if (generated is null)
         CountWrite(c.Serializer);
-      if (c.Serializer.Options._objectLayout == ObjectLayout.Array)
+      if (_array)
       {
         WriteArray(c, value, typeId, assignedTo, infos, generated);
         return;
@@ -190,7 +223,7 @@ namespace LtMsgPack.Writing
 
       c.EnterContainer();
       if (generated != null)
-        count += generated.Code.WriteBoxed(c, value, keys, infos, generated, out int end);
+        count += generated.Code.WriteBoxed(c, value, keys, infos, generated, out int end); // WriteUnrolledMap or Write: decided there
       else
       {
         PropWriter[] props = Props;
@@ -220,7 +253,7 @@ namespace LtMsgPack.Writing
 
       c.EnterContainer();
       PropWriter[] props = Props;
-      if (c.Serializer.Options._trimTrailingNulls)
+      if (_trim)
         WriteTrimmed(c, value, infos, generated);
       else
       {
@@ -287,11 +320,11 @@ namespace LtMsgPack.Writing
       GeneratedWritePlan generated = GeneratedPlan;
       if (generated is null)
         CountWrite(c.Serializer);
-      if (c.Serializer.Options._objectLayout == ObjectLayout.Array)
+      if (_array)
       {
         SerializationRules.ThrowIfUnresolvableAsArray(Type, assignedTo);
         c.EnterContainer();
-        if (c.Serializer.Options._trimTrailingNulls)
+        if (_trim)
           WriteStructTrimmed(c, ref value, infos, generated);
         else
         {
@@ -301,7 +334,11 @@ namespace LtMsgPack.Writing
             if (generated.Unrolled)
               Unsafe.As<GeneratedStructCode<T>>(generated.Code).WriteUnrolled(c, ref value, infos, generated); // the code of the plan's type
             else
+            {
+              if (generated.UntilCompiled > 0)
+                generated.CountLoop();
               Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, null, infos, generated, out int end);
+            }
           }
           else
           {
@@ -320,7 +357,16 @@ namespace LtMsgPack.Writing
       SerializationRules.ThrowIfUnresolvableWithSchema(Type, assignedTo, c.UsesSchema);
       c.EnterContainer();
       if (generated != null)
-        count += Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, keys, infos, generated, out int end);
+      {
+        if (generated.UnrolledMap)
+          count += Unsafe.As<GeneratedStructCode<T>>(generated.Code).WriteUnrolledMap(c, ref value, keys, infos, generated);
+        else
+        {
+          if (generated.UntilCompiled > 0)
+            generated.CountLoop();
+          count += Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, keys, infos, generated, out int end);
+        }
+      }
       else
       {
         for (int t = 0; t < props.Length; t++)
@@ -341,7 +387,16 @@ namespace LtMsgPack.Writing
       int at = w.ReserveArrayHeader(props.Length);
       if (generated != null)
       {
-        int last = Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, null, infos, generated, out int after);
+        int after;
+        int last;
+        if (generated.UnrolledTrimmed)
+          last = Unsafe.As<GeneratedStructCode<T>>(generated.Code).WriteUnrolledTrimmed(c, ref value, infos, generated, out after);
+        else
+        {
+          if (generated.UntilCompiled > 0)
+            generated.CountLoop();
+          last = Unsafe.As<GeneratedStructCode<T>>(generated.Code).Write(c, ref value, null, infos, generated, out after);
+        }
         w.Pos = after;
         w.PatchArrayHeader(at, props.Length, last);
         return;
@@ -454,7 +509,7 @@ namespace LtMsgPack.Writing
     {
       Serializer = serializer;
       NoFilters = serializer.Filters == FilterMode.None;
-      BoxedFilters = serializer.Filters == FilterMode.Custom || info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute));
+      BoxedFilters = IsBoxed(serializer, info);
     }
 
     /// <param name="key">The encoded property id, null for the array layout (only the value)</param>
@@ -467,6 +522,22 @@ namespace LtMsgPack.Writing
     internal virtual bool ByRef
     {
       get { return false; }
+    }
+
+    /// <summary>
+    /// The filter mode of a property as the type argument of <see cref="PropWriter{TTarget, TValue, TFilter}"/> and <see cref="StructPropWriter{TTarget, TValue, TFilter}"/>:
+    /// <see cref="NoFilter"/>, <see cref="DefaultValuesFilter"/> or <see cref="BoxedFilter"/> (decided once per property, not tested per value).
+    /// </summary>
+    internal static Type FilterType(Serializer serializer, FullPropertyInfo info)
+    {
+      if (serializer.Filters == FilterMode.None)
+        return typeof(NoFilter);
+      return IsBoxed(serializer, info) ? typeof(BoxedFilter) : typeof(DefaultValuesFilter);
+    }
+
+    private static bool IsBoxed(Serializer serializer, FullPropertyInfo info)
+    {
+      return serializer.Filters == FilterMode.Custom || info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute));
     }
 
     internal bool IncludeBoxed(object value, FullPropertyInfo info)
@@ -484,6 +555,8 @@ namespace LtMsgPack.Writing
     internal static PropWriter Create(Serializer serializer, FullPropertyInfo info)
     {
       PropertyInfo property = info.PropertyInfo;
+      if (property is null)
+        return CreateForField(serializer, info, info.FieldInfo);
       PropWriter generated = serializer.GeneratedProperty(property)?.CreateWriter(serializer, info); // the getter of the source generator
       if (generated != null)
         return generated;
@@ -493,7 +566,7 @@ namespace LtMsgPack.Writing
       {
         try
         {
-          Type writerType = (property.DeclaringType.IsValueType ? typeof(StructPropWriter<,>) : typeof(PropWriter<,>)).MakeGenericType(property.DeclaringType, property.PropertyType);
+          Type writerType = (property.DeclaringType.IsValueType ? typeof(StructPropWriter<,,>) : typeof(PropWriter<,,>)).MakeGenericType(property.DeclaringType, property.PropertyType, FilterType(serializer, info));
           return (PropWriter)Activator.CreateInstance(writerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, get }, null);
         }
         catch (Exception) // e.g. a runtime that cannot create the generic type, use reflection
@@ -502,12 +575,59 @@ namespace LtMsgPack.Writing
       }
       return new BoxedPropWriter(serializer, info);
     }
+
+    /// <summary>
+    /// A field: read by the getter of the source generator, or a typed delegate compiled from an expression when the plan is built (not after some uses: PGO then profiles the final code), as a property's getter is bound.
+    /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // as Create
+    [UnconditionalSuppressMessage("Trimming", "IL2076", Justification = TrimReasons.Fallback)]
+    private static PropWriter CreateForField(Serializer serializer, FullPropertyInfo info, FieldInfo field)
+    {
+      PropWriter generated = serializer.GeneratedProperty(field)?.CreateWriter(serializer, info);
+      if (generated != null)
+        return generated;
+      Type declaring = field.DeclaringType;
+      if (!field.IsStatic && !declaring.ContainsGenericParameters && serializer.CanBindDelegates)
+      {
+        try
+        {
+          Type writerType = (declaring.IsValueType ? typeof(StructPropWriter<,,>) : typeof(PropWriter<,,>)).MakeGenericType(declaring, field.FieldType, FilterType(serializer, info));
+          return (PropWriter)Activator.CreateInstance(writerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, field }, null);
+        }
+        catch (Exception) // e.g. a runtime that cannot create the generic type or compile the expression, use reflection
+        {
+        }
+      }
+      return new BoxedPropWriter(serializer, info);
+    }
   }
 
   /// <summary>
-  /// A property read through a typed delegate, the value is not boxed.
+  /// The filter modes of the typed property writers (a type argument: the JIT drops the tests of the other modes, see <see cref="PropWriter.FilterType"/>).
   /// </summary>
-  internal sealed class PropWriter<TTarget, TValue> : PropWriter where TTarget : class
+  internal struct NoFilter
+  {
+  }
+
+  /// <summary>
+  /// Only FilterDefaultValues, typed (<see cref="ValueHandler{T}.IncludeByDefault"/>).
+  /// </summary>
+  internal struct DefaultValuesFilter
+  {
+  }
+
+  /// <summary>
+  /// The dynamic filters with the value boxed (<see cref="PropWriter.BoxedFilters"/>).
+  /// </summary>
+  internal struct BoxedFilter
+  {
+  }
+
+  /// <summary>
+  /// A property (or field) read through a typed delegate, the value is not boxed. <typeparamref name="TFilter"/>: the filter mode (<see cref="PropWriter.FilterType"/>).
+  /// </summary>
+  internal sealed class PropWriter<TTarget, TValue, TFilter> : PropWriter where TTarget : class where TFilter : struct
   {
     private readonly Func<TTarget, TValue> _get;
     private readonly FullPropertyInfo _declared;
@@ -517,6 +637,11 @@ namespace LtMsgPack.Writing
     {
       _declared = info;
       _get = (Func<TTarget, TValue>)Delegate.CreateDelegate(typeof(Func<TTarget, TValue>), get);
+    }
+
+    /// <param name="field">Read by a delegate compiled from an expression</param>
+    public PropWriter(Serializer serializer, FullPropertyInfo info, FieldInfo field) : this(serializer, info, FieldDelegates.Getter<TTarget, TValue>(field))
+    {
     }
 
     /// <param name="get">The getter of the source generator</param>
@@ -540,14 +665,14 @@ namespace LtMsgPack.Writing
       }
 
       ValueHandler<TValue> handler = _handler ?? (_handler = Serializer.Handler<TValue>(_declared));
-      if (!NoFilters)
+      if (typeof(TFilter) == typeof(BoxedFilter))
       {
-        if (BoxedFilters)
-        {
-          if (!IncludeBoxed(value, info))
-            return false;
-        }
-        else if (!handler.IncludeByDefault(value, info))
+        if (!IncludeBoxed(value, info))
+          return false;
+      }
+      else if (typeof(TFilter) == typeof(DefaultValuesFilter))
+      {
+        if (!handler.IncludeByDefault(value, info))
           return false;
       }
 
@@ -581,9 +706,9 @@ namespace LtMsgPack.Writing
 
   /// <summary>
   /// A property of a struct read through a typed delegate on the struct by reference (in the caller's value, see ObjectPlan.WriteStruct, or in a box: a struct written as an object), the value is not boxed.
-  /// The same as <see cref="PropWriter{TTarget, TValue}.Write"/> after the getter: keep the two the same (the class writer is not changed for this, it is the usual path).
+  /// The same as <see cref="PropWriter{TTarget, TValue, TFilter}.Write"/> after the getter: keep the two the same (the class writer is not changed for this, it is the usual path).
   /// </summary>
-  internal sealed class StructPropWriter<TTarget, TValue> : RefPropWriter<TTarget> where TTarget : struct
+  internal sealed class StructPropWriter<TTarget, TValue, TFilter> : RefPropWriter<TTarget> where TTarget : struct where TFilter : struct
   {
     private readonly StructGetter<TTarget, TValue> _get;
     private readonly FullPropertyInfo _declared;
@@ -594,6 +719,11 @@ namespace LtMsgPack.Writing
     {
       _declared = info;
       _get = (StructGetter<TTarget, TValue>)Delegate.CreateDelegate(typeof(StructGetter<TTarget, TValue>), get);
+    }
+
+    /// <param name="field">Read by reference by a delegate compiled from an expression</param>
+    public StructPropWriter(Serializer serializer, FullPropertyInfo info, FieldInfo field) : this(serializer, info, FieldDelegates.StructGetter<TTarget, TValue>(field))
+    {
     }
 
     /// <param name="get">The getter of the source generator</param>
@@ -613,14 +743,14 @@ namespace LtMsgPack.Writing
       TValue value = _get(ref target);
 
       ValueHandler<TValue> handler = _handler ?? (_handler = Serializer.Handler<TValue>(_declared));
-      if (!NoFilters)
+      if (typeof(TFilter) == typeof(BoxedFilter))
       {
-        if (BoxedFilters)
-        {
-          if (!IncludeBoxed(value, info))
-            return false;
-        }
-        else if (!handler.IncludeByDefault(value, info))
+        if (!IncludeBoxed(value, info))
+          return false;
+      }
+      else if (typeof(TFilter) == typeof(DefaultValuesFilter))
+      {
+        if (!handler.IncludeByDefault(value, info))
           return false;
       }
 

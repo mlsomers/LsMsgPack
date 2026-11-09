@@ -17,6 +17,7 @@ namespace LsMsgPack.TypeResolving.Filters
     /// <item>System.Runtime.Serialization.IgnoreDataMember</item>
     /// <item>MessagePack.IgnoreMember</item>
     /// <item>PolyType.PropertyShape(Ignore = true)</item>
+    /// <item>System.NonSerialized (fields)</item>
     /// </list>
     /// <para>By default the attributes of the properties a property overrides and of the interface properties it implements count too (<see cref="IgnoreAttributeLookup.All"/>), the presets look where their library does.</para>
     /// <para>The attributes are recognized by their names, so there are no dependencies on the libraries that define them.
@@ -73,9 +74,10 @@ namespace LsMsgPack.TypeResolving.Filters
         public IEnumerable<string> AlsoIgnore { get { return _alsoIgnore ?? (IEnumerable<string>)new string[0]; } }
 
         /// <summary>
-        /// As Json.NET: <c>[Newtonsoft.Json.JsonIgnore]</c> and <c>[IgnoreDataMember]</c>, also on the properties it overrides (inherited attributes: not <c>[IgnoreDataMember]</c>) and on the interface properties of the same name.
+        /// As Json.NET: <c>[Newtonsoft.Json.JsonIgnore]</c> and <c>[IgnoreDataMember]</c>, also on the properties it overrides (inherited attributes: not <c>[IgnoreDataMember]</c>) and on the interface properties of the same name,
+        /// and <c>[NonSerialized]</c> on a field.
         /// </summary>
-        public static FilterIgnoredAttribute LikeNewtonsoft { get; } = new FilterIgnoredAttribute(IgnoreAttributes.Newtonsoft | IgnoreAttributes.IgnoreDataMember, IgnoreAttributeLookup.Overridden | IgnoreAttributeLookup.Interfaces);
+        public static FilterIgnoredAttribute LikeNewtonsoft { get; } = new FilterIgnoredAttribute(IgnoreAttributes.Newtonsoft | IgnoreAttributes.IgnoreDataMember | IgnoreAttributes.NonSerialized, IgnoreAttributeLookup.Overridden | IgnoreAttributeLookup.Interfaces);
 
         /// <summary>
         /// As System.Text.Json: <c>[System.Text.Json.Serialization.JsonIgnore]</c> (with <c>Condition = Always</c>, the default), only on the property itself.
@@ -102,9 +104,14 @@ namespace LsMsgPack.TypeResolving.Filters
         /// </summary>
         public static FilterIgnoredAttribute LikeNerdbank { get; } = new FilterIgnoredAttribute(IgnoreAttributes.PolyType | IgnoreAttributes.IgnoreDataMember, IgnoreAttributeLookup.Overridden);
 
+        // FieldAttributes.NotSerialized ([NonSerialized]): FieldInfo.IsNotSerialized and the enum member are obsolete on .NET 8 (SYSLIB0050), the metadata flag is not
+        private const int NotSerializedFlag = 0x0080;
+
         /// <inheritdoc cref="IMsgPackPropertyIncludeStatically.IncludeProperty(FullPropertyInfo)"/>
         public bool IncludeProperty(FullPropertyInfo info)
         {
+            if ((_ignore & IgnoreAttributes.NonSerialized) != 0 && info.FieldInfo != null && ((int)info.FieldInfo.Attributes & NotSerializedFlag) != 0) // a pseudo-attribute: a flag in the metadata
+                return false;
             if (_lookup != IgnoreAttributeLookup.Declared && info.Attributes != null)
             {
                 // Read once per property (FullPropertyInfo.Attributes), most of these arrays are empty
@@ -114,10 +121,10 @@ namespace LsMsgPack.TypeResolving.Filters
                     && ((_lookup & IgnoreAttributeLookup.Interfaces) == 0 || !IgnoresAny(attributes.Interfaces));
             }
 
-            if (info.PropertyInfo != null && info.CustomAttributes.ContainsKey(JsonIgnoreName))
+            if (info.Member != null && info.CustomAttributes.ContainsKey(JsonIgnoreName))
             {
                 // Both JsonIgnore attributes may be there, only one of them is in CustomAttributes
-                object[] atts = info.PropertyInfo.GetCustomAttributes(true);
+                object[] atts = info.Member.GetCustomAttributes(true);
                 for (int t = atts.Length - 1; t >= 0; t--)
                     if (Ignores(atts[t]))
                         return false;

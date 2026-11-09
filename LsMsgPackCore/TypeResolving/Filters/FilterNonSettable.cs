@@ -9,14 +9,16 @@ namespace LsMsgPack.TypeResolving.Filters
     /// Leaves out the properties without a (public) setter: a reader could not set them. Except the properties of anonymous types (<c>new { Id = 1 }</c>), which are written only (readers set them through their fields),
     /// the properties a constructor of the type takes (immutable classes: <c>Money(decimal amount, string currency)</c> with get-only <c>Amount</c> and <c>Currency</c>, see docs/schema.md "Immutable classes"):
     /// readers call that constructor, and the properties without a setter that <see cref="GetOnlyProperties"/> keeps (by default: computed properties and get-only collections, see docs/schema.md "Computed and get-only properties").
-    /// <para>Also decides which non-public properties are serialized (<see cref="NonPublicProperties"/>, none by default, see docs/schema.md "Non-public properties"):
-    /// the serializers only look at them when the static filters have a FilterNonSettable that keeps them.</para>
+    /// <para>Also decides which non-public properties are serialized (<see cref="NonPublicProperties"/>, none by default, see docs/schema.md "Non-public properties") and which fields
+    /// (<see cref="SerializedFields"/>, the attributed ones by default, see docs/schema.md "Fields"): the serializers only look at them when the static filters have a FilterNonSettable that selects them
+    /// (without one: no non-public properties, the attributed fields). A readonly field is kept as a property without a setter would be.</para>
     /// </summary>
     public class FilterNonSettable : IMsgPackPropertyIncludeStatically
     {
         private bool _onlyPublic;
         private readonly GetOnlyProperties _getOnly;
         private readonly NonPublicProperties _nonPublic;
+        private readonly SerializedFields _fields = SerializedFields.Attributed;
 
         /// <summary>
         /// Keeps the properties without a setter of <see cref="GetOnlyProperties.All"/>.
@@ -40,6 +42,16 @@ namespace LsMsgPack.TypeResolving.Filters
             _nonPublic = nonPublicProperties;
         }
 
+        /// <param name="getOnlyProperties">The properties without a setter (and readonly fields) that are kept (<see cref="GetOnlyProperties.None"/>: none)</param>
+        /// <param name="nonPublicProperties">The non-public properties that are serialized, and the properties whose non-public setters are used (the others need a public setter)</param>
+        /// <param name="fields">The fields that are serialized (<see cref="SerializedFields.Attributed"/> with the other constructors)</param>
+        public FilterNonSettable(GetOnlyProperties getOnlyProperties, NonPublicProperties nonPublicProperties, SerializedFields fields) : this(getOnlyProperties, nonPublicProperties)
+        {
+            if (fields < SerializedFields.None || fields > SerializedFields.All) // the values are indexes of caches (MemberSelection)
+                throw new ArgumentOutOfRangeException(nameof(fields));
+            _fields = fields;
+        }
+
         /// <summary>
         /// The properties without a setter that are kept.
         /// </summary>
@@ -50,8 +62,17 @@ namespace LsMsgPack.TypeResolving.Filters
         /// </summary>
         public NonPublicProperties NonPublicProperties { get { return _nonPublic; } }
 
+        /// <summary>
+        /// The fields that are serialized.
+        /// </summary>
+        public SerializedFields Fields { get { return _fields; } }
+
         public bool IncludeProperty(FullPropertyInfo propertyInfo)
         {
+            FieldInfo field = propertyInfo.FieldInfo;
+            if (field != null) // the serializers only offer the fields this filter selects (FullPropertyInfo.GetMembers)
+                return !field.IsInitOnly || ObjectConstructor.Sets(field) || KeepsGetOnly(field, field.FieldType);
+
             bool nonPublic = UsesNonPublic(propertyInfo);
             if (!propertyInfo.PropertyInfo.CanWrite)
                 return SerializationRules.IsAnonymous(propertyInfo.PropertyInfo.DeclaringType) || ObjectConstructor.Sets(propertyInfo.PropertyInfo) || KeepsGetOnly(propertyInfo.PropertyInfo, nonPublic);
@@ -90,15 +111,25 @@ namespace LsMsgPack.TypeResolving.Filters
         private bool KeepsGetOnly(PropertyInfo property, bool nonPublic)
         {
             MethodInfo getter = property.GetGetMethod(nonPublic);
-            if (_getOnly == GetOnlyProperties.None || getter is null || getter.IsStatic || TypeResolver.IsFrameworkAssembly(property.DeclaringType.Assembly))
+            if (getter is null || getter.IsStatic)
                 return false;
-            GetOnlyProperties kind = GetOnlyCollection.IsFillable(property.PropertyType) ? GetOnlyProperties.Collections : GetOnlyProperties.Computed;
-            return (_getOnly & kind) != 0 && (kind == GetOnlyProperties.Collections || !SerializationRules.IsNeverWritten(property.PropertyType));
+            return KeepsGetOnly(property, property.PropertyType);
+        }
+
+        /// <summary>
+        /// A property without a setter (with a getter that is used) or a readonly field: kept as <see cref="GetOnlyProperties"/> says.
+        /// </summary>
+        private bool KeepsGetOnly(MemberInfo member, Type type)
+        {
+            if (_getOnly == GetOnlyProperties.None || (TypeResolver.IsFrameworkAssembly(member.DeclaringType.Assembly) && !SerializationRules.IsFieldStruct(member.DeclaringType)))
+                return false;
+            GetOnlyProperties kind = GetOnlyCollection.IsFillable(type) ? GetOnlyProperties.Collections : GetOnlyProperties.Computed;
+            return (_getOnly & kind) != 0 && (kind == GetOnlyProperties.Collections || !SerializationRules.IsNeverWritten(type));
         }
     }
 
     /// <summary>
-    /// The properties without a setter (<c>{ get; }</c> or <c>=&gt; ...</c>) that <see cref="FilterNonSettable"/> keeps, besides those of anonymous types and those a constructor takes (always kept).
+    /// The properties without a setter (<c>{ get; }</c> or <c>=&gt; ...</c>) and the readonly fields that <see cref="FilterNonSettable"/> keeps, besides those of anonymous types and those a constructor takes (always kept).
     /// Properties with a setter that is not public are not among them (see the onlyPublic parameter of the filter, and <see cref="NonPublicProperties"/>).
     /// </summary>
     [Flags]

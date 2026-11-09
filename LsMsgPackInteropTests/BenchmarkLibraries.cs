@@ -249,8 +249,24 @@ namespace LsMsgPackInteropTests
       object target = Activator.CreateInstance(to);
       System.Reflection.PropertyInfo[] properties = to.GetProperties();
       for (int t = 0; t < properties.Length; t++)
-        properties[t].SetValue(target, Copy(value.GetType().GetProperty(properties[t].Name).GetValue(value), properties[t].PropertyType));
+      {
+        if (properties[t].GetIndexParameters().Length == 0 && properties[t].CanWrite) // not Vector3's indexer
+          properties[t].SetValue(target, Copy(ValueOf(value, properties[t].Name), properties[t].PropertyType));
+      }
+      // Models with fields (and System.Numerics.Vector3)
+      System.Reflection.FieldInfo[] fields = to.GetFields();
+      for (int t = 0; t < fields.Length; t++)
+      {
+        if (!fields[t].IsStatic)
+          fields[t].SetValue(target, Copy(ValueOf(value, fields[t].Name), fields[t].FieldType));
+      }
       return target;
+    }
+
+    private static object ValueOf(object value, string name)
+    {
+      System.Reflection.PropertyInfo property = value.GetType().GetProperty(name);
+      return property != null ? property.GetValue(value) : value.GetType().GetField(name).GetValue(value);
     }
 
     private static ICandidate[] CreateCandidates()

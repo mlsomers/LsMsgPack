@@ -14,11 +14,12 @@ namespace LtMsgPack.GeneratorTests
   public class GeneratorTests
   {
     /// <summary>
-    /// The invoice model of the benchmarks (BenchmarkInvoices), with a context.
+    /// The invoice model of the benchmarks (BenchmarkInvoices), with a context. Since contract version 4 with fields too (opted in: the runtime's default).
     /// </summary>
     internal const string InvoiceModel = @"
 using System;
 using System.Collections.Generic;
+using System.Runtime.Serialization;
 using LtMsgPack;
 
 namespace Shop
@@ -30,6 +31,7 @@ namespace Shop
   {
     public string Street { get; set; }
     public string City { get; set; }
+    [DataMember] public string PostalCode;
   }
 
   public class Customer
@@ -43,6 +45,7 @@ namespace Shop
   {
     public decimal Amount { get; set; }
     public string Currency { get; set; }
+    [DataMember] public byte Precision;
   }
 
   public class InvoiceLine
@@ -51,6 +54,7 @@ namespace Shop
     public decimal Quantity { get; set; }
     public UnitOfMeasure Unit { get; set; }
     public Money UnitPrice { get; set; }
+    [DataMember] private int _discountPercent;
   }
 
   public class Invoice
@@ -646,6 +650,265 @@ namespace M
       Assert.AreEqual(1, LtMsgPackGenerator.ParseNonPublic("Attributed", 0));
       Assert.AreEqual(2, LtMsgPackGenerator.ParseNonPublic("ALL", 1));
       Assert.AreEqual(1, LtMsgPackGenerator.ParseNonPublic("nonsense", 1));
+    }
+
+    private const string FieldModel = @"
+using LtMsgPack;
+using System;
+using System.Collections.Generic;
+using System.Runtime.Serialization;
+namespace F
+{
+  public class Base
+  {
+    [DataMember] public int Shared { get; set; }
+    [DataMember] protected string _baseNote;
+    public int BasePlain;
+  }
+
+  public class Item : Base
+  {
+    public string Plain;
+    [DataMember] public Guid Opted;
+    [DataMember] private int _secret;
+    [DataMember] public readonly List<int> Filled = new List<int>();
+    [DataMember] public readonly int Fixed = 3;
+    [DataMember] public new string Shared;
+    [NonSerialized, DataMember] public int Skipped;
+    public static int StaticField;
+    public const int Constant = 1;
+    public event EventHandler Changed;
+    public string Title { get; set; }
+    private int _unmarked;
+  }
+
+  public struct Point
+  {
+    public float X;
+    [DataMember] public float Y;
+    [DataMember] private int _tag;
+  }
+
+  public class Page<T>
+  {
+    [DataMember] private T _item;
+  }
+
+  public class Holder
+  {
+    public Item Item { get; set; }
+    public Point Point { get; set; }
+    public Page<int> Page { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(Holder))]
+  public partial class Context : LtMsgPackContext { }
+}";
+
+    /// <summary>
+    /// The default (SerializedFields.Attributed, the runtime's default): fields with an opt-in attribute, public or not, private ones through UnsafeAccessor (a field by reference);
+    /// readonly fields without a setter; never static, const, event or compiler-generated fields.
+    /// </summary>
+    [TestMethod]
+    public void Fields_Attributed_ByDefault()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(FieldModel);
+      result.AssertCompiles();
+      Assert.IsEmpty(result.CompileProblems, string.Join("\n", result.CompileProblems.Select(p => p.ToString())) + "\n" + result.AllGenerated);
+      string code = result.AllGenerated;
+      Assert.Contains("Property<global::F.Item, global::System.Guid>(\"Opted\", o => o.Opted, (o, v) => o.Opted = v)", code);
+      Assert.Contains("[global::System.Runtime.CompilerServices.UnsafeAccessor(global::System.Runtime.CompilerServices.UnsafeAccessorKind.Field, Name = \"_secret\")]", code);
+      Assert.Contains("private static extern ref int LtMsgPackField", code);
+      Assert.Contains("Property<global::F.Item, int>(\"_secret\", o => LtMsgPackField", code);
+      Assert.Contains("Property<global::F.Item, int>(\"Fixed\", o => o.Fixed, null)", code, "a readonly field is never set behind the type's back");
+      Assert.Contains("Property<global::F.Item, global::System.Collections.Generic.List<int>>(\"Filled\", o => o.Filled, null)", code);
+      Assert.Contains("Property<global::F.Base, string>(\"_baseNote\", o => LtMsgPackField", code, "protected: through an UnsafeAccessor taking the base class");
+      Assert.Contains("(global::F.Base o);", code);
+      Assert.Contains("StructProperty<global::F.Point, int>(\"_tag\", (ref global::F.Point o) => LtMsgPackField", code);
+      Assert.Contains("(ref global::F.Point o);", code, "a struct's field accessor takes it by reference");
+      Assert.Contains("(ref global::F.Point o, float v) => o.Y = v", code);
+      foreach (string left in new[] { "\"Plain\"", "\"BasePlain\"", "\"X\"", "StaticField", "Constant", "Changed", "_unmarked", "k__BackingField" })
+        Assert.DoesNotContain(left, code, left);
+      Assert.DoesNotContain("\"_item\", o", code, "a field of a generic class: no UnsafeAccessor before .NET 9, the runtime reads it");
+      Assert.Contains("\"Skipped\"", code, "[NonSerialized] is left out by a runtime filter: described");
+      Assert.Contains("PublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::F.Item))", code);
+      Assert.Contains("PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::F.Page<int>))", code,
+        "the generic class's private field: not described (UnsafeAccessor), but kept for the runtime's reflection");
+      Assert.Contains("PublicProperties | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::F.Holder))", code);
+    }
+
+    /// <summary>
+    /// The members of the generated writer and reader in the runtime's order (FullPropertyInfo.GetMembers): the properties, then the fields, each the class's own first;
+    /// a derived member hides a base member of the same name whatever its kind (Item.Shared, a field, hides Base.Shared, a property). Unrolled: what the default static filters keep.
+    /// </summary>
+    [TestMethod]
+    public void Fields_OrderHidingAndUnrolled()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(FieldModel);
+      string code = result.AllGenerated;
+      string item = code.Substring(code.IndexOf("GeneratedObjectCode<global::F.Item>", StringComparison.Ordinal));
+      item = item.Substring(0, item.IndexOf("}, new int[]", StringComparison.Ordinal) + 40);
+      string[] members = item.Split('\n').Where(l => l.Contains("new global::LtMsgPack.Generated.GeneratedMember(")).Select(l => l.Substring(l.IndexOf("typeof(", StringComparison.Ordinal) + 7)).Select(l => l.Substring(0, l.IndexOf(',', l.IndexOf('"')))).ToArray();
+      CollectionAssert.AreEqual(new[] { "global::F.Item), \"Title\"", "global::F.Item), \"Opted\"", "global::F.Item), \"Filled\"", "global::F.Item), \"Fixed\"", "global::F.Item), \"Shared\"", "global::F.Item), \"Skipped\"", "global::F.Item), \"_secret\"", "global::F.Base), \"_baseNote\"" }, members,
+        string.Join("\n", members));
+      Assert.Contains("}, new int[] { 0, 1, 2, 3, 4, 6, 7 }", item, "Skipped: [NonSerialized]");
+    }
+
+    [TestMethod]
+    public void Fields_Public_ByMsBuildProperty()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(FieldModel, msbuild: new Dictionary<string, string>() { { "LsMsgPackFields", "Public" } });
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.Contains("Property<global::F.Item, string>(\"Plain\", o => o.Plain, (o, v) => o.Plain = v)", code);
+      Assert.Contains("\"BasePlain\"", code);
+      Assert.Contains("StructProperty<global::F.Point, float>(\"X\"", code);
+      Assert.DoesNotContain("_unmarked", code, "non-public: only attributed ones");
+      Assert.Contains("\"_secret\"", code);
+    }
+
+    [TestMethod]
+    public void Fields_All_And_None()
+    {
+      GeneratorHarness.Result all = GeneratorHarness.Run(FieldModel.Replace("namespace F", "[assembly: LtMsgPack.LtMsgPackGenerate(Fields = LsMsgPack.TypeResolving.Filters.SerializedFields.All)]\nnamespace F"),
+        msbuild: new Dictionary<string, string>() { { "LsMsgPackFields", "None" } });
+      all.AssertCompiles();
+      Assert.Contains("Name = \"_unmarked\")]", all.AllGenerated, "the assembly attribute wins");
+      foreach (string left in new[] { "StaticField", "Constant", "\"Changed\"", "k__BackingField" })
+        Assert.DoesNotContain(left, all.AllGenerated, left);
+
+      GeneratorHarness.Result none = GeneratorHarness.Run(FieldModel, msbuild: new Dictionary<string, string>() { { "LsMsgPackFields", "None" } });
+      none.AssertCompiles();
+      Assert.Contains(" = ((global::F.Base)o).Shared;", none.AllGenerated, "Item's field Shared (not serialized) hides the property of the base class in C#");
+      foreach (string left in new[] { "\"Opted\"", "_secret", "UnsafeAccessorKind.Field", "NonPublicFields" })
+        Assert.DoesNotContain(left, none.AllGenerated, left);
+      Assert.Contains("PublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::F.Item))", none.AllGenerated,
+        "public fields are kept whatever the mode (as public properties), a runtime with other options finds them");
+    }
+
+    [TestMethod]
+    public void Fields_NetStandard20_LeftToReflection()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(FieldModel.Replace("    public event EventHandler Changed;\n", "").Replace("    public event EventHandler Changed;\r\n", ""), LanguageVersion.CSharp7_3, netStandard20: true);
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.DoesNotContain("UnsafeAccessor", code);
+      Assert.Contains("Property<global::F.Item, global::System.Guid>(\"Opted\", o => o.Opted, (o, v) => o.Opted = v)", code);
+      Assert.DoesNotContain("\"_secret\", o", code, "the runtime reads it by reflection");
+    }
+
+    private const string VisualBasicModel = @"
+Imports System
+Imports System.Runtime.Serialization
+Namespace VbModels
+  Public Class Model
+    Public Property Auto As Integer
+    Public Field As Integer
+    Private _private As Integer
+    <DataMember> Private _secret As Integer
+    Public Event Changed As EventHandler
+    Public WithEvents Source As Model
+    Public Function Counter() As Integer
+      Static count As Integer
+      count += 1
+      Return count + _private + _secret
+    End Function
+    Public Function CounterInit() As Integer
+      Static started As Integer = 5
+      started += 1
+      Return started
+    End Function
+  End Class
+End Namespace
+";
+
+    /// <summary>
+    /// A VB library's fields (LsMsgPack.AnalyzerTests' FieldTests.VisualBasic_SameFieldsAsTheRuntime checks the runtime): the [CompilerGenerated] ones (auto-property <c>_Auto</c>, event
+    /// <c>ChangedEvent</c>, WithEvents <c>_Source</c>) and those of Static locals (<c>$STATIC$Counter$2008$count</c>, <c>...$Init</c>: not marked, compiler names with $) are never candidates.
+    /// A C# project imports only the public and protected members of a reference (the private fields are left to the runtime's reflection): the rules are compared on all of them.
+    /// </summary>
+    [TestMethod]
+    public void Fields_VisualBasic_CompilerFieldsLeftOut()
+    {
+      MetadataReference[] vbRuntime = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")).Split(System.IO.Path.PathSeparator)
+        .Where(p => System.IO.Path.GetFileName(p).StartsWith("Microsoft.VisualBasic", StringComparison.Ordinal)).Select(p => (MetadataReference)MetadataReference.CreateFromFile(p)).ToArray();
+      Microsoft.CodeAnalysis.VisualBasic.VisualBasicCompilation vb = Microsoft.CodeAnalysis.VisualBasic.VisualBasicCompilation.Create("VbModels",
+        new[] { Microsoft.CodeAnalysis.VisualBasic.VisualBasicSyntaxTree.ParseText(VisualBasicModel) }, GeneratorHarness.Net8References().Concat(vbRuntime),
+        new Microsoft.CodeAnalysis.VisualBasic.VisualBasicCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+      MetadataReference image;
+      using (System.IO.MemoryStream stream = new System.IO.MemoryStream())
+      {
+        Microsoft.CodeAnalysis.Emit.EmitResult emitted = vb.Emit(stream);
+        Assert.IsTrue(emitted.Success, string.Join("\n", emitted.Diagnostics));
+        image = MetadataReference.CreateFromImage(stream.ToArray());
+      }
+
+      CSharpCompilation all = CSharpCompilation.Create("VbUser", new SyntaxTree[0], GeneratorHarness.Net8References().Concat(vbRuntime).Concat(new[] { image }),
+        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary).WithMetadataImportOptions(MetadataImportOptions.All));
+      IFieldSymbol[] fields = all.GetTypeByMetadataName("VbModels.Model").GetMembers().OfType<IFieldSymbol>().ToArray();
+      foreach (string generated in new[] { "_Auto", "ChangedEvent", "_Source", "$STATIC$Counter$2008$count", "$STATIC$CounterInit$2008$started$Init" })
+        Assert.Contains(generated, fields.Select(f => f.Name).ToArray(), "the fields VB generates (the test's premise)");
+      CollectionAssert.AreEqual(new[] { "_secret" }, fields.Where(f => TypeWalker.IsFieldCandidate(f, LtMsgPackGenerator.FieldsAttributed)).Select(f => f.Name).ToArray(), "Attributed");
+      CollectionAssert.AreEqual(new[] { "Field", "_secret" }, fields.Where(f => TypeWalker.IsFieldCandidate(f, LtMsgPackGenerator.FieldsPublic)).Select(f => f.Name).ToArray(), "Public");
+      CollectionAssert.AreEqual(new[] { "Field", "_private", "_secret" }, fields.Where(f => TypeWalker.IsFieldCandidate(f, LtMsgPackGenerator.FieldsAll)).Select(f => f.Name).ToArray(), "All");
+
+      GeneratorHarness.Result result = GeneratorHarness.Run(@"
+[assembly: LtMsgPack.LtMsgPackGenerate(Fields = LsMsgPack.TypeResolving.Filters.SerializedFields.All)]
+namespace U
+{
+  [LtMsgPack.LtMsgPackSerializable(typeof(VbModels.Model))]
+  public partial class Context : LtMsgPack.LtMsgPackContext { }
+}", references: vbRuntime.Concat(new[] { image }));
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.Contains("Property<global::VbModels.Model, int>(\"Field\", o => o.Field, (o, v) => o.Field = v)", code);
+      Assert.Contains("\"Auto\"", code);
+      foreach (string left in new[] { "$STATIC$", "_Auto", "ChangedEvent", "_Source", "_private", "_secret" })
+        Assert.DoesNotContain(left, code, left + ": private fields of another assembly are not imported, the runtime reads them");
+    }
+
+    /// <summary>
+    /// Framework structs whose state is their public fields (System.Numerics.Vector3...): always written by them, so described as structs with field accessors (typed, by reference, NativeAOT keeps their fields).
+    /// </summary>
+    [TestMethod]
+    public void FieldStructs_DescribedByTheirFields()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(@"
+using LtMsgPack;
+using System.Numerics;
+namespace V
+{
+  public class Body
+  {
+    public Vector3 Position { get; set; }
+    public Quaternion Rotation { get; set; }
+    public Plane Ground { get; set; }
+    public (int, string) Pair { get; set; }
+  }
+
+  [LtMsgPackSerializable(typeof(Body))]
+  public partial class Context : LtMsgPackContext { }
+}", msbuild: new Dictionary<string, string>() { { "LsMsgPackFields", "None" } });
+      result.AssertCompiles();
+      Assert.IsEmpty(result.CompileProblems, string.Join("\n", result.CompileProblems.Select(p => p.ToString())) + "\n" + result.AllGenerated);
+      string code = result.AllGenerated;
+      Assert.Contains("Struct<global::System.Numerics.Vector3>(null, new LtMsgPackCode", code, "whatever the fields mode");
+      Assert.Contains("StructProperty<global::System.Numerics.Vector3, float>(\"X\", (ref global::System.Numerics.Vector3 o) => o.X, (ref global::System.Numerics.Vector3 o, float v) => o.X = v)", code);
+      Assert.Contains("StructProperty<global::System.Numerics.Plane, global::System.Numerics.Vector3>(\"Normal\"", code);
+      Assert.Contains("PublicFields | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(global::System.Numerics.Quaternion))", code);
+      Assert.Contains("return default(global::System.Numerics.Vector3).Equals(v);", code, "the default check by its typed Equals, as StructDefault");
+      Assert.DoesNotContain("\"IsIdentity\"", code, "its properties are computed from the fields");
+      Assert.Contains("Boxed<(int, string)>()", code, "tuples stay the runtime's");
+    }
+
+    [TestMethod]
+    public void ParseFields()
+    {
+      Assert.AreEqual(0, LtMsgPackGenerator.ParseFields(" none ", 1));
+      Assert.AreEqual(1, LtMsgPackGenerator.ParseFields("Attributed", 0));
+      Assert.AreEqual(2, LtMsgPackGenerator.ParseFields("PUBLIC", 1));
+      Assert.AreEqual(3, LtMsgPackGenerator.ParseFields("all", 1));
+      Assert.AreEqual(1, LtMsgPackGenerator.ParseFields("nonsense", 1));
     }
 
     [TestMethod]

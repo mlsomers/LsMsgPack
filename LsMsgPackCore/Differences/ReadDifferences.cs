@@ -160,7 +160,7 @@ namespace LsMsgPack
     internal bool UnmatchedClass(Type type, FullPropertyInfo assignedTo, Type[] writerClasses, Exception error)
     {
       object parent = _parents.Count > 0 ? _parents[_parents.Count - 1] : null;
-      Difference difference = Add(type, DifferenceKind.UnmatchedClass, assignedTo?.PropertyInfo.Name, -1, parent);
+      Difference difference = Add(type, DifferenceKind.UnmatchedClass, assignedTo?.Name, -1, parent);
       if (difference != null && writerClasses != null)
         difference.WriterClasses = writerClasses;
       return Continue(difference, error);
@@ -176,7 +176,7 @@ namespace LsMsgPack
     {
       if (ReferenceEquals(ex, _thrown) || !IsNotConverted(ex))
         return false;
-      Difference difference = Add(ClassOf(parent), DifferenceKind.InvalidValue, prop?.PropertyInfo.Name, -1, parent);
+      Difference difference = Add(ClassOf(parent), DifferenceKind.InvalidValue, prop?.Name, -1, parent);
       return Continue(difference, ex);
     }
 
@@ -521,7 +521,7 @@ namespace LsMsgPack
       {
         for (int t = 0; t < props.Length; t++)
           if (Walker.TryGetValue(props[t], first, out object value) && IsDefault(value))
-            defaults.Add(props[t].PropertyInfo.Name);
+            defaults.Add(props[t].Name);
       }
 
       string best = null;
@@ -529,7 +529,7 @@ namespace LsMsgPack
       int allowed = difference.Name.Length <= 4 ? 1 : 2;
       for (int t = 0; t < props.Length; t++)
       {
-        string name = props[t].PropertyInfo.Name;
+        string name = props[t].Name;
         int distance = Distance(difference.Name.ToLowerInvariant(), name.ToLowerInvariant());
         // A property with a value was probably set by its own key (State is not meant for Date): only a name one character away (a constructor's value, e.g. an empty list)
         if (distance > allowed || (distance > 1 && first != null && !defaults.Contains(name)))
@@ -667,7 +667,7 @@ namespace LsMsgPack
         FullPropertyInfo[] props = Properties(value.GetType());
         for (int t = 0; t < props.Length; t++)
           if (TryGetValue(props[t], value, out object child))
-            Add(nodes, n, child, string.Concat(".", props[t].PropertyInfo.Name));
+            Add(nodes, n, child, string.Concat(".", props[t].Name));
       }
 
       private static void Add(List<Node> nodes, int parent, object value, string segment)
@@ -700,7 +700,8 @@ namespace LsMsgPack
           for (int t = 0; t < included.Length; t++)
           {
             FullPropertyInfo prop = included[t];
-            if (prop.PropertyInfo.CanRead && prop.PropertyInfo.GetIndexParameters().Length == 0 && !prop.PropertyInfo.GetGetMethod(true).IsStatic)
+            PropertyInfo property = prop.PropertyInfo;
+            if (property is null ? !prop.FieldInfo.IsStatic : property.CanRead && property.GetIndexParameters().Length == 0 && !property.GetGetMethod(true).IsStatic)
               readable.Add(prop);
           }
         }

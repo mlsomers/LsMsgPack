@@ -76,11 +76,11 @@ namespace LsMsgPack.Generated
       return null;
     }
 
-    /// <returns>The generated accessors of the property in the registered contexts, null when there are none</returns>
-    internal static GeneratedProperty FindProperty(PropertyInfo property)
+    /// <returns>The generated accessors of the property or field in the registered contexts, null when there are none</returns>
+    internal static GeneratedProperty FindMember(MemberInfo member)
     {
-      GeneratedType declaring = Find(property.DeclaringType);
-      return declaring?.FindProperty(property);
+      GeneratedType declaring = Find(member.DeclaringType);
+      return declaring?.FindMember(member);
     }
   }
 }

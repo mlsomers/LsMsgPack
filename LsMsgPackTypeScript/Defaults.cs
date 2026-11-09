@@ -89,6 +89,12 @@ namespace LsMsgPackTypeScript
     {
       try
       {
+        // By the member the model came from: a field (public or an attributed private one) is no property of that name, and a member found by name could be ambiguous
+        // (new hides an inherited one). The old by-name lookup stays for models without a member.
+        if (prop.Member is FieldInfo field)
+          return field.GetValue(instance);
+        if (prop.Member is PropertyInfo property)
+          return property.GetValue(instance);
         return instance.GetType().GetProperty(prop.Name, BindingFlags.Instance | BindingFlags.Public)?.GetValue(instance);
       }
       catch (Exception) // e.g. AmbiguousMatchException (new hides an inherited property), or the getter throws

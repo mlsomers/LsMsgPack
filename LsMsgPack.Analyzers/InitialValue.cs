@@ -7,7 +7,7 @@ using System.Threading;
 namespace LsMsgPack.Analyzers
 {
   /// <summary>
-  /// What the constructor sets a property to: its initializer, the initializer of the field its getter returns, or the last assignment of either in the body of the constructor
+  /// What the constructor sets a property or field to: its initializer, the initializer of the field its getter returns, or the last assignment of either in the body of the constructor
   /// a reader calls (the parameterless one, or the one taking the values of properties: <see cref="ValuesConstructor"/>); a reader gives a left out property this value.
   /// </summary>
   internal readonly struct InitialValue
@@ -32,12 +32,12 @@ namespace LsMsgPack.Analyzers
     public readonly SemanticModel Model;
 
     /// <summary>
-    /// It is the initializer of the auto-property, so the code fix can replace it.
+    /// It is the initializer of the auto-property or field, so the code fix can replace it.
     /// </summary>
     public readonly bool CanReplace;
 
     /// <summary>
-    /// Nothing sets it and it is an auto-property, so the code fix can add an initializer.
+    /// Nothing sets it and it is an auto-property or a field, so the code fix can add an initializer.
     /// </summary>
     public readonly bool CanAdd;
 
@@ -52,22 +52,38 @@ namespace LsMsgPack.Analyzers
       CanAdd = canAdd;
     }
 
+    /// <param name="member">A property or field</param>
     /// <param name="withValues">The constructor a reader calls with the values of properties (<see cref="ValuesConstructor.Of"/>), null when it calls the parameterless one</param>
-    public static InitialValue Find(IPropertySymbol property, Compilation compilation, CancellationToken cancellation, IMethodSymbol withValues = null)
+    public static InitialValue Find(ISymbol member, Compilation compilation, CancellationToken cancellation, IMethodSymbol withValues = null)
     {
-      if (property.DeclaringSyntaxReferences.Length != 1 || !(property.DeclaringSyntaxReferences[0].GetSyntax(cancellation) is PropertyDeclarationSyntax declaration))
+      if (member.DeclaringSyntaxReferences.Length != 1)
         return default(InitialValue);
-      SemanticModel model = compilation.GetSemanticModel(declaration.SyntaxTree);
-      bool isAuto = IsAutoProperty(declaration);
-
-      ExpressionSyntax value = declaration.Initializer?.Value;
-      bool fromInitializer = value != null;
-      IFieldSymbol field = isAuto ? null : BackingField(declaration, model, property, cancellation);
+      SyntaxNode node = member.DeclaringSyntaxReferences[0].GetSyntax(cancellation);
+      SemanticModel model = compilation.GetSemanticModel(node.SyntaxTree);
+      ExpressionSyntax value;
+      bool isAuto; // an auto-property or a field: the code fix can write its initializer
+      IFieldSymbol field = null; // the field the getter of the property returns
+      if (member is IFieldSymbol)
+      {
+        if (!(node is VariableDeclaratorSyntax declarator))
+          return default(InitialValue);
+        value = declarator.Initializer?.Value;
+        isAuto = true;
+      }
+      else
+      {
+        if (!(node is PropertyDeclarationSyntax declaration))
+          return default(InitialValue);
+        isAuto = IsAutoProperty(declaration);
+        value = declaration.Initializer?.Value;
+        field = isAuto ? null : BackingField(declaration, model, member, cancellation);
+      }
+      bool fromInitializer = value != null; // its own initializer
       if (value is null && field != null)
         value = FieldInitializer(field, cancellation);
 
       // The body of the constructor runs after the initializers: its last assignment wins
-      ExpressionSyntax assigned = ConstructorAssignment(property, field, model, cancellation, withValues);
+      ExpressionSyntax assigned = ConstructorAssignment(member, field, model, cancellation, withValues);
       if (assigned != null)
       {
         value = assigned;
@@ -77,7 +93,7 @@ namespace LsMsgPack.Analyzers
       if (value is null)
         return new InitialValue(false, false, null, null, model, false, isAuto);
 
-      SemanticModel valueModel = value.SyntaxTree == declaration.SyntaxTree ? model : compilation.GetSemanticModel(value.SyntaxTree);
+      SemanticModel valueModel = value.SyntaxTree == node.SyntaxTree ? model : compilation.GetSemanticModel(value.SyntaxTree);
       Optional<object> constant = valueModel.GetConstantValue(value, cancellation);
       if (!constant.HasValue)
         return new InitialValue(true, false, null, value, valueModel, false, false);
@@ -110,7 +126,7 @@ namespace LsMsgPack.Analyzers
     /// <summary>
     /// The field of this type that the getter returns (<c>get =&gt; _x;</c>, <c>get { return _x; }</c>, <c>=&gt; _x</c>).
     /// </summary>
-    private static IFieldSymbol BackingField(PropertyDeclarationSyntax declaration, SemanticModel model, IPropertySymbol property, CancellationToken cancellation)
+    private static IFieldSymbol BackingField(PropertyDeclarationSyntax declaration, SemanticModel model, ISymbol property, CancellationToken cancellation)
     {
       ExpressionSyntax returned = declaration.ExpressionBody?.Expression;
       if (returned is null && declaration.AccessorList != null)
@@ -138,10 +154,10 @@ namespace LsMsgPack.Analyzers
     }
 
     /// <summary>
-    /// The last statement of the constructor's body that assigns the property or its field (<c>X = 3;</c>, <c>this.X = 3;</c>, <c>_x = 3;</c>), null when there is none.
+    /// The last statement of the constructor's body that assigns the property (or field) or the field its getter returns (<c>X = 3;</c>, <c>this.X = 3;</c>, <c>_x = 3;</c>), null when there is none.
     /// </summary>
     /// <param name="withValues">The constructor taking the values of properties, null for the parameterless one</param>
-    private static ExpressionSyntax ConstructorAssignment(IPropertySymbol property, IFieldSymbol field, SemanticModel model, CancellationToken cancellation, IMethodSymbol withValues)
+    private static ExpressionSyntax ConstructorAssignment(ISymbol property, IFieldSymbol field, SemanticModel model, CancellationToken cancellation, IMethodSymbol withValues)
     {
       ExpressionSyntax found = null;
       foreach (IMethodSymbol constructor in property.ContainingType.InstanceConstructors)

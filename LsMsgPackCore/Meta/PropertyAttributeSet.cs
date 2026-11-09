@@ -6,13 +6,15 @@ using System.Reflection;
 namespace LsMsgPack.Meta
 {
   /// <summary>
-  /// The attributes of a property, read once per property (static metadata): its own ones by class name, and where it may inherit them from (read when first asked, see FilterIgnoredAttribute).
+  /// The attributes of a property or field, read once per member (static metadata): its own ones by class name, and where a property may inherit them from (read when first asked, see FilterIgnoredAttribute).
   /// </summary>
   internal sealed class PropertyAttributeSet
   {
     private static readonly object[] None = new object[0];
 
-    private readonly PropertyInfo _property;
+    private readonly MemberInfo _member;
+    private readonly PropertyInfo _property; // null for a field
+    private readonly Type _type;
 
     /// <summary>
     /// The attributes of the property itself, one per class name.
@@ -34,15 +36,18 @@ namespace LsMsgPack.Meta
       internal object[] Interfaces;
     }
 
-    internal PropertyAttributeSet(PropertyInfo property)
+    /// <param name="member">A property or a field</param>
+    internal PropertyAttributeSet(MemberInfo member)
     {
-      _property = property;
-      object[] atts = property.GetCustomAttributes(true);
+      _member = member;
+      _property = member as PropertyInfo;
+      _type = _property?.PropertyType ?? ((FieldInfo)member).FieldType;
+      object[] atts = member.GetCustomAttributes(true);
       ByName = new Dictionary<string, object>(atts.Length);
       for (int t = atts.Length - 1; t >= 0; t--)
         ByName.TryAdd(atts[t].GetType().Name, atts[t]);
 
-      Type type = property.PropertyType;
+      Type type = _type;
       if (type.IsValueType)
       {
         IsNullable = Nullable.GetUnderlyingType(type) != null;
@@ -54,7 +59,10 @@ namespace LsMsgPack.Meta
       }
     }
 
-    internal PropertyInfo Property { get { return _property; } }
+    /// <summary>
+    /// The property or field.
+    /// </summary>
+    internal MemberInfo Member { get { return _member; } }
 
     /// <summary>
     /// The type of the property when it is a value type other than <see cref="Nullable{T}"/>: its values are boxed as this type, and FilterDefaultValues compares them as <see cref="Default"/> says.
@@ -97,22 +105,23 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// All attributes of the property itself (ByName keeps one per class name, and both JSON serializers call theirs JsonIgnoreAttribute).
+    /// All attributes of the property or field itself (ByName keeps one per class name, and both JSON serializers call theirs JsonIgnoreAttribute).
     /// </summary>
     internal object[] Declared { get { return Look().Declared; } }
 
     /// <summary>
-    /// The attributes of the property and the inherited attributes (<c>AttributeUsage(Inherited = true)</c>) of the properties it overrides, as <c>Attribute.GetCustomAttributes(property, true)</c> finds them.
+    /// The attributes of the property and the inherited attributes (<c>AttributeUsage(Inherited = true)</c>) of the properties it overrides, as <c>Attribute.GetCustomAttributes(property, true)</c> finds them
+    /// (of a field: its own).
     /// </summary>
     internal object[] Inheritable { get { return Look().Inheritable; } }
 
     /// <summary>
-    /// All attributes of the properties it overrides (not its own).
+    /// All attributes of the properties it overrides (not its own; none for a field).
     /// </summary>
     internal object[] Overridden { get { return Look().Overridden; } }
 
     /// <summary>
-    /// The attributes of the properties with the same name, type and index parameters of the interfaces of the declaring type (as Json.NET looks for them).
+    /// The attributes of the properties with the same name, type and index parameters of the interfaces of the declaring type (as Json.NET looks for them; none for a field).
     /// </summary>
     internal object[] Interfaces { get { return Look().Interfaces; } }
 
@@ -144,7 +153,7 @@ namespace LsMsgPack.Meta
       internal object TypeDefault;
     }
 
-    [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = TrimReasons.ModelTypes)]
+    [UnconditionalSuppressMessage("Trimming", "IL2077", Justification = TrimReasons.ModelTypes)]
     internal NilValues Nil
     {
       get
@@ -152,7 +161,7 @@ namespace LsMsgPack.Meta
         NilValues nil = _nil;
         if (nil != null)
           return nil;
-        Type type = _property.PropertyType;
+        Type type = _type;
         Type underlying = Nullable.GetUnderlyingType(type);
         nil = new NilValues();
         if (type.IsValueType && underlying is null)
@@ -171,14 +180,22 @@ namespace LsMsgPack.Meta
       if (looked != null)
         return looked;
 
-      looked = new Looked()
+      if (_property is null) // a field: no overrides, no interfaces
       {
-        Declared = OrNone(_property.GetCustomAttributes(false)),
-        // Attribute.GetCustomAttributes also looks at the overridden properties (PropertyInfo.GetCustomAttributes ignores inherit)
-        Inheritable = OrNone(Attribute.GetCustomAttributes(_property, true)),
-        Overridden = OrNone(OverriddenAttributes()),
-        Interfaces = OrNone(InterfaceAttributes())
-      };
+        object[] declared = OrNone(_member.GetCustomAttributes(false));
+        looked = new Looked() { Declared = declared, Inheritable = declared, Overridden = None, Interfaces = None };
+      }
+      else
+      {
+        looked = new Looked()
+        {
+          Declared = OrNone(_property.GetCustomAttributes(false)),
+          // Attribute.GetCustomAttributes also looks at the overridden properties (PropertyInfo.GetCustomAttributes ignores inherit)
+          Inheritable = OrNone(Attribute.GetCustomAttributes(_property, true)),
+          Overridden = OrNone(OverriddenAttributes()),
+          Interfaces = OrNone(InterfaceAttributes())
+        };
+      }
       _looked = looked; // the same for every thread that computes it
       return looked;
     }

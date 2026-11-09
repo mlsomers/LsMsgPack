@@ -146,13 +146,13 @@ namespace LsMsgPackTypeScript
         HashSet<string> inherited = model.Base is null ? new HashSet<string>() : new HashSet<string>(model.Base.AllProps.Select(p => p.Name), StringComparer.Ordinal);
         foreach (FullPropertyInfo prop in props)
         {
-          ModelProperty property = new ModelProperty(prop.PropertyInfo);
+          ModelProperty property = new ModelProperty(prop.Member);
           model.AllProps.Add(property);
           if (!inherited.Contains(property.Name))
             model.OwnProps.Add(property);
         }
         foreach (FullPropertyInfo prop in props)
-          Visit(prop.PropertyInfo.PropertyType, depth + 1);
+          Visit(prop.DeclaredType, depth + 1);
       }
 
       if (!type.IsSealed && !type.IsValueType)
@@ -162,7 +162,8 @@ namespace LsMsgPackTypeScript
 
     private static bool IsUsers(Type type)
     {
-      return ModelAssemblies.IsUsers(type.Assembly) && !TypeResolver.IsFrameworkAssembly(type.Assembly);
+      // The framework structs the serializer writes by their public fields (Vector3...) get a model like a user's struct
+      return (ModelAssemblies.IsUsers(type.Assembly) && !TypeResolver.IsFrameworkAssembly(type.Assembly)) || SerializationRules.IsFieldStruct(type);
     }
 
     /// <summary>
@@ -333,18 +334,26 @@ namespace LsMsgPackTypeScript
     internal readonly Type Type;
 
     /// <summary>
+    /// The property or field itself: the initial value is read from it (a field has no property of that name).
+    /// </summary>
+    internal readonly MemberInfo Member;
+
+    /// <summary>
     /// The nullable annotations of the property (string? or string), Unknown without them (null when they cannot be read).
     /// </summary>
     internal readonly NullabilityInfo Nullability;
 
-    internal ModelProperty(PropertyInfo property)
+    /// <param name="member">A property or a field</param>
+    internal ModelProperty(MemberInfo member)
     {
-      Name = property.Name;
-      Type = property.PropertyType;
+      Name = member.Name;
+      Member = member;
+      FieldInfo field = member as FieldInfo;
+      Type = field?.FieldType ?? ((PropertyInfo)member).PropertyType;
       try
       {
         lock (NullabilityContext) // not thread-safe
-          Nullability = NullabilityContext.Create(property);
+          Nullability = field is null ? NullabilityContext.Create((PropertyInfo)member) : NullabilityContext.Create(field);
       }
       catch (Exception)
       {

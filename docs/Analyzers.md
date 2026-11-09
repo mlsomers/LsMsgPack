@@ -7,6 +7,7 @@ The `LsMsgPack.Core` package includes analyzers, so every project that reference
 - **Reads without property names**: `object` and `Dictionary<string, object>` (LSMP007).
 - **Classes of other projects** that no analyzer checked (LSMP008).
 - **JSON document types** (`JsonElement`, `JsonNode`, Json.NET's `JObject`...), which the serializers don't write or read (LSMP009).
+- **Public fields that aren't serialized** (LSMP010): by default the serializers only write fields that opt in with an attribute.
 
 The warnings show while you type in Visual Studio, VS Code (C# Dev Kit) and Rider, and in the build output.
 
@@ -21,7 +22,7 @@ Only the classes your project serializes. Options classes, view models and anyth
 - **Values of ASP.NET Core results**, for actions that return `IActionResult`: the type of the value passed to `Ok(value)`, `Created...(..., value)`, `Accepted...(..., value)`, `StatusCode(code, value)`, `NotFound(value)`, `BadRequest(error)`, `Conflict(error)`, `UnprocessableEntity(error)`, `Unauthorized(value)` and to the constructors of `ObjectResult` and its subclasses (`new OkObjectResult(value)`). As with `Serialize`, a value declared as `object` tells nothing.
 - **Minimal APIs** with `LsMsgPack.AspNetCore`: the type argument of `MsgPackBody<T>` (read) and `MsgPackResult<T>` (written) where they're named (handler parameters, `Results<MsgPackResult<Invoice>, NotFound>`), and the value of `MsgPackResults.MsgPack(value)` / `Results.Extensions.MsgPack(value)`, as for `Ok(value)`. `MsgPackBody<object>` reads into object (LSMP005, LSMP007).
 - **HttpClient with the Web API formatter**: `GetFromMsgPackAsync<T>`, `ReadFromMsgPackAsync<T>`, `GetFromMsgPackAsAsyncEnumerable<T>`, `ReadFromMsgPackAsAsyncEnumerable<T>`, `PostAsMsgPackAsync<T>`, `PutAsMsgPackAsync<T>`, `PatchAsMsgPackAsync<T>`, `ReadAsAsync<T>`, `PostAsync<T>`, `PutAsync<T>`, `new ObjectContent<T>`. MVC 5: `new LsMsgPackResult(value)`.
-- **What those reach**: the types of public properties, elements of collections, generic arguments, base classes, and the classes of the project that derive from any of them (a type id can name those).
+- **What those reach**: the types of public properties and of the fields the serializers write, elements of collections, generic arguments, base classes, and the classes of the project that derive from any of them (a type id can name those).
 
 Classes declared in another project are checked in that project. A project of models that never calls the serializers itself can ask for all its public classes and structs to be checked, with a reference to `LsMsgPack.Core` (the smallest package) or a package that depends on it:
 
@@ -36,7 +37,19 @@ Classes declared in another project are checked in that project. A project of mo
 
 This also marks the assembly as checked (`[assembly: AssemblyMetadata("LsMsgPackAnalyze", "AllTypes")]`, written by the SDK's assembly info), so the projects using its classes don't report them (LSMP008). With `GenerateAssemblyInfo` set to `false`, add that attribute yourself.
 
-Only the properties the serializers write are checked: public, not static, with a public getter and setter, and not ignored (`[IgnoreDataMember]`, `[JsonIgnore]`, `[XmlIgnore]`, MessagePack's `[IgnoreMember]`...).
+Only the properties and fields the serializers write are checked: properties that are public, not static, with a public getter and setter, and fields the serializers select (see [Which fields are written](#which-fields-are-written)), neither of them ignored (`[IgnoreDataMember]`, `[JsonIgnore]`, `[XmlIgnore]`, MessagePack's `[IgnoreMember]`, `[NonSerialized]` on a field...). A property without a setter and a readonly field are written but never set from the data, so only LSMP009 applies to them.
+
+### Which fields are written
+
+Which fields the serializers write is a setting of their static filters (`FilterNonSettable`, `SerializedFields`, see [schema.md](schema.md#fields)), which the analyzers can't see. By default (`Attributed`) only fields with an attribute that opts them in are written: `[DataMember]`, `[JsonInclude]`, Json.NET's `[JsonProperty]`, `[Key]`... When your serializers write other fields, tell the analyzers (and LtMsgPack's source generator) with the same mode:
+
+```xml
+<PropertyGroup>
+  <LsMsgPackFields>Public</LsMsgPackFields>   <!-- None, Attributed (the default), Public or All -->
+</PropertyGroup>
+```
+
+`[assembly: LtMsgPackGenerate(Fields = SerializedFields.Public)]` sets it too and wins over the property. The presets `LtMsgPackPresets.MessagePackCSharp()` and `Nerdbank()` write public fields: set `Public` with them.
 
 Change the severity of a rule or turn it off in `.editorconfig`, as for any analyzer:
 
@@ -172,4 +185,26 @@ MsgPack has no form for a JSON document. System.Text.Json's `JsonElement`, `Json
 
 Hold the JSON text in a `string` (`element.GetRawText()`, `JsonDocument.Parse(text)`), or the values in a class of your own. An endpoint that passes JSON through (a webhook) can also stay on JSON: the formatters only answer MsgPack to clients that ask for it.
 
-It is reported for the properties of serialized classes (also get-only ones, which are written), and for the types that calls and actions read or write, also as an element or generic argument (`List<JsonElement>`, `ActionResult<JsonObject>`). `JsonNode` isn't reported as LSMP004.
+It is reported for the properties and fields of serialized classes (also get-only properties and readonly fields, which are written), and for the types that calls and actions read or write, also as an element or generic argument (`List<JsonElement>`, `ActionResult<JsonObject>`). `JsonNode` isn't reported as LSMP004.
+
+## Fields
+
+### LSMP010: Public field is not serialized
+
+```csharp
+public class Point
+{
+  public int X;                         // LSMP010: not written, a reader leaves it 0
+  [DataMember] public int Y;            // written
+  [JsonIgnore] public int Cache;        // left out on purpose: not reported
+}
+```
+
+The serializers write properties, and fields only when they opt in (the default `SerializedFields.Attributed`, as System.Text.Json without `IncludeFields`). A public field without such an attribute is lost both ways, without an error. It isn't reported when:
+
+- the project tells the analyzers that its serializers write other fields (`LsMsgPackFields` set to `Public` or `All`: then it is written and checked like the others) or none (`None`), see [Which fields are written](#which-fields-are-written);
+- it is ignored (`[JsonIgnore]`, `[IgnoreDataMember]`, `[NonSerialized]`...);
+- the class marks the members it serializes (`[DataContract]`, MessagePack's `[MessagePackObject]` with keys): a field without `[DataMember]` or `[Key]` is left out there on purpose;
+- writing it changes nothing or fails: a readonly field that neither a reader fills (a collection) nor the constructor a reader calls takes, a field of a type that is never written (`Type`, `MemberInfo`, delegates) or of a JSON document type.
+
+The code fixes add `[DataMember]` (from `System.Runtime.Serialization`; outside a `[DataContract]` class it only opts the field in), or make the field an auto-property: `{ get; set; }`, `{ get; }` for a readonly field, with its initializer and attributes (an attribute that can't be on a property gets the `field:` target). A property breaks code that passes the field by `ref` or changes a struct it holds in place (`model.Position.X = 1`), so check the uses first.

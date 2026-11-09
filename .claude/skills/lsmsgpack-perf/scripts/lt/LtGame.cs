@@ -1,7 +1,8 @@
 // The messages of a multiplayer game (the model and data of BenchmarkGame in the interop tests): a state of 8 values, a snapshot of 15 states, Vec3 as a struct and as a class.
 // Usage: dotnet game-new.dll [seconds per pass=0.25] [name filter] [passes=5]    prints ns per message (fastest pass) and allocated bytes
 //        dotnet game-new.dll one <candidate> <ws|rs|ss|wn|rn|sn> <seconds>        one operation for perf (ws = write state, rs = read, ss = send to a reused stream; n = snapshot)
-// Asserts the round trip by comparing the bytes written again after reading. The candidates are the LtMsgPack rows of BenchmarkGame; "-gen" uses the generated code when the library has the generator.
+// Asserts the round trip by comparing the bytes written again after reading. The candidates are the LtMsgPack rows of BenchmarkGame; "-gen" uses the generated code when the library has the generator,
+// "fields*" (the model with [DataMember] fields) and "vector3*" (System.Numerics.Vector3) only exist when it serializes fields (FIELDS, set by setup.sh).
 using LtMsgPack;
 using LsMsgPack;
 using System;
@@ -9,6 +10,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+#if FIELDS
+using System.Numerics;
+using System.Runtime.Serialization;
+#endif
 
 public enum PlayerAction { Idle, Walking, Running, Jumping, Crouching, Shooting, Reloading, Dead }
 
@@ -54,11 +59,60 @@ public class WorldSnapshotC
   public List<PlayerStateC> Players { get; set; }
 }
 
+#if FIELDS
+// Fields instead of properties (opted in: the default SerializedFields.Attributed), and System.Numerics.Vector3 (always written by its fields)
+public struct Vec3F { [DataMember] public float X; [DataMember] public float Y; [DataMember] public float Z; }
+
+public class PlayerStateF
+{
+  [DataMember] public int PlayerId;
+  [DataMember] public uint Sequence;
+  [DataMember] public Vec3F Position;
+  [DataMember] public Vec3F Velocity;
+  [DataMember] public float Yaw;
+  [DataMember] public float Pitch;
+  [DataMember] public PlayerAction Action;
+  [DataMember] public byte Health;
+}
+
+public class WorldSnapshotF
+{
+  [DataMember] public uint Tick;
+  [DataMember] public uint LastProcessedSequence;
+  [DataMember] public List<PlayerStateF> Players;
+}
+
+public class PlayerStateV
+{
+  public int PlayerId { get; set; }
+  public uint Sequence { get; set; }
+  public Vector3 Position { get; set; }
+  public Vector3 Velocity { get; set; }
+  public float Yaw { get; set; }
+  public float Pitch { get; set; }
+  public PlayerAction Action { get; set; }
+  public byte Health { get; set; }
+}
+
+public class WorldSnapshotV
+{
+  public uint Tick { get; set; }
+  public uint LastProcessedSequence { get; set; }
+  public List<PlayerStateV> Players { get; set; }
+}
+#endif
+
 #if GENERATED
 [LtMsgPackSerializable(typeof(PlayerState))]
 [LtMsgPackSerializable(typeof(WorldSnapshot))]
 [LtMsgPackSerializable(typeof(PlayerStateC))]
 [LtMsgPackSerializable(typeof(WorldSnapshotC))]
+#if FIELDS
+[LtMsgPackSerializable(typeof(PlayerStateF))]
+[LtMsgPackSerializable(typeof(WorldSnapshotF))]
+[LtMsgPackSerializable(typeof(PlayerStateV))]
+[LtMsgPackSerializable(typeof(WorldSnapshotV))]
+#endif
 public partial class GameContext : LtMsgPackContext { }
 #endif
 
@@ -119,6 +173,18 @@ public static class LtGame
   private static PlayerStateC C(PlayerState s) => new PlayerStateC() { PlayerId = s.PlayerId, Sequence = s.Sequence, Position = C(s.Position), Velocity = C(s.Velocity), Yaw = s.Yaw, Pitch = s.Pitch, Action = s.Action, Health = s.Health };
 
   private static WorldSnapshotC C(WorldSnapshot w) => new WorldSnapshotC() { Tick = w.Tick, LastProcessedSequence = w.LastProcessedSequence, Players = w.Players.Select(C).ToList() };
+#if FIELDS
+
+  private static Vec3F F(Vec3 v) => new Vec3F() { X = v.X, Y = v.Y, Z = v.Z };
+
+  private static PlayerStateF F(PlayerState s) => new PlayerStateF() { PlayerId = s.PlayerId, Sequence = s.Sequence, Position = F(s.Position), Velocity = F(s.Velocity), Yaw = s.Yaw, Pitch = s.Pitch, Action = s.Action, Health = s.Health };
+
+  private static WorldSnapshotF F(WorldSnapshot w) => new WorldSnapshotF() { Tick = w.Tick, LastProcessedSequence = w.LastProcessedSequence, Players = w.Players.Select(F).ToList() };
+
+  private static PlayerStateV V(PlayerState s) => new PlayerStateV() { PlayerId = s.PlayerId, Sequence = s.Sequence, Position = new Vector3(s.Position.X, s.Position.Y, s.Position.Z), Velocity = new Vector3(s.Velocity.X, s.Velocity.Y, s.Velocity.Z), Yaw = s.Yaw, Pitch = s.Pitch, Action = s.Action, Health = s.Health };
+
+  private static WorldSnapshotV V(WorldSnapshot w) => new WorldSnapshotV() { Tick = w.Tick, LastProcessedSequence = w.LastProcessedSequence, Players = w.Players.Select(V).ToList() };
+#endif
 
   private sealed class Candidate
   {
@@ -226,6 +292,20 @@ public static class LtGame
       () => Create("noschema-class-gen", NoSchema, true, statesC, snapshotsC),
       () => Create("default-class", () => new LtMsgPackOptions(), false, statesC, snapshotsC),
     };
+#if FIELDS
+    PlayerStateF[] statesF = AllStates.Select(F).ToArray();
+    WorldSnapshotF[] snapshotsF = AllSnapshots.Select(F).ToArray();
+    PlayerStateV[] statesV = AllStates.Select(V).ToArray();
+    WorldSnapshotV[] snapshotsV = AllSnapshots.Select(V).ToArray();
+    make.Add(() => Create("fields-noschema", NoSchema, false, statesF, snapshotsF));
+    make.Add(() => Create("fields-noschema-gen", NoSchema, true, statesF, snapshotsF));
+    make.Add(() => Create("fields-default", () => new LtMsgPackOptions(), false, statesF, snapshotsF));
+    make.Add(() => Create("fields-default-gen", () => new LtMsgPackOptions(), true, statesF, snapshotsF));
+    make.Add(() => Create("fields-names", Names, false, statesF, snapshotsF));
+    make.Add(() => Create("vector3-noschema", NoSchema, false, statesV, snapshotsV));
+    make.Add(() => Create("vector3-default", () => new LtMsgPackOptions(), false, statesV, snapshotsV));
+    make.Add(() => Create("vector3-default-gen", () => new LtMsgPackOptions(), true, statesV, snapshotsV));
+#endif
     List<Candidate> candidates = new List<Candidate>();
     for (int t = 0; t < make.Count; t++)
     {

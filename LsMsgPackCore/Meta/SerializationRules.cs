@@ -199,6 +199,52 @@ namespace LsMsgPack.Meta
     }
 
     private static readonly ConcurrentDictionary<Type, string> Unsupported = new ConcurrentDictionary<Type, string>();
+    private static readonly ConcurrentDictionary<Type, bool> FieldStructs = new ConcurrentDictionary<Type, bool>();
+
+    /// <summary>
+    /// A struct of the framework whose state is its public instance fields (System.Numerics <c>Vector2</c>/<c>Vector3</c>/<c>Vector4</c>, <c>Quaternion</c>, <c>Plane</c>, <c>Matrix3x2</c>, <c>Matrix4x4</c>):
+    /// serialized by those fields only, whatever <see cref="TypeResolving.Filters.SerializedFields"/> says (its properties are computed from them, <c>Matrix4x4.Translation</c>), in the order of reflection
+    /// (<c>Vector3</c> in the array layout: <c>[x, y, z]</c>, as MessagePack-CSharp writes it). Not the framework types the serializers write by themselves (tuples, see FrameworkTypeInfo). Cached per type.
+    /// </summary>
+    internal static bool IsFieldStruct(Type type)
+    {
+      if (!type.IsValueType || type.IsPrimitive || type.IsEnum)
+        return false;
+      bool found;
+      if (!FieldStructs.TryGetValue(type, out found))
+        found = FieldStructs.GetOrAdd(type, HasFieldState);
+      return found;
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
+    private static bool HasFieldState(Type type)
+    {
+      if (!TypeResolver.IsFrameworkAssembly(type.Assembly) || type.ContainsGenericParameters || Nullable.GetUnderlyingType(type) != null || FrameworkTypeInfo.IsTuple(type) || FrameworkTypeInfo.IsKeyValuePair(type))
+        return false;
+      FieldInfo[] fields = type.GetFields(BindingFlags.Instance | BindingFlags.Public);
+      for (int t = fields.Length - 1; t >= 0; t--)
+        if (!fields[t].IsInitOnly)
+          return true; // fields that can be set (a struct with only readonly public fields is not written by them: there is no constructor binding for framework types)
+      return false;
+    }
+
+    /// <summary>
+    /// A ref struct (<c>Span&lt;T&gt;</c>...): never boxed, so never serialized as a value of a property or field (found by its attribute, .NET Standard 2.0 has no <c>Type.IsByRefLike</c>).
+    /// </summary>
+    internal static bool IsByRefLike(Type type)
+    {
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      return type.IsByRefLike;
+#else
+      if (!type.IsValueType)
+        return false;
+      object[] attributes = type.GetCustomAttributes(false);
+      for (int t = attributes.Length - 1; t >= 0; t--)
+        if (string.Equals(attributes[t].GetType().FullName, "System.Runtime.CompilerServices.IsByRefLikeAttribute", StringComparison.Ordinal))
+          return true;
+      return false;
+#endif
+    }
 
     /// <summary>
     /// A type of the framework that would be written as an object with properties but has no settable ones (e.g. Lazy&lt;T&gt;, Index): its values would be written as an empty map
@@ -235,6 +281,8 @@ namespace LsMsgPack.Meta
       if (type == typeof(object) || type.IsPrimitive || type.IsEnum || type == typeof(string) || typeof(IEnumerable).IsAssignableFrom(type) || !TypeResolver.IsFrameworkAssembly(type.Assembly))
         return null;
 
+      if (IsFieldStruct(type))
+        return null; // written by its public fields
       bool hasState = type.GetFields(BindingFlags.Instance | BindingFlags.Public).Length > 0;
       PropertyInfo[] props = type.GetProperties(BindingFlags.Instance | BindingFlags.Public);
       for (int t = props.Length - 1; t >= 0; t--)
@@ -279,7 +327,7 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal static void BindReaderTypes(Type root, MsgPackOptions schemaSettings)
     {
-      GetIndexedSchema(schemaSettings)?.BindReaderTypes(root, schemaSettings._propertyNameCaseInsensitive, FullPropertyInfo.NonPublicOf(schemaSettings));
+      GetIndexedSchema(schemaSettings)?.BindReaderTypes(root, schemaSettings._propertyNameCaseInsensitive, FullPropertyInfo.SelectionOf(schemaSettings));
     }
 
     internal static bool UsesIndexedSchema(MsgPackOptions settings)
