@@ -16,6 +16,22 @@ namespace LsMsgPack.Meta
 
     internal abstract bool Call(object owner);
 
+    /// <summary>
+    /// The class the typed delegate (<see cref="Typed"/>) takes, null when the method is called by reflection (a struct, a static method, no dynamic code).
+    /// </summary>
+    internal virtual Type OwnerType
+    {
+      get { return null; }
+    }
+
+    /// <summary>
+    /// A <c>Func&lt;OwnerType, bool&gt;</c> calling the method, for a serializer that calls it typed (LtMsgPack's ShouldSerialize filter modes); null with <see cref="OwnerType"/>.
+    /// </summary>
+    internal virtual Delegate Typed
+    {
+      get { return null; }
+    }
+
     /// <returns>null when the member has no such method</returns>
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(TypedShouldSerialize<>))]
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ShouldSerializeMethods)]
@@ -79,6 +95,16 @@ namespace LsMsgPack.Meta
       internal override bool Call(object owner)
       {
         return _call((T)owner);
+      }
+
+      internal override Type OwnerType
+      {
+        get { return typeof(T); }
+      }
+
+      internal override Delegate Typed
+      {
+        get { return _call; }
       }
     }
   }

@@ -11,6 +11,7 @@ using System;
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
@@ -30,6 +31,12 @@ namespace LtMsgPack
     /// The dynamic filters have a <see cref="FilterShouldSerialize"/>: the properties with a ShouldSerialize method take the boxed filters (<see cref="CallsShouldSerialize"/>).
     /// </summary>
     private readonly bool _shouldSerialize;
+
+    /// <summary>
+    /// The filter mode of <see cref="PropWriter{TTarget, TValue, TFilter}"/> that calls the ShouldSerialize methods typed (<see cref="ShouldSerializeFilter"/>,
+    /// <see cref="ShouldSerializeThenDefaultsFilter"/>, <see cref="DefaultsThenShouldSerializeFilter"/>), null when the filters are not one of those sets (the boxed filters).
+    /// </summary>
+    private readonly Type _typedShouldSerialize;
 
     /// <summary>
     /// A dynamic filter takes the owner (<see cref="IMsgPackPropertyIncludeWithOwner"/>): a struct is boxed for it.
@@ -66,6 +73,7 @@ namespace LtMsgPack
       Options = options;
       IMsgPackPropertyIncludeDynamicallyArray(options, out Filters);
       _shouldSerialize = options.CallsShouldSerialize;
+      _typedShouldSerialize = _shouldSerialize ? TypedShouldSerialize(options._dynamicFilters) : null;
       OwnerFilters = HasOwnerFilters(options._dynamicFilters);
       IgnoreCycles = options._ignoreCycles;
       CanBindDelegates = PropertyAccessor.CanCompile;
@@ -115,6 +123,56 @@ namespace LtMsgPack
     internal bool CallsShouldSerialize(FullPropertyInfo info)
     {
       return _shouldSerialize && info.Attributes?.ShouldSerialize != null;
+    }
+
+    /// <summary>
+    /// The filter sets that a property writer can apply typed, in the order <see cref="MsgPackOptions.IncludeDynamically"/> asks them (the last filter first: the calls of the method stay the same).
+    /// </summary>
+    private static Type TypedShouldSerialize(IMsgPackPropertyIncludeDynamically[] filters)
+    {
+      if (filters.Length == 1 && IsShouldSerialize(filters[0]))
+        return typeof(ShouldSerializeFilter);
+      if (filters.Length == 2)
+      {
+        if (IsTypedDefaults(filters[0]) && IsShouldSerialize(filters[1]))
+          return typeof(ShouldSerializeThenDefaultsFilter);
+        if (IsShouldSerialize(filters[0]) && IsTypedDefaults(filters[1]))
+          return typeof(DefaultsThenShouldSerializeFilter);
+      }
+      return null;
+    }
+
+    private static bool IsShouldSerialize(IMsgPackPropertyIncludeDynamically filter)
+    {
+      return filter != null && filter.GetType() == typeof(FilterShouldSerialize);
+    }
+
+    private static bool IsTypedDefaults(IMsgPackPropertyIncludeDynamically filter)
+    {
+      return filter != null && filter.GetType() == typeof(FilterDefaultValues) && !((FilterDefaultValues)filter).OmitEmptyStrings; // as FilterMode.DefaultValues
+    }
+
+    /// <summary>
+    /// The typed mode asks FilterDefaultValues before the ShouldSerialize method (<see cref="DefaultsThenShouldSerializeFilter"/>).
+    /// </summary>
+    internal bool ShouldSerializeDefaultsFirst
+    {
+      get { return _typedShouldSerialize == typeof(DefaultsThenShouldSerializeFilter); }
+    }
+
+    /// <summary>
+    /// The typed filter mode for a property with a ShouldSerialize method (<see cref="CallsShouldSerialize"/>) written by a <see cref="PropWriter{TTarget, TValue, TFilter}"/> of <paramref name="declaring"/>:
+    /// the method has a typed delegate on that class (dynamic code, not a struct or a static method), the filters are one of the typed sets, and no [DefaultValue] asks for the boxed default check.
+    /// </summary>
+    /// <returns>null for the boxed filters</returns>
+    internal Type TypedShouldSerializeFilter(FullPropertyInfo info, Type declaring)
+    {
+      Type mode = _typedShouldSerialize;
+      if (mode is null || info.Attributes.ShouldSerialize.OwnerType != declaring)
+        return null;
+      if (mode != typeof(ShouldSerializeFilter) && info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)))
+        return null;
+      return mode;
     }
 
     #region Handlers and plans
@@ -194,7 +252,7 @@ namespace LtMsgPack
           if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
           {
             object handler = Instantiate(type, typeof(ObjectHandler<>), type, this);
-            return IgnoreCycles && !type.IsValueType ? ((ICycleTracking)handler).Tracked() : handler; // apart, so the handler without the option stays as it is
+            return IgnoreCycles && !type.IsValueType && CanContainObjects(type) ? ((ICycleTracking)handler).Tracked() : handler; // apart, so the handler without the option stays as it is
           }
           return Boxed(type);
         default:
@@ -402,6 +460,29 @@ namespace LtMsgPack
       c.ByNames = SerializationRules.EntersByNames(type, assignedTo, byNames, isObject);
       WriteBoxed(c, value, type, info, assignedTo);
       c.ByNames = byNames;
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.IgnoreCycles"/>: whether an object of exactly this class can contain an object with properties (itself, in a cycle). Its handler tracks it only then:
+    /// with properties of only numbers, strings and the like nothing below it can be it, so the check could never find it (the same bytes as tracking it, as LsMsgPack does);
+    /// an object of a derived type goes through <see cref="WriteBoxed"/>, which tracks it.
+    /// </summary>
+    private bool CanContainObjects(Type type)
+    {
+      return !HoldNoObjects(FullPropertyInfo.GetSerializedProps(type, Options)) || !HoldNoObjects(FullPropertyInfo.GetStaticallyIncludedProps(type, Options)); // both lists: the plans by names and by the schema
+    }
+
+    private static bool HoldNoObjects(FullPropertyInfo[] infos)
+    {
+      for (int t = infos.Length - 1; t >= 0; t--)
+      {
+        Type type = infos[t].DeclaredType;
+        type = Nullable.GetUnderlyingType(type) ?? type;
+        if (!(type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime) || type == typeof(DateTimeOffset)
+          || type == typeof(TimeSpan) || type == typeof(Guid) || type == typeof(byte[])))
+          return false;
+      }
+      return true;
     }
 
     /// <summary>

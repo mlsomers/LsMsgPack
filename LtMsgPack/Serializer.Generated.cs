@@ -77,8 +77,8 @@ namespace LtMsgPack
     /// <returns>The generated member of the property; -1 when there is none, or the generated code would write it otherwise than these options do (the runtime writes it)</returns>
     private int WriteMember(GeneratedObjectCode code, FullPropertyInfo info)
     {
-      if (CallsShouldSerialize(info))
-        return -1; // its PropWriter calls the method of the owner (FilterShouldSerialize)
+      if (CallsShouldSerialize(info) && !(code is ICompiledCode))
+        return -1; // its PropWriter calls the method of the owner (FilterShouldSerialize); the compiled writers call it themselves or leave the member to the PropWriter (not CanWrite)
       int id = FindMember(code, info);
       if (id < 0)
         return -1;

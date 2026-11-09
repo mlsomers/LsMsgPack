@@ -318,7 +318,7 @@ MsgPackSettings settings = new MsgPackSettings()
 };
 ```
 
-The methods are looked up once per property, and only the properties that have one are checked per object: LtMsgPack writes the others with its usual code (generated or compiled). The source generator keeps the methods of the classes it describes when the application is trimmed.
+The methods are looked up once per property, and only the properties that have one are checked per object: LtMsgPack writes the others with its usual code (generated or compiled). With `FilterShouldSerialize` alone or together with `FilterDefaultValues`, it calls an instance method of a class typed, also in its compiled writers (a list of objects with 3 such methods among 8 properties writes as fast as without them); with other dynamic filters, for structs and for static methods the value is boxed for the filters. The source generator keeps the methods of the classes it describes when the application is trimmed.
 
 ### Cycles
 
@@ -328,7 +328,7 @@ An object that refers back to an object containing it (a parent, the object itse
 MsgPackSettings settings = new MsgPackSettings() { IgnoreCycles = true }; // LtMsgPackOptions too
 ```
 
-Only the objects on the current path count: an object referenced from two places side by side (not containing each other) is written twice, there are no references in the data. Objects with properties are tracked (not structs and collections). The option costs time per object written (LtMsgPack, small objects of 3-6 properties: about 10% more in the map layout, 20-30% in the array layout), so it is off by default.
+Only the objects on the current path count: an object referenced from two places side by side (not containing each other) is written twice, there are no references in the data. Objects with properties are tracked (not structs and collections); LtMsgPack does not track a class whose properties are all numbers, strings, enums, dates, Guids or `byte[]` (nothing below it can be it). The option costs time per tracked object (LtMsgPack, a tree of small nodes: about 7 ns per node, 11-16% more in the map layout, 15-21% in the array layout), so it is off by default.
 
 ### Ignoring the same properties as another serializer
 

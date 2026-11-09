@@ -115,7 +115,7 @@ namespace LsMsgPackUnitTests
     private const BindingFlags Internal = BindingFlags.Instance | BindingFlags.NonPublic;
 
     /// <returns>The type name of the code the plan writes with, null for the runtime's plan</returns>
-    private static string WriterOf(LtMsgPackSerializer serializer, Type type, bool names)
+    internal static string WriterOf(LtMsgPackSerializer serializer, Type type, bool names)
     {
       object inner = typeof(LtMsgPackSerializer).GetField("_serializer", Internal).GetValue(serializer);
       object plan = inner.GetType().GetMethod("Plan", Internal).Invoke(inner, new object[] { type, names });

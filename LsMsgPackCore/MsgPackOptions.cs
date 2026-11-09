@@ -569,7 +569,7 @@ namespace LsMsgPack
     /// Writing: a reference to an object that is being written (the object itself or one that contains it, a cycle) is written as nil, as System.Text.Json's <c>ReferenceHandler.IgnoreCycles</c> does.
     /// Off by default: a cycle then ends at <see cref="MaxDepth"/> with a <see cref="MsgPackException"/>.
     /// <para>Objects with properties are tracked (not structs, collections, pairs and tuples): every object being written is compared with the ones containing it. That costs LtMsgPack
-    /// a part of writing per object: small objects (3-6 properties) about 10% more time in the map layout, 20-30% in the array layout. Only the current path counts:
+    /// a part of writing per object (a tree of small nodes: 11-16% more time in the map layout, 15-21% in the array layout); it does not track a class whose properties are all numbers, strings, enums, dates, Guids or byte[]. Only the current path counts:
     /// an object referenced twice side by side is written twice. Read back, the reference is null.</para>
     /// </summary>
     [Category("Control")]

@@ -7,6 +7,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
 
 namespace LsMsgPackUnitTests
@@ -98,6 +99,100 @@ namespace LsMsgPackUnitTests
       public SsGroup Group { get; set; }
 
       public bool ShouldSerializeGroup() { return false; }
+    }
+
+    public class SsCallsChild
+    {
+      public int A { get; set; }
+    }
+
+    public enum SsCallsDay { None, Monday, Tuesday }
+
+    /// <summary>
+    /// Records the calls of its methods: the serializers call them in the same order and as often (LtMsgPack's typed filter modes and compiled writers as the boxed filters),
+    /// for the kinds of members the compiled writers write themselves, one they leave to the runtime (Child), a [DefaultValue] (boxed) and a static method (by reflection).
+    /// </summary>
+    public class SsCalls
+    {
+      internal readonly List<string> Log = new List<string>();
+
+      public int Number { get; set; }
+      public double Discount { get; set; }
+      public string Note { get; set; }
+      public SsCallsDay Day { get; set; }
+      public int? Maybe { get; set; }
+      public SsCallsChild Child { get; set; }
+      [DefaultValue(5)]
+      public int Five { get; set; }
+      public string Last { get; set; }
+
+      public bool ShouldSerializeNumber() { Log.Add(nameof(Number)); return Number != 3; }
+      public bool ShouldSerializeDiscount() { Log.Add(nameof(Discount)); return Number % 2 == 0; }
+      public virtual bool ShouldSerializeNote() { Log.Add(nameof(Note)); return Number % 3 != 1; }
+      public bool ShouldSerializeDay() { Log.Add(nameof(Day)); return Number < 5; }
+      public bool ShouldSerializeMaybe() { Log.Add(nameof(Maybe)); return Number != 4; }
+      public bool ShouldSerializeChild() { Log.Add(nameof(Child)); return Number != 2; }
+      public bool ShouldSerializeFive() { Log.Add(nameof(Five)); return Number != 6; }
+      public static bool ShouldSerializeLast() { return false; }
+    }
+
+    internal static List<SsCalls> CallValues()
+    {
+      List<SsCalls> values = new List<SsCalls>();
+      for (int t = 0; t < 9; t++) // defaults and values for every member, each method true and false
+        values.Add(new SsCalls()
+        {
+          Number = t, Discount = t % 4 == 0 ? 0 : t * 0.5, Note = t % 2 == 0 ? null : "n" + t, Day = (SsCallsDay)(t % 3), Maybe = t % 3 == 0 ? (int?)null : t,
+          Child = t % 2 == 0 ? new SsCallsChild() { A = t } : null, Five = t % 2 == 0 ? 5 : t, Last = "l"
+        });
+      return values;
+    }
+
+    /// <summary>
+    /// The sets LtMsgPack calls typed (the method alone, either order with FilterDefaultValues) and one it asks boxed.
+    /// </summary>
+    internal static readonly IMsgPackPropertyIncludeDynamically[][] FilterSets =
+    {
+      new IMsgPackPropertyIncludeDynamically[] { new FilterShouldSerialize() },
+      new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(), new FilterShouldSerialize() },
+      new IMsgPackPropertyIncludeDynamically[] { new FilterShouldSerialize(), new FilterDefaultValues() },
+      new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(true), new FilterShouldSerialize() },
+    };
+
+    internal static string Describe(IMsgPackPropertyIncludeDynamically[] filters)
+    {
+      return string.Join(", ", filters.Select(f => f.GetType().Name + (f is FilterDefaultValues d && d.OmitEmptyStrings ? "(omit empty)" : "")));
+    }
+
+    /// <summary>
+    /// The bytes of LsMsgPack, and the calls of the methods of its map layout: its array layout does not ask the filters for a null value (LtMsgPack asks them in both layouts).
+    /// </summary>
+    internal static void AssertSameAsLsMsgPack(Func<List<SsCalls>, byte[]> serialize, MsgPackSettings settings, string message)
+    {
+      List<SsCalls> actual = CallValues();
+      CollectionAssert.AreEqual(Serializers.Ls.Serialize(CallValues(), typeof(List<SsCalls>), settings), serialize(actual), message);
+
+      List<SsCalls> expected = CallValues();
+      MsgPackSettings map = new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseInexedSchema = settings.UseInexedSchema, DynamicFilters = settings.DynamicFilters };
+      Serializers.Ls.Serialize(expected, typeof(List<SsCalls>), map);
+      for (int t = 0; t < expected.Count; t++)
+        CollectionAssert.AreEqual(expected[t].Log, actual[t].Log, message + ", value " + t + ": " + string.Join(" ", actual[t].Log) + " (LsMsgPack: " + string.Join(" ", expected[t].Log) + ")");
+    }
+
+    [TestMethod]
+    [DataRow(ObjectLayout.Map, false)]
+    [DataRow(ObjectLayout.Map, true)]
+    [DataRow(ObjectLayout.Array, false)]
+    [DataRow(ObjectLayout.Array, true)]
+    public void CallsTheMethodsAsLsMsgPack(ObjectLayout layout, bool useSchema)
+    {
+      if (ReferenceEquals(Serializer, Serializers.Ls))
+        return; // the reference
+      foreach (IMsgPackPropertyIncludeDynamically[] filters in FilterSets)
+      {
+        MsgPackSettings settings = Settings(layout, useSchema, filters);
+        AssertSameAsLsMsgPack(values => Serializer.Serialize(values, typeof(List<SsCalls>), settings), settings, $"{layout}, schema {useSchema}, {Describe(filters)}");
+      }
     }
 
     /// <summary>
@@ -272,7 +367,7 @@ namespace LsMsgPackUnitTests
     protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
 
     /// <summary>
-    /// The compiled writers (compiled with the plan) leave the property with the method to the runtime's writer.
+    /// The compiled writers (compiled with the plan) call the method of a value they write themselves.
     /// </summary>
     [TestMethod]
     [DataRow(ObjectLayout.Map)]
@@ -293,6 +388,37 @@ namespace LsMsgPackUnitTests
 
       MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = layout, DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(), new FilterShouldSerialize() } };
       CollectionAssert.AreEqual(Serializers.Ls.Serialize(hidden, settings), compiled.Serialize(hidden));
+    }
+
+    /// <summary>
+    /// The runtime's plans (typed filter modes of the property writers) and the compiled writers: the bytes and the calls of LsMsgPack, and the compiled writer is used.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map, false)]
+    [DataRow(ObjectLayout.Map, true)]
+    [DataRow(ObjectLayout.Array, false)]
+    [DataRow(ObjectLayout.Array, true)]
+    public void PlansAndCompiledWritersCallTheMethods(ObjectLayout layout, bool useSchema)
+    {
+      for (int f = 0; f < FilterSets.Length; f++)
+      {
+        IMsgPackPropertyIncludeDynamically[] filters = FilterSets[f];
+        foreach (int compileAfter in new[] { -1, 0 })
+        {
+          LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions()
+          {
+            ObjectLayout = layout,
+            UseInexedSchema = useSchema,
+            DynamicFilters = filters,
+            CompileWritersAfter = compileAfter,
+            UseRegisteredContexts = false
+          });
+          string message = $"{layout}, schema {useSchema}, {Describe(filters)}, compile after {compileAfter}";
+          AssertSameAsLsMsgPack(values => lt.Serialize(values), new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema, DynamicFilters = filters }, message);
+          bool custom = f == FilterSets.Length - 1; // FilterDefaultValues(true): custom filters, not compiled
+          Assert.AreEqual(compileAfter == 0 && !custom ? "CompiledObjectCode" : null, CompiledWriterTests.WriterOf(lt, typeof(SsCalls), !useSchema), message);
+        }
+      }
     }
   }
 

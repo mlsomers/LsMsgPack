@@ -64,6 +64,25 @@ namespace LsMsgPackUnitTests
       public ICyLink Next { get; set; }
     }
 
+    // Only numbers and strings: LtMsgPack does not track it (nothing below it can be it), a derived class referring back is tracked through the boxed path
+    public class CyPlain
+    {
+      public int X { get; set; }
+      public string Label { get; set; }
+    }
+
+    public class CyPlainBack : CyPlain
+    {
+      public CyPlainHolder Back { get; set; }
+    }
+
+    public class CyPlainHolder
+    {
+      public string Name { get; set; }
+      public CyPlain Item { get; set; }
+      public List<CyPlain> Items { get; set; }
+    }
+
     public class CyThrowing
     {
       public string Name { get; set; }
@@ -174,6 +193,25 @@ namespace LsMsgPackUnitTests
         CyLink link = Serializer.Deserialize<CyLink>(Serializer.Serialize(first, settings), settings);
         Assert.AreEqual("2", link.Next.Name);
         Assert.IsNull(((CyLink)link.Next).Next);
+      }
+    }
+
+    [TestMethod]
+    public void BackReferenceInADerivedClassOfAClassWithoutObjects()
+    {
+      CyPlainHolder holder = new CyPlainHolder() { Name = "h" };
+      holder.Item = new CyPlainBack() { X = 1, Label = "i", Back = holder };
+      holder.Items = new List<CyPlain>() { new CyPlain() { X = 2 }, new CyPlainBack() { X = 3, Back = holder }, holder.Item };
+      foreach (MsgPackSettings settings in AllSettings())
+      {
+        byte[] bytes = Serializer.Serialize(holder, settings);
+        CollectionAssert.AreEqual(Serializers.Ls.Serialize(holder, settings), bytes, $"{settings.ObjectLayout}, trimmed {settings.TrimTrailingNulls}, schema {settings.UseInexedSchema}");
+        CyPlainHolder read = Serializer.Deserialize<CyPlainHolder>(bytes, settings);
+        Assert.AreEqual(1, read.Item.X);
+        Assert.IsNull(((CyPlainBack)read.Item).Back);
+        Assert.AreEqual(2, read.Items[0].X);
+        Assert.IsNull(((CyPlainBack)read.Items[1]).Back);
+        Assert.IsNull(((CyPlainBack)read.Items[2]).Back);
       }
     }
 

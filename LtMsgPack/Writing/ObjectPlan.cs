@@ -526,12 +526,14 @@ namespace LtMsgPack.Writing
 
     /// <summary>
     /// The filter mode of a property as the type argument of <see cref="PropWriter{TTarget, TValue, TFilter}"/> and <see cref="StructPropWriter{TTarget, TValue, TFilter}"/>:
-    /// <see cref="NoFilter"/>, <see cref="DefaultValuesFilter"/> or <see cref="BoxedFilter"/> (decided once per property, not tested per value).
+    /// <see cref="NoFilter"/>, <see cref="DefaultValuesFilter"/>, <see cref="BoxedFilter"/> or, for a property with a ShouldSerialize method, one of the typed modes calling it
+    /// (<see cref="Serializer.TypedShouldSerializeFilter"/>; only <see cref="PropWriter{TTarget, TValue, TFilter}"/> has them, a struct's method is called boxed). Decided once per property, not tested per value.
     /// </summary>
-    internal static Type FilterType(Serializer serializer, FullPropertyInfo info)
+    /// <param name="declaring">The class or struct the writer reads the property of (its TTarget)</param>
+    internal static Type FilterType(Serializer serializer, FullPropertyInfo info, Type declaring)
     {
       if (serializer.CallsShouldSerialize(info))
-        return typeof(BoxedFilter);
+        return serializer.TypedShouldSerializeFilter(info, declaring) ?? typeof(BoxedFilter);
       if (serializer.Filters == FilterMode.None)
         return typeof(NoFilter);
       return IsBoxed(serializer, info) ? typeof(BoxedFilter) : typeof(DefaultValuesFilter);
@@ -565,7 +567,7 @@ namespace LtMsgPack.Writing
       {
         try
         {
-          Type writerType = (property.DeclaringType.IsValueType ? typeof(StructPropWriter<,,>) : typeof(PropWriter<,,>)).MakeGenericType(property.DeclaringType, property.PropertyType, FilterType(serializer, info));
+          Type writerType = (property.DeclaringType.IsValueType ? typeof(StructPropWriter<,,>) : typeof(PropWriter<,,>)).MakeGenericType(property.DeclaringType, property.PropertyType, FilterType(serializer, info, property.DeclaringType));
           return (PropWriter)Activator.CreateInstance(writerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, get }, null);
         }
         catch (Exception) // e.g. a runtime that cannot create the generic type, use reflection
@@ -591,7 +593,7 @@ namespace LtMsgPack.Writing
       {
         try
         {
-          Type writerType = (declaring.IsValueType ? typeof(StructPropWriter<,,>) : typeof(PropWriter<,,>)).MakeGenericType(declaring, field.FieldType, FilterType(serializer, info));
+          Type writerType = (declaring.IsValueType ? typeof(StructPropWriter<,,>) : typeof(PropWriter<,,>)).MakeGenericType(declaring, field.FieldType, FilterType(serializer, info, declaring));
           return (PropWriter)Activator.CreateInstance(writerType, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { serializer, info, field }, null);
         }
         catch (Exception) // e.g. a runtime that cannot create the generic type or compile the expression, use reflection
@@ -624,6 +626,27 @@ namespace LtMsgPack.Writing
   }
 
   /// <summary>
+  /// Only FilterShouldSerialize: its method called through the typed delegate (ShouldSerializeMethod.Typed), the value not boxed (<see cref="Serializer.TypedShouldSerializeFilter"/>).
+  /// </summary>
+  internal struct ShouldSerializeFilter
+  {
+  }
+
+  /// <summary>
+  /// FilterDefaultValues, FilterShouldSerialize (in that order: the method is asked first), both typed.
+  /// </summary>
+  internal struct ShouldSerializeThenDefaultsFilter
+  {
+  }
+
+  /// <summary>
+  /// FilterShouldSerialize, FilterDefaultValues (the default check first: the method is not called for a default value), both typed.
+  /// </summary>
+  internal struct DefaultsThenShouldSerializeFilter
+  {
+  }
+
+  /// <summary>
   /// A property (or field) read through a typed delegate, the value is not boxed. <typeparamref name="TFilter"/>: the filter mode (<see cref="PropWriter.FilterType"/>).
   /// </summary>
   internal sealed class PropWriter<TTarget, TValue, TFilter> : PropWriter where TTarget : class where TFilter : struct
@@ -632,10 +655,16 @@ namespace LtMsgPack.Writing
     private readonly FullPropertyInfo _declared;
     private ValueHandler<TValue> _handler;
 
+    /// <summary>
+    /// The ShouldSerialize method of the property, with the modes that call it typed (see <see cref="PropWriter.FilterType"/>).
+    /// </summary>
+    private readonly Func<TTarget, bool> _shouldSerialize;
+
     public PropWriter(Serializer serializer, FullPropertyInfo info, MethodInfo get) : base(serializer, info)
     {
       _declared = info;
       _get = (Func<TTarget, TValue>)Delegate.CreateDelegate(typeof(Func<TTarget, TValue>), get);
+      _shouldSerialize = ShouldSerializeOf(info);
     }
 
     /// <param name="field">Read by a delegate compiled from an expression</param>
@@ -648,6 +677,14 @@ namespace LtMsgPack.Writing
     {
       _declared = info;
       _get = get;
+      _shouldSerialize = ShouldSerializeOf(info);
+    }
+
+    private static Func<TTarget, bool> ShouldSerializeOf(FullPropertyInfo info)
+    {
+      if (typeof(TFilter) == typeof(ShouldSerializeFilter) || typeof(TFilter) == typeof(ShouldSerializeThenDefaultsFilter) || typeof(TFilter) == typeof(DefaultsThenShouldSerializeFilter))
+        return (Func<TTarget, bool>)info.Attributes.ShouldSerialize.Typed;
+      return null;
     }
 
     internal override bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info)
@@ -672,6 +709,21 @@ namespace LtMsgPack.Writing
       else if (typeof(TFilter) == typeof(DefaultValuesFilter))
       {
         if (!handler.IncludeByDefault(value, info))
+          return false;
+      }
+      else if (typeof(TFilter) == typeof(ShouldSerializeFilter))
+      {
+        if (!_shouldSerialize(Unsafe.As<TTarget>(target)))
+          return false;
+      }
+      else if (typeof(TFilter) == typeof(ShouldSerializeThenDefaultsFilter))
+      {
+        if (!_shouldSerialize(Unsafe.As<TTarget>(target)) || !handler.IncludeByDefault(value, info))
+          return false;
+      }
+      else if (typeof(TFilter) == typeof(DefaultsThenShouldSerializeFilter))
+      {
+        if (!handler.IncludeByDefault(value, info) || !_shouldSerialize(Unsafe.As<TTarget>(target)))
           return false;
       }
 

@@ -1,4 +1,4 @@
-using LsMsgPack.Meta;
+﻿using LsMsgPack.Meta;
 using LtMsgPack.Extensions;
 using LtMsgPack.Generated;
 using LtMsgPack.IO;
@@ -37,36 +37,39 @@ namespace LtMsgPack.Writing
   internal sealed class CompiledObjectCode<T> : GeneratedObjectCode<T>, ICompiledCode where T : class
   {
     private readonly MemberInfo[] _properties; // properties and fields
+    private readonly ShouldSerializeCalls _calls;
     private CompiledWrite<T> _map;
     private CompiledWrite<T> _items;
     private CompiledWriteUnrolled<T> _unrolled;
 
-    public CompiledObjectCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap | GeneratedCapabilities.WriteFormats)
+    /// <param name="calls">null when no member calls a ShouldSerialize method</param>
+    public CompiledObjectCode(GeneratedMember[] members, MemberInfo[] properties, ShouldSerializeCalls calls) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap | GeneratedCapabilities.WriteFormats)
     {
       _properties = properties;
+      _calls = calls;
     }
 
     public void Compile(GeneratedWritePlan plan, bool map)
     {
       if (map)
-        _map = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, plan, true);
+        _map = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, _calls, plan, true);
       else if (plan.Unrolled)
-        _unrolled = CompiledWriter.Unrolled<CompiledWriteUnrolled<T>>(typeof(T), false, Members, _properties, plan);
+        _unrolled = CompiledWriter.Unrolled<CompiledWriteUnrolled<T>>(typeof(T), false, Members, _properties, _calls, plan);
       else
-        _items = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, plan, false);
+        _items = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, _calls, plan, false);
     }
 
     public override int Write(WriteContext c, T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
       CompiledWrite<T> write = keys != null
-        ? _map ?? (_map = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, p, true)) // also the maps of the array layout: a collection with SerializeProperties
+        ? _map ?? (_map = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, _calls, p, true)) // also the maps of the array layout: a collection with SerializeProperties
         : _items;
       return write(c, value, keys, infos, p, out end);
     }
 
     public override int WriteUnrolledMap(WriteContext c, T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p)
     {
-      CompiledWrite<T> write = _map ?? (_map = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, p, true)); // also the maps of the array layout: a collection with SerializeProperties
+      CompiledWrite<T> write = _map ?? (_map = CompiledWriter.Write<CompiledWrite<T>>(typeof(T), false, Members, _properties, _calls, p, true)); // also the maps of the array layout: a collection with SerializeProperties
       return write(c, value, keys, infos, p, out int end);
     }
 
@@ -86,7 +89,8 @@ namespace LtMsgPack.Writing
     private CompiledRefWrite<T> _items;
     private CompiledRefWriteUnrolled<T> _unrolled;
 
-    public CompiledStructCode(GeneratedMember[] members, MemberInfo[] properties) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap | GeneratedCapabilities.WriteFormats)
+    /// <param name="calls">Always null: a struct's ShouldSerialize method is called boxed, by the runtime's writer of the property</param>
+    public CompiledStructCode(GeneratedMember[] members, MemberInfo[] properties, ShouldSerializeCalls calls) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap | GeneratedCapabilities.WriteFormats)
     {
       _properties = properties;
       Unboxer = new StructUnboxer<T, T>(); // what GeneratedValues.Struct gives the generated code: a struct written as an object
@@ -95,30 +99,52 @@ namespace LtMsgPack.Writing
     public void Compile(GeneratedWritePlan plan, bool map)
     {
       if (map)
-        _map = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, plan, true);
+        _map = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, null, plan, true);
       else if (plan.Unrolled)
-        _unrolled = CompiledWriter.Unrolled<CompiledRefWriteUnrolled<T>>(typeof(T), true, Members, _properties, plan);
+        _unrolled = CompiledWriter.Unrolled<CompiledRefWriteUnrolled<T>>(typeof(T), true, Members, _properties, null, plan);
       else
-        _items = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, plan, false);
+        _items = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, null, plan, false);
     }
 
     public override int Write(WriteContext c, ref T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
     {
       CompiledRefWrite<T> write = keys != null
-        ? _map ?? (_map = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, p, true))
+        ? _map ?? (_map = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, null, p, true))
         : _items;
       return write(c, ref value, keys, infos, p, out end);
     }
 
     public override int WriteUnrolledMap(WriteContext c, ref T value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p)
     {
-      CompiledRefWrite<T> write = _map ?? (_map = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, p, true)); // also the maps of the array layout: a collection with SerializeProperties
+      CompiledRefWrite<T> write = _map ?? (_map = CompiledWriter.Write<CompiledRefWrite<T>>(typeof(T), true, Members, _properties, null, p, true)); // also the maps of the array layout: a collection with SerializeProperties
       return write(c, ref value, keys, infos, p, out int end);
     }
 
     public override void WriteUnrolled(WriteContext c, ref T value, FullPropertyInfo[] infos, GeneratedWritePlan p)
     {
       _unrolled(c, ref value, infos, p);
+    }
+  }
+
+  /// <summary>
+  /// The ShouldSerialize methods a compiled writer calls itself (FilterShouldSerialize, see <see cref="Serializer.TypedShouldSerializeFilter"/>).
+  /// </summary>
+  internal sealed class ShouldSerializeCalls
+  {
+    /// <summary>
+    /// Per member (null for the members without one).
+    /// </summary>
+    internal readonly MethodInfo[] Methods;
+
+    /// <summary>
+    /// FilterDefaultValues is asked before the method (<see cref="DefaultsThenShouldSerializeFilter"/>).
+    /// </summary>
+    internal readonly bool DefaultsFirst;
+
+    internal ShouldSerializeCalls(MethodInfo[] methods, bool defaultsFirst)
+    {
+      Methods = methods;
+      DefaultsFirst = defaultsFirst;
     }
   }
 
@@ -186,6 +212,7 @@ namespace LtMsgPack.Writing
 
       GeneratedMember[] members = new GeneratedMember[infos.Length];
       MemberInfo[] properties = new MemberInfo[infos.Length];
+      MethodInfo[] calls = null;
       for (int t = 0; t < infos.Length; t++)
       {
         MemberInfo member = infos[t].Member;
@@ -198,16 +225,32 @@ namespace LtMsgPack.Writing
           MethodInfo get = ((PropertyInfo)member).GetGetMethod(true);
           canWrite = get != null && !get.IsStatic && get.GetParameters().Length == 0;
         }
-        canWrite = canWrite && member.DeclaringType.IsAssignableFrom(type) && !propertyType.IsByRef && !propertyType.IsPointer && !IsByRefLike(propertyType)
-          && !serializer.CallsShouldSerialize(infos[t]); // the runtime's PropWriter calls the owner's method (FilterShouldSerialize)
+        canWrite = canWrite && member.DeclaringType.IsAssignableFrom(type) && !propertyType.IsByRef && !propertyType.IsPointer && !IsByRefLike(propertyType);
         Type underlying = Nullable.GetUnderlyingType(propertyType);
         GeneratedKind kind = canWrite && !infos[t].CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)) ? KindOf(serializer, underlying ?? propertyType) : GeneratedKind.None;
+        if (serializer.CallsShouldSerialize(infos[t]))
+        {
+          // Called here when this code writes the value itself and the property writer would call it typed; otherwise the runtime's PropWriter calls it (GeneratedWritePlan.Value has no owner)
+          MethodInfo call = kind != GeneratedKind.None && !type.IsValueType && serializer.TypedShouldSerializeFilter(infos[t], member.DeclaringType) != null
+            ? ((Delegate)infos[t].Attributes.ShouldSerialize.Typed).Method : null;
+          if (call is null)
+          {
+            canWrite = false;
+            kind = GeneratedKind.None;
+          }
+          else
+          {
+            if (calls is null)
+              calls = new MethodInfo[infos.Length];
+            calls[t] = call;
+          }
+        }
         members[t] = new GeneratedMember(member.DeclaringType, member.Name, propertyType, kind, underlying != null && kind != GeneratedKind.None, canWrite, false);
         properties[t] = member;
       }
 
       Type codeType = (type.IsValueType ? typeof(CompiledStructCode<>) : typeof(CompiledObjectCode<>)).MakeGenericType(type);
-      return (GeneratedObjectCode)Activator.CreateInstance(codeType, new object[] { members, properties }); // one array: two would be taken as the arguments and activation attributes
+      return (GeneratedObjectCode)Activator.CreateInstance(codeType, new object[] { members, properties, calls is null ? null : new ShouldSerializeCalls(calls, serializer.ShouldSerializeDefaultsFirst) });
     }
 
     /// <summary>
@@ -249,9 +292,9 @@ namespace LtMsgPack.Writing
     /// <param name="map">The delegate is only called with keys</param>
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
-    internal static TDelegate Write<TDelegate>(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, GeneratedWritePlan plan, bool map) where TDelegate : Delegate
+    internal static TDelegate Write<TDelegate>(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, ShouldSerializeCalls calls, GeneratedWritePlan plan, bool map) where TDelegate : Delegate
     {
-      Builder b = new Builder(type, byRef, members, properties, plan);
+      Builder b = new Builder(type, byRef, members, properties, calls, plan);
       ParameterExpression keys = Expression.Parameter(typeof(byte[][]), "keys");
       ParameterExpression end = Expression.Parameter(typeof(int).MakeByRefType(), "end");
       ParameterExpression count = Expression.Variable(typeof(int), "count");
@@ -310,9 +353,9 @@ namespace LtMsgPack.Writing
     /// </summary>
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
-    internal static TDelegate Unrolled<TDelegate>(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, GeneratedWritePlan plan) where TDelegate : Delegate
+    internal static TDelegate Unrolled<TDelegate>(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, ShouldSerializeCalls calls, GeneratedWritePlan plan) where TDelegate : Delegate
     {
-      Builder b = new Builder(type, byRef, members, properties, plan);
+      Builder b = new Builder(type, byRef, members, properties, calls, plan);
       List<Expression> body = new List<Expression>();
       body.Add(Expression.Assign(b.W, Expression.Field(b.C, nameof(WriteContext.W))));
       int[] ids = plan.Ids;
@@ -341,6 +384,7 @@ namespace LtMsgPack.Writing
       private readonly bool _byRef;
       private readonly GeneratedMember[] _members;
       private readonly MemberInfo[] _properties; // properties and fields
+      private readonly ShouldSerializeCalls _calls;
       private readonly bool _filter;
       private readonly bool _guidString;
       private readonly bool _decimalString;
@@ -350,12 +394,13 @@ namespace LtMsgPack.Writing
       /// </summary>
       private readonly Dictionary<Type, ParameterExpression> _values = new Dictionary<Type, ParameterExpression>();
 
-      internal Builder(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, GeneratedWritePlan plan)
+      internal Builder(Type type, bool byRef, GeneratedMember[] members, MemberInfo[] properties, ShouldSerializeCalls calls, GeneratedWritePlan plan)
       {
         _type = type;
         _byRef = byRef;
         _members = members;
         _properties = properties;
+        _calls = calls;
         _filter = plan.FilterDefaults;
         _guidString = plan.GuidString;
         _decimalString = plan.DecimalString;
@@ -426,8 +471,9 @@ namespace LtMsgPack.Writing
         Expression written = key is ConstantExpression // the constant null: an array item
           ? Expression.Block(WriteValue(member, v, null), Expression.Constant(true))
           : Expression.Block(Expression.Call(W, nameof(MsgPackWriter.Raw), null, key), WriteValue(member, v, null), Expression.Constant(true));
-        if (_filter)
-          written = Expression.Condition(Omitted(member, v), Expression.Constant(false), written);
+        Expression leftOut = LeftOut(id, member, v);
+        if (leftOut != null)
+          written = Expression.Condition(leftOut, Expression.Constant(false), written);
         return Expression.Block(Expression.Assign(v, Get(id)), written);
       }
 
@@ -450,9 +496,27 @@ namespace LtMsgPack.Writing
         GeneratedMember member = _members[id];
         ParameterExpression v = Value(member.PropertyType);
         Expression write = WriteValue(member, v, written);
-        if (_filter)
-          write = Expression.IfThenElse(Omitted(member, v), Nil(), write);
+        Expression leftOut = LeftOut(id, member, v);
+        if (leftOut != null)
+          write = Expression.IfThenElse(leftOut, Nil(), write);
         return Expression.Block(Expression.Assign(v, Get(id)), write);
+      }
+
+      /// <summary>
+      /// The dynamic filters for the member's value (read before, as the runtime's PropWriter reads it before the filters): FilterDefaultValues and the ShouldSerialize method,
+      /// in the order of the typed filter mode (Serializer.TypedShouldSerializeFilter).
+      /// </summary>
+      /// <returns>A bool, true when the value is left out; null without filters</returns>
+      private Expression LeftOut(int id, GeneratedMember member, Expression v)
+      {
+        Expression omitted = _filter ? Omitted(member, v) : null;
+        MethodInfo call = _calls?.Methods[id];
+        if (call is null)
+          return omitted;
+        Expression skip = Expression.Not(Expression.Call(O, call)); // virtual when the method is, as the delegate calls it
+        if (omitted is null)
+          return skip;
+        return _calls.DefaultsFirst ? Expression.OrElse(omitted, skip) : Expression.OrElse(skip, omitted);
       }
 
       /// <summary>

@@ -65,34 +65,42 @@ namespace LtMsgPack.Writing
     /// <summary>
     /// <see cref="MsgPackOptions.IgnoreCycles"/>: the objects with properties being written, the root first (LsMsgPack: CyclePath). Null until the first.
     /// </summary>
-    private object[] _path;
+    private PathEntry[] _path;
     internal int PathCount;
+
+    /// <summary>
+    /// An element of the path: a struct, so a store has no covariance check (an object[] might be a string[]: CastHelpers.StelemRef per object).
+    /// </summary>
+    private struct PathEntry
+    {
+      internal object Value;
+    }
 
     /// <returns>false when the object is already being written (a cycle: write nil instead), otherwise it is on the path until <see cref="LeaveObject"/></returns>
     internal bool EnterObject(object value)
     {
-      object[] path = _path;
+      PathEntry[] path = _path;
       int count = PathCount;
       for (int t = count - 1; t >= 0; t--)
-        if (ReferenceEquals(path[t], value))
+        if (ReferenceEquals(path[t].Value, value))
           return false;
       if (path is null || count == path.Length)
         path = GrowPath();
-      path[count] = value;
+      path[count].Value = value;
       PathCount = count + 1;
       return true;
     }
 
-    private object[] GrowPath()
+    private PathEntry[] GrowPath()
     {
-      object[] path = _path;
+      PathEntry[] path = _path;
       Array.Resize(ref path, path is null ? 16 : path.Length * 2);
       return _path = path;
     }
 
     internal void LeaveObject()
     {
-      _path[--PathCount] = null; // not kept alive after the call
+      _path[--PathCount].Value = null; // not kept alive after the call
     }
 
     /// <summary>

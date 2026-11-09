@@ -394,11 +394,13 @@ namespace LtMsgPack.Generated
     {
       if (Get is null)
         return null;
-      Type filter = PropWriter.FilterType(serializer, info);
+      Type filter = PropWriter.FilterType(serializer, info, typeof(TTarget));
       if (filter == typeof(NoFilter))
         return new PropWriter<TTarget, TValue, NoFilter>(serializer, info, Get);
       if (filter == typeof(DefaultValuesFilter))
         return new PropWriter<TTarget, TValue, DefaultValuesFilter>(serializer, info, Get);
+      if (filter != typeof(BoxedFilter))
+        return null; // a typed ShouldSerialize mode, only with dynamic code (Serializer.TypedShouldSerializeFilter): PropWriter.Create binds the getter, NativeAOT does not get the instantiations of those modes
       return new PropWriter<TTarget, TValue, BoxedFilter>(serializer, info, Get);
     }
 
@@ -421,7 +423,7 @@ namespace LtMsgPack.Generated
     {
       if (Get is null)
         return null;
-      Type filter = PropWriter.FilterType(serializer, info);
+      Type filter = PropWriter.FilterType(serializer, info, typeof(TTarget)); // a struct's ShouldSerialize method is called boxed
       if (filter == typeof(NoFilter))
         return new StructPropWriter<TTarget, TValue, NoFilter>(serializer, info, Get);
       if (filter == typeof(DefaultValuesFilter))
