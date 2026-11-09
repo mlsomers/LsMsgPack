@@ -134,6 +134,9 @@ namespace LtMsgPack.Generator
               + (type.KeepNonPublicFields ? " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicFields" : "")
               + " | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicConstructors | global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof("
               + type.TypeName + "))]");
+          if (type.KeepMetadata) // FilterShouldSerialize finds them by name
+            for (int t = 0; t < type.KeptMethods.Length; t++)
+              w.Line("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(\"" + type.KeptMethods[t].Value + "()\", typeof(" + type.TypeName + "))]");
         }
       }
       Accessors accessors = new Accessors();

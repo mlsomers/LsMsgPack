@@ -195,7 +195,7 @@ namespace LsMsgPack
       {
         FullPropertyInfo prop = props[t];
         object value = prop.GetValue(item);
-        if (value is null || !IncludeDynamically(prop, value, settings))
+        if (value is null || !MsgPackOptions.IncludeDynamically(settings._dynamicFilters, prop, item, value))
           values[t] = new MpNull(settings);
         else
         {
@@ -216,14 +216,6 @@ namespace LsMsgPack
         new KeyValuePair<object, object>(TypeIdKey, typeId),
         new KeyValuePair<object, object>(ContentKey, array)
       }, settings);
-    }
-
-    private static bool IncludeDynamically(FullPropertyInfo prop, object value, MsgPackSettings settings)
-    {
-      for (int i = settings._dynamicFilters.Length - 1; i >= 0; i--)
-        if (!settings._dynamicFilters[i].IncludeProperty(prop, value))
-          return false;
-      return true;
     }
 
     /// <summary>
@@ -305,11 +297,7 @@ namespace LsMsgPack
         FullPropertyInfo prop = props[t];
         object value = prop.GetValue(item);
 
-        bool exclude = false;
-        for (int i = settings._dynamicFilters.Length - 1; i >= 0; i--)
-          if (!settings._dynamicFilters[i].IncludeProperty(prop, value)) { exclude = true; break; }
-
-        if (exclude)
+        if (!MsgPackOptions.IncludeDynamically(settings._dynamicFilters, prop, item, value))
           continue;
 
         if (value is null)

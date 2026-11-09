@@ -2,6 +2,7 @@
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Filters;
+using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.TypeResolving.Types;
 using LtMsgPack.Extensions;
 using LtMsgPack.IO;
@@ -24,6 +25,16 @@ namespace LtMsgPack
   {
     internal readonly LtMsgPackOptions Options;
     internal readonly FilterMode Filters;
+
+    /// <summary>
+    /// The dynamic filters have a <see cref="FilterShouldSerialize"/>: the properties with a ShouldSerialize method take the boxed filters (<see cref="CallsShouldSerialize"/>).
+    /// </summary>
+    private readonly bool _shouldSerialize;
+
+    /// <summary>
+    /// A dynamic filter takes the owner (<see cref="IMsgPackPropertyIncludeWithOwner"/>): a struct is boxed for it.
+    /// </summary>
+    internal readonly bool OwnerFilters;
     internal readonly bool CanBindDelegates;
 
     /// <summary>
@@ -49,6 +60,8 @@ namespace LtMsgPack
     {
       Options = options;
       IMsgPackPropertyIncludeDynamicallyArray(options, out Filters);
+      _shouldSerialize = options.CallsShouldSerialize;
+      OwnerFilters = HasOwnerFilters(options._dynamicFilters);
       CanBindDelegates = PropertyAccessor.CanCompile;
       _alwaysTypeId = (options._addTypeIdOptions & AddTypeIdOption.Always) != 0;
       _customTypeResolvers = options._typeResolvers.Length > 0;
@@ -61,13 +74,41 @@ namespace LtMsgPack
 
     private static void IMsgPackPropertyIncludeDynamicallyArray(LtMsgPackOptions options, out FilterMode mode)
     {
-      if (options._dynamicFilters is null || options._dynamicFilters.Length == 0)
-        mode = FilterMode.None;
-      else if (options._dynamicFilters.Length == 1 && options._dynamicFilters[0] != null && options._dynamicFilters[0].GetType() == typeof(FilterDefaultValues)
-        && !((FilterDefaultValues)options._dynamicFilters[0]).OmitEmptyStrings) // the typed handlers decide as the default filter (DefaultFilter.Instance)
-        mode = FilterMode.DefaultValues;
-      else
-        mode = FilterMode.Custom;
+      IMsgPackPropertyIncludeDynamically[] filters = options._dynamicFilters;
+      mode = FilterMode.None;
+      if (filters is null)
+        return;
+      for (int t = 0; t < filters.Length; t++)
+      {
+        Type type = filters[t]?.GetType();
+        if (type == typeof(FilterShouldSerialize))
+          continue; // only the properties with a ShouldSerialize method take the boxed filters (CallsShouldSerialize)
+        if (type == typeof(FilterDefaultValues) && !((FilterDefaultValues)filters[t]).OmitEmptyStrings) // the typed handlers decide as the default filter (DefaultFilter.Instance)
+          mode = FilterMode.DefaultValues;
+        else
+        {
+          mode = FilterMode.Custom;
+          return;
+        }
+      }
+    }
+
+    private static bool HasOwnerFilters(IMsgPackPropertyIncludeDynamically[] filters)
+    {
+      if (filters is null)
+        return false;
+      for (int t = filters.Length - 1; t >= 0; t--)
+        if (filters[t] is IMsgPackPropertyIncludeWithOwner)
+          return true;
+      return false;
+    }
+
+    /// <summary>
+    /// <see cref="FilterShouldSerialize"/> calls a method of the owner for this property: its writer takes the boxed filters with the owner, the generated and compiled code leave it to that writer.
+    /// </summary>
+    internal bool CallsShouldSerialize(FullPropertyInfo info)
+    {
+      return _shouldSerialize && info.Attributes?.ShouldSerialize != null;
     }
 
     #region Handlers and plans

@@ -82,7 +82,14 @@ builder.Services.AddControllers()
   });
 ```
 
-See [Property names and filters](schema.md#property-names-and-filters) for the other presets and for empty strings and default values.
+`application/msgpack` writes every value (the `Generic()` preset); Json.NET with `DefaultValueHandling.Ignore` (or System.Text.Json with `JsonIgnoreCondition.WhenWritingDefault`) leaves default values out. And Json.NET calls the `ShouldSerialize{Name}()` methods of the models. To write the same properties as such a JSON API:
+
+```csharp
+    o.Plain.DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(), new FilterShouldSerialize() };
+    o.XLsMsgPack.DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(), new FilterShouldSerialize() };
+```
+
+See [Property names and filters](schema.md#property-names-and-filters) for the other presets, empty strings, default values and [ShouldSerialize methods](schema.md#shouldserialize-methods).
 
 Alternatively, add them to `MvcOptions` directly, with or without an `LtMsgPackHttpOptions` instance:
 

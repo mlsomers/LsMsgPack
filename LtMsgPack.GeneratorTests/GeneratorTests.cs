@@ -754,6 +754,41 @@ namespace F
       Assert.Contains("}, new int[] { 0, 1, 2, 3, 4, 6, 7 }", item, "Skipped: [NonSerialized]");
     }
 
+    /// <summary>
+    /// FilterShouldSerialize finds the ShouldSerialize{Name}() methods by name: each is kept by a DynamicDependency, the methods that do not fit are not.
+    /// </summary>
+    [TestMethod]
+    public void ShouldSerializeMethods_Kept()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(@"
+[assembly: LtMsgPack.LtMsgPackGenerate(Include = LtMsgPack.LtMsgPackInclude.AllTypes)]
+namespace S
+{
+  public class Discount
+  {
+    public decimal Percentage { get; set; }
+    public Group Group { get; set; }
+    public bool ShouldSerializeGroup() { return false; }
+    public static bool ShouldSerializePercentage() { return true; }
+    public bool ShouldSerializeWith(int x) { return false; }
+    private bool ShouldSerializeHidden() { return false; }
+    public int ShouldSerializeNumber() { return 0; }
+  }
+
+  public class Group
+  {
+    public string Name { get; set; }
+  }
+}");
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.Contains("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(\"ShouldSerializeGroup()\", typeof(global::S.Discount))]", code);
+      Assert.Contains("[global::System.Diagnostics.CodeAnalysis.DynamicDependency(\"ShouldSerializePercentage()\", typeof(global::S.Discount))]", code);
+      foreach (string left in new[] { "ShouldSerializeWith", "ShouldSerializeHidden", "ShouldSerializeNumber" })
+        Assert.DoesNotContain(left, code, left);
+      Assert.DoesNotContain("typeof(global::S.Group))]\n        [global::System.Diagnostics.CodeAnalysis.DynamicDependency(\"ShouldSerialize", code.Replace("\r\n", "\n"), "Group has none");
+    }
+
     [TestMethod]
     public void Fields_Public_ByMsBuildProperty()
     {

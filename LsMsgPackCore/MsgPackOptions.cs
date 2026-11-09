@@ -373,6 +373,38 @@ namespace LsMsgPack
       }
     }
 
+    /// <summary>
+    /// Asks the dynamic filters whether the value is written (both serializers): the filters that implement <see cref="IMsgPackPropertyIncludeWithOwner"/> get the object too.
+    /// </summary>
+    /// <param name="owner">The object owning the property (a struct: boxed)</param>
+    internal static bool IncludeDynamically(IMsgPackPropertyIncludeDynamically[] filters, Meta.FullPropertyInfo prop, object owner, object value)
+    {
+      for (int t = filters.Length - 1; t >= 0; t--)
+      {
+        IMsgPackPropertyIncludeDynamically filter = filters[t];
+        if (filter is IMsgPackPropertyIncludeWithOwner withOwner ? !withOwner.IncludeProperty(prop, owner, value) : !filter.IncludeProperty(prop, value))
+          return false;
+      }
+      return true;
+    }
+
+    /// <summary>
+    /// The dynamic filters have a <see cref="FilterShouldSerialize"/>.
+    /// </summary>
+    internal bool CallsShouldSerialize
+    {
+      get
+      {
+        IMsgPackPropertyIncludeDynamically[] filters = _dynamicFilters;
+        if (filters is null)
+          return false;
+        for (int t = filters.Length - 1; t >= 0; t--)
+          if (filters[t] is FilterShouldSerialize)
+            return true;
+        return false;
+      }
+    }
+
 
     /// <summary>
     /// Available:
