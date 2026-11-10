@@ -116,6 +116,26 @@ namespace LtMsgPack
       set { _compileWritersAfter = value; }
     }
 
+    internal int _compileReadersAfter = Default_CompileReadersAfter;
+
+    /// <summary>
+    /// The default of <see cref="CompileReadersAfter"/>.
+    /// </summary>
+    public static int Default_CompileReadersAfter = 1000;
+
+    /// <summary>
+    /// After how many objects of a type a reader compiled for that type takes over (default 1000), as <see cref="CompileWritersAfter"/> for writing: the code the source generator writes,
+    /// built at runtime for the type's properties and these options. Compiled on the thread pool while the plans of the runtime keep reading. 0 compiles when the type is first read (on the calling thread), a negative number never.
+    /// <para>Only where the runtime compiles dynamic code (not under NativeAOT or on WebAssembly), not for types the source generator covers (its code is used), not for classes created by a constructor
+    /// that takes their values, and not with custom property name or type resolvers. The objects read are the same either way.</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public int CompileReadersAfter
+    {
+      get { return _compileReadersAfter; }
+      set { _compileReadersAfter = value; }
+    }
+
     internal override bool HasCustomExtension(Type type)
     {
       LtExtension[] extensions = _extensions;

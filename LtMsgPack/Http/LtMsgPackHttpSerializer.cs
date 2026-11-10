@@ -79,11 +79,13 @@ namespace LtMsgPack.Http
       LtMsgPackOptions plain = options.Plain?.Clone() ?? LtMsgPackPresets.Generic();
       plain.PropertyNameCaseInsensitive |= options.PropertyNameCaseInsensitive;
       plain.CompileWritersAfter = options.CompileWritersAfter;
+      plain.CompileReadersAfter = options.CompileReadersAfter;
       _plain = new LtMsgPackSerializer(plain, context);
 
       LtMsgPackOptions ls = (options.XLsMsgPack ?? LtMsgPackPresets.LsMsgPack()).Clone();
       ls.PropertyNameCaseInsensitive |= options.PropertyNameCaseInsensitive;
       ls.CompileWritersAfter = options.CompileWritersAfter;
+      ls.CompileReadersAfter = options.CompileReadersAfter;
       _negotiate = options.NegotiateSchemas && ls.UseInexedSchema;
       if (_negotiate)
       {

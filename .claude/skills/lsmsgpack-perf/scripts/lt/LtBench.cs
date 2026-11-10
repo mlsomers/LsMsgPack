@@ -380,7 +380,10 @@ public static class Bench
   {
     string after = System.Environment.GetEnvironmentVariable("LT_COMPILE_AFTER");
     if (after != null)
+      {
       typeof(LtMsgPack.LtMsgPackOptions).GetField("Default_CompileWritersAfter")?.SetValue(null, int.Parse(after));
+      typeof(LtMsgPack.LtMsgPackOptions).GetField("Default_CompileReadersAfter")?.SetValue(null, int.Parse(after)); // the compiled readers too
+    }
   }
   public static void Main(string[] args)
   {

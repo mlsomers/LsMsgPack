@@ -30,6 +30,8 @@ public class EqColl {
   [LsMsgPack.TypeResolving.Attributes.SerializeEnumerable(SerializeElements = true, SerializeProperties = true)] public HashSet<int> AttrH { get; set; }
   [LsMsgPack.TypeResolving.Attributes.SerializeEnumerable(SerializeElements = true, SerializeProperties = true)] public IList<int> AttrI { get; set; }
 }
+public class EqNumbers { public int[] I { get; set; } public long[] L { get; set; } public float[] F { get; set; } public double[] D { get; set; } public List<int> LI { get; set; } public List<long> LL { get; set; } public List<float> LF { get; set; } public List<double> LD { get; set; } public DateTime[] T { get; set; } public object Any { get; set; } public IList<int> IL { get; set; } public IEnumerable<double> IE { get; set; } }
+public class EqDerivedDoubles : List<double> { }
 public sealed class EqNoGuard : LsMsgPack.TypeResolving.Interfaces.IMsgPackTypeGuard { public bool IsAllowed(Type type, Type assignedTo, LsMsgPack.Meta.FullPropertyInfo prop, MsgPackOptions settings) => false; }
 public static class P {
   static string Hex(byte[] b) => BitConverter.ToString(b);
@@ -96,6 +98,22 @@ public static class P {
     values.Add(new EqColl { AttrD = new Dictionary<string, int> { { "a", 1 } }, AttrE = new Dictionary<string, int> { { "b", 2 } }, AttrH = new HashSet<int> { 3 }, AttrI = new List<int> { 4 } });
     values.Add(new Dictionary<string, string> { { "root", "x" } }); values.Add(new HashSet<int> { 1, 2 }); values.Add(new Dictionary<string, Nested> { { "n", new Nested { Name = "z" } } }); values.Add(new EqDerivedDict { { "a", 1 } }); values.Add(new EqDerivedSet { 1 }); values.Add(new EqDerivedList { 1 });
     values.Add(new Dictionary<string, object> { { "", "only reserved" } }); values.Add(new Dictionary<string, int> { { "@", 1 }, { "", 2 } }); values.Add(new List<Dictionary<string, int>> { new Dictionary<string, int> { { "a", 1 } }, null }); values.Add(new Dictionary<string, Dictionary<string, int>> { { "a", new Dictionary<string, int> { { "b", 1 } } } }); values.Add(new HashSet<Nested> { new Nested() }); values.Add(new List<IList<string>> { new List<string> { "x" }, new string[] { "y" } });
+    // Arrays and lists of numbers (written and read in bulk), dates
+    int[] ei = { 0, 1, 31, 32, 127, 128, 255, 256, 32767, 32768, 65535, 65536, int.MaxValue, -1, -31, -32, -33, -128, -129, -32768, -32769, int.MinValue };
+    long[] el = { 0, 1, 31, 32, 127, 128, 255, 256, 32767, 32768, 65535, 65536, int.MaxValue, 2147483648L, uint.MaxValue, 4294967296L, long.MaxValue, -1, -31, -32, -33, -128, -129, -32768, -32769, int.MinValue, -2147483649L, long.MinValue };
+    float[] ef = { 0f, -0.0f, 1.5f, -2.25f, float.NaN, float.PositiveInfinity, float.NegativeInfinity, float.MaxValue, float.MinValue, float.Epsilon };
+    double[] ed = { 0, -0.0, 1.5, -2.25, double.NaN, double.PositiveInfinity, double.NegativeInfinity, double.MaxValue, double.MinValue, double.Epsilon, 1.5f, 0.1 };
+    DateTime[] et = { new DateTime(2026, 3, 4, 5, 6, 7, DateTimeKind.Utc), new DateTime(2026, 3, 4, 5, 6, 7, 123, DateTimeKind.Utc).AddTicks(4567), new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(1969, 12, 31, 23, 59, 59, 999, DateTimeKind.Utc), new DateTime(2106, 2, 7, 6, 28, 15, DateTimeKind.Utc), new DateTime(2106, 2, 7, 6, 28, 16, DateTimeKind.Utc),
+      new DateTime(2514, 5, 30, 1, 53, 3, DateTimeKind.Utc).AddTicks(9999999), new DateTime(2514, 5, 30, 1, 53, 4, DateTimeKind.Utc), DateTime.MinValue, DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc), new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Local), new DateTime(2026, 1, 1, 12, 0, 0, 5, DateTimeKind.Unspecified), default(DateTime) };
+    int[] bigI = Enumerable.Range(0, 2500).Select(x => x * 7919 - 1000000).ToArray();
+    values.Add(ei); values.Add(el); values.Add(ef); values.Add(ed); values.Add(et); values.Add(ei.ToList()); values.Add(el.ToList()); values.Add(ef.ToList()); values.Add(ed.ToList()); values.Add(et.ToList());
+    values.Add(new int[0]); values.Add(new long[0]); values.Add(new float[0]); values.Add(new double[0]); values.Add(new List<int>()); values.Add(new List<double>());
+    values.Add(bigI); values.Add(bigI.Select(x => x * 1000003L).ToArray()); values.Add(bigI.Select(x => x * 0.37f).ToArray()); values.Add(bigI.Select(x => x * 0.37).ToArray()); values.Add(bigI.ToList()); values.Add(bigI.Select(x => x * 0.37).ToList()); values.Add(bigI.Select(x => (long)x << 20).ToList()); values.Add(bigI.Select(x => x * 0.5f).ToList());
+    values.Add(new uint[] { 1, uint.MaxValue }); values.Add(new ulong[] { 1, ulong.MaxValue }); values.Add(new short[] { 1, -300 }); values.Add(new EqDerivedDoubles { 1.5, 2 });
+    values.Add(new EqNumbers());
+    values.Add(new EqNumbers { I = ei, L = el, F = ef, D = ed, LI = ei.ToList(), LL = el.ToList(), LF = ef.ToList(), LD = ed.ToList(), T = et, Any = ed, IL = ei, IE = ed });
+    values.Add(new EqNumbers { I = (int[])(object)new uint[] { 1, uint.MaxValue }, L = (long[])(object)new ulong[] { 1, ulong.MaxValue }, LD = new EqDerivedDoubles { 1.5 }, Any = new List<float> { 1.5f }, IL = new List<int> { 1, 2 }, IE = new List<double> { 0.5 } });
+    values.Add(new EqNumbers { I = new int[0], L = new long[0], F = new float[0], D = new double[0], LI = new List<int>(), LL = new List<long>(), LF = new List<float>(), LD = new List<double>(), T = new DateTime[0], Any = new long[] { 5 } });
     return values;
   }
   // Data that is not what the typed readers expect (of other writers, or damaged): the same values, or the same errors
@@ -106,10 +124,17 @@ public static class P {
       ("text number key", Raw(0x81, "5", 1)), ("text value", Raw(0x81, "a", "7")), ("bad text value", Raw(0x81, "a", "x")), ("array value", Raw(0x81, "a", 0x91, 1)), ("map value", Raw(0x81, "a", 0x81, "b", 1)), ("float value", Raw(0x81, "a", 0xCA, 0x40, 0x20, 0, 0)), ("bool key", Raw(0x81, 0xC3, 1)), ("bin key", Raw(0x81, 0xC4, 1, 65, 1)), ("float key", Raw(0x81, 0xCA, 0x40, 0x20, 0, 0, 1)), ("array key", Raw(0x81, 0x91, 1, 1)),
       ("array", Raw(0x92, 1, 2)), ("array nil", Raw(0x92, 1, 0xC0)), ("array dup", Raw(0x93, 1, 1, 2)), ("array text", Raw(0x92, "1", "2")), ("array pairs", Raw(0x91, 0x92, "a", 1)), ("array odd pairs", Raw(0x91, 0x93, "a", 1, 2)), ("empty array", Raw(0x90)), ("empty map", Raw(0x80)), ("array16", Raw(0xDC, 0, 1, 1)), ("map16", Raw(0xDE, 0, 1, "a", 1)), ("number", Raw(5)), ("text", Raw("x")), ("nil", Raw(0xC0)),
       ("wrapped list", Raw(0x82, "", "List<Int32>", "@", 0x92, 1, 2)), ("wrapped array", Raw(0x82, "", "Int32[]", "@", 0x92, 1, 2)), ("wrapped set", Raw(0x82, "", "HashSet<Int32>", "@", 0x92, 1, 2)), ("wrapped dict", Raw(0x82, "", "Dictionary<String, Int32>", "@", 0x81, "a", 1)), ("wrapped dict reserved", Raw(0x82, "", "Dictionary<String, Int32>", "@", 0x82, "", 1, "@", 2)), ("wrapped dict number key", Raw(0x82, "", "Dictionary<String, Int32>", "@", 0x81, 1, 1)), ("wrapped sorted", Raw(0x82, "", "SortedDictionary<String, Int32>", "@", 0x81, "a", 1)), ("wrapped unknown", Raw(0x82, "", "NoSuchType", "@", 0x91, 1)), ("wrapped not assignable", Raw(0x82, "", "Nested", "@", 0x91, 1)), ("wrapped number id", Raw(0x82, "", 0, "@", 0x91, 1)), ("wrapped nil content", Raw(0x82, "", "List<Int32>", "@", 0xC0)), ("wrapped wrong content", Raw(0x82, "", "List<Int32>", "@", 5)), ("wrapped map content", Raw(0x82, "", "List<Int32>", "@", 0x81, "a", 1)), ("wrapped third key", Raw(0x83, "", "List<Int32>", "@", 0x91, 1, "x", 1)), ("wrapped content first", Raw(0x82, "@", 0x91, 1, "", "List<Int32>")), ("id only", Raw(0x81, "", "List<Int32>")), ("cut map", Raw(0x82, "a", 1)), ("cut wrap", Raw(0x82, "")), ("cut key", Raw(0x81, 0xA5, 0x61)),
+      ("mixed ints", Raw(0x9F, 1, 0xCC, 200, 0xCD, 1, 2, 0xCE, 0, 1, 2, 3, 0xD0, 0x80, 0xD1, 0x80, 0, 0xD2, 0x80, 0, 0, 0, 0xD3, 0, 0, 0, 0, 0, 0, 0, 9, 0xCF, 0, 0, 0, 0, 0, 0, 0, 8, 0xE0, 0xFF, 0x7F, 0xC0, 0xCA, 0x40, 0x20, 0, 0, 0xCB, 0x40, 0x04, 0, 0, 0, 0, 0, 0)),
+      ("uint32 max", Raw(0x92, 1, 0xCE, 0xFF, 0xFF, 0xFF, 0xFF)), ("uint64 max", Raw(0x92, 1, 0xCF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)), ("int64 min", Raw(0x92, 1, 0xD3, 0x80, 0, 0, 0, 0, 0, 0, 0)), ("big int64", Raw(0x91, 0xD3, 0, 0, 0, 1, 0, 0, 0, 0)),
+      ("floats", Raw(0x93, 0xCA, 0x40, 0x20, 0, 0, 0xCA, 0x7F, 0xC0, 0, 0, 0xCA, 0x80, 0, 0, 0)), ("doubles", Raw(0x93, 0xCB, 0x40, 0x04, 0, 0, 0, 0, 0, 0, 0xCB, 0x7F, 0xF8, 0, 0, 0, 0, 0, 0, 0xCA, 0x40, 0x20, 0, 0)), ("fraction", Raw(0x92, 1, 0xCB, 0x40, 0x04, 0, 0, 0, 0, 0, 0)),
+      ("ints then text", Raw(0x93, 1, 2, "x")), ("ints then true", Raw(0x93, 1, 2, 0xC3)), ("ints then array", Raw(0x93, 1, 2, 0x91, 3)), ("nils", Raw(0x93, 0xC0, 1, 0xC0)),
+      ("cut uint16", Raw(0x92, 1, 0xCD, 0)), ("cut uint32", Raw(0x93, 1, 2, 0xCE, 0, 0, 0)), ("cut int64", Raw(0x92, 1, 0xD3, 0, 0, 0)), ("cut float", Raw(0x92, 0xCA, 0x40, 0x20, 0, 0, 0xCA, 0x40)), ("cut double", Raw(0x92, 0xCB, 0x40, 0x04, 0, 0, 0, 0, 0, 0, 0xCB, 0x40, 0x04)), ("cut format", Raw(0x93, 1, 2)), ("too many", Raw(0xDC, 0x10, 0, 1, 2)),
+      ("timestamps", Raw(0x93, 0xD6, 0xFF, 0x60, 0, 0, 0, 0xD7, 0xFF, 0x77, 0x35, 0x94, 0, 0x60, 0, 0, 0, 0xC7, 12, 0xFF, 0, 0, 0, 100, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE)), ("timestamp max nanos", Raw(0x91, 0xD7, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)), ("cut timestamp32", Raw(0x91, 0xD6, 0xFF, 0x60, 0)), ("cut timestamp64", Raw(0x91, 0xD7, 0xFF, 0x60, 0, 0, 0)), ("cut timestamp header", Raw(0x91, 0xD7)), ("timestamp96 far", Raw(0x91, 0xC7, 12, 0xFF, 0, 0, 0, 0, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)), ("ext8 timestamp 4", Raw(0x91, 0xC7, 4, 0xFF, 0x60, 0, 0, 0)),
     };
     foreach (var (name, body) in bodies) {
       byte[] data = new byte[prefix.Length + body.Length]; prefix.CopyTo(data, 0); body.CopyTo(data, prefix.Length);
-      foreach (Type t in new[] { typeof(Dictionary<string, int>), typeof(Dictionary<int, int>), typeof(Dictionary<string, object>), typeof(Dictionary<object, object>), typeof(Dictionary<string, int?>), typeof(HashSet<int>), typeof(HashSet<string>), typeof(IList<int>), typeof(IEnumerable<int>), typeof(ISet<int>), typeof(IDictionary<string, int>), typeof(IReadOnlyDictionary<string, int>), typeof(IEnumerable<KeyValuePair<string, int>>) }) {
+      foreach (Type t in new[] { typeof(Dictionary<string, int>), typeof(Dictionary<int, int>), typeof(Dictionary<string, object>), typeof(Dictionary<object, object>), typeof(Dictionary<string, int?>), typeof(HashSet<int>), typeof(HashSet<string>), typeof(IList<int>), typeof(IEnumerable<int>), typeof(ISet<int>), typeof(IDictionary<string, int>), typeof(IReadOnlyDictionary<string, int>), typeof(IEnumerable<KeyValuePair<string, int>>),
+        typeof(int[]), typeof(long[]), typeof(float[]), typeof(double[]), typeof(List<int>), typeof(List<long>), typeof(List<float>), typeof(List<double>), typeof(DateTime[]), typeof(short[]), typeof(ulong[]), typeof(EqNumbers) }) {
         sb.AppendLine($"odd {name} {t.Name} {string.Join(",", t.GenericTypeArguments.Select(x => x.Name))}: " + Run(() => Dump(s.Deserialize(t, data))));
         if (t == typeof(Dictionary<string, int>) || t == typeof(IList<int>)) sb.AppendLine("  report: " + Run(() => { object r = s.Deserialize(t, data, out LsMsgPack.ReadDifferences d); return Dump(r) + " | " + (d?.GenerateReport() ?? "none").Replace("\r", "").Replace("\n", " "); }));
       }
@@ -132,7 +157,10 @@ public static class P {
   {
     string after = System.Environment.GetEnvironmentVariable("LT_COMPILE_AFTER");
     if (after != null)
+      {
       typeof(LtMsgPack.LtMsgPackOptions).GetField("Default_CompileWritersAfter")?.SetValue(null, int.Parse(after));
+      typeof(LtMsgPack.LtMsgPackOptions).GetField("Default_CompileReadersAfter")?.SetValue(null, int.Parse(after)); // the compiled readers too
+    }
   }
   public static void Main() {
     CompileAfterFromEnvironment();

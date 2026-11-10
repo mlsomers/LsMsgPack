@@ -396,7 +396,43 @@ namespace LsMsgPackUnitTests
       values.Add(new System.Numerics.Vector3(1, 2, 3));
       values.Add(new object[] { System.Numerics.Vector2.One, new System.Numerics.Vector4(1, 2, 3, 4), new System.Numerics.Plane(1, 0, 0, 2), System.Numerics.Matrix3x2.CreateRotation(1) });
       values.Add(new XlNoMembersHolder { Inner = new XlNoMembers { Unattributed = 3 }, After = 2 }); // an object without serialized members (an empty map, no schema entry)
+
+      // Arrays and lists of numbers (LtMsgPack writes and reads int, long, float and double in bulk) and dates: every format and its boundaries, more values than one block
+      int[] bulkInts = { 0, 1, 31, 32, 127, 128, 255, 256, 32767, 32768, 65535, 65536, int.MaxValue, -1, -31, -32, -33, -128, -129, -32768, -32769, int.MinValue };
+      long[] longs = { 0, 1, 127, 128, 255, 256, 65535, 65536, int.MaxValue, 2147483648L, uint.MaxValue, 4294967296L, long.MaxValue, -1, -32, -33, -128, -129, -32768, -32769, int.MinValue, -2147483649L, long.MinValue };
+      float[] floats = { 0f, -0.0f, 1.5f, -2.25f, float.NaN, float.PositiveInfinity, float.NegativeInfinity, float.MaxValue, float.MinValue, float.Epsilon };
+      double[] doubles = { 0, -0.0, 1.5, -2.25, double.NaN, double.PositiveInfinity, double.NegativeInfinity, double.MaxValue, double.MinValue, double.Epsilon, 0.1 };
+      DateTime[] dates = { new DateTime(2026, 3, 4, 5, 6, 7, DateTimeKind.Utc), new DateTime(2026, 3, 4, 5, 6, 7, 123, DateTimeKind.Utc).AddTicks(4567), new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        new DateTime(1969, 12, 31, 23, 59, 59, 999, DateTimeKind.Utc), new DateTime(2106, 2, 7, 6, 28, 15, DateTimeKind.Utc), new DateTime(2106, 2, 7, 6, 28, 16, DateTimeKind.Utc),
+        new DateTime(2514, 5, 30, 1, 53, 3, DateTimeKind.Utc).AddTicks(9999999), new DateTime(2514, 5, 30, 1, 53, 4, DateTimeKind.Utc), DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc),
+        new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Local), new DateTime(2026, 1, 1, 12, 0, 0, 5, DateTimeKind.Unspecified) };
+      int[] manyInts = Enumerable.Range(0, 2500).Select(x => x * 7919 - 1000000).ToArray();
+      values.Add(bulkInts); values.Add(longs); values.Add(floats); values.Add(doubles); values.Add(dates);
+      values.Add(bulkInts.ToList()); values.Add(longs.ToList()); values.Add(floats.ToList()); values.Add(doubles.ToList()); values.Add(dates.ToList());
+      values.Add(new int[0]); values.Add(new long[0]); values.Add(new float[0]); values.Add(new double[0]); values.Add(new List<int>()); values.Add(new List<double>());
+      values.Add(manyInts); values.Add(manyInts.Select(x => x * 1000003L).ToArray()); values.Add(manyInts.Select(x => x * 0.37f).ToArray()); values.Add(manyInts.Select(x => x * 0.37).ToArray());
+      values.Add(manyInts.ToList()); values.Add(manyInts.Select(x => (long)x << 20).ToList()); values.Add(manyInts.Select(x => x * 0.5f).ToList()); values.Add(manyInts.Select(x => x * 0.37).ToList());
+      values.Add(new XlNumbers());
+      values.Add(new XlNumbers { I = bulkInts, L = longs, F = floats, D = doubles, LI = bulkInts.ToList(), LL = longs.ToList(), LF = floats.ToList(), LD = doubles.ToList(), T = dates, Any = doubles, IL = bulkInts, IE = doubles.ToList() });
+      values.Add(new XlNumbers { I = new int[0], LD = new List<double>(), Any = new List<float> { 1.5f }, IL = new List<int> { 1, 2 }, IE = new[] { 0.5 } });
+      values.Add(new XlGeneric<object> { Value = new long[] { 5, long.MinValue } });
       return values;
+    }
+
+    public class XlNumbers
+    {
+      public int[] I { get; set; }
+      public long[] L { get; set; }
+      public float[] F { get; set; }
+      public double[] D { get; set; }
+      public List<int> LI { get; set; }
+      public List<long> LL { get; set; }
+      public List<float> LF { get; set; }
+      public List<double> LD { get; set; }
+      public DateTime[] T { get; set; }
+      public object Any { get; set; }
+      public IList<int> IL { get; set; }
+      public IEnumerable<double> IE { get; set; }
     }
 
     public enum SchemaMode { Names, Inline, Reference }
@@ -568,7 +604,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// LtMsgPack with the options, as it builds its plans at runtime, with writers compiled at runtime from the first object (CompileWritersAfter = 0)
+    /// LtMsgPack with the options, as it builds its plans at runtime, with writers and readers compiled at runtime from the first object (CompileWritersAfter and CompileReadersAfter = 0)
     /// and with the code of the source generator (TestMsgPackContext).
     /// </summary>
     private static IEnumerable<(string Name, LtMsgPackSerializer Serializer)> LtAndGenerated(LtMsgPackOptions options)
@@ -576,10 +612,12 @@ namespace LsMsgPackUnitTests
       LtMsgPackOptions runtime = options.Clone();
       runtime.UseRegisteredContexts = false;
       runtime.CompileWritersAfter = -1;
+      runtime.CompileReadersAfter = -1;
       yield return ("Lt", new LtMsgPackSerializer(runtime));
       LtMsgPackOptions compiled = options.Clone();
       compiled.UseRegisteredContexts = false;
       compiled.CompileWritersAfter = 0;
+      compiled.CompileReadersAfter = 0;
       yield return ("Compiled", new LtMsgPackSerializer(compiled));
       LtMsgPackOptions generated = options.Clone();
       generated.Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default };

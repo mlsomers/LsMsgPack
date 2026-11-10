@@ -5,6 +5,7 @@ using System.Buffers.Binary;
 using System.ComponentModel;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace LtMsgPack.IO
@@ -106,8 +107,8 @@ namespace LtMsgPack.IO
     {
       if (count > End - Pos)
         throw EndOfData();
-      byte[] result = new byte[count];
-      Buffer.BlockCopy(Buf, Pos, result, 0, (int)count);
+      byte[] result = MsgPackWriter.NewBytes((int)count);
+      new ReadOnlySpan<byte>(Buf, Pos, (int)count).CopyTo(result);
       Pos += (int)count;
       return result;
     }
@@ -347,6 +348,175 @@ namespace LtMsgPack.IO
       }
     }
 
+    #region Numbers in bulk
+
+    // Arrays and lists of numbers (NumberArrayReader, NumberListReader): the values in the formats of their type are read in one loop with the position in a local, instead of a call per value.
+    // Each stops at the first value that is not in those formats or not complete: the reader of the element type reads that one (nil, other formats, conversions, the errors).
+    // The data is read by reference: the end is checked against the buffer once, each value against the end.
+
+    /// <returns>The number of values read into <paramref name="target"/> (from its start)</returns>
+    internal int ReadInt32s(Span<int> target)
+    {
+      byte[] buffer = Buf;
+      int pos = Pos;
+      int end = End;
+      if (pos >= end || (uint)end > (uint)buffer.Length)
+        return 0;
+      ref byte data = ref buffer[0];
+      ref int to = ref MemoryMarshal.GetReference(target);
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      int t = 0;
+      while (t < target.Length && pos < end)
+      {
+        ref byte at = ref Unsafe.Add(ref data, pos);
+        ref byte next = ref Unsafe.Add(ref at, 1);
+        byte c = at;
+        int left = end - pos;
+        int value;
+        if (c <= 0x7F) { value = c; pos++; }
+        else if (c >= 0xE0) { value = (sbyte)c; pos++; }
+        else if (c == 0xCD && left >= 3) { value = U16(ref next, swap); pos += 3; }
+        else if (c == 0xCC && left >= 2) { value = next; pos += 2; }
+        else if (c == 0xD2 && left >= 5) { value = (int)U32(ref next, swap); pos += 5; }
+        else if (c == 0xD1 && left >= 3) { value = (short)U16(ref next, swap); pos += 3; }
+        else if (c == 0xD0 && left >= 2) { value = (sbyte)next; pos += 2; }
+        else if (c == 0xCE && left >= 5)
+        {
+          uint unsigned = U32(ref next, swap);
+          if (unsigned > int.MaxValue)
+            break; // the reader of the type reports the overflow
+          value = (int)unsigned;
+          pos += 5;
+        }
+        else
+          break;
+        Unsafe.Add(ref to, t++) = value;
+      }
+      Pos = pos;
+      return t;
+    }
+
+    /// <inheritdoc cref="ReadInt32s"/>
+    internal int ReadInt64s(Span<long> target)
+    {
+      byte[] buffer = Buf;
+      int pos = Pos;
+      int end = End;
+      if (pos >= end || (uint)end > (uint)buffer.Length)
+        return 0;
+      ref byte data = ref buffer[0];
+      ref long to = ref MemoryMarshal.GetReference(target);
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      int t = 0;
+      while (t < target.Length && pos < end)
+      {
+        ref byte at = ref Unsafe.Add(ref data, pos);
+        ref byte next = ref Unsafe.Add(ref at, 1);
+        byte c = at;
+        int left = end - pos;
+        long value;
+        if (c <= 0x7F) { value = c; pos++; }
+        else if (c >= 0xE0) { value = (sbyte)c; pos++; }
+        else if (c == 0xCE && left >= 5) { value = U32(ref next, swap); pos += 5; }
+        else if (c == 0xCD && left >= 3) { value = U16(ref next, swap); pos += 3; }
+        else if (c == 0xCC && left >= 2) { value = next; pos += 2; }
+        else if (c == 0xD3 && left >= 9) { value = (long)U64(ref next, swap); pos += 9; }
+        else if (c == 0xD2 && left >= 5) { value = (int)U32(ref next, swap); pos += 5; }
+        else if (c == 0xD1 && left >= 3) { value = (short)U16(ref next, swap); pos += 3; }
+        else if (c == 0xD0 && left >= 2) { value = (sbyte)next; pos += 2; }
+        else if (c == 0xCF && left >= 9)
+        {
+          ulong unsigned = U64(ref next, swap);
+          if (unsigned > long.MaxValue)
+            break; // the reader of the type converts or refuses it
+          value = (long)unsigned;
+          pos += 9;
+        }
+        else
+          break;
+        Unsafe.Add(ref to, t++) = value;
+      }
+      Pos = pos;
+      return t;
+    }
+
+    /// <inheritdoc cref="ReadInt32s"/>
+    internal int ReadSingles(Span<float> target)
+    {
+      byte[] buffer = Buf;
+      int pos = Pos;
+      int end = End;
+      if (pos >= end || (uint)end > (uint)buffer.Length)
+        return 0;
+      ref byte data = ref buffer[0];
+      ref uint to = ref Unsafe.As<float, uint>(ref MemoryMarshal.GetReference(target)); // the bits as they are
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      int t = 0;
+      while (t < target.Length && end - pos >= 5 && Unsafe.Add(ref data, pos) == 0xCA)
+      {
+        Unsafe.Add(ref to, t++) = U32(ref Unsafe.Add(ref data, pos + 1), swap);
+        pos += 5;
+      }
+      Pos = pos;
+      return t;
+    }
+
+    /// <inheritdoc cref="ReadInt32s"/>
+    internal int ReadDoubles(Span<double> target)
+    {
+      byte[] buffer = Buf;
+      int pos = Pos;
+      int end = End;
+      if (pos >= end || (uint)end > (uint)buffer.Length)
+        return 0;
+      ref byte data = ref buffer[0];
+      ref double to = ref MemoryMarshal.GetReference(target);
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      int t = 0;
+      while (t < target.Length && pos < end)
+      {
+        ref byte at = ref Unsafe.Add(ref data, pos);
+        int left = end - pos;
+        if (at == 0xCB && left >= 9)
+        {
+          Unsafe.As<double, ulong>(ref Unsafe.Add(ref to, t++)) = U64(ref Unsafe.Add(ref at, 1), swap);
+          pos += 9;
+        }
+        else if (at == 0xCA && left >= 5) // a float, as TryReadDouble takes it
+        {
+          Unsafe.Add(ref to, t++) = new SingleBits(U32(ref Unsafe.Add(ref at, 1), swap)).Value;
+          pos += 5;
+        }
+        else
+          break;
+      }
+      Pos = pos;
+      return t;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ushort U16(ref byte source, bool swap)
+    {
+      ushort value = Unsafe.ReadUnaligned<ushort>(ref source);
+      return swap ? BinaryPrimitives.ReverseEndianness(value) : value;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint U32(ref byte source, bool swap)
+    {
+      uint value = Unsafe.ReadUnaligned<uint>(ref source);
+      return swap ? BinaryPrimitives.ReverseEndianness(value) : value;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong U64(ref byte source, bool swap)
+    {
+      ulong value = Unsafe.ReadUnaligned<ulong>(ref source);
+      return swap ? BinaryPrimitives.ReverseEndianness(value) : value;
+    }
+
+    #endregion
+
     public bool TryReadString(out string value)
     {
       int length = TryReadStringHeader();
@@ -495,6 +665,7 @@ namespace LtMsgPack.IO
     }
 
     private static readonly DateTime Zero = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
+    private const long ZeroTicks = 621355968000000000; // of Zero
 
     /// <summary>
     /// A timestamp (extension type -1), returned with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (UTC by default) like MpDateTime.Value.
@@ -515,7 +686,29 @@ namespace LtMsgPack.IO
     /// </summary>
     internal bool TryReadTimestamp(out DateTime value)
     {
-      if (End - Pos >= 2 && Buf[Pos + 1] == 0xFF) // the 32 and 64 bit formats, without the general extension header
+      int pos = Pos;
+      byte[] buffer = Buf;
+      int left = End - pos;
+      if (left >= 6 && buffer[pos + 1] == 0xFF) // the 32 and 64 bit formats complete: in ticks (see ReadTimestamp), without a call per part
+      {
+        byte code = buffer[pos];
+        if (code == 0xD7 && left >= 10)
+        {
+          ulong bits = U64(new ReadOnlySpan<byte>(buffer, pos + 2, 8));
+          Pos = pos + 10;
+          value = new DateTime(ZeroTicks + (long)(bits & 0x3FFFFFFFF) * TimeSpan.TicksPerSecond + (long)(bits >> 34) / 100, DateTimeKind.Utc);
+          return true;
+        }
+        if (code == 0xD6)
+        {
+          uint seconds = U32(new ReadOnlySpan<byte>(buffer, pos + 2, 4));
+          Pos = pos + 6;
+          value = new DateTime(ZeroTicks + seconds * TimeSpan.TicksPerSecond, DateTimeKind.Utc);
+          return true;
+        }
+      }
+
+      if (End - Pos >= 2 && Buf[Pos + 1] == 0xFF) // the 32 and 64 bit formats, without the general extension header (data that ends early: the same error)
       {
         byte c = Buf[Pos];
         if (c == 0xD6) { Pos += 2; value = ReadTimestamp(MsgPackTypeId.MpFExt4, 4); return true; }
@@ -538,13 +731,14 @@ namespace LtMsgPack.IO
     /// </summary>
     private DateTime ReadTimestamp(MsgPackTypeId format, int length)
     {
+      // The formats of 32 and 64 bits in ticks: always in the range of DateTime (up to the years 2106 and 2514), the same value as AddSeconds gives, which calculates with a double
       if (format == MsgPackTypeId.MpFExt4)
-        return Zero.AddSeconds(U32());
+        return new DateTime(ZeroTicks + U32() * TimeSpan.TicksPerSecond, DateTimeKind.Utc);
 
       if (format == MsgPackTypeId.MpFExt8)
       {
         ulong bits = U64();
-        return Zero.AddSeconds(bits & 0x3FFFFFFFF).Add(new TimeSpan((long)(bits >> 34) / 100));
+        return new DateTime(ZeroTicks + (long)(bits & 0x3FFFFFFFF) * TimeSpan.TicksPerSecond + (long)(bits >> 34) / 100, DateTimeKind.Utc);
       }
 
       if (format == MsgPackTypeId.MpExt8 && length == 12)

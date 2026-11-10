@@ -237,6 +237,9 @@ namespace LtMsgPack
         case TypeKind.Enum:
           return Instantiate(type, typeof(EnumHandler<>), type, null);
         case TypeKind.Array:
+          object numbers = NumberHandler(type);
+          if (numbers != null)
+            return numbers;
           if (IsVector(type))
             return Instantiate(type, typeof(ArrayHandler<>), type.GetElementType(), this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
@@ -272,6 +275,22 @@ namespace LtMsgPack
     /// <summary>
     /// A one-dimensional array with a lower bound of zero (T[]), not a T[*] (one dimension, any lower bound: what a multidimensional array of rank 1 is).
     /// </summary>
+    /// <returns>The handler of an array or list of int, long, float or double, which writes the values in bulk (see <see cref="Numbers"/>: these types are written the same with any options); null for other types</returns>
+    private object NumberHandler(Type type)
+    {
+      if (type == typeof(int[])) return new NumberArrayHandler<int>(this);
+      if (type == typeof(long[])) return new NumberArrayHandler<long>(this);
+      if (type == typeof(float[])) return new NumberArrayHandler<float>(this);
+      if (type == typeof(double[])) return new NumberArrayHandler<double>(this);
+#if NET8_0_OR_GREATER
+      if (type == typeof(List<int>)) return new NumberListHandler<int>(this);
+      if (type == typeof(List<long>)) return new NumberListHandler<long>(this);
+      if (type == typeof(List<float>)) return new NumberListHandler<float>(this);
+      if (type == typeof(List<double>)) return new NumberListHandler<double>(this);
+#endif
+      return null;
+    }
+
     internal static bool IsVector(Type type)
     {
       return type.IsArray && type.GetArrayRank() == 1 && !type.Name.EndsWith("[*]", StringComparison.Ordinal);

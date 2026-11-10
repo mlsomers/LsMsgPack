@@ -62,7 +62,7 @@ namespace LtMsgPack.Http
 
     public byte[] ToArray()
     {
-      byte[] all = new byte[Length];
+      byte[] all = IO.MsgPackWriter.NewBytes(Length); // filled below
       int schemaLength = Schema.Array is null ? 0 : Schema.Count;
       if (schemaLength > 0)
         Buffer.BlockCopy(Schema.Array, Schema.Offset, all, 0, schemaLength);

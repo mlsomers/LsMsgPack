@@ -12,7 +12,7 @@ namespace LsMsgPack
     public MpDateTime(MpExt ext) : base(ext.Settings) // not base(), that creates default settings that CopyBaseDataFrom replaces
     {
       CopyBaseDataFrom(ext);
-      value = ConvertExt(Settings, ext).ToUniversalTime();
+      value = ConvertExtUtc(Settings, ext);
     }
 
     private DateTime value; // UTC
@@ -47,7 +47,7 @@ namespace LsMsgPack
     public override MsgPackItem Read(MsgPackTypeId typeId, Stream data)
     {
       base.Read(typeId, data);
-      value = ConvertExt(Settings, this).ToUniversalTime();
+      value = ConvertExtUtc(Settings, this);
       return this;
     }
 
@@ -79,7 +79,19 @@ namespace LsMsgPack
         $"DateTime ({GetOfficialTypeName(TypeId)}) extension type {TypeSpecifier} with the value {value.ToLongDateString()}";
     }
 
+    /// <summary>
+    /// The moment of a timestamp as local time (see <see cref="ConvertExtUtc"/> for the moment itself: local time is clamped at the first and last hours of the range of DateTime).
+    /// </summary>
     public static DateTime ConvertExt(MsgPackSettings settings, MpExt ext)
+    {
+      return ConvertExtUtc(settings, ext).ToLocalTime();
+    }
+
+    /// <summary>
+    /// The moment of a timestamp in UTC. Not by way of local time and back: within an offset of the ends of DateTime's range local time is clamped (east of Greenwich DateTime.MaxValue in UTC
+    /// would not be read at all, adding its nanoseconds to the clamped value, and the last hour of year 9999 would come back an offset earlier; west of it the first hours of year 1 an offset later).
+    /// </summary>
+    internal static DateTime ConvertExtUtc(MsgPackSettings settings, MpExt ext)
     {
       if (ext.TypeSpecifier != -1)
 #if KEEPTRACK
@@ -93,7 +105,7 @@ namespace LsMsgPack
       {
         case MsgPackTypeId.MpFExt4:
           uint seconds = BitConverter.ToUInt32(SwapIfLittleEndian(settings, (byte[])ext.Value), 0);
-          return EpochToLocalDateTime(seconds);
+          return Zero.AddSeconds(seconds);
 
         case MsgPackTypeId.MpFExt8:
           // One big-endian 64 bit value: 30 bits nanoseconds followed by 34 bits seconds
@@ -111,15 +123,14 @@ namespace LsMsgPack
             ticks = (long)nanoSecc / 100;
           }
 
-          DateTime ret = Zero.AddSeconds(sec).Add(new TimeSpan(ticks));
-          return ret.ToLocalTime();
+          return Zero.AddSeconds(sec).Add(new TimeSpan(ticks));
         case MsgPackTypeId.MpExt8:
           byte[] vall = (byte[])ext.Value;
           uint nanoSec = BitConverter.ToUInt32(SwapIfLittleEndian(settings, vall, 0, 4), 0);
           long sc = BitConverter.ToInt64(SwapIfLittleEndian(settings, vall, 4, 8), 0);
           long tick = nanoSec / 100;
           TimeSpan subSec = TimeSpan.FromTicks(tick);
-          return EpochToLocalDateTime(sc) + subSec; // the nanoseconds are added, also before 1970 (the seconds are rounded down, see DateTimeToEpoch)
+          return Zero.AddSeconds(sc) + subSec; // the nanoseconds are added, also before 1970 (the seconds are rounded down, see DateTimeToEpoch)
       }
 
 #if KEEPTRACK

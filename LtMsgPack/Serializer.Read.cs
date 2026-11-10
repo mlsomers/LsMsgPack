@@ -100,9 +100,16 @@ namespace LtMsgPack
 
     internal bool CustomTypeResolvers { get { return _customTypeResolvers; } }
 
+    /// <summary>
+    /// The read plans compile their readers after this many objects (<see cref="LtMsgPackOptions.CompileReadersAfter"/>), -1 when they do not:
+    /// no compiled code (CompiledWriter.Supported), or the plans do not read the objects (<see cref="SlowObjects"/>).
+    /// </summary>
+    internal int CompileReadersAfter;
+
     private void InitReading()
     {
       SlowObjects = CustomPropertyIds || _customTypeResolvers;
+      CompileReadersAfter = Options._compileReadersAfter >= 0 && CompiledWriter.Supported && !SlowObjects ? Options._compileReadersAfter : -1;
       _inlineStore = new SchemaStore();
     }
 
@@ -164,6 +171,9 @@ namespace LtMsgPack
         case TypeKind.Enum:
           return (ValueReader)Instantiate(type, typeof(EnumReader<>), type, null);
         case TypeKind.Array:
+          ValueReader numbers = NumberReader(type);
+          if (numbers != null)
+            return numbers;
           if (IsVector(type))
             return (ValueReader)Instantiate(type, typeof(ArrayReader<>), type.GetElementType(), this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
@@ -197,6 +207,22 @@ namespace LtMsgPack
           break;
       }
       return (ValueReader)Instantiate(type, typeof(BoxedReader<>), type, null);
+    }
+
+    /// <returns>The reader of an array or list of int, long, float or double, which reads the values in bulk (see <see cref="Numbers"/>); null for other types</returns>
+    private ValueReader NumberReader(Type type)
+    {
+      if (type == typeof(int[])) return new NumberArrayReader<int>(Reader<int>());
+      if (type == typeof(long[])) return new NumberArrayReader<long>(Reader<long>());
+      if (type == typeof(float[])) return new NumberArrayReader<float>(Reader<float>());
+      if (type == typeof(double[])) return new NumberArrayReader<double>(Reader<double>());
+#if NET8_0_OR_GREATER
+      if (type == typeof(List<int>)) return new NumberListReader<int>(Reader<int>());
+      if (type == typeof(List<long>)) return new NumberListReader<long>(Reader<long>());
+      if (type == typeof(List<float>)) return new NumberListReader<float>(Reader<float>());
+      if (type == typeof(List<double>)) return new NumberListReader<double>(Reader<double>());
+#endif
+      return null;
     }
 
     /// <returns>The reader of a generic interface of a collection (IList&lt;T&gt;, IEnumerable&lt;T&gt;, IDictionary&lt;TKey, TValue&gt;...) whose concrete type has a typed reader (see <see cref="CollectionInterfaceReader{T}"/>), otherwise null</returns>

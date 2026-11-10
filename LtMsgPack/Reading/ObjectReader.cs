@@ -246,6 +246,7 @@ namespace LtMsgPack.Reading
         c.Depth = depth;
         return result;
       }
+      plan.CountByRef();
       int next = 0; // names are usually written in the order of the properties
       for (int t = 0; t < count; t++)
       {
@@ -286,6 +287,7 @@ namespace LtMsgPack.Reading
         Unsafe.As<GeneratedStructCode<T>>(plan.Code).ReadPositional(c, ref result, props, items, plan.GeneratedRead);
       else
       {
+        plan.CountByRef();
         for (int t = 0; t < items; t++)
         {
           if (t >= props.Length || props[t] is null)
@@ -543,18 +545,28 @@ namespace LtMsgPack.Reading
     /// <summary>
     /// The reader of the source generator (see LtMsgPackContext), null when there is none: the <see cref="Props"/> with a <see cref="PropReader.GeneratedId"/> are read by it.
     /// </summary>
-    internal readonly GeneratedObjectCode Code;
-    internal readonly GeneratedReadPlan GeneratedRead;
+    /// <remarks>Or a reader compiled at runtime (CompiledReader, see <see cref="Compile"/>), set once after some objects: before <see cref="Positional"/> and <see cref="Map"/>,
+    /// which are volatile so a thread that sees them set also sees the code.</remarks>
+    internal GeneratedObjectCode Code;
+    internal GeneratedReadPlan GeneratedRead;
 
     /// <summary>
-    /// Arrays are read by the generated <see cref="GeneratedObjectCode{T}.ReadPositional"/>.
+    /// Arrays are read by the generated (or compiled) <see cref="GeneratedObjectCode{T}.ReadPositional"/>.
     /// </summary>
-    internal readonly bool Positional;
+    internal volatile bool Positional;
 
     /// <summary>
-    /// Maps are read by the generated <see cref="GeneratedObjectCode{T}.ReadMap"/>.
+    /// Maps are read by the generated (or compiled) <see cref="GeneratedObjectCode{T}.ReadMap"/>.
     /// </summary>
-    internal readonly bool Map;
+    internal volatile bool Map;
+
+    /// <summary>
+    /// The objects still to read before the reader is compiled (<see cref="Serializer.CompileReadersAfter"/>), 0 when it is not (any more). Not exact with several threads, which is all right
+    /// (two threads reaching 0 at once both compile, the last reader is kept).
+    /// </summary>
+    private int _untilCompiled;
+    private readonly Serializer _serializer;
+    private readonly FullPropertyInfo[] _infos;
 
     /// <summary>
     /// A struct created as its default (StructCreator) whose properties are all set by reference (<see cref="RefPropReader{T}"/>):
@@ -579,6 +591,8 @@ namespace LtMsgPack.Reading
     internal ReadPlan(Serializer serializer, Type type, FullPropertyInfo[] infos, Func<object> generated)
     {
       Type = type;
+      _serializer = serializer;
+      _infos = infos;
       _caseInsensitive = serializer.Options._propertyNameCaseInsensitive;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
       Props = new PropReader[infos.Length];
@@ -629,11 +643,66 @@ namespace LtMsgPack.Reading
           byRef &= Props[t].ByRef; // a struct declares all its properties: each is a RefPropReader of this type
         ByRef = byRef;
       }
+
+      for (int t = Props.Length - 1; t >= 0; t--)
+        Props[t].CompiledId = t;
+      if (Code is null && serializer.CompileReadersAfter >= 0) // not with generated code: it is used
+      {
+        if (serializer.CompileReadersAfter == 0)
+          Compile();
+        else
+          _untilCompiled = serializer.CompileReadersAfter;
+      }
     }
 
     internal object Create()
     {
+      if (_untilCompiled > 0)
+        CountRead();
       return _create();
+    }
+
+    /// <summary>
+    /// Counts a struct read by reference by the runtime's readers (the others are counted when they are created, <see cref="Create"/>).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void CountByRef()
+    {
+      if (_untilCompiled > 0)
+        CountRead();
+    }
+
+    /// <summary>
+    /// Counts an object read by the runtime's readers, and compiles the reader of the plan after <see cref="Serializer.CompileReadersAfter"/> of them, on the thread pool
+    /// (as the writers, see ObjectPlan.CompileInBackground): the runtime's readers read until it is set.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void CountRead()
+    {
+      if (--_untilCompiled == 0)
+        ThreadPool.UnsafeQueueUserWorkItem(plan => ((ReadPlan)plan).Compile(), this); // no ExecutionContext: nothing of the caller's (AsyncLocal values) is needed or kept
+    }
+
+    /// <summary>
+    /// Compiles the reader of this plan (CompiledReader) and sets it; stays with the runtime's readers when it cannot. Two threads may both compile, the last one is kept.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void Compile()
+    {
+      _untilCompiled = 0;
+      try
+      {
+        GeneratedObjectCode code = CompiledReader.Create(_serializer, Type, _infos, Props);
+        if (code is null)
+          return;
+        GeneratedRead = _serializer.GeneratedReadPlan;
+        Code = code;
+        Positional = true; // volatile: after the code
+        Map = _serializer.Options._useInexedSchema; // maps keyed by names stay with the runtime's loop (see CompiledReader)
+      }
+      catch (Exception) // a type or runtime the expressions do not handle: the runtime's readers read it, as before (CompiledReaderTests check that the readers are used)
+      {
+      }
     }
 
     internal PropReader FindByName(byte[] buffer, int offset, int length, ref int next)
@@ -911,6 +980,12 @@ namespace LtMsgPack.Reading
     /// The member of the generated reader of the type (<see cref="GeneratedObjectCode{T}.ReadValue"/>), -1 when the runtime reads it.
     /// </summary>
     public int GeneratedId { get; internal set; } = -1;
+
+    /// <summary>
+    /// The position of the property in its plan (<see cref="ReadPlan.Props"/>): the member of a reader compiled at runtime (CompiledReader). Apart from <see cref="GeneratedId"/>,
+    /// which says that the plan's <see cref="ReadPlan.Code"/> reads the value by a call (ObjectReader's loops), and is set with the plan.
+    /// </summary>
+    internal int CompiledId;
 
     internal PropReader(FullPropertyInfo info)
     {

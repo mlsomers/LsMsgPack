@@ -63,6 +63,13 @@ namespace LtMsgPack.Http
     public int CompileWritersAfter { get; set; } = 0;
 
     /// <summary>
+    /// When the readers of a type are compiled (<see cref="LtMsgPackOptions.CompileReadersAfter"/>, replaces the value of <see cref="XLsMsgPack"/> and <see cref="Plain"/>), default 0: when a type is first read.
+    /// <para>As for the writers: the compiled reader is used from the first request body on (the type's first request waits for it), and the JIT optimizes the serializer's object loops
+    /// with the compiled readers in place.</para>
+    /// </summary>
+    public int CompileReadersAfter { get; set; } = 0;
+
+    /// <summary>
     /// Collect what did not match between a body and the classes it is read into (<see cref="ReadDifferences"/>: unknown properties, classes without a schema entry, type ids that are not found...). Default false.
     /// <para>ASP.NET Core: in <c>HttpContext.Features</c> (<c>HttpContext.GetReadDifferences()</c>) and logged (see <see cref="LogDifferencesAsWarning"/>). Web API and HttpClient: <c>HttpContent.GetReadDifferences()</c> (also <c>request.GetReadDifferences()</c>).
     /// MVC 5: <c>HttpContextBase.GetReadDifferences()</c>. Reading with it is a bit slower (see docs/ReadDifferences.md), the report itself is only made when it is asked for.</para>

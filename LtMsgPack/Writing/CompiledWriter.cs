@@ -256,7 +256,7 @@ namespace LtMsgPack.Writing
     /// <summary>
     /// The kind the generated code would have for the type, when these options write it that way (Serializer.Fits).
     /// </summary>
-    private static GeneratedKind KindOf(Serializer serializer, Type type)
+    internal static GeneratedKind KindOf(Serializer serializer, Type type)
     {
       WriteTypeInfo info = serializer.GetTypeInfo(type);
       switch (info.Kind)

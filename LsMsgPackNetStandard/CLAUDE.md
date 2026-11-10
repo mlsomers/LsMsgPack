@@ -15,6 +15,7 @@ Assembly and package `LsMsgPack`, on top of `LsMsgPack.Core` (read `../LsMsgPack
 
 - **Leaf items write themselves** through `WriteTo` only when `GetType() == typeof(ThatType)`, because a subclass (e.g. a user's custom extension) may override `ToBytes`, which must still be used. `ToBytes` and `WriteTo` share one private writer per type, so they cannot drift apart.
 - The parameterless `MsgPackItem()` constructor allocates a new `MsgPackSettings` (50-70 ns). Use the constructors taking the settings in hot paths (see `AbstractCustomExt.CreateNew`).
+- `MpDateTime` keeps the moment in UTC and reads it as such (`ConvertExtUtc`), never by way of local time and back: local time is clamped within an offset of the ends of DateTime's range (east of Greenwich `DateTime.MaxValue` in UTC would not be read, and the last hour of year 9999 would come back an offset early). The public `ConvertExt` returns local time, clamped there. `LtValueFormatTests.Timestamps_AsLsMsgPackWritesAndReadsThem` compares both serializers on 20,000 moments.
 - Duplicate map keys: the first one wins (LtMsgPack: the last); properties are set last to first (LtMsgPack: in the order of the data).
 - `MsgPackValidation` validates single items (timestamps, big integers, decimals, reserved extension types); validation beyond single items is `ObjectDebugger`'s `PayloadValidation`.
 

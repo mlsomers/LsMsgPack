@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace LtMsgPack.Writing
 {
@@ -663,6 +664,116 @@ namespace LtMsgPack.Writing
       return value != null;
     }
   }
+
+  /// <summary>
+  /// The numbers that arrays and lists are written in bulk (<see cref="NumberArrayHandler{T}"/>, <see cref="NumberListHandler{T}"/>; reading: NumberArrayReader, NumberListReader):
+  /// int, long, float and double.
+  /// </summary>
+  internal static class Numbers
+  {
+    /// <summary>
+    /// The same bytes as the handler of <typeparamref name="T"/> writes per value (Int32Handler, Int64Handler, SingleHandler, DoubleHandler).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void Write<T>(MsgPackWriter w, ReadOnlySpan<T> values) where T : struct
+    {
+      if (typeof(T) == typeof(int)) w.Int32s(MemoryMarshal.Cast<T, int>(values)); // the JIT keeps the one of T
+      else if (typeof(T) == typeof(long)) w.Int64s(MemoryMarshal.Cast<T, long>(values));
+      else if (typeof(T) == typeof(float)) w.Singles(MemoryMarshal.Cast<T, float>(values));
+      else w.Doubles(MemoryMarshal.Cast<T, double>(values));
+    }
+
+    /// <summary>
+    /// The values in the formats the reader of <typeparamref name="T"/> reads without converting.
+    /// </summary>
+    /// <returns>The number of values read (see <see cref="MsgPackReader.ReadInt32s"/>)</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static int Read<T>(MsgPackReader r, Span<T> target) where T : struct
+    {
+      if (typeof(T) == typeof(int)) return r.ReadInt32s(MemoryMarshal.Cast<T, int>(target));
+      if (typeof(T) == typeof(long)) return r.ReadInt64s(MemoryMarshal.Cast<T, long>(target));
+      if (typeof(T) == typeof(float)) return r.ReadSingles(MemoryMarshal.Cast<T, float>(target));
+      return r.ReadDoubles(MemoryMarshal.Cast<T, double>(target));
+    }
+  }
+
+  /// <summary>
+  /// int[], long[], float[] and double[] (see <see cref="Numbers"/>; when the options write the element type as such): the same bytes as <see cref="ArrayHandler{TItem}"/>,
+  /// written in bulk (1000 values: int 5.3 -> 2.2 us, long 6.1 -> 3.3 us, float 2.5 -> 1.2 us, double 2.8 -> 1.4 us, mostly the copy of the payload).
+  /// </summary>
+  internal sealed class NumberArrayHandler<T> : ValueHandler<T[]>, ITypedElements where T : struct
+  {
+    private readonly Serializer _serializer;
+
+    internal NumberArrayHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, T[] value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(T[])) // e.g. a uint[] as an int[]
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      c.EnterContainer();
+      c.W.ArrayHeader(value.Length);
+      Numbers.Write(c.W, new ReadOnlySpan<T>(value));
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<T[]>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(T[] value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+
+#if NET8_0_OR_GREATER
+  /// <summary>
+  /// List&lt;T&gt; of int, long, float or double (not a derived type), as <see cref="NumberArrayHandler{T}"/>.
+  /// </summary>
+  internal sealed class NumberListHandler<T> : ValueHandler<List<T>>, ITypedElements where T : struct
+  {
+    private readonly Serializer _serializer;
+
+    internal NumberListHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, List<T> value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(List<T>))
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      c.EnterContainer();
+      ReadOnlySpan<T> items = CollectionsMarshal.AsSpan(value);
+      c.W.ArrayHeader(items.Length);
+      Numbers.Write(c.W, items);
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<List<T>>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(List<T> value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+#endif
 
   /// <summary>
   /// HashSet&lt;T&gt; (not a derived class) as an array, in the order it enumerates.

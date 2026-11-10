@@ -4,7 +4,7 @@ LtMsgPack builds a plan per class the first time it meets the class: typed prope
 
 - **NativeAOT, WebAssembly AOT (Blazor), iOS:** code that can't be generated at runtime. Without the generator, LtMsgPack fails under NativeAOT on the first object. With it, the generated code runs compiled where the runtime plans would be interpreted.
 - **Trimming:** the generated code refers to your classes and their properties, so the trimmer keeps them (.NET 5 and later). A serializer created with the context has no trim or AOT warnings (see [Trimming and NativeAOT](#trimming-and-nativeaot)).
-- **Speed:** reading is about 1.2x as fast with a JIT. Writing gains on the first objects of each type: with a JIT, LtMsgPack compiles the same writers at runtime once a type has been written 1000 times (`LtMsgPackOptions.CompileWritersAfter`; 0 compiles at the first object, -1 never), after which both write equally fast. Under WebAssembly AOT writing is 7-8x and reading about 3x as fast (measurements below).
+- **Speed:** with a JIT, LtMsgPack compiles the same writers and readers at runtime once a type has been written or read 1000 times (`LtMsgPackOptions.CompileWritersAfter`, `CompileReadersAfter`; 0 compiles at the first object, -1 never), after which both are about as fast. So the generated code gains on the first objects of each type, and reads maps keyed by property names about 1.3x as fast (those readers aren't compiled at runtime). Under WebAssembly AOT writing is 7-8x and reading about 3x as fast (measurements below).
 
 The data doesn't change: the generated code writes the same bytes and reads the same values as LtMsgPack does without it, with the same options. Anything it doesn't cover is done by the runtime as before, so you can switch it on and off without touching stored data or peers.
 
@@ -105,7 +105,7 @@ The context of the constructor is asked first, then the options' contexts, then 
 For each class and struct:
 
 1. **Accessors and creators:** a typed getter and setter per property, `new T()` for an accessible parameterless constructor, and the generic handlers and readers of each type (enums, nullables, lists, arrays, objects) created without `MakeGenericType`. The runtime uses them wherever it would have used reflection, with every option.
-2. **Writers and readers per class and struct:** the loop over the properties, with the values of simple types written and read inline: strings, numbers, `bool`, `char`, enums, `Guid`, `DateTime`, `TimeSpan`, `decimal`, and nullables of those. When the runtime's property order is the one the generator predicted (the default `PropertyOrder.Reflection`), objects are written by straight-line code, in the array and in the map layout (also with `TrimTrailingNulls`). `Guid`s and `decimal`s are written and read in the format of the options (`GuidFormat.String` and `DecimalFormat.String` too, as the `Generic()` preset sets them). Otherwise a loop maps each property position to its generated member, so every `PropertyOrder` works; where the runtime compiles code (not NativeAOT or WebAssembly) it replaces that loop by a writer compiled for the order after `CompileWritersAfter` objects of the class.
+2. **Writers and readers per class and struct:** the loop over the properties, with the values of simple types written and read inline: strings, numbers, `bool`, `char`, enums, `Guid`, `DateTime`, `TimeSpan`, `decimal`, and nullables of those. When the runtime's property order is the one the generator predicted (the default `PropertyOrder.Reflection`), objects are written by straight-line code, in the array and in the map layout (also with `TrimTrailingNulls`). `Guid`s and `decimal`s are written and read in the format of the options (`GuidFormat.String` and `DecimalFormat.String` too, as the `Generic()` preset sets them). Otherwise a loop maps each property position to its generated member, so every `PropertyOrder` works; where the runtime compiles code (not NativeAOT or WebAssembly) it replaces that loop by a writer compiled for the order after `CompileWritersAfter` objects of the class. Where the runtime compiles code it also compiles readers for classes without generated code, after `CompileReadersAfter` objects of a class: the same code as the generated readers, for arrays and for maps with the indexed schema (maps keyed by property names keep the runtime's loop).
 
 The runtime checks once per class and serializer whether the generated code fits the options. Where it doesn't, the runtime does that part itself, as it does without the generator:
 
@@ -171,16 +171,16 @@ The invoice model of the benchmarks (100 invoices × 20 rounds), one machine: on
 
 | .NET 10, JIT | write | read |
 |---|---|---|
-| LtMsgPack, default options (indexed schema, arrays) | 3.53 ms (4.6x) | 6.01 ms (4.7x) |
-| the same with the generated code | 3.31 ms (4.9x) | 4.93 ms (5.7x) |
-| LtMsgPack, arrays without the schema | 2.86 ms (5.7x) | 5.89 ms (4.8x) |
-| the same with the generated code | 3.01 ms (5.4x) | 4.81 ms (5.9x) |
-| LtMsgPack, maps with property names | 4.87 ms (3.3x) | 8.36 ms (3.4x) |
-| the same with the generated code | 4.62 ms (3.5x) | 6.64 ms (4.3x) |
+| LtMsgPack, default options (indexed schema, arrays) | 3.71 ms (4.6x) | 5.03 ms (5.8x) |
+| the same with the generated code | 3.41 ms (5.0x) | 5.42 ms (5.3x) |
+| LtMsgPack, arrays without the schema | 3.08 ms (5.5x) | 4.97 ms (5.8x) |
+| the same with the generated code | 3.19 ms (5.3x) | 5.28 ms (5.5x) |
+| LtMsgPack, maps with property names | 5.04 ms (3.4x) | 8.86 ms (3.3x) |
+| the same with the generated code | 4.76 ms (3.6x) | 7.03 ms (4.1x) |
 
 | .NET 10, WebAssembly (node) | interpreter write | read | AOT write | read |
 |---|---|---|---|---|
 | LtMsgPack, default options | 183 ms (3.0x) | 235 ms (3.5x) | 78 ms (2.8x) | 69 ms (3.1x) |
 | the same with the generated code | 92 ms (5.8x) | 196 ms (4.2x) | 10.5 ms (20x) | 24 ms (8.7x) |
 
-With a JIT, writing is about as fast without the generated code (within 7% either way) once LtMsgPack has compiled its writers (after 1000 objects of a class, as in these rows). Reading gains about 1.2x: decoding strings takes most of the time, the same with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).
+With a JIT, LtMsgPack compiles its writers and readers at runtime (after 1000 objects of a class, as in these rows). Writing is about as fast without the generated code (within 8% either way), and so is reading arrays: in this table, where all setups share one process and its JIT profile, the generated code read them 6-8% slower, measured one setup per process equally fast. Maps keyed by property names read 1.3x as fast with the generated code. Decoding strings takes most of the time of reading, with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).

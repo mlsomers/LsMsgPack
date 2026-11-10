@@ -102,6 +102,20 @@ namespace LtMsgPack
       return member.Kind != GeneratedKind.None && member.CanRead && Fits(member, true, (code.Capabilities & GeneratedCapabilities.ReadFormats) != 0) ? id : -1;
     }
 
+    /// <summary>
+    /// How a reader compiled at runtime (CompiledReader) reads values of the type itself: the kind the generated code has for it, when these options read it that way
+    /// (<see cref="Fits"/>, with <see cref="GeneratedCapabilities.ReadFormats"/>); None for the types the runtime's readers read.
+    /// </summary>
+    /// <param name="type">The declared type of a property (also a nullable)</param>
+    internal GeneratedKind ReadKind(Type type)
+    {
+      Type underlying = Nullable.GetUnderlyingType(type);
+      GeneratedKind kind = CompiledWriter.KindOf(this, underlying ?? type);
+      if (kind == GeneratedKind.None)
+        return kind;
+      return Fits(new GeneratedMember(null, null, type, kind, underlying != null, false, true), true, true) ? kind : GeneratedKind.None;
+    }
+
     private static int FindMember(GeneratedObjectCode code, FullPropertyInfo info)
     {
       MemberInfo declared = info.Member; // a property or field (the runtime's compiled code describes both, the generator's code properties)

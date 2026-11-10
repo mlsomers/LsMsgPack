@@ -255,8 +255,8 @@ namespace LtMsgPack.Reading
       int length = c.R.TryReadBinHeader();
       if (length >= 0)
       {
-        byte[] value = new byte[length];
-        Buffer.BlockCopy(c.R.Buf, c.R.Pos, value, 0, length);
+        byte[] value = MsgPackWriter.NewBytes(length); // the length is checked against the data (TryReadBinHeader)
+        new ReadOnlySpan<byte>(c.R.Buf, c.R.Pos, length).CopyTo(value);
         c.R.Pos += length;
         return value;
       }
@@ -337,6 +337,15 @@ namespace LtMsgPack.Reading
         r.Pos = start + 18;
         return value;
       }
+      return ReadText(c, start, assignedTo);
+    }
+
+    /// <summary>
+    /// Any other text: decoded and parsed by .NET. Not inlined: the <c>stackalloc</c> gives a method a stack cookie and a larger frame.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private decimal ReadText(ReadContext c, int start, FullPropertyInfo assignedTo)
+    {
 #if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
       Span<char> chars = stackalloc char[64];
       if (c.R.TryReadShortString(chars, out int count))
@@ -592,6 +601,100 @@ namespace LtMsgPack.Reading
       return value != null;
     }
   }
+
+  /// <summary>
+  /// int[], long[], float[] and double[] (see <see cref="Writing.Numbers"/>; when the options read the element type as such): the same values and errors as <see cref="ArrayReader{TItem}"/>.
+  /// The values in the formats of the type are read in bulk, any other value (nil, another format, an incomplete one) by the reader of the element type
+  /// (1000 values: int 8.0 -> 2.4 us, long 7.7 -> 3.9 us, float 3.0 -> 1.4 us, double 4.2 -> 2.3 us, mostly allocating the array).
+  /// </summary>
+  internal sealed class NumberArrayReader<T> : ValueReader<T[]>, ICollectionContent where T : struct
+  {
+    private readonly ValueReader<T> _item;
+
+    internal NumberArrayReader(ValueReader<T> item)
+    {
+      _item = item;
+    }
+
+    internal override T[] Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadNil())
+        return null;
+
+      int count = c.R.TryReadArrayHeader();
+      if (count < 0)
+        return Slow(c, start, assignedTo);
+
+      c.Enter();
+#if NET8_0_OR_GREATER
+      T[] array = GC.AllocateUninitializedArray<T>(count); // every element is set before it is returned
+#else
+      T[] array = new T[count];
+#endif
+      int t = 0;
+      while (t < count)
+      {
+        t += Writing.Numbers.Read(c.R, new Span<T>(array, t, count - t));
+        if (t < count)
+          array[t++] = _item.Read(c, null);
+      }
+      c.Depth--;
+      return array;
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      value = CollectionRules.IsArray(c.R) ? Read(c, null) : null;
+      return value != null;
+    }
+  }
+
+#if NET8_0_OR_GREATER
+  /// <summary>
+  /// List&lt;T&gt; of int, long, float or double, as <see cref="NumberArrayReader{T}"/>: read into the list's own array.
+  /// </summary>
+  internal sealed class NumberListReader<T> : ValueReader<List<T>>, ICollectionContent where T : struct
+  {
+    private readonly ValueReader<T> _item;
+
+    internal NumberListReader(ValueReader<T> item)
+    {
+      _item = item;
+    }
+
+    internal override List<T> Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadNil())
+        return null;
+
+      int count = c.R.TryReadArrayHeader();
+      if (count < 0)
+        return Slow(c, start, assignedTo);
+
+      c.Enter();
+      List<T> list = new List<T>(count);
+      System.Runtime.InteropServices.CollectionsMarshal.SetCount(list, count);
+      Span<T> items = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(list);
+      int t = 0;
+      while (t < count)
+      {
+        t += Writing.Numbers.Read(c.R, items.Slice(t));
+        if (t < count)
+          items[t++] = _item.Read(c, null);
+      }
+      c.Depth--;
+      return list;
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      value = CollectionRules.IsArray(c.R) ? Read(c, null) : null;
+      return value != null;
+    }
+  }
+#endif
 
   /// <summary>
   /// HashSet&lt;T&gt; (not a derived class) from an array.

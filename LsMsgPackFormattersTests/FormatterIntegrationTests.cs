@@ -253,18 +253,23 @@ namespace LsMsgPackFormattersTests
     }
 
     [Test]
-    public void WritersAreCompiledAtOnce_ForBothMediaTypes()
+    public void WritersAndReadersAreCompiledAtOnce_ForBothMediaTypes()
     {
       LtMsgPackHttpSerializer defaults = new LtMsgPackHttpSerializer();
       Assert.That(defaults.For(MsgPackMediaTypes.XLsMsgPack).Options.CompileWritersAfter, Is.EqualTo(0));
       Assert.That(defaults.For(MsgPackMediaTypes.MsgPack).Options.CompileWritersAfter, Is.EqualTo(0));
+      Assert.That(defaults.For(MsgPackMediaTypes.XLsMsgPack).Options.CompileReadersAfter, Is.EqualTo(0));
+      Assert.That(defaults.For(MsgPackMediaTypes.MsgPack).Options.CompileReadersAfter, Is.EqualTo(0));
 
-      // The formatters' setting replaces the value of the media types' options
+      // The formatters' settings replace the values of the media types' options
       LtMsgPackOptions plain = LtMsgPackPresets.MessagePackCSharp();
       plain.CompileWritersAfter = -1;
-      LtMsgPackHttpSerializer configured = new LtMsgPackHttpSerializer(new LtMsgPackHttpOptions { Plain = plain, CompileWritersAfter = 50 });
+      plain.CompileReadersAfter = -1;
+      LtMsgPackHttpSerializer configured = new LtMsgPackHttpSerializer(new LtMsgPackHttpOptions { Plain = plain, CompileWritersAfter = 50, CompileReadersAfter = 70 });
       Assert.That(configured.For(MsgPackMediaTypes.XLsMsgPack).Options.CompileWritersAfter, Is.EqualTo(50));
       Assert.That(configured.For(MsgPackMediaTypes.MsgPack).Options.CompileWritersAfter, Is.EqualTo(50));
+      Assert.That(configured.For(MsgPackMediaTypes.XLsMsgPack).Options.CompileReadersAfter, Is.EqualTo(70));
+      Assert.That(configured.For(MsgPackMediaTypes.MsgPack).Options.CompileReadersAfter, Is.EqualTo(70));
     }
 
     [Test]

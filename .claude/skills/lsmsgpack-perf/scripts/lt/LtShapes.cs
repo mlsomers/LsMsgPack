@@ -23,6 +23,12 @@ public class HashSetInts { public HashSet<int> Values { get; set; } }
 public class ListInts { public List<int> Values { get; set; } }
 public class IntArray { public int[] Values { get; set; } }
 public class DoubleArray { public double[] Values { get; set; } }
+public class LongArray { public long[] Values { get; set; } }
+public class FloatArray { public float[] Values { get; set; } }
+public class ListDoubles { public List<double> Values { get; set; } }
+public class DateTimeArray { public DateTime[] Values { get; set; } }
+public class GuidArray { public Guid[] Values { get; set; } }
+public class DecimalArray { public decimal[] Values { get; set; } }
 public class StringArray { public string[] Values { get; set; } }
 public class Blob { public byte[] Value { get; set; } }
 public class LongText { public string Value { get; set; } }
@@ -139,6 +145,12 @@ public static class LtShapes
       Make("list-int", new ListInts { Values = numbers.ToList() }),
       Make("int-array", new IntArray { Values = numbers }),
       Make("double-array", new DoubleArray { Values = doubles }),
+      Make("long-array", new LongArray { Values = numbers.Select(x => x * 1000003L - 500000).ToArray() }),
+      Make("float-array", new FloatArray { Values = numbers.Select(x => x * 0.37f).ToArray() }),
+      Make("list-double", new ListDoubles { Values = doubles.ToList() }),
+      Make("datetime-array", new DateTimeArray { Values = numbers.Select(x => new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(x * 7).AddMilliseconds(x % 3 == 0 ? x : 0)).ToArray() }),
+      Make("guid-array", new GuidArray { Values = numbers.Select(x => new Guid(x, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)).ToArray() }),
+      Make("decimal-array", new DecimalArray { Values = numbers.Select(x => x * 1.25m).ToArray() }),
       Make("string-array", new StringArray { Values = texts }),
       Make("bytes-64k", new Blob { Value = blob }),
       Make("ascii-10k", new LongText { Value = ascii }),
@@ -194,7 +206,10 @@ public static class LtShapes
   {
     string after = System.Environment.GetEnvironmentVariable("LT_COMPILE_AFTER");
     if (after != null)
+      {
       typeof(LtMsgPack.LtMsgPackOptions).GetField("Default_CompileWritersAfter")?.SetValue(null, int.Parse(after));
+      typeof(LtMsgPack.LtMsgPackOptions).GetField("Default_CompileReadersAfter")?.SetValue(null, int.Parse(after)); // the compiled readers too
+    }
   }
   public static void Main(string[] args)
   {
