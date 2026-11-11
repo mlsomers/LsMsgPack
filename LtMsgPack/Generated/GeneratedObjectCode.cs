@@ -620,6 +620,76 @@ namespace LtMsgPack.Generated
     }
 
     /// <summary>
+    /// The plan's properties when a map keyed by names may be read straight-line by the generated <see cref="GeneratedObjectCode{T}.ReadMap"/> (version 5): property t of the plan is
+    /// member <see cref="GeneratedObjectCode.UnrolledIds"/>[t], so its key is that member's name. Null with the indexed schema, PropertyNameCaseInsensitive or another order of the properties:
+    /// the keys are then read by the loop (<see cref="TryReadKey"/>).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static PropReader[] NamesInOrder(ReadContext c, ReadPlan plan)
+    {
+      return c.Schema ? null : plan.NamesInOrder;
+    }
+
+    /// <summary>
+    /// Whether the data at the reader's position starts with a key of <paramref name="length"/> (1-32) bytes (the string header and the name) whose words are <paramref name="first"/> (at 0),
+    /// <paramref name="second"/> (at 8), <paramref name="third"/> (at 16) and <paramref name="last"/> (the last word, overlapping the others), little-endian: words of 8 bytes for keys of 8 bytes
+    /// and more, otherwise of 4, 2 or 1 (0 for the words past the key's end). The generated code and the compiled readers pass constants, so the JIT keeps only the comparisons of that length.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool KeyIs(MsgPackReader r, int length, ulong first, ulong second, ulong third, ulong last)
+    {
+      byte[] buffer = r.Buf;
+      int pos = r.Pos;
+      int end = r.End;
+      if (end - pos < length || (uint)end > (uint)buffer.Length)
+        return false;
+      ref byte at = ref buffer[pos];
+      if (length >= 8)
+      {
+        if (Word64(ref at) != first || Word64(ref Unsafe.Add(ref at, length - 8)) != last)
+          return false;
+        if (length > 16 && Word64(ref Unsafe.Add(ref at, 8)) != second)
+          return false;
+        return length <= 24 || Word64(ref Unsafe.Add(ref at, 16)) == third;
+      }
+      if (length >= 4)
+        return Word32(ref at) == (uint)first && Word32(ref Unsafe.Add(ref at, length - 4)) == (uint)last;
+      if (length >= 2)
+        return Word16(ref at) == (ushort)first && Word16(ref Unsafe.Add(ref at, length - 2)) == (ushort)last;
+      return at == (byte)first;
+    }
+
+    /// <summary>
+    /// <see cref="KeyIs"/> for a key of more than 32 bytes.
+    /// </summary>
+    public static bool LongKeyIs(MsgPackReader r, byte[] key)
+    {
+      return r.End - r.Pos >= key.Length && new ReadOnlySpan<byte>(r.Buf, r.Pos, key.Length).SequenceEqual(key);
+    }
+
+    // Little-endian whatever the machine's order, so the generator's constants mean the same everywhere (the JIT drops the test)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong Word64(ref byte at)
+    {
+      ulong word = Unsafe.ReadUnaligned<ulong>(ref at);
+      return BitConverter.IsLittleEndian ? word : System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(word);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint Word32(ref byte at)
+    {
+      uint word = Unsafe.ReadUnaligned<uint>(ref at);
+      return BitConverter.IsLittleEndian ? word : System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(word);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ushort Word16(ref byte at)
+    {
+      ushort word = Unsafe.ReadUnaligned<ushort>(ref at);
+      return BitConverter.IsLittleEndian ? word : System.Buffers.Binary.BinaryPrimitives.ReverseEndianness(word);
+    }
+
+    /// <summary>
     /// The runtime reads the value into a struct by reference (<see cref="GeneratedStructCode{T}"/>): another format, or a property the generated code does not read.
     /// </summary>
     public static void Read<T>(PropReader prop, ReadContext c, ref T target)

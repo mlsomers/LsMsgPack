@@ -27,9 +27,9 @@ namespace Shop
     public static ShopMsgPackContext Default { get; } = new ShopMsgPackContext();
 
     /// <summary>
-    /// Written by the generator (version 4 of the generated code).
+    /// Written by the generator (version 5 of the generated code).
     /// </summary>
-    public ShopMsgPackContext() : base(4)
+    public ShopMsgPackContext() : base(5)
     {
     }
 
@@ -797,6 +797,9 @@ namespace Shop
       {
         global::LtMsgPack.IO.MsgPackReader r = c.R;
         int next = 0;
+        global::LtMsgPack.Reading.PropReader[] props = global::LtMsgPack.Generated.GeneratedIO.NamesInOrder(c, plan);
+        if (props != null)
+          next = ReadNames(c, o, props, ref count, p);
         for (int t = 0; t < count; t++)
         {
           global::LtMsgPack.Reading.PropReader prop;
@@ -883,6 +886,154 @@ namespace Shop
           prop.Read(c, o); // another format: read as the runtime does
         }
         return true;
+      }
+
+      private int ReadNames(global::LtMsgPack.Reading.ReadContext c, global::Shop.Invoice o, global::LtMsgPack.Reading.PropReader[] props, ref int count, global::LtMsgPack.Generated.GeneratedReadPlan p)
+      {
+        int next = 0;
+        global::LtMsgPack.IO.MsgPackReader r = c.R;
+        global::LtMsgPack.Reading.PropReader prop;
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 3, 0x49A2UL, 0UL, 0UL, 0x6449UL)) // "Id"
+        {
+          r.Pos += 3;
+          count--;
+          next = 1;
+          prop = props[0];
+          if (prop.GeneratedId == 0)
+          {
+            if (global::LtMsgPack.Generated.GeneratedIO.TryReadGuid(r, p, out global::System.Guid v))
+            {
+              o.Id = v;
+              goto read0;
+            }
+            if (r.TryReadNil())
+            {
+              o.Id = default(global::System.Guid);
+              goto read0;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read0:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 12, 0x6563696F766E49ABUL, 0UL, 0UL, 0x657461446563696FUL)) // "InvoiceDate"
+        {
+          r.Pos += 12;
+          count--;
+          next = 2;
+          prop = props[1];
+          if (prop.GeneratedId == 1)
+          {
+            if (r.TryReadDateTime(out global::System.DateTime v))
+            {
+              o.InvoiceDate = v;
+              goto read1;
+            }
+            if (r.TryReadNil())
+            {
+              o.InvoiceDate = default(global::System.DateTime);
+              goto read1;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read1:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 9, 0x74614464696150A8UL, 0UL, 0UL, 0x6574614464696150UL)) // "PaidDate"
+        {
+          r.Pos += 9;
+          count--;
+          next = 3;
+          prop = props[2];
+          if (prop.GeneratedId == 2)
+          {
+            if (r.TryReadNil())
+            {
+              o.PaidDate = null;
+              goto read2;
+            }
+            if (r.TryReadDateTime(out global::System.DateTime v))
+            {
+              o.PaidDate = v;
+              goto read2;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read2:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 7, 0x617453A6UL, 0UL, 0UL, 0x73757461UL)) // "Status"
+        {
+          r.Pos += 7;
+          count--;
+          next = 4;
+          prop = props[3];
+          if (prop.GeneratedId == 3)
+          {
+            if (r.TryReadInt64(out long v))
+            {
+              o.Status = (global::Shop.InvoiceStatus)unchecked((int)v);
+              goto read3;
+            }
+            if (r.TryReadNil())
+            {
+              o.Status = default(global::Shop.InvoiceStatus);
+              goto read3;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read3:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 9, 0x656D6F74737543A8UL, 0UL, 0UL, 0x72656D6F74737543UL)) // "Customer"
+        {
+          r.Pos += 9;
+          count--;
+          next = 5;
+          prop = props[4];
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 6, 0x6E694CA5UL, 0UL, 0UL, 0x73656E69UL)) // "Lines"
+        {
+          r.Pos += 6;
+          count--;
+          next = 6;
+          prop = props[5];
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 6, 0x746F54A5UL, 0UL, 0UL, 0x6C61746FUL)) // "Total"
+        {
+          r.Pos += 6;
+          count--;
+          next = 7;
+          prop = props[6];
+          if (prop.GeneratedId == 6)
+          {
+            if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p, out decimal v))
+            {
+              o.Total = v;
+              goto read6;
+            }
+            if (r.TryReadNil())
+            {
+              o.Total = default(decimal);
+              goto read6;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read6:
+        return next;
       }
     }
 
@@ -1119,6 +1270,9 @@ namespace Shop
       {
         global::LtMsgPack.IO.MsgPackReader r = c.R;
         int next = 0;
+        global::LtMsgPack.Reading.PropReader[] props = global::LtMsgPack.Generated.GeneratedIO.NamesInOrder(c, plan);
+        if (props != null)
+          next = ReadNames(c, o, props, ref count, p);
         for (int t = 0; t < count; t++)
         {
           global::LtMsgPack.Reading.PropReader prop;
@@ -1168,6 +1322,77 @@ namespace Shop
           prop.Read(c, o); // another format: read as the runtime does
         }
         return true;
+      }
+
+      private int ReadNames(global::LtMsgPack.Reading.ReadContext c, global::Shop.Customer o, global::LtMsgPack.Reading.PropReader[] props, ref int count, global::LtMsgPack.Generated.GeneratedReadPlan p)
+      {
+        int next = 0;
+        global::LtMsgPack.IO.MsgPackReader r = c.R;
+        global::LtMsgPack.Reading.PropReader prop;
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 11, 0x656D6F74737543AAUL, 0UL, 0UL, 0x644972656D6F7473UL)) // "CustomerId"
+        {
+          r.Pos += 11;
+          count--;
+          next = 1;
+          prop = props[0];
+          if (prop.GeneratedId == 0)
+          {
+            int start = r.Pos;
+            if (r.TryReadInt64(out long v))
+            {
+              if (v >= int.MinValue && v <= int.MaxValue)
+              {
+                o.CustomerId = (int)v;
+                goto read0;
+              }
+              r.Pos = start;
+            }
+            if (r.TryReadNil())
+            {
+              o.CustomerId = default(int);
+              goto read0;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read0:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 12, 0x796E61706D6F43ABUL, 0UL, 0UL, 0x656D614E796E6170UL)) // "CompanyName"
+        {
+          r.Pos += 12;
+          count--;
+          next = 2;
+          prop = props[1];
+          if (prop.GeneratedId == 1)
+          {
+            if (r.TryReadString(out string v))
+            {
+              o.CompanyName = v;
+              goto read1;
+            }
+            if (r.TryReadNil())
+            {
+              o.CompanyName = default(string);
+              goto read1;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read1:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 15, 0x676E696C6C6942AEUL, 0UL, 0UL, 0x7373657264644167UL)) // "BillingAddress"
+        {
+          r.Pos += 15;
+          count--;
+          next = 3;
+          prop = props[2];
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        return next;
       }
     }
 
@@ -1452,6 +1677,9 @@ namespace Shop
       {
         global::LtMsgPack.IO.MsgPackReader r = c.R;
         int next = 0;
+        global::LtMsgPack.Reading.PropReader[] props = global::LtMsgPack.Generated.GeneratedIO.NamesInOrder(c, plan);
+        if (props != null)
+          next = ReadNames(c, o, props, ref count, p);
         for (int t = 0; t < count; t++)
         {
           global::LtMsgPack.Reading.PropReader prop;
@@ -1510,6 +1738,86 @@ namespace Shop
           prop.Read(c, o); // another format: read as the runtime does
         }
         return true;
+      }
+
+      private int ReadNames(global::LtMsgPack.Reading.ReadContext c, global::Shop.Address o, global::LtMsgPack.Reading.PropReader[] props, ref int count, global::LtMsgPack.Generated.GeneratedReadPlan p)
+      {
+        int next = 0;
+        global::LtMsgPack.IO.MsgPackReader r = c.R;
+        global::LtMsgPack.Reading.PropReader prop;
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 7, 0x727453A6UL, 0UL, 0UL, 0x74656572UL)) // "Street"
+        {
+          r.Pos += 7;
+          count--;
+          next = 1;
+          prop = props[0];
+          if (prop.GeneratedId == 0)
+          {
+            if (r.TryReadString(out string v))
+            {
+              o.Street = v;
+              goto read0;
+            }
+            if (r.TryReadNil())
+            {
+              o.Street = default(string);
+              goto read0;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read0:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 5, 0x746943A4UL, 0UL, 0UL, 0x79746943UL)) // "City"
+        {
+          r.Pos += 5;
+          count--;
+          next = 2;
+          prop = props[1];
+          if (prop.GeneratedId == 1)
+          {
+            if (r.TryReadString(out string v))
+            {
+              o.City = v;
+              goto read1;
+            }
+            if (r.TryReadNil())
+            {
+              o.City = default(string);
+              goto read1;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read1:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 11, 0x436C6174736F50AAUL, 0UL, 0UL, 0x65646F436C617473UL)) // "PostalCode"
+        {
+          r.Pos += 11;
+          count--;
+          next = 3;
+          prop = props[2];
+          if (prop.GeneratedId == 2)
+          {
+            if (r.TryReadString(out string v))
+            {
+              o.PostalCode = v;
+              goto read2;
+            }
+            if (r.TryReadNil())
+            {
+              o.PostalCode = default(string);
+              goto read2;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read2:
+        return next;
       }
     }
 
@@ -1994,6 +2302,9 @@ namespace Shop
       {
         global::LtMsgPack.IO.MsgPackReader r = c.R;
         int next = 0;
+        global::LtMsgPack.Reading.PropReader[] props = global::LtMsgPack.Generated.GeneratedIO.NamesInOrder(c, plan);
+        if (props != null)
+          next = ReadNames(c, o, props, ref count, p);
         for (int t = 0; t < count; t++)
         {
           global::LtMsgPack.Reading.PropReader prop;
@@ -2076,6 +2387,130 @@ namespace Shop
           prop.Read(c, o); // another format: read as the runtime does
         }
         return true;
+      }
+
+      private int ReadNames(global::LtMsgPack.Reading.ReadContext c, global::Shop.InvoiceLine o, global::LtMsgPack.Reading.PropReader[] props, ref int count, global::LtMsgPack.Generated.GeneratedReadPlan p)
+      {
+        int next = 0;
+        global::LtMsgPack.IO.MsgPackReader r = c.R;
+        global::LtMsgPack.Reading.PropReader prop;
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 11, 0x6D754E656E694CAAUL, 0UL, 0UL, 0x7265626D754E656EUL)) // "LineNumber"
+        {
+          r.Pos += 11;
+          count--;
+          next = 1;
+          prop = props[0];
+          if (prop.GeneratedId == 0)
+          {
+            int start = r.Pos;
+            if (r.TryReadInt64(out long v))
+            {
+              if (v >= int.MinValue && v <= int.MaxValue)
+              {
+                o.LineNumber = (int)v;
+                goto read0;
+              }
+              r.Pos = start;
+            }
+            if (r.TryReadNil())
+            {
+              o.LineNumber = default(int);
+              goto read0;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read0:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 9, 0x7469746E617551A8UL, 0UL, 0UL, 0x797469746E617551UL)) // "Quantity"
+        {
+          r.Pos += 9;
+          count--;
+          next = 2;
+          prop = props[1];
+          if (prop.GeneratedId == 1)
+          {
+            if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p, out decimal v))
+            {
+              o.Quantity = v;
+              goto read1;
+            }
+            if (r.TryReadNil())
+            {
+              o.Quantity = default(decimal);
+              goto read1;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read1:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 5, 0x696E55A4UL, 0UL, 0UL, 0x74696E55UL)) // "Unit"
+        {
+          r.Pos += 5;
+          count--;
+          next = 3;
+          prop = props[2];
+          if (prop.GeneratedId == 2)
+          {
+            if (r.TryReadInt64(out long v))
+            {
+              o.Unit = (global::Shop.UnitOfMeasure)unchecked((byte)v);
+              goto read2;
+            }
+            if (r.TryReadNil())
+            {
+              o.Unit = default(global::Shop.UnitOfMeasure);
+              goto read2;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read2:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 10, 0x69725074696E55A9UL, 0UL, 0UL, 0x656369725074696EUL)) // "UnitPrice"
+        {
+          r.Pos += 10;
+          count--;
+          next = 4;
+          prop = props[3];
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 17, 0x756F637369645FB0UL, 0x6E6563726550746EUL, 0UL, 0x746E656372655074UL)) // "_discountPercent"
+        {
+          r.Pos += 17;
+          count--;
+          next = 5;
+          prop = props[4];
+          if (prop.GeneratedId == 4)
+          {
+            int start = r.Pos;
+            if (r.TryReadInt64(out long v))
+            {
+              if (v >= int.MinValue && v <= int.MaxValue)
+              {
+                LtMsgPackField0(o) = (int)v;
+                goto read4;
+              }
+              r.Pos = start;
+            }
+            if (r.TryReadNil())
+            {
+              LtMsgPackField0(o) = default(int);
+              goto read4;
+            }
+          }
+          prop.Read(c, o); // another format, or read as the runtime does
+        }
+        read4:
+        return next;
       }
     }
 
@@ -2484,6 +2919,9 @@ namespace Shop
       {
         global::LtMsgPack.IO.MsgPackReader r = c.R;
         int next = 0;
+        global::LtMsgPack.Reading.PropReader[] props = global::LtMsgPack.Generated.GeneratedIO.NamesInOrder(c, plan);
+        if (props != null)
+          next = ReadNames(c, ref o, props, ref count, p);
         for (int t = 0; t < count; t++)
         {
           global::LtMsgPack.Reading.PropReader prop;
@@ -2547,6 +2985,91 @@ namespace Shop
           global::LtMsgPack.Generated.GeneratedIO.Read(prop, c, ref o); // another format: read as the runtime does
         }
         return true;
+      }
+
+      private int ReadNames(global::LtMsgPack.Reading.ReadContext c, ref global::Shop.Money o, global::LtMsgPack.Reading.PropReader[] props, ref int count, global::LtMsgPack.Generated.GeneratedReadPlan p)
+      {
+        int next = 0;
+        global::LtMsgPack.IO.MsgPackReader r = c.R;
+        global::LtMsgPack.Reading.PropReader prop;
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 7, 0x6F6D41A6UL, 0UL, 0UL, 0x746E756FUL)) // "Amount"
+        {
+          r.Pos += 7;
+          count--;
+          next = 1;
+          prop = props[0];
+          if (prop.GeneratedId == 0)
+          {
+            if (global::LtMsgPack.Generated.GeneratedIO.TryReadDecimal(r, p, out decimal v))
+            {
+              o.Amount = v;
+              goto read0;
+            }
+            if (r.TryReadNil())
+            {
+              o.Amount = default(decimal);
+              goto read0;
+            }
+          }
+          global::LtMsgPack.Generated.GeneratedIO.Read(prop, c, ref o); // another format, or read as the runtime does
+        }
+        read0:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 9, 0x636E6572727543A8UL, 0UL, 0UL, 0x79636E6572727543UL)) // "Currency"
+        {
+          r.Pos += 9;
+          count--;
+          next = 2;
+          prop = props[1];
+          if (prop.GeneratedId == 1)
+          {
+            if (r.TryReadString(out string v))
+            {
+              o.Currency = v;
+              goto read1;
+            }
+            if (r.TryReadNil())
+            {
+              o.Currency = default(string);
+              goto read1;
+            }
+          }
+          global::LtMsgPack.Generated.GeneratedIO.Read(prop, c, ref o); // another format, or read as the runtime does
+        }
+        read1:
+        if (count == 0)
+          return next;
+        if (global::LtMsgPack.Generated.GeneratedIO.KeyIs(r, 10, 0x69736963657250A9UL, 0UL, 0UL, 0x6E6F697369636572UL)) // "Precision"
+        {
+          r.Pos += 10;
+          count--;
+          next = 3;
+          prop = props[2];
+          if (prop.GeneratedId == 2)
+          {
+            int start = r.Pos;
+            if (r.TryReadInt64(out long v))
+            {
+              if (v >= byte.MinValue && v <= byte.MaxValue)
+              {
+                o.Precision = (byte)v;
+                goto read2;
+              }
+              r.Pos = start;
+            }
+            if (r.TryReadNil())
+            {
+              o.Precision = default(byte);
+              goto read2;
+            }
+          }
+          global::LtMsgPack.Generated.GeneratedIO.Read(prop, c, ref o); // another format, or read as the runtime does
+        }
+        read2:
+        return next;
       }
     }
 

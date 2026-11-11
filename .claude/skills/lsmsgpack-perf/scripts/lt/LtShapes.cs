@@ -29,6 +29,10 @@ public class ListDoubles { public List<double> Values { get; set; } }
 public class DateTimeArray { public DateTime[] Values { get; set; } }
 public class GuidArray { public Guid[] Values { get; set; } }
 public class DecimalArray { public decimal[] Values { get; set; } }
+public class ShortArray { public short[] Values { get; set; } }
+public class UIntArray { public uint[] Values { get; set; } }
+public class BoolArray { public bool[] Values { get; set; } }
+public class ListGuids { public List<Guid> Values { get; set; } }
 public class StringArray { public string[] Values { get; set; } }
 public class Blob { public byte[] Value { get; set; } }
 public class LongText { public string Value { get; set; } }
@@ -151,6 +155,10 @@ public static class LtShapes
       Make("datetime-array", new DateTimeArray { Values = numbers.Select(x => new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(x * 7).AddMilliseconds(x % 3 == 0 ? x : 0)).ToArray() }),
       Make("guid-array", new GuidArray { Values = numbers.Select(x => new Guid(x, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)).ToArray() }),
       Make("decimal-array", new DecimalArray { Values = numbers.Select(x => x * 1.25m).ToArray() }),
+      Make("short-array", new ShortArray { Values = numbers.Select(x => (short)(x * 37 - 18000)).ToArray() }),
+      Make("uint-array", new UIntArray { Values = numbers.Select(x => (uint)x * 4294967u).ToArray() }),
+      Make("bool-array", new BoolArray { Values = numbers.Select(x => x % 3 == 0).ToArray() }),
+      Make("list-guid", new ListGuids { Values = numbers.Select(x => new Guid(x, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)).ToList() }),
       Make("string-array", new StringArray { Values = texts }),
       Make("bytes-64k", new Blob { Value = blob }),
       Make("ascii-10k", new LongText { Value = ascii }),

@@ -561,6 +561,12 @@ namespace LtMsgPack.Reading
     internal volatile bool Map;
 
     /// <summary>
+    /// The <see cref="Props"/> when they are the generated code's <see cref="GeneratedObjectCode.UnrolledIds"/> (the order the generator predicted) and the names are compared exactly:
+    /// its <see cref="GeneratedObjectCode{T}.ReadMap"/> then compares the keys with the names as constants, straight-line (<see cref="GeneratedIO.NamesInOrder"/>). Null otherwise.
+    /// </summary>
+    internal readonly PropReader[] NamesInOrder;
+
+    /// <summary>
     /// The objects still to read before the reader is compiled (<see cref="Serializer.CompileReadersAfter"/>), 0 when it is not (any more). Not exact with several threads, which is all right
     /// (two threads reaching 0 at once both compile, the last reader is kept).
     /// </summary>
@@ -635,6 +641,8 @@ namespace LtMsgPack.Reading
         Positional = (code.Capabilities & positional) == positional;
         for (int t = 0; t < infos.Length; t++)
           Props[t].GeneratedId = serializer.ReadMember(code, infos[t]);
+        if (Map && !_caseInsensitive && serializer.InUnrolledOrder(code, infos)) // keys ignoring case stay with the loop (FindOrMatchIgnoringCase), as for the compiled readers
+          NamesInOrder = Props;
       }
       if (type.IsValueType && _create.Target is ICreator creator && creator.GetType().IsGenericType && creator.GetType().GetGenericTypeDefinition() == typeof(StructCreator<>))
       {
@@ -690,6 +698,10 @@ namespace LtMsgPack.Reading
     private void Compile()
     {
       _untilCompiled = 0;
+#if NET5_0_OR_GREATER
+      if (!RuntimeFeature.IsDynamicCodeSupported) // never true here (CompiledWriter.Supported), but a constant for NativeAOT: it then leaves out the expression compiler
+        return;
+#endif
       try
       {
         GeneratedObjectCode code = CompiledReader.Create(_serializer, Type, _infos, Props);
@@ -698,7 +710,7 @@ namespace LtMsgPack.Reading
         GeneratedRead = _serializer.GeneratedReadPlan;
         Code = code;
         Positional = true; // volatile: after the code
-        Map = _serializer.Options._useInexedSchema; // maps keyed by names stay with the runtime's loop (see CompiledReader)
+        Map = _serializer.Options._useInexedSchema || !_caseInsensitive; // maps keyed by names ignoring case stay with the runtime's loop (see CompiledReader)
       }
       catch (Exception) // a type or runtime the expressions do not handle: the runtime's readers read it, as before (CompiledReaderTests check that the readers are used)
       {
@@ -993,6 +1005,11 @@ namespace LtMsgPack.Reading
       Name = info.Name;
       _nameBytes = MsgPackOptions.StringEncoding.GetBytes(Name);
     }
+
+    /// <summary>
+    /// The name as UTF-8, what <see cref="NameIs"/> compares the keys with (the compiled readers of maps keyed by names compare it as constants).
+    /// </summary>
+    internal byte[] NameBytes { get { return _nameBytes; } }
 
     internal bool NameIs(byte[] buffer, int offset, int length)
     {

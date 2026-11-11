@@ -48,6 +48,10 @@ namespace LtMsgPack.Writing
       Type type = typeof(T);
       if (!PropertyAccessor.CanCompile) // without dynamic code (NativeAOT, a generated struct) expressions are interpreted: compare as Core does
         return IsDefaultBoxed;
+#if NET5_0_OR_GREATER
+      if (!RuntimeFeature.IsDynamicCodeSupported) // never true after CanCompile, but a constant for NativeAOT: it then leaves out the expression compiler
+        return IsDefaultBoxed;
+#endif
       if (type.IsValueType && OwnEquals(type))
         return TypedEquals(type) ?? IsDefaultBoxed;
       if (!type.IsValueType || OwnEquals(type) || type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null) // Core's default is what that constructor makes

@@ -103,6 +103,22 @@ namespace LtMsgPack
     }
 
     /// <summary>
+    /// Whether the properties of a read plan are the generated code's <see cref="GeneratedObjectCode.UnrolledIds"/>, in that order (the members whose names its ReadMap compares as constants).
+    /// </summary>
+    internal bool InUnrolledOrder(GeneratedObjectCode code, FullPropertyInfo[] infos)
+    {
+      int[] unrolled = code.UnrolledIds;
+      if (infos.Length != unrolled.Length)
+        return false;
+      for (int t = infos.Length - 1; t >= 0; t--)
+      {
+        if (FindMember(code, infos[t]) != unrolled[t])
+          return false;
+      }
+      return true;
+    }
+
+    /// <summary>
     /// How a reader compiled at runtime (CompiledReader) reads values of the type itself: the kind the generated code has for it, when these options read it that way
     /// (<see cref="Fits"/>, with <see cref="GeneratedCapabilities.ReadFormats"/>); None for the types the runtime's readers read.
     /// </summary>

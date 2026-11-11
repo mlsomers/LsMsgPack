@@ -245,7 +245,11 @@ namespace LtMsgPack
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
             return Instantiate(type, typeof(ListHandler<>), type.GenericTypeArguments[0], this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
+          {
+            if (InBulk(type.GenericTypeArguments[0]))
+              return WithBulkElement(type.GenericTypeArguments[0], new BulkHandlers(this, BulkCollection.Set));
             return InstantiateCollection(type, typeof(HashSetHandler<>), type.GenericTypeArguments, this) ?? Boxed(type);
+          }
           return Boxed(type);
         case TypeKind.Map:
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
@@ -275,20 +279,113 @@ namespace LtMsgPack
     /// <summary>
     /// A one-dimensional array with a lower bound of zero (T[]), not a T[*] (one dimension, any lower bound: what a multidimensional array of rank 1 is).
     /// </summary>
-    /// <returns>The handler of an array or list of int, long, float or double, which writes the values in bulk (see <see cref="Numbers"/>: these types are written the same with any options); null for other types</returns>
+    /// <returns>The handler of an array or list that writes its values in bulk (see <see cref="Bulk"/>); null for other types</returns>
     private object NumberHandler(Type type)
     {
-      if (type == typeof(int[])) return new NumberArrayHandler<int>(this);
-      if (type == typeof(long[])) return new NumberArrayHandler<long>(this);
-      if (type == typeof(float[])) return new NumberArrayHandler<float>(this);
-      if (type == typeof(double[])) return new NumberArrayHandler<double>(this);
+      Type element = Bulk(type, out bool list);
+      return element is null ? null : WithBulkElement(element, new BulkHandlers(this, list ? BulkCollection.List : BulkCollection.Array));
+    }
+
+    internal enum BulkCollection { Array, List, Set }
+
+    /// <summary>
+    /// Creates the handler or reader of a collection of a <see cref="InBulk"/> element type (one switch over the types for every kind of collection, without dynamic code).
+    /// </summary>
+    internal interface IBulkCreator
+    {
+      object Create<T>() where T : unmanaged;
+    }
+
+    internal static object WithBulkElement<TCreator>(Type element, TCreator creator) where TCreator : struct, IBulkCreator
+    {
+      if (element == typeof(int)) return creator.Create<int>();
+      if (element == typeof(long)) return creator.Create<long>();
+      if (element == typeof(float)) return creator.Create<float>();
+      if (element == typeof(double)) return creator.Create<double>();
+      if (element == typeof(sbyte)) return creator.Create<sbyte>();
+      if (element == typeof(short)) return creator.Create<short>();
+      if (element == typeof(ushort)) return creator.Create<ushort>();
+      if (element == typeof(uint)) return creator.Create<uint>();
+      if (element == typeof(ulong)) return creator.Create<ulong>();
+      if (element == typeof(bool)) return creator.Create<bool>();
+      if (element == typeof(Guid)) return creator.Create<Guid>();
+      return creator.Create<decimal>();
+    }
+
+    private struct BulkHandlers : IBulkCreator
+    {
+      private readonly Serializer _serializer;
+      private readonly BulkCollection _collection;
+
+      internal BulkHandlers(Serializer serializer, BulkCollection collection)
+      {
+        _serializer = serializer;
+        _collection = collection;
+      }
+
+      public object Create<T>() where T : unmanaged
+      {
+        byte code = _serializer.DecimalCode(typeof(T));
+        if (_collection == BulkCollection.Set)
+          return new NumberSetHandler<T>(_serializer, code);
 #if NET8_0_OR_GREATER
-      if (type == typeof(List<int>)) return new NumberListHandler<int>(this);
-      if (type == typeof(List<long>)) return new NumberListHandler<long>(this);
-      if (type == typeof(List<float>)) return new NumberListHandler<float>(this);
-      if (type == typeof(List<double>)) return new NumberListHandler<double>(this);
+        if (_collection == BulkCollection.List)
+          return new NumberListHandler<T>(_serializer, code);
 #endif
-      return null;
+        return new NumberArrayHandler<T>(_serializer, code);
+      }
+    }
+
+    /// <summary>
+    /// The arrays (T[]) and lists (List&lt;T&gt;, net8.0: <c>CollectionsMarshal</c>) whose values are written and read in bulk (see <see cref="Numbers"/>): of int, long, float or double (written the same with any options),
+    /// and of sbyte, short, ushort, uint, ulong, bool, Guid or decimal when the options write and read the element type as such (its <see cref="TypeKind"/>: not with a custom extension for it, nor Guids
+    /// and decimals in another <see cref="GuidFormat"/> or <see cref="DecimalFormat"/>; decimals with the built-in <see cref="DecimalExtension"/>). Not DateTime: a loop without the call per value
+    /// wrote 1000 of them 5-8% faster and read them as fast, the timestamp is most of it. Sets (<see cref="HashSet{T}"/>) of these types too (<see cref="InBulk"/>).
+    /// </summary>
+    /// <returns>The element type, or null for other types</returns>
+    internal Type Bulk(Type type, out bool list)
+    {
+      list = false;
+      Type element;
+      if (type.IsArray && IsVector(type))
+        element = type.GetElementType();
+#if NET8_0_OR_GREATER
+      else if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
+      {
+        element = type.GenericTypeArguments[0];
+        list = true;
+      }
+#endif
+      else
+        return null;
+
+      return InBulk(element) ? element : null;
+    }
+
+    /// <summary>
+    /// Whether arrays, lists and sets (<see cref="HashSet{T}"/>) of the type are written and read in bulk (see <see cref="Bulk"/>).
+    /// </summary>
+    internal bool InBulk(Type element)
+    {
+      if (element == typeof(int) || element == typeof(long) || element == typeof(float) || element == typeof(double))
+        return true;
+      TypeKind kind;
+      if (element == typeof(sbyte)) kind = TypeKind.SByte; // a List<sbyte> (an sbyte[] is bin)
+      else if (element == typeof(short)) kind = TypeKind.Int16;
+      else if (element == typeof(ushort)) kind = TypeKind.UInt16;
+      else if (element == typeof(uint)) kind = TypeKind.UInt32;
+      else if (element == typeof(ulong)) kind = TypeKind.UInt64;
+      else if (element == typeof(bool)) kind = TypeKind.Bool;
+      else if (element == typeof(Guid)) kind = TypeKind.Guid;
+      else if (element == typeof(decimal)) return GetTypeInfo(element).Kind == TypeKind.Extension && GetTypeInfo(element).Extension is DecimalExtension builtIn && builtIn.TypeCode != -1; // the built-in extension (-1 is read as a timestamp)
+      else return false;
+      return GetTypeInfo(element).Kind == kind;
+    }
+
+    /// <returns>The type code of the built-in decimal extension for decimals in bulk (<see cref="InBulk"/>), 0 for the other types</returns>
+    internal byte DecimalCode(Type element)
+    {
+      return element == typeof(decimal) ? unchecked((byte)GetTypeInfo(element).Extension.TypeCode) : (byte)0;
     }
 
     internal static bool IsVector(Type type)

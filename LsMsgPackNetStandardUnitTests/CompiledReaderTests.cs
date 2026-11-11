@@ -101,6 +101,14 @@ namespace LsMsgPackUnitTests
       return plan?.GetType().GetField("Code", Internal).GetValue(plan);
     }
 
+    /// <returns>Whether the generated code of the read plan reads maps keyed by names straight-line (ReadPlan.NamesInOrder)</returns>
+    internal static bool NamesInOrder(LtMsgPackSerializer serializer, Type type)
+    {
+      object inner = typeof(LtMsgPackSerializer).GetField("_serializer", Internal).GetValue(serializer);
+      object plan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { type });
+      return plan.GetType().GetField("NamesInOrder", Internal).GetValue(plan) != null;
+    }
+
     /// <returns>The type name of the code the read plan reads with, null for the runtime's readers</returns>
     internal static string ReaderOf(LtMsgPackSerializer serializer, Type type)
     {
@@ -110,7 +118,7 @@ namespace LsMsgPackUnitTests
       return code.Name.Substring(0, code.Name.IndexOf('`') < 0 ? code.Name.Length : code.Name.IndexOf('`'));
     }
 
-    /// <returns>Whether the plan has a compiled reader of the layout (maps: with the indexed schema)</returns>
+    /// <returns>Whether the plan has a compiled reader of the layout</returns>
     private static bool IsCompiled(LtMsgPackSerializer serializer, Type type, bool map)
     {
       object code = CodeOf(serializer, type);
@@ -284,7 +292,7 @@ namespace LsMsgPackUnitTests
         Assert.AreEqual("CompiledObjectReader", ReaderOf(compiled, typeof(CompiledWriterTests.CwAllKinds)), Describe(options));
         Assert.AreEqual("CompiledStructReader", ReaderOf(compiled, typeof(CompiledWriterTests.CwPoint)), Describe(options));
         Assert.AreEqual(!map, IsCompiled(compiled, typeof(CompiledWriterTests.CwAllKinds), false), Describe(options) + ": arrays");
-        Assert.AreEqual(map && options.UseInexedSchema, IsCompiled(compiled, typeof(CompiledWriterTests.CwAllKinds), true), Describe(options) + ": maps (only with the indexed schema)");
+        Assert.AreEqual(map, IsCompiled(compiled, typeof(CompiledWriterTests.CwAllKinds), true), Describe(options) + ": maps");
       }
       Assert.IsEmpty(differences, string.Join("\n", differences));
     }
@@ -404,6 +412,110 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
+    /// Names of every length the compiled readers of maps compare differently (keys of 2-33 bytes, a header of str8 from 32 chars on), one of them not ASCII.
+    /// </summary>
+    public class CrNames
+    {
+      public int N { get; set; }
+      public string Na { get; set; }
+      public double Nab { get; set; }
+      public bool Nabc { get; set; }
+      public long Nabcde { get; set; }
+      public int Nabcdef { get; set; }
+      public string Nabcdefg { get; set; }
+      public double Nabcdefghijklmn { get; set; }
+      public object Nabcdefghijklmno { get; set; }
+      public int Nabcdefghijklmnop { get; set; }
+      public string Nabcdefghijklmnopqrstuv { get; set; }
+      public long Nabcdefghijklmnopqrstuvw { get; set; }
+      public bool Nabcdefghijklmnopqrstuvwx { get; set; }
+      public double Nabcdefghijklmnopqrstuvwxyzabc { get; set; }
+      public int Nabcdefghijklmnopqrstuvwxyzabcd { get; set; }
+      public string Nabcdefghijklmnopqrstuvwxyzabcde { get; set; }
+      public int Nabcdefghijklmnopqrstuvwxyzabcdefghijklm { get; set; }
+      public int Größe { get; set; }
+      public int TwinsabcdBefghijklmn { get; set; } // the twins differ in the second word of their keys (21 bytes) or the third (29 bytes) only: the other twin's key is compared with the first one's
+      public int TwinsabcdAefghijklmn { get; set; }
+      public int TriplesabcdefghijBklmnopqrst { get; set; }
+      public int TriplesabcdefghijAklmnopqrst { get; set; }
+    }
+
+    private static CrNames Names()
+    {
+      return new CrNames { N = 0 + 1, Na = "v1 ü", Nab = 2 + 0.5, Nabc = true, Nabcde = 5000000000L + 4, Nabcdef = 5 + 1, Nabcdefg = "v6 ü", Nabcdefghijklmn = 7 + 0.5, Nabcdefghijklmno = "any", Nabcdefghijklmnop = 9 + 1, Nabcdefghijklmnopqrstuv = "v10 ü", Nabcdefghijklmnopqrstuvw = 5000000000L + 11, Nabcdefghijklmnopqrstuvwx = true, Nabcdefghijklmnopqrstuvwxyzabc = 13 + 0.5, Nabcdefghijklmnopqrstuvwxyzabcd = 14 + 1, Nabcdefghijklmnopqrstuvwxyzabcde = "v15 ü", Nabcdefghijklmnopqrstuvwxyzabcdefghijklm = 16 + 1, Größe = 9 };
+    }
+
+    /// <summary>
+    /// Maps keyed by names are read straight-line, the next key compared with the next property's name (CompiledReader.Names): keys in another order, keys the class does not have,
+    /// duplicates, other string headers, data that ends anywhere and values in other formats are read by the runtime's loop from there, with the same values and errors.
+    /// </summary>
+    [TestMethod]
+    public void MapsWithNames_ReadAsTheRuntimesPlans()
+    {
+      LtMsgPackSerializer plain = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseRegisteredContexts = false });
+      string[] names = new string[] { "N", "Na", "Nab", "Nabc", "Nabcde", "Nabcdef", "Nabcdefg", "Nabcdefghijklmn", "Nabcdefghijklmno", "Nabcdefghijklmnop", "Nabcdefghijklmnopqrstuv", "Nabcdefghijklmnopqrstuvw", "Nabcdefghijklmnopqrstuvwx", "Nabcdefghijklmnopqrstuvwxyzabc", "Nabcdefghijklmnopqrstuvwxyzabcd", "Nabcdefghijklmnopqrstuvwxyzabcde", "Nabcdefghijklmnopqrstuvwxyzabcdefghijklm", "Größe" };
+      List<byte[]> data = new List<byte[]>();
+      Dictionary<string, object> inOrder = new Dictionary<string, object>();
+      for (int t = 0; t < names.Length; t++)
+        inOrder[names[t]] = t % 3 == 0 ? (object)t : t % 3 == 1 ? (object)("s" + t) : (object)(t + 0.25);
+      data.Add(plain.Serialize(inOrder));
+      Dictionary<string, object> reversed = new Dictionary<string, object>();
+      for (int t = names.Length - 1; t >= 0; t--)
+        reversed[names[t]] = t;
+      data.Add(plain.Serialize(reversed));
+      data.Add(plain.Serialize(new Dictionary<string, object> { { "Unknown", 1 }, { names[0], 2 }, { names[1], "x" } }));
+      data.Add(plain.Serialize(new Dictionary<string, object> { { names[0], 2 }, { "Unknown", new[] { 1, 2 } }, { names[1], "x" }, { names[2], 1.5 } }));
+      data.Add(plain.Serialize(new Dictionary<string, object> { { names[2], 1.5 }, { names[1], "x" }, { names[3], true } })); // a prefix of the next name, then the one before
+      data.Add(plain.Serialize(new Dictionary<string, object> { { names[0], null }, { names[1], 5 }, { names[2], "1.5" }, { names[3], 1 }, { names[4], long.MaxValue }, { names[5], "nine" } })); // nils and other formats
+      data.Add(plain.Serialize(new Dictionary<string, object> { { names[15], 1 }, { names[16], 2 }, { names[17], 3 } })); // only the long names
+      data.Add(plain.Serialize(new Dictionary<string, object> { { names[0], 1 }, { "@", 2 } })); // a reserved key: read again from the start
+      data.Add(plain.Serialize(new Dictionary<string, object> { { names[0], 1 }, { "", "CrNames" } }));
+      data.Add(new byte[] { 0x83, 0xD9, (byte)names[0].Length, (byte)'N', 1, 0xA2, (byte)'N', (byte)'a', 2, 0xD9, 2, (byte)'N', (byte)'a', 3 }); // str8 headers of short names, then a duplicate
+      data.Add(new byte[] { 0x82, 0xA1, (byte)'N', 1, 0x05, 2 }); // a key that is not a string
+      data.Add(new byte[] { 0x82, 0xA1, (byte)'N', 1, 0xA2, (byte)'N' }); // a key that ends early
+      data.Add(new byte[] { 0x80 });
+      data.Add(plain.Serialize(new Dictionary<string, object> { { "TwinsabcdAefghijklmn", 1 }, { "TriplesabcdefghijAklmnopqrst", 2 } }));
+      data.Add(plain.Serialize(new Dictionary<string, object> { { "TwinsabcdBefghijklmn", 3 }, { "TwinsabcdAefghijklmn", 4 }, { "TriplesabcdefghijBklmnopqrst", 5 }, { "TriplesabcdefghijAklmnopqrst", 6 } }));
+      foreach (bool filter in new[] { false, true })
+      {
+        LtMsgPackSerializer writer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false,
+          DynamicFilters = filter ? new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() } : new IMsgPackPropertyIncludeDynamically[0] });
+        byte[] whole = writer.Serialize(Names());
+        data.Add(whole);
+        data.Add(writer.Serialize(new CrNames { N = 1, Na = "x", Größe = 2 }));
+        for (int length = 0; length < whole.Length; length += 3)
+          data.Add(whole.AsSpan(0, length).ToArray());
+      }
+
+      foreach (bool ignoreCase in new[] { false, true })
+      {
+        LtMsgPackOptions options = new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = ignoreCase };
+        LtMsgPackSerializer runtime = Create(options, -1);
+        LtMsgPackSerializer compiled = Create(options, 0);
+        LtMsgPackOptions withContext = options.Clone(); // the source generator's straight-line code (GeneratedIO.NamesInOrder: in parts, the class has more than 16 members)
+        withContext.Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default };
+        withContext.UseRegisteredContexts = false;
+        withContext.CompileReadersAfter = -1;
+        LtMsgPackSerializer generated = new LtMsgPackSerializer(withContext);
+        List<string> differences = new List<string>();
+        for (int t = 0; t < data.Count; t++)
+        {
+          string expected = Read(runtime, typeof(CrNames), data[t]);
+          string actual = Read(compiled, typeof(CrNames), data[t]);
+          if (expected != actual)
+            differences.Add($"ignore case {ignoreCase}, #{t} {BitConverter.ToString(data[t])}:\n  {expected}\n  {actual}");
+          actual = Read(generated, typeof(CrNames), data[t]);
+          if (expected != actual)
+            differences.Add($"generated, ignore case {ignoreCase}, #{t} {BitConverter.ToString(data[t])}:\n  {expected}\n  {actual}");
+        }
+        Assert.IsEmpty(differences, string.Join("\n", differences));
+        Assert.AreEqual("CompiledObjectReader", ReaderOf(compiled, typeof(CrNames)));
+        Assert.AreEqual(!ignoreCase, IsCompiled(compiled, typeof(CrNames), true), "maps with names ignoring case stay with the runtime's loop");
+        Assert.AreEqual(!ignoreCase, NamesInOrder(generated, typeof(CrNames)), "the generated code reads the names straight-line, not ignoring case");
+      }
+    }
+
+    /// <summary>
     /// A serializer reads both layouts whatever its options write: the reader of the other layout is compiled when its first object is read.
     /// </summary>
     [TestMethod]
@@ -428,7 +540,7 @@ namespace LsMsgPackUnitTests
         Assert.AreEqual(expected, Read(ofArrays, typeof(CrSimple), asArray));
         Assert.IsFalse(IsCompiled(ofArrays, typeof(CrSimple), true), "no map read yet");
         Assert.AreEqual(expected, Read(ofArrays, typeof(CrSimple), asMap));
-        Assert.AreEqual(schema, IsCompiled(ofArrays, typeof(CrSimple), true), "a map was read: compiled with the indexed schema, maps with names stay with the runtime's loop");
+        Assert.IsTrue(IsCompiled(ofArrays, typeof(CrSimple), true), "a map was read");
         Assert.AreEqual(expected, Read(ofArrays, typeof(CrSimple), asMap), "again");
       }
     }

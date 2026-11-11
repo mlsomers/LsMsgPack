@@ -14,7 +14,7 @@ namespace LtMsgPack.Generator
     /// <summary>
     /// The version of the generated code (LsMsgPack.Generated.GeneratedContract.Current of the runtime this generator is released with, checked by a test).
     /// </summary>
-    internal const int ContractVersion = 4;
+    internal const int ContractVersion = 5;
 
     private const string Values = "global::LtMsgPack.Generated.GeneratedValues";
 
@@ -466,6 +466,12 @@ namespace LtMsgPack.Generator
       w.Open();
       w.Line(IO + "MsgPackReader r = c.R;");
       w.Line("int next = 0;");
+      if (unrolled.Count > 0) // keys by names in the predicted order: straight-line first (ReadNames), the loop reads the entries after the first key that is not the next property's
+      {
+        w.Line(Reading + "PropReader[] props = " + Generated + "GeneratedIO.NamesInOrder(c, plan);");
+        w.Line("if (props != null)");
+        w.Line("  next = ReadNames(c, " + o + ", props, ref count, p);");
+      }
       w.Line("for (int t = 0; t < count; t++)");
       w.Open();
       w.Line(Reading + "PropReader prop;");
@@ -516,7 +522,170 @@ namespace LtMsgPack.Generator
       w.Line("return true;");
       w.Close();
 
+      if (unrolled.Count > 0)
+        ReadNames(w, type, unrolled, accessors, t, o);
+
       w.Close();
+    }
+
+    /// <summary>
+    /// ReadNames: the entries of a map keyed by names straight-line, when the plan's properties are the unrolled members (GeneratedIO.NamesInOrder): the code of position i reads the next
+    /// entry when its key is that member's name with the header the writers write (GeneratedIO.KeyIs with the words as constants), so a value FilterDefaultValues left out costs one comparison.
+    /// Returns the position after the last property read (where ReadMap's loop searches on, ReadPlan.FindByName), <c>count</c> the entries left. By parts for a wide class, as the unrolled writers.
+    /// The same code as the runtime's compiled readers (CompiledReader.Names).
+    /// </summary>
+    private static void ReadNames(CodeWriter w, TypeModel type, List<int> unrolled, Accessors accessors, string t, string o)
+    {
+      string parameters = "(" + Reading + "ReadContext c, " + t + " o, " + Reading + "PropReader[] props, ref int count, " + Generated + "GeneratedReadPlan p";
+      w.Line();
+      for (int i = 0; i < unrolled.Count; i++)
+      {
+        byte[] key = Key(type.Members[unrolled[i]].Name);
+        if (key.Length > 32)
+          w.Line("private static readonly byte[] Key" + i + " = new byte[] { " + string.Join(", ", System.Linq.Enumerable.Select(key, b => "0x" + b.ToString("X2"))) + " };");
+      }
+      w.Line("private int ReadNames" + parameters + ")");
+      w.Open();
+      if (unrolled.Count <= UnrolledPart)
+      {
+        w.Line("int next = 0;");
+        ReadNamesBody(w, type, unrolled, 0, unrolled.Count, accessors, o);
+        w.Close();
+        return;
+      }
+      w.Line("int next = 0;");
+      for (int from = 0; from < unrolled.Count; from += UnrolledPart)
+      {
+        if (from > 0)
+        {
+          w.Line("if (count == 0)");
+          w.Line("  return next;");
+        }
+        w.Line("next = ReadNamesPart" + (from / UnrolledPart) + "(c, " + o + ", props, ref count, p, next);");
+      }
+      w.Line("return next;");
+      w.Close();
+      for (int from = 0; from < unrolled.Count; from += UnrolledPart)
+      {
+        w.Line();
+        w.Line("[global::System.Runtime.CompilerServices.MethodImpl(global::System.Runtime.CompilerServices.MethodImplOptions.NoInlining)] // its own inline budget");
+        w.Line("private int ReadNamesPart" + (from / UnrolledPart) + parameters + ", int next)");
+        w.Open();
+        ReadNamesBody(w, type, unrolled, from, System.Math.Min(from + UnrolledPart, unrolled.Count), accessors, o);
+        w.Close();
+      }
+    }
+
+    /// <summary>
+    /// The unrolled members at the positions from..to of ReadNames (<c>next</c> declared, returned at the end).
+    /// </summary>
+    private static void ReadNamesBody(CodeWriter w, TypeModel type, List<int> unrolled, int from, int to, Accessors accessors, string o)
+    {
+      bool byRef = type.Kind == TypeModelKind.Struct;
+      w.Line(IO + "MsgPackReader r = c.R;");
+      w.Line(Reading + "PropReader prop;");
+      for (int i = from; i < to; i++)
+      {
+        int m = unrolled[i];
+        MemberModel member = type.Members[m];
+        byte[] key = Key(member.Name);
+        string matches = key.Length > 32
+          ? Generated + "GeneratedIO.LongKeyIs(r, Key" + i + ")"
+          : Generated + "GeneratedIO.KeyIs(r, " + key.Length + ", " + Word(key, 0) + ", " + Word(key, 8) + ", " + Word(key, 16) + ", " + Word(key, key.Length - System.Math.Min(8, WordSize(key.Length))) + ")";
+        string done = "goto read" + i + ";";
+        w.Line("if (count == 0)");
+        w.Line("  return next;");
+        w.Line("if (" + matches + ") // \"" + member.Name + "\"");
+        w.Open();
+        w.Line("r.Pos += " + key.Length + ";");
+        w.Line("count--;");
+        w.Line("next = " + (i + 1) + ";");
+        w.Line("prop = props[" + i + "];");
+        bool readHere = IsReadHere(member);
+        if (readHere)
+        {
+          w.Line("if (prop.GeneratedId == " + m + ")");
+          w.Open();
+          if (member.Nullable)
+          {
+            w.Line("if (r.TryReadNil())");
+            w.Open();
+            w.Line(Set(accessors, member, "null") + ";");
+            w.Line(done);
+            w.Close();
+            ReadValue(w, member, done, accessors);
+          }
+          else
+          {
+            ReadValue(w, member, done, accessors);
+            w.Line("if (r.TryReadNil())");
+            w.Open();
+            w.Line(Set(accessors, member, "default(" + member.TypeName + ")") + ";");
+            w.Line(done);
+            w.Close();
+          }
+          w.Close();
+        }
+        w.Line((byRef ? Generated + "GeneratedIO.Read(prop, c, ref o);" : "prop.Read(c, o);") + " // another format, or read as the runtime does");
+        w.Close();
+        if (readHere)
+          w.Line("read" + i + ":");
+      }
+      w.Line("return next;");
+    }
+
+    /// <summary>
+    /// A key as the writers write a property's name (LtMsgPack's CompiledReader.Key): the header of a string in its smallest format, then the UTF-8 bytes.
+    /// </summary>
+    private static byte[] Key(string name)
+    {
+      byte[] bytes = System.Text.Encoding.UTF8.GetBytes(name);
+      int header = bytes.Length < 32 ? 1 : bytes.Length <= byte.MaxValue ? 2 : bytes.Length <= ushort.MaxValue ? 3 : 5;
+      byte[] key = new byte[header + bytes.Length];
+      if (header == 1)
+        key[0] = (byte)(0xA0 | bytes.Length);
+      else if (header == 2)
+      {
+        key[0] = 0xD9;
+        key[1] = (byte)bytes.Length;
+      }
+      else if (header == 3)
+      {
+        key[0] = 0xDA;
+        key[1] = (byte)(bytes.Length >> 8);
+        key[2] = (byte)bytes.Length;
+      }
+      else
+      {
+        key[0] = 0xDB;
+        for (int b = 0; b < 4; b++)
+          key[1 + b] = (byte)(bytes.Length >> (24 - 8 * b));
+      }
+      System.Array.Copy(bytes, 0, key, header, bytes.Length);
+      return key;
+    }
+
+    /// <summary>
+    /// The size of the words GeneratedIO.KeyIs compares for a key of <paramref name="length"/> bytes.
+    /// </summary>
+    private static int WordSize(int length)
+    {
+      return length >= 8 ? 8 : length >= 4 ? 4 : length >= 2 ? 2 : 1;
+    }
+
+    /// <summary>
+    /// The word of <see cref="WordSize"/> bytes of the key at <paramref name="offset"/> as a C# constant, little-endian (as GeneratedIO.KeyIs reads the data; CompiledReader.Word), 0 past the key's end.
+    /// </summary>
+    private static string Word(byte[] key, int offset)
+    {
+      int size = WordSize(key.Length);
+      ulong word = 0;
+      if (offset + size <= key.Length)
+      {
+        for (int b = size - 1; b >= 0; b--)
+          word = (word << 8) | key[offset + b];
+      }
+      return word == 0 ? "0UL" : "0x" + word.ToString("X") + "UL";
     }
 
     /// <summary>

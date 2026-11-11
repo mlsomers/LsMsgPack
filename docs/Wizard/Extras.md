@@ -32,7 +32,7 @@ LtMsgPackSerializer serializer = new LtMsgPackSerializer(AppMsgPackContext.Defau
 
 The web formatters take it too: `AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)`, `AddLsMsgPack(AppMsgPackContext.Default)`, and on the client `new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options))`.
 
-Without AOT it's several times faster under WebAssembly. With a JIT, LtMsgPack compiles the same writers and readers at runtime once a class has been written or read 1000 times, so there the generator helps the first objects of each class, and reads maps keyed by property names about 1.3x as fast. The bytes are exactly the same with or without it, so you can switch it on at any time. More: [SourceGenerator.md](../SourceGenerator.md).
+Without AOT it's several times faster under WebAssembly. With a JIT, LtMsgPack compiles the same writers and readers at runtime once a class has been written or read 1000 times, so there the generator helps the first objects of each class (maps keyed by property names are read faster without it). The bytes are exactly the same with or without it, so you can switch it on at any time. More: [SourceGenerator.md](../SourceGenerator.md).
 
 ## Warnings while you type
 

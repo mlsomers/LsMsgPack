@@ -666,48 +666,61 @@ namespace LtMsgPack.Writing
   }
 
   /// <summary>
-  /// The numbers that arrays and lists are written in bulk (<see cref="NumberArrayHandler{T}"/>, <see cref="NumberListHandler{T}"/>; reading: NumberArrayReader, NumberListReader):
-  /// int, long, float and double.
+  /// The element types of the arrays and lists that are written in bulk (<see cref="NumberArrayHandler{T}"/>, <see cref="NumberListHandler{T}"/>; reading: NumberArrayReader, NumberListReader):
+  /// int, long, float and double (written the same with any options), sbyte, short, ushort, uint, ulong, bool, Guid and decimal (when the options write them as such: <see cref="Serializer.Bulk"/>; not byte, a byte[] is bin).
   /// </summary>
   internal static class Numbers
   {
     /// <summary>
-    /// The same bytes as the handler of <typeparamref name="T"/> writes per value (Int32Handler, Int64Handler, SingleHandler, DoubleHandler).
+    /// The same bytes as the handler of <typeparamref name="T"/> writes per value (Int32Handler, Int64Handler, SingleHandler, DoubleHandler, the other integer handlers, BoolHandler, GuidHandler, DecimalHandler).
     /// </summary>
+    /// <param name="decimalCode">The type code of the decimal extension (decimals only)</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static void Write<T>(MsgPackWriter w, ReadOnlySpan<T> values) where T : struct
+    internal static void Write<T>(MsgPackWriter w, ReadOnlySpan<T> values, byte decimalCode) where T : struct
     {
       if (typeof(T) == typeof(int)) w.Int32s(MemoryMarshal.Cast<T, int>(values)); // the JIT keeps the one of T
       else if (typeof(T) == typeof(long)) w.Int64s(MemoryMarshal.Cast<T, long>(values));
       else if (typeof(T) == typeof(float)) w.Singles(MemoryMarshal.Cast<T, float>(values));
-      else w.Doubles(MemoryMarshal.Cast<T, double>(values));
+      else if (typeof(T) == typeof(double)) w.Doubles(MemoryMarshal.Cast<T, double>(values));
+      else if (typeof(T) == typeof(bool)) w.Bools(MemoryMarshal.Cast<T, bool>(values));
+      else if (typeof(T) == typeof(Guid)) w.Guids(MemoryMarshal.Cast<T, Guid>(values));
+      else if (typeof(T) == typeof(decimal)) w.Decimals(MemoryMarshal.Cast<T, decimal>(values), decimalCode);
+      else w.Integers(values);
     }
 
     /// <summary>
     /// The values in the formats the reader of <typeparamref name="T"/> reads without converting.
     /// </summary>
+    /// <param name="decimalCode">The type code of the decimal extension (decimals only)</param>
     /// <returns>The number of values read (see <see cref="MsgPackReader.ReadInt32s"/>)</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static int Read<T>(MsgPackReader r, Span<T> target) where T : struct
+    internal static int Read<T>(MsgPackReader r, Span<T> target, byte decimalCode) where T : struct
     {
       if (typeof(T) == typeof(int)) return r.ReadInt32s(MemoryMarshal.Cast<T, int>(target));
       if (typeof(T) == typeof(long)) return r.ReadInt64s(MemoryMarshal.Cast<T, long>(target));
       if (typeof(T) == typeof(float)) return r.ReadSingles(MemoryMarshal.Cast<T, float>(target));
-      return r.ReadDoubles(MemoryMarshal.Cast<T, double>(target));
+      if (typeof(T) == typeof(double)) return r.ReadDoubles(MemoryMarshal.Cast<T, double>(target));
+      if (typeof(T) == typeof(bool)) return r.ReadBools(MemoryMarshal.Cast<T, bool>(target));
+      if (typeof(T) == typeof(Guid)) return r.ReadGuids(MemoryMarshal.Cast<T, Guid>(target));
+      if (typeof(T) == typeof(decimal)) return r.ReadDecimals(MemoryMarshal.Cast<T, decimal>(target), decimalCode);
+      return r.ReadIntegers(target);
     }
   }
 
   /// <summary>
-  /// int[], long[], float[] and double[] (see <see cref="Numbers"/>; when the options write the element type as such): the same bytes as <see cref="ArrayHandler{TItem}"/>,
-  /// written in bulk (1000 values: int 5.3 -> 2.2 us, long 6.1 -> 3.3 us, float 2.5 -> 1.2 us, double 2.8 -> 1.4 us, mostly the copy of the payload).
+  /// An array of a type written in bulk (see <see cref="Numbers"/>, <see cref="Serializer.Bulk"/>): the same bytes as <see cref="ArrayHandler{TItem}"/>, written in bulk
+  /// (1000 values: int 5.3 -> 2.2 us, long 6.1 -> 3.3 us, float 2.5 -> 1.2 us, double 2.8 -> 1.4 us, short 5.8-6.7 -> 2.9-3.0 us, uint 5.1-5.7 -> 2.8 us, bool 2.0 -> 1.0-1.1 us,
+  /// Guid 5.3-5.5 -> 1.8-1.9 us, decimal 4.3 -> 1.85 us; mostly the copy of the payload).
   /// </summary>
   internal sealed class NumberArrayHandler<T> : ValueHandler<T[]>, ITypedElements where T : struct
   {
     private readonly Serializer _serializer;
+    private readonly byte _decimalCode;
 
-    internal NumberArrayHandler(Serializer serializer)
+    internal NumberArrayHandler(Serializer serializer, byte decimalCode)
     {
       _serializer = serializer;
+      _decimalCode = decimalCode;
     }
 
     internal override void Write(WriteContext c, T[] value, FullPropertyInfo assignedTo)
@@ -720,7 +733,7 @@ namespace LtMsgPack.Writing
 
       c.EnterContainer();
       c.W.ArrayHeader(value.Length);
-      Numbers.Write(c.W, new ReadOnlySpan<T>(value));
+      Numbers.Write(c.W, new ReadOnlySpan<T>(value), _decimalCode);
       c.LeaveContainer();
     }
 
@@ -737,15 +750,17 @@ namespace LtMsgPack.Writing
 
 #if NET8_0_OR_GREATER
   /// <summary>
-  /// List&lt;T&gt; of int, long, float or double (not a derived type), as <see cref="NumberArrayHandler{T}"/>.
+  /// List&lt;T&gt; of a type written in bulk (not a derived type), as <see cref="NumberArrayHandler{T}"/>.
   /// </summary>
   internal sealed class NumberListHandler<T> : ValueHandler<List<T>>, ITypedElements where T : struct
   {
     private readonly Serializer _serializer;
+    private readonly byte _decimalCode;
 
-    internal NumberListHandler(Serializer serializer)
+    internal NumberListHandler(Serializer serializer, byte decimalCode)
     {
       _serializer = serializer;
+      _decimalCode = decimalCode;
     }
 
     internal override void Write(WriteContext c, List<T> value, FullPropertyInfo assignedTo)
@@ -759,7 +774,7 @@ namespace LtMsgPack.Writing
       c.EnterContainer();
       ReadOnlySpan<T> items = CollectionsMarshal.AsSpan(value);
       c.W.ArrayHeader(items.Length);
-      Numbers.Write(c.W, items);
+      Numbers.Write(c.W, items, _decimalCode);
       c.LeaveContainer();
     }
 
@@ -774,6 +789,50 @@ namespace LtMsgPack.Writing
     }
   }
 #endif
+
+  /// <summary>
+  /// HashSet&lt;T&gt; (not a derived class) of a type written in bulk (see <see cref="Numbers"/>) as <see cref="HashSetHandler{TItem}"/> writes it, in the order it enumerates:
+  /// copied to a pooled array first (<c>CopyTo</c>, the same order; 1000 ints 5.3-6.3 -> 4.0-4.5 us, the enumerator in blocks 5.0-5.1 us).
+  /// </summary>
+  internal sealed class NumberSetHandler<T> : ValueHandler<HashSet<T>>, ITypedElements where T : unmanaged
+  {
+    private readonly Serializer _serializer;
+    private readonly byte _decimalCode;
+
+    internal NumberSetHandler(Serializer serializer, byte decimalCode)
+    {
+      _serializer = serializer;
+      _decimalCode = decimalCode;
+    }
+
+    internal override void Write(WriteContext c, HashSet<T> value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(HashSet<T>))
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      c.EnterContainer();
+      c.W.ArrayHeader(value.Count);
+      int count = value.Count;
+      T[] items = System.Buffers.ArrayPool<T>.Shared.Rent(count); // not returned when writing throws: the pool makes another one
+      value.CopyTo(items);
+      Numbers.Write(c.W, new ReadOnlySpan<T>(items, 0, count), _decimalCode);
+      System.Buffers.ArrayPool<T>.Shared.Return(items);
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<HashSet<T>>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(HashSet<T> value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
 
   /// <summary>
   /// HashSet&lt;T&gt; (not a derived class) as an array, in the order it enumerates.

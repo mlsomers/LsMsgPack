@@ -7,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -46,6 +47,11 @@ namespace LtMsgPack.Reading
   {
     internal readonly Type Type;
     internal readonly CompiledReader.Member[] Members;
+
+    /// <summary>
+    /// Maps keyed by names: the key of each property (its name with the header of a string, as the writers write it), null with the indexed schema.
+    /// </summary>
+    internal readonly byte[][] Keys;
     private readonly PropReader[] _props;
     private readonly bool _atOnce;
     private ICompiledReader _owner;
@@ -70,10 +76,17 @@ namespace LtMsgPack.Reading
     }
 
     /// <param name="atOnce">A layout is compiled when its first object is read, on the calling thread (<see cref="LtMsgPackOptions.CompileReadersAfter"/> 0), otherwise on the thread pool</param>
-    internal CompiledReads(Type type, CompiledReader.Member[] members, PropReader[] props, bool atOnce)
+    /// <param name="names">Maps are keyed by names (not with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: ReadPlan.Map stays false then)</param>
+    internal CompiledReads(Type type, CompiledReader.Member[] members, PropReader[] props, bool atOnce, bool names)
     {
       Type = type;
       Members = members;
+      if (names)
+      {
+        Keys = new byte[props.Length][];
+        for (int t = 0; t < props.Length; t++)
+          Keys[t] = CompiledReader.Key(props[t].NameBytes);
+      }
       _props = props;
       _atOnce = atOnce;
       _last = new Order(props, props.Length);
@@ -163,7 +176,7 @@ namespace LtMsgPack.Reading
     public void Compile(bool map)
     {
       if (map)
-        _map = CompiledReader.Map<CompiledReadMap<T>>(_reads.Type, false, _reads.Members);
+        _map = _reads.Keys is null ? CompiledReader.Map<CompiledReadMap<T>>(_reads.Type, false, _reads.Members) : CompiledReader.Names<CompiledReadMap<T>>(_reads.Type, false, _reads.Members, _reads.Keys);
       else
         _positional = CompiledReader.Positional<CompiledReadPositional<T>>(_reads.Type, false, _reads.Members);
       _reads.Compiled(map);
@@ -236,7 +249,7 @@ namespace LtMsgPack.Reading
     public void Compile(bool map)
     {
       if (map)
-        _map = CompiledReader.Map<CompiledRefReadMap<T>>(_reads.Type, true, _reads.Members);
+        _map = _reads.Keys is null ? CompiledReader.Map<CompiledRefReadMap<T>>(_reads.Type, true, _reads.Members) : CompiledReader.Names<CompiledRefReadMap<T>>(_reads.Type, true, _reads.Members, _reads.Keys);
       else
         _positional = CompiledReader.Positional<CompiledRefReadPositional<T>>(_reads.Type, true, _reads.Members);
       _reads.Compiled(map);
@@ -279,9 +292,9 @@ namespace LtMsgPack.Reading
   /// Readers compiled per <see cref="ReadPlan"/> at runtime (<see cref="LtMsgPackOptions.CompileReadersAfter"/>): the code of the source generator's readers as expression trees, so the per property
   /// costs of the runtime's plans go for the values of simple types (a virtual call and a setter delegate per property: <see cref="PropReader{TTarget, TValue}"/>). The counterpart of the compiled writers (CompiledWriter).
   /// <para>Per plan. Arrays are read straight-line: position t is the plan's property t (see <see cref="CompiledReads.Limit"/>). Maps with the indexed schema by a loop over the keys with a switch over
-  /// the plan's properties (<see cref="PropReader.CompiledId"/>), as the generated code. Maps keyed by names stay with the runtime's loop (ReadPlan.Map is not set for them): the JIT inlines
-  /// the comparison of the names into it and makes better code of that loop than of a compiled one (invoices, A/B on .NET 8: arrays 5.7 -> 4.4 ms, maps with the schema 5.7 -> 5.3 ms,
-  /// with names 6.8 -> 6.7 ms at best, 7.0 -> 7.9 ms with a call per key).</para>
+  /// the plan's properties (<see cref="PropReader.CompiledId"/>), as the generated code. Maps keyed by names straight-line, each key compared with the next property's name as constants
+  /// (<see cref="Names{TDelegate}"/>; not with PropertyNameCaseInsensitive: ReadPlan.Map is not set then, its rules stay in the runtime's loop). Invoices, A/B on .NET 8: arrays 5.7 -> 4.4 ms,
+  /// maps with the schema 5.7 -> 5.3 ms, with names 6.8-6.9 -> 4.7 ms (a loop over the keys with the names compared inline: 6.7 ms; a call per key: 7.9 ms).</para>
   /// <para>A value is read here when it is in the format the reader of its type reads directly (the same calls as that reader makes), otherwise the property's reader reads it from where it starts:
   /// the same values, conversions and errors. Properties of other types (objects, collections...) and the ones without a setter this code can call are read by their readers.</para>
   /// </summary>
@@ -347,12 +360,13 @@ namespace LtMsgPack.Reading
       if (!any)
         return null;
 
-      CompiledReads reads = new CompiledReads(type, members, props, serializer.CompileReadersAfter == 0);
+      bool names = !serializer.Options._useInexedSchema;
+      CompiledReads reads = new CompiledReads(type, members, props, serializer.CompileReadersAfter == 0, names);
       Type codeType = (type.IsValueType ? typeof(CompiledStructReader<>) : typeof(CompiledObjectReader<>)).MakeGenericType(type);
       GeneratedObjectCode code = (GeneratedObjectCode)Activator.CreateInstance(codeType, new object[] { reads });
       if (serializer.Options._objectLayout == ObjectLayout.Array)
         ((ICompiledReader)code).Compile(false);
-      else if (serializer.Options._useInexedSchema)
+      else if (!names || !serializer.Options._propertyNameCaseInsensitive)
         ((ICompiledReader)code).Compile(true);
       return code; // the other layout (also arrays read by a serializer of maps with names) when its first object is read
     }
@@ -411,7 +425,12 @@ namespace LtMsgPack.Reading
     /// <returns>false on a key that loop does not read: the object is read again from its start</returns>
     internal static bool Entries(ReadContext c, object target, ReadPlan plan, PropReader[] bound, int count)
     {
-      int next = 0;
+      return Entries(c, target, plan, bound, count, 0);
+    }
+
+    /// <param name="next">Keys by name: the property the search for the next key starts at (ReadPlan.FindByName)</param>
+    internal static bool Entries(ReadContext c, object target, ReadPlan plan, PropReader[] bound, int count, int next)
+    {
       for (int t = 0; t < count; t++)
       {
         if (!GeneratedIO.TryReadKey(c, plan, bound, ref next, out PropReader prop))
@@ -429,7 +448,12 @@ namespace LtMsgPack.Reading
     /// </summary>
     internal static bool Entries<T>(ReadContext c, ref T target, ReadPlan plan, PropReader[] bound, int count)
     {
-      int next = 0;
+      return Entries(c, ref target, plan, bound, count, 0);
+    }
+
+    /// <inheritdoc cref="Entries(ReadContext, object, ReadPlan, PropReader[], int, int)"/>
+    internal static bool Entries<T>(ReadContext c, ref T target, ReadPlan plan, PropReader[] bound, int count, int next)
+    {
       for (int t = 0; t < count; t++)
       {
         if (!GeneratedIO.TryReadKey(c, plan, bound, ref next, out PropReader prop))
@@ -532,6 +556,107 @@ namespace LtMsgPack.Reading
       variables.Add(next);
       variables.Add(other);
       return Expression.Lambda<TDelegate>(Expression.Block(typeof(bool), variables, body), b.C, b.O, plan, bound, count, b.P).Compile();
+    }
+
+    /// <summary>
+    /// The entries of a map keyed by names, straight-line: the code of property t reads the next entry when its key is the name of property t (the writers write the keys in the plan's order,
+    /// FilterDefaultValues leaves some out), the key compared as constants (<see cref="GeneratedIO.KeyIs"/>: no call and no loop per key; the source generator writes the same code). The entries after the first key that is not the next property's
+    /// (another order, a property this class does not have, another string header, a key that makes the object be read again) are read by the runtime's loop (<see cref="Entries(ReadContext, object, ReadPlan, PropReader[], int, int)"/>).
+    /// </summary>
+    /// <param name="keys">The key of each property (<see cref="Key"/>)</param>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
+    [UnconditionalSuppressMessage("Trimming", "IL2060", Justification = Reason)]
+    internal static TDelegate Names<TDelegate>(Type type, bool byRef, Member[] members, byte[][] keys) where TDelegate : Delegate
+    {
+      Builder b = new Builder(type, byRef, members);
+      ParameterExpression plan = Expression.Parameter(typeof(ReadPlan), "plan");
+      ParameterExpression bound = Expression.Parameter(typeof(PropReader[]), "bound");
+      ParameterExpression count = Expression.Parameter(typeof(int), "count"); // counted down: the entries left
+      ParameterExpression next = Expression.Variable(typeof(int), "next");
+      LabelTarget end = Expression.Label(typeof(bool), "end");
+      Expression position = Expression.Field(b.R, nameof(MsgPackReader.Pos));
+      Expression props = Expression.Field(plan, nameof(ReadPlan.Props));
+      MethodInfo entries = byRef
+        ? typeof(CompiledReader).GetMethods(BindingFlags.Static | BindingFlags.NonPublic).First(m => m.Name == nameof(Entries) && m.IsGenericMethodDefinition && m.GetParameters().Length == 6).MakeGenericMethod(type)
+        : typeof(CompiledReader).GetMethod(nameof(Entries), BindingFlags.Static | BindingFlags.NonPublic, null, new[] { typeof(ReadContext), typeof(object), typeof(ReadPlan), typeof(PropReader[]), typeof(int), typeof(int) }, null);
+      MethodInfo keyIs = typeof(GeneratedIO).GetMethod(nameof(GeneratedIO.KeyIs));
+      MethodInfo longKeyIs = typeof(GeneratedIO).GetMethod(nameof(GeneratedIO.LongKeyIs));
+
+      List<Expression> body = new List<Expression>();
+      body.Add(Expression.Assign(b.R, Expression.Field(b.C, nameof(ReadContext.R))));
+      body.Add(Expression.Assign(next, Expression.Constant(0)));
+      body.Add(Expression.IfThen(Expression.Field(b.C, nameof(ReadContext.Schema)), Expression.Return(end, Expression.Call(entries, b.C, b.O, plan, bound, count, next)))); // not data this code is compiled for
+      for (int t = 0; t < members.Length; t++)
+      {
+        byte[] key = keys[t];
+        Expression matches = key.Length <= 32
+          ? Expression.Call(keyIs, b.R, Expression.Constant(key.Length), Expression.Constant(Word(key, 0)), Expression.Constant(Word(key, 8)), Expression.Constant(Word(key, 16)), Expression.Constant(Word(key, key.Length - Math.Min(8, WordSize(key.Length)))))
+          : Expression.Call(longKeyIs, b.R, Expression.Constant(key));
+        body.Add(Expression.IfThen(Expression.Equal(count, Expression.Constant(0)), Expression.Return(end, Expression.Constant(true))));
+        body.Add(Expression.IfThen(matches, Expression.Block(typeof(void),
+          Expression.AddAssign(position, Expression.Constant(key.Length)),
+          Expression.PreDecrementAssign(count),
+          Expression.Assign(next, Expression.Constant(t + 1)),
+          Expression.Block(typeof(void), b.Entry(t, Expression.ArrayIndex(props, Expression.Constant(t)))))));
+      }
+      body.Add(Expression.Label(end, Expression.OrElse(Expression.Equal(count, Expression.Constant(0)), Expression.Call(entries, b.C, b.O, plan, bound, count, next))));
+
+      List<ParameterExpression> variables = b.Variables();
+      variables.Add(next);
+      return Expression.Lambda<TDelegate>(Expression.Block(typeof(bool), variables, body), b.C, b.O, plan, bound, count, b.P).Compile();
+    }
+
+    /// <summary>
+    /// A key as the writers write a property's name: the header of a string in its smallest format (MsgPackWriter), then the UTF-8 bytes.
+    /// </summary>
+    internal static byte[] Key(byte[] name)
+    {
+      int header = name.Length < 32 ? 1 : name.Length <= byte.MaxValue ? 2 : name.Length <= ushort.MaxValue ? 3 : 5;
+      byte[] key = new byte[header + name.Length];
+      if (header == 1)
+        key[0] = (byte)(0xA0 | name.Length);
+      else if (header == 2)
+      {
+        key[0] = 0xD9;
+        key[1] = (byte)name.Length;
+      }
+      else if (header == 3)
+      {
+        key[0] = 0xDA;
+        key[1] = (byte)(name.Length >> 8);
+        key[2] = (byte)name.Length;
+      }
+      else
+      {
+        key[0] = 0xDB;
+        for (int t = 0; t < 4; t++)
+          key[1 + t] = (byte)(name.Length >> (24 - 8 * t));
+      }
+      Buffer.BlockCopy(name, 0, key, header, name.Length);
+      return key;
+    }
+
+    /// <summary>
+    /// The size of the words <see cref="GeneratedIO.KeyIs"/> compares for a key of <paramref name="length"/> bytes.
+    /// </summary>
+    private static int WordSize(int length)
+    {
+      return length >= 8 ? 8 : length >= 4 ? 4 : length >= 2 ? 2 : 1;
+    }
+
+    /// <summary>
+    /// The word of <see cref="WordSize"/> bytes of the key at <paramref name="offset"/>, little-endian (as <see cref="GeneratedIO.KeyIs"/> reads the data; LtMsgPack.Generator's Emitter.Word), 0 past the key's end.
+    /// </summary>
+    private static ulong Word(byte[] key, int offset)
+    {
+      int size = WordSize(key.Length);
+      if (offset + size > key.Length)
+        return 0;
+      ulong word = 0;
+      for (int t = size - 1; t >= 0; t--)
+        word = (word << 8) | key[offset + t];
+      return word;
     }
 
     /// <summary>

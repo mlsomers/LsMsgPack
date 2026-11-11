@@ -940,6 +940,148 @@ namespace LtMsgPack.IO
       }
     }
 
+    /// <summary>
+    /// sbyte, short, ushort, uint and ulong: the same bytes as <see cref="SByte"/>, <see cref="Int16"/>, <see cref="UInt16"/>, <see cref="UInt32"/> and <see cref="UInt64"/> write.
+    /// </summary>
+    internal void Integers<T>(ReadOnlySpan<T> values) where T : struct
+    {
+      int most = Unsafe.SizeOf<T>() + 1; // the largest format of the type, compact or not
+      bool compact = _compact;
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      for (int from = 0; from < values.Length; from += NumberBlock)
+      {
+        ReadOnlySpan<T> block = values.Slice(from, Math.Min(NumberBlock, values.Length - from));
+        Ensure(block.Length * most);
+        ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, block.Length * most));
+        int at = 0;
+        for (int t = 0; t < block.Length; t++)
+        {
+          T item = block[t];
+          ref byte code = ref Unsafe.Add(ref to, at);
+          ref byte next = ref Unsafe.Add(ref code, 1);
+          if (typeof(T) == typeof(sbyte))
+          {
+            sbyte value = Unsafe.As<T, sbyte>(ref item);
+            if (compact || (value >= -32 && value <= 31))
+              at = CompactAt(ref to, at, value, swap);
+            else
+            {
+              code = 0xD0;
+              next = (byte)value;
+              at += 2;
+            }
+          }
+          else if (typeof(T) == typeof(short))
+          {
+            short value = Unsafe.As<T, short>(ref item);
+            if (compact)
+              at = CompactAt(ref to, at, value, swap);
+            else
+            {
+              code = 0xD1;
+              Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness((ushort)value) : (ushort)value);
+              at += 3;
+            }
+          }
+          else if (typeof(T) == typeof(ushort))
+          {
+            ushort value = Unsafe.As<T, ushort>(ref item);
+            if (compact)
+              at = CompactAt(ref to, at, value, swap);
+            else
+            {
+              code = 0xCD;
+              Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness(value) : value);
+              at += 3;
+            }
+          }
+          else if (typeof(T) == typeof(uint))
+          {
+            uint value = Unsafe.As<T, uint>(ref item);
+            if (compact)
+              at = CompactAt(ref to, at, value, swap);
+            else
+            {
+              code = 0xCE;
+              Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness(value) : value);
+              at += 5;
+            }
+          }
+          else
+          {
+            ulong value = Unsafe.As<T, ulong>(ref item);
+            if (compact && value <= long.MaxValue)
+              at = CompactAt(ref to, at, (long)value, swap);
+            else // also what CompactUnsigned writes above long.MaxValue
+            {
+              code = 0xCF;
+              Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness(value) : value);
+              at += 9;
+            }
+          }
+        }
+        Pos += at;
+      }
+    }
+
+    /// <summary>
+    /// The same bytes as <see cref="Bool"/> writes per value.
+    /// </summary>
+    internal void Bools(ReadOnlySpan<bool> values)
+    {
+      Ensure(values.Length);
+      ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, values.Length));
+      for (int t = 0; t < values.Length; t++)
+        Unsafe.Add(ref to, t) = values[t] ? (byte)0xC3 : (byte)0xC2;
+      Pos += values.Length;
+    }
+
+    /// <summary>
+    /// The same bytes as <see cref="Guid(System.Guid)"/> writes per value: bin 16 in the order of <see cref="System.Guid.ToByteArray"/>, which is the order of a Guid in memory on a little-endian machine.
+    /// </summary>
+    internal void Guids(ReadOnlySpan<Guid> values)
+    {
+      if (!BitConverter.IsLittleEndian)
+      {
+        for (int t = 0; t < values.Length; t++)
+          Guid(values[t]);
+        return;
+      }
+      for (int from = 0; from < values.Length; from += NumberBlock)
+      {
+        ReadOnlySpan<Guid> block = values.Slice(from, Math.Min(NumberBlock, values.Length - from));
+        Ensure(block.Length * 18);
+        ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, block.Length * 18));
+        for (int t = 0, at = 0; t < block.Length; t++, at += 18)
+        {
+          Unsafe.Add(ref to, at) = 0xC4;
+          Unsafe.Add(ref to, at + 1) = 16;
+          Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, at + 2), block[t]);
+        }
+        Pos += block.Length * 18;
+      }
+    }
+
+    /// <summary>
+    /// The same bytes as DecimalHandler writes per value for the built-in DecimalExtension: fixext 16 with the 16 bytes of the decimal as they are in memory.
+    /// </summary>
+    internal void Decimals(ReadOnlySpan<decimal> values, byte typeCode)
+    {
+      for (int from = 0; from < values.Length; from += NumberBlock)
+      {
+        ReadOnlySpan<decimal> block = values.Slice(from, Math.Min(NumberBlock, values.Length - from));
+        Ensure(block.Length * 18);
+        ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, block.Length * 18));
+        for (int t = 0, at = 0; t < block.Length; t++, at += 18)
+        {
+          Unsafe.Add(ref to, at) = 0xD8;
+          Unsafe.Add(ref to, at + 1) = typeCode;
+          Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, at + 2), block[t]);
+        }
+        Pos += block.Length * 18;
+      }
+    }
+
     #endregion
 
     internal void ArrayHeader(int count)

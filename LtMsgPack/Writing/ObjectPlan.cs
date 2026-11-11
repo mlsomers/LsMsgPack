@@ -180,6 +180,10 @@ namespace LtMsgPack.Writing
     private void Compile(Serializer serializer)
     {
       _untilCompiled = 0;
+#if NET5_0_OR_GREATER
+      if (!RuntimeFeature.IsDynamicCodeSupported) // never true here (CompiledWriter.Supported), but a constant for NativeAOT: it then leaves out the expression compiler
+        return;
+#endif
       try
       {
         GeneratedObjectCode code = CompiledWriter.Create(serializer, Type, Infos);

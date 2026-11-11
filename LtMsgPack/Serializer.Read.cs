@@ -180,6 +180,8 @@ namespace LtMsgPack
             return (ValueReader)Instantiate(type, typeof(ListReader<>), type.GenericTypeArguments[0], this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
           {
+            if (InBulk(type.GenericTypeArguments[0]))
+              return (ValueReader)WithBulkElement(type.GenericTypeArguments[0], new BulkReaders(this, BulkCollection.Set));
             ValueReader set = (ValueReader)InstantiateCollection(type, typeof(HashSetReader<>), type.GenericTypeArguments, this);
             if (set != null)
               return set;
@@ -209,20 +211,35 @@ namespace LtMsgPack
       return (ValueReader)Instantiate(type, typeof(BoxedReader<>), type, null);
     }
 
-    /// <returns>The reader of an array or list of int, long, float or double, which reads the values in bulk (see <see cref="Numbers"/>); null for other types</returns>
+    /// <returns>The reader of an array or list that reads its values in bulk (see <see cref="Bulk"/>); null for other types</returns>
     private ValueReader NumberReader(Type type)
     {
-      if (type == typeof(int[])) return new NumberArrayReader<int>(Reader<int>());
-      if (type == typeof(long[])) return new NumberArrayReader<long>(Reader<long>());
-      if (type == typeof(float[])) return new NumberArrayReader<float>(Reader<float>());
-      if (type == typeof(double[])) return new NumberArrayReader<double>(Reader<double>());
+      Type element = Bulk(type, out bool list);
+      return element is null ? null : (ValueReader)WithBulkElement(element, new BulkReaders(this, list ? BulkCollection.List : BulkCollection.Array));
+    }
+
+    private struct BulkReaders : IBulkCreator
+    {
+      private readonly Serializer _serializer;
+      private readonly BulkCollection _collection;
+
+      internal BulkReaders(Serializer serializer, BulkCollection collection)
+      {
+        _serializer = serializer;
+        _collection = collection;
+      }
+
+      public object Create<T>() where T : unmanaged
+      {
+        byte code = _serializer.DecimalCode(typeof(T));
+        if (_collection == BulkCollection.Set)
+          return new NumberSetReader<T>(_serializer.Reader<T>(), code);
 #if NET8_0_OR_GREATER
-      if (type == typeof(List<int>)) return new NumberListReader<int>(Reader<int>());
-      if (type == typeof(List<long>)) return new NumberListReader<long>(Reader<long>());
-      if (type == typeof(List<float>)) return new NumberListReader<float>(Reader<float>());
-      if (type == typeof(List<double>)) return new NumberListReader<double>(Reader<double>());
+        if (_collection == BulkCollection.List)
+          return new NumberListReader<T>(_serializer.Reader<T>(), code);
 #endif
-      return null;
+        return new NumberArrayReader<T>(_serializer.Reader<T>(), code);
+      }
     }
 
     /// <returns>The reader of a generic interface of a collection (IList&lt;T&gt;, IEnumerable&lt;T&gt;, IDictionary&lt;TKey, TValue&gt;...) whose concrete type has a typed reader (see <see cref="CollectionInterfaceReader{T}"/>), otherwise null</returns>

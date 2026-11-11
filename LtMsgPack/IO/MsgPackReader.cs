@@ -494,6 +494,167 @@ namespace LtMsgPack.IO
       return t;
     }
 
+    /// <summary>
+    /// sbyte, short, ushort, uint and ulong: the integer formats with a value that fits the type (IntegerReader: <see cref="TryReadAnyInt64"/>, for ulong <see cref="TryReadUInt64"/>, then the range of the type).
+    /// A value that does not fit stops the loop: the reader of the type reports the overflow.
+    /// </summary>
+    /// <inheritdoc cref="ReadInt32s"/>
+    internal int ReadIntegers<T>(Span<T> target) where T : struct
+    {
+      byte[] buffer = Buf;
+      int pos = Pos;
+      int end = End;
+      if (pos >= end || (uint)end > (uint)buffer.Length)
+        return 0;
+      ref byte data = ref buffer[0];
+      ref T to = ref MemoryMarshal.GetReference(target);
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      int t = 0;
+      while (t < target.Length && pos < end)
+      {
+        ref byte at = ref Unsafe.Add(ref data, pos);
+        ref byte next = ref Unsafe.Add(ref at, 1);
+        byte c = at;
+        int left = end - pos;
+        long value;
+        int length;
+        if (c <= 0x7F) { value = c; length = 1; }
+        else if (c >= 0xE0) { value = (sbyte)c; length = 1; }
+        else if (c == 0xCC && left >= 2) { value = next; length = 2; }
+        else if (c == 0xCD && left >= 3) { value = U16(ref next, swap); length = 3; }
+        else if (c == 0xCE && left >= 5) { value = U32(ref next, swap); length = 5; }
+        else if (c == 0xD0 && left >= 2) { value = (sbyte)next; length = 2; }
+        else if (c == 0xD1 && left >= 3) { value = (short)U16(ref next, swap); length = 3; }
+        else if (c == 0xD2 && left >= 5) { value = (int)U32(ref next, swap); length = 5; }
+        else if (c == 0xD3 && left >= 9) { value = (long)U64(ref next, swap); length = 9; }
+        else if (c == 0xCF && left >= 9)
+        {
+          ulong unsigned = U64(ref next, swap);
+          if (typeof(T) == typeof(ulong))
+          {
+            Unsafe.As<T, ulong>(ref Unsafe.Add(ref to, t++)) = unsigned;
+            pos += 9;
+            continue;
+          }
+          if (unsigned > long.MaxValue)
+            break;
+          value = (long)unsigned;
+          length = 9;
+        }
+        else
+          break;
+
+        ref T item = ref Unsafe.Add(ref to, t);
+        if (typeof(T) == typeof(sbyte))
+        {
+          if ((ulong)(value - sbyte.MinValue) > byte.MaxValue)
+            break;
+          Unsafe.As<T, sbyte>(ref item) = (sbyte)value;
+        }
+        else if (typeof(T) == typeof(short))
+        {
+          if ((ulong)(value - short.MinValue) > ushort.MaxValue)
+            break;
+          Unsafe.As<T, short>(ref item) = (short)value;
+        }
+        else if (typeof(T) == typeof(ushort))
+        {
+          if ((ulong)value > ushort.MaxValue)
+            break;
+          Unsafe.As<T, ushort>(ref item) = (ushort)value;
+        }
+        else if (typeof(T) == typeof(uint))
+        {
+          if ((ulong)value > uint.MaxValue)
+            break;
+          Unsafe.As<T, uint>(ref item) = (uint)value;
+        }
+        else
+        {
+          if (value < 0)
+            break;
+          Unsafe.As<T, ulong>(ref item) = (ulong)value;
+        }
+        t++;
+        pos += length;
+      }
+      Pos = pos;
+      return t;
+    }
+
+    /// <summary>
+    /// true and false (<see cref="TryReadBool"/>).
+    /// </summary>
+    /// <inheritdoc cref="ReadInt32s"/>
+    internal int ReadBools(Span<bool> target)
+    {
+      byte[] buffer = Buf;
+      int pos = Pos;
+      int end = End;
+      if (pos >= end || (uint)end > (uint)buffer.Length)
+        return 0;
+      ref byte data = ref buffer[0];
+      ref bool to = ref MemoryMarshal.GetReference(target);
+      int t = 0;
+      while (t < target.Length && pos < end)
+      {
+        byte c = Unsafe.Add(ref data, pos);
+        if (c == 0xC3) Unsafe.Add(ref to, t) = true;
+        else if (c == 0xC2) Unsafe.Add(ref to, t) = false;
+        else break;
+        t++;
+        pos++;
+      }
+      Pos = pos;
+      return t;
+    }
+
+    /// <summary>
+    /// Guids as bin 16 (<see cref="TryReadGuid"/>): the bytes are in the order of <see cref="Guid.ToByteArray"/>, which is the order of a Guid in memory on a little-endian machine.
+    /// </summary>
+    /// <inheritdoc cref="ReadInt32s"/>
+    internal int ReadGuids(Span<Guid> target)
+    {
+      byte[] buffer = Buf;
+      int pos = Pos;
+      int end = End;
+      if (!BitConverter.IsLittleEndian || pos >= end || (uint)end > (uint)buffer.Length) // big-endian: TryReadGuid per value
+        return 0;
+      ref byte data = ref buffer[0];
+      ref Guid to = ref MemoryMarshal.GetReference(target);
+      int t = 0;
+      while (t < target.Length && end - pos >= 18 && Unsafe.Add(ref data, pos) == 0xC4 && Unsafe.Add(ref data, pos + 1) == 16)
+      {
+        Unsafe.Add(ref to, t++) = Unsafe.ReadUnaligned<Guid>(ref Unsafe.Add(ref data, pos + 2));
+        pos += 18;
+      }
+      Pos = pos;
+      return t;
+    }
+
+    /// <summary>
+    /// Decimals as the built-in DecimalExtension writes them (DecimalReader): fixext 16 of <paramref name="typeCode"/> with the 16 bytes of the decimal as they are in memory.
+    /// </summary>
+    /// <inheritdoc cref="ReadInt32s"/>
+    internal int ReadDecimals(Span<decimal> target, byte typeCode)
+    {
+      byte[] buffer = Buf;
+      int pos = Pos;
+      int end = End;
+      if (pos >= end || (uint)end > (uint)buffer.Length)
+        return 0;
+      ref byte data = ref buffer[0];
+      ref decimal to = ref MemoryMarshal.GetReference(target);
+      int t = 0;
+      while (t < target.Length && end - pos >= 18 && Unsafe.Add(ref data, pos) == 0xD8 && Unsafe.Add(ref data, pos + 1) == typeCode)
+      {
+        Unsafe.Add(ref to, t++) = Unsafe.ReadUnaligned<decimal>(ref Unsafe.Add(ref data, pos + 2));
+        pos += 18;
+      }
+      Pos = pos;
+      return t;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static ushort U16(ref byte source, bool swap)
     {

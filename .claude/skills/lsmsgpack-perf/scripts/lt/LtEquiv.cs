@@ -32,6 +32,9 @@ public class EqColl {
 }
 public class EqNumbers { public int[] I { get; set; } public long[] L { get; set; } public float[] F { get; set; } public double[] D { get; set; } public List<int> LI { get; set; } public List<long> LL { get; set; } public List<float> LF { get; set; } public List<double> LD { get; set; } public DateTime[] T { get; set; } public object Any { get; set; } public IList<int> IL { get; set; } public IEnumerable<double> IE { get; set; } }
 public class EqDerivedDoubles : List<double> { }
+public class EqSmall { public sbyte[] SB { get; set; } public short[] S { get; set; } public ushort[] US { get; set; } public uint[] U { get; set; } public ulong[] UL { get; set; } public bool[] B { get; set; } public Guid[] G { get; set; } public List<short> LS { get; set; } public List<uint> LU { get; set; } public List<bool> LB { get; set; } public List<Guid> LG { get; set; } public IList<bool> IB { get; set; } public object Any { get; set; } }
+public class EqDerivedGuids : List<Guid> { }
+public class EqDecimals { public decimal[] A { get; set; } public List<decimal> L { get; set; } public HashSet<decimal> S { get; set; } public object Any { get; set; } }
 public sealed class EqNoGuard : LsMsgPack.TypeResolving.Interfaces.IMsgPackTypeGuard { public bool IsAllowed(Type type, Type assignedTo, LsMsgPack.Meta.FullPropertyInfo prop, MsgPackOptions settings) => false; }
 public static class P {
   static string Hex(byte[] b) => BitConverter.ToString(b);
@@ -110,6 +113,24 @@ public static class P {
     values.Add(new int[0]); values.Add(new long[0]); values.Add(new float[0]); values.Add(new double[0]); values.Add(new List<int>()); values.Add(new List<double>());
     values.Add(bigI); values.Add(bigI.Select(x => x * 1000003L).ToArray()); values.Add(bigI.Select(x => x * 0.37f).ToArray()); values.Add(bigI.Select(x => x * 0.37).ToArray()); values.Add(bigI.ToList()); values.Add(bigI.Select(x => x * 0.37).ToList()); values.Add(bigI.Select(x => (long)x << 20).ToList()); values.Add(bigI.Select(x => x * 0.5f).ToList());
     values.Add(new uint[] { 1, uint.MaxValue }); values.Add(new ulong[] { 1, ulong.MaxValue }); values.Add(new short[] { 1, -300 }); values.Add(new EqDerivedDoubles { 1.5, 2 });
+    // The other integer types, bools and Guids in bulk (bin 16; the presets write Guids as strings)
+    sbyte[] esb = { 0, 1, 31, 32, 127, -1, -31, -32, -33, -128 };
+    short[] es = { 0, 1, 31, 32, 127, 128, 255, 256, 32767, -1, -31, -32, -33, -128, -129, -32768 };
+    ushort[] eus = { 0, 1, 31, 32, 127, 128, 255, 256, 32767, 32768, 65535 };
+    uint[] eu = { 0, 1, 31, 32, 127, 128, 255, 256, 32767, 32768, 65535, 65536, int.MaxValue, 2147483648u, uint.MaxValue };
+    ulong[] eul = { 0, 1, 31, 32, 127, 128, 255, 256, 65535, 65536, uint.MaxValue, 4294967296UL, long.MaxValue, 9223372036854775808UL, ulong.MaxValue };
+    bool[] eb = { true, false, false, true };
+    Guid[] eg = { Guid.Empty, Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"), Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff") };
+    values.Add(esb); values.Add(es); values.Add(eus); values.Add(eu); values.Add(eul); values.Add(eb); values.Add(eg); values.Add(es.ToList()); values.Add(eu.ToList()); values.Add(eul.ToList()); values.Add(eb.ToList()); values.Add(eg.ToList()); values.Add(esb.ToList()); values.Add(eus.ToList());
+    values.Add(new sbyte[0]); values.Add(new bool[0]); values.Add(new Guid[0]); values.Add(new List<short>()); values.Add(new List<Guid>()); values.Add(new EqDerivedGuids { Guid.Empty });
+    values.Add(bigI.Select(x => (short)x).ToArray()); values.Add(bigI.Select(x => (uint)x).ToArray()); values.Add(bigI.Select(x => (ulong)(long)x << 9).ToArray()); values.Add(bigI.Select(x => (sbyte)x).ToList()); values.Add(bigI.Select(x => x % 3 == 0).ToArray()); values.Add(bigI.Select(x => new Guid(x, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)).ToArray()); values.Add(bigI.Select(x => (ushort)x).ToList());
+    values.Add(new HashSet<int>(bigI)); values.Add(new HashSet<long>(el)); values.Add(new HashSet<short>(es)); values.Add(new HashSet<Guid>(eg)); values.Add(new HashSet<ulong>(eul)); values.Add(new HashSet<double>(ed)); values.Add(new HashSet<bool> { true }); values.Add(new HashSet<Guid>());
+    decimal[] edec = { 0m, -0m, 1.5m, -2.25m, decimal.MaxValue, decimal.MinValue, 0.0000000000000000000000000001m, 1.000m, 79228162514264337593543950335m / 3 };
+    values.Add(edec); values.Add(edec.ToList()); values.Add(new HashSet<decimal>(edec)); values.Add(bigI.Select(x => x * 1.25m).ToArray()); values.Add(new decimal[0]); values.Add(new List<decimal> { 1m });
+    values.Add(new EqDecimals { A = edec, L = edec.ToList(), S = new HashSet<decimal> { 2m }, Any = edec });
+    values.Add(new EqSmall());
+    values.Add(new EqSmall { SB = esb, S = es, US = eus, U = eu, UL = eul, B = eb, G = eg, LS = es.ToList(), LU = eu.ToList(), LB = eb.ToList(), LG = eg.ToList(), IB = eb, Any = eg });
+    values.Add(new EqSmall { S = (short[])(object)new ushort[] { 1, 65535 }, SB = (sbyte[])(object)new byte[] { 1, 255 }, LG = new EqDerivedGuids { Guid.Empty }, Any = new List<bool> { true }, IB = new List<bool> { false } });
     values.Add(new EqNumbers());
     values.Add(new EqNumbers { I = ei, L = el, F = ef, D = ed, LI = ei.ToList(), LL = el.ToList(), LF = ef.ToList(), LD = ed.ToList(), T = et, Any = ed, IL = ei, IE = ed });
     values.Add(new EqNumbers { I = (int[])(object)new uint[] { 1, uint.MaxValue }, L = (long[])(object)new ulong[] { 1, ulong.MaxValue }, LD = new EqDerivedDoubles { 1.5 }, Any = new List<float> { 1.5f }, IL = new List<int> { 1, 2 }, IE = new List<double> { 0.5 } });
@@ -130,11 +151,15 @@ public static class P {
       ("ints then text", Raw(0x93, 1, 2, "x")), ("ints then true", Raw(0x93, 1, 2, 0xC3)), ("ints then array", Raw(0x93, 1, 2, 0x91, 3)), ("nils", Raw(0x93, 0xC0, 1, 0xC0)),
       ("cut uint16", Raw(0x92, 1, 0xCD, 0)), ("cut uint32", Raw(0x93, 1, 2, 0xCE, 0, 0, 0)), ("cut int64", Raw(0x92, 1, 0xD3, 0, 0, 0)), ("cut float", Raw(0x92, 0xCA, 0x40, 0x20, 0, 0, 0xCA, 0x40)), ("cut double", Raw(0x92, 0xCB, 0x40, 0x04, 0, 0, 0, 0, 0, 0, 0xCB, 0x40, 0x04)), ("cut format", Raw(0x93, 1, 2)), ("too many", Raw(0xDC, 0x10, 0, 1, 2)),
       ("timestamps", Raw(0x93, 0xD6, 0xFF, 0x60, 0, 0, 0, 0xD7, 0xFF, 0x77, 0x35, 0x94, 0, 0x60, 0, 0, 0, 0xC7, 12, 0xFF, 0, 0, 0, 100, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE)), ("timestamp max nanos", Raw(0x91, 0xD7, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)), ("cut timestamp32", Raw(0x91, 0xD6, 0xFF, 0x60, 0)), ("cut timestamp64", Raw(0x91, 0xD7, 0xFF, 0x60, 0, 0, 0)), ("cut timestamp header", Raw(0x91, 0xD7)), ("timestamp96 far", Raw(0x91, 0xC7, 12, 0xFF, 0, 0, 0, 0, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF)), ("ext8 timestamp 4", Raw(0x91, 0xC7, 4, 0xFF, 0x60, 0, 0, 0)),
+      ("bools", Raw(0x94, 0xC3, 0xC2, 0xC0, 0xC3)), ("bools then int", Raw(0x93, 0xC3, 1, 0xC2)), ("bool text", Raw(0x92, 0xC3, "true")), ("small ints", Raw(0x96, 0x7F, 0xCC, 0x80, 0xD0, 0x80, 0xD1, 0x7F, 0xFF, 0xCD, 0xFF, 0xFF, 0xE0)), ("int8 overflow", Raw(0x92, 1, 0xCC, 200)), ("int16 overflow", Raw(0x92, 1, 0xCD, 0x80, 0)), ("negative unsigned", Raw(0x92, 1, 0xD0, 0xFF)), ("uint64 in int64", Raw(0x92, 0xD3, 0, 0, 0, 0, 0, 0, 0, 5, 0xCF, 0x80, 0, 0, 0, 0, 0, 0, 0)),
+      ("guids", Raw(0x93, 0xC4, 16, new byte[] { 0x5B, 0xAD, 0x8F, 0x0F, 0xCB, 0xD9, 0x9F, 0x46, 0xA1, 0x65, 0x70, 0x86, 0x77, 0x28, 0x95, 0x0E }, 0xC0, 0xC4, 16, new byte[16])), ("guid text", Raw(0x92, 0xC4, 16, new byte[16], "0f8fad5b-d9cb-469f-a165-70867728950e")), ("bin 15", Raw(0x92, 0xC4, 16, new byte[16], 0xC4, 15, new byte[15])), ("cut guid", Raw(0x92, 0xC4, 16, new byte[16], 0xC4, 16, new byte[9])), ("cut bin header", Raw(0x92, 0xC4, 16, new byte[16], 0xC4)),
+      ("decimals", Raw(0x93, 0xD8, 1, new byte[16], 0xC0, 0xD8, 1, new byte[] { 0, 0, 2, 0, 0, 0, 0, 0, 15, 0, 0, 0, 0, 0, 0, 0 })), ("decimal other code", Raw(0x92, 0xD8, 1, new byte[16], 0xD8, 2, new byte[16])), ("decimal text", Raw(0x92, 0xD8, 1, new byte[16], "1.5")), ("decimal int", Raw(0x92, 0xD8, 1, new byte[16], 7)), ("cut decimal", Raw(0x92, 0xD8, 1, new byte[16], 0xD8, 1, new byte[5])), ("decimal ext8", Raw(0x91, 0xC7, 16, 1, new byte[16])),
     };
     foreach (var (name, body) in bodies) {
       byte[] data = new byte[prefix.Length + body.Length]; prefix.CopyTo(data, 0); body.CopyTo(data, prefix.Length);
       foreach (Type t in new[] { typeof(Dictionary<string, int>), typeof(Dictionary<int, int>), typeof(Dictionary<string, object>), typeof(Dictionary<object, object>), typeof(Dictionary<string, int?>), typeof(HashSet<int>), typeof(HashSet<string>), typeof(IList<int>), typeof(IEnumerable<int>), typeof(ISet<int>), typeof(IDictionary<string, int>), typeof(IReadOnlyDictionary<string, int>), typeof(IEnumerable<KeyValuePair<string, int>>),
-        typeof(int[]), typeof(long[]), typeof(float[]), typeof(double[]), typeof(List<int>), typeof(List<long>), typeof(List<float>), typeof(List<double>), typeof(DateTime[]), typeof(short[]), typeof(ulong[]), typeof(EqNumbers) }) {
+        typeof(int[]), typeof(long[]), typeof(float[]), typeof(double[]), typeof(List<int>), typeof(List<long>), typeof(List<float>), typeof(List<double>), typeof(DateTime[]), typeof(short[]), typeof(ulong[]), typeof(EqNumbers),
+        typeof(sbyte[]), typeof(ushort[]), typeof(uint[]), typeof(bool[]), typeof(Guid[]), typeof(List<short>), typeof(List<ulong>), typeof(List<bool>), typeof(List<Guid>), typeof(IList<bool>), typeof(EqSmall), typeof(HashSet<short>), typeof(HashSet<Guid>), typeof(HashSet<long>), typeof(decimal[]), typeof(List<decimal>), typeof(HashSet<decimal>), typeof(EqDecimals) }) {
         sb.AppendLine($"odd {name} {t.Name} {string.Join(",", t.GenericTypeArguments.Select(x => x.Name))}: " + Run(() => Dump(s.Deserialize(t, data))));
         if (t == typeof(Dictionary<string, int>) || t == typeof(IList<int>)) sb.AppendLine("  report: " + Run(() => { object r = s.Deserialize(t, data, out LsMsgPack.ReadDifferences d); return Dump(r) + " | " + (d?.GenerateReport() ?? "none").Replace("\r", "").Replace("\n", " "); }));
       }

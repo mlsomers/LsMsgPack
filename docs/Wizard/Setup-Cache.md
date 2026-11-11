@@ -81,7 +81,7 @@ Register the serializer once: `builder.Services.AddSingleton(new LtMsgPackSerial
 
 ## Optional: the source generator
 
-LtMsgPack contains a source generator that writes the serialization code of your classes at compile time. With a JIT a cache doesn't need it for speed: LtMsgPack compiles the same writers and readers at runtime once a class has been written or read 1000 times (it reads maps keyed by property names about 1.3x as fast with the generator). The generator is for NativeAOT, trimming and the first objects of each class.
+LtMsgPack contains a source generator that writes the serialization code of your classes at compile time. With a JIT a cache doesn't need it for speed: LtMsgPack compiles the same writers and readers at runtime once a class has been written or read 1000 times. The generator is for NativeAOT, trimming and the first objects of each class.
 
 ```csharp
 [LtMsgPackSerializable(typeof(Order))]

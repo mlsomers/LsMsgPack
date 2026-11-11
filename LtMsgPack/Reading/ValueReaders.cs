@@ -603,17 +603,20 @@ namespace LtMsgPack.Reading
   }
 
   /// <summary>
-  /// int[], long[], float[] and double[] (see <see cref="Writing.Numbers"/>; when the options read the element type as such): the same values and errors as <see cref="ArrayReader{TItem}"/>.
+  /// An array of a type read in bulk (see <see cref="Writing.Numbers"/>, Serializer.Bulk): the same values and errors as <see cref="ArrayReader{TItem}"/>.
   /// The values in the formats of the type are read in bulk, any other value (nil, another format, an incomplete one) by the reader of the element type
-  /// (1000 values: int 8.0 -> 2.4 us, long 7.7 -> 3.9 us, float 3.0 -> 1.4 us, double 4.2 -> 2.3 us, mostly allocating the array).
+  /// (1000 values: int 8.0 -> 2.4 us, long 7.7 -> 3.9 us, float 3.0 -> 1.4 us, double 4.2 -> 2.3 us, short 8.3-9.6 -> 3.8 us, uint 7.5-8.6 -> 3.1-3.2 us, bool 2.1-2.7 -> 1.3 us,
+  /// Guid 8.8-9.1 -> 2.5-2.8 us, decimal 4.7 -> 2.1 us; mostly allocating the array).
   /// </summary>
   internal sealed class NumberArrayReader<T> : ValueReader<T[]>, ICollectionContent where T : struct
   {
     private readonly ValueReader<T> _item;
+    private readonly byte _decimalCode;
 
-    internal NumberArrayReader(ValueReader<T> item)
+    internal NumberArrayReader(ValueReader<T> item, byte decimalCode)
     {
       _item = item;
+      _decimalCode = decimalCode;
     }
 
     internal override T[] Read(ReadContext c, FullPropertyInfo assignedTo)
@@ -635,7 +638,7 @@ namespace LtMsgPack.Reading
       int t = 0;
       while (t < count)
       {
-        t += Writing.Numbers.Read(c.R, new Span<T>(array, t, count - t));
+        t += Writing.Numbers.Read(c.R, new Span<T>(array, t, count - t), _decimalCode);
         if (t < count)
           array[t++] = _item.Read(c, null);
       }
@@ -652,15 +655,17 @@ namespace LtMsgPack.Reading
 
 #if NET8_0_OR_GREATER
   /// <summary>
-  /// List&lt;T&gt; of int, long, float or double, as <see cref="NumberArrayReader{T}"/>: read into the list's own array.
+  /// List&lt;T&gt; of a type read in bulk, as <see cref="NumberArrayReader{T}"/>: read into the list's own array.
   /// </summary>
   internal sealed class NumberListReader<T> : ValueReader<List<T>>, ICollectionContent where T : struct
   {
     private readonly ValueReader<T> _item;
+    private readonly byte _decimalCode;
 
-    internal NumberListReader(ValueReader<T> item)
+    internal NumberListReader(ValueReader<T> item, byte decimalCode)
     {
       _item = item;
+      _decimalCode = decimalCode;
     }
 
     internal override List<T> Read(ReadContext c, FullPropertyInfo assignedTo)
@@ -680,7 +685,7 @@ namespace LtMsgPack.Reading
       int t = 0;
       while (t < count)
       {
-        t += Writing.Numbers.Read(c.R, items.Slice(t));
+        t += Writing.Numbers.Read(c.R, items.Slice(t), _decimalCode);
         if (t < count)
           items[t++] = _item.Read(c, null);
       }
@@ -739,6 +744,69 @@ namespace LtMsgPack.Reading
 #endif
       for (int t = 0; t < count; t++)
         set.Add(item.Read(c, null));
+      c.Depth--;
+      return set;
+    }
+  }
+
+  /// <summary>
+  /// HashSet&lt;T&gt; of a type read in bulk (see <see cref="Writing.Numbers"/>), as <see cref="HashSetReader{TItem}"/>: a block of values at a time, then added to the set;
+  /// any other value (nil, another format, an incomplete one) by the reader of the element type.
+  /// </summary>
+  internal sealed class NumberSetReader<T> : ValueReader<HashSet<T>>, ICollectionContent where T : unmanaged
+  {
+    private const int Block = 32;
+    private readonly ValueReader<T> _item;
+    private readonly byte _decimalCode;
+
+    internal NumberSetReader(ValueReader<T> item, byte decimalCode)
+    {
+      _item = item;
+      _decimalCode = decimalCode;
+    }
+
+    internal override HashSet<T> Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadNil())
+        return null;
+
+      int count = c.Unusual || CollectionRules.HasEnumerableAttribute(assignedTo) ? -1 : c.R.TryReadArrayHeader();
+      if (count < 0)
+        return Slow(c, start, assignedTo);
+      return ReadItems(c, count);
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      int count = c.R.TryReadArrayHeader();
+      value = count < 0 ? null : ReadItems(c, count);
+      return count >= 0;
+    }
+
+    private HashSet<T> ReadItems(ReadContext c, int count)
+    {
+      c.Enter();
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      HashSet<T> set = new HashSet<T>(count); // the header's count is checked against the data (MsgPackReader.Count)
+#else
+      HashSet<T> set = new HashSet<T>();
+#endif
+      Span<T> block = stackalloc T[Block];
+      int t = 0;
+      while (t < count)
+      {
+        int wanted = Math.Min(Block, count - t);
+        int read = Writing.Numbers.Read(c.R, block.Slice(0, wanted), _decimalCode);
+        for (int i = 0; i < read; i++)
+          set.Add(block[i]);
+        t += read;
+        if (read < wanted)
+        {
+          set.Add(_item.Read(c, null));
+          t++;
+        }
+      }
       c.Depth--;
       return set;
     }
