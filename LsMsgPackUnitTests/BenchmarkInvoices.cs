@@ -302,22 +302,22 @@ namespace LsMsgPackUnitTests
           b => JsonConvert.DeserializeObject<Invoice>(Encoding.UTF8.GetString(b)),
           b => b.Length),
 
-        new Candidate<byte[]>("LsMsgPack (indexed schema)",
+        new Candidate<byte[]>("LsMsgPackDebug (indexed schema)",
           i => MsgPackSerializer.Serialize(i, indexed),
           b => MsgPackSerializer.Deserialize<Invoice>(b, indexed),
           b => b.Length),
 
-        new Candidate<byte[]>("LsMsgPack (inline, store)", // the schema is written like the indexed schema, the reader recognizes it
+        new Candidate<byte[]>("LsMsgPackDebug (inline, store)", // the schema is written like the indexed schema, the reader recognizes it
           i => MsgPackSerializer.Serialize(i, inlineStore),
           b => MsgPackSerializer.Deserialize<Invoice>(b, inlineStore),
           b => b.Length),
 
-        new Candidate<byte[]>("LsMsgPack (schema reference)",
+        new Candidate<byte[]>("LsMsgPackDebug (schema reference)",
           i => MsgPackSerializer.Serialize(i, reference),
           b => MsgPackSerializer.Deserialize<Invoice>(b, reference),
           b => b.Length),
 
-        new Candidate<byte[]>("LsMsgPack (property names)",
+        new Candidate<byte[]>("LsMsgPackDebug (property names)",
           i => MsgPackSerializer.Serialize(i, named),
           b => MsgPackSerializer.Deserialize<Invoice>(b, named),
           b => b.Length),
@@ -338,7 +338,7 @@ namespace LsMsgPackUnitTests
           b => b.Length),
 
         // ObjectLayout.Array: objects as arrays of their values
-        new Candidate<byte[]>("LsMsgPack (arrays, indexed)",
+        new Candidate<byte[]>("LsMsgPackDebug (arrays, indexed)",
           i => MsgPackSerializer.Serialize(i, indexedArrays),
           b => MsgPackSerializer.Deserialize<Invoice>(b, indexedArrays),
           b => b.Length),
@@ -405,9 +405,9 @@ namespace LsMsgPackUnitTests
 
     private void Benchmark(string operation, Func<ICandidate, Invoice[], TimeSpan> measure)
     {
-      // PreservePackages only exists when LsMsgPack is compiled with KEEPTRACK (DebugKeepTrack / ReleaseKeepTrack), the debugging overhead would skew the results
+      // PreservePackages only exists when LsMsgPackDebug is compiled with KEEPTRACK (DebugKeepTrack / ReleaseKeepTrack), the debugging overhead would skew the results
       if (typeof(MsgPackSettings).GetProperty("PreservePackages") != null)
-        Assert.Inconclusive("LsMsgPack is compiled with KEEPTRACK, run the benchmark using the Release (or Debug) configuration.");
+        Assert.Inconclusive("LsMsgPackDebug is compiled with KEEPTRACK, run the benchmark using the Release (or Debug) configuration.");
 
       Invoice[] invoices = CreateInvoices(InvoiceCount);
       ICandidate[] candidates = CreateCandidates();
@@ -449,12 +449,16 @@ namespace LsMsgPackUnitTests
       StringBuilder sb = new StringBuilder();
       sb.AppendLine($"{operation}: {InvoiceCount} invoices ({totalLines} lines), {Rounds} rounds each, fastest of {Passes} passes");
       sb.AppendLine();
-      sb.AppendLine(string.Format("{0,-28} {1,12} {2,8} {3,16} {4,8}", "Serializer", "Bytes", "Size", operation + " ms", "Speed"));
-      sb.AppendLine(new string('-', 76));
+      // The name column fits the longest name, so the numbers stay aligned
+      int nameWidth = "Serializer".Length;
+      for (int c = 0; c < candidates.Length; c++)
+        nameWidth = Math.Max(nameWidth, candidates[c].Name.Length);
+      sb.AppendLine(string.Format("{0} {1,12} {2,8} {3,16} {4,8}", "Serializer".PadRight(nameWidth), "Bytes", "Size", operation + " ms", "Speed"));
+      sb.AppendLine(new string('-', nameWidth + 48));
       for (int c = 0; c < candidates.Length; c++)
       {
-        sb.AppendLine(string.Format("{0,-28} {1,12:N0} {2,7:P0} {3,16:N1} {4,7:N2}x",
-          candidates[c].Name,
+        sb.AppendLine(string.Format("{0} {1,12:N0} {2,7:P0} {3,16:N1} {4,7:N2}x",
+          candidates[c].Name.PadRight(nameWidth),
           bytes[c],
           (double)bytes[c] / bytes[0],
           fastest[c].TotalMilliseconds,
