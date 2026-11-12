@@ -66,6 +66,7 @@
       this.menUninstallVisualStudio = new System.Windows.Forms.ToolStripMenuItem();
       this.toolViewMenu = new System.Windows.Forms.ToolStripDropDownButton();
       this.objectsMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+      this.lsMsgPackExtensionsMenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
       this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
       this.ddLimitItems = new System.Windows.Forms.ToolStripComboBox();
@@ -483,7 +484,8 @@
       // toolViewMenu
       //
       this.toolViewMenu.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
-            this.objectsMenuItem});
+            this.objectsMenuItem,
+            this.lsMsgPackExtensionsMenuItem});
       this.toolViewMenu.Image = global::MsgPackExplorer.Properties.Resources.Explore16;
       this.toolViewMenu.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.toolViewMenu.Name = "toolViewMenu";
@@ -500,6 +502,18 @@
       this.objectsMenuItem.ToolTipText = "Show the objects the data was written from (switched on when the data looks like " +
     "objects)";
       this.objectsMenuItem.CheckedChanged += new System.EventHandler(this.objectsMenuItem_CheckedChanged);
+      //
+      // lsMsgPackExtensionsMenuItem
+      //
+      this.lsMsgPackExtensionsMenuItem.Checked = true;
+      this.lsMsgPackExtensionsMenuItem.CheckOnClick = true;
+      this.lsMsgPackExtensionsMenuItem.CheckState = System.Windows.Forms.CheckState.Checked;
+      this.lsMsgPackExtensionsMenuItem.Name = "lsMsgPackExtensionsMenuItem";
+      this.lsMsgPackExtensionsMenuItem.Size = new System.Drawing.Size(196, 22);
+      this.lsMsgPackExtensionsMenuItem.Text = "LsMsgPack extensions";
+      this.lsMsgPackExtensionsMenuItem.ToolTipText = "Read extension type 1 as a decimal and the streams LsMsgPack writes (values of unknown length, their index)." +
+    " Off: plain MsgPack, for data of other writers that use these extension types for something else";
+      this.lsMsgPackExtensionsMenuItem.CheckedChanged += new System.EventHandler(this.lsMsgPackExtensionsMenuItem_CheckedChanged);
       //
       // toolStripSeparator1
       //
@@ -718,6 +732,7 @@
     private System.Windows.Forms.ToolStripMenuItem menUninstallVisualStudio;
     private System.Windows.Forms.ToolStripDropDownButton toolViewMenu;
     private System.Windows.Forms.ToolStripMenuItem objectsMenuItem;
+    private System.Windows.Forms.ToolStripMenuItem lsMsgPackExtensionsMenuItem;
     private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
     private System.Windows.Forms.ToolStripLabel toolStripLabel1;
     private System.Windows.Forms.ToolStripComboBox ddLimitItems;

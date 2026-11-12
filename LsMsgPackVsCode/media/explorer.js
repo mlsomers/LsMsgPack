@@ -38,6 +38,7 @@
     length: 0,
     settings: {
       continueOnError: !!saved.continueOnError,
+      lsMsgPackExtensions: saved.lsMsgPackExtensions !== false,
       endian: saved.endian || 'SwapIfCurrentSystemIsLittleEndian',
       displayLimit: typeof saved.displayLimit === 'number' ? saved.displayLimit : 1000,
       objects: 'auto',
@@ -56,6 +57,7 @@
   function saveState() {
     vscode.setState({
       continueOnError: state.settings.continueOnError,
+      lsMsgPackExtensions: state.settings.lsMsgPackExtensions,
       endian: state.settings.endian,
       displayLimit: state.settings.displayLimit,
       sizes: state.sizes
@@ -545,6 +547,15 @@
         load();
       }
     }, 'Ignore errors');
+    ui.lsMsgPackExtensions = el('button', {
+      className: 'toggle', 'aria-pressed': 'true',
+      title: 'Read extension type 1 as a decimal and the streams LsMsgPack writes (values of unknown length, their index). Off: plain MsgPack, for data of other writers that use these extension types for something else.',
+      onclick: () => {
+        state.settings.lsMsgPackExtensions = !state.settings.lsMsgPackExtensions;
+        saveState();
+        load();
+      }
+    }, 'LsMsgPack extensions');
     ui.objects = el('button', {
       className: 'toggle', 'aria-pressed': 'false',
       title: objectsTitle(''),
@@ -604,7 +615,7 @@
     const toolbar = el('div', { className: 'toolbar', role: 'toolbar' },
       ui.refresh, ui.save, ui.copyHex, ui.copyBase64,
       el('span', { className: 'sep' }),
-      ui.ignoreErrors, ui.objects,
+      ui.ignoreErrors, ui.lsMsgPackExtensions, ui.objects,
       el('span', { className: 'sep' }),
       el('label', {}, 'Limit: '), ui.limit,
       el('label', {}, 'Endian: '), ui.endian,
@@ -723,6 +734,7 @@
     const items = model.items || [];
 
     ui.ignoreErrors.setAttribute('aria-pressed', String(state.settings.continueOnError));
+    ui.lsMsgPackExtensions.setAttribute('aria-pressed', String(state.settings.lsMsgPackExtensions));
     /** @type {HTMLSelectElement} */ (ui.endian).value = state.settings.endian;
     fillLimits();
 

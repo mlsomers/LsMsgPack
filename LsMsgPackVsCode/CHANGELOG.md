@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **LsMsgPack extensions** toggle (on by default): extension type 1 as a decimal, and the streams LsMsgPack writes. Off: plain MsgPack, for data of other writers that use these extension types for something else.
+
 ## 2026.11.3
 
 - Debug sessions of Microsoft's Unity extension (`vstuc`) are read as .NET: faster than through the elements in the Variables view, and an AI agent can read a `SchemaStore` there.
