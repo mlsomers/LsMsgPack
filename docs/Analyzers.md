@@ -1,6 +1,6 @@
 ﻿# Analyzers
 
-The `LsMsgPack.Core` package includes analyzers, so every project that references `LsMsgPack`, `LtMsgPack` or one of the web formatter packages gets them. They warn about these things in the classes you serialize:
+The `LsMsgPack.Core` package includes analyzers, so every project that references `LsMsgPackDebug`, `LsMsgPack` or one of the web formatter packages gets them. They warn about these things in the classes you serialize:
 
 - **Values that are lost** because a left-out default doesn't match what the constructor sets (LSMP001 to LSMP003), or because null can't be told apart from a left-out value (LSMP006). Code fixes add or correct the `[DefaultValue]`.
 - **Places where the data picks the type** that a reader creates (LSMP004, LSMP005), see [security.md](security.md).
@@ -15,9 +15,9 @@ The warnings show while you type in Visual Studio, VS Code (C# Dev Kit) and Ride
 
 Only the classes your project serializes. Options classes, view models and anything else with initialized properties are left alone. A class is serialized when the project hands it to a serializer, or a serialized class reaches it:
 
-- **Calls**: the type argument or `typeof` of `MsgPackSerializer.Serialize`/`Deserialize`, `LtMsgPackSerializer.Serialize`/`Deserialize` and `LtMsgPackHttpSerializer`. Without one, the type of the value passed to `Serialize`.
+- **Calls**: the type argument or `typeof` of `MsgPackSerializer.Serialize`/`Deserialize`, `LsMsgPackSerializer.Serialize`/`Deserialize` and `LsMsgPackHttpSerializer`. Without one, the type of the value passed to `Serialize`.
 - **Your own generic methods** that pass their type parameter on to one of these (`Save<T>(T item) => MsgPackSerializer.Serialize(item)`), also through the interface methods they implement: the type arguments of their callers.
-- **Contexts of the source generator**: `[LtMsgPackSerializable(typeof(Invoice))]`.
+- **Contexts of the source generator**: `[LsMsgPackSerializable(typeof(Invoice))]`.
 - **Controller actions**, when the project references one of the web formatters: the result type (`ActionResult<Invoice>`, `Task<List<Invoice>>`) and the parameters of the public methods of ASP.NET Core controllers (`ControllerBase`), Web API controllers (`ApiController`) and MVC 5 controllers (`Controller`). `[NonAction]` methods and `[FromServices]` parameters are skipped.
 - **Values of ASP.NET Core results**, for actions that return `IActionResult`: the type of the value passed to `Ok(value)`, `Created...(..., value)`, `Accepted...(..., value)`, `StatusCode(code, value)`, `NotFound(value)`, `BadRequest(error)`, `Conflict(error)`, `UnprocessableEntity(error)`, `Unauthorized(value)` and to the constructors of `ObjectResult` and its subclasses (`new OkObjectResult(value)`). As with `Serialize`, a value declared as `object` tells nothing.
 - **Minimal APIs** with `LsMsgPack.AspNetCore`: the type argument of `MsgPackBody<T>` (read) and `MsgPackResult<T>` (written) where they're named (handler parameters, `Results<MsgPackResult<Invoice>, NotFound>`), and the value of `MsgPackResults.MsgPack(value)` / `Results.Extensions.MsgPack(value)`, as for `Ok(value)`. `MsgPackBody<object>` reads into object (LSMP005, LSMP007).
@@ -41,7 +41,7 @@ Only the properties and fields the serializers write are checked: properties tha
 
 ### Which fields are written
 
-Which fields the serializers write is a setting of their static filters (`FilterNonSettable`, `SerializedFields`, see [schema.md](schema.md#fields)), which the analyzers can't see. By default (`Attributed`) only fields with an attribute that opts them in are written: `[DataMember]`, `[JsonInclude]`, Json.NET's `[JsonProperty]`, `[Key]`... When your serializers write other fields, tell the analyzers (and LtMsgPack's source generator) with the same mode:
+Which fields the serializers write is a setting of their static filters (`FilterNonSettable`, `SerializedFields`, see [schema.md](schema.md#fields)), which the analyzers can't see. By default (`Attributed`) only fields with an attribute that opts them in are written: `[DataMember]`, `[JsonInclude]`, Json.NET's `[JsonProperty]`, `[Key]`... When your serializers write other fields, tell the analyzers (and LsMsgPack's source generator) with the same mode:
 
 ```xml
 <PropertyGroup>
@@ -49,7 +49,7 @@ Which fields the serializers write is a setting of their static filters (`Filter
 </PropertyGroup>
 ```
 
-`[assembly: LtMsgPackGenerate(Fields = SerializedFields.Public)]` sets it too and wins over the property. The presets `LtMsgPackPresets.MessagePackCSharp()` and `Nerdbank()` write public fields: set `Public` with them.
+`[assembly: LsMsgPackGenerate(Fields = SerializedFields.Public)]` sets it too and wins over the property. The presets `LsMsgPackPresets.MessagePackCSharp()` and `Nerdbank()` write public fields: set `Public` with them.
 
 Change the severity of a rule or turn it off in `.editorconfig`, as for any analyzer:
 
@@ -63,7 +63,7 @@ dotnet_diagnostic.LSMP004.severity = none
 The serializers leave out properties that hold their default value (`FilterDefaultValues`): the type's default (`0`, `false`, `null`), or the value of `[DefaultValue]`. How a reader fills them in depends on the layout:
 
 - **Arrays** (`ObjectLayout.Array`, the default, and `application/x-lsmsgpack`): a left-out value is written as nil, and a reader reads a nil as the value that was left out: the `[DefaultValue]`, otherwise the type's default (`null`, `0`, `false`), as JSON reads them. Only values missing after the end of the array (a writer with fewer properties, or `TrimTrailingNulls`) keep what the constructor set.
-- **Maps** (`ObjectLayout.Map`): a left-out value has no key, and a reader keeps what the constructor set. The web formatters' `application/msgpack` writes every value by default (`LtMsgPackPresets.Generic()`), so nothing is left out there.
+- **Maps** (`ObjectLayout.Map`): a left-out value has no key, and a reader keeps what the constructor set. The web formatters' `application/msgpack` writes every value by default (`LsMsgPackPresets.Generic()`), so nothing is left out there.
 
 So in a map, when the constructor sets something other than what was left out, the value is lost:
 

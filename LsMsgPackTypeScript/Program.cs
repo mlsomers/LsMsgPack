@@ -1,6 +1,5 @@
 using LsMsgPack;
-using LtMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -23,7 +22,7 @@ namespace LsMsgPackTypeScript
 Which classes (at least one of):
   --root <type>          A type the server responds with (e.g. Shop.Invoice[], List<Shop.Invoice>), repeatable.
   --request <type>       A type the server reads (a request body): a model, no schema. Repeatable.
-                         [LtMsgPackSerializable(typeof(T))] in the assemblies are roots as well.
+                         [LsMsgPackSerializable(typeof(T))] in the assemblies are roots as well.
   --solution <sln|csproj>  Finds the roots as LsMsgPack's analyzers do: the results and parameters of controller actions,
                          the results and bodies of minimal APIs, the types handed to the serializers. Build it first: the types are taken from the assemblies.
   --all-types            Every public class, struct and enum of the assemblies (models only).
@@ -41,8 +40,8 @@ How the client reads (the types depend on it, the client checks it):
                          writes them (the server reads request bodies ignoring case), or the .NET names.
 
 The server's formatters:
-  --options <Type.Member>  A static property, field or method of the assemblies returning the LtMsgPackHttpOptions
-                         (or the LtMsgPackOptions of application/x-lsmsgpack) the server uses. Default: the defaults.
+  --options <Type.Member>  A static property, field or method of the assemblies returning the LsMsgPackHttpOptions
+                         (or the LsMsgPackOptions of application/x-lsmsgpack) the server uses. Default: the defaults.
 ";
 
     public static int Main(string[] args)
@@ -124,9 +123,9 @@ The server's formatters:
       List<Type> all = allTypes ? loaded.Types.Where(t => (t.IsPublic || t.IsNestedPublic) && !t.ContainsGenericParameters && !t.IsInterface && !(t.IsAbstract && t.IsSealed)
         && t.Name.IndexOf('<') < 0 && ModelAssemblies.IsUsers(t.Assembly)).ToList() : new List<Type>();
       if (written.Count == 0 && read.Count == 0 && all.Count == 0)
-        throw new UsageException("No classes: pass --root (or --request), --solution or --all-types, or list the roots with [LtMsgPackSerializable(typeof(T))].");
+        throw new UsageException("No classes: pass --root (or --request), --solution or --all-types, or list the roots with [LsMsgPackSerializable(typeof(T))].");
 
-      LtMsgPackOptions xls = new LtMsgPackHttpSerializer(options.Http).For(MsgPackMediaTypes.XLsMsgPack).Options; // as the server's formatters copy them
+      LsMsgPackOptions xls = new LsMsgPackHttpSerializer(options.Http).For(MsgPackMediaTypes.XLsMsgPack).Options; // as the server's formatters copy them
       ModelSet models = new ModelSet(xls, loaded.Types);
       foreach (Type type in written.Concat(read).Concat(all))
         models.Add(type);
@@ -166,7 +165,7 @@ The server's formatters:
     }
 
     /// <summary>
-    /// The types of <c>[LtMsgPackSerializable(typeof(T))]</c> on the classes of the assemblies (the contexts of LtMsgPack's source generator).
+    /// The types of <c>[LsMsgPackSerializable(typeof(T))]</c> on the classes of the assemblies (the contexts of LsMsgPack's source generator).
     /// </summary>
     private static IEnumerable<Type> SerializableRoots(ModelAssemblies loaded)
     {
@@ -182,12 +181,12 @@ The server's formatters:
           continue;
         }
         foreach (CustomAttributeData attribute in attributes)
-          if (attribute.AttributeType.FullName == "LtMsgPack.LtMsgPackSerializableAttribute" && attribute.ConstructorArguments.Count > 0 && attribute.ConstructorArguments[0].Value is Type root)
+          if (attribute.AttributeType.FullName == "LsMsgPack.LsMsgPackSerializableAttribute" && attribute.ConstructorArguments.Count > 0 && attribute.ConstructorArguments[0].Value is Type root)
             yield return root;
       }
     }
 
-    private static LtMsgPackHttpOptions FindOptions(ModelAssemblies loaded, string member)
+    private static LsMsgPackHttpOptions FindOptions(ModelAssemblies loaded, string member)
     {
       int dot = member.LastIndexOf('.');
       if (dot <= 0)
@@ -196,11 +195,11 @@ The server's formatters:
       string name = member.Substring(dot + 1);
       const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
       object value = type.GetProperty(name, flags)?.GetValue(null) ?? type.GetField(name, flags)?.GetValue(null) ?? type.GetMethod(name, flags, null, Type.EmptyTypes, null)?.Invoke(null, null);
-      if (value is LtMsgPackHttpOptions http)
+      if (value is LsMsgPackHttpOptions http)
         return http;
-      if (value is LtMsgPackOptions xls)
-        return new LtMsgPackHttpOptions() { XLsMsgPack = xls };
-      throw new UsageException(string.Concat(member, " is not a static property, field or method returning LtMsgPackHttpOptions or LtMsgPackOptions."));
+      if (value is LsMsgPackOptions xls)
+        return new LsMsgPackHttpOptions() { XLsMsgPack = xls };
+      throw new UsageException(string.Concat(member, " is not a static property, field or method returning LsMsgPackHttpOptions or LsMsgPackOptions."));
     }
 
     private static void WriteFile(string path, string content)

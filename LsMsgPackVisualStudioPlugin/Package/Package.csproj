@@ -117,8 +117,8 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\MsgPackExplorer\bin\ReleaseKeepTrack\LsMsgPack.dll">
-      <Link>Debugger\Visualizers\LsMsgPack.dll</Link>
+    <Content Include="..\..\MsgPackExplorer\bin\ReleaseKeepTrack\LsMsgPackDebug.dll">
+      <Link>Debugger\Visualizers\LsMsgPackDebug.dll</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
       <IncludeInVSIX>true</IncludeInVSIX>
     </Content>

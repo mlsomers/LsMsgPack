@@ -13,11 +13,12 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using LsMsgPackDebug;
 
 namespace LsMsgPack.AnalyzerTests
 {
   /// <summary>
-  /// Runs the analyzer on source text as the compiler does in a project referencing LsMsgPack and LtMsgPack (and, when asked, the ASP.NET Core formatters), and applies the code fixes as the IDE does.
+  /// Runs the analyzer on source text as the compiler does in a project referencing LsMsgPack and LsMsgPack (and, when asked, the ASP.NET Core formatters), and applies the code fixes as the IDE does.
   /// </summary>
   internal static class AnalyzerHarness
   {
@@ -119,7 +120,7 @@ namespace LsMsgPack.AnalyzerTests
       }
       references.Add(MetadataReference.CreateFromFile(typeof(MsgPackSerializer).Assembly.Location));
       references.Add(MetadataReference.CreateFromFile(typeof(MsgPackOptions).Assembly.Location));
-      references.Add(MetadataReference.CreateFromFile(typeof(LtMsgPack.LtMsgPackSerializer).Assembly.Location));
+      references.Add(MetadataReference.CreateFromFile(typeof(LsMsgPack.LsMsgPackSerializer).Assembly.Location));
       if (formatters)
       {
         references.Add(MetadataReference.CreateFromFile(typeof(LsMsgPackFormatters.LsMsgPackInputFormatter).Assembly.Location));

@@ -28,7 +28,7 @@
     </Dependencies>
     <Assets>
         <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPackVisualStudioPlugin.dll" AssemblyName="LsMsgPackVisualStudioPlugin, Version=2026.11.9.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
-        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPack.dll" AssemblyName="LsMsgPack, Version=2026.11.9.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
+        <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPackDebug.dll" AssemblyName="LsMsgPackDebug, Version=2026.11.9.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
         <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\LsMsgPack.Core.dll" AssemblyName="LsMsgPack.Core, Version=2026.11.9.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />
         <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\netstandard2.0\DebuggerProxy.dll" AssemblyName="DebuggerProxy, Version=2026.11.9.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers\netstandard2.0" />
         <Asset Type="Microsoft.VisualStudio.Assembly" d:Source="File" Path="Debugger\Visualizers\MsgPackExplorer.exe" AssemblyName="MsgPackExplorer, Version=2026.11.9.1, Culture=neutral, PublicKeyToken=null" d:VsixSubPath="Debugger\Visualizers" />

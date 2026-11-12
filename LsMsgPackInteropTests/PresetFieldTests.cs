@@ -1,4 +1,4 @@
-﻿using LtMsgPack;
+﻿using LsMsgPack;
 using MessagePack;
 using MessagePack.Resolvers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -79,14 +79,14 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void MessagePackCSharp_SameBytes()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.MessagePackCSharp());
       CollectionAssert.AreEqual(MessagePackSerializer.Serialize(Sample(), ContractlessStandardResolver.Options), lt.Serialize(Sample()));
     }
 
     [TestMethod]
     public void MessagePackCSharp_BothWays()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.MessagePackCSharp());
       AssertSame(Sample(), MessagePackSerializer.Deserialize<IopFieldModel>(lt.Serialize(Sample()), ContractlessStandardResolver.Options), "MessagePack-CSharp reads ours");
       AssertSame(Sample(), lt.Deserialize<IopFieldModel>(MessagePackSerializer.Serialize(Sample(), ContractlessStandardResolver.Options)), "we read MessagePack-CSharp's");
     }
@@ -94,14 +94,14 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void Nerdbank_SameBytes()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.Nerdbank());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.Nerdbank());
       CollectionAssert.AreEqual(Nerdbank.Serialize<IopFieldModel, IopFieldShapes>(Sample()), lt.Serialize(Sample()));
     }
 
     [TestMethod]
     public void Nerdbank_BothWays()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.Nerdbank());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.Nerdbank());
       AssertSame(Sample(), Nerdbank.Deserialize<IopFieldModel, IopFieldShapes>(lt.Serialize(Sample())), "Nerdbank reads ours");
       AssertSame(Sample(), lt.Deserialize<IopFieldModel>(Nerdbank.Serialize<IopFieldModel, IopFieldShapes>(Sample())), "we read Nerdbank's");
     }
@@ -109,7 +109,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void Generic_DefaultFieldsOnly()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.Generic());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.Generic());
       Assert.AreEqual("{\"Name\":\"n\"}", MessagePackSerializer.ConvertToJson(lt.Serialize(Sample())), "no attributed fields in the model");
     }
 
@@ -120,11 +120,11 @@ namespace LsMsgPackInteropTests
     public void Newtonsoft_NonSerialized()
     {
       IopNonSerialized value = new IopNonSerialized() { Name = "n", Kept = 1, Skipped = 2 };
-      LsMsgPack.MsgPackSettings settings = new LsMsgPack.MsgPackSettings() { UseInexedSchema = false, ObjectLayout = LsMsgPack.ObjectLayout.Map,
+      LsMsgPackDebug.MsgPackSettings settings = new LsMsgPackDebug.MsgPackSettings() { UseInexedSchema = false, ObjectLayout = LsMsgPack.ObjectLayout.Map,
         StaticFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeStatically[] { new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All,
           LsMsgPack.TypeResolving.Filters.NonPublicProperties.None, LsMsgPack.TypeResolving.Filters.SerializedFields.Public), LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute.LikeNewtonsoft, new LsMsgPack.TypeResolving.Filters.FilterStatic() } };
       CollectionAssert.AreEquivalent(new[] { "Kept", "Name" }, Keys(Newtonsoft.Json.JsonConvert.SerializeObject(value)), "Json.NET (its order differs: fields first)");
-      CollectionAssert.AreEquivalent(new[] { "Kept", "Name" }, Keys(MessagePackSerializer.ConvertToJson(LsMsgPack.MsgPackSerializer.Serialize(value, settings))), "LsMsgPack");
+      CollectionAssert.AreEquivalent(new[] { "Kept", "Name" }, Keys(MessagePackSerializer.ConvertToJson(LsMsgPackDebug.MsgPackSerializer.Serialize(value, settings))), "LsMsgPackDebug");
     }
 
     /// <summary>
@@ -134,7 +134,7 @@ namespace LsMsgPackInteropTests
     public void Newtonsoft_FieldsFirst()
     {
       CollectionAssert.AreEqual(new[] { "Count", "Ratio", "Point", "Items", "Name" }, Keys(Newtonsoft.Json.JsonConvert.SerializeObject(Sample())), "Json.NET");
-      CollectionAssert.AreEqual(new[] { "Name", "Count", "Ratio", "Point", "Items" }, Keys(MessagePackSerializer.ConvertToJson(LsMsgPack.MsgPackSerializer.Serialize(Sample(), MapSettings(LsMsgPack.TypeResolving.Filters.SerializedFields.Public)))), "LsMsgPack");
+      CollectionAssert.AreEqual(new[] { "Name", "Count", "Ratio", "Point", "Items" }, Keys(MessagePackSerializer.ConvertToJson(LsMsgPackDebug.MsgPackSerializer.Serialize(Sample(), MapSettings(LsMsgPack.TypeResolving.Filters.SerializedFields.Public)))), "LsMsgPackDebug");
     }
 
     /// <summary>
@@ -146,20 +146,20 @@ namespace LsMsgPackInteropTests
     {
       IopJsonFields value = IopJsonFields.Sample();
       CollectionAssert.AreEqual(new[] { "Name", "Number", "Hidden", "Included", "_hidden" }, Keys(System.Text.Json.JsonSerializer.Serialize(value)), "System.Text.Json");
-      CollectionAssert.AreEqual(new[] { "Name", "Number", "Hidden", "Included", "_hidden" }, Keys(MessagePackSerializer.ConvertToJson(LsMsgPack.MsgPackSerializer.Serialize(value, MapSettings(LsMsgPack.TypeResolving.Filters.SerializedFields.Attributed)))), "LsMsgPack Attributed");
+      CollectionAssert.AreEqual(new[] { "Name", "Number", "Hidden", "Included", "_hidden" }, Keys(MessagePackSerializer.ConvertToJson(LsMsgPackDebug.MsgPackSerializer.Serialize(value, MapSettings(LsMsgPack.TypeResolving.Filters.SerializedFields.Attributed)))), "LsMsgPack Attributed");
 
       System.Text.Json.JsonSerializerOptions includeFields = new System.Text.Json.JsonSerializerOptions() { IncludeFields = true };
       CollectionAssert.AreEqual(new[] { "Name", "Number", "Hidden", "Plain", "Included", "_hidden" }, Keys(System.Text.Json.JsonSerializer.Serialize(value, includeFields)), "System.Text.Json IncludeFields");
-      CollectionAssert.AreEqual(new[] { "Name", "Number", "Hidden", "Plain", "Included", "_hidden" }, Keys(MessagePackSerializer.ConvertToJson(LsMsgPack.MsgPackSerializer.Serialize(value, MapSettings(LsMsgPack.TypeResolving.Filters.SerializedFields.Public)))), "LsMsgPack Public");
+      CollectionAssert.AreEqual(new[] { "Name", "Number", "Hidden", "Plain", "Included", "_hidden" }, Keys(MessagePackSerializer.ConvertToJson(LsMsgPackDebug.MsgPackSerializer.Serialize(value, MapSettings(LsMsgPack.TypeResolving.Filters.SerializedFields.Public)))), "LsMsgPack Public");
 
       IopJsonFields read = System.Text.Json.JsonSerializer.Deserialize<IopJsonFields>(System.Text.Json.JsonSerializer.Serialize(value));
       Assert.AreEqual(3, read.Hidden, "System.Text.Json sets the private [JsonInclude] field");
-      Assert.AreEqual(3, LsMsgPack.MsgPackSerializer.Deserialize<IopJsonFields>(LsMsgPack.MsgPackSerializer.Serialize(value)).Hidden, "LsMsgPack too");
+      Assert.AreEqual(3, LsMsgPackDebug.MsgPackSerializer.Deserialize<IopJsonFields>(LsMsgPackDebug.MsgPackSerializer.Serialize(value)).Hidden, "LsMsgPack too");
     }
 
-    private static LsMsgPack.MsgPackSettings MapSettings(LsMsgPack.TypeResolving.Filters.SerializedFields fields)
+    private static LsMsgPackDebug.MsgPackSettings MapSettings(LsMsgPack.TypeResolving.Filters.SerializedFields fields)
     {
-      return new LsMsgPack.MsgPackSettings() { UseInexedSchema = false, ObjectLayout = LsMsgPack.ObjectLayout.Map,
+      return new LsMsgPackDebug.MsgPackSettings() { UseInexedSchema = false, ObjectLayout = LsMsgPack.ObjectLayout.Map,
         StaticFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeStatically[] { new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All,
           LsMsgPack.TypeResolving.Filters.NonPublicProperties.None, fields), new LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute(), new LsMsgPack.TypeResolving.Filters.FilterStatic() } };
     }

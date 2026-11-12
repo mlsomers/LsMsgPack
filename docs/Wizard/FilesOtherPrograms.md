@@ -18,7 +18,7 @@ If JavaScript also *writes* files that your .NET app reads back, that works too:
 
 The files are read with a general-purpose MsgPack library: `msgpack` in Python, `vmihailenco/msgpack` in Go, `rmp-serde` in Rust, MessagePack-CSharp or Nerdbank.MessagePack in .NET, or you publish the format for whoever wants it.
 
-These libraries read *plain* MsgPack: each object is a map of property names and values, as in JSON. LtMsgPack has ready-made settings ("presets") for this.
+These libraries read *plain* MsgPack: each object is a map of property names and values, as in JSON. LsMsgPack has ready-made settings ("presets") for this.
 
 **→ [Plain MsgPack files](Setup-FilesPlain.md)**
 

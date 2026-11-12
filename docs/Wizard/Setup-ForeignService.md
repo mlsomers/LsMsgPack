@@ -8,13 +8,13 @@ Your .NET app talks to a server, feed or device someone else built, and its MsgP
 
 | | |
 |---|---|
-| Package | `LtMsgPack` (and `LsMsgPack` while you figure out the format) |
+| Package | `LsMsgPack` (and `LsMsgPackDebug` while you figure out the format) |
 | Settings | the preset of their library, adjusted to their names and layout |
 | Transport | `HttpClient` with `ByteArrayContent`, or whatever they use |
 | Keep in mind | look at real bytes first; their data is untrusted |
 
 ```
-dotnet add package LtMsgPack
+dotnet add package LsMsgPack
 ```
 
 ## Step 1: find out what their data looks like
@@ -31,11 +31,11 @@ Also check how they send `Guid`/UUIDs (text or 16 bytes), money (text, float or 
 **Maps**, from Python, Go, JavaScript and most others:
 
 ```csharp
-using LtMsgPack;
+using LsMsgPack;
 
-LtMsgPackOptions options = LtMsgPackPresets.Generic(); // MessagePackCSharp() or Nerdbank() when they use those
+LsMsgPackOptions options = LsMsgPackPresets.Generic(); // MessagePackCSharp() or Nerdbank() when they use those
 options.PropertyNameCaseInsensitive = true;            // "createdAt" sets CreatedAt
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
 ```
 
 Names in another style (`created_at`) go on the properties, with the attribute names turned on:
@@ -58,7 +58,7 @@ public class Ticket
 ```csharp
 using LsMsgPack;
 
-LtMsgPackOptions options = LtMsgPackPresets.Generic();
+LsMsgPackOptions options = LsMsgPackPresets.Generic();
 options.ObjectLayout = ObjectLayout.Array;          // write objects as arrays too
 options.PropertyOrder = PropertyOrder.Declaration;  // the order of the properties in your class (base class first)
 
@@ -113,8 +113,8 @@ if (differences != null)
 
 - **Their data is untrusted.** Declare the types you expect (no `object` properties), and see [Add-ons](Extras.md#reading-data-you-dont-trust). Other libraries rarely write LsMsgPack's class names, so the main risk (data that picks your classes) hardly applies, but it still could.
 - **Dates**: MsgPack timestamps are UTC moments, read as `DateTime` with `Kind = Utc`. Dates sent as text (`"2026-10-29T12:00:00Z"`) are not parsed: declare such a property as `string` and convert it yourself.
-- **Extensions you don't know** (their own type codes) can only be read into a `byte[]` (or `object`) property; another property type throws. For a known one, add a custom extension (`LtExtension<T>`, see [Compatibility.md](../Compatibility.md)).
-- Only reading their data and not sure of its shape yet? `MsgPackItem.Unpack(bytes)` of the `LsMsgPack` package gives you the tree of maps, arrays and values to explore in code.
+- **Extensions you don't know** (their own type codes) can only be read into a `byte[]` (or `object`) property; another property type throws. For a known one, add a custom extension (`LsExtension<T>`, see [Compatibility.md](../Compatibility.md)).
+- Only reading their data and not sure of its shape yet? `MsgPackItem.Unpack(bytes)` of the `LsMsgPackDebug` package gives you the tree of maps, arrays and values to explore in code.
 
 ## Next
 

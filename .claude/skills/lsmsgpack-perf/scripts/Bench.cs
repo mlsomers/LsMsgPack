@@ -4,6 +4,7 @@
 //   nocompile switches off MsgPackSettings.CompilePropertyAccessors (A/B within one build).
 //   phases (named settings): object tree build vs WriteTo/ToBytes vs raw MsgPackItem.Unpack.
 using LsMsgPack;
+using LsMsgPackDebug;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;

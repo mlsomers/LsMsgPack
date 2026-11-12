@@ -1,13 +1,12 @@
-﻿// A/B benchmark of LtMsgPack.Data and the stream writer/reader (data/setup.sh builds it against the working tree and a base ref), ns and allocated bytes per row (best run):
+﻿// A/B benchmark of LsMsgPack.Data and the stream writer/reader (data/setup.sh builds it against the working tree and a base ref), ns and allocated bytes per row (best run):
 // 10 000 invoice rows of 10 columns (the data tests' Data.Invoices, an in-memory ColumnarReader) and 10 000 orders of 5 lines in a head's body.
 // Modes (comma separated, or all) and seconds per mode: dump-read|dump-values|dump-typed|dump-rows|dump-async (MsgPackDataReader over a dump, at its index entry),
 // readrows, serrows, serrows-stream, table (WriteTable), stream-write|stream-read|stream-read-async (WriteObject/ReadObject per element), serialize-list|deserialize-list.
 // Other modes: percall (the closures of the libraries' assemblies, and bytes and ns per Serialize/Deserialize of one small object), allocs <mode> (allocated types, sampled), sizes.
 using LsMsgPack.Streaming;
-using LtMsgPack;
-using LtMsgPack.Data;
-using LtMsgPack.DataTests;
-using LtMsgPack.Streaming;
+using LsMsgPack;
+using LsMsgPack.Data;
+using LsMsgPack.DataTests;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -20,7 +19,7 @@ public class Order { public int Id { get; set; } public string Customer { get; s
 public static class Program
 {
   const int Rows = 10000;
-  static LtMsgPackSerializer lt = new LtMsgPackSerializer();
+  static LsMsgPackSerializer lt = new LsMsgPackSerializer();
   static List<InvoiceRow> rows = Data.Invoices(Rows);
   static ColumnarReader mem = Data.InvoiceReader(rows);
   static byte[] dump; static MsgPackStreamEntry entry;
@@ -135,13 +134,13 @@ public static class Program
     Setup();
     if (args[0] == "percall")
     {
-      foreach (System.Reflection.Assembly asm in new[] { typeof(LtMsgPackSerializer).Assembly, typeof(MsgPackDataReader).Assembly, typeof(LsMsgPack.MsgPackOptions).Assembly })
+      foreach (System.Reflection.Assembly asm in new[] { typeof(LsMsgPackSerializer).Assembly, typeof(MsgPackDataReader).Assembly, typeof(LsMsgPack.MsgPackOptions).Assembly })
       foreach (Type t in asm.GetTypes())
         if (t.Name.Contains("DisplayClass"))
         { Console.Write(t.DeclaringType.FullName + "." + t.Name + ":"); foreach (var f in t.GetFields()) Console.Write(" " + f.Name); Console.WriteLine(); }
       Line one = new Line() { Product = "abc", Quantity = 2, Price = 1.5m };
-      LtMsgPackSerializer named = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false });
-      foreach (LtMsgPackSerializer ser in new[] { lt, named })
+      LsMsgPackSerializer named = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false });
+      foreach (LsMsgPackSerializer ser in new[] { lt, named })
       {
         byte[] b = ser.Serialize(one);
         for (int w = 0; w < 100000; w++) { ser.Serialize(one); ser.Deserialize<Line>(b); }

@@ -1,13 +1,13 @@
 # LsMsgPack.AspNet.Mvc
 
-MsgPack model binding and action result for ASP.NET MVC 5 controllers on .NET Framework 4.6.2+. Serializing is done by [LtMsgPack](https://www.nuget.org/packages/LtMsgPack), which reads and writes several times faster than System.Text.Json.
+MsgPack model binding and action result for ASP.NET MVC 5 controllers on .NET Framework 4.6.2+. Serializing is done by [LsMsgPack](https://www.nuget.org/packages/LsMsgPack), which reads and writes several times faster than System.Text.Json.
 
 It speaks the same formats as [LsMsgPack.AspNetCore](https://www.nuget.org/packages/LsMsgPack.AspNetCore) and [LsMsgPack.AspNet.WebApi](https://www.nuget.org/packages/LsMsgPack.AspNet.WebApi) (also for `HttpClient`).
 
 | Media type | Format |
 |---|---|
 | `application/msgpack`, `application/x-msgpack` | Plain MsgPack, readable by any MsgPack implementation: maps keyed by property names, every value, `Guid` and `decimal` as text, dates as timestamps (a `DateTimeOffset` loses its offset). |
-| `application/x-lsmsgpack` | The indexed schema with type ids: smaller, polymorphic, and with the schema sent only once per client. Use this between LsMsgPack / LtMsgPack endpoints. |
+| `application/x-lsmsgpack` | The indexed schema with type ids: smaller, polymorphic, and with the schema sent only once per client. Use this between endpoints that use LsMsgPack (or LsMsgPackDebug). |
 
 ## Usage
 
@@ -18,7 +18,7 @@ using LsMsgPackMvc;
 
 protected void Application_Start()
 {
-  LsMsgPackMvc.LsMsgPackMvc.Register(); // or Register(new LtMsgPackHttpOptions { ... })
+  LsMsgPackMvc.LsMsgPackMvc.Register(); // or Register(new LsMsgPackHttpOptions { ... })
   RouteConfig.RegisterRoutes(RouteTable.Routes);
 }
 ```
@@ -41,7 +41,7 @@ public class OrdersController : Controller
 }
 ```
 
-With `Register(new LtMsgPackHttpOptions { ReportDifferences = true })`, `HttpContext.GetReadDifferences()` says what didn't match between the request body and your classes, for example properties of another version of the models.
+With `Register(new LsMsgPackHttpOptions { ReportDifferences = true })`, `HttpContext.GetReadDifferences()` says what didn't match between the request body and your classes, for example properties of another version of the models.
 
 ## Documentation
 

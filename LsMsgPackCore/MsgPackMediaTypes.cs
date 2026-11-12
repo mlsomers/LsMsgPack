@@ -20,7 +20,7 @@ namespace LsMsgPack
     public const string XMsgPack = "application/x-msgpack";
 
     /// <summary>
-    /// MsgPack using the configured settings (by default an indexed schema followed by the body, with type id's where ambiguous). Only LsMsgPack and LtMsgPack are expected to understand this.
+    /// MsgPack using the configured settings (by default an indexed schema followed by the body, with type id's where ambiguous). Only LsMsgPack and LsMsgPack are expected to understand this.
     /// </summary>
     public const string XLsMsgPack = "application/x-lsmsgpack";
 
@@ -82,7 +82,7 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// True if the Content-Type has <see cref="StreamParameter"/>: the body is a stream (docs/Streaming.md), with values of unknown length, read it with MsgPackStreamReader (LtMsgPack) as it arrives.
+    /// True if the Content-Type has <see cref="StreamParameter"/>: the body is a stream (docs/Streaming.md), with values of unknown length, read it with MsgPackStreamReader (LsMsgPack) as it arrives.
     /// </summary>
     public static bool IsStream(string contentType)
     {
@@ -124,7 +124,7 @@ namespace LsMsgPack
     /// <summary>
     /// Returns a copy of the settings that produces plain MsgPack (no indexed schema, no type id's, objects as maps keyed by property names), so the result is not tied to LsMsgPack.
     /// </summary>
-    /// <param name="settings">MsgPackSettings (LsMsgPack) or LtMsgPackOptions (LtMsgPack)</param>
+    /// <param name="settings">MsgPackSettings (LsMsgPack) or LsMsgPackOptions (LsMsgPack)</param>
     public static TOptions ToPlain<TOptions>(TOptions settings) where TOptions : MsgPackOptions
     {
       if (settings is null)

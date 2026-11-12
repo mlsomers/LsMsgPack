@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackMcp;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;

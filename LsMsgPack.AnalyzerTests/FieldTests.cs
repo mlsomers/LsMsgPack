@@ -10,18 +10,19 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using LsMsgPackDebug;
 using static LsMsgPack.AnalyzerTests.AnalyzerHarness;
 
 namespace LsMsgPack.AnalyzerTests
 {
   /// <summary>
-  /// Fields: LSMP010 for public fields the default mode (SerializedFields.Attributed) leaves out, the mode from LsMsgPackFields / [assembly: LtMsgPackGenerate(Fields = ...)],
+  /// Fields: LSMP010 for public fields the default mode (SerializedFields.Attributed) leaves out, the mode from LsMsgPackFields / [assembly: LsMsgPackGenerate(Fields = ...)],
   /// the other rules on the fields the serializers write, and the code fixes of LSMP010.
   /// </summary>
   [TestClass]
   public class FieldTests
   {
-    private const string Usings = "using System;\nusing System.Collections;\nusing System.Collections.Generic;\nusing System.ComponentModel;\nusing System.Runtime.Serialization;\nusing LsMsgPack;\nusing LtMsgPack;\n";
+    private const string Usings = "using System;\nusing System.Collections;\nusing System.Collections.Generic;\nusing System.ComponentModel;\nusing System.Runtime.Serialization;\nusing LsMsgPack;\nusing LsMsgPackDebug;\n";
     private const string Write = "public static class Use { public static byte[] Write(Model m) => MsgPackSerializer.Serialize(m); }\n";
 
     private static void AssertDiagnostics(ImmutableArray<Diagnostic> diagnostics, params string[] expected)
@@ -123,7 +124,7 @@ public class Model
     [TestMethod]
     public void Mode_AssemblyAttributeWins()
     {
-      string source = Usings + "[assembly: LtMsgPackGenerate(Fields = LsMsgPack.TypeResolving.Filters.SerializedFields.Attributed)]\npublic class Model { public int Count; }\n" + Write;
+      string source = Usings + "[assembly: LsMsgPackGenerate(Fields = LsMsgPack.TypeResolving.Filters.SerializedFields.Attributed)]\npublic class Model { public int Count; }\n" + Write;
       AssertDiagnostics(AnalyzeWith(source, "Public"), "LSMP010 Count");
       AssertDiagnostics(AnalyzeWith(source.Replace(".Attributed", ".All"), null));
     }
@@ -464,14 +465,14 @@ End Namespace
 
       IMsgPackPropertyIncludeStatically[] filters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.None, mode), new FilterIgnoredAttribute(), new FilterStatic() };
       MsgPackSettings settings = new MsgPackSettings() { StaticFilters = filters, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
-      LtMsgPack.LtMsgPackSerializer lt = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { StaticFilters = filters, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      LsMsgPack.LsMsgPackSerializer lt = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { StaticFilters = filters, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
       string[] properties = { "Auto", "WithInit", "ReadOnlyAuto", "Source" };
       string[] all = properties.Concat(expected).ToArray();
       CollectionAssert.AreEqual(all, MsgPackSerializer.Deserialize<Dictionary<string, object>>(MsgPackSerializer.Serialize(model, type, settings), settings).Keys.ToArray(), "LsMsgPack " + mode);
-      CollectionAssert.AreEqual(all, MsgPackSerializer.Deserialize<Dictionary<string, object>>(lt.Serialize(model, type), settings).Keys.ToArray(), "LtMsgPack " + mode);
+      CollectionAssert.AreEqual(all, MsgPackSerializer.Deserialize<Dictionary<string, object>>(lt.Serialize(model, type), settings).Keys.ToArray(), "LsMsgPack " + mode);
       object anonymous = type.GetMethod("Anonymous").Invoke(null, null);
       CollectionAssert.AreEqual(new[] { "Name", "Id" }, MsgPackSerializer.Deserialize<Dictionary<string, object>>(MsgPackSerializer.Serialize(anonymous, anonymous.GetType(), settings), settings).Keys.ToArray(), "LsMsgPack, anonymous type " + mode);
-      CollectionAssert.AreEqual(new[] { "Name", "Id" }, MsgPackSerializer.Deserialize<Dictionary<string, object>>(lt.Serialize(anonymous, anonymous.GetType()), settings).Keys.ToArray(), "LtMsgPack, anonymous type " + mode);
+      CollectionAssert.AreEqual(new[] { "Name", "Id" }, MsgPackSerializer.Deserialize<Dictionary<string, object>>(lt.Serialize(anonymous, anonymous.GetType()), settings).Keys.ToArray(), "LsMsgPack, anonymous type " + mode);
 
       // a project's compilation imports the public and protected members of its references only (the private fields are left to the runtime): all of them here, to compare the rules
       CSharpCompilation user = CSharpCompilation.Create("VbUser", new SyntaxTree[0], platform.Concat(new[] { MetadataReference.CreateFromImage(image) }),

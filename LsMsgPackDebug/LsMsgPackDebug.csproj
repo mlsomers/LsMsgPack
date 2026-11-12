@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\Packaging.props" />
+
+  <PropertyGroup>
+    <!-- 2.1 can ask whether the runtime compiles code (RuntimeFeature.IsDynamicCodeCompiled, see PropertyAccessor) -->
+    <TargetFrameworks>netstandard2.0;netstandard2.1</TargetFrameworks>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <PackageId>LsMsgPackDebug</PackageId>
+    <RootNamespace>LsMsgPackDebug</RootNamespace>
+    <Description>MessagePack (MsgPack) serializer for .NET classes that also gives you the tree of MsgPack items of any payload, to inspect MsgPack data even without the classes. Writes and reads the same data as LsMsgPack, the much faster package to use when you only need to serialize.</Description>
+    <PackageTags>$(PackageTags);polymorphism;schema;inspection;debugging</PackageTags>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='ReleaseKeepTrack|AnyCPU'">
+    <Optimize>True</Optimize>
+    <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='DebugKeepTrack|AnyCPU'">
+    <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Memory" Version="4.6.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- PrivateAssets none: the analyzers of LsMsgPack.Core reach the projects that reference this package (NuGet leaves out the analyzers of dependencies otherwise) -->
+    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" PrivateAssets="none" />
+  </ItemGroup>
+
+</Project>

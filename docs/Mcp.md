@@ -17,7 +17,7 @@ The server decodes with the library itself (the KEEPTRACK build, like MsgPack Ex
 ```mermaid
 flowchart LR
   agent[AI agent<br/>VS Code chat, Claude Code, Visual Studio...] -- MCP stdio --> server[lsmsgpack-mcp<br/>LsMsgPackMcpServer]
-  server -- decode --> lib[LsMsgPack KEEPTRACK<br/>+ ObjectDebugger]
+  server -- decode --> lib[LsMsgPackDebug KEEPTRACK<br/>+ ObjectDebugger]
   server -- "TCP 127.0.0.1, token<br/>status / locals / read" --> code[VS Code extension<br/>src/mcpBridge.ts, src/mcp.ts]
   server -- same protocol --> vs[Visual Studio package<br/>McpBridge.cs, DebuggerBridgeHandler.cs]
   code -- DAP evaluate --> app1[debugged program]
@@ -32,7 +32,7 @@ flowchart LR
 | `TextRenderer.cs` | The text: summary, schema, objects view, items view, issues, explaining an offset, search. |
 | `IdeBridge.cs` | Finds the IDEs (environment or lock files) and sends them requests. |
 | `ByteText.cs` | Bytes written as text, the same formats as the VS Code extension's `bytesFromText.ts`. |
-| `ClassReader.cs` | `msgpack_read_as_class`: writes the payload (and the schemas) to a temporary folder and runs this program again (`read-as-worker`, with `DOTNET_ROLL_FORWARD=LatestMajor`). The worker loads the user's assembly with its `deps.json` and the shared frameworks of its `runtimeconfig.json`, reads with LsMsgPack (`ReadErrors = ReportAndContinue`, the indexed schema when the payload has one) and writes the `ReadDifferences` report and the object as JSON. A separate process because it runs the user's code, because the assembly may need a newer runtime, and because LsMsgPack's type name caches are global (a rebuilt assembly would meet the types of the previous build). |
+| `ClassReader.cs` | `msgpack_read_as_class`: writes the payload (and the schemas) to a temporary folder and runs this program again (`read-as-worker`, with `DOTNET_ROLL_FORWARD=LatestMajor`). The worker loads the user's assembly with its `deps.json` and the shared frameworks of its `runtimeconfig.json`, reads with LsMsgPackDebug (`ReadErrors = ReportAndContinue`, the indexed schema when the payload has one) and writes the `ReadDifferences` report and the object as JSON. A separate process because it runs the user's code, because the assembly may need a newer runtime, and because LsMsgPackDebug's type name caches are global (a rebuilt assembly would meet the types of the previous build). |
 | `Program.cs` | No arguments (or `mcp`): the server. Otherwise the command line: `decode`, `explain`, `search`, `read-as`, `debug status/locals/read` (and the worker of `ClassReader`). |
 
 ### The output
@@ -43,7 +43,7 @@ flowchart LR
 - **Items view**. One line per item: offset, indentation, role (`key`, `value`, `[n]`), encoding and value (`uint 16 1234`, `fixext 4, type -1 (timestamp): ...`). The object path is a comment.
 - **Limits** keep answers within the agent's context: `maxNodes` (1000), `maxString` (200 chars), 32 bytes of bin shown. `path` and `from`/`to` select a part.
 - **Errors** are listed with their offset and object path. `msgpack_explain_offset` shows the items holding a byte, the header and content bytes of its item, and a hex window around it.
-- **Streams** (written by LtMsgPack's `MsgPackStreamWriter`, see [Streaming.md](Streaming.md)) are decoded with `MsgPackSettings.ReadStreams`. The structure says "a stream", values of unknown length show as `array of unknown length (C1 90 ... C1 C0)` (a str or bin with its chunks), and `msgpack_explain_offset` names the escape sequence at a `0xC1`. The summary lists each index of the stream (status, writer, CRC-32, moved offsets) and its entries (identifier, offset, length, content type, element count, points, sidecar), and the objects view names the payloads after their entries (`// entry "orders"`). The items view shows the index's content by field name (`entries`, `offset`, `identifier`...) and its tail. A schema written once per stream (`PerStream`) is found by the references to it later in the data. A stray `0xC1` is read as an escape sequence too: its code byte belongs to the error.
+- **Streams** (written by LsMsgPack's `MsgPackStreamWriter`, see [Streaming.md](Streaming.md)) are decoded with `MsgPackSettings.ReadStreams`. The structure says "a stream", values of unknown length show as `array of unknown length (C1 90 ... C1 C0)` (a str or bin with its chunks), and `msgpack_explain_offset` names the escape sequence at a `0xC1`. The summary lists each index of the stream (status, writer, CRC-32, moved offsets) and its entries (identifier, offset, length, content type, element count, points, sidecar), and the objects view names the payloads after their entries (`// entry "orders"`). The items view shows the index's content by field name (`entries`, `offset`, `identifier`...) and its tail. A schema written once per stream (`PerStream`) is found by the references to it later in the data. A stray `0xC1` is read as an escape sequence too: its code byte belongs to the error.
 
 ## The IDE bridge protocol
 

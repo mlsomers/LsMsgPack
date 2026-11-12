@@ -6,10 +6,10 @@ using System.Collections.Generic;
 namespace LsMsgPack.Analyzers
 {
   /// <summary>
-  /// The fields the serializers write, as LsMsgPack.Core decides it (FullPropertyInfo.AddFieldCandidates / IsFieldCandidate, PropertyAttributeSet.OptsIn) and LtMsgPack's source generator mirrors it
+  /// The fields the serializers write, as LsMsgPack.Core decides it (FullPropertyInfo.AddFieldCandidates / IsFieldCandidate, PropertyAttributeSet.OptsIn) and LsMsgPack's source generator mirrors it
   /// (TypeWalker.IsFieldCandidate, OptsIn: keep the three equal).
   /// <para>The runtime takes the mode from the static filters (FilterNonSettable's SerializedFields), which the analyzers cannot see: they read the MSBuild property <c>LsMsgPackFields</c>
-  /// (declared in buildTransitive/LsMsgPack.Core.props) and <c>[assembly: LtMsgPackGenerate(Fields = ...)]</c> (wins, as for the generator). <see cref="Attributed"/> by default.</para>
+  /// (declared in buildTransitive/LsMsgPack.Core.props) and <c>[assembly: LsMsgPackGenerate(Fields = ...)]</c> (wins, as for the generator). <see cref="Attributed"/> by default.</para>
   /// </summary>
   internal static class Fields
   {
@@ -20,7 +20,7 @@ namespace LsMsgPack.Analyzers
     public const int All = 3;
 
     /// <summary>
-    /// The mode the project says the runtime uses: <c>[assembly: LtMsgPackGenerate(Fields = ...)]</c>, otherwise the MSBuild property <c>LsMsgPackFields</c>, otherwise <see cref="Attributed"/>.
+    /// The mode the project says the runtime uses: <c>[assembly: LsMsgPackGenerate(Fields = ...)]</c>, otherwise the MSBuild property <c>LsMsgPackFields</c>, otherwise <see cref="Attributed"/>.
     /// </summary>
     public static int ModeOf(Compilation compilation, AnalyzerOptions options)
     {
@@ -29,7 +29,7 @@ namespace LsMsgPack.Analyzers
         mode = Parse(text, mode);
       foreach (AttributeData attribute in compilation.Assembly.GetAttributes())
       {
-        if (attribute.AttributeClass?.ToDisplayString() != "LtMsgPack.LtMsgPackGenerateAttribute")
+        if (attribute.AttributeClass?.ToDisplayString() != "LsMsgPack.LsMsgPackGenerateAttribute")
           continue;
         foreach (KeyValuePair<string, TypedConstant> argument in attribute.NamedArguments)
           if (argument.Key == "Fields" && argument.Value.Value is int value && value >= None && value <= All)
@@ -39,7 +39,7 @@ namespace LsMsgPack.Analyzers
     }
 
     /// <summary>
-    /// "None", "Attributed", "Public" or "All" (ignoring case, as LtMsgPackGenerator.ParseFields), <paramref name="fallback"/> for anything else.
+    /// "None", "Attributed", "Public" or "All" (ignoring case, as LsMsgPackGenerator.ParseFields), <paramref name="fallback"/> for anything else.
     /// </summary>
     internal static int Parse(string text, int fallback)
     {

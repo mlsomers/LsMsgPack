@@ -1,4 +1,6 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
+using LsMsgPackDebug.Types.Extensions;
 using ObjectDebugger;
 using System;
 using System.Collections;
@@ -39,6 +41,12 @@ namespace LsMsgPackInspector
     /// A str, bin or ext with a longer content only keeps its ends (<see cref="MsgPackSettings.TruncateValuesLargerThan"/>).
     /// </summary>
     public long LargeValueLimit { get; set; } = MsgPackSettings.PracticalDebuggingLimit;
+
+    /// <summary>
+    /// Read the extensions LsMsgPack writes ("LsMsgPack extensions" of the explorer): type 1 as a decimal, and streams (values of unknown length, the index and sidecar of a stream).
+    /// Off: plain MsgPack as the specification defines it, for data of other writers that use these extension types for something else.
+    /// </summary>
+    public bool LsMsgPackExtensions { get; set; } = true;
   }
 
   /// <summary>
@@ -108,7 +116,9 @@ namespace LsMsgPackInspector
         PreservePackages = true,
         ContinueProcessingOnBreakingError = settings.ContinueOnError,
         EndianAction = settings.Endian,
-        ReadStreams = true, // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
+        // The extensions of LsMsgPack: decimals (type 1), and values of unknown length and the index of a stream, as its MsgPackStreamWriter writes them
+        CustomExtentionTypes = settings.LsMsgPackExtensions ? MsgPackSettings.Default_CustomExtentionTypes : new ICustomExt[0],
+        ReadStreams = settings.LsMsgPackExtensions,
         TruncateValuesLargerThan = settings.LargeValueLimit
       };
 
@@ -368,7 +378,7 @@ namespace LsMsgPackInspector
       if (typ == typeof(MpNull)) return "nil";
       if (typ == typeof(MpBool)) return "bool";
       if (typ == typeof(MpInt)) return "int";
-      if (typ == typeof(MpFloat)) return "float";
+      if (typ == typeof(MpFloat) || typ == typeof(MpDecimal)) return "float"; // a decimal is a number too, as in the Windows explorer
       if (typ == typeof(MpBin)) return "bin";
       if (typ == typeof(MpString)) return "str";
       if (typ == typeof(MpArray)) return "array";

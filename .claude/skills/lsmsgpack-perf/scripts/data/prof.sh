@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# perf profile of the "new" data harness, writes <out>.self.txt and <out>.children.txt in <work dir>/perf (see lt/prof.sh).
+# perf profile of the "new" data harness, writes <out>.self.txt and <out>.children.txt in <work dir>/perf (see fast/prof.sh).
 # Usage: data/prof.sh <work dir> <out name> <bench arguments...>   e.g. data/prof.sh $W sread stream-read 8
 set -euo pipefail
 WORK=$(realpath "${1:?Usage: data/prof.sh <work dir> <out name> <bench args...>}")

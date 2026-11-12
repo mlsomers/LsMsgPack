@@ -1,7 +1,7 @@
 ﻿namespace LsMsgPack.Streaming
 {
   /// <summary>
-  /// The escape sequences of arrays, maps, str and bin of unknown length: the byte 0xC1 followed by one code byte, as proposed in msgpack/msgpack#347 (not in the specification yet, so the codes may still change: the only .NET place with them, shared by LtMsgPack's stream reader and writer and LsMsgPack's item reader with MsgPackSettings.ReadStreams).
+  /// The escape sequences of arrays, maps, str and bin of unknown length: the byte 0xC1 followed by one code byte, as proposed in msgpack/msgpack#347 (not in the specification yet, so the codes may still change: the only .NET place with them, shared by LsMsgPack's stream reader and writer and LsMsgPack's item reader with MsgPackSettings.ReadStreams).
   /// <para>Each start code is the first byte of an empty value of the same family, the end code is nil. Every other code is reserved and an error, never "more data needed".</para>
   /// </summary>
   internal static class Escape

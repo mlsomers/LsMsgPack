@@ -1,4 +1,4 @@
-﻿// The trim and AOT attributes for the .NET Standard builds (ILLink and ILC recognize them by name): a trimmed HttpClient app gets the warnings of the constructors without a context, as with LtMsgPack.
+﻿// The trim and AOT attributes for the .NET Standard builds (ILLink and ILC recognize them by name): a trimmed HttpClient app gets the warnings of the constructors without a context, as with LsMsgPack.
 #if !NET5_0_OR_GREATER
 namespace System.Diagnostics.CodeAnalysis
 {

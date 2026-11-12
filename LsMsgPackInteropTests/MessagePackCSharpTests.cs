@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackUnitTests;
 using LsMsgPack.TypeResolving.Interfaces;
 using MessagePack;
@@ -368,15 +369,15 @@ namespace LsMsgPackInteropTests
   }
 
   [TestClass]
-  public class LsMessagePackCSharpTests : MessagePackCSharpTests
+  public class DebugMessagePackCSharpTests : MessagePackCSharpTests
   {
-    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Ls; } }
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtMessagePackCSharpTests : MessagePackCSharpTests
+  public class LsMessagePackCSharpTests : MessagePackCSharpTests
   {
-    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Lt; } }
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Ls; } }
   }
 
   [TestClass]

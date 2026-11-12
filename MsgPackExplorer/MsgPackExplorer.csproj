@@ -162,9 +162,9 @@
     <None Include="Resources\Open.png" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj">
+    <ProjectReference Include="..\LsMsgPackDebug\LsMsgPackDebug.csproj">
       <Project>{1d06fe9f-830f-4ee2-bd10-0b12522e1dfc}</Project>
-      <Name>LsMsgPack</Name>
+      <Name>LsMsgPackDebug</Name>
     </ProjectReference>
     <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj">
       <Project>{341c8f0f-1d80-4129-92cf-a8494dd78fd0}</Project>

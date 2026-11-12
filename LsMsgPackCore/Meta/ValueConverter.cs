@@ -10,7 +10,7 @@ namespace LsMsgPack.Meta
 {
   /// <summary>
   /// Converts unpacked values (null, a primitive or extension value, object[] for arrays, KeyValuePair&lt;object, object&gt;[] for maps) into the types they are assigned to.
-  /// <para>Shared by the serializers: LsMsgPack converts every value this way, LtMsgPack the ones its typed readers leave to it (polymorphism, dictionaries, unexpected formats).</para>
+  /// <para>Shared by the serializers: LsMsgPack converts every value this way, LsMsgPack the ones its typed readers leave to it (polymorphism, dictionaries, unexpected formats).</para>
   /// </summary>
   internal static class ValueConverter
   {
@@ -326,7 +326,7 @@ namespace LsMsgPack.Meta
       ReadDifferences differences = settings._differences;
       if (differences != null)
       {
-        ReportUnknownKeys(instance, tType, props, propVals, settings); // before the values (the objects in them), as LtMsgPack finds them
+        ReportUnknownKeys(instance, tType, props, propVals, settings); // before the values (the objects in them), as LsMsgPack finds them
         differences.Push(instance);
       }
       int set = 0;

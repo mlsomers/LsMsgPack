@@ -14,9 +14,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "CommonSource", "CommonSourc
 		CommonAssemblyInfo.cs = CommonAssemblyInfo.cs
 	EndProjectSection
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LsMsgPack", "LsMsgPackNetStandard\LsMsgPack.csproj", "{1D06FE9F-830F-4EE2-BD10-0B12522E1DFC}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LsMsgPackDebug", "LsMsgPackDebug\LsMsgPackDebug.csproj", "{1D06FE9F-830F-4EE2-BD10-0B12522E1DFC}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LsMsgPackUnitTests", "LsMsgPackNetStandardUnitTests\LsMsgPackUnitTests.csproj", "{666FAF0C-09CE-421F-977C-B989D0D2ED03}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LsMsgPackUnitTests", "LsMsgPackUnitTests\LsMsgPackUnitTests.csproj", "{666FAF0C-09CE-421F-977C-B989D0D2ED03}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "WinformsDebugger", "WinformsDebugger", "{D6E2537A-D3DA-40D3-B7CB-905541CD8E60}"
 EndProject
@@ -56,7 +56,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPackInteropTests", "Ls
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPack.Core", "LsMsgPackCore\LsMsgPack.Core.csproj", "{341C8F0F-1D80-4129-92CF-A8494DD78FD0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LtMsgPack", "LtMsgPack\LtMsgPack.csproj", "{DE67060B-F9DE-42D0-A625-08E3EA9A20C8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPack", "LsMsgPack\LsMsgPack.csproj", "{DE67060B-F9DE-42D0-A625-08E3EA9A20C8}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Documentation", "Documentation", "{864B66E3-CB20-4FC7-AFD4-A9FCB0302FE4}"
 	ProjectSection(SolutionItems) = preProject
@@ -93,9 +93,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPackMcpServer", "LsMsg
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPackMcpServerTests", "LsMsgPackMcpServerTests\LsMsgPackMcpServerTests.csproj", "{EA57F68D-01B8-4357-AE1F-6EDB155421EF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LtMsgPack.Generator", "LtMsgPack.Generator\LtMsgPack.Generator.csproj", "{F4A5D2D5-32F9-4746-ADAC-9711AD8A185A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPack.Generator", "LsMsgPack.Generator\LsMsgPack.Generator.csproj", "{F4A5D2D5-32F9-4746-ADAC-9711AD8A185A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LtMsgPack.GeneratorTests", "LtMsgPack.GeneratorTests\LtMsgPack.GeneratorTests.csproj", "{34B682ED-4A1A-4384-83D1-A5D2F61F40F7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPack.GeneratorTests", "LsMsgPack.GeneratorTests\LsMsgPack.GeneratorTests.csproj", "{34B682ED-4A1A-4384-83D1-A5D2F61F40F7}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPack.Analyzers", "LsMsgPack.Analyzers\LsMsgPack.Analyzers.csproj", "{BB3F9EA6-47E8-41F6-B920-581B76708A68}"
 EndProject
@@ -113,9 +113,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "typescript", "typescript", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPackTsTestServer", "clients\typescript\test-server\LsMsgPackTsTestServer.csproj", "{8F244BF3-DE69-4DC5-A0CE-EC0C4586CACB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LtMsgPack.DataTests", "LtMsgPack.DataTests\LtMsgPack.DataTests.csproj", "{DD0584CC-053D-4FC7-9499-EA1EAC960511}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPack.DataTests", "LsMsgPack.DataTests\LsMsgPack.DataTests.csproj", "{DD0584CC-053D-4FC7-9499-EA1EAC960511}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LtMsgPack.Data", "LtMsgPack.Data\LtMsgPack.Data.csproj", "{83B9B7CD-FB6E-4E38-9C70-4DCFC56248F1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LsMsgPack.Data", "LsMsgPack.Data\LsMsgPack.Data.csproj", "{83B9B7CD-FB6E-4E38-9C70-4DCFC56248F1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

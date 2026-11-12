@@ -1,0 +1,935 @@
+﻿using LsMsgPack.Meta;
+using LsMsgPack.TypeResolving.Filters;
+using LsMsgPack.Extensions;
+using LsMsgPack.Generated;
+using LsMsgPack.IO;
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+
+namespace LsMsgPack.Writing
+{
+  /// <summary>
+  /// Writes values of a declared type without boxing them. Values of another runtime type (polymorphism) go through <see cref="Serializer.WriteBoxed"/>, which adds the type id.
+  /// </summary>
+  internal abstract class ValueHandler<T>
+  {
+    /// <param name="value">Not null</param>
+    /// <param name="assignedTo">The property or element the value is assigned to</param>
+    internal abstract void Write(WriteContext c, T value, FullPropertyInfo assignedTo);
+
+    /// <summary>
+    /// FilterDefaultValues for a property of this type (without [DefaultValue], that one is asked boxed): false for the default value of the type.
+    /// </summary>
+    internal abstract bool IncludeByDefault(T value, FullPropertyInfo info);
+  }
+
+  /// <summary>
+  /// The infos of the runtime types seen where one type is declared: a polymorphic list or property usually holds a few, comparing them costs less than the hash of a <see cref="Type"/> (a call into the runtime) and a dictionary lookup per value.
+  /// </summary>
+  internal sealed class RecentTypes
+  {
+    private const int Most = 8;
+    private WriteTypeInfo[] _infos = new WriteTypeInfo[0];
+
+    internal WriteTypeInfo Get(Serializer serializer, Type type)
+    {
+      WriteTypeInfo[] infos = _infos;
+      for (int t = infos.Length - 1; t >= 0; t--)
+      {
+        if (infos[t].Type == type)
+          return infos[t];
+      }
+      return Add(serializer, type, infos);
+    }
+
+    private WriteTypeInfo Add(Serializer serializer, Type type, WriteTypeInfo[] infos)
+    {
+      WriteTypeInfo info = serializer.GetTypeInfo(type);
+      if (infos.Length < Most) // a copy, other threads read the array (one that adds at the same time may get lost, it comes back)
+      {
+        WriteTypeInfo[] more = new WriteTypeInfo[infos.Length + 1];
+        Array.Copy(infos, more, infos.Length);
+        more[infos.Length] = info;
+        _infos = more;
+      }
+      return info;
+    }
+  }
+
+  internal static class DefaultFilter
+  {
+    internal static readonly FilterDefaultValues Instance = new FilterDefaultValues();
+  }
+
+  /// <summary>
+  /// Any value, boxed: object and interface types, dictionaries and other collections, structs with properties, ...
+  /// </summary>
+  internal sealed class BoxedHandler<T> : ValueHandler<T>
+  {
+    private readonly Serializer _serializer;
+    private readonly RecentTypes _recent = new RecentTypes();
+
+    internal BoxedHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
+    {
+      object boxed = value;
+      if (boxed is null)
+      {
+        c.W.Nil();
+        return;
+      }
+      Type type = boxed.GetType();
+      _serializer.WriteBoxedAs(c, boxed, type, _recent.Get(_serializer, type), assignedTo);
+    }
+
+    internal override bool IncludeByDefault(T value, FullPropertyInfo info)
+    {
+      return DefaultFilter.Instance.IncludeProperty(info, value);
+    }
+  }
+
+  #region Leaf values (their declared type is their runtime type)
+
+  internal sealed class BoolHandler : ValueHandler<bool>
+  {
+    internal override void Write(WriteContext c, bool value, FullPropertyInfo assignedTo) { c.W.Bool(value); }
+    internal override bool IncludeByDefault(bool value, FullPropertyInfo info) { return value; }
+  }
+
+  internal sealed class SByteHandler : ValueHandler<sbyte>
+  {
+    internal override void Write(WriteContext c, sbyte value, FullPropertyInfo assignedTo) { c.W.SByte(value); }
+    internal override bool IncludeByDefault(sbyte value, FullPropertyInfo info) { return value != 0; }
+  }
+
+  internal sealed class Int16Handler : ValueHandler<short>
+  {
+    internal override void Write(WriteContext c, short value, FullPropertyInfo assignedTo) { c.W.Int16(value); }
+    internal override bool IncludeByDefault(short value, FullPropertyInfo info) { return value != 0; }
+  }
+
+  internal sealed class Int32Handler : ValueHandler<int>
+  {
+    internal override void Write(WriteContext c, int value, FullPropertyInfo assignedTo) { c.W.Int32(value); }
+    internal override bool IncludeByDefault(int value, FullPropertyInfo info) { return value != 0; }
+  }
+
+  internal sealed class Int64Handler : ValueHandler<long>
+  {
+    internal override void Write(WriteContext c, long value, FullPropertyInfo assignedTo) { c.W.Int64(value); }
+    internal override bool IncludeByDefault(long value, FullPropertyInfo info) { return value != 0; }
+  }
+
+  internal sealed class ByteHandler : ValueHandler<byte>
+  {
+    internal override void Write(WriteContext c, byte value, FullPropertyInfo assignedTo) { c.W.UInt8(value); }
+    internal override bool IncludeByDefault(byte value, FullPropertyInfo info) { return value != 0; }
+  }
+
+  internal sealed class UInt16Handler : ValueHandler<ushort>
+  {
+    internal override void Write(WriteContext c, ushort value, FullPropertyInfo assignedTo) { c.W.UInt16(value); }
+    internal override bool IncludeByDefault(ushort value, FullPropertyInfo info) { return value != 0; }
+  }
+
+  internal sealed class UInt32Handler : ValueHandler<uint>
+  {
+    internal override void Write(WriteContext c, uint value, FullPropertyInfo assignedTo) { c.W.UInt32(value); }
+    internal override bool IncludeByDefault(uint value, FullPropertyInfo info) { return value != 0; }
+  }
+
+  internal sealed class UInt64Handler : ValueHandler<ulong>
+  {
+    internal override void Write(WriteContext c, ulong value, FullPropertyInfo assignedTo) { c.W.UInt64(value); }
+    internal override bool IncludeByDefault(ulong value, FullPropertyInfo info) { return value != 0; }
+  }
+
+  internal sealed class SingleHandler : ValueHandler<float>
+  {
+    internal override void Write(WriteContext c, float value, FullPropertyInfo assignedTo) { c.W.Single(value); }
+    internal override bool IncludeByDefault(float value, FullPropertyInfo info) { return value != 0; }
+  }
+
+  internal sealed class DoubleHandler : ValueHandler<double>
+  {
+    internal override void Write(WriteContext c, double value, FullPropertyInfo assignedTo) { c.W.Double(value); }
+    internal override bool IncludeByDefault(double value, FullPropertyInfo info) { return value != 0; }
+  }
+
+  internal sealed class CharHandler : ValueHandler<char>
+  {
+    internal override void Write(WriteContext c, char value, FullPropertyInfo assignedTo) { c.W.UInt16(value); } // as an unsigned 16 bit integer, like MessagePack-CSharp
+    internal override bool IncludeByDefault(char value, FullPropertyInfo info) { return value != '\0'; }
+  }
+
+  internal sealed class TimeSpanHandler : ValueHandler<TimeSpan>
+  {
+    internal override void Write(WriteContext c, TimeSpan value, FullPropertyInfo assignedTo) { c.W.Int64(value.Ticks); }
+    internal override bool IncludeByDefault(TimeSpan value, FullPropertyInfo info) { return value.Ticks != 0; }
+  }
+
+  internal sealed class StringHandler : ValueHandler<string>
+  {
+    internal override void Write(WriteContext c, string value, FullPropertyInfo assignedTo) { c.W.String(value); }
+    internal override bool IncludeByDefault(string value, FullPropertyInfo info) { return value != null; } // an empty string is not a default value (FilterDefaultValues)
+  }
+
+  internal sealed class BinHandler : ValueHandler<byte[]>
+  {
+    internal override void Write(WriteContext c, byte[] value, FullPropertyInfo assignedTo) { c.W.Bin(value); }
+    internal override bool IncludeByDefault(byte[] value, FullPropertyInfo info) { return value != null; }
+  }
+
+  internal sealed class GuidHandler : ValueHandler<Guid>
+  {
+    internal override void Write(WriteContext c, Guid value, FullPropertyInfo assignedTo) { c.W.Guid(value); }
+    internal override bool IncludeByDefault(Guid value, FullPropertyInfo info) { return value != Guid.Empty; }
+  }
+
+  /// <summary>
+  /// A Guid as a string of 36 characters (<see cref="GuidFormat.String"/>).
+  /// </summary>
+  internal sealed class GuidStringHandler : ValueHandler<Guid>
+  {
+    internal override void Write(WriteContext c, Guid value, FullPropertyInfo assignedTo) { c.W.GuidString(value); }
+    internal override bool IncludeByDefault(Guid value, FullPropertyInfo info) { return value != Guid.Empty; }
+  }
+
+  /// <summary>
+  /// A decimal as a string in the invariant culture (<see cref="DecimalFormat.String"/>).
+  /// </summary>
+  internal sealed class DecimalStringHandler : ValueHandler<decimal>
+  {
+    internal override void Write(WriteContext c, decimal value, FullPropertyInfo assignedTo) { c.W.DecimalString(value); }
+    internal override bool IncludeByDefault(decimal value, FullPropertyInfo info) { return !DecimalHandler.IsZero(value); }
+  }
+
+  internal sealed class DateTimeHandler : ValueHandler<DateTime>
+  {
+    private readonly bool _unspecifiedIsUtc;
+
+    internal DateTimeHandler(bool unspecifiedIsUtc)
+    {
+      _unspecifiedIsUtc = unspecifiedIsUtc;
+    }
+
+    internal override void Write(WriteContext c, DateTime value, FullPropertyInfo assignedTo) { c.W.DateTime(Utc(value, _unspecifiedIsUtc)); }
+    internal override bool IncludeByDefault(DateTime value, FullPropertyInfo info) { return value.Ticks != 0; } // DateTime.Equals ignores the Kind
+
+    /// <summary>
+    /// Unspecified is the clock time in UTC (<see cref="LsMsgPackOptions.UnspecifiedDateTimeKind"/>, the default), otherwise the writer takes it as local time.
+    /// </summary>
+    internal static DateTime Utc(DateTime value, bool unspecifiedIsUtc)
+    {
+      return unspecifiedIsUtc && value.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(value, DateTimeKind.Utc) : value;
+    }
+  }
+
+  /// <summary>
+  /// <see cref="DateTimeOffsetFormat.Timestamp"/>: the moment, the offset is lost.
+  /// </summary>
+  internal sealed class DateTimeOffsetHandler : ValueHandler<DateTimeOffset>
+  {
+    internal override void Write(WriteContext c, DateTimeOffset value, FullPropertyInfo assignedTo) { c.W.DateTime(value.UtcDateTime); }
+    internal override bool IncludeByDefault(DateTimeOffset value, FullPropertyInfo info) { return !value.Equals(default(DateTimeOffset)); }
+  }
+
+  /// <summary>
+  /// <see cref="DateTimeOffsetFormat.TimestampAndOffset"/> (the default): [the moment as a timestamp, the offset in minutes].
+  /// </summary>
+  internal sealed class DateTimeOffsetMomentHandler : ValueHandler<DateTimeOffset>
+  {
+    internal override void Write(WriteContext c, DateTimeOffset value, FullPropertyInfo assignedTo) { WriteArray(c.W, value); }
+    internal override bool IncludeByDefault(DateTimeOffset value, FullPropertyInfo info) { return !value.Equals(default(DateTimeOffset)); }
+
+    internal static void WriteArray(MsgPackWriter w, DateTimeOffset value)
+    {
+      w.ArrayHeader(2);
+      w.DateTime(value.UtcDateTime);
+      w.Int16((short)value.Offset.TotalMinutes);
+    }
+  }
+
+  /// <summary>
+  /// MessagePack-CSharp's DateTimeOffset (<see cref="DateTimeOffsetFormat.ClockTimeAndOffset"/>): [the clock time as a UTC timestamp, the offset in minutes].
+  /// </summary>
+  internal sealed class DateTimeOffsetArrayHandler : ValueHandler<DateTimeOffset>
+  {
+    internal override void Write(WriteContext c, DateTimeOffset value, FullPropertyInfo assignedTo) { WriteArray(c.W, value); }
+    internal override bool IncludeByDefault(DateTimeOffset value, FullPropertyInfo info) { return !value.Equals(default(DateTimeOffset)); }
+
+    internal static void WriteArray(MsgPackWriter w, DateTimeOffset value)
+    {
+      w.ArrayHeader(2);
+      w.DateTime(new DateTime(value.Ticks, DateTimeKind.Utc));
+      w.Int16((short)value.Offset.TotalMinutes);
+    }
+  }
+
+  internal sealed class DecimalHandler : ValueHandler<decimal>
+  {
+    private readonly LsExtension<decimal> _extension;
+
+    /// <summary>
+    /// The built-in <see cref="DecimalExtension"/>: the 16 bytes of the value, written without asking the extension.
+    /// </summary>
+    private readonly bool _builtIn;
+    private readonly byte _typeCode;
+
+    internal DecimalHandler(LsExtension<decimal> extension)
+    {
+      _extension = extension;
+      _builtIn = extension.GetType() == typeof(DecimalExtension);
+      _typeCode = unchecked((byte)extension.TypeCode);
+    }
+
+    internal override void Write(WriteContext c, decimal value, FullPropertyInfo assignedTo)
+    {
+      if (_builtIn)
+      {
+        MsgPackWriter w = c.W;
+        w.Ensure(18);
+        byte[] b = w.Buf;
+        int at = w.Pos;
+        b[at] = 0xD8; // fixext16
+        b[at + 1] = _typeCode;
+        Unsafe.WriteUnaligned(ref b[at + 2], value); // as DecimalExtension.Write (MemoryMarshal.Write)
+        w.Pos = at + 18;
+        return;
+      }
+
+      int max = _extension.GetMaxLength(value);
+      if (max == 16)
+      {
+        c.W.Ensure(18);
+        int header = c.W.Pos;
+        c.W.ExtHeader(_extension.TypeCode, 16);
+        if (_extension.Write(value, new Span<byte>(c.W.Buf, c.W.Pos, 16)) == 16)
+        {
+          c.W.Pos += 16;
+          return;
+        }
+        c.W.Pos = header; // another length after all
+      }
+      ExtensionHandler<decimal>.WriteExtension(c, _extension, value);
+    }
+
+    internal override bool IncludeByDefault(decimal value, FullPropertyInfo info) { return !IsZero(value); }
+
+    /// <summary>
+    /// value == 0m (also -0m and zeros with a scale) without the call: the flags (sign and scale) come first in the memory of a decimal, the 96 bit integer is the rest.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static bool IsZero(decimal value)
+    {
+      DecimalBits bits = Unsafe.As<decimal, DecimalBits>(ref value);
+      return (bits.High | bits.Low64) == 0;
+    }
+
+    private struct DecimalBits
+    {
+#pragma warning disable CS0649 // only read
+      internal uint Flags;
+      internal uint High;
+      internal ulong Low64;
+#pragma warning restore CS0649
+    }
+  }
+
+  /// <summary>
+  /// A custom extension of the declared type.
+  /// </summary>
+  internal sealed class ExtensionHandler<T> : ValueHandler<T>
+  {
+    private readonly LsExtension _extension;
+
+    internal ExtensionHandler(LsExtension extension)
+    {
+      _extension = extension;
+    }
+
+    internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
+    {
+      if (_extension is LsExtension<T> typed)
+        WriteExtension(c, typed, value);
+      else
+        WriteExtensionBoxed(c, _extension, value);
+    }
+
+    internal static void WriteExtension(WriteContext c, LsExtension<T> extension, T value)
+    {
+      int max = extension.GetMaxLength(value);
+      byte[] data = new byte[max];
+      int length = extension.Write(value, data);
+      c.W.ExtHeader(extension.TypeCode, length);
+      c.W.Raw(data, 0, length);
+    }
+
+    internal static void WriteExtensionBoxed(WriteContext c, LsExtension extension, object value)
+    {
+      int max = extension.GetMaxLength(value);
+      byte[] data = new byte[max];
+      int length = extension.WriteBoxed(value, data);
+      c.W.ExtHeader(extension.TypeCode, length);
+      c.W.Raw(data, 0, length);
+    }
+
+    internal override bool IncludeByDefault(T value, FullPropertyInfo info)
+    {
+      return DefaultFilter.Instance.IncludeProperty(info, value);
+    }
+  }
+
+  /// <summary>
+  /// An enum as its underlying integer type (like MpInt.SetEnumVal).
+  /// </summary>
+  internal sealed class EnumHandler<TEnum> : ValueHandler<TEnum> where TEnum : struct
+  {
+    private static readonly TypeCode Underlying = Type.GetTypeCode(Enum.GetUnderlyingType(typeof(TEnum)));
+
+    internal override void Write(WriteContext c, TEnum value, FullPropertyInfo assignedTo)
+    {
+      switch (Underlying)
+      {
+        case TypeCode.SByte: c.W.SByte(Unsafe.As<TEnum, sbyte>(ref value)); return;
+        case TypeCode.Int16: c.W.Int16(Unsafe.As<TEnum, short>(ref value)); return;
+        case TypeCode.Int32: c.W.Int32(Unsafe.As<TEnum, int>(ref value)); return;
+        case TypeCode.Int64: c.W.Int64(Unsafe.As<TEnum, long>(ref value)); return;
+        case TypeCode.Byte: c.W.UInt8(Unsafe.As<TEnum, byte>(ref value)); return;
+        case TypeCode.UInt16: c.W.UInt16(Unsafe.As<TEnum, ushort>(ref value)); return;
+        case TypeCode.UInt32: c.W.UInt32(Unsafe.As<TEnum, uint>(ref value)); return;
+        default: c.W.UInt64(Unsafe.As<TEnum, ulong>(ref value)); return;
+      }
+    }
+
+    internal override bool IncludeByDefault(TEnum value, FullPropertyInfo info)
+    {
+      return !EqualityComparer<TEnum>.Default.Equals(value, default(TEnum));
+    }
+  }
+
+  /// <summary>
+  /// Nullable&lt;T&gt;: the value itself when it has one (its type id would be the underlying type, which equals the assigned type).
+  /// </summary>
+  internal sealed class NullableHandler<T> : ValueHandler<T?> where T : struct
+  {
+    private readonly ValueHandler<T> _inner;
+
+    internal NullableHandler(ValueHandler<T> inner)
+    {
+      _inner = inner;
+    }
+
+    internal override void Write(WriteContext c, T? value, FullPropertyInfo assignedTo)
+    {
+      _inner.Write(c, value.GetValueOrDefault(), assignedTo);
+    }
+
+    internal override bool IncludeByDefault(T? value, FullPropertyInfo info)
+    {
+      return value.HasValue; // FilterDefaultValues keeps every value of a Nullable property
+    }
+  }
+
+  #endregion
+
+  #region Objects and collections (the runtime type may differ: then written boxed, with a type id)
+
+  /// <summary>
+  /// A class, or a struct (by reference when the plan allows it, see ObjectPlan.WriteStruct, otherwise boxed once: the plans read the properties of the box, see StructPropWriter).
+  /// </summary>
+  internal sealed class ObjectHandler<T> : ValueHandler<T>, ICycleTracking
+  {
+    private readonly Serializer _serializer;
+    private ObjectPlan _names;
+    private ObjectPlan _schema;
+    private readonly RecentTypes _recent = new RecentTypes();
+
+    /// <summary>
+    /// A struct's generated default check (<see cref="GeneratedStructCode{T}.IsDefault"/>), null when there is none (then StructDefault).
+    /// </summary>
+    private readonly GeneratedStructCode<T> _default;
+
+    internal ObjectHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+      if (typeof(T).IsValueType && serializer.GeneratedCode(typeof(T)) is GeneratedStructCode<T> code && (code.Capabilities & GeneratedCapabilities.IsDefault) != 0)
+        _default = code;
+    }
+
+    internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
+    {
+      if (!typeof(T).IsValueType && value.GetType() != typeof(T)) // a struct is its own type (GetType would box it), the JIT drops the test for structs
+      {
+        WriteDerived(c, value, assignedTo);
+        return;
+      }
+
+      ObjectPlan plan = c.Mode == IdMode.Names
+        ? _names ?? (_names = _serializer.Plan(typeof(T), true))
+        : _schema ?? (_schema = _serializer.Plan(typeof(T), false));
+      if (typeof(T).IsValueType && plan.ByRef) // the JIT drops the test for classes
+        plan.WriteStruct(c, ref value, assignedTo); // the parameter by reference, no box
+      else
+        plan.Write(c, value, false, assignedTo);
+    }
+
+    /// <summary>
+    /// Created here, so NativeAOT has the instantiation wherever it has this one.
+    /// </summary>
+    public object Tracked()
+    {
+      return new CycleHandler<T>(this, _serializer);
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)] // keeps Write small
+    private void WriteDerived(WriteContext c, object value, FullPropertyInfo assignedTo)
+    {
+      Type type = value.GetType();
+      _serializer.WriteBoxedAs(c, value, type, _recent.Get(_serializer, type), assignedTo);
+    }
+
+    internal override bool IncludeByDefault(T value, FullPropertyInfo info)
+    {
+      if (typeof(T).IsValueType)
+      {
+        GeneratedStructCode<T> generated = _default;
+        if (generated != null)
+          return !generated.IsDefault(ref value); // no box, also without dynamic code
+        return !StructDefault<T>.IsDefault(ref value);
+      }
+      return value != null;
+    }
+  }
+
+  /// <summary>
+  /// An object handler that tracks the objects it writes (<see cref="Serializer.IgnoreCycles"/>, <see cref="CycleHandler{T}"/>).
+  /// </summary>
+  internal interface ICycleTracking
+  {
+    /// <returns>A <see cref="CycleHandler{T}"/> around this handler</returns>
+    object Tracked();
+  }
+
+  /// <summary>
+  /// <see cref="MsgPackOptions.IgnoreCycles"/>: the handler of a class, an object that is already being written is nil (LsMsgPack: SerializeTracked).
+  /// A handler of its own around <see cref="ObjectHandler{T}"/>, so the one without the option keeps its size (whether it is inlined into the loops of collections decides their speed).
+  /// </summary>
+  internal sealed class CycleHandler<T> : ValueHandler<T>
+  {
+    private readonly ObjectHandler<T> _inner;
+    private readonly Serializer _serializer;
+    private ObjectPlan _names;
+    private ObjectPlan _schema;
+
+    internal CycleHandler(ObjectHandler<T> inner, Serializer serializer)
+    {
+      _inner = inner;
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
+    {
+      object item = value; // a class: no box
+      if (item.GetType() != typeof(T)) // a derived type goes through Serializer.WriteBoxed, which tracks it
+      {
+        _inner.Write(c, value, assignedTo);
+        return;
+      }
+      if (!c.EnterObject(item))
+      {
+        c.W.Nil();
+        return;
+      }
+      ObjectPlan plan = c.Mode == IdMode.Names // as ObjectHandler.Write: the plan here, not a call of that handler per object (one virtual call less: small objects in arrays wrote about 10% faster)
+        ? _names ?? (_names = _serializer.Plan(typeof(T), true))
+        : _schema ?? (_schema = _serializer.Plan(typeof(T), false));
+      plan.Write(c, item, false, assignedTo);
+      c.LeaveObject();
+    }
+
+    internal override bool IncludeByDefault(T value, FullPropertyInfo info)
+    {
+      return _inner.IncludeByDefault(value, info);
+    }
+  }
+
+  /// <summary>
+  /// List&lt;T&gt; (not a derived type) as an array of its items.
+  /// </summary>
+  /// <summary>
+  /// A handler of a collection type that also writes the elements of a value that goes through <see cref="Serializer.WriteBoxed"/> (declared as an interface, or as object), without boxing them.
+  /// </summary>
+  internal interface ITypedElements
+  {
+    /// <param name="collection">Of exactly the handled type</param>
+    void WriteElements(WriteContext c, object collection);
+  }
+
+  internal sealed class ListHandler<TItem> : ValueHandler<List<TItem>>, ITypedElements
+  {
+    private readonly Serializer _serializer;
+    private readonly FullPropertyInfo _itemInfo = new FullPropertyInfo(typeof(TItem));
+    private ValueHandler<TItem> _item;
+
+    internal ListHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, List<TItem> value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(List<TItem>))
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      ValueHandler<TItem> item = _item ?? (_item = _serializer.Handler<TItem>(null));
+      c.EnterContainer();
+      int count = value.Count;
+      c.W.ArrayHeader(count);
+      for (int t = 0; t < count; t++)
+      {
+        TItem element = value[t];
+        if (element == null)
+          c.W.Nil();
+        else
+          item.Write(c, element, _itemInfo);
+      }
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<List<TItem>>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(List<TItem> value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+
+  /// <summary>
+  /// T[] (not an array of a derived type) as an array.
+  /// </summary>
+  internal sealed class ArrayHandler<TItem> : ValueHandler<TItem[]>, ITypedElements
+  {
+    private readonly Serializer _serializer;
+    private readonly FullPropertyInfo _itemInfo = new FullPropertyInfo(typeof(TItem));
+    private ValueHandler<TItem> _item;
+
+    internal ArrayHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, TItem[] value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(TItem[]))
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      ValueHandler<TItem> item = _item ?? (_item = _serializer.Handler<TItem>(null));
+      c.EnterContainer();
+      c.W.ArrayHeader(value.Length);
+      for (int t = 0; t < value.Length; t++)
+      {
+        TItem element = value[t];
+        if (element == null)
+          c.W.Nil();
+        else
+          item.Write(c, element, _itemInfo);
+      }
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<TItem[]>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(TItem[] value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+
+  /// <summary>
+  /// The element types of the arrays and lists that are written in bulk (<see cref="NumberArrayHandler{T}"/>, <see cref="NumberListHandler{T}"/>; reading: NumberArrayReader, NumberListReader):
+  /// int, long, float and double (written the same with any options), sbyte, short, ushort, uint, ulong, bool, Guid and decimal (when the options write them as such: <see cref="Serializer.Bulk"/>; not byte, a byte[] is bin).
+  /// </summary>
+  internal static class Numbers
+  {
+    /// <summary>
+    /// The same bytes as the handler of <typeparamref name="T"/> writes per value (Int32Handler, Int64Handler, SingleHandler, DoubleHandler, the other integer handlers, BoolHandler, GuidHandler, DecimalHandler).
+    /// </summary>
+    /// <param name="decimalCode">The type code of the decimal extension (decimals only)</param>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static void Write<T>(MsgPackWriter w, ReadOnlySpan<T> values, byte decimalCode) where T : struct
+    {
+      if (typeof(T) == typeof(int)) w.Int32s(MemoryMarshal.Cast<T, int>(values)); // the JIT keeps the one of T
+      else if (typeof(T) == typeof(long)) w.Int64s(MemoryMarshal.Cast<T, long>(values));
+      else if (typeof(T) == typeof(float)) w.Singles(MemoryMarshal.Cast<T, float>(values));
+      else if (typeof(T) == typeof(double)) w.Doubles(MemoryMarshal.Cast<T, double>(values));
+      else if (typeof(T) == typeof(bool)) w.Bools(MemoryMarshal.Cast<T, bool>(values));
+      else if (typeof(T) == typeof(Guid)) w.Guids(MemoryMarshal.Cast<T, Guid>(values));
+      else if (typeof(T) == typeof(decimal)) w.Decimals(MemoryMarshal.Cast<T, decimal>(values), decimalCode);
+      else w.Integers(values);
+    }
+
+    /// <summary>
+    /// The values in the formats the reader of <typeparamref name="T"/> reads without converting.
+    /// </summary>
+    /// <param name="decimalCode">The type code of the decimal extension (decimals only)</param>
+    /// <returns>The number of values read (see <see cref="MsgPackReader.ReadInt32s"/>)</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static int Read<T>(MsgPackReader r, Span<T> target, byte decimalCode) where T : struct
+    {
+      if (typeof(T) == typeof(int)) return r.ReadInt32s(MemoryMarshal.Cast<T, int>(target));
+      if (typeof(T) == typeof(long)) return r.ReadInt64s(MemoryMarshal.Cast<T, long>(target));
+      if (typeof(T) == typeof(float)) return r.ReadSingles(MemoryMarshal.Cast<T, float>(target));
+      if (typeof(T) == typeof(double)) return r.ReadDoubles(MemoryMarshal.Cast<T, double>(target));
+      if (typeof(T) == typeof(bool)) return r.ReadBools(MemoryMarshal.Cast<T, bool>(target));
+      if (typeof(T) == typeof(Guid)) return r.ReadGuids(MemoryMarshal.Cast<T, Guid>(target));
+      if (typeof(T) == typeof(decimal)) return r.ReadDecimals(MemoryMarshal.Cast<T, decimal>(target), decimalCode);
+      return r.ReadIntegers(target);
+    }
+  }
+
+  /// <summary>
+  /// An array of a type written in bulk (see <see cref="Numbers"/>, <see cref="Serializer.Bulk"/>): the same bytes as <see cref="ArrayHandler{TItem}"/>, written in bulk
+  /// (1000 values: int 5.3 -> 2.2 us, long 6.1 -> 3.3 us, float 2.5 -> 1.2 us, double 2.8 -> 1.4 us, short 5.8-6.7 -> 2.9-3.0 us, uint 5.1-5.7 -> 2.8 us, bool 2.0 -> 1.0-1.1 us,
+  /// Guid 5.3-5.5 -> 1.8-1.9 us, decimal 4.3 -> 1.85 us; mostly the copy of the payload).
+  /// </summary>
+  internal sealed class NumberArrayHandler<T> : ValueHandler<T[]>, ITypedElements where T : struct
+  {
+    private readonly Serializer _serializer;
+    private readonly byte _decimalCode;
+
+    internal NumberArrayHandler(Serializer serializer, byte decimalCode)
+    {
+      _serializer = serializer;
+      _decimalCode = decimalCode;
+    }
+
+    internal override void Write(WriteContext c, T[] value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(T[])) // e.g. a uint[] as an int[]
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      c.EnterContainer();
+      c.W.ArrayHeader(value.Length);
+      Numbers.Write(c.W, new ReadOnlySpan<T>(value), _decimalCode);
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<T[]>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(T[] value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+
+#if NET8_0_OR_GREATER
+  /// <summary>
+  /// List&lt;T&gt; of a type written in bulk (not a derived type), as <see cref="NumberArrayHandler{T}"/>.
+  /// </summary>
+  internal sealed class NumberListHandler<T> : ValueHandler<List<T>>, ITypedElements where T : struct
+  {
+    private readonly Serializer _serializer;
+    private readonly byte _decimalCode;
+
+    internal NumberListHandler(Serializer serializer, byte decimalCode)
+    {
+      _serializer = serializer;
+      _decimalCode = decimalCode;
+    }
+
+    internal override void Write(WriteContext c, List<T> value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(List<T>))
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      c.EnterContainer();
+      ReadOnlySpan<T> items = CollectionsMarshal.AsSpan(value);
+      c.W.ArrayHeader(items.Length);
+      Numbers.Write(c.W, items, _decimalCode);
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<List<T>>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(List<T> value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+#endif
+
+  /// <summary>
+  /// HashSet&lt;T&gt; (not a derived class) of a type written in bulk (see <see cref="Numbers"/>) as <see cref="HashSetHandler{TItem}"/> writes it, in the order it enumerates:
+  /// copied to a pooled array first (<c>CopyTo</c>, the same order; 1000 ints 5.3-6.3 -> 4.0-4.5 us, the enumerator in blocks 5.0-5.1 us).
+  /// </summary>
+  internal sealed class NumberSetHandler<T> : ValueHandler<HashSet<T>>, ITypedElements where T : unmanaged
+  {
+    private readonly Serializer _serializer;
+    private readonly byte _decimalCode;
+
+    internal NumberSetHandler(Serializer serializer, byte decimalCode)
+    {
+      _serializer = serializer;
+      _decimalCode = decimalCode;
+    }
+
+    internal override void Write(WriteContext c, HashSet<T> value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(HashSet<T>))
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      c.EnterContainer();
+      c.W.ArrayHeader(value.Count);
+      int count = value.Count;
+      T[] items = System.Buffers.ArrayPool<T>.Shared.Rent(count); // not returned when writing throws: the pool makes another one
+      value.CopyTo(items);
+      Numbers.Write(c.W, new ReadOnlySpan<T>(items, 0, count), _decimalCode);
+      System.Buffers.ArrayPool<T>.Shared.Return(items);
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<HashSet<T>>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(HashSet<T> value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+
+  /// <summary>
+  /// HashSet&lt;T&gt; (not a derived class) as an array, in the order it enumerates.
+  /// </summary>
+  internal sealed class HashSetHandler<TItem> : ValueHandler<HashSet<TItem>>, ITypedElements
+  {
+    private readonly Serializer _serializer;
+    private readonly FullPropertyInfo _itemInfo = new FullPropertyInfo(typeof(TItem));
+    private ValueHandler<TItem> _item;
+
+    internal HashSetHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, HashSet<TItem> value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(HashSet<TItem>))
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      ValueHandler<TItem> item = _item ?? (_item = _serializer.Handler<TItem>(null));
+      c.EnterContainer();
+      c.W.ArrayHeader(value.Count);
+      foreach (TItem element in value)
+      {
+        if (element == null)
+          c.W.Nil();
+        else
+          item.Write(c, element, _itemInfo);
+      }
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<HashSet<TItem>>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(HashSet<TItem> value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+
+  /// <summary>
+  /// Dictionary&lt;TKey, TValue&gt; (not a derived class) as a map, in the order it enumerates.
+  /// </summary>
+  internal sealed class DictionaryHandler<TKey, TValue> : ValueHandler<Dictionary<TKey, TValue>>, ITypedElements
+  {
+    private readonly Serializer _serializer;
+    private readonly FullPropertyInfo _keyInfo = new FullPropertyInfo(typeof(TKey));
+    private readonly FullPropertyInfo _valueInfo = new FullPropertyInfo(typeof(TValue));
+    private ValueHandler<TKey> _key;
+    private ValueHandler<TValue> _value;
+
+    internal DictionaryHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    internal override void Write(WriteContext c, Dictionary<TKey, TValue> value, FullPropertyInfo assignedTo)
+    {
+      if (value.GetType() != typeof(Dictionary<TKey, TValue>))
+      {
+        _serializer.WriteBoxed(c, value, assignedTo);
+        return;
+      }
+
+      ValueHandler<TKey> keys = _key ?? (_key = _serializer.Handler<TKey>(null));
+      ValueHandler<TValue> values = _value ?? (_value = _serializer.Handler<TValue>(null));
+      c.EnterContainer();
+      c.W.MapHeader(value.Count);
+      foreach (KeyValuePair<TKey, TValue> entry in value)
+      {
+        keys.Write(c, entry.Key, _keyInfo); // never null
+        TValue item = entry.Value;
+        if (item == null)
+          c.W.Nil();
+        else
+          values.Write(c, item, _valueInfo);
+      }
+      c.LeaveContainer();
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      Write(c, Unsafe.As<Dictionary<TKey, TValue>>(collection), null); // of exactly this type: assignedTo is not used
+    }
+
+    internal override bool IncludeByDefault(Dictionary<TKey, TValue> value, FullPropertyInfo info)
+    {
+      return value != null;
+    }
+  }
+
+  #endregion
+}

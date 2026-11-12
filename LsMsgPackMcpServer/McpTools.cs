@@ -134,7 +134,7 @@ namespace LsMsgPackMcp
           Name = "msgpack_decode",
           Title = "MsgPack: decode",
           Description = "Decodes MsgPack data into JSON-like text with comments for what JSON does not tell (types from type ids or the LsMsgPack indexed schema, timestamps, decimals, bin, extensions, errors with offsets), " +
-            "or into the MsgPack items with their offsets and encodings (view \"items\"). Also streams of LtMsgPack's MsgPackStreamWriter: values of unknown length (0xC1 escapes) and the stream's index with its entries. " +
+            "or into the MsgPack items with their offsets and encodings (view \"items\"). Also streams of LsMsgPack's MsgPackStreamWriter: values of unknown length (0xC1 escapes) and the stream's index with its entries. " +
             "Give data (hex, base64, a list of byte values), a file, or the id of a document decoded before (to see another view or part).",
           InputSchema = Schema(new JsonObject[] {
             Prop("data", "string", "The bytes as text: hex (\"82 a4 4e 61...\", \"0x82a4...\"), base64, decimal byte values (\"130, 164, ...\") or a Python bytes literal."),
@@ -151,7 +151,7 @@ namespace LsMsgPackMcp
           Description = "Deserializes MsgPack data into a class of a compiled .NET assembly (the program's or library's .dll, e.g. bin/Debug/net8.0/MyApp.dll) with LsMsgPack, and reports what does not match the classes: " +
             "properties the data has and the class does not (with \"did you mean\" for misspelled names and the properties left at their default), values that do not convert (a string where an int is declared, an overflow, an unknown enum name), " +
             "classes without an entry in the indexed schema, type ids that are not found; each with the paths of the objects. Also shows the object that was read as JSON. " +
-            "Use it when an object deserialized from MsgPack has missing, null or wrong values, or to check data against the classes (any writer: LsMsgPack, LtMsgPack, MessagePack-CSharp...). " +
+            "Use it when an object deserialized from MsgPack has missing, null or wrong values, or to check data against the classes (any writer: LsMsgPack, LsMsgPack, MessagePack-CSharp...). " +
             "Give data, a file or a document id as msgpack_decode. Runs the class's constructors and setters, in a separate process.",
           ReadOnly = false, // runs code of the assembly (static constructors, constructors, setters)
           InputSchema = Schema(new JsonObject[] {

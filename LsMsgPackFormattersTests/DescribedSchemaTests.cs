@@ -1,6 +1,7 @@
 using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackFormatters;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -97,7 +98,7 @@ namespace LsMsgPackFormattersTests
   {
     private const string DescribedAccept = MsgPackMediaTypes.XLsMsgPack + "; " + MsgPackMediaTypes.DescribedSchemaParameter + ", " + MsgPackMediaTypes.XLsMsgPack + "; q=0.9"; // as the TypeScript client asks
 
-    private static async Task<(IHost host, HttpClient client)> StartAsync(Action<LtMsgPackHttpOptions> configure = null)
+    private static async Task<(IHost host, HttpClient client)> StartAsync(Action<LsMsgPackHttpOptions> configure = null)
     {
       IHost host = await new HostBuilder()
         .ConfigureWebHost(web => web
@@ -113,7 +114,7 @@ namespace LsMsgPackFormattersTests
       HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, path);
       request.Headers.TryAddWithoutValidation("Accept", described ? DescribedAccept : MsgPackMediaTypes.XLsMsgPack);
       if (!(schemas is null))
-        request.Headers.Add(LtMsgPackHttpSerializer.SchemasHeader, schemas);
+        request.Headers.Add(LsMsgPackHttpSerializer.SchemasHeader, schemas);
       HttpResponseMessage response = await client.SendAsync(request);
       response.EnsureSuccessStatusCode();
       return new Response(response, await response.Content.ReadAsByteArrayAsync());
@@ -125,7 +126,7 @@ namespace LsMsgPackFormattersTests
       {
         Message = message;
         Bytes = bytes;
-        SchemaId = message.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemaHeader, out IEnumerable<string> values) ? values.Single() : null;
+        SchemaId = message.Headers.TryGetValues(LsMsgPackHttpSerializer.SchemaHeader, out IEnumerable<string> values) ? values.Single() : null;
         IsReference = bytes.Length >= SchemaStore.ReferenceLength && bytes[0] == 0xD8 && bytes[1] == (byte)SchemaStore.ReferenceExtensionType;
         MemoryStream stream = new MemoryStream(bytes);
         Schema = IsReference ? null : MsgPackItem.Unpack(stream);

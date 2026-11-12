@@ -190,7 +190,7 @@ namespace LsMsgPack.Meta
     /// Whether the runtime supports dynamic code: the delegates need a generic class instantiated for the declaring type and property type at runtime,
     /// which is not possible without it (NativeAOT, iOS without the interpreter).
     /// <para>Not <c>IsDynamicCodeCompiled</c>, which is false on WebAssembly: there Mono interprets the code (also the generic instantiations an AOT build did not compile),
-    /// and the delegates are still 3-4.7x faster than reflection (LtMsgPack, invoice benchmark, interpreter and AOT, .NET 10, October 2026).</para>
+    /// and the delegates are still 3-4.7x faster than reflection (LsMsgPack, invoice benchmark, interpreter and AOT, .NET 10, October 2026).</para>
     /// </summary>
     internal static bool CanCompile
     {

@@ -10,7 +10,7 @@ REPO=$(git -C "$SCRIPTS" rev-parse --show-toplevel)
 mkdir -p "$WORK"
 rm -rf "$WORK/baseline" && mkdir -p "$WORK/baseline"
 # LsMsgPackCore (LsMsgPack.Core) exists since the library was split, older bases do not have it
-PATHS="LsMsgPackNetStandard CommonAssemblyInfo.cs Packaging.props"
+PATHS="LsMsgPackDebug CommonAssemblyInfo.cs Packaging.props"
 if [ -n "$(git -C "$REPO" ls-tree --name-only "$BASE_REF" LsMsgPackCore)" ]; then PATHS="$PATHS LsMsgPackCore"; fi
 git -C "$REPO" archive "$BASE_REF" $PATHS | tar -x -C "$WORK/baseline"
 echo "$BASE_REF ($(git -C "$REPO" rev-parse --short "$BASE_REF"))" > "$WORK/baseline/REF"
@@ -34,8 +34,8 @@ PROJ
   dotnet build "$WORK/$1" -c Release 2>&1 | grep -E " error |rror\(s\)"
 }
 
-make_project bench-new Bench.cs "$REPO/LsMsgPackNetStandard/LsMsgPack.csproj"
-make_project bench-base Bench.cs "$WORK/baseline/LsMsgPackNetStandard/LsMsgPack.csproj"
-make_project equiv-new Equiv.cs "$REPO/LsMsgPackNetStandard/LsMsgPack.csproj"
-make_project equiv-base Equiv.cs "$WORK/baseline/LsMsgPackNetStandard/LsMsgPack.csproj"
+make_project bench-new Bench.cs "$REPO/LsMsgPackDebug/LsMsgPackDebug.csproj"
+make_project bench-base Bench.cs "$WORK/baseline/LsMsgPackDebug/LsMsgPackDebug.csproj"
+make_project equiv-new Equiv.cs "$REPO/LsMsgPackDebug/LsMsgPackDebug.csproj"
+make_project equiv-base Equiv.cs "$WORK/baseline/LsMsgPackDebug/LsMsgPackDebug.csproj"
 echo "Harnesses in $WORK, base: $(cat "$WORK/baseline/REF")"

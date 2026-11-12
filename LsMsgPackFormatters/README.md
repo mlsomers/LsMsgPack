@@ -1,6 +1,6 @@
 # LsMsgPack.AspNetCore
 
-MsgPack input and output formatters for ASP.NET Core MVC / Web API controllers, and results and bodies for minimal APIs. Controllers receive and return MsgPack the same way they handle JSON, without any changes. Serializing is done by [LtMsgPack](https://www.nuget.org/packages/LtMsgPack), which reads and writes several times faster than System.Text.Json.
+MsgPack input and output formatters for ASP.NET Core MVC / Web API controllers, and results and bodies for minimal APIs. Controllers receive and return MsgPack the same way they handle JSON, without any changes. Serializing is done by [LsMsgPack](https://www.nuget.org/packages/LsMsgPack), which reads and writes several times faster than System.Text.Json.
 
 Targets ASP.NET Core 2.x (netstandard2.0, also on .NET Framework) and ASP.NET Core 3.0 and up (net8.0).
 
@@ -18,23 +18,23 @@ Clients choose the format with the `Content-Type` and `Accept` headers. JSON sta
 | Media type | Format |
 |---|---|
 | `application/msgpack`, `application/x-msgpack` | Plain MsgPack, readable by any MsgPack implementation: maps keyed by property names, every value, `Guid` and `decimal` as text, dates as timestamps (a `DateTimeOffset` loses its offset). |
-| `application/x-lsmsgpack` | The indexed schema with type ids: smaller, polymorphic, and with the schema sent only once per client. Use this between LsMsgPack / LtMsgPack endpoints. |
+| `application/x-lsmsgpack` | The indexed schema with type ids: smaller, polymorphic, and with the schema sent only once per client. Use this between endpoints that use LsMsgPack (or LsMsgPackDebug). |
 
 To change the settings, pass a configuration action:
 
 ```csharp
 using LsMsgPack.TypeResolving.Types;
-using LtMsgPack;
+using LsMsgPack;
 
 builder.Services.AddControllers()
   .AddLsMsgPackSerializerFormatters(o =>
   {
-    o.Plain = LtMsgPackPresets.MessagePackCSharp(); // or Nerdbank(); the default is Generic()
+    o.Plain = LsMsgPackPresets.MessagePackCSharp(); // or Nerdbank(); the default is Generic()
     o.XLsMsgPack.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(Order));
   });
 ```
 
-With the code of LtMsgPack's source generator, pass the context first: `.AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)`. The overloads without one are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` (see [Trimming and NativeAOT](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md#trimming-and-nativeaot)).
+With the code of LsMsgPack's source generator, pass the context first: `.AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)`. The overloads without one are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]` (see [Trimming and NativeAOT](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md#trimming-and-nativeaot)).
 
 To find out what didn't match between request bodies and your classes (properties of another version of the models), set `o.ReportDifferences = true`: the differences are available as `HttpContext.GetReadDifferences()` and logged at the `Debug` level (as a warning with `o.LogDifferencesAsWarning = true`). For example, to tell the client why a value is missing:
 

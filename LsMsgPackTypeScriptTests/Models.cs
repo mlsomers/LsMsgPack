@@ -1,7 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPackFormatters;
-using LtMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using System;
@@ -99,13 +98,13 @@ namespace LsMsgPackTypeScriptTests
     /// <summary>
     /// The server's options for --options.
     /// </summary>
-    public static LtMsgPackHttpOptions Alphabetical
+    public static LsMsgPackHttpOptions Alphabetical
     {
       get
       {
-        LtMsgPackOptions xls = LtMsgPackPresets.LsMsgPack();
+        LsMsgPackOptions xls = LsMsgPackPresets.LsMsgPack();
         xls.PropertyOrder = PropertyOrder.Alphabetical;
-        return new LtMsgPackHttpOptions() { XLsMsgPack = xls };
+        return new LsMsgPackHttpOptions() { XLsMsgPack = xls };
       }
     }
   }
@@ -132,7 +131,7 @@ namespace LsMsgPackTypeScriptTests
   {
     internal static byte[] Save(TsOrder order)
     {
-      return LtMsgPackSerializer.Default.Serialize(order);
+      return LsMsgPackSerializer.Default.Serialize(order);
     }
 
     /// <summary>

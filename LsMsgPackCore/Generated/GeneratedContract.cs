@@ -15,7 +15,7 @@ namespace LsMsgPack.Generated
     /// <summary>
     /// The version the generator of this release writes.
     /// </summary>
-    public const int Current = 5; // 2: ReadPositional sets the value of a nil (October 2026); 3: structs (GeneratedValues.Struct, GeneratedStructCode), the loop over the values of a map (ReadMap), types described when looked up (GeneratedContext.Describe) and typed sets, dictionaries and collection interfaces without dynamic code (GeneratedValues.HashSet, Dictionary, CollectionInterface), November 2026; 4: fields, described with the factories of properties (GeneratedType.FindMember), unrolled maps and trimmed arrays, Guids and decimals in the plan's formats (LtMsgPack's GeneratedCapabilities), November 2026; 5: maps keyed by names read straight-line (LtMsgPack's GeneratedIO.NamesInOrder, KeyIs, LongKeyIs), November 2026
+    public const int Current = 5; // 2: ReadPositional sets the value of a nil (October 2026); 3: structs (GeneratedValues.Struct, GeneratedStructCode), the loop over the values of a map (ReadMap), types described when looked up (GeneratedContext.Describe) and typed sets, dictionaries and collection interfaces without dynamic code (GeneratedValues.HashSet, Dictionary, CollectionInterface), November 2026; 4: fields, described with the factories of properties (GeneratedType.FindMember), unrolled maps and trimmed arrays, Guids and decimals in the plan's formats (LsMsgPack's GeneratedCapabilities), November 2026; 5: maps keyed by names read straight-line (LsMsgPack's GeneratedIO.NamesInOrder, KeyIs, LongKeyIs), November 2026
 
     /// <summary>
     /// The oldest version of generated code this runtime still uses.

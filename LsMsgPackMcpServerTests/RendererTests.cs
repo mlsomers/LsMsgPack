@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackMcp;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
@@ -415,7 +416,7 @@ namespace LsMsgPackMcpServerTests
       byte[] bytes = Payloads.Stream();
       string text = Render(bytes, new RenderOptions() { Issues = IssueLevel.All });
       AssertContains(text, "Structure: a stream (as MsgPackStreamWriter writes it) with 1 value of unknown length (0xC1 escape sequences, msgpack/msgpack#347) and an index of 4 entries; 4 payloads that follow each other");
-      AssertContains(text, ": Complete, written by LtMsgPack ");
+      AssertContains(text, ": Complete, written by LsMsgPack ");
       AssertContains(text, ", CRC-32 matches, 4 entries, 2 schemas:");
       AssertContains(text, "  entry \"invoice 2\" at 0xF5 (141 bytes), application/x-invoice\n");
       AssertContains(text, "  entry \"lines\" at ");
@@ -464,7 +465,7 @@ namespace LsMsgPackMcpServerTests
       AssertContains(text, "0x000C     chunk bin 8, 1 byte: 07\n");
 
       byte[] bytes = Payloads.Stream();
-      int writer = IndexOf(bytes, System.Text.Encoding.ASCII.GetBytes("LtMsgPack"));
+      int writer = IndexOf(bytes, System.Text.Encoding.ASCII.GetBytes("LsMsgPack"));
       bytes[writer] = (byte)'X';
       string damaged = Render(bytes);
       AssertContains(damaged, "CRC-32 does NOT match (readers that seek do not use it)");

@@ -45,7 +45,7 @@ namespace ObjectDebugger
     /// <summary>
     /// The item holding the schema (a map) or the reference to it (an extension). Null when the item tree was not kept.
     /// </summary>
-    public LsMsgPack.MsgPackItem ItemRef { get; set; }
+    public LsMsgPackDebug.MsgPackItem ItemRef { get; set; }
 
     public override string ToString()
     {
@@ -143,12 +143,12 @@ namespace ObjectDebugger
     /// <summary>
     /// The item holding the type name (a key of the schema). Null when the item tree was not kept, or for a schema read from a store.
     /// </summary>
-    public LsMsgPack.MsgPackItem NameItemRef { get; set; }
+    public LsMsgPackDebug.MsgPackItem NameItemRef { get; set; }
 
     /// <summary>
     /// The items holding the property names (version 2: the items <c>[name, type, default]</c>), in the order of <see cref="Properties"/> (null items when the item tree was not kept).
     /// </summary>
-    public List<LsMsgPack.MsgPackItem> PropertyItemRefs { get; } = new List<LsMsgPack.MsgPackItem>();
+    public List<LsMsgPackDebug.MsgPackItem> PropertyItemRefs { get; } = new List<LsMsgPackDebug.MsgPackItem>();
 
     /// <summary>
     /// The body has a value of this type (read from a type id or inferred).

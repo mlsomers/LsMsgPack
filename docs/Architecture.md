@@ -5,8 +5,8 @@
 | Project (folder) | Assembly / package | What it is |
 |---|---|---|
 | `LsMsgPackCore` | `LsMsgPack.Core` | What both serializers share and what doesn't depend on MsgPack items: the format settings (`MsgPackOptions`), media types, the indexed schema and its `SchemaStore`, property metadata and accessors, type resolvers, attributes and filters. |
-| `LsMsgPackNetStandard` | `LsMsgPack` | The original serializer and parser. It turns objects into a tree of MsgPack items (`MsgPackItem`, `Types/`) and that tree into bytes, and back. Built with `KEEPTRACK` (the `DebugKeepTrack` / `ReleaseKeepTrack` configurations), the items remember their offsets and lengths and errors become items instead of exceptions, which is what the explorer tools use. |
-| `LtMsgPack` | `LtMsgPack` | The fast serializer. It writes the same bytes and reads the same values as LsMsgPack with the same settings, without the item tree (typed writers and readers per type). Also has the options for other libraries (`LtMsgPackPresets`) and what the web formatters share (`Http/`). |
+| `LsMsgPackDebug` | `LsMsgPackDebug` | The original serializer and parser. It turns objects into a tree of MsgPack items (`MsgPackItem`, `Types/`) and that tree into bytes, and back. Built with `KEEPTRACK` (the `DebugKeepTrack` / `ReleaseKeepTrack` configurations), the items remember their offsets and lengths and errors become items instead of exceptions, which is what the explorer tools use. |
+| `LsMsgPack` | `LsMsgPack` | The fast serializer. It writes the same bytes and reads the same values as LsMsgPackDebug with the same settings, without the item tree (typed writers and readers per type). Also has the options for other libraries (`LsMsgPackPresets`) and what the web formatters share (`Http/`). |
 | `LsMsgPackFormatters` | `LsMsgPack.AspNetCore` | Input and output formatters for ASP.NET Core, see [WebFormatters.md](WebFormatters.md). |
 | `LsMsgPackWebApiFormatters` | `LsMsgPack.AspNet.WebApi` | `MediaTypeFormatter` for ASP.NET Web API 2 and `HttpClient`, and the client side of the schema negotiation (`LsMsgPackSchemaHandler`). |
 | `LsMsgPackMvc` | `LsMsgPack.AspNet.Mvc` | Model binder and action result for ASP.NET MVC 5 (.NET Framework 4.5 through 4.8). |
@@ -14,12 +14,12 @@
 | `LsMsgPackFiddlerInspector` | `LsMsgPackFiddlerInspector.dll` | A tiny wrapper that makes MsgPack Explorer a Fiddler Inspector. |
 | `LsMsgPackVisualStudioPlugin` | Visual Studio extension | MsgPack Explorer as a debugger visualizer for `byte[]`, `List<byte>`, streams and more. |
 | `ObjectDebugger` | `ObjectDebugger.dll` | Rebuilds the objects of a payload without their types (type and property names from the indexed schema), and the search of the explorers. Used by MsgPack Explorer and the VS Code extension. |
-| `LsMsgPackVsCode` | VS Code extension | MsgPack Explorer for VS Code (TypeScript webview), for values of the debugged program and `.msgpack` files. `Server/` (`LsMsgPackInspector`, net8.0) reads the data with LsMsgPack (KEEPTRACK) and ObjectDebugger for it. See its [README](../LsMsgPackVsCode/README.md). |
+| `LsMsgPackVsCode` | VS Code extension | MsgPack Explorer for VS Code (TypeScript webview), for values of the debugged program and `.msgpack` files. `Server/` (`LsMsgPackInspector`, net8.0) reads the data with LsMsgPackDebug (KEEPTRACK) and ObjectDebugger for it. See its [README](../LsMsgPackVsCode/README.md). |
 | `LsMsgPackMcpServer` | `LsMsgPackMcp` (.NET tool `lsmsgpack-mcp`) | MsgPack for AI agents: an MCP server and command line tool that decode payloads into text (with ObjectDebugger), and read bytes from the debugger of VS Code or Visual Studio through their extensions. See [Mcp.md](Mcp.md). |
 | `MicroFramework` | | An old copy of the sources for the .NET Micro Framework. It doesn't link the current library files. |
 
 Tests:
-- `LsMsgPackNetStandardUnitTests` (`LsMsgPackUnitTests`): most test classes run against both serializers (an `Ls...` and an `Lt...` subclass each), `CrossLibraryTests` checks that they write the same bytes in all settings, and `BenchmarkInvoices` compares them with System.Text.Json.
+- `LsMsgPackUnitTests` (`LsMsgPackUnitTests`): most test classes run against both serializers (a `Debug...` subclass for LsMsgPackDebug and an `Ls...` subclass for LsMsgPack each), `CrossLibraryTests` checks that they write the same bytes in all settings, and `BenchmarkInvoices` compares them with System.Text.Json.
 - `LsMsgPackInteropTests`: what MessagePack-CSharp and Nerdbank.MessagePack read of our output and the other way around, the source of [Compatibility.md](Compatibility.md); `BenchmarkLibraries` compares the speed with them, the source of [Comparison.md](Comparison.md).
 - `LsMsgPackFormattersTests`, `LsMsgPackWebApiFormattersTests`, `LsMsgPackMvcTests`: the web formatters, in process.
 - `LsMsgPackVsCode/test`: the VS Code extension (`npm test`): reading bytes from debuggers, text formats, and the inspector process.
@@ -28,13 +28,13 @@ Tests:
 
 ## How it works
 
-**LsMsgPack** works in two phases. Writing: object → tree of `MsgPackItem`s → bytes (each item writes itself). Reading: bytes → tree of `MsgPackItem`s → plain values (`object[]` for arrays, key/value pairs for maps) → objects. The item tree is what makes it useful for inspecting data, and also what makes it slower.
+**LsMsgPackDebug** works in two phases. Writing: object → tree of `MsgPackItem`s → bytes (each item writes itself). Reading: bytes → tree of `MsgPackItem`s → plain values (`object[]` for arrays, key/value pairs for maps) → objects. The item tree is what makes it useful for inspecting data, and also what makes it slower.
 
-**LtMsgPack** skips the tree. Per type it builds a plan once (which properties, in which order, with typed getters and setters) and writes the values straight into a buffer, or reads them straight into the objects. Once a type has been written 1000 times (`LtMsgPackOptions.CompileWritersAfter`), its writer is compiled at runtime into straight-line code per property, and once it has been read 1000 times (`CompileReadersAfter`) so is its reader: the code the [source generator](SourceGenerator.md) writes at compile time (not under NativeAOT or on WebAssembly, where the runtime can't compile code). When a value isn't what it expects, it falls back to reading it the way LsMsgPack does, so both return the same values.
+**LsMsgPack** skips the tree. Per type it builds a plan once (which properties, in which order, with typed getters and setters) and writes the values straight into a buffer, or reads them straight into the objects. Once a type has been written 1000 times (`LsMsgPackOptions.CompileWritersAfter`), its writer is compiled at runtime into straight-line code per property, and once it has been read 1000 times (`CompileReadersAfter`) so is its reader: the code the [source generator](SourceGenerator.md) writes at compile time (not under NativeAOT or on WebAssembly, where the runtime can't compile code). When a value isn't what it expects, it falls back to reading it the way LsMsgPackDebug does, so both return the same values.
 
 Both use the decisions in `LsMsgPack.Core`: which properties are written (filters, property order), when a type id is needed and how it's resolved, and the indexed schema. See [schema.md](schema.md) for the wire formats.
 
-## Object model (LsMsgPack)
+## Object model (LsMsgPackDebug)
 
 ![Hierarchy](https://github.com/mlsomers/LsMsgPack/blob/master/Hierarchy.png)
 
@@ -44,6 +44,6 @@ Each class can serialize and deserialize the associated MsgPack type. Types that
 
 ![Services](https://github.com/mlsomers/LsMsgPack/blob/master/Services.png)
 
-`MsgPackSerializer` and `MsgPackSettings` are the classes end users are supposed to use (the entry points). For LtMsgPack these are `LtMsgPackSerializer` and `LtMsgPackOptions`.
+`MsgPackSerializer` and `MsgPackSettings` are the classes end users are supposed to use (the entry points). For LsMsgPack (the fast serializer) these are `LsMsgPackSerializer` and `LsMsgPackOptions`; both options classes derive from `MsgPackOptions` in LsMsgPack.Core.
 
-The diagrams are the class diagrams in `LsMsgPackNetStandard/Architecture/`.
+The diagrams are the class diagrams in `LsMsgPackDebug/Architecture/`.

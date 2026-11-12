@@ -14,7 +14,7 @@ namespace LsMsgPackInspector
   /// <summary>
   /// The backend of the VS Code extension. Reads one JSON request per line from stdin and writes one JSON response per line to stdout:
   /// <code>
-  /// {"id":1,"method":"load","doc":"a","data":"&lt;base64&gt;","continueOnError":false,"endian":"SwapIfCurrentSystemIsLittleEndian","displayLimit":1000,"objects":"auto","showObjectsAt":"high"}
+  /// {"id":1,"method":"load","doc":"a","data":"&lt;base64&gt;","continueOnError":false,"endian":"SwapIfCurrentSystemIsLittleEndian","displayLimit":1000,"objects":"auto","showObjectsAt":"high","lsMsgPackExtensions":true}
   /// {"id":2,"method":"search","doc":"a","text":"abc","matchCase":false}
   /// {"id":3,"method":"close","doc":"a"}
   /// {"id":4,"method":"version"}
@@ -124,7 +124,8 @@ namespace LsMsgPackInspector
 
       InspectorSettings settings = new InspectorSettings()
       {
-        ContinueOnError = GetBool(root, "continueOnError")
+        ContinueOnError = GetBool(root, "continueOnError"),
+        LsMsgPackExtensions = !root.TryGetProperty("lsMsgPackExtensions", out JsonElement extensions) || extensions.ValueKind != JsonValueKind.False // on unless switched off
       };
       string endian = GetString(root, "endian");
       if (!string.IsNullOrEmpty(endian))

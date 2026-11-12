@@ -1,5 +1,5 @@
 using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace LsMsgPackWebApiFormatters
 {
   /// <summary>
-  /// Client side schema negotiation for application/x-lsmsgpack (see <see cref="LtMsgPackHttpSerializer"/>): tells the server which schemas the client holds (request header MsgPack-Schemas),
+  /// Client side schema negotiation for application/x-lsmsgpack (see <see cref="LsMsgPackHttpSerializer"/>): tells the server which schemas the client holds (request header MsgPack-Schemas),
   /// so it can refer to them instead of sending them, and registers the schemas the server sends inline (response header MsgPack-Schema).
   /// <para>Create it with <see cref="LsMsgPackMediaTypeFormatter.CreateHandler(HttpMessageHandler)"/>, so it shares the formatter's schema store: <c>new HttpClient(formatter.CreateHandler())</c>.
   /// With IHttpClientFactory, which sets the inner handler itself: <c>services.AddHttpClient("api").AddHttpMessageHandler(() => formatter.CreateDelegatingHandler())</c>
@@ -17,9 +17,9 @@ namespace LsMsgPackWebApiFormatters
   /// </summary>
   public class LsMsgPackSchemaHandler : DelegatingHandler
   {
-    private readonly LtMsgPackHttpSerializer _serializer;
+    private readonly LsMsgPackHttpSerializer _serializer;
 
-    public LsMsgPackSchemaHandler(LtMsgPackHttpSerializer serializer, HttpMessageHandler innerHandler) : base(innerHandler)
+    public LsMsgPackSchemaHandler(LsMsgPackHttpSerializer serializer, HttpMessageHandler innerHandler) : base(innerHandler)
     {
       _serializer = serializer ?? throw new System.ArgumentNullException(nameof(serializer));
     }
@@ -27,7 +27,7 @@ namespace LsMsgPackWebApiFormatters
     /// <summary>
     /// Without an inner handler, for a pipeline that sets <see cref="DelegatingHandler.InnerHandler"/> itself (IHttpClientFactory refuses handlers that have one).
     /// </summary>
-    public LsMsgPackSchemaHandler(LtMsgPackHttpSerializer serializer)
+    public LsMsgPackSchemaHandler(LsMsgPackHttpSerializer serializer)
     {
       _serializer = serializer ?? throw new System.ArgumentNullException(nameof(serializer));
     }
@@ -45,20 +45,20 @@ namespace LsMsgPackWebApiFormatters
       if (RequestDescribedSchemas)
         AskForDescribedSchema(request.Headers.Accept);
 
-      if (_serializer.NegotiatesSchemas && !request.Headers.Contains(LtMsgPackHttpSerializer.SchemasHeader))
+      if (_serializer.NegotiatesSchemas && !request.Headers.Contains(LsMsgPackHttpSerializer.SchemasHeader))
       {
         string schemas = _serializer.GetSchemasHeader(request.RequestUri);
         if (!(schemas is null))
-          request.Headers.TryAddWithoutValidation(LtMsgPackHttpSerializer.SchemasHeader, schemas);
+          request.Headers.TryAddWithoutValidation(LsMsgPackHttpSerializer.SchemasHeader, schemas);
       }
 
       HttpResponseMessage response = await base.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
       HttpContent content = response.Content;
       if (_serializer.NegotiatesSchemas && !(content is null) && MsgPackMediaTypes.IsLsMsgPack(content.Headers.ContentType?.MediaType) && !MsgPackMediaTypes.IsStream(content.Headers.ContentType.ToString()))
-      { // a stream is read as it arrives, the schema of its head is learned by its reader (LtMsgPackHttpSerializer.CreateStreamReader)
+      { // a stream is read as it arrives, the schema of its head is learned by its reader (LsMsgPackHttpSerializer.CreateStreamReader)
         await content.LoadIntoBufferAsync().ConfigureAwait(false); // also runs a formatter that sets the header while writing (Web API in memory)
-        string schemaId = HeaderValue(response, LtMsgPackHttpSerializer.SchemaHeader);
+        string schemaId = HeaderValue(response, LsMsgPackHttpSerializer.SchemaHeader);
         if (!(schemaId is null))
         {
           byte[] body = await content.ReadAsByteArrayAsync().ConfigureAwait(false);

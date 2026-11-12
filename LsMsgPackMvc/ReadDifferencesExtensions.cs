@@ -1,5 +1,5 @@
 using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System.Web;
 
 namespace LsMsgPackMvc
@@ -15,7 +15,7 @@ namespace LsMsgPackMvc
     }
 
     /// <summary>
-    /// What did not match between the request body and the classes it was read into by <see cref="LsMsgPackModelBinder"/> (with <see cref="LtMsgPackHttpOptions.ReportDifferences"/>),
+    /// What did not match between the request body and the classes it was read into by <see cref="LsMsgPackModelBinder"/> (with <see cref="LsMsgPackHttpOptions.ReportDifferences"/>),
     /// null when it matched or was not read by it. Also when reading failed: the differences found until the error (without paths).
     /// </summary>
     public static ReadDifferences GetReadDifferences(this HttpContextBase context)

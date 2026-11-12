@@ -1,0 +1,1163 @@
+﻿using LsMsgPack;
+using System;
+using System.Buffers.Binary;
+using System.ComponentModel;
+using System.IO;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace LsMsgPack.IO
+{
+  /// <summary>
+  /// Writes MsgPack values into a growable buffer, with the same encodings as LsMsgPack's items (MpInt, MpString, MpBin, MpFloat, MpDateTime, MpExt, MpArray, MpMap).
+  /// <para>Integers follow <see cref="MsgPackOptions.DynamicallyCompact"/>: the smallest format for the value, or the format of the .NET type. Multi-byte values follow <see cref="MsgPackOptions.EndianAction"/>.</para>
+  /// </summary>
+  /// <para>Public for the code of the source generator (see LsMsgPack.LsMsgPackContext): may change between releases.</para>
+  [EditorBrowsable(EditorBrowsableState.Never)]
+  public sealed class MsgPackWriter
+  {
+    public byte[] Buf;
+    public int Pos;
+    private bool _compact;
+    private bool _littleEndian; // the byte order of multi-byte values on the wire (big-endian unless EndianAction says otherwise)
+
+    internal MsgPackWriter(int capacity)
+    {
+      Buf = new byte[capacity];
+    }
+
+    internal void Reset(MsgPackOptions options)
+    {
+      Pos = 0;
+      _compact = options._dynamicallyCompact;
+      _littleEndian = BitConverter.IsLittleEndian != MsgPackOptions.SwapEndianChoice(options, 2);
+    }
+
+    internal bool Compact { get { return _compact; } }
+
+    /// <summary>
+    /// An empty writer with the same settings (byte order, compact integers).
+    /// </summary>
+    internal MsgPackWriter Like(int capacity)
+    {
+      return new MsgPackWriter(capacity) { _compact = _compact, _littleEndian = _littleEndian };
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Ensure(int count)
+    {
+      if (Pos + count > Buf.Length)
+        Grow(count);
+    }
+
+    private void Grow(int count)
+    {
+      byte[] grown = NewBytes(Math.Max(Buf.Length * 2, Pos + count)); // not Array.Resize: it zeroes the new array and copies the bytes after the position too
+      new ReadOnlySpan<byte>(Buf, 0, Pos).CopyTo(grown);
+      Buf = grown;
+    }
+
+    /// <summary>
+    /// An array that is filled completely before anyone reads it (the payload of a call, a copy, the grown buffer): not zeroed first where the runtime can leave that out
+    /// (.NET 5+, arrays over 2 KB; 64 KB of binary data: write 5.5 -> 4.3 us, read 4.3 -> 3.2 us).
+    /// </summary>
+    internal static byte[] NewBytes(int length)
+    {
+#if NET8_0_OR_GREATER
+      if (length < 2048) // GC.AllocateUninitializedArray zeroes those anyway, and is a call (the payload of a small message: write 123 -> 190 ns)
+        return new byte[length];
+      return GC.AllocateUninitializedArray<byte>(length);
+#else
+      return new byte[length];
+#endif
+    }
+
+    internal void Byte(byte value)
+    {
+      if (Pos == Buf.Length)
+        Grow(1);
+      Buf[Pos++] = value;
+    }
+
+    /// <summary>
+    /// The bytes of an encoded key: up to 16 bytes as two (overlapping) blocks instead of a call to Memmove, which was 10% of writing maps of names.
+    /// </summary>
+    public void Raw(byte[] bytes)
+    {
+      int count = bytes.Length;
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (count > 16 || count == 0 || buffer.Length - pos < 16)
+      {
+        Raw(bytes, 0, count);
+        return;
+      }
+
+      ref byte to = ref buffer[pos];
+      ref byte from = ref bytes[0];
+      if (count >= 8)
+      {
+        ulong first = Unsafe.ReadUnaligned<ulong>(ref from);
+        ulong last = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref from, count - 8));
+        Unsafe.WriteUnaligned(ref to, first);
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, count - 8), last);
+      }
+      else if (count >= 4)
+      {
+        uint first = Unsafe.ReadUnaligned<uint>(ref from);
+        uint last = Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref from, count - 4));
+        Unsafe.WriteUnaligned(ref to, first);
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, count - 4), last);
+      }
+      else if (count >= 2)
+      {
+        ushort first = Unsafe.ReadUnaligned<ushort>(ref from);
+        ushort last = Unsafe.ReadUnaligned<ushort>(ref Unsafe.Add(ref from, count - 2));
+        Unsafe.WriteUnaligned(ref to, first);
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, count - 2), last);
+      }
+      else
+        to = from;
+      Pos = pos + count;
+    }
+
+    internal void Raw(byte[] bytes, int offset, int count)
+    {
+      Ensure(count);
+      if (count == 1)
+        Buf[Pos++] = bytes[offset];
+      else
+      {
+        new ReadOnlySpan<byte>(bytes, offset, count).CopyTo(new Span<byte>(Buf, Pos, count)); // Buffer.BlockCopy checks the array types first, which costs more than copying a short key
+        Pos += count;
+      }
+    }
+
+    internal void Raw(ReadOnlySpan<byte> bytes)
+    {
+      Ensure(bytes.Length);
+      bytes.CopyTo(new Span<byte>(Buf, Pos, bytes.Length));
+      Pos += bytes.Length;
+    }
+
+    internal byte[] ToArray()
+    {
+      byte[] result = NewBytes(Pos);
+      new ReadOnlySpan<byte>(Buf, 0, Pos).CopyTo(result);
+      return result;
+    }
+
+    internal void CopyTo(Stream target)
+    {
+      target.Write(Buf, 0, Pos);
+    }
+
+    #region Numbers in the wire byte order
+
+    // Callers ensure the space
+    // One store with one bounds check instead of one per byte (the JIT of .NET 8 does not merge those)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void U16(ushort value)
+    {
+      Span<byte> target = new Span<byte>(Buf, Pos, 2);
+      if (_littleEndian)
+        BinaryPrimitives.WriteUInt16LittleEndian(target, value);
+      else
+        BinaryPrimitives.WriteUInt16BigEndian(target, value);
+      Pos += 2;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void U32(uint value)
+    {
+      Span<byte> target = new Span<byte>(Buf, Pos, 4);
+      if (_littleEndian)
+        BinaryPrimitives.WriteUInt32LittleEndian(target, value);
+      else
+        BinaryPrimitives.WriteUInt32BigEndian(target, value);
+      Pos += 4;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void U64(ulong value)
+    {
+      Span<byte> target = new Span<byte>(Buf, Pos, 8);
+      if (_littleEndian)
+        BinaryPrimitives.WriteUInt64LittleEndian(target, value);
+      else
+        BinaryPrimitives.WriteUInt64BigEndian(target, value);
+      Pos += 8;
+    }
+
+    #endregion
+
+    #region Values
+
+    public void Nil()
+    {
+      Byte(0xC0);
+    }
+
+    public void Bool(bool value)
+    {
+      Byte(value ? (byte)0xC3 : (byte)0xC2);
+    }
+
+    /// <summary>
+    /// A signed value in the smallest format (DynamicallyCompact): non-negative values use the unsigned formats.
+    /// </summary>
+    internal void CompactSigned(long value)
+    {
+      if (value >= 0)
+      {
+        CompactUnsigned((ulong)value);
+        return;
+      }
+
+      Ensure(9);
+      byte[] b = Buf;
+      if (value >= -32) b[Pos++] = (byte)value; // negative fixint
+      else if (value >= sbyte.MinValue) { b[Pos++] = 0xD0; b[Pos++] = (byte)value; }
+      else if (value >= short.MinValue) { b[Pos++] = 0xD1; U16((ushort)value); }
+      else if (value >= int.MinValue) { b[Pos++] = 0xD2; U32((uint)value); }
+      else { b[Pos++] = 0xD3; U64((ulong)value); }
+    }
+
+    internal void CompactUnsigned(ulong value)
+    {
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (buffer.Length - pos < 9)
+      {
+        Grow(9);
+        buffer = Buf;
+      }
+      ref byte to = ref buffer[pos];
+      ref byte next = ref Unsafe.Add(ref to, 1);
+      if (value <= 0x7F)
+      {
+        to = (byte)value;
+        Pos = pos + 1;
+      }
+      else if (value <= 0xFF)
+      {
+        to = 0xCC;
+        next = (byte)value;
+        Pos = pos + 2;
+      }
+      else if (value <= 0xFFFF)
+      {
+        to = 0xCD;
+        Unsafe.WriteUnaligned(ref next, _littleEndian == BitConverter.IsLittleEndian ? (ushort)value : BinaryPrimitives.ReverseEndianness((ushort)value));
+        Pos = pos + 3;
+      }
+      else if (value <= 0xFFFFFFFF)
+      {
+        to = 0xCE;
+        Unsafe.WriteUnaligned(ref next, _littleEndian == BitConverter.IsLittleEndian ? (uint)value : BinaryPrimitives.ReverseEndianness((uint)value));
+        Pos = pos + 5;
+      }
+      else
+      {
+        to = 0xCF;
+        Unsafe.WriteUnaligned(ref next, _littleEndian == BitConverter.IsLittleEndian ? value : BinaryPrimitives.ReverseEndianness(value));
+        Pos = pos + 9;
+      }
+    }
+
+    // Without DynamicallyCompact the format of the .NET type is kept (only fixints stay single bytes), like MpInt
+
+    public void SByte(sbyte value)
+    {
+      if (_compact || (value >= -32 && value <= 31)) { CompactSigned(value); return; }
+      Ensure(2);
+      Buf[Pos++] = 0xD0;
+      Buf[Pos++] = (byte)value;
+    }
+
+    public void Int16(short value)
+    {
+      if (_compact) { CompactSigned(value); return; }
+      Ensure(3);
+      Buf[Pos++] = 0xD1;
+      U16((ushort)value);
+    }
+
+    public void Int32(int value)
+    {
+      if (_compact) { CompactSigned(value); return; }
+      Ensure(5);
+      Buf[Pos++] = 0xD2;
+      U32((uint)value);
+    }
+
+    public void Int64(long value)
+    {
+      if (_compact) { CompactSigned(value); return; }
+      Ensure(9);
+      Buf[Pos++] = 0xD3;
+      U64((ulong)value);
+    }
+
+    public void UInt8(byte value)
+    {
+      CompactUnsigned(value); // the same in both modes: a fixint up to 127, then 0xCC
+    }
+
+    public void UInt16(ushort value)
+    {
+      if (_compact) { CompactUnsigned(value); return; }
+      Ensure(3);
+      Buf[Pos++] = 0xCD;
+      U16(value);
+    }
+
+    public void UInt32(uint value)
+    {
+      if (_compact) { CompactUnsigned(value); return; }
+      Ensure(5);
+      Buf[Pos++] = 0xCE;
+      U32(value);
+    }
+
+    public void UInt64(ulong value)
+    {
+      if (_compact) { CompactUnsigned(value); return; }
+      Ensure(9);
+      Buf[Pos++] = 0xCF;
+      U64(value);
+    }
+
+    public void Single(float value)
+    {
+#if NET8_0_OR_GREATER
+      uint bits = BitConverter.SingleToUInt32Bits(value); // from register to register
+#else
+      uint bits = new SingleBits(value).Bits;
+#endif
+      Coded32(0xCA, bits);
+    }
+
+    public void Double(double value)
+    {
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (buffer.Length - pos < 9)
+      {
+        Grow(9);
+        buffer = Buf;
+      }
+      ref byte to = ref buffer[pos];
+      to = 0xCB;
+      ulong bits = (ulong)BitConverter.DoubleToInt64Bits(value);
+      Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, 1), _littleEndian == BitConverter.IsLittleEndian ? bits : BinaryPrimitives.ReverseEndianness(bits));
+      Pos = pos + 9;
+    }
+
+    /// <summary>
+    /// A format byte and 32 bits in the wire byte order, with one load and one store of the position (Ensure, Buf[Pos++] and <see cref="U32"/> each load it).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void Coded32(byte code, uint value)
+    {
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (buffer.Length - pos < 5)
+      {
+        Grow(5);
+        buffer = Buf;
+      }
+      ref byte to = ref buffer[pos];
+      to = code;
+      Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, 1), _littleEndian == BitConverter.IsLittleEndian ? value : BinaryPrimitives.ReverseEndianness(value));
+      Pos = pos + 5;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]
+    private struct SingleBits
+    {
+      [System.Runtime.InteropServices.FieldOffset(0)] private readonly float _value;
+      [System.Runtime.InteropServices.FieldOffset(0)] public readonly uint Bits;
+
+      public SingleBits(float value)
+      {
+        Bits = 0;
+        _value = value;
+      }
+    }
+
+    public void String(string value)
+    {
+      Encoding encoding = MsgPackOptions.StringEncoding;
+      int length = value.Length;
+      if (length <= MaxOnePassLength && IsUtf8(encoding))
+      {
+        if (length <= MaxAsciiLoopLength && Ascii(value))
+          return;
+
+        int reserved = StringHeaderSize(length);
+#if NET8_0_OR_GREATER
+        int ascii = 0; // the chars before the first one that is not ASCII, written where the one pass below writes them
+        if (length > MaxAsciiLoopLength)
+        {
+          Ensure(reserved + length);
+          if (System.Text.Ascii.FromUtf16(value.AsSpan(), new Span<byte>(Buf, Pos + reserved, length), out ascii) == System.Buffers.OperationStatus.Done) // vectorized, without the cost of the encoder's calls
+          {
+            StringHeader(length);
+            Pos += length;
+            return;
+          }
+        }
+#endif
+
+        // One pass: UTF-8 has at least one byte per char, so the header is reserved for that many bytes and moved when the string turns out longer (only non-ASCII text near a boundary)
+        Ensure(encoding.GetMaxByteCount(length) + 5);
+#if NET8_0_OR_GREATER
+        int at = Pos + reserved + ascii; // from the first char that is not ASCII: no surrogate pair is split there, the same bytes as encoding it all
+        int count = ascii + encoding.GetBytes(value.AsSpan(ascii), new Span<byte>(Buf, at, Buf.Length - at));
+#elif NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+        int count = encoding.GetBytes(value.AsSpan(), new Span<byte>(Buf, Pos + reserved, Buf.Length - Pos - reserved));
+#else
+        int count = encoding.GetBytes(value, 0, length, Buf, Pos + reserved);
+#endif
+        int needed = StringHeaderSize(count);
+        if (needed != reserved)
+          Buffer.BlockCopy(Buf, Pos + reserved, Buf, Pos + needed, count);
+        StringHeader(count);
+        Pos += count;
+        return;
+      }
+
+      int byteCount = encoding.GetByteCount(value);
+      Ensure(byteCount + 5);
+      StringHeader(byteCount);
+      Pos += encoding.GetBytes(value, 0, length, Buf, Pos);
+    }
+
+    /// <summary>
+    /// Longer strings are measured first, so the buffer does not grow to three times their length.
+    /// </summary>
+    private const int MaxOnePassLength = 1 << 16;
+
+    /// <summary>
+    /// Up to this length a loop over the chars is faster than the encoder (which costs 10-15 ns per call), on .NET 8 than Ascii.FromUtf16.
+    /// </summary>
+#if NET8_0_OR_GREATER
+    private const int MaxAsciiLoopLength = 8;
+#else
+    private const int MaxAsciiLoopLength = 16;
+#endif
+
+    private static Encoding _utf8; // the StringEncoding that was found to be UTF-8 (the type check is a call)
+
+    internal static bool IsUtf8(Encoding encoding)
+    {
+      if (ReferenceEquals(encoding, _utf8))
+        return true;
+      if (!(encoding is UTF8Encoding))
+        return false;
+      _utf8 = encoding;
+      return true;
+    }
+
+    /// <summary>
+    /// Writes a short string of ASCII chars (a fixstr: one byte per char), false (nothing written) when it has other chars.
+    /// </summary>
+    private bool Ascii(string value)
+    {
+      int length = value.Length;
+      if (length <= 8 && BitConverter.IsLittleEndian)
+        return ShortAscii(value, length);
+
+      Ensure(length + 1);
+      byte[] b = Buf;
+      int at = Pos + 1;
+      for (int t = length - 1; t >= 0; t--) // backwards: dec + jns, 17% faster on .NET 8 and 9 (the same on .NET 10)
+      {
+        char c = value[t];
+        if (c >= 0x80)
+          return false;
+        b[at + t] = (byte)c;
+      }
+      b[Pos] = (byte)(0xA0 | length);
+      Pos = at + length;
+      return true;
+    }
+
+    /// <summary>
+    /// <see cref="Ascii"/> for up to 8 chars on a little-endian machine: two (overlapping) blocks of 4 or 2 chars, each checked and narrowed at once (about half the time of the loop from 5 chars on).
+    /// </summary>
+    private bool ShortAscii(string value, int length)
+    {
+      Ensure(length + 1);
+      ref byte header = ref Buf[Pos]; // the space is ensured
+      ref byte chars = ref Unsafe.As<char, byte>(ref MemoryMarshal.GetReference(value.AsSpan()));
+      if (length >= 4)
+      {
+        ulong first = Unsafe.ReadUnaligned<ulong>(ref chars);
+        ulong last = Unsafe.ReadUnaligned<ulong>(ref Unsafe.Add(ref chars, 2 * (length - 4)));
+        if (((first | last) & 0xFF80FF80FF80FF80UL) != 0)
+          return false;
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref header, 1), Narrow(first));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref header, length - 3), Narrow(last));
+      }
+      else if (length >= 2)
+      {
+        uint first = Unsafe.ReadUnaligned<uint>(ref chars);
+        uint last = Unsafe.ReadUnaligned<uint>(ref Unsafe.Add(ref chars, 2 * (length - 2)));
+        if (((first | last) & 0xFF80FF80U) != 0)
+          return false;
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref header, 1), (ushort)(first | first >> 8));
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref header, length - 1), (ushort)(last | last >> 8));
+      }
+      else if (length == 1)
+      {
+        char c = value[0];
+        if (c >= 0x80)
+          return false;
+        Unsafe.Add(ref header, 1) = (byte)c;
+      }
+      header = (byte)(0xA0 | length);
+      Pos += length + 1;
+      return true;
+    }
+
+    /// <summary>
+    /// 4 ASCII chars (16 bit each, little-endian) to their 4 bytes.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint Narrow(ulong chars)
+    {
+      chars = (chars | chars >> 8) & 0x0000FFFF0000FFFFUL;
+      return (uint)(chars | chars >> 16);
+    }
+
+    /// <summary>
+    /// The header of a str of <paramref name="byteCount"/> bytes, the bytes should follow.
+    /// </summary>
+    internal void StrHeader(int byteCount)
+    {
+      Ensure(5);
+      StringHeader(byteCount);
+    }
+
+    /// <summary>
+    /// A str of the chars (in <see cref="MsgPackOptions.StringEncoding"/>), e.g. a chunk of a str of unknown length.
+    /// </summary>
+    /// <param name="scratch">For the .NET Standard 2.0 build, which cannot encode a span: grown when too small</param>
+    /// <returns>The number of bytes of the str (without its header)</returns>
+    internal int String(ReadOnlySpan<char> chars, ref char[] scratch)
+    {
+      Encoding encoding = MsgPackOptions.StringEncoding;
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      int byteCount = encoding.GetByteCount(chars);
+      Ensure(byteCount + 5);
+      StringHeader(byteCount);
+      Pos += encoding.GetBytes(chars, new Span<byte>(Buf, Pos, byteCount));
+      return byteCount;
+#else
+      if (scratch is null || scratch.Length < chars.Length)
+        scratch = new char[Math.Max(chars.Length, 256)];
+      chars.CopyTo(scratch);
+      int byteCount = encoding.GetByteCount(scratch, 0, chars.Length);
+      Ensure(byteCount + 5);
+      StringHeader(byteCount);
+      Pos += encoding.GetBytes(scratch, 0, chars.Length, Buf, Pos);
+      return byteCount;
+#endif
+    }
+
+    private static int StringHeaderSize(int byteCount)
+    {
+      return byteCount < 32 ? 1 : byteCount < 256 ? 2 : byteCount <= ushort.MaxValue ? 3 : 5;
+    }
+
+    // Callers ensure the space
+    private void StringHeader(int byteCount)
+    {
+      byte[] b = Buf;
+      if (byteCount < 32) b[Pos++] = (byte)(0xA0 | byteCount);
+      else if (byteCount < 256) { b[Pos++] = 0xD9; b[Pos++] = (byte)byteCount; }
+      else if (byteCount <= ushort.MaxValue) { b[Pos++] = 0xDA; U16((ushort)byteCount); }
+      else { b[Pos++] = 0xDB; U32((uint)byteCount); }
+    }
+
+    /// <summary>
+    /// A decimal as a string in the invariant culture (<see cref="DecimalFormat.String"/>), formatted in place.
+    /// Not inlined: the generated and compiled writers call it per member (in a branch), its code is too large to repeat there.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal void DecimalString(decimal value)
+    {
+      if (IsUtf8(MsgPackOptions.StringEncoding)) // ASCII, the same bytes in UTF-8
+      {
+        Ensure(DecimalText.MaxLength + 1);
+        int written = DecimalText.TryFormat(value, Buf, Pos + 1); // always shorter than 32: a fixstr
+        if (written >= 0)
+        {
+          Buf[Pos] = (byte)(0xA0 | written);
+          Pos += written + 1;
+          return;
+        }
+      }
+      DecimalStringByFramework(value);
+    }
+
+    /// <summary>
+    /// A decimal <see cref="DecimalText"/> does not format (a mantissa over 64 bits, negative zero), or another encoding. Apart: the stackalloc gives a method a stack cookie and a larger frame.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void DecimalStringByFramework(decimal value)
+    {
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      Span<char> chars = stackalloc char[32]; // at most 31: sign, 29 digits and the point
+      if (IsUtf8(MsgPackOptions.StringEncoding) && value.TryFormat(chars, out int length, default, System.Globalization.CultureInfo.InvariantCulture)) // ASCII, the same bytes in UTF-8
+      {
+        AsciiString(chars.Slice(0, length));
+        return;
+      }
+#endif
+      String(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// A Guid as a string of 36 characters (<see cref="GuidFormat.String"/>), formatted in place.
+    /// Not inlined: the generated and compiled writers call it per member (in a branch), its code is too large to repeat there.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal void GuidString(Guid value)
+    {
+#if NET8_0_OR_GREATER
+      if (IsUtf8(MsgPackOptions.StringEncoding)) // ASCII, formatted as UTF-8 in place (str 8 of 36 bytes)
+      {
+        Ensure(38);
+        if (value.TryFormat(new Span<byte>(Buf, Pos + 2, 36), out int written, "D") && written == 36)
+        {
+          Buf[Pos] = 0xD9;
+          Buf[Pos + 1] = 36;
+          Pos += 38;
+          return;
+        }
+      }
+#endif
+      GuidStringAsChars(value);
+    }
+
+    /// <summary>
+    /// A Guid formatted as chars first (.NET Standard, another encoding). Apart: the stackalloc gives a method a stack cookie and a larger frame.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void GuidStringAsChars(Guid value)
+    {
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      Span<char> chars = stackalloc char[36];
+      if (IsUtf8(MsgPackOptions.StringEncoding) && value.TryFormat(chars, out int length, "D")) // ASCII, the same bytes in UTF-8
+      {
+        AsciiString(chars.Slice(0, length));
+        return;
+      }
+#endif
+      String(value.ToString("D"));
+    }
+
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+    /// <summary>
+    /// A string of ASCII chars shorter than 256 (formatted numbers, Guids): one byte per char.
+    /// </summary>
+    private void AsciiString(ReadOnlySpan<char> chars)
+    {
+      int length = chars.Length;
+      Ensure(length + 2);
+      StringHeader(length);
+      byte[] b = Buf;
+      for (int t = 0; t < length; t++)
+        b[Pos + t] = (byte)chars[t];
+      Pos += length;
+    }
+#endif
+
+    internal void BinHeader(int length)
+    {
+      Ensure(5);
+      if (length < 256) { Buf[Pos++] = 0xC4; Buf[Pos++] = (byte)length; }
+      else if (length <= ushort.MaxValue) { Buf[Pos++] = 0xC5; U16((ushort)length); }
+      else { Buf[Pos++] = 0xC6; U32((uint)length); }
+    }
+
+    internal void Bin(byte[] value)
+    {
+      BinHeader(value.Length);
+      Raw(value);
+    }
+
+    /// <summary>
+    /// A Guid is binary data of 16 bytes, in the order of <see cref="System.Guid.ToByteArray"/> (as MpBin).
+    /// </summary>
+    public void Guid(Guid value)
+    {
+      Ensure(18);
+      Buf[Pos++] = 0xC4;
+      Buf[Pos++] = 16;
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      value.TryWriteBytes(new Span<byte>(Buf, Pos, 16));
+#else
+      Buffer.BlockCopy(value.ToByteArray(), 0, Buf, Pos, 16);
+#endif
+      Pos += 16;
+    }
+
+    /// <summary>
+    /// The header of an extension with <paramref name="length"/> bytes of data (as MpExt: fixext when the length allows, otherwise ext8/16/32), the data should follow.
+    /// </summary>
+    internal void ExtHeader(sbyte typeCode, int length)
+    {
+      MsgPackTypeId format = Extensions.MsgPackExtension.FormatOf(length);
+      Ensure(6);
+      Buf[Pos++] = (byte)format;
+      if (format == MsgPackTypeId.MpExt8) Buf[Pos++] = (byte)length;
+      else if (format == MsgPackTypeId.MpExt16) U16((ushort)length);
+      else if (format == MsgPackTypeId.MpExt32) U32((uint)length);
+      Buf[Pos++] = unchecked((byte)typeCode);
+    }
+
+    internal void Extension(sbyte typeCode, byte[] data)
+    {
+      ExtHeader(typeCode, data.Length);
+      Raw(data);
+    }
+
+    private static readonly DateTime Zero = new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc);
+    private const long ZeroSeconds = 62135596800; // of Zero
+    private static readonly DateTime MaxFExt4 = Zero.AddSeconds(uint.MaxValue);
+    private static readonly DateTime MaxFExt8 = new DateTime(2514, 5, 30, 1, 53, 03, DateTimeKind.Utc).Add(TimeSpan.FromTicks(9999999));
+
+    /// <summary>
+    /// A timestamp (extension type -1) in UTC, the smallest of the three formats (as MpDateTime): 32 bit seconds, 64 bit with nanoseconds, 96 bit before 1970 or after 2514.
+    /// </summary>
+    public void DateTime(DateTime value)
+    {
+      DateTime utc = value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime(); // Unspecified is taken as local time, as MpDateTime does (the handlers make it UTC first when UnspecifiedDateTimeKind says so); a call also for UTC
+      long ticks = utc.Ticks;
+      long whole = ticks / TimeSpan.TicksPerSecond; // one division for the seconds and the fraction
+      long seconds = whole - ZeroSeconds; // rounded down, also before 1970
+      long fraction = ticks - whole * TimeSpan.TicksPerSecond;
+      int pos = Pos; // one load and one store of the position, as Coded32
+      byte[] buffer = Buf;
+      if (buffer.Length - pos < 15)
+      {
+        Grow(15);
+        buffer = Buf;
+      }
+      ref byte to = ref buffer[pos];
+      Unsafe.Add(ref to, 1) = 0xFF; // the type code, after the length of the 96 bit format
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      if (utc < Zero || utc > MaxFExt8)
+      {
+        to = 0xC7;
+        Unsafe.Add(ref to, 1) = 12;
+        Unsafe.Add(ref to, 2) = 0xFF;
+        uint nanoseconds = (uint)fraction * 100;
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, 3), swap ? BinaryPrimitives.ReverseEndianness(nanoseconds) : nanoseconds);
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, 7), swap ? BinaryPrimitives.ReverseEndianness((ulong)seconds) : (ulong)seconds);
+        Pos = pos + 15;
+      }
+      else if (utc > MaxFExt4 || fraction != 0)
+      {
+        to = 0xD7;
+        ulong bits = ((ulong)fraction * 100) << 34 | (ulong)seconds;
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, 2), swap ? BinaryPrimitives.ReverseEndianness(bits) : bits);
+        Pos = pos + 10;
+      }
+      else
+      {
+        to = 0xD6;
+        Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, 2), swap ? BinaryPrimitives.ReverseEndianness((uint)seconds) : (uint)seconds);
+        Pos = pos + 6;
+      }
+    }
+
+    #region Numbers in bulk
+
+    // Arrays and lists of numbers (NumberArrayHandler, NumberListHandler): the space is checked per block and the position kept in a local, instead of a call per value.
+    // The same bytes as Int32, Int64, Single and Double write.
+
+    private const int NumberBlock = 1024; // so the space reserved for compact integers (the largest format each) stays small
+
+    internal void Int32s(ReadOnlySpan<int> values)
+    {
+      bool compact = _compact;
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      for (int from = 0; from < values.Length; from += NumberBlock)
+      {
+        ReadOnlySpan<int> block = values.Slice(from, Math.Min(NumberBlock, values.Length - from));
+        Ensure(block.Length * 5);
+        ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, block.Length * 5));
+        int at = 0;
+        if (compact)
+        {
+          for (int t = 0; t < block.Length; t++)
+            at = CompactAt(ref to, at, block[t], swap);
+        }
+        else
+        {
+          for (int t = 0; t < block.Length; t++, at += 5)
+          {
+            Unsafe.Add(ref to, at) = 0xD2;
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, at + 1), swap ? BinaryPrimitives.ReverseEndianness((uint)block[t]) : (uint)block[t]);
+          }
+        }
+        Pos += at;
+      }
+    }
+
+    internal void Int64s(ReadOnlySpan<long> values)
+    {
+      bool compact = _compact;
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      for (int from = 0; from < values.Length; from += NumberBlock)
+      {
+        ReadOnlySpan<long> block = values.Slice(from, Math.Min(NumberBlock, values.Length - from));
+        Ensure(block.Length * 9);
+        ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, block.Length * 9));
+        int at = 0;
+        if (compact)
+        {
+          for (int t = 0; t < block.Length; t++)
+            at = CompactAt(ref to, at, block[t], swap);
+        }
+        else
+        {
+          for (int t = 0; t < block.Length; t++, at += 9)
+          {
+            Unsafe.Add(ref to, at) = 0xD3;
+            Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, at + 1), swap ? BinaryPrimitives.ReverseEndianness((ulong)block[t]) : (ulong)block[t]);
+          }
+        }
+        Pos += at;
+      }
+    }
+
+    /// <summary>
+    /// The value in the smallest format (as <see cref="CompactSigned"/> and <see cref="CompactUnsigned"/>) at <paramref name="at"/>, where there is space for 9 bytes (5 for a value of 32 bits).
+    /// </summary>
+    /// <returns>The position after it</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int CompactAt(ref byte to, int at, long value, bool swap)
+    {
+      ref byte code = ref Unsafe.Add(ref to, at);
+      ref byte next = ref Unsafe.Add(ref code, 1);
+      if ((ulong)value <= 0x7F)
+      {
+        code = (byte)value;
+        return at + 1;
+      }
+      if (value >= 0)
+      {
+        if (value <= 0xFF)
+        {
+          code = 0xCC;
+          next = (byte)value;
+          return at + 2;
+        }
+        if (value <= 0xFFFF)
+        {
+          code = 0xCD;
+          Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness((ushort)value) : (ushort)value);
+          return at + 3;
+        }
+        if (value <= 0xFFFFFFFF)
+        {
+          code = 0xCE;
+          Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness((uint)value) : (uint)value);
+          return at + 5;
+        }
+        code = 0xCF;
+        Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness((ulong)value) : (ulong)value);
+        return at + 9;
+      }
+      if (value >= -32)
+      {
+        code = (byte)value; // negative fixint
+        return at + 1;
+      }
+      if (value >= sbyte.MinValue)
+      {
+        code = 0xD0;
+        next = (byte)value;
+        return at + 2;
+      }
+      if (value >= short.MinValue)
+      {
+        code = 0xD1;
+        Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness((ushort)value) : (ushort)value);
+        return at + 3;
+      }
+      if (value >= int.MinValue)
+      {
+        code = 0xD2;
+        Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness((uint)value) : (uint)value);
+        return at + 5;
+      }
+      code = 0xD3;
+      Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness((ulong)value) : (ulong)value);
+      return at + 9;
+    }
+
+    internal void Singles(ReadOnlySpan<float> values)
+    {
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      ReadOnlySpan<uint> bits = MemoryMarshal.Cast<float, uint>(values);
+      for (int from = 0; from < bits.Length; from += NumberBlock)
+      {
+        ReadOnlySpan<uint> block = bits.Slice(from, Math.Min(NumberBlock, bits.Length - from));
+        Ensure(block.Length * 5);
+        ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, block.Length * 5));
+        for (int t = 0, at = 0; t < block.Length; t++, at += 5)
+        {
+          Unsafe.Add(ref to, at) = 0xCA;
+          Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, at + 1), swap ? BinaryPrimitives.ReverseEndianness(block[t]) : block[t]);
+        }
+        Pos += block.Length * 5;
+      }
+    }
+
+    internal void Doubles(ReadOnlySpan<double> values)
+    {
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      ReadOnlySpan<ulong> bits = MemoryMarshal.Cast<double, ulong>(values);
+      for (int from = 0; from < bits.Length; from += NumberBlock)
+      {
+        ReadOnlySpan<ulong> block = bits.Slice(from, Math.Min(NumberBlock, bits.Length - from));
+        Ensure(block.Length * 9);
+        ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, block.Length * 9));
+        for (int t = 0, at = 0; t < block.Length; t++, at += 9)
+        {
+          Unsafe.Add(ref to, at) = 0xCB;
+          Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, at + 1), swap ? BinaryPrimitives.ReverseEndianness(block[t]) : block[t]);
+        }
+        Pos += block.Length * 9;
+      }
+    }
+
+    /// <summary>
+    /// sbyte, short, ushort, uint and ulong: the same bytes as <see cref="SByte"/>, <see cref="Int16"/>, <see cref="UInt16"/>, <see cref="UInt32"/> and <see cref="UInt64"/> write.
+    /// </summary>
+    internal void Integers<T>(ReadOnlySpan<T> values) where T : struct
+    {
+      int most = Unsafe.SizeOf<T>() + 1; // the largest format of the type, compact or not
+      bool compact = _compact;
+      bool swap = _littleEndian != BitConverter.IsLittleEndian;
+      for (int from = 0; from < values.Length; from += NumberBlock)
+      {
+        ReadOnlySpan<T> block = values.Slice(from, Math.Min(NumberBlock, values.Length - from));
+        Ensure(block.Length * most);
+        ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, block.Length * most));
+        int at = 0;
+        for (int t = 0; t < block.Length; t++)
+        {
+          T item = block[t];
+          ref byte code = ref Unsafe.Add(ref to, at);
+          ref byte next = ref Unsafe.Add(ref code, 1);
+          if (typeof(T) == typeof(sbyte))
+          {
+            sbyte value = Unsafe.As<T, sbyte>(ref item);
+            if (compact || (value >= -32 && value <= 31))
+              at = CompactAt(ref to, at, value, swap);
+            else
+            {
+              code = 0xD0;
+              next = (byte)value;
+              at += 2;
+            }
+          }
+          else if (typeof(T) == typeof(short))
+          {
+            short value = Unsafe.As<T, short>(ref item);
+            if (compact)
+              at = CompactAt(ref to, at, value, swap);
+            else
+            {
+              code = 0xD1;
+              Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness((ushort)value) : (ushort)value);
+              at += 3;
+            }
+          }
+          else if (typeof(T) == typeof(ushort))
+          {
+            ushort value = Unsafe.As<T, ushort>(ref item);
+            if (compact)
+              at = CompactAt(ref to, at, value, swap);
+            else
+            {
+              code = 0xCD;
+              Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness(value) : value);
+              at += 3;
+            }
+          }
+          else if (typeof(T) == typeof(uint))
+          {
+            uint value = Unsafe.As<T, uint>(ref item);
+            if (compact)
+              at = CompactAt(ref to, at, value, swap);
+            else
+            {
+              code = 0xCE;
+              Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness(value) : value);
+              at += 5;
+            }
+          }
+          else
+          {
+            ulong value = Unsafe.As<T, ulong>(ref item);
+            if (compact && value <= long.MaxValue)
+              at = CompactAt(ref to, at, (long)value, swap);
+            else // also what CompactUnsigned writes above long.MaxValue
+            {
+              code = 0xCF;
+              Unsafe.WriteUnaligned(ref next, swap ? BinaryPrimitives.ReverseEndianness(value) : value);
+              at += 9;
+            }
+          }
+        }
+        Pos += at;
+      }
+    }
+
+    /// <summary>
+    /// The same bytes as <see cref="Bool"/> writes per value.
+    /// </summary>
+    internal void Bools(ReadOnlySpan<bool> values)
+    {
+      Ensure(values.Length);
+      ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, values.Length));
+      for (int t = 0; t < values.Length; t++)
+        Unsafe.Add(ref to, t) = values[t] ? (byte)0xC3 : (byte)0xC2;
+      Pos += values.Length;
+    }
+
+    /// <summary>
+    /// The same bytes as <see cref="Guid(System.Guid)"/> writes per value: bin 16 in the order of <see cref="System.Guid.ToByteArray"/>, which is the order of a Guid in memory on a little-endian machine.
+    /// </summary>
+    internal void Guids(ReadOnlySpan<Guid> values)
+    {
+      if (!BitConverter.IsLittleEndian)
+      {
+        for (int t = 0; t < values.Length; t++)
+          Guid(values[t]);
+        return;
+      }
+      for (int from = 0; from < values.Length; from += NumberBlock)
+      {
+        ReadOnlySpan<Guid> block = values.Slice(from, Math.Min(NumberBlock, values.Length - from));
+        Ensure(block.Length * 18);
+        ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, block.Length * 18));
+        for (int t = 0, at = 0; t < block.Length; t++, at += 18)
+        {
+          Unsafe.Add(ref to, at) = 0xC4;
+          Unsafe.Add(ref to, at + 1) = 16;
+          Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, at + 2), block[t]);
+        }
+        Pos += block.Length * 18;
+      }
+    }
+
+    /// <summary>
+    /// The same bytes as DecimalHandler writes per value for the built-in DecimalExtension: fixext 16 with the 16 bytes of the decimal as they are in memory.
+    /// </summary>
+    internal void Decimals(ReadOnlySpan<decimal> values, byte typeCode)
+    {
+      for (int from = 0; from < values.Length; from += NumberBlock)
+      {
+        ReadOnlySpan<decimal> block = values.Slice(from, Math.Min(NumberBlock, values.Length - from));
+        Ensure(block.Length * 18);
+        ref byte to = ref MemoryMarshal.GetReference(new Span<byte>(Buf, Pos, block.Length * 18));
+        for (int t = 0, at = 0; t < block.Length; t++, at += 18)
+        {
+          Unsafe.Add(ref to, at) = 0xD8;
+          Unsafe.Add(ref to, at + 1) = typeCode;
+          Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, at + 2), block[t]);
+        }
+        Pos += block.Length * 18;
+      }
+    }
+
+    #endregion
+
+    internal void ArrayHeader(int count)
+    {
+      Ensure(5);
+      if (count < 16) Buf[Pos++] = (byte)(0x90 | count);
+      else if (count <= ushort.MaxValue) { Buf[Pos++] = 0xDC; U16((ushort)count); }
+      else { Buf[Pos++] = 0xDD; U32((uint)count); }
+    }
+
+    internal void MapHeader(int count)
+    {
+      Ensure(5);
+      if (count < 16) Buf[Pos++] = (byte)(0x80 | count);
+      else if (count <= ushort.MaxValue) { Buf[Pos++] = 0xDE; U16((ushort)count); }
+      else { Buf[Pos++] = 0xDF; U32((uint)count); }
+    }
+
+    // The same for arrays and maps
+    private static int MapHeaderSize(int count)
+    {
+      return count < 16 ? 1 : count <= ushort.MaxValue ? 3 : 5;
+    }
+
+    /// <summary>
+    /// The number of entries of a map is known after writing them (values can be left out by the filters): reserve the header for at most <paramref name="maxCount"/> entries, then <see cref="PatchMapHeader"/>.
+    /// </summary>
+    /// <returns>The position of the header</returns>
+    internal int ReserveMapHeader(int maxCount)
+    {
+      int at = Pos;
+      int size = MapHeaderSize(maxCount);
+      Ensure(size);
+      Pos += size;
+      return at;
+    }
+
+    internal void PatchMapHeader(int at, int maxCount, int count)
+    {
+      PatchHeader(at, maxCount, count, true);
+    }
+
+    /// <summary>
+    /// <see cref="ReserveMapHeader"/> for an array whose number of items is known after writing them (see <see cref="MsgPackOptions.TrimTrailingNulls"/>).
+    /// </summary>
+    internal int ReserveArrayHeader(int maxCount)
+    {
+      return ReserveMapHeader(maxCount);
+    }
+
+    internal void PatchArrayHeader(int at, int maxCount, int count)
+    {
+      PatchHeader(at, maxCount, count, false);
+    }
+
+    private void PatchHeader(int at, int maxCount, int count, bool map)
+    {
+      int reserved = MapHeaderSize(maxCount);
+      int needed = MapHeaderSize(count);
+      if (needed != reserved) // move the entries (fewer were written than the maximum)
+      {
+        int entries = Pos - at - reserved;
+        Ensure(needed - reserved);
+        Buffer.BlockCopy(Buf, at + reserved, Buf, at + needed, entries);
+        Pos += needed - reserved;
+      }
+
+      int end = Pos;
+      Pos = at;
+      if (map)
+        MapHeader(count);
+      else
+        ArrayHeader(count);
+      Pos = end;
+    }
+
+    #endregion
+  }
+}

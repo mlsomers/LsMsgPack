@@ -4,7 +4,7 @@
 import { EndOfDataError, EscapeError, MsgPackError } from './errors.js';
 import { DecimalMode, decodeDecimal } from './values.js';
 
-/** An extension type the reader does not know (as LtMsgPack's MsgPackExtension). */
+/** An extension type the reader does not know (as LsMsgPack's MsgPackExtension). */
 export class MsgPackExtension {
   constructor(readonly type: number, readonly data: Uint8Array) {}
 }

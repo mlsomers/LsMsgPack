@@ -8,7 +8,7 @@
     <TargetFrameworks>netstandard2.0;netstandard2.1;net8.0</TargetFrameworks>
     <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
     <PackageId>LsMsgPack.AspNet.WebApi</PackageId>
-    <Description>MessagePack (MsgPack) MediaTypeFormatter for ASP.NET Web API 2 and for HttpClient (ObjectContent / ReadAsAsync) on any platform, on the fast LtMsgPack serializer (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
+    <Description>MessagePack (MsgPack) MediaTypeFormatter for ASP.NET Web API 2 and for HttpClient (ObjectContent / ReadAsAsync) on any platform, on the fast LsMsgPack serializer (application/msgpack, application/x-msgpack and application/x-lsmsgpack).</Description>
     <PackageTags>$(PackageTags);aspnet;webapi;asp.net-web-api;httpclient;mediatypeformatter;formatter</PackageTags>
   </PropertyGroup>
 
@@ -17,10 +17,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- In the configuration the solution gives LtMsgPack: LtMsgPack and LsMsgPack.Core have no KEEPTRACK code, so their KeepTrack builds are the same.
-         (A mapping to Debug/Release here made Visual Studio compile against an old LtMsgPack: the IDE does not build references, so nothing built that configuration.) -->
-    <!-- PrivateAssets none: the analyzers (LsMsgPack.Core) and LtMsgPack's source generator reach the projects that reference this package -->
-    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" PrivateAssets="none" />
+    <!-- In the configuration the solution gives LsMsgPack: LsMsgPack and LsMsgPack.Core have no KEEPTRACK code, so their KeepTrack builds are the same.
+         (A mapping to Debug/Release here made Visual Studio compile against an old LsMsgPack: the IDE does not build references, so nothing built that configuration.) -->
+    <!-- PrivateAssets none: the analyzers (LsMsgPack.Core) and LsMsgPack's source generator reach the projects that reference this package -->
+    <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj" PrivateAssets="none" />
   </ItemGroup>
 
 </Project>

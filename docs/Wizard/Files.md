@@ -8,7 +8,7 @@ LsMsgPack's default format is made for .NET readers: it starts with a small sche
 
 ### Only my own .NET application (or other .NET apps using these packages)
 
-The files are written and read by your program, maybe by several versions of it, maybe by a companion tool you also write in .NET with LtMsgPack or LsMsgPack.
+The files are written and read by your program, maybe by several versions of it, maybe by a companion tool you also write in .NET with LsMsgPack or LsMsgPackDebug.
 
 Examples:
 - Documents of a desktop app (WinForms, WPF, MAUI, Avalonia).

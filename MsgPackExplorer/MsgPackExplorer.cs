@@ -1,4 +1,6 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
+using LsMsgPackDebug.Types.Extensions;
 
 using System;
 using System.Collections.Generic;
@@ -167,6 +169,25 @@ namespace MsgPackExplorer
             }
         }
 
+        private bool _lsMsgPackExtensions = true;
+        [Category("MsgPack")]
+        [DisplayName("LsMsgPack Extensions")]
+        [Description("Read the extensions LsMsgPack writes: type 1 as a decimal, and streams (values of unknown length, the index and sidecar of a stream). Off: plain MsgPack as the specification defines it, for data of other writers that use these extension types for something else.")]
+        [DefaultValue(true)]
+        public bool LsMsgPackExtensions
+        {
+            get { return _lsMsgPackExtensions; }
+            set
+            {
+                if (value != _lsMsgPackExtensions)
+                {
+                    _lsMsgPackExtensions = value;
+                    if (!ReferenceEquals(_file, null) || !ReferenceEquals(data, null) && data.Length > 0) Reload();
+                    lsMsgPackExtensionsMenuItem.Checked = value; // its handler sets the same value
+                }
+            }
+        }
+
         private byte[] data;
         [Category("MsgPack")]
         [DisplayName("Data")]
@@ -215,7 +236,9 @@ namespace MsgPackExplorer
                 PreservePackages = true,
                 ContinueProcessingOnBreakingError = _continueOnError,
                 EndianAction = _endianHandling,
-                ReadStreams = true, // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
+                // The extensions of LsMsgPack: decimals (type 1), and values of unknown length and the index of a stream, as its MsgPackStreamWriter writes them
+                CustomExtentionTypes = _lsMsgPackExtensions ? MsgPackSettings.Default_CustomExtentionTypes : new ICustomExt[0],
+                ReadStreams = _lsMsgPackExtensions,
                 TruncateValuesLargerThan = MsgPackSettings.PracticalDebuggingLimit
             };
         }
@@ -725,7 +748,7 @@ namespace MsgPackExplorer
             Type typ = item.GetType();
             if (typ == typeof(MpBool)) return 1;
             if (typ == typeof(MpInt)) return 2;
-            if (typ == typeof(MpFloat)) return 3;
+            if (typ == typeof(MpFloat) || typ == typeof(MpDecimal)) return 3;
             if (typ == typeof(MpBin)) return ((MpBin)item).IsTruncated ? _truncatedBinIcon : 4;
             if (typ == typeof(MpString)) return ((MpString)item).IsTruncated ? _truncatedStringIcon : 5;
             if (typ == typeof(MpArray) || typ == typeof(MpStreamTail)) return 6;
@@ -734,6 +757,7 @@ namespace MsgPackExplorer
             if (typ == typeof(MpStreamIndex) || typ == typeof(MpStreamSidecar)) return 10;
             if (typ == typeof(MpError)) return 11;
             if (typ == typeof(MpRoot)) return 12;
+            if (item is MpExt) return 10; // timestamps and other custom extensions (-1 would show the icon of nil)
             return -1;
         }
 
@@ -1045,6 +1069,11 @@ namespace MsgPackExplorer
         private void objectsMenuItem_CheckedChanged(object sender, EventArgs e)
         {
             ObjectsVisible = objectsMenuItem.Checked;
+        }
+
+        private void lsMsgPackExtensionsMenuItem_CheckedChanged(object sender, EventArgs e)
+        {
+            LsMsgPackExtensions = lsMsgPackExtensionsMenuItem.Checked;
         }
 
         private void aboutToolStripMenuItem_Click(object sender, EventArgs e)

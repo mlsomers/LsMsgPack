@@ -1,10 +1,10 @@
 ﻿# Streaming: MsgPackStreamWriter and MsgPackStreamReader
 
-`MsgPackStreamWriter` and `MsgPackStreamReader` (LtMsgPack, namespace `LtMsgPack.Streaming`) write and read MsgPack values one after another on a `Stream`. Use them when the data is too large to buffer, when it's produced while it's written (rows of a database query), or when one stream holds several parts (the result sets of a stored procedure, the tables of a backup). For the rows of an ADO.NET data reader, the `LtMsgPack.Data` package writes and reads whole result sets with these: see [data readers](DataReader.md).
+`MsgPackStreamWriter` and `MsgPackStreamReader` (LsMsgPack, namespace `LsMsgPack.Streaming`) write and read MsgPack values one after another on a `Stream`. Use them when the data is too large to buffer, when it's produced while it's written (rows of a database query), or when one stream holds several parts (the result sets of a stored procedure, the tables of a backup). For the rows of an ADO.NET data reader, the `LsMsgPack.Data` package writes and reads whole result sets with these: see [data readers](DataReader.md).
 
 - **Values**: integers, floats, strings, bins, timestamps, Guids, decimals, extensions, and arrays and maps of a known length.
 - **Values of unknown length**: arrays, maps, str and bin that are written before their length is known (see [the format](#the-format)).
-- **Objects**: whole objects, written and read by the `LtMsgPackSerializer`, with their schema. Or the schema once for a whole root value, e.g. a table of objects of unknown length (see [one schema for a root value](#one-schema-for-a-root-value)).
+- **Objects**: whole objects, written and read by the `LsMsgPackSerializer`, with their schema. Or the schema once for a whole root value, e.g. a table of objects of unknown length (see [one schema for a root value](#one-schema-for-a-root-value)).
 - **Positions**: the writer reports the position after each value.
 - **An index** (optional): the writer lists the root values with their positions, hashes and points into large arrays, and writes the list at the end of the stream. A reader of a file goes to any table or row directly (see [the index](#the-index)).
 
@@ -13,10 +13,10 @@ Neither is thread-safe. Both work synchronously or asynchronously, for streams t
 ## Writing
 
 ```csharp
-using LtMsgPack;
-using LtMsgPack.Streaming;
+using LsMsgPack;
+using LsMsgPack.Streaming;
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions());
 List<long> index = new List<long>();
 
 using (MsgPackStreamWriter writer = new MsgPackStreamWriter(file, serializer))
@@ -116,7 +116,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 - At a `StringStart`, `BinaryStart`, `ArrayStart` or `MapStart`, `GetString()`, `GetBytes()` and `GetValue()` read the whole value. The reader is then at its end.
 - `Skip()` passes the current array, map, str or bin without buffering it.
 
-**Objects.** `ReadObject<T>()` reads the next value as `LtMsgPackSerializer.Deserialize<T>` does, with its schema. Values of unknown length inside it are read too: the reader replaces them by ones of known length before the serializer reads them. `ReadHead<TRoot>()` reads a schema written by `WriteHead<TRoot>()` (see [one schema for a root value](#one-schema-for-a-root-value)).
+**Objects.** `ReadObject<T>()` reads the next value as `LsMsgPackSerializer.Deserialize<T>` does, with its schema. Values of unknown length inside it are read too: the reader replaces them by ones of known length before the serializer reads them. `ReadHead<TRoot>()` reads a schema written by `WriteHead<TRoot>()` (see [one schema for a root value](#one-schema-for-a-root-value)).
 
 **The buffer.** The reader reads the stream in blocks into a buffer, so the stream doesn't have to seek (network streams work). Values that are read whole are buffered whole: objects, `GetValue`, `GetString`... The buffer only grows as far as the data that arrives, so a header that claims more than the stream holds costs no more memory than the stream holds.
 
@@ -153,7 +153,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(response, serializer
 With the indexed schema (`UseInexedSchema`, the default) an object is written as its schema, then the object. That's two MsgPack values, so on their own `WriteObject` and `ReadObject` only take root values of the stream (`Depth` 0). For objects in an array or map, write their schema once before it: see [one schema for a root value](#one-schema-for-a-root-value). Without the indexed schema an object is one value: it can also be an element of an array, e.g. of an array of unknown length:
 
 ```csharp
-LtMsgPackSerializer plain = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false });
+LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
 // writer: WriteArrayStart(), WriteObject(row) per row, WriteEnd()
 // reader: Read(), then while (!reader.AtEnd) rows.Add(reader.ReadObject<Row>())
 ```
@@ -303,4 +303,4 @@ MsgPack stores the length of an array, map, str or bin before its content. The v
 "abc" in two chunks:                              c1 a0  a2 61 62  a1 63  c1 c0
 ```
 
-Only `MsgPackStreamReader` (and the stream reader of the TypeScript client) reads these as a stream. LsMsgPack reads them with `MsgPackSettings.ReadStreams` (off by default): its items and `Deserialize` then take values of unknown length, and at the root the index (`MpStreamIndex`), its tail (`MpStreamTail`) and sidecars (`MpStreamSidecar`). The explorers (MsgPack Explorer, the VS Code extension) and the MCP server turn it on to show streams: the escape sequences in the hex view, the index with its fields and entries, checked against its tail and CRC-32. LtMsgPack's serializer, the decoder of the TypeScript client and other MsgPack libraries refuse the data at the first `0xC1`. So write values of unknown length only for readers known to support them. Without them, the output of the writer is plain MsgPack that any reader reads value by value.
+Only `MsgPackStreamReader` (and the stream reader of the TypeScript client) reads these as a stream. LsMsgPackDebug reads them with `MsgPackSettings.ReadStreams` (off by default): its items and `Deserialize` then take values of unknown length, and at the root the index (`MpStreamIndex`), its tail (`MpStreamTail`) and sidecars (`MpStreamSidecar`). The explorers (MsgPack Explorer, the VS Code extension) and the MCP server turn it on to show streams: the escape sequences in the hex view, the index with its fields and entries, checked against its tail and CRC-32. LsMsgPack's serializer, the decoder of the TypeScript client and other MsgPack libraries refuse the data at the first `0xC1`. So write values of unknown length only for readers known to support them. Without them, the output of the writer is plain MsgPack that any reader reads value by value.

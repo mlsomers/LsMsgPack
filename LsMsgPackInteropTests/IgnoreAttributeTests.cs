@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
 using MessagePack;
@@ -196,15 +197,15 @@ namespace LsMsgPackInteropTests
   }
 
   [TestClass]
-  public class LsIgnoreAttributeTests : IgnoreAttributeTests
+  public class DebugIgnoreAttributeTests : IgnoreAttributeTests
   {
-    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Ls; } }
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtIgnoreAttributeTests : IgnoreAttributeTests
+  public class LsIgnoreAttributeTests : IgnoreAttributeTests
   {
-    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Lt; } }
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Ls; } }
   }
 
   [TestClass]

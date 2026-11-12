@@ -1,7 +1,5 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Streaming;
-using LtMsgPack;
-using LtMsgPack.Streaming;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
@@ -27,11 +25,11 @@ namespace LsMsgPackTsTestServer
     [HttpGet("{name}")]
     public IActionResult Get(string name, [FromQuery] int count = 10, [FromQuery] bool plain = false, [FromQuery] bool checkpoints = false)
     {
-      LtMsgPackOptions options = LtMsgPackPresets.LsMsgPack();
+      LsMsgPackOptions options = LsMsgPackPresets.LsMsgPack();
       options.SchemaVersion = plain ? SchemaVersion.Names : SchemaVersion.Described;
       options.SchemaStore = new SchemaStore();
       options.WriteSchemaReference = true;
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
       Invoice[] invoices = Data.Invoices(count);
       MsgPackStreamIndexOptions index = new MsgPackStreamIndexOptions { PointInterval = 25, CheckpointInterval = checkpoints ? 1 : 0 };
 
@@ -112,7 +110,7 @@ namespace LsMsgPackTsTestServer
       MemoryStream stream = new MemoryStream();
       await Request.Body.CopyToAsync(stream);
       stream.Position = 0;
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, PropertyNameCaseInsensitive = true });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, PropertyNameCaseInsensitive = true });
       using (MsgPackStreamReader reader = new MsgPackStreamReader(stream, serializer))
       {
         IReadOnlyList<MsgPackStreamIndex> indexes = reader.ReadIndexes();

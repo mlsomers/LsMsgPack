@@ -11,7 +11,7 @@ namespace LsMsgPack.AnalyzerTests
   [TestClass]
   public class AnalyzerTests
   {
-    private const string Usings = "using System;\nusing System.Collections;\nusing System.Collections.Generic;\nusing System.ComponentModel;\nusing LsMsgPack;\nusing LtMsgPack;\n";
+    private const string Usings = "using System;\nusing System.Collections;\nusing System.Collections.Generic;\nusing System.ComponentModel;\nusing LsMsgPack;\nusing LsMsgPackDebug;\n";
 
     private static void AssertDiagnostics(string source, params string[] expected)
     {
@@ -101,7 +101,7 @@ public class Thing
   public int Reset { get; set; } = 4;
   public Thing() { Name = ""x""; Enabled = true; Reset = 0; }
 }
-public static class Use { public static Thing Read(byte[] b) => new LtMsgPackSerializer().Deserialize<Thing>(b); }
+public static class Use { public static Thing Read(byte[] b) => new LsMsgPackSerializer().Deserialize<Thing>(b); }
 ", "LSMP001 Level", "LSMP001 Name", "LSMP001 Enabled");
     }
 
@@ -156,7 +156,7 @@ public class Leash { public int Length { get; set; } = 2; }
 public class Owner { public Animal Pet { get; set; } public Dictionary<string, Leash> Leashes { get; set; } }
 public class Unrelated { public int Size { get; set; } = 1; }
 public class Listed { public int Width { get; set; } = 3; }
-[LtMsgPackSerializable(typeof(Listed))]
+[LsMsgPackSerializable(typeof(Listed))]
 public partial class AppContext { }
 public static class Use { public static List<Owner> Read(byte[] b) => (List<Owner>)MsgPackSerializer.Deserialize(typeof(List<Owner>), b); }
 ", "LSMP001 Legs", "LSMP001 Length", "LSMP001 Width");
@@ -213,7 +213,7 @@ public class Settings
   [DefaultValue(null)] public string Nothing { get; set; }
   [DefaultValue(typeof(DateTime), ""2026-01-02"")] public DateTime Unset { get; set; }
 }
-public static class Use { public static byte[] Write(Settings s) => new LtMsgPackSerializer().Serialize(s); }
+public static class Use { public static byte[] Write(Settings s) => new LsMsgPackSerializer().Serialize(s); }
 ";
 
     [TestMethod]
@@ -235,7 +235,7 @@ public static class Use { public static byte[] Write(Settings s) => new LtMsgPac
     public void DefaultValue_MismatchFixes(string property, string title, string expected)
     {
       string line = Mismatched.Split('\n').First(l => l.Contains(" " + property + " {"));
-      string single = Usings + "public enum Color { Red = 1, Green = 2 }\npublic class Settings\n{\n" + line + "\n}\npublic static class Use { public static byte[] Write(Settings s) => new LtMsgPackSerializer().Serialize(s); }\n";
+      string single = Usings + "public enum Color { Red = 1, Green = 2 }\npublic class Settings\n{\n" + line + "\n}\npublic static class Use { public static byte[] Write(Settings s) => new LsMsgPackSerializer().Serialize(s); }\n";
       string fixedSource = Fix(single, Analyze(single)[0].Id, title);
       StringAssert.Contains(fixedSource, "  " + expected, fixedSource);
       Assert.IsEmpty(Analyze(fixedSource), fixedSource);
@@ -283,7 +283,7 @@ public static class Use
   public static void Calls(byte[] b)
   {
     MsgPackSerializer.Deserialize<object>(b);
-    new LtMsgPackSerializer().Deserialize<List<object>>(b);
+    new LsMsgPackSerializer().Deserialize<List<object>>(b);
     MsgPackSerializer.Deserialize(typeof(Dictionary<string, object>), b);
     MsgPackSerializer.Deserialize<List<int>>(b);
     MsgPackSerializer.Serialize<object>(1);
@@ -291,7 +291,7 @@ public static class Use
 }
 ");
       AssertDiagnostics(diagnostics, "LSMP005 object", "LSMP007 object", "LSMP005 List<object>", "LSMP005 typeof(Dictionary<string, object>)", "LSMP007 typeof(Dictionary<string, object>)");
-      StringAssert.StartsWith(diagnostics[2].GetMessage(), "LtMsgPackSerializer.Deserialize reads List<object>: the data can make the reader create any type that fits object");
+      StringAssert.StartsWith(diagnostics[2].GetMessage(), "LsMsgPackSerializer.Deserialize reads List<object>: the data can make the reader create any type that fits object");
     }
 
     #endregion
@@ -409,7 +409,7 @@ public static class Use
   public static void Calls(byte[] b, JsonDocument document)
   {
     MsgPackSerializer.Deserialize<JsonElement>(b);
-    new LtMsgPackSerializer().Deserialize<List<JsonNode>>(b);
+    new LsMsgPackSerializer().Deserialize<List<JsonNode>>(b);
     MsgPackSerializer.Serialize<JsonDocument>(document);
     MsgPackSerializer.Deserialize<List<string>>(b);
   }

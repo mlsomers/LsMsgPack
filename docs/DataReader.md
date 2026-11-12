@@ -1,22 +1,22 @@
-﻿# Data readers (LtMsgPack.Data)
+﻿# Data readers (LsMsgPack.Data)
 
-The `LtMsgPack.Data` package connects ADO.NET data readers (SqlClient, Npgsql, SQLite, MySqlConnector...) to LtMsgPack, without a class per table:
+The `LsMsgPack.Data` package connects ADO.NET data readers (SqlClient, Npgsql, SQLite, MySqlConnector...) to LsMsgPack, without a class per table:
 
 - **Result sets and table dumps as streams**: `WriteTable` and `WriteResultSets` write the rows of a data reader to a `MsgPackStreamWriter` while they are read. Each result set gets one schema. With an index, a file of dumps lets a reader go to a table or a row directly.
 - **Dumps read back as a data reader**: `MsgPackDataReader` is a `DbDataReader` over the tables of a stream, e.g. for `SqlBulkCopy.WriteToServer(reader)`.
 - **One payload**: `SerializeRows` writes a result set as the bytes of a `List<T>`, for any reader of that list.
 - **Rows into objects**: `ReadRows<T>` maps rows to objects like Dapper's `Query<T>`, with the serializer's rules for properties and serialized fields, names and object creation.
 
-It's an add-on to [LtMsgPack](Streaming.md), in its own package so applications without databases don't carry it. It depends on exactly the LtMsgPack version it was built with. ADO.NET is part of .NET Standard 2.0, so there are no other dependencies.
+It's an add-on to [LsMsgPack](Streaming.md), in its own package so applications without databases don't carry it. It depends on exactly the LsMsgPack version it was built with. ADO.NET is part of .NET Standard 2.0, so there are no other dependencies.
 
 ## Result sets and table dumps
 
 ```csharp
-using LtMsgPack;
-using LtMsgPack.Data;
-using LtMsgPack.Streaming;
+using LsMsgPack;
+using LsMsgPack.Data;
+using LsMsgPack.Streaming;
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { SchemaVersion = SchemaVersion.Described });
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { SchemaVersion = SchemaVersion.Described });
 
 using (MsgPackStreamWriter writer = new MsgPackStreamWriter(file, serializer, index: new MsgPackStreamIndexOptions { PointInterval = 1000 }))
 {
@@ -104,7 +104,7 @@ byte[] data = serializer.SerializeRows<Order>(reader);   // or SerializeRows(rea
 List<Order> orders = serializer.Deserialize<List<Order>>(data);
 ```
 
-- The bytes are the same as `Serialize(List<T>)` of a class with a property per column: the column names, the field types, `Nullable` for value types, in the column order. So any reader of that list reads them (LsMsgPack included), without the escape sequences of streams.
+- The bytes are the same as `Serialize(List<T>)` of a class with a property per column: the column names, the field types, `Nullable` for value types, in the column order. So any reader of that list reads them (LsMsgPackDebug included), without the escape sequences of streams.
 - The rows are buffered, because the array header needs their number before them. For large results use the stream writer.
 - The schema is inline, or a reference with `WriteSchemaReference` (the schema is added to the `SchemaStore`). An empty result has the schema of an empty list.
 - Custom dynamic filters are not supported (`NotSupportedException`).
@@ -125,7 +125,7 @@ foreach (Order order in serializer.EnumerateRows<Order>(reader)) { ... }
 
 ## Performance
 
-Measured on an i7-7700K with .NET 8 in Release, per row, best of 5 passes (`BenchmarkRows` in `LtMsgPack.DataTests`, 10,000 invoice rows, default options):
+Measured on an i7-7700K with .NET 8 in Release, per row, best of 5 passes (`BenchmarkRows` in `LsMsgPack.DataTests`, 10,000 invoice rows, default options):
 
 | | in-memory reader, 10 columns | SQLite in memory, native types, 9 columns |
 |---|---|---|
@@ -133,7 +133,7 @@ Measured on an i7-7700K with .NET 8 in Release, per row, best of 5 passes (`Benc
 | hand-written, `IsDBNull` on every column | | 2488 ns |
 | Dapper 2.1.66 `Query<T>` / `Parse<T>` | 412 ns | 2857 ns |
 | `ReadRows<T>` | **237 ns** (1.74x Dapper) | **2047 ns** (1.40x Dapper) |
-| Dapper + LtMsgPack `Serialize` | 847 ns | 3144 ns |
+| Dapper + LsMsgPack `Serialize` | 847 ns | 3144 ns |
 | `SerializeRows` | 379 ns | 1948 ns |
 | `WriteTable` (stream writer) | **356 ns** (2.4x Dapper + `Serialize`) | **1880 ns** (1.67x) |
 | Dapper + System.Text.Json | 1268 ns | 3734 ns |

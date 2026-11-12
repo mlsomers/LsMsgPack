@@ -1,8 +1,9 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackFormatters;
 using LsMsgPackWebApiFormatters;
-using LtMsgPack.Http;
-using LtMsgPack.Streaming;
+using LsMsgPack.Http;
+using LsMsgPack.Streaming;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -98,7 +99,7 @@ namespace LsMsgPackWebApiFormattersTests
     private static void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
       // a streamed request body, read asynchronously (TestServer, as Kestrel, refuses synchronous reads)
-      endpoints.MapPost("/streamclient/upload", async (HttpContext context, LtMsgPackHttpSerializer serializer) =>
+      endpoints.MapPost("/streamclient/upload", async (HttpContext context, LsMsgPackHttpSerializer serializer) =>
       {
         List<string> customers = new List<string>();
         using (MsgPackStreamReader reader = serializer.CreateStreamReader(context.Request.Body, context.Request.ContentType, leaveOpen: true))

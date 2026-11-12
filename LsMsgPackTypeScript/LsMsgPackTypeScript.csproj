@@ -29,7 +29,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
+    <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj" />
     <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" />
     <!-- The roots of a solution (lsmsgpack-ts -solution) are found as the analyzers find them -->
     <ProjectReference Include="..\LsMsgPack.Analyzers\LsMsgPack.Analyzers.csproj" />

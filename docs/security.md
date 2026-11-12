@@ -1,6 +1,6 @@
 ﻿# Security: type injection
 
-LsMsgPack and LtMsgPack support polymorphic object models out of the box: when a value's type differs from its declared type, a type id is written, and when reading, that type id picks the class to create (see [Schema, type ids and polymorphic class hierarchies](schema.md)). This document explains what that means when you read data from a source you don't trust, what the serializers do to protect you, and what you should do yourself.
+LsMsgPackDebug and LsMsgPack support polymorphic object models out of the box: when a value's type differs from its declared type, a type id is written, and when reading, that type id picks the class to create (see [Schema, type ids and polymorphic class hierarchies](schema.md)). This document explains what that means when you read data from a source you don't trust, what the serializers do to protect you, and what you should do yourself.
 
 - [The threat](#the-threat)
 - [What the schema hashes do and don't protect](#what-the-schema-hashes-do-and-dont-protect)
@@ -65,7 +65,7 @@ settings.TypeGuard = new AllowedTypesGuard()
   .Allow(typeof(PluginShape));       // and single types from elsewhere
 ```
 
-`MsgPackOptions.TypeGuard` (`IMsgPackTypeGuard`, null by default) decides which types the data may pick. It's consulted after the type resolvers and the indexed schema have resolved the type, and before anything creates it. If the guard refuses the type, deserializing throws a `MsgPackException` that names the type and the property. It's part of the options, so it works the same in LsMsgPack (`MsgPackSettings`), LtMsgPack (`LtMsgPackOptions`) and the web formatters. Use `MsgPackOptions.Default_TypeGuard` to set it for all settings created afterwards.
+`MsgPackOptions.TypeGuard` (`IMsgPackTypeGuard`, null by default) decides which types the data may pick. It's consulted after the type resolvers and the indexed schema have resolved the type, and before anything creates it. If the guard refuses the type, deserializing throws a `MsgPackException` that names the type and the property. It's part of the options, so it works the same in LsMsgPackDebug (`MsgPackSettings`), LsMsgPack (`LsMsgPackOptions`) and the web formatters. Use `MsgPackOptions.Default_TypeGuard` to set it for all settings created afterwards.
 
 The guard is only asked when the data picks a different type than the declared one. Values of their declared type are never checked, even with `AddTypeIdOption.Always`.
 
@@ -113,7 +113,7 @@ The web formatters read request bodies, so they read data from clients. Set the 
 
 ```csharp
 AllowedTypesGuard guard = new AllowedTypesGuard().AllowAssemblyOf(typeof(Invoice));
-LtMsgPackHttpOptions options = new LtMsgPackHttpOptions();
+LsMsgPackHttpOptions options = new LsMsgPackHttpOptions();
 options.XLsMsgPack.TypeGuard = guard;
 options.Plain.TypeGuard = guard;
 ```
@@ -175,6 +175,6 @@ What else to keep in mind
 - **Types without a parameterless constructor** are created without running a constructor, by default without their finalizer. See [How objects are created](#how-objects-are-created).
 - **Static properties** are left out by `FilterStatic`, one of the default `StaticFilters`, so the data can't change state that the whole application shares. If you replace the static filters, keep `FilterStatic` in the list. Without it, settable public static properties are written with every instance and set again when reading.
 - **Deep nesting**: both serializers refuse data with arrays and maps nested deeper than `MsgPackOptions.MaxDepth` (256 by default) and throw a `MsgPackException`. Without a limit, a few kilobytes of nested arrays exhaust the stack, and a stack overflow ends the process. Writing stops at the same depth, so an object graph with a cycle throws instead of overflowing the stack (or set `IgnoreCycles`, see [Cycles](schema.md#cycles)).
-- **Claimed lengths**: a header of a few bytes can claim billions of items or bytes. Both serializers check a length against the rest of the data before they allocate anything for it, and throw a `MsgPackException` ("The data claims ... items, more than the remaining ... bytes can hold.", or "Unexpected end of data." for strings, bin and extensions). LsMsgPack can only check this on a stream that knows its length (`CanSeek`): read untrusted data from a byte array or a `MemoryStream`, not directly from a network stream.
+- **Claimed lengths**: a header of a few bytes can claim billions of items or bytes. Both serializers check a length against the rest of the data before they allocate anything for it, and throw a `MsgPackException` ("The data claims ... items, more than the remaining ... bytes can hold.", or "Unexpected end of data." for strings, bin and extensions). LsMsgPackDebug can only check this on a stream that knows its length (`CanSeek`): read untrusted data from a byte array or a `MemoryStream`, not directly from a network stream.
 - **Other resource use** (such as payloads that are large but valid) is a separate topic. A `SchemaStore` caches at most `MaxSchemas` received schemas.
 - **Custom type resolvers** are your code: a resolver that maps names to types decides what the data can reach. The guard is still asked about the types it returns.

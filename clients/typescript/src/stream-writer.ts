@@ -1,4 +1,4 @@
-// Writes MsgPack values one after another to a sink (a WritableStream or a function), as LtMsgPack's MsgPackStreamWriter: values as encode writes them,
+// Writes MsgPack values one after another to a sink (a WritableStream or a function), as LsMsgPack's MsgPackStreamWriter: values as encode writes them,
 // arrays and maps of known length, arrays, maps, str and bin of unknown length (the escape sequences of msgpack/msgpack#347), and optionally an index at the end.
 // Objects are written as plain MsgPack (maps of their property names, $type as the type id ""), as the request bodies of the client: no heads, no indexed schema.
 

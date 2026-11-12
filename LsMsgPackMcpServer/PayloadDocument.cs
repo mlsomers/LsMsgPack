@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using ObjectDebugger;
 using System;
 using System.Collections.Generic;
@@ -354,7 +355,7 @@ namespace LsMsgPackMcp
         PreservePackages = true,
         ContinueProcessingOnBreakingError = Options.ContinueOnError,
         EndianAction = Options.Endian,
-        ReadStreams = true // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
+        ReadStreams = true // values of unknown length and the index of a stream, as LsMsgPack's MsgPackStreamWriter writes them
       };
       _settings = settings;
 

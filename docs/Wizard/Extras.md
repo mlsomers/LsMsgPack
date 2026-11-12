@@ -12,27 +12,27 @@ These work with any of the setups. Add them when you need them.
 
 ## Trimmed and AOT apps, and more speed
 
-LtMsgPack normally learns your classes at runtime, with reflection. Some platforms don't allow that, or remove the code it would need:
+LsMsgPack normally learns your classes at runtime, with reflection. Some platforms don't allow that, or remove the code it would need:
 
 - **NativeAOT** (`PublishAot`), **WebAssembly AOT** (Blazor with `RunAOTCompilation`), **iOS**: code can't be generated at runtime.
 - **Trimmed apps** (Android, iOS, `PublishTrimmed`): the trimmer removes properties nobody seems to use, including the ones only the serializer reads.
 
-The source generator, which comes with the `LtMsgPack` package, writes that code at compile time instead. Name the classes you serialize (what they reach is included):
+The source generator, which comes with the `LsMsgPack` package, writes that code at compile time instead. Name the classes you serialize (what they reach is included):
 
 ```csharp
-using LtMsgPack;
+using LsMsgPack;
 
-[LtMsgPackSerializable(typeof(Drawing))]
-[LtMsgPackSerializable(typeof(Circle))] // classes only met through an interface or base class: list them too
-[LtMsgPackSerializable(typeof(Square))]
-public partial class AppMsgPackContext : LtMsgPackContext { }
+[LsMsgPackSerializable(typeof(Drawing))]
+[LsMsgPackSerializable(typeof(Circle))] // classes only met through an interface or base class: list them too
+[LsMsgPackSerializable(typeof(Square))]
+public partial class AppMsgPackContext : LsMsgPackContext { }
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(AppMsgPackContext.Default, new LtMsgPackOptions());
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(AppMsgPackContext.Default, new LsMsgPackOptions());
 ```
 
-The web formatters take it too: `AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)`, `AddLsMsgPack(AppMsgPackContext.Default)`, and on the client `new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options))`.
+The web formatters take it too: `AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)`, `AddLsMsgPack(AppMsgPackContext.Default)`, and on the client `new LsMsgPackMediaTypeFormatter(new LsMsgPackHttpSerializer(AppMsgPackContext.Default, options))`.
 
-Without AOT it's several times faster under WebAssembly. With a JIT, LtMsgPack compiles the same writers and readers at runtime once a class has been written or read 1000 times, so there the generator helps the first objects of each class (maps keyed by property names are read faster without it). The bytes are exactly the same with or without it, so you can switch it on at any time. More: [SourceGenerator.md](../SourceGenerator.md).
+Without AOT it's several times faster under WebAssembly. With a JIT, LsMsgPack compiles the same writers and readers at runtime once a class has been written or read 1000 times, so there the generator helps the first objects of each class (maps keyed by property names are read faster without it). The bytes are exactly the same with or without it, so you can switch it on at any time. More: [SourceGenerator.md](../SourceGenerator.md).
 
 ## Warnings while you type
 
@@ -76,7 +76,7 @@ The default format can carry class names, so that a `List<IShape>` comes back wi
 using LsMsgPack.TypeResolving.Types;
 
 AllowedTypesGuard guard = new AllowedTypesGuard().AllowAssemblyOf(typeof(Order)); // the classes of your models' assembly
-LtMsgPackOptions options = new LtMsgPackOptions { TypeGuard = guard };
+LsMsgPackOptions options = new LsMsgPackOptions { TypeGuard = guard };
 
 // the web formatters:
 builder.Services.AddControllers().AddLsMsgPackSerializerFormatters(o =>
@@ -104,4 +104,4 @@ MsgPack is binary, so you can't read it in a text editor. These tools show it as
 
 They also validate the data: for example, they flag places where the data picks a class for a property declared as `object`.
 
-In your own code, the `LsMsgPack` package gives you the same tree: `MsgPackItem.Unpack(bytes)` returns the maps, arrays and values of any MsgPack data, also without classes. It writes and reads the same data as LtMsgPack, only slower, so use it for inspecting, not as your serializer.
+In your own code, the `LsMsgPackDebug` package gives you the same tree: `MsgPackItem.Unpack(bytes)` returns the maps, arrays and values of any MsgPack data, also without classes. It writes and reads the same data as LsMsgPack, only slower, so use it for inspecting, not as your serializer.

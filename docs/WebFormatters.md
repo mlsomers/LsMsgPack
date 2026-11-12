@@ -1,6 +1,6 @@
 ﻿# Web formatters (ASP.NET and HttpClient)
 
-Three packages let controllers receive and return MsgPack the same way they handle JSON. They serialize with [LtMsgPack](../README.md#which-package), which writes the same data as LsMsgPack, only faster.
+Three packages let controllers receive and return MsgPack the same way they handle JSON. They serialize with [LsMsgPack](../README.md#which-package), which writes the same data as LsMsgPackDebug, only faster.
 
 | Scenario | NuGet package | Targets | Namespace |
 |---|---|---|---|
@@ -9,25 +9,25 @@ Three packages let controllers receive and return MsgPack the same way they hand
 | [HttpClient](#httpclient) (`GetFromMsgPackAsync` / `PostAsMsgPackAsync`, `ObjectContent` / `ReadAsAsync`, [streams](#streams-with-httpclient)) | `LsMsgPack.AspNet.WebApi` | netstandard2.0 and 2.1 (`IAsyncEnumerable`), any platform | `LsMsgPackWebApiFormatters` |
 | [ASP.NET MVC 5](#aspnet-mvc-5) (`System.Web.Mvc`) | `LsMsgPack.AspNet.Mvc` | .NET Framework 4.6.2+ | `LsMsgPackMvc` |
 
-All of them depend on the `LtMsgPack` package (and through it `LsMsgPack.Core`) and speak exactly the same wire formats, so an HttpClient using the Web API formatter can talk to an ASP.NET Core server, for example.
+All of them depend on the `LsMsgPack` package (and through it `LsMsgPack.Core`) and speak exactly the same wire formats, so an HttpClient using the Web API formatter can talk to an ASP.NET Core server, for example.
 
 Media types and settings
 ------------------------
 
-Every package supports three media types (`Content-Type` for request bodies and `Accept` for responses). The constants are in `LsMsgPack.MsgPackMediaTypes`. The settings for each are in `LtMsgPack.Http.LtMsgPackHttpOptions`:
+Every package supports three media types (`Content-Type` for request bodies and `Accept` for responses). The constants are in `LsMsgPack.MsgPackMediaTypes`. The settings for each are in `LsMsgPack.Http.LsMsgPackHttpOptions`:
 
 | Media type | Constant | Settings | Default |
 |---|---|---|---|
-| `application/msgpack` | `MsgPackMediaTypes.MsgPack` | `Plain` | What any MsgPack implementation reads (`LtMsgPackPresets.Generic()`): maps keyed by property names, every value, no indexed schema, no type ids, `Guid` and `decimal` as text, dates as timestamps (a `DateTimeOffset` loses its offset). Use a preset for a specific library (below). |
+| `application/msgpack` | `MsgPackMediaTypes.MsgPack` | `Plain` | What any MsgPack implementation reads (`LsMsgPackPresets.Generic()`): maps keyed by property names, every value, no indexed schema, no type ids, `Guid` and `decimal` as text, dates as timestamps (a `DateTimeOffset` loses its offset). Use a preset for a specific library (below). |
 | `application/x-msgpack` | `MsgPackMediaTypes.XMsgPack` | `Plain` | Same as `application/msgpack` (an older, widely used name). |
-| `application/x-lsmsgpack` | `MsgPackMediaTypes.XLsMsgPack` | `XLsMsgPack` | What LsMsgPack writes by default (`LtMsgPackPresets.LsMsgPack()`): the [indexed schema](schema.md#the-indexed-schema), objects as arrays of their values, type ids where the type differs from the declared type (full [polymorphism](schema.md#polymorphic-class-hierarchy-support)), and [schema references](#schema-references-applicationx-lsmsgpack) between these formatters (`NegotiateSchemas`). Use this between LsMsgPack / LtMsgPack endpoints. |
+| `application/x-lsmsgpack` | `MsgPackMediaTypes.XLsMsgPack` | `XLsMsgPack` | What LsMsgPack writes by default (`LsMsgPackPresets.LsMsgPack()`): the [indexed schema](schema.md#the-indexed-schema), objects as arrays of their values, type ids where the type differs from the declared type (full [polymorphism](schema.md#polymorphic-class-hierarchy-support)), and [schema references](#schema-references-applicationx-lsmsgpack) between these formatters (`NegotiateSchemas`). Use this between LsMsgPack / LsMsgPack endpoints. |
 
-`Plain` and `XLsMsgPack` are independent `LtMsgPackOptions` objects. Changing one doesn't affect the other. To match a specific library, use its preset (see [Compatibility.md](Compatibility.md)):
+`Plain` and `XLsMsgPack` are independent `LsMsgPackOptions` objects. Changing one doesn't affect the other. To match a specific library, use its preset (see [Compatibility.md](Compatibility.md)):
 
 ```csharp
 services.AddControllers().AddLsMsgPackSerializerFormatters(o =>
 {
-  o.Plain = LtMsgPackPresets.MessagePackCSharp(); // or Nerdbank()
+  o.Plain = LsMsgPackPresets.MessagePackCSharp(); // or Nerdbank()
 });
 ```
 
@@ -35,7 +35,7 @@ No type ids are written for the plain media types, so properties declared as an 
 
 Property names in bodies are matched ignoring case when no property has the exact name (`PropertyNameCaseInsensitive`, on by default, as ASP.NET Core reads JSON), so clients that write camelCase names are read too: the [TypeScript client](TypeScriptClient.md) (camelCase by default), objects of other JavaScript code. It applies to maps keyed by names (the plain media types, `application/x-lsmsgpack` without the indexed schema) and to the names of the indexed schema (matched once per class and schema), and costs nothing for the exact names, which are looked up first. When several properties of a class differ only in case (`Id` and `ID`), a key that equals neither exactly (`id`) sets none. Set it to `false` to read the exact names only; it is `MsgPackOptions.PropertyNameCaseInsensitive` of both serializers (off by default outside the formatters).
 
-The writer of each class is compiled when the class is first written (`CompileWritersAfter = 0`, for both media types), so responses use it from the first one on; the first response of each class waits 1-7 ms for it. Outside the formatters a class is compiled after 1000 objects, on the thread pool (`LtMsgPackOptions.CompileWritersAfter`, see [the source generator](SourceGenerator.md), which writes the same code at compile time). The readers of request bodies are compiled the same way, when a class is first read (`CompileReadersAfter = 0`), so the first request body of each class waits for its reader. Where the runtime can't compile code (NativeAOT, WebAssembly) the settings do nothing.
+The writer of each class is compiled when the class is first written (`CompileWritersAfter = 0`, for both media types), so responses use it from the first one on; the first response of each class waits 1-7 ms for it. Outside the formatters a class is compiled after 1000 objects, on the thread pool (`LsMsgPackOptions.CompileWritersAfter`, see [the source generator](SourceGenerator.md), which writes the same code at compile time). The readers of request bodies are compiled the same way, when a class is first read (`CompileReadersAfter = 0`), so the first request body of each class waits for its reader. Where the runtime can't compile code (NativeAOT, WebAssembly) the settings do nothing.
 
 Anonymous objects (`return Ok(new { Id = 1, Name = "x" });`, `Ok(items.Select(i => new { i.Id }))`) are written with their properties and read into classes with the same names, as with JSON. In a property declared as `object`, or inside another anonymous object, they're written as maps of names. See [anonymous types](schema.md#anonymous-types).
 
@@ -59,7 +59,7 @@ builder.Services.AddControllers()
   .AddLsMsgPackSerializerFormatters();
 ```
 
-To change the settings, pass a configuration action. The options are also registered as `IOptions<LtMsgPackHttpOptions>`:
+To change the settings, pass a configuration action. The options are also registered as `IOptions<LsMsgPackHttpOptions>`:
 
 ```csharp
 builder.Services.AddControllers()
@@ -91,13 +91,13 @@ builder.Services.AddControllers()
 
 See [Property names and filters](schema.md#property-names-and-filters) for the other presets, empty strings, default values and [ShouldSerialize methods](schema.md#shouldserialize-methods). A model with cycles (an object referring back to its parent) fails at `MaxDepth`, unless the references are left out or `IgnoreCycles` is set ([Cycles](schema.md#cycles)).
 
-Alternatively, add them to `MvcOptions` directly, with or without an `LtMsgPackHttpOptions` instance:
+Alternatively, add them to `MvcOptions` directly, with or without an `LsMsgPackHttpOptions` instance:
 
 ```csharp
-builder.Services.AddControllers(options => options.AddLsMsgPackSerializerFormatters(new LtMsgPackHttpOptions()));
+builder.Services.AddControllers(options => options.AddLsMsgPackSerializerFormatters(new LsMsgPackHttpOptions()));
 ```
 
-With the code of LtMsgPack's [source generator](SourceGenerator.md), pass the context first: `AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)` on the `IMvcBuilder`, or `options.AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, settings)`. The overloads without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`, as LtMsgPack's serializer is (see [Trimming and NativeAOT](SourceGenerator.md#trimming-and-nativeaot)). ASP.NET Core MVC itself is not trim compatible, so the formatters don't claim to be.
+With the code of LsMsgPack's [source generator](SourceGenerator.md), pass the context first: `AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)` on the `IMvcBuilder`, or `options.AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, settings)`. The overloads without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`, as LsMsgPack's serializer is (see [Trimming and NativeAOT](SourceGenerator.md#trimming-and-nativeaot)). ASP.NET Core MVC itself is not trim compatible, so the formatters don't claim to be.
 
 Controllers don't need any changes. Body parameters are read with the input formatter when the request's `Content-Type` is one of the MsgPack media types. Results are written with the output formatter when the client's `Accept` header asks for one:
 
@@ -132,7 +132,7 @@ using LsMsgPackFormatters;
 builder.Services.AddLsMsgPack(); // or AddLsMsgPack(o => ...), AddLsMsgPack(AppMsgPackContext.Default, o => ...)
 ```
 
-It registers an `LtMsgPackHttpSerializer` singleton (unless one is registered already) with the `LtMsgPackHttpOptions` of the services, the same options `AddLsMsgPackSerializerFormatters` configures. An app with controllers too gets a second serializer with its own schema store: the schema ids are the same in both, so negotiation works either way.
+It registers an `LsMsgPackHttpSerializer` singleton (unless one is registered already) with the `LsMsgPackHttpOptions` of the services, the same options `AddLsMsgPackSerializerFormatters` configures. An app with controllers too gets a second serializer with its own schema store: the schema ids are the same in both, so negotiation works either way.
 
 Return `MsgPackResults.MsgPack(value)` (or `Results.Extensions.MsgPack(value)`), and take the body as a `MsgPackBody<T>`:
 
@@ -149,7 +149,7 @@ app.MapGet("/api/invoices/{id}", Results<MsgPackResult<Invoice>, NotFound> (int 
 
 - **The response** is MsgPack when the `Accept` header asks for one of the MsgPack media types, and JSON otherwise (with the JSON options of minimal APIs, `ConfigureHttpJsonOptions`), as MVC chooses between the JSON formatter and the MsgPack output formatter: by quality, then by position, and JSON when the header lists `*/*`. Responses have `Vary: Accept`. Schema negotiation, version 2 of the schema and the headers are the same as the output formatter's.
 - **The declared type** is the type argument: `MsgPackResults.MsgPack<Animal>(dog)` gets a type id on the root with `application/x-lsmsgpack`, as an action declared to return `Animal`. Declared as `object`, the value is written as its class, as `Ok(value)`.
-- **The body** is read with LtMsgPack when the `Content-Type` is one of the MsgPack media types, and as JSON for a JSON `Content-Type`. An empty body, nil or JSON `null` is no value: a `MsgPackBody<Order>?` parameter (or one with a default value) is then `null`, and ASP.NET Core answers `400 Bad Request` for a required one. In a project without nullable annotations, ASP.NET Core takes every reference type parameter as optional. A body that can't be read throws a `BadHttpRequestException` with `400`, another `Content-Type` one with `415 Unsupported Media Type`: Kestrel answers with that status code (an exception handler of your own can read it from the exception).
+- **The body** is read with LsMsgPack when the `Content-Type` is one of the MsgPack media types, and as JSON for a JSON `Content-Type`. An empty body, nil or JSON `null` is no value: a `MsgPackBody<Order>?` parameter (or one with a default value) is then `null`, and ASP.NET Core answers `400 Bad Request` for a required one. In a project without nullable annotations, ASP.NET Core takes every reference type parameter as optional. A body that can't be read throws a `BadHttpRequestException` with `400`, another `Content-Type` one with `415 Unsupported Media Type`: Kestrel answers with that status code (an exception handler of your own can read it from the exception).
 - `ReportDifferences` works as with the input formatter: `HttpContext.GetReadDifferences()` and the log (category `LsMsgPackFormatters.MsgPackBody`).
 - Both add their media types to the endpoint's metadata (`Produces` and `Accepts`), so OpenAPI lists them.
 - An `IAsyncEnumerable<T>` is written as a `List<T>`, or streamed when the client asks for it, as with the output formatter.
@@ -165,7 +165,7 @@ Accept: application/x-lsmsgpack; stream=unknown-length, application/x-lsmsgpack;
 
 The parameter (`MsgPackMediaTypes.StreamParameter`) works on any of the three media types, and `schema=described` can be added to the first range. The second range is needed because MVC's negotiation only matches a media type without parameters. The .NET client's [`GetFromMsgPackAsAsyncEnumerable`](#streams-with-httpclient) and the TypeScript client's `stream(url)` send such a header.
 
-- **`IAsyncEnumerable<T>`** (an action, `Ok(items)`, `MsgPackResults.MsgPack(items)`) is then written as a head (the schema of `List<T>`, once) followed by an array of unknown length, with each item written as it comes. With known lengths this would be the payload of the `List<T>`. The schema is negotiated as for other responses (`MsgPack-Schema`, a reference when the client holds it). A `List<KeyValuePair<K, V>>` is a map, so pairs aren't streamed. Other clients get the `List<T>` as before. The response varies with the `Accept` header, and `LtMsgPackHttpOptions.WriteStreams = false` turns streaming off.
+- **`IAsyncEnumerable<T>`** (an action, `Ok(items)`, `MsgPackResults.MsgPack(items)`) is then written as a head (the schema of `List<T>`, once) followed by an array of unknown length, with each item written as it comes. With known lengths this would be the payload of the `List<T>`. The schema is negotiated as for other responses (`MsgPack-Schema`, a reference when the client holds it). A `List<KeyValuePair<K, V>>` is a map, so pairs aren't streamed. Other clients get the `List<T>` as before. The response varies with the `Accept` header, and `LsMsgPackHttpOptions.WriteStreams = false` turns streaming off.
 - **When items go out**: what's written is sent whenever the source makes the formatter wait for the next item, and every `FlushThreshold` bytes (64 KiB). Nothing is sent before the first item, so an exception before it still gets an error response. An exception after it aborts the response: the array has no end, and the client finds the data cut off.
 - **The response** has `stream=unknown-length` in its `Content-Type` and no `Content-Length`. Read it with HttpClient's [`GetFromMsgPackAsAsyncEnumerable<T>`](#streams-with-httpclient), with `MsgPackStreamReader` (`ReadHeadAsync<List<T>>()`, then `ReadElementsAsync<T>()`) or the TypeScript client's `stream(url)` (`readHead()`, `elements()`).
 
@@ -225,7 +225,7 @@ using LsMsgPackWebApiFormatters;
 public static void Register(HttpConfiguration config)
 {
   config.Formatters.Add(new LsMsgPackMediaTypeFormatter());
-  // or: config.Formatters.Add(new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpOptions { ... }));
+  // or: config.Formatters.Add(new LsMsgPackMediaTypeFormatter(new LsMsgPackHttpOptions { ... }));
 
   config.MapHttpAttributeRoutes();
 }
@@ -243,7 +243,7 @@ The same package works on the client side, on any platform (.NET Framework, .NET
 ```csharp
 using LsMsgPackWebApiFormatters;
 
-LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter(); // trimmed or AOT apps: new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options))
+LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter(); // trimmed or AOT apps: new LsMsgPackMediaTypeFormatter(new LsMsgPackHttpSerializer(AppMsgPackContext.Default, options))
 HttpClient client = new HttpClient(formatter.CreateHandler()) { BaseAddress = new Uri("https://example.com/") }; // keep both for the lifetime of the app
 
 Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter);
@@ -351,7 +351,7 @@ await client.PostAsync("api/import", new MsgPackStreamContent(formatter, async w
 ```
 
 - The `Content-Type` is the media type (application/x-lsmsgpack by default) with `stream=unknown-length`. With application/x-lsmsgpack each schema is inline the first time it is used, and referred to after that, in the same body.
-- The formatters only read bodies of a known length. The server reads such a body with `serializer.CreateStreamReader(Request.Body, Request.ContentType)` (the `LtMsgPackHttpSerializer` that `services.AddLsMsgPack()` registers) and its async methods: ASP.NET Core refuses synchronous reads.
+- The formatters only read bodies of a known length. The server reads such a body with `serializer.CreateStreamReader(Request.Body, Request.ContentType)` (the `LsMsgPackHttpSerializer` that `services.AddLsMsgPack()` registers) and its async methods: ASP.NET Core refuses synchronous reads.
 - On .NET Framework, set `request.Headers.TransferEncodingChunked = true`: `HttpClientHandler` buffers a body without a length to compute it otherwise.
 
 ASP.NET MVC 5
@@ -369,7 +369,7 @@ using LsMsgPackMvc;
 protected void Application_Start()
 {
   LsMsgPackMvc.LsMsgPackMvc.Register();
-  // or: LsMsgPackMvc.LsMsgPackMvc.Register(new LtMsgPackHttpOptions { ... });
+  // or: LsMsgPackMvc.LsMsgPackMvc.Register(new LsMsgPackHttpOptions { ... });
 
   RouteConfig.RegisterRoutes(RouteTable.Routes);
 }
@@ -409,7 +409,7 @@ return new LsMsgPackResult(pets)
 {
   ContentType = MsgPackMediaTypes.XLsMsgPack, // skip content negotiation
   DeclaredType = typeof(IPet[]),              // add type ids relative to this type (x-lsmsgpack only)
-  Serializer = mySerializer                   // an LtMsgPackHttpSerializer, created once, instead of the one Register made
+  Serializer = mySerializer                   // an LsMsgPackHttpSerializer, created once, instead of the one Register made
 };
 ```
 
@@ -432,7 +432,7 @@ builder.Services.AddControllers()
 
 Values that can't be read (a string where an `int` is declared...) fail the request by default. Set `ReadErrors` on the options of the media type to skip them instead (`o.XLsMsgPack.ReadErrors = ReadErrorHandling.ReportAndContinue`, they're then reported with the other differences), or to fail with all of them at once (`FailDeferred`, the message in the `ModelState` has the complete report), see [ReadDifferences.md](ReadDifferences.md#values-that-cant-be-read-readerrors).
 
-It's `null` when the body matched the classes (or wasn't read by the MsgPack formatter). When reading fails, it has what was found until the error, which is often the cause (a misspelled property that was skipped). `LtMsgPackHttpSerializer.Deserialize` also has an overload with `out ReadDifferences`.
+It's `null` when the body matched the classes (or wasn't read by the MsgPack formatter). When reading fails, it has what was found until the error, which is often the cause (a misspelled property that was skipped). `LsMsgPackHttpSerializer.Deserialize` also has an overload with `out ReadDifferences`.
 
 It's off by default: reading with it is a bit slower (about 0.15 µs per request body, and 10% on large bodies), and logging the report walks the objects that were read to find the paths (only when the log level is enabled). Turn it on while you look for a problem, or in a test environment.
 
@@ -516,14 +516,14 @@ Without the handler (or from any other client), nothing changes: the responses c
 - ASP.NET Web API 2 as a server: a formatter can't set response headers, so `MsgPack-Schema` is a content header. Instead of `Vary`, a response with a reference has `Expires` in the past, so shared caches don't keep a body only this client can read.
 - `NegotiateSchemas = false` turns it off (the schema is always inline). It's also off when `XLsMsgPack.UseInexedSchema` is false.
 
-Measured on the invoices of `BenchmarkInvoices` (100 invoices, LtMsgPack with the default options, one serializer, in process, one run): with the schema inline, 214.7 KB, write ~310 µs, read ~425 µs. With references, 176.2 KB (-18%), write ~255 µs, read ~415 µs.
+Measured on the invoices of `BenchmarkInvoices` (100 invoices, LsMsgPack with the default options, one serializer, in process, one run): with the schema inline, 214.7 KB, write ~310 µs, read ~425 µs. With references, 176.2 KB (-18%), write ~255 µs, read ~415 µs.
 
 ### Complete schemas
 
 By default (`CompleteSchemas`, with `NegotiateSchemas`) the schema of a response type is made at once with every class its values can hold, in a fixed order: the classes of its properties, the elements of collections and values of dictionaries, and the classes deriving from them (or implementing an interface) in the assemblies the type reaches. So its id depends only on the classes and the options, not on what the first response happened to contain:
 
 - Every instance of the server (a web farm, after a restart) writes the same schemas, so a client keeps using the ones it holds.
-- A client can hold them before its first request: [lsmsgpack-ts](TypeScriptModels.md) writes them for the TypeScript client, made by the same code (`LtMsgPackHttpSerializer.PrepareSchema(declaredType, describedSchema)`, which also tells the id of a type's schema).
+- A client can hold them before its first request: [lsmsgpack-ts](TypeScriptModels.md) writes them for the TypeScript client, made by the same code (`LsMsgPackHttpSerializer.PrepareSchema(declaredType, describedSchema)`, which also tells the id of a type's schema).
 - A value with a class the schema does not have still makes it grow: a value in a property declared as `object`, a class of an assembly the type does not reach, a collection with a type id (`IEnumerable<Address>` holding a `List<Address>`).
 - `CompleteSchemas = false`: a schema gets the classes of the values written so far, smaller when most derived classes are never sent.
 

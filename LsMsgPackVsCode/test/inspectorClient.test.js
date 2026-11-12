@@ -51,6 +51,15 @@ test('load, search, settings and errors', { skip }, async () => {
     assert.ok(auto.objects.nodes.length > 0);
     assert.strictEqual((await client.load('r', undefined, Object.assign({}, settings, { showObjectsAt: 'certain' }))).objects, undefined);
 
+    // Extension type 1 (fixext 16): a decimal with the LsMsgPack extensions (the default), a plain extension without them
+    const decimal = Buffer.from('d801' + '00'.repeat(16), 'hex').toString('base64');
+    const withExtensions = await client.load('d', decimal, settings);
+    assert.match(withExtensions.items[0].text, /^Decimal .*value 0/);
+    assert.strictEqual(withExtensions.items[0].kind, 'float');
+    const plain = await client.load('d', undefined, Object.assign({}, settings, { lsMsgPackExtensions: false }));
+    assert.strictEqual(plain.items[0].text, 'Extension value (fixext 16) with a type specifier of 1 containing 16 bytes.');
+    assert.strictEqual(plain.items[0].kind, 'ext');
+
     // A schema naming a gadget ({ "Process": ["FileName"] }, then { "": 0, 0: "calc" }): validated with the schema, the issue is shown with the type name
     const gadget = Buffer.from('81a750726f6365737391a846696c654e616d6582a00000a463616c63', 'hex').toString('base64');
     const attack = await client.load('g', gadget, settings);
@@ -72,7 +81,7 @@ test('load, search, settings and errors', { skip }, async () => {
     const map = await client.load('m', Buffer.from([0x84, 0x01, 0x02, 0xc1, 0x03, 0x04, 0x05, 0x06, 0x07]).toString('base64'), settings);
     assert.ok(!map.items.some((item) => item.text === 'NULL'), JSON.stringify(map.items.map((item) => item.text)));
 
-    // A stream (LtMsgPack's MsgPackStreamWriter): values of unknown length (0xC1 escapes), then its index (ext 3) and the tail
+    // A stream (LsMsgPack's MsgPackStreamWriter): values of unknown length (0xC1 escapes), then its index (ext 3) and the tail
     const body = Buffer.from('92c1a0a26162a163c1c0c19001c1c0', 'hex'); // ["abc" in 2 chunks, [1] of unknown length]
     // [version 1, status Complete, writer, previous tail, hash algorithm: nil, no schemas, entries: [[offset 0, length]]]
     const content = Buffer.from([0x97, 0x01, 0x00, 0xc0, 0xc0, 0xc0, 0x90, 0x91, 0x92, 0x00, body.length]);

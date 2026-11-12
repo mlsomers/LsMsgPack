@@ -111,7 +111,7 @@ namespace LsMsgPackWebApiFormatters
 
     /// <summary>
     /// Reads the body as <typeparamref name="T"/> with the formatter's serializer, as <c>ReadAsAsync&lt;T&gt;</c> with only this formatter, but a body that is not MsgPack (e.g. JSON) throws a <see cref="NotSupportedException"/>.
-    /// With <see cref="LtMsgPack.Http.LtMsgPackHttpOptions.ReportDifferences"/> the content has the differences afterwards (<see cref="ReadDifferencesExtensions.GetReadDifferences(HttpContent)"/>).
+    /// With <see cref="LsMsgPack.Http.LsMsgPackHttpOptions.ReportDifferences"/> the content has the differences afterwards (<see cref="ReadDifferencesExtensions.GetReadDifferences(HttpContent)"/>).
     /// </summary>
     /// <param name="formatter">Its serializer reads the body (the one the client's <see cref="LsMsgPackSchemaHandler"/> was created with)</param>
     /// <returns>The value, default for an empty body</returns>

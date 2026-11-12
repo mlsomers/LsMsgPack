@@ -1,0 +1,222 @@
+﻿using LsMsgPack;
+using System.Collections.Generic;
+using System.IO;
+using LsMsgPackDebug.Types.Extensions;
+using System.Runtime;
+using System;
+using LsMsgPack.Meta;
+using LsMsgPack.Streaming;
+
+
+#if KEEPTRACK
+using System.Xml.Serialization;
+using System.ComponentModel;
+#endif
+
+namespace LsMsgPackDebug {
+  public class MpExt: MsgPackVarLen, IMsgPackExtension {
+
+    public MpExt() : base() { }
+    public MpExt(MsgPackSettings settings) : base(settings) { }
+
+    public static readonly MsgPackTypeId[] VarLenExtTypes = new MsgPackTypeId[] { MsgPackTypeId.MpExt8, MsgPackTypeId.MpExt16, MsgPackTypeId.MpExt32 };
+
+    protected override MsgPackTypeId GetTypeId(long len) {
+      if(len <= 0) return MsgPackTypeId.MpExt8;
+      if(len == 1) return MsgPackTypeId.MpFExt1;
+      if(len == 2) return MsgPackTypeId.MpFExt2;
+      if(len == 3) return MsgPackTypeId.MpExt8;
+      if(len == 4) return MsgPackTypeId.MpFExt4;
+      if(len <= 7) return MsgPackTypeId.MpExt8;
+      if(len == 8) return MsgPackTypeId.MpFExt8;
+      if(len <= 15) return MsgPackTypeId.MpExt8;
+      if(len == 16) return MsgPackTypeId.MpFExt16;
+      if(len <= 255) return MsgPackTypeId.MpExt8;
+      if(len <= ushort.MaxValue) return MsgPackTypeId.MpExt16;
+      if(len <= uint.MaxValue) return MsgPackTypeId.MpExt32;
+      throw new MsgPackException($"Cannot store more than {uint.MaxValue} bytes in an Ext package.",0, MsgPackTypeId.MpExt32);
+    }
+
+    private MsgPackTypeId typeId = MsgPackTypeId.NeverUsed;
+    private sbyte typeSpecifier = 0;
+    private byte[] value;
+
+    public override int Count {
+      get { return value is null ? 0 : value.Length; } // null when the data ended before the content (KEEPTRACK keeps the item)
+    }
+
+#if KEEPTRACK
+    [Browsable(true)]
+    public override long OriginalLength {
+      get { return base.OriginalLength; }
+    }
+#endif
+
+    ///<summary>
+    /// The type Extension type assigned to this container
+    /// </summary>
+#if KEEPTRACK
+    [XmlAttribute("TypeSpecifier", DataType = "byte")]
+    [Category("Data")]
+    [DisplayName("Extension Type")]
+    [Description("The type Extension type assigned to this container")]
+    [ReadOnly(true)]
+#endif
+    public virtual sbyte TypeSpecifier {
+      get { return typeSpecifier; }
+      set { typeSpecifier = value; }
+    }
+    
+    public override MsgPackTypeId TypeId {
+      get {
+        return typeId;
+      }
+    }
+
+    public override object Value {
+      get {
+        if(!ReferenceEquals(value,null)) return value;
+        return new byte[0];
+      }
+      set {
+        byte[] bytes = value as byte[];
+        this.value = bytes;
+        if(ReferenceEquals(bytes, null)) return;
+        if(TypeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(this.value.Length);
+      }
+    }
+
+    byte[] IMsgPackExtension.Data {
+      get { return (byte[])Value; }
+    }
+
+    protected internal byte[] BaseValue {
+      get { return value ?? new byte[0]; }
+      set { this.value = value; }
+    }
+
+    public override byte[] ToBytes() {
+#if KEEPTRACK
+      ThrowWhenTruncated();
+#endif
+      ByteWriter bytes = new ByteWriter(value.Length + 6); // current max length limit is 4 bytes + specifier + identifier
+      WriteExt(bytes);
+      return bytes.ToArray();
+    }
+
+    internal override void WriteTo(ByteWriter target) {
+      if (GetType() != typeof(MpExt)) { // derived types (custom extensions) may override ToBytes
+        base.WriteTo(target);
+        return;
+      }
+      WriteExt(target);
+    }
+
+    /// <summary>
+    /// Writes the bytes of <see cref="MpExt.ToBytes"/>, derived types that know they do not need anything else can call this from their <see cref="WriteTo"/>.
+    /// </summary>
+    internal void WriteExt(ByteWriter bytes) {
+#if KEEPTRACK
+      ThrowWhenTruncated();
+#endif
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
+      if (typeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(value.LongLength);
+#else
+      if (typeId == MsgPackTypeId.NeverUsed) typeId = GetTypeId(value.Length);
+#endif
+      bytes.Write((byte)typeId);
+      if(typeId == MsgPackTypeId.MpExt8 || typeId == MsgPackTypeId.MpExt16 || typeId == MsgPackTypeId.MpExt32) { // VarLenExtTypes
+
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
+        WriteLength(bytes, value.LongLength, SupportedLengths.All);
+#else
+        WriteLength(bytes, value.Length, SupportedLengths.All);
+#endif
+      }
+      bytes.Write((byte)TypeSpecifier);
+      bytes.Write(value);
+    }
+
+    public override MsgPackItem Read(MsgPackTypeId typeId, Stream data) {
+      this.typeId = typeId;
+      long start = _settings._readStreams && data.CanSeek ? data.Position - 1 : 0; // only for the index of a stream
+      long len;
+      switch(typeId) {
+        case MsgPackTypeId.MpFExt1 : len = 1; break;
+        case MsgPackTypeId.MpFExt2 : len = 2; break;
+        case MsgPackTypeId.MpFExt4 : len = 4; break;
+        case MsgPackTypeId.MpFExt8 : len = 8; break;
+        case MsgPackTypeId.MpFExt16: len = 16; break;
+        case MsgPackTypeId.MpExt8:   len = ReadLen(data, 1); break;
+        case MsgPackTypeId.MpExt16:  len = ReadLen(data, 2); break;
+        case MsgPackTypeId.MpExt32:  len = ReadLen(data, 4); break;
+        default: throw new MsgPackException($"Ext does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position-1, typeId);
+      }
+      typeSpecifier = unchecked((sbyte)ReadByteExactly(data)); // at the end of the data ReadByte returns -1: the timestamp type
+#if KEEPTRACK
+      // Nothing can read a type from its ends: it stays an extension with its type specifier. The index of a stream is needed whole, it has a tail to check it.
+      if (Truncates(len, KeptBytes) && !(_settings._readStreams && _depth == 0 && typeSpecifier == MsgPackStreamIndex.IndexExtensionType)) {
+        byte[] head;
+        byte[] tail;
+        long contentStart;
+        ReadEnds(data, len, KeptBytes, out head, out tail, out contentStart);
+        value = new byte[head.Length + tail.Length];
+        Array.Copy(head, 0, value, 0, head.Length);
+        Array.Copy(tail, 0, value, head.Length, tail.Length);
+        MarkTruncated(contentStart, len, head.Length, tail.Length);
+        return this;
+      }
+#endif
+      value = ReadBytes(data, len);
+
+      if (typeSpecifier == -1)
+        return new MpDateTime(this);
+
+      if (_settings._customExtentionTypes != null)
+      {
+        for (int t = 0; t < _settings._customExtentionTypes.Length; t++)
+        {
+          ICustomExt ext = _settings._customExtentionTypes[t];
+          if (ext is null)
+            continue;
+
+          if (typeSpecifier == ext.TypeSpecifier)
+            return ext.Create(_settings, this, null);
+        }
+      }
+
+      // The types a stream reserves for root values (after the custom extensions: a registered one wins)
+      if (_settings._readStreams && _depth == 0) {
+        if (typeSpecifier == MsgPackStreamIndex.IndexExtensionType)
+          return new MpStreamIndex(this, data, start, data.CanSeek ? data.Position - value.Length : 0);
+        if (typeSpecifier == MsgPackStreamIndex.SidecarExtensionType)
+          return new MpStreamSidecar(this);
+      }
+
+      return this;
+    }
+
+    public override string ToString() {
+#if KEEPTRACK
+      if (_truncatedLength > 0)
+        return $"Extension value ({GetOfficialTypeName(typeId)}) with a type specifier of {TypeSpecifier} containing {_truncatedLength} bytes, {TooLargeText}.";
+#endif
+      if (value is null) // the data ended before the content (KEEPTRACK keeps the item): the explorers show it, a NullReferenceException hid the data
+        return $"Extension value ({GetOfficialTypeName(typeId)}) with a type specifier of {TypeSpecifier}, the data ended before its content.";
+      return
+        $"Extension value ({GetOfficialTypeName(typeId)}) with a type specifier of {TypeSpecifier} containing {value.Length} bytes.";
+    }
+
+    protected virtual void CopyBaseDataFrom(MpExt generic) {
+#if KEEPTRACK
+      storedOffset = generic.storedOffset;
+      storedLength = generic.storedLength;
+      _truncatedLength = generic._truncatedLength;
+#endif
+      _settings = generic._settings;
+      typeId = generic.typeId;
+      typeSpecifier = generic.TypeSpecifier;
+      value = generic.value;
+    }
+  }
+}

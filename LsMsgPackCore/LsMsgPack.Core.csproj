@@ -11,7 +11,7 @@
     <AssemblyName>LsMsgPack.Core</AssemblyName>
     <RootNamespace>LsMsgPack</RootNamespace>
     <PackageId>LsMsgPack.Core</PackageId>
-    <Description>The parts shared by the LtMsgPack and LsMsgPack serializers (settings, the indexed schema, type resolving, attributes and filters) and the analyzers LSMP001-009. To serialize, install LtMsgPack: it brings this package along.</Description>
+    <Description>The parts shared by the LsMsgPack and LsMsgPack serializers (settings, the indexed schema, type resolving, attributes and filters) and the analyzers LSMP001-009. To serialize, install LsMsgPack: it brings this package along.</Description>
     <PackageTags>$(PackageTags);schema;polymorphism;analyzers</PackageTags>
   </PropertyGroup>
 
@@ -29,7 +29,7 @@
     <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
   </PropertyGroup>
 
-  <!-- The analyzers (and their code fixes) ship in this package (analyzers/dotnet/cs): LsMsgPack and LtMsgPack depend on it, so both get them (see docs/Analyzers.md) -->
+  <!-- The analyzers (and their code fixes) ship in this package (analyzers/dotnet/cs): LsMsgPack and LsMsgPack depend on it, so both get them (see docs/Analyzers.md) -->
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPack.Analyzers\LsMsgPack.Analyzers.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
     <ProjectReference Include="..\LsMsgPack.Analyzers.CodeFixes\LsMsgPack.Analyzers.CodeFixes.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />

@@ -1,4 +1,4 @@
-// The index of a stream (as LtMsgPack's IndexFormat, the only place with the positions of the fields; the layout is documented in docs/Streaming.md "The index"
+// The index of a stream (as LsMsgPack's IndexFormat, the only place with the positions of the fields; the layout is documented in docs/Streaming.md "The index"
 // and by MsgPackStreamIndex in LsMsgPack.Core). The index is an extension value of type 3 whose data is one MsgPack array, followed by its tail:
 // 94 cf <offset of the index> ce <its length> ce <CRC-32 of the index> a4 "LSIX" (25 bytes, big-endian). Its content is always in the specification's byte order.
 
@@ -66,7 +66,7 @@ export interface StreamEntry {
 export interface StreamIndex {
   version: number;
   status: StreamIndexStatus;
-  /** What wrote the stream, e.g. "LtMsgPack 2026.10.31.1". */
+  /** What wrote the stream, e.g. "LsMsgPack 2026.10.31.1". */
   writer?: string;
   /** Where the tail of the index before this one starts, if any. */
   previousTail?: number;

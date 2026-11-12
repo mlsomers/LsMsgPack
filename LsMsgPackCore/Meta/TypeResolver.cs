@@ -204,7 +204,7 @@ namespace LsMsgPack.Meta
     {
       if (typeId is null)
         return "(none, a type resolver picked the type)";
-      if (typeId is Type type) // LtMsgPack: the type was found by a name or schema index
+      if (typeId is Type type) // LsMsgPack: the type was found by a name or schema index
         return $"\"{type.Name}\"";
       return typeId is string ? $"\"{typeId}\"" : typeId.ToString();
     }

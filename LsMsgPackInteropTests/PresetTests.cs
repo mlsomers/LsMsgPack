@@ -1,4 +1,4 @@
-using LtMsgPack;
+using LsMsgPack;
 using MessagePack;
 using MessagePack.Resolvers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -30,7 +30,7 @@ namespace LsMsgPackInteropTests
   }
 
   /// <summary>
-  /// LtMsgPack's presets (<see cref="LtMsgPackPresets"/>) against the other libraries with their default settings: nothing configured on their side except reading objects as maps (contractless).
+  /// LsMsgPack's presets (<see cref="LsMsgPackPresets"/>) against the other libraries with their default settings: nothing configured on their side except reading objects as maps (contractless).
   /// </summary>
   [TestClass]
   public class PresetTests
@@ -60,7 +60,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void MessagePackCSharp_SameBytes()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.MessagePackCSharp());
       foreach (Invoice invoice in AllInvoices)
         CollectionAssert.AreEqual(MessagePackSerializer.Serialize(invoice, Contractless), lt.Serialize(invoice), invoice.InvoiceNumber);
       CollectionAssert.AreEqual(MessagePackSerializer.Serialize(SampleMeeting(), Contractless), lt.Serialize(SampleMeeting()));
@@ -69,7 +69,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void MessagePackCSharp_BothWays()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.MessagePackCSharp());
       foreach (Invoice invoice in AllInvoices)
       {
         Same.AssertEqual(invoice, MessagePackSerializer.Deserialize<Invoice>(lt.Serialize(invoice), Contractless), invoice.InvoiceNumber);
@@ -95,7 +95,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void MessagePackCSharp_BigIntegers()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.MessagePackCSharp());
       BigNumbers numbers = new BigNumbers()
       {
         Big = System.Numerics.BigInteger.Parse("-123456789012345678901234567890", CultureInfo.InvariantCulture),
@@ -122,7 +122,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void MessagePackCSharp_UnspecifiedIsUtc()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.MessagePackCSharp());
       DateTime unspecified = new DateTime(2026, 9, 29, 12, 0, 0, DateTimeKind.Unspecified);
       CollectionAssert.AreEqual(MessagePackSerializer.Serialize(unspecified, Contractless), lt.Serialize(unspecified));
     }
@@ -130,7 +130,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void Nerdbank_BothWays()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.Nerdbank());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.Nerdbank());
       foreach (Invoice invoice in AllInvoices)
       {
         Same.AssertEqual(invoice, Nerdbank.Deserialize<Invoice, NerdbankShapes>(lt.Serialize(invoice)), invoice.InvoiceNumber);
@@ -144,7 +144,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void Generic_StringsForGuidAndDecimal()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.Generic());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.Generic());
       Meeting meeting = SampleMeeting();
       byte[] bytes = lt.Serialize(meeting);
 

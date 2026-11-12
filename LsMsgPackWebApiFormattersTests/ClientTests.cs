@@ -1,4 +1,5 @@
 using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackWebApiFormatters;
 using NUnit.Framework;
 using System;
@@ -45,7 +46,7 @@ namespace LsMsgPackWebApiFormattersTests
     [Test]
     public async Task DifferencesOfTheResponse()
     {
-      LsMsgPackMediaTypeFormatter reporting = new LsMsgPackMediaTypeFormatter(new LtMsgPack.Http.LtMsgPackHttpOptions() { ReportDifferences = true });
+      LsMsgPackMediaTypeFormatter reporting = new LsMsgPackMediaTypeFormatter(new LsMsgPack.Http.LsMsgPackHttpOptions() { ReportDifferences = true });
       HttpContent content = new ObjectContent<OrderWithExtra>(new OrderWithExtra() { Id = 1, Extra = "x" }, Formatter);
       Order order = await content.ReadAsAsync<Order>(new MediaTypeFormatter[] { reporting });
 
@@ -58,7 +59,7 @@ namespace LsMsgPackWebApiFormattersTests
     [Test]
     public void DifferencesUntilTheError()
     {
-      LsMsgPackMediaTypeFormatter reporting = new LsMsgPackMediaTypeFormatter(new LtMsgPack.Http.LtMsgPackHttpOptions() { ReportDifferences = true });
+      LsMsgPackMediaTypeFormatter reporting = new LsMsgPackMediaTypeFormatter(new LsMsgPack.Http.LsMsgPackHttpOptions() { ReportDifferences = true });
       byte[] body = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Extra", "x" }, { "Id", 300 } }, new MsgPackSettings() { UseInexedSchema = false });
       HttpContent content = Bytes(body.Take(body.Length - 1).ToArray(), MsgPackMediaTypes.MsgPack); // the Id is cut off
 

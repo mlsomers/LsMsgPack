@@ -1,6 +1,6 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackUnitTests;
-using LtMsgPack;
 using MessagePack;
 using MessagePack.Resolvers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -48,7 +48,7 @@ namespace LsMsgPackInteropTests
     public List<PlayerState> Players { get; set; }
   }
 
-  // The same model with a class instead of the struct, for LtMsgPack (a struct is written and read in place, also by the generated code: compare the two)
+  // The same model with a class instead of the struct, for LsMsgPack (a struct is written and read in place, also by the generated code: compare the two)
 
   public class Vec3C
   {
@@ -198,9 +198,9 @@ namespace LsMsgPackInteropTests
   /// The libraries of <see cref="BenchmarkLibraries"/> (in the same setups) on the messages of a multiplayer game with 16 players:
   /// a client sends its own <see cref="PlayerState"/> (a few numbers) every tick and receives a <see cref="WorldSnapshot"/> with the states of the 15 others.
   /// Lots of small messages, so the cost per call and the size of every message count, not the throughput on large data.
-  /// <para>Each message is written to a new byte[] ("Write") and to a buffer that is reused ("Send": an ArrayBufferWriter, or a MemoryStream for LtMsgPack, which has no IBufferWriter overload), as a game loop would to keep the garbage collector quiet.
+  /// <para>Each message is written to a new byte[] ("Write") and to a buffer that is reused ("Send": an ArrayBufferWriter, or a MemoryStream for LsMsgPack, which has no IBufferWriter overload), as a game loop would to keep the garbage collector quiet.
   /// The schema reference rows get the writer's schemas once, as in a handshake when connecting.</para>
-  /// <para>The "Vec3 class" rows are LtMsgPack with <see cref="Vec3C"/>: LtMsgPack writes and reads struct values in place (by reference, with the runtime's typed accessors or the generated code), compared with a class.</para>
+  /// <para>The "Vec3 class" rows are LsMsgPack with <see cref="Vec3C"/>: LsMsgPack writes and reads struct values in place (by reference, with the runtime's typed accessors or the generated code), compared with a class.</para>
   /// <para>Results are written to the test output (docs/Comparison.md has a run), timings are not asserted.</para>
   /// </summary>
   [TestClass]
@@ -241,7 +241,7 @@ namespace LsMsgPackInteropTests
           float speed = action == PlayerAction.Idle || action == PlayerAction.Dead ? 0 : action == PlayerAction.Running ? 7f : action == PlayerAction.Crouching ? 1.5f : 4f;
           float yaw = (last.Yaw + Coordinate(random, 15) + 360) % 360;
           double radians = yaw * Math.PI / 180;
-          // Standing still is (0, 0, 0), not sin * 0 (which can be -0.0: LtMsgPack's default filter leaves out zeros as defaults, so -0.0 reads back as 0.0)
+          // Standing still is (0, 0, 0), not sin * 0 (which can be -0.0: LsMsgPack's default filter leaves out zeros as defaults, so -0.0 reads back as 0.0)
           Vec3 velocity = speed == 0 ? default(Vec3) : new Vec3() { X = (float)(Math.Sin(radians) * speed), Y = action == PlayerAction.Jumping ? 3.5f : 0, Z = (float)(Math.Cos(radians) * speed) };
           int damage = action == PlayerAction.Dead ? 0 : random.Next(0, 20) == 0 ? random.Next(5, 40) : 0;
           PlayerState state = new PlayerState()
@@ -416,7 +416,7 @@ namespace LsMsgPackInteropTests
       public int Length => _buffer.WrittenCount;
     }
 
-    /// <summary>LtMsgPack writes to a Stream: a MemoryStream that is reused</summary>
+    /// <summary>LsMsgPack writes to a Stream: a MemoryStream that is reused</summary>
     private sealed class StreamOutbox
     {
       private readonly MemoryStream _stream = new MemoryStream(4096);
@@ -446,26 +446,26 @@ namespace LsMsgPackInteropTests
         w => serializer.Serialize<WorldSnapshot, GameShapes>(w), b => serializer.Deserialize<WorldSnapshot, GameShapes>(b), w => { serializer.Serialize<WorldSnapshot, GameShapes>(outbox.Clear(), w); return outbox.Length; });
     }
 
-    private static ICandidate Lt(string name, LtMsgPackOptions options, bool generated)
+    private static ICandidate Ls(string name, LsMsgPackOptions options, bool generated)
     {
-      return Lt<PlayerState, WorldSnapshot>(name, options, generated);
+      return Ls<PlayerState, WorldSnapshot>(name, options, generated);
     }
 
-    private static ICandidate Lt<TState, TSnapshot>(string name, LtMsgPackOptions options, bool generated)
+    private static ICandidate Ls<TState, TSnapshot>(string name, LsMsgPackOptions options, bool generated)
     {
       if (generated)
       {
-        options.Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default };
+        options.Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default };
         options.UseRegisteredContexts = false;
       }
-      LtMsgPackSerializer writer = new LtMsgPackSerializer(options);
-      LtMsgPackSerializer reader = writer;
+      LsMsgPackSerializer writer = new LsMsgPackSerializer(options);
+      LsMsgPackSerializer reader = writer;
       if (options.WriteSchemaReference)
       {
         // The receiver has its own store, filled once with the sender's schemas (a handshake when connecting)
         writer.Serialize(BenchmarkLibraries.As<TState>(AllStates[0]));
         writer.Serialize(BenchmarkLibraries.As<TSnapshot>(AllSnapshots[0]));
-        LtMsgPackOptions receiving = options.Clone();
+        LsMsgPackOptions receiving = options.Clone();
         receiving.SchemaStore = new SchemaStore();
         using (MemoryStream handshake = new MemoryStream())
         {
@@ -473,7 +473,7 @@ namespace LsMsgPackInteropTests
           handshake.Position = 0;
           receiving.SchemaStore.Import(handshake);
         }
-        reader = new LtMsgPackSerializer(receiving);
+        reader = new LsMsgPackSerializer(receiving);
       }
       StreamOutbox outbox = new StreamOutbox();
       return new Candidate<TState, TSnapshot>(name,
@@ -487,7 +487,7 @@ namespace LsMsgPackInteropTests
       Assert.IsNotNull(GeneratedMessagePackResolver.Instance.GetFormatter<WorldSnapshotN>(), "MessagePack-CSharp's source generator did not run");
       MessagePackSerializerOptions mpGenerated = MessagePackSerializerOptions.Standard.WithResolver(CompositeResolver.Create(GeneratedMessagePackResolver.Instance, StandardResolver.Instance));
 
-      LtMsgPackOptions mpArrays = LtMsgPackPresets.MessagePackCSharp();
+      LsMsgPackOptions mpArrays = LsMsgPackPresets.MessagePackCSharp();
       mpArrays.ObjectLayout = ObjectLayout.Array;
       mpArrays.PropertyOrder = PropertyOrder.Declaration;
 
@@ -504,34 +504,34 @@ namespace LsMsgPackInteropTests
         // Objects as arrays (positional)
         MessagePackCSharp<PlayerStateK, WorldSnapshotK>("MessagePack-CSharp [Key(n)], generated", mpGenerated),
         Nerdbank("Nerdbank PerfOverSchemaStability, shapes", new NB.MessagePackSerializer() { PerfOverSchemaStability = true }),
-        Lt("LtMsgPack MessagePackCSharp preset, arrays", mpArrays, false), // the bytes of MessagePack-CSharp's row
-        Lt("LtMsgPack arrays, no schema", new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, false),
-        Lt("LtMsgPack arrays, no schema, generated", new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, true),
-        Lt("LtMsgPack schema reference (arrays)", new LtMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true }, false),
-        Lt("LtMsgPack schema reference, generated", new LtMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true }, true),
-        Lt("LtMsgPack default (arrays, schema)", new LtMsgPackOptions(), false),
-        Lt("LtMsgPack default, generated", new LtMsgPackOptions(), true),
+        Ls("LsMsgPack MessagePackCSharp preset, arrays", mpArrays, false), // the bytes of MessagePack-CSharp's row
+        Ls("LsMsgPack arrays, no schema", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, false),
+        Ls("LsMsgPack arrays, no schema, generated", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, true),
+        Ls("LsMsgPack schema reference (arrays)", new LsMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true }, false),
+        Ls("LsMsgPack schema reference, generated", new LsMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true }, true),
+        Ls("LsMsgPack default (arrays, schema)", new LsMsgPackOptions(), false),
+        Ls("LsMsgPack default, generated", new LsMsgPackOptions(), true),
 
-        // LtMsgPack with Vec3 as a class
-        Lt<PlayerStateC, WorldSnapshotC>("LtMsgPack MessagePackCSharp preset, Vec3 class", mpArrays.Clone(), false), // still MessagePack-CSharp's bytes
-        Lt<PlayerStateC, WorldSnapshotC>("LtMsgPack arrays, no schema, Vec3 class", new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, false),
-        Lt<PlayerStateC, WorldSnapshotC>("LtMsgPack arrays, no schema, gen., Vec3 class", new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, true),
-        Lt<PlayerStateC, WorldSnapshotC>("LtMsgPack schema ref., gen., Vec3 class", new LtMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true }, true),
-        Lt<PlayerStateC, WorldSnapshotC>("LtMsgPack default, Vec3 class", new LtMsgPackOptions(), false),
-        Lt<PlayerStateC, WorldSnapshotC>("LtMsgPack default, generated, Vec3 class", new LtMsgPackOptions(), true),
+        // LsMsgPack with Vec3 as a class
+        Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack MessagePackCSharp preset, Vec3 class", mpArrays.Clone(), false), // still MessagePack-CSharp's bytes
+        Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack arrays, no schema, Vec3 class", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, false),
+        Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack arrays, no schema, gen., Vec3 class", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, true),
+        Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack schema ref., gen., Vec3 class", new LsMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true }, true),
+        Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack default, Vec3 class", new LsMsgPackOptions(), false),
+        Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack default, generated, Vec3 class", new LsMsgPackOptions(), true),
 
-        // LtMsgPack with System.Numerics.Vector3, and with fields instead of properties
-        Lt<PlayerStateV, WorldSnapshotV>("LtMsgPack default, Vector3", new LtMsgPackOptions(), false),
-        Lt<PlayerStateV, WorldSnapshotV>("LtMsgPack default, generated, Vector3", new LtMsgPackOptions(), true),
-        Lt<PlayerStateF, WorldSnapshotF>("LtMsgPack default, fields", new LtMsgPackOptions(), false),
-        Lt<PlayerStateF, WorldSnapshotF>("LtMsgPack default, generated, fields", new LtMsgPackOptions(), true),
-        Lt<PlayerStateF, WorldSnapshotF>("LtMsgPack names, fields", new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, false),
+        // LsMsgPack with System.Numerics.Vector3, and with fields instead of properties
+        Ls<PlayerStateV, WorldSnapshotV>("LsMsgPack default, Vector3", new LsMsgPackOptions(), false),
+        Ls<PlayerStateV, WorldSnapshotV>("LsMsgPack default, generated, Vector3", new LsMsgPackOptions(), true),
+        Ls<PlayerStateF, WorldSnapshotF>("LsMsgPack default, fields", new LsMsgPackOptions(), false),
+        Ls<PlayerStateF, WorldSnapshotF>("LsMsgPack default, generated, fields", new LsMsgPackOptions(), true),
+        Ls<PlayerStateF, WorldSnapshotF>("LsMsgPack names, fields", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, false),
 
         // Objects as maps keyed by property names
         MessagePackCSharp<PlayerStateN, WorldSnapshotN>("MessagePack-CSharp names, generated", mpGenerated),
         Nerdbank("Nerdbank names, shapes", new NB.MessagePackSerializer()),
-        Lt("LtMsgPack names", new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, false),
-        Lt("LtMsgPack names, generated", new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, true),
+        Ls("LsMsgPack names", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, false),
+        Ls("LsMsgPack names, generated", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, true),
       };
     }
 
@@ -545,10 +545,10 @@ namespace LsMsgPackInteropTests
       ICandidate[] candidates = CreateCandidates();
       for (int c = 0; c < candidates.Length; c++)
         candidates[c].Prepare();
-      AssertSameBytes(candidates, "MessagePack-CSharp [Key(n)], generated", "LtMsgPack MessagePackCSharp preset, arrays");
-      AssertSameBytes(candidates, "MessagePack-CSharp [Key(n)], generated", "LtMsgPack MessagePackCSharp preset, Vec3 class");
+      AssertSameBytes(candidates, "MessagePack-CSharp [Key(n)], generated", "LsMsgPack MessagePackCSharp preset, arrays");
+      AssertSameBytes(candidates, "MessagePack-CSharp [Key(n)], generated", "LsMsgPack MessagePackCSharp preset, Vec3 class");
       // Fields and Vector3's fields are written as the properties (by name: the schema names the classes)
-      AssertSameBytes(candidates, "LtMsgPack names", "LtMsgPack names, fields");
+      AssertSameBytes(candidates, "LsMsgPack names", "LsMsgPack names, fields");
 
       for (int c = 0; c < candidates.Length; c++)
       {

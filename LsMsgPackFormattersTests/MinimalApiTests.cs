@@ -1,6 +1,7 @@
 using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackFormatters;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -255,11 +256,11 @@ namespace LsMsgPackFormattersTests
       using (host)
       {
         HttpResponseMessage first = await client.SendAsync(Request(HttpMethod.Get, "/min/order", MsgPackMediaTypes.XLsMsgPack));
-        string schemaId = first.Headers.GetValues(LtMsgPackHttpSerializer.SchemaHeader).Single();
-        Assert.That(first.Headers.Vary, Does.Contain(LtMsgPackHttpSerializer.SchemasHeader).And.Contain("Accept"));
+        string schemaId = first.Headers.GetValues(LsMsgPackHttpSerializer.SchemaHeader).Single();
+        Assert.That(first.Headers.Vary, Does.Contain(LsMsgPackHttpSerializer.SchemasHeader).And.Contain("Accept"));
 
         HttpRequestMessage again = Request(HttpMethod.Get, "/min/order", MsgPackMediaTypes.XLsMsgPack);
-        again.Headers.Add(LtMsgPackHttpSerializer.SchemasHeader, schemaId);
+        again.Headers.Add(LsMsgPackHttpSerializer.SchemasHeader, schemaId);
         byte[] reference = await (await client.SendAsync(again)).Content.ReadAsByteArrayAsync();
         Assert.That(reference[0], Is.EqualTo(0xD8), "The client holds the schema: a reference");
         Assert.That(reference.Length, Is.LessThan((await first.Content.ReadAsByteArrayAsync()).Length));
@@ -376,7 +377,7 @@ namespace LsMsgPackFormattersTests
     }
 
     /// <summary>
-    /// The options of the services: AddLsMsgPack and AddLsMsgPackSerializerFormatters configure the same LtMsgPackHttpOptions.
+    /// The options of the services: AddLsMsgPack and AddLsMsgPackSerializerFormatters configure the same LsMsgPackHttpOptions.
     /// </summary>
     [Test]
     public async Task SetupActionIsApplied()

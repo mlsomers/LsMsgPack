@@ -9,7 +9,7 @@ setlocal
 set "SRC=%~dp0bin\ReleaseKeepTrack"
 set "DEST=%SRC%\LsMsgPack"
 
-set FILES=MsgPackExplorer.exe MsgPackExplorer.exe.config LsMsgPack.dll LsMsgPack.Core.dll ObjectDebugger.dll LsMsgPackFiddlerInspector.dll LsMsgPackVisualStudioPlugin.dll DebuggerProxy.dll System.Memory.dll System.Buffers.dll System.Numerics.Vectors.dll System.Runtime.CompilerServices.Unsafe.dll
+set FILES=MsgPackExplorer.exe MsgPackExplorer.exe.config LsMsgPackDebug.dll LsMsgPack.Core.dll ObjectDebugger.dll LsMsgPackFiddlerInspector.dll LsMsgPackVisualStudioPlugin.dll DebuggerProxy.dll System.Memory.dll System.Buffers.dll System.Numerics.Vectors.dll System.Runtime.CompilerServices.Unsafe.dll
 
 rem Check everything first, so a missing file does not leave half a release behind.
 set MISSING=

@@ -1,6 +1,7 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackUnitTests;
-using LsMsgPack.Types.Extensions;
+using LsMsgPackDebug.Types.Extensions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PolyType;
 using System;
@@ -144,15 +145,15 @@ namespace LsMsgPackInteropTests
   }
 
   [TestClass]
-  public class LsNerdbankTests : NerdbankTests
+  public class DebugNerdbankTests : NerdbankTests
   {
-    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Ls; } }
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtNerdbankTests : NerdbankTests
+  public class LsNerdbankTests : NerdbankTests
   {
-    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Lt; } }
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Ls; } }
   }
 
   [TestClass]

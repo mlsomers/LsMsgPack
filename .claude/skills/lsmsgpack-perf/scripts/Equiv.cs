@@ -5,6 +5,7 @@
 // Large payloads are compared by hash (SHA-256 prefix, deterministic), small ones are printed.
 // A warm-up first uses every property more than PropertyAccessor.CompileAfterCalls times, so the bound delegates are compared as well.
 using LsMsgPack;
+using LsMsgPackDebug;
 using System;
 using System.Collections.Generic;
 using System.Text;

@@ -1,6 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPackTypeScript;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -157,7 +157,7 @@ namespace LsMsgPackTypeScriptTests
       string[] ids = Regex.Matches(result.Schemas, @"// ([0-9a-f]{32}),").Select(m => m.Groups[1].Value).ToArray();
       Assert.HasCount(2, ids);
 
-      LtMsgPackHttpSerializer server = new LtMsgPackHttpSerializer();
+      LsMsgPackHttpSerializer server = new LsMsgPackHttpSerializer();
       MsgPackPayload order = server.Serialize(new TsOrder() { Animals = new System.Collections.Generic.List<TsAnimal>() { new TsDog() } }, typeof(TsOrder), MsgPackMediaTypes.XLsMsgPack, null, true);
       Assert.AreEqual(ids[0], order.SchemaId);
       MsgPackPayload list = server.Serialize(new System.Collections.Generic.List<TsAddress>(), typeof(System.Collections.Generic.List<TsAddress>), MsgPackMediaTypes.XLsMsgPack, null, true);
@@ -173,8 +173,8 @@ namespace LsMsgPackTypeScriptTests
       Result result = Run("--root", "LsMsgPackTypeScriptTests.TsAddress", "--options", "LsMsgPackTypeScriptTests.TsSetup.Alphabetical");
       StringAssert.Contains(result.Models, "[TsAddress, 'TsAddress', [['City', 'string'], ['Street', 'string']]]");
       string id = Regex.Match(result.Schemas, @"// ([0-9a-f]{32}),").Groups[1].Value;
-      Assert.AreEqual(new LtMsgPackHttpSerializer(TsSetup.Alphabetical).PrepareSchema(typeof(TsAddress), true).ToString(), id);
-      Assert.AreNotEqual(new LtMsgPackHttpSerializer().PrepareSchema(typeof(TsAddress), true).ToString(), id);
+      Assert.AreEqual(new LsMsgPackHttpSerializer(TsSetup.Alphabetical).PrepareSchema(typeof(TsAddress), true).ToString(), id);
+      Assert.AreNotEqual(new LsMsgPackHttpSerializer().PrepareSchema(typeof(TsAddress), true).ToString(), id);
     }
 
     [TestMethod]
@@ -182,13 +182,13 @@ namespace LsMsgPackTypeScriptTests
     {
       string project = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Assembly), "..", "..", "..", "LsMsgPackTypeScriptTests.csproj"));
       Result result = Run("--solution", project);
-      StringAssert.Contains(result.Output, "LsMsgPackTypeScriptTests.TsOrder", "LtMsgPackSerializer.Default.Serialize(order) in TsUses");
+      StringAssert.Contains(result.Output, "LsMsgPackTypeScriptTests.TsOrder", "LsMsgPackSerializer.Default.Serialize(order) in TsUses");
       StringAssert.Contains(result.Models, "export class TsOrder {");
       StringAssert.Contains(result.Models, "export class TsReply {", "MsgPackResults.MsgPack(new TsReply()) of a minimal API");
       StringAssert.Contains(result.Models, "export class TsRequest {", "MsgPackBody<TsRequest> of a minimal API");
       StringAssert.Contains(result.Schemas, "TsReply", "written: a schema");
       StringAssert.Contains(result.Schemas, "System.Collections.Generic.List<LsMsgPackTypeScriptTests.TsLine>", "IAsyncEnumerable<TsLine>: the formatters write a List<TsLine>");
-      StringAssert.Contains(result.Schemas, new LtMsgPackHttpSerializer().PrepareSchema(typeof(List<TsLine>), true).ToString());
+      StringAssert.Contains(result.Schemas, new LsMsgPackHttpSerializer().PrepareSchema(typeof(List<TsLine>), true).ToString());
     }
 
     [TestMethod]

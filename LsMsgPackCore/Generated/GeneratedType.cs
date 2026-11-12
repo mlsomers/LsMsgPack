@@ -7,7 +7,7 @@ namespace LsMsgPack.Generated
 {
   /// <summary>
   /// What the source generator wrote for one type: how to create it and the accessors of the properties it declares. The serializers derive from it to add their typed parts
-  /// (LtMsgPack: the handlers and readers of the type, created without <see cref="Type.MakeGenericType"/>).
+  /// (LsMsgPack: the handlers and readers of the type, created without <see cref="Type.MakeGenericType"/>).
   /// </summary>
   [EditorBrowsable(EditorBrowsableState.Never)]
   public abstract class GeneratedType

@@ -2,8 +2,7 @@
 using LsMsgPack;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
-using LtMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.Serialization;
@@ -73,13 +72,13 @@ namespace LsMsgPackTypeScriptTests
     /// <summary>
     /// The server's options with the public fields serialized.
     /// </summary>
-    public static LtMsgPackHttpOptions PublicFields
+    public static LsMsgPackHttpOptions PublicFields
     {
       get
       {
-        LtMsgPackOptions xls = LtMsgPackPresets.LsMsgPack();
+        LsMsgPackOptions xls = LsMsgPackPresets.LsMsgPack();
         xls.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.None, SerializedFields.Public), new FilterIgnoredAttribute(), new FilterStatic() };
-        return new LtMsgPackHttpOptions() { XLsMsgPack = xls };
+        return new LsMsgPackHttpOptions() { XLsMsgPack = xls };
       }
     }
   }

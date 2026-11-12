@@ -24,4 +24,4 @@ Example: an order service publishes `OrderPlaced` messages on RabbitMQ, and a sh
 
 ### Not sure?
 
-SignalR, gRPC and similar frameworks have their own serializers; use *something else* only when you put LtMsgPack's bytes into them yourself. If you're starting from scratch and both ends are yours, HTTP with the formatters is the least code.
+SignalR, gRPC and similar frameworks have their own serializers; use *something else* only when you put LsMsgPack's bytes into them yourself. If you're starting from scratch and both ends are yours, HTTP with the formatters is the least code.

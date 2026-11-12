@@ -1,5 +1,5 @@
 using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System;
 using System.ComponentModel;
 using System.IO;
@@ -9,20 +9,20 @@ using System.Web.Mvc;
 namespace LsMsgPackMvc
 {
   /// <summary>
-  /// Deserializes the request body when the Content-Type is application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack, with LtMsgPack (see <see cref="LtMsgPackHttpOptions"/>).
+  /// Deserializes the request body when the Content-Type is application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack, with LsMsgPack (see <see cref="LsMsgPackHttpOptions"/>).
   /// Other requests are passed on to the binder MVC would have used otherwise.
   /// <para>Errors are added to the ModelState (check ModelState.IsValid) and the model is validated (DataAnnotations etc.) like the default model binder does.</para>
   /// </summary>
   public class LsMsgPackModelBinder : IModelBinder
   {
-    private readonly LtMsgPackHttpSerializer Serializer;
+    private readonly LsMsgPackHttpSerializer Serializer;
 
-    public LsMsgPackModelBinder() : this(new LtMsgPackHttpSerializer()) { }
+    public LsMsgPackModelBinder() : this(new LsMsgPackHttpSerializer()) { }
 
     /// <param name="options">Read once, later changes have no effect.</param>
-    public LsMsgPackModelBinder(LtMsgPackHttpOptions options) : this(new LtMsgPackHttpSerializer(options ?? new LtMsgPackHttpOptions())) { }
+    public LsMsgPackModelBinder(LsMsgPackHttpOptions options) : this(new LsMsgPackHttpSerializer(options ?? new LsMsgPackHttpOptions())) { }
 
-    public LsMsgPackModelBinder(LtMsgPackHttpSerializer serializer)
+    public LsMsgPackModelBinder(LsMsgPackHttpSerializer serializer)
     {
       Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
     }
@@ -77,7 +77,7 @@ namespace LsMsgPackMvc
     /// <returns>False (an exception filter)</returns>
     private static bool ReportFailure(HttpContextBase context, Exception ex)
     {
-      ReadDifferences differences = LtMsgPackHttpSerializer.DifferencesOf(ex);
+      ReadDifferences differences = LsMsgPackHttpSerializer.DifferencesOf(ex);
       if (differences != null)
         ReadDifferencesExtensions.Set(context, differences);
       return false;

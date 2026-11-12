@@ -101,7 +101,7 @@ socket.onmessage = e => handle(decoder.decode(new Uint8Array(e.data)).value);
 socket.send(encode({ type: 'subscribe', symbol: 'MSFT' }));
 ```
 
-On the server, write with `new LtMsgPackSerializer(new LtMsgPackOptions { SchemaVersion = SchemaVersion.Described })` and read what the browser sends with `MsgPackMediaTypes.ToPlain(new LtMsgPackOptions())` plus `PropertyNameCaseInsensitive = true` (`encode` writes plain MsgPack with the camelCase keys of your objects).
+On the server, write with `new LsMsgPackSerializer(new LsMsgPackOptions { SchemaVersion = SchemaVersion.Described })` and read what the browser sends with `MsgPackMediaTypes.ToPlain(new LsMsgPackOptions())` plus `PropertyNameCaseInsensitive = true` (`encode` writes plain MsgPack with the camelCase keys of your objects).
 
 ## Watch out
 

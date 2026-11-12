@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The analyzers of LsMsgPack and LtMsgPack (see docs/Analyzers.md): runs inside the compiler, netstandard2.0, packed into the LsMsgPack.Core package (analyzers/dotnet/cs) by LsMsgPack.Core.csproj, not a package of its own.
+  <!-- The analyzers of LsMsgPack and LsMsgPack (see docs/Analyzers.md): runs inside the compiler, netstandard2.0, packed into the LsMsgPack.Core package (analyzers/dotnet/cs) by LsMsgPack.Core.csproj, not a package of its own.
        The code fixes are in LsMsgPack.Analyzers.CodeFixes: they need the Workspaces of the IDE, which the command line compiler does not load. -->
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>

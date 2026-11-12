@@ -8,27 +8,27 @@ Files that a program in another language, or another MsgPack library, reads (and
 
 | | |
 |---|---|
-| Package | `LtMsgPack` |
-| Settings | a preset: `LtMsgPackPresets.Generic()`, `MessagePackCSharp()` or `Nerdbank()` |
+| Package | `LsMsgPack` |
+| Settings | a preset: `LsMsgPackPresets.Generic()`, `MessagePackCSharp()` or `Nerdbank()` |
 | Format | each object a map of property names and values, like JSON; every value written; no schema, no type ids |
 | Keep in mind | names must match on both sides; no automatic class hierarchies |
 
 ```
-dotnet add package LtMsgPack
+dotnet add package LsMsgPack
 ```
 
 ## Pick the preset of the other side
 
 | The other program uses | Preset | What it changes |
 |---|---|---|
-| Python (`msgpack`), JavaScript (`@msgpack/msgpack`), Go, Rust, or you don't know | `LtMsgPackPresets.Generic()` | `Guid` and `decimal` as text, dates as standard timestamps |
-| MessagePack-CSharp (contractless, or `[MessagePackObject(true)]`) | `LtMsgPackPresets.MessagePackCSharp()` | the same bytes as its default formatters |
-| Nerdbank.MessagePack | `LtMsgPackPresets.Nerdbank()` | its decimal and Guid extensions |
+| Python (`msgpack`), JavaScript (`@msgpack/msgpack`), Go, Rust, or you don't know | `LsMsgPackPresets.Generic()` | `Guid` and `decimal` as text, dates as standard timestamps |
+| MessagePack-CSharp (contractless, or `[MessagePackObject(true)]`) | `LsMsgPackPresets.MessagePackCSharp()` | the same bytes as its default formatters |
+| Nerdbank.MessagePack | `LsMsgPackPresets.Nerdbank()` | its decimal and Guid extensions |
 
 ```csharp
-using LtMsgPack;
+using LsMsgPack;
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(LtMsgPackPresets.Generic()); // keep one for the whole app
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(LsMsgPackPresets.Generic()); // keep one for the whole app
 
 await File.WriteAllBytesAsync("measurements.msgpack", serializer.Serialize(measurements));
 
@@ -38,7 +38,7 @@ Measurements read = serializer.Deserialize<Measurements>(await File.ReadAllBytes
 
 ## Why these settings
 
-The default format of LtMsgPack starts every file with a schema, which only LtMsgPack and LsMsgPack understand: Python's `unpackb` reads that schema as the whole file and stops with "extra data". The presets switch to what every MsgPack library reads:
+The default format of LsMsgPack starts every file with a schema, which only LsMsgPack and LsMsgPackDebug understand: Python's `unpackb` reads that schema as the whole file and stops with "extra data". The presets switch to what every MsgPack library reads:
 
 - **Objects as maps of names.** `{"Title": "Run 1", "Count": 3}`, exactly like JSON but binary. Any library turns that into a dictionary (Python `dict`, JavaScript object, Go `map` or struct).
 - **Every value is written**, also `0`, `false` and `null`. The default format leaves those out to save space, but a Python script would then find keys missing.
@@ -84,7 +84,7 @@ The keys are the .NET property names (`Title`, `StartedAt`), and they must match
 using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.TypeResolving.Names;
 
-LtMsgPackOptions options = LtMsgPackPresets.Generic();
+LsMsgPackOptions options = LsMsgPackPresets.Generic();
 options.PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new AttributePropertyNameResolver() };
 
 public class Measurements
