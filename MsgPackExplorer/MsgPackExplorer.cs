@@ -748,7 +748,7 @@ namespace MsgPackExplorer
             Type typ = item.GetType();
             if (typ == typeof(MpBool)) return 1;
             if (typ == typeof(MpInt)) return 2;
-            if (typ == typeof(MpFloat)) return 3;
+            if (typ == typeof(MpFloat) || typ == typeof(MpDecimal)) return 3;
             if (typ == typeof(MpBin)) return ((MpBin)item).IsTruncated ? _truncatedBinIcon : 4;
             if (typ == typeof(MpString)) return ((MpString)item).IsTruncated ? _truncatedStringIcon : 5;
             if (typ == typeof(MpArray) || typ == typeof(MpStreamTail)) return 6;
@@ -757,6 +757,7 @@ namespace MsgPackExplorer
             if (typ == typeof(MpStreamIndex) || typ == typeof(MpStreamSidecar)) return 10;
             if (typ == typeof(MpError)) return 11;
             if (typ == typeof(MpRoot)) return 12;
+            if (item is MpExt) return 10; // timestamps and other custom extensions (-1 would show the icon of nil)
             return -1;
         }
 

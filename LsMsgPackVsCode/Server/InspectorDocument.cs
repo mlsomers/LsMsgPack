@@ -378,7 +378,7 @@ namespace LsMsgPackInspector
       if (typ == typeof(MpNull)) return "nil";
       if (typ == typeof(MpBool)) return "bool";
       if (typ == typeof(MpInt)) return "int";
-      if (typ == typeof(MpFloat)) return "float";
+      if (typ == typeof(MpFloat) || typ == typeof(MpDecimal)) return "float"; // a decimal is a number too, as in the Windows explorer
       if (typ == typeof(MpBin)) return "bin";
       if (typ == typeof(MpString)) return "str";
       if (typ == typeof(MpArray)) return "array";
