@@ -412,7 +412,9 @@ namespace LsMsgPackUnitTests
           for (int t = 1; t <= 2; t++)
           {
             CollectionAssert.AreEqual(expected, serializer.Serialize(value), name + ", object " + t);
-            Assert.AreNotEqual("CompiledObjectCode", WriterOf(serializer, typeof(CwAllKinds), true), name + ", the generated code after object " + t);
+            // The second write queues compilation on the thread pool. It may finish before Serialize returns on a fast machine.
+            if (t == 1)
+              Assert.AreNotEqual("CompiledObjectCode", WriterOf(serializer, typeof(CwAllKinds), true), name + ", the generated code after object " + t);
           }
           CollectionAssert.AreEqual(expected, serializer.Serialize(value), name + ", object 3: compiles in the background");
           Stopwatch waited = Stopwatch.StartNew();
