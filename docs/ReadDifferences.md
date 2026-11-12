@@ -13,7 +13,7 @@ if (differences != null)
   logger.LogWarning(differences.GenerateReport());
 ```
 
-LtMsgPack has the same overloads on the serializer: `serializer.Deserialize<Order>(data, out ReadDifferences differences)`. The web formatters collect them with `LtMsgPackHttpOptions.ReportDifferences` (see [WebFormatters.md](WebFormatters.md#reporting-differences)).
+LsMsgPack has the same overloads on the serializer: `serializer.Deserialize<Order>(data, out ReadDifferences differences)`. The web formatters collect them with `LsMsgPackHttpOptions.ReportDifferences` (see [WebFormatters.md](WebFormatters.md#reporting-differences)).
 
 `differences` is `null` when the data matched the classes. Otherwise it counts each difference per class and name, over the whole payload:
 
@@ -80,11 +80,11 @@ catch (ReadErrorsException ex)
 - `Root`: the value that was read. The paths of the samples (`$`, `.Name`, `[0]`, `["key"]`) are only looked up when you ask for them: `GenerateReport()` (also `ToString()`) and `PathOf(object)` walk the graph from the root, breadth first, over the properties the serializer reads, the elements of collections and the values of dictionaries.
 - `Omitted`: the names come from the data, so at most `ReadDifferences.MaxDifferences` (100) different ones are kept, the rest are only counted. Names longer than 256 characters are cut.
 
-Collecting costs little while the data matches: the serializers only take note where they skip something. Reading with an `out ReadDifferences` (or with `ReadErrors` other than `FailFast`) is still slower than without: about 10-15% for LtMsgPack on larger payloads and 0.15 µs per call, because it takes a separate path for the objects. So use it where you want the report, not by default everywhere.
+Collecting costs little while the data matches: the serializers only take note where they skip something. Reading with an `out ReadDifferences` (or with `ReadErrors` other than `FailFast`) is still slower than without: about 10-15% for LsMsgPack on larger payloads and 0.15 µs per call, because it takes a separate path for the objects. So use it where you want the report, not by default everywhere.
 
 ## Things to keep in mind
 
 - **The paths are looked up when you ask for them.** If you change the objects in between (move them, replace a list), a sample may be found at another path, or not at all ("not found"). A sample that is a struct is a copy and isn't found either.
 - **When reading throws** (`FailFast`, or one of the errors that always throw), the differences found until then are on the exception: `ex.Data[ReadDifferences.ExceptionDataKey]` (no `Root`, so no paths). That's often the cause: a property that wasn't set because its name was misspelled.
-- **LsMsgPackDebug and LtMsgPack report the same differences** with the same counts. The order of the differences and of their samples can differ (LsMsgPackDebug converts the values of a collection from the last to the first). With more than 10 occurrences they may keep other samples. The report lists the samples in the order of the graph.
+- **LsMsgPackDebug and LsMsgPack report the same differences** with the same counts. The order of the differences and of their samples can differ (LsMsgPackDebug converts the values of a collection from the last to the first). With more than 10 occurrences they may keep other samples. The report lists the samples in the order of the graph.
 - The report is per call. Settings and serializers are shared by threads, the differences belong to the call that read them.

@@ -1,7 +1,6 @@
 using LsMsgPack;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
-using LtMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections;
@@ -14,7 +13,7 @@ using System.Threading.Tasks;
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// LtMsgPack compiles a reader per type at runtime (LtMsgPackOptions.CompileReadersAfter): it is used, and reads what the runtime's plans read (the same values, conversions and errors).
+  /// LsMsgPack compiles a reader per type at runtime (LsMsgPackOptions.CompileReadersAfter): it is used, and reads what the runtime's plans read (the same values, conversions and errors).
   /// CrossLibraryTests also compares it with LsMsgPack (the corpus in all settings, compiled from the first object).
   /// </summary>
   [TestClass]
@@ -94,23 +93,23 @@ namespace LsMsgPackUnitTests
 
     private const BindingFlags Internal = BindingFlags.Instance | BindingFlags.NonPublic;
 
-    private static object CodeOf(LtMsgPackSerializer serializer, Type type)
+    private static object CodeOf(LsMsgPackSerializer serializer, Type type)
     {
-      object inner = typeof(LtMsgPackSerializer).GetField("_serializer", Internal).GetValue(serializer);
+      object inner = typeof(LsMsgPackSerializer).GetField("_serializer", Internal).GetValue(serializer);
       object plan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { type });
       return plan?.GetType().GetField("Code", Internal).GetValue(plan);
     }
 
     /// <returns>Whether the generated code of the read plan reads maps keyed by names straight-line (ReadPlan.NamesInOrder)</returns>
-    internal static bool NamesInOrder(LtMsgPackSerializer serializer, Type type)
+    internal static bool NamesInOrder(LsMsgPackSerializer serializer, Type type)
     {
-      object inner = typeof(LtMsgPackSerializer).GetField("_serializer", Internal).GetValue(serializer);
+      object inner = typeof(LsMsgPackSerializer).GetField("_serializer", Internal).GetValue(serializer);
       object plan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { type });
       return plan.GetType().GetField("NamesInOrder", Internal).GetValue(plan) != null;
     }
 
     /// <returns>The type name of the code the read plan reads with, null for the runtime's readers</returns>
-    internal static string ReaderOf(LtMsgPackSerializer serializer, Type type)
+    internal static string ReaderOf(LsMsgPackSerializer serializer, Type type)
     {
       Type code = CodeOf(serializer, type)?.GetType();
       if (code is null)
@@ -119,7 +118,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <returns>Whether the plan has a compiled reader of the layout</returns>
-    private static bool IsCompiled(LtMsgPackSerializer serializer, Type type, bool map)
+    private static bool IsCompiled(LsMsgPackSerializer serializer, Type type, bool map)
     {
       object code = CodeOf(serializer, type);
       return code != null && (bool)code.GetType().GetMethod("IsCompiled").Invoke(code, new object[] { map });
@@ -128,7 +127,7 @@ namespace LsMsgPackUnitTests
     /// <summary>
     /// After the number of objects the reader is compiled on the thread pool: waits for it (at most 10 s).
     /// </summary>
-    private static string WaitForReader(LtMsgPackSerializer serializer, Type type)
+    private static string WaitForReader(LsMsgPackSerializer serializer, Type type)
     {
       Stopwatch waited = Stopwatch.StartNew();
       string reader;
@@ -138,23 +137,23 @@ namespace LsMsgPackUnitTests
     }
 
     /// <param name="compileAfter">For the readers; the writers are the runtime's</param>
-    private static LtMsgPackSerializer Create(LtMsgPackOptions options, int compileAfter)
+    private static LsMsgPackSerializer Create(LsMsgPackOptions options, int compileAfter)
     {
-      LtMsgPackOptions copy = options.Clone();
+      LsMsgPackOptions copy = options.Clone();
       copy.UseRegisteredContexts = false;
       copy.CompileWritersAfter = -1;
       copy.CompileReadersAfter = compileAfter;
-      return new LtMsgPackSerializer(copy);
+      return new LsMsgPackSerializer(copy);
     }
 
-    private static IEnumerable<LtMsgPackOptions> AllOptions()
+    private static IEnumerable<LsMsgPackOptions> AllOptions()
     {
       foreach (bool schema in new[] { false, true })
         foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
           foreach (bool filter in new[] { false, true })
             foreach (bool trim in new[] { false, true })
               foreach (bool reference in schema ? new[] { false, true } : new[] { false })
-                yield return new LtMsgPackOptions
+                yield return new LsMsgPackOptions
                 {
                   UseInexedSchema = schema, WriteSchemaReference = reference, SchemaStore = reference ? new SchemaStore() : null, ObjectLayout = layout, TrimTrailingNulls = trim,
                   DynamicFilters = filter ? new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() } : new IMsgPackPropertyIncludeDynamically[0],
@@ -162,14 +161,14 @@ namespace LsMsgPackUnitTests
                 };
       foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map }) // Guids and decimals as strings (the Generic() preset), read by the compiled code too
         foreach (bool schema in new[] { false, true })
-          yield return new LtMsgPackOptions
+          yield return new LsMsgPackOptions
           {
             UseInexedSchema = schema, ObjectLayout = layout, GuidFormat = GuidFormat.String, DecimalFormat = DecimalFormat.String,
             DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() }
           };
     }
 
-    private static string Describe(LtMsgPackOptions o)
+    private static string Describe(LsMsgPackOptions o)
     {
       return $"schema {o.UseInexedSchema}, reference {o.WriteSchemaReference}, {o.ObjectLayout}, filters {o.DynamicFilters.Length}, trim {o.TrimTrailingNulls}, {o.GuidFormat}/{o.DecimalFormat}, {o.PropertyOrder}";
     }
@@ -177,7 +176,7 @@ namespace LsMsgPackUnitTests
     /// <summary>
     /// Everything of a value that was read, as bytes (maps with names, every value written).
     /// </summary>
-    private static readonly LtMsgPackSerializer Dump = new LtMsgPackSerializer(new LtMsgPackOptions
+    private static readonly LsMsgPackSerializer Dump = new LsMsgPackSerializer(new LsMsgPackOptions
     {
       UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseRegisteredContexts = false, CompileWritersAfter = -1,
       UnspecifiedDateTimeKind = DateTimeKind.Utc
@@ -186,7 +185,7 @@ namespace LsMsgPackUnitTests
     /// <summary>
     /// What reading gives: the value as bytes, or the exception.
     /// </summary>
-    private static string Read(LtMsgPackSerializer serializer, Type type, byte[] data)
+    private static string Read(LsMsgPackSerializer serializer, Type type, byte[] data)
     {
       object read;
       try
@@ -230,9 +229,9 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void TheCompiledReader_TakesOverAfterTheNumberOfObjects()
     {
-      LtMsgPackOptions options = new LtMsgPackOptions { UseInexedSchema = false };
-      LtMsgPackSerializer runtime = Create(options, -1);
-      LtMsgPackSerializer compiled = Create(options, 3);
+      LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = false };
+      LsMsgPackSerializer runtime = Create(options, -1);
+      LsMsgPackSerializer compiled = Create(options, 3);
       byte[] data = runtime.Serialize(Simple());
       string expected = Read(runtime, typeof(CrSimple), data);
       for (int t = 1; t <= 2; t++)
@@ -250,8 +249,8 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Default_CompilesAfterAThousandObjects()
     {
-      Assert.AreEqual(1000, new LtMsgPackOptions().CompileReadersAfter);
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, UseRegisteredContexts = false });
+      Assert.AreEqual(1000, new LsMsgPackOptions().CompileReadersAfter);
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, UseRegisteredContexts = false });
       List<CompiledWriterTests.CwPoint> points = new List<CompiledWriterTests.CwPoint>();
       for (int t = 0; t < 999; t++)
         points.Add(new CompiledWriterTests.CwPoint { X = t });
@@ -265,10 +264,10 @@ namespace LsMsgPackUnitTests
     public void AllKinds_ReadAsTheRuntimesPlans()
     {
       List<string> differences = new List<string>();
-      foreach (LtMsgPackOptions options in AllOptions())
+      foreach (LsMsgPackOptions options in AllOptions())
       {
-        LtMsgPackSerializer runtime = Create(options, -1);
-        LtMsgPackSerializer compiled = Create(options, 0);
+        LsMsgPackSerializer runtime = Create(options, -1);
+        LsMsgPackSerializer compiled = Create(options, 0);
         foreach (CompiledWriterTests.CwAllKinds value in Values())
         {
           foreach (Type declared in new[] { typeof(CompiledWriterTests.CwAllKinds), typeof(CompiledWriterTests.CwBase), typeof(object) })
@@ -305,9 +304,9 @@ namespace LsMsgPackUnitTests
         P00 = 1, P05 = "five", P10 = 0.5, P15 = new DateTime(2020, 2, 2, 0, 0, 0, DateTimeKind.Utc), P17 = 1.7m, P19 = true, P20 = 20, P22 = CompiledWriterTests.CwSmall.One,
         P23 = new CompiledWriterTests.CwWide { P04 = 4 }, P24 = new List<int> { 1, 2 }
       };
-      foreach (LtMsgPackOptions options in AllOptions())
+      foreach (LsMsgPackOptions options in AllOptions())
       {
-        LtMsgPackSerializer runtime = Create(options, -1);
+        LsMsgPackSerializer runtime = Create(options, -1);
         byte[] data = runtime.Serialize(wide);
         Assert.AreEqual(Read(runtime, typeof(CompiledWriterTests.CwWide), data), Read(Create(options, 0), typeof(CompiledWriterTests.CwWide), data), Describe(options));
       }
@@ -350,10 +349,10 @@ namespace LsMsgPackUnitTests
       };
       List<string> differences = new List<string>();
       int same = 0;
-      foreach (LtMsgPackOptions options in AllOptions())
+      foreach (LsMsgPackOptions options in AllOptions())
       {
-        LtMsgPackSerializer runtime = Create(options, -1);
-        LtMsgPackSerializer compiled = Create(options, 0);
+        LsMsgPackSerializer runtime = Create(options, -1);
+        LsMsgPackSerializer compiled = Create(options, 0);
         for (int t = 0; t < data.Count; t++)
         {
           byte[] bytes = runtime.Serialize(data[t], data[t].GetType());
@@ -376,10 +375,10 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void DataThatEndsEarly_SameErrorAsTheRuntimesPlans()
     {
-      foreach (LtMsgPackOptions options in AllOptions())
+      foreach (LsMsgPackOptions options in AllOptions())
       {
-        LtMsgPackSerializer runtime = Create(options, -1);
-        LtMsgPackSerializer compiled = Create(options, 0);
+        LsMsgPackSerializer runtime = Create(options, -1);
+        LsMsgPackSerializer compiled = Create(options, 0);
         byte[] whole = runtime.Serialize(Simple());
         for (int length = 0; length < whole.Length; length++)
         {
@@ -393,21 +392,21 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Structs_ByReference_ReadAsTheRuntimesPlans()
     {
-      LtStructTests.LtsMover moving = new LtStructTests.LtsMover
+      LsStructTests.LtsMover moving = new LsStructTests.LtsMover
       {
-        Name = "m", Position = new LtStructTests.LtsVec { X = 1, Y = 2, Z = 3 }, Velocity = new LtStructTests.LtsVec { Z = -0.5f }, Target = new LtStructTests.LtsVec { Y = 4 },
-        Path = new List<LtStructTests.LtsVec> { new LtStructTests.LtsVec { X = 1 } }, Points = new[] { new LtStructTests.LtsVec { Z = 9 } }
+        Name = "m", Position = new LsStructTests.LtsVec { X = 1, Y = 2, Z = 3 }, Velocity = new LsStructTests.LtsVec { Z = -0.5f }, Target = new LsStructTests.LtsVec { Y = 4 },
+        Path = new List<LsStructTests.LtsVec> { new LsStructTests.LtsVec { X = 1 } }, Points = new[] { new LsStructTests.LtsVec { Z = 9 } }
       };
-      foreach (LtMsgPackOptions options in AllOptions())
+      foreach (LsMsgPackOptions options in AllOptions())
       {
-        LtMsgPackSerializer runtime = Create(options, -1);
-        LtMsgPackSerializer compiled = Create(options, 0);
+        LsMsgPackSerializer runtime = Create(options, -1);
+        LsMsgPackSerializer compiled = Create(options, 0);
         byte[] data = runtime.Serialize(moving);
-        Assert.AreEqual(Read(runtime, typeof(LtStructTests.LtsMover), data), Read(compiled, typeof(LtStructTests.LtsMover), data), Describe(options));
+        Assert.AreEqual(Read(runtime, typeof(LsStructTests.LtsMover), data), Read(compiled, typeof(LsStructTests.LtsMover), data), Describe(options));
         byte[] root = runtime.Serialize(moving.Position);
-        Assert.AreEqual(Read(runtime, typeof(LtStructTests.LtsVec), root), Read(compiled, typeof(LtStructTests.LtsVec), root), Describe(options) + ", as the root");
+        Assert.AreEqual(Read(runtime, typeof(LsStructTests.LtsVec), root), Read(compiled, typeof(LsStructTests.LtsVec), root), Describe(options) + ", as the root");
         Assert.AreEqual(Read(runtime, typeof(object), root), Read(compiled, typeof(object), root), Describe(options) + ", as an object");
-        Assert.AreEqual("CompiledStructReader", ReaderOf(compiled, typeof(LtStructTests.LtsVec)), Describe(options));
+        Assert.AreEqual("CompiledStructReader", ReaderOf(compiled, typeof(LsStructTests.LtsVec)), Describe(options));
       }
     }
 
@@ -452,7 +451,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void MapsWithNames_ReadAsTheRuntimesPlans()
     {
-      LtMsgPackSerializer plain = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseRegisteredContexts = false });
+      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseRegisteredContexts = false });
       string[] names = new string[] { "N", "Na", "Nab", "Nabc", "Nabcde", "Nabcdef", "Nabcdefg", "Nabcdefghijklmn", "Nabcdefghijklmno", "Nabcdefghijklmnop", "Nabcdefghijklmnopqrstuv", "Nabcdefghijklmnopqrstuvw", "Nabcdefghijklmnopqrstuvwx", "Nabcdefghijklmnopqrstuvwxyzabc", "Nabcdefghijklmnopqrstuvwxyzabcd", "Nabcdefghijklmnopqrstuvwxyzabcde", "Nabcdefghijklmnopqrstuvwxyzabcdefghijklm", "Größe" };
       List<byte[]> data = new List<byte[]>();
       Dictionary<string, object> inOrder = new Dictionary<string, object>();
@@ -478,7 +477,7 @@ namespace LsMsgPackUnitTests
       data.Add(plain.Serialize(new Dictionary<string, object> { { "TwinsabcdBefghijklmn", 3 }, { "TwinsabcdAefghijklmn", 4 }, { "TriplesabcdefghijBklmnopqrst", 5 }, { "TriplesabcdefghijAklmnopqrst", 6 } }));
       foreach (bool filter in new[] { false, true })
       {
-        LtMsgPackSerializer writer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false,
+        LsMsgPackSerializer writer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false,
           DynamicFilters = filter ? new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() } : new IMsgPackPropertyIncludeDynamically[0] });
         byte[] whole = writer.Serialize(Names());
         data.Add(whole);
@@ -489,14 +488,14 @@ namespace LsMsgPackUnitTests
 
       foreach (bool ignoreCase in new[] { false, true })
       {
-        LtMsgPackOptions options = new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = ignoreCase };
-        LtMsgPackSerializer runtime = Create(options, -1);
-        LtMsgPackSerializer compiled = Create(options, 0);
-        LtMsgPackOptions withContext = options.Clone(); // the source generator's straight-line code (GeneratedIO.NamesInOrder: in parts, the class has more than 16 members)
-        withContext.Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default };
+        LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = ignoreCase };
+        LsMsgPackSerializer runtime = Create(options, -1);
+        LsMsgPackSerializer compiled = Create(options, 0);
+        LsMsgPackOptions withContext = options.Clone(); // the source generator's straight-line code (GeneratedIO.NamesInOrder: in parts, the class has more than 16 members)
+        withContext.Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default };
         withContext.UseRegisteredContexts = false;
         withContext.CompileReadersAfter = -1;
-        LtMsgPackSerializer generated = new LtMsgPackSerializer(withContext);
+        LsMsgPackSerializer generated = new LsMsgPackSerializer(withContext);
         List<string> differences = new List<string>();
         for (int t = 0; t < data.Count; t++)
         {
@@ -523,20 +522,20 @@ namespace LsMsgPackUnitTests
     {
       foreach (bool schema in new[] { false, true })
       {
-        LtMsgPackOptions maps = new LtMsgPackOptions { UseInexedSchema = schema, ObjectLayout = ObjectLayout.Map };
-        LtMsgPackOptions arrays = new LtMsgPackOptions { UseInexedSchema = schema, ObjectLayout = ObjectLayout.Array };
+        LsMsgPackOptions maps = new LsMsgPackOptions { UseInexedSchema = schema, ObjectLayout = ObjectLayout.Map };
+        LsMsgPackOptions arrays = new LsMsgPackOptions { UseInexedSchema = schema, ObjectLayout = ObjectLayout.Array };
         byte[] asMap = Create(maps, -1).Serialize(Simple());
         byte[] asArray = Create(arrays, -1).Serialize(Simple());
         string expected = Read(Create(maps, -1), typeof(CrSimple), asMap);
 
-        LtMsgPackSerializer ofMaps = Create(maps, 0);
+        LsMsgPackSerializer ofMaps = Create(maps, 0);
         Assert.AreEqual(expected, Read(ofMaps, typeof(CrSimple), asMap));
         Assert.IsFalse(IsCompiled(ofMaps, typeof(CrSimple), false), "no array read yet");
         Assert.AreEqual(expected, Read(ofMaps, typeof(CrSimple), asArray));
         Assert.IsTrue(IsCompiled(ofMaps, typeof(CrSimple), false), "an array was read");
         Assert.AreEqual(expected, Read(ofMaps, typeof(CrSimple), asArray), "by the compiled reader");
 
-        LtMsgPackSerializer ofArrays = Create(arrays, 0);
+        LsMsgPackSerializer ofArrays = Create(arrays, 0);
         Assert.AreEqual(expected, Read(ofArrays, typeof(CrSimple), asArray));
         Assert.IsFalse(IsCompiled(ofArrays, typeof(CrSimple), true), "no map read yet");
         Assert.AreEqual(expected, Read(ofArrays, typeof(CrSimple), asMap));
@@ -550,15 +549,15 @@ namespace LsMsgPackUnitTests
     {
       foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
       {
-        LtMsgPackOptions options = new LtMsgPackOptions { UseInexedSchema = true, ObjectLayout = layout };
-        LtMsgPackSerializer runtime = Create(options, -1);
+        LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = true, ObjectLayout = layout };
+        LsMsgPackSerializer runtime = Create(options, -1);
         byte[] data = runtime.Serialize(Simple());
         byte[] list = runtime.Serialize(new List<CrSimple> { Simple(), new CrSimple(), Simple() });
         string expected = Read(runtime, typeof(CrSimple), data);
         string expectedList = Read(runtime, typeof(List<CrSimple>), list);
         for (int round = 0; round < 5; round++)
         {
-          LtMsgPackSerializer compiled = Create(options, 20);
+          LsMsgPackSerializer compiled = Create(options, 20);
           Parallel.For(0, 400, new ParallelOptions { MaxDegreeOfParallelism = 8 }, t =>
           {
             if (t % 2 == 0)
@@ -576,15 +575,15 @@ namespace LsMsgPackUnitTests
     public void NotCompiled_WhereThePlansDoNotReadTheValues()
     {
       // A constructor that takes the values: they are collected first
-      LtMsgPackSerializer compiled = Create(new LtMsgPackOptions { UseInexedSchema = false }, 0);
+      LsMsgPackSerializer compiled = Create(new LsMsgPackOptions { UseInexedSchema = false }, 0);
       CrImmutable read = compiled.Deserialize<CrImmutable>(compiled.Serialize(new CrImmutable(5, "five")));
       Assert.AreEqual(5, read.Number);
       Assert.AreEqual("five", read.Text);
       Assert.IsNull(ReaderOf(compiled, typeof(CrImmutable)));
 
       // No property of a type the compiled code reads itself
-      compiled.Deserialize<LtStructTests.LtsMover>(compiled.Serialize(new LtStructTests.LtsMover { Position = new LtStructTests.LtsVec { X = 1 } }));
-      Assert.AreEqual("CompiledObjectReader", ReaderOf(compiled, typeof(LtStructTests.LtsMover)), "it has a string");
+      compiled.Deserialize<LsStructTests.LtsMover>(compiled.Serialize(new LsStructTests.LtsMover { Position = new LsStructTests.LtsVec { X = 1 } }));
+      Assert.AreEqual("CompiledObjectReader", ReaderOf(compiled, typeof(LsStructTests.LtsMover)), "it has a string");
       compiled.Deserialize<CrOnlyObjects>(compiled.Serialize(new CrOnlyObjects { Items = new List<int> { 1 }, Child = new CrOnlyObjects() }));
       Assert.IsNull(ReaderOf(compiled, typeof(CrOnlyObjects)));
     }
@@ -598,9 +597,9 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void TheSourceGeneratorsCode_IsPreferred()
     {
-      LtMsgPackSerializer generated = new LtMsgPackSerializer(new LtMsgPackOptions
+      LsMsgPackSerializer generated = new LsMsgPackSerializer(new LsMsgPackOptions
       {
-        UseInexedSchema = false, Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, CompileReadersAfter = 0
+        UseInexedSchema = false, Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, CompileReadersAfter = 0
       });
       CrSimple read = generated.Deserialize<CrSimple>(generated.Serialize(Simple()));
       Assert.AreEqual(-70000, read.I);
@@ -612,13 +611,13 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void NonPublicSettersAndFields_AreSet()
     {
-      LtMsgPackOptions options = new LtMsgPackOptions
+      LsMsgPackOptions options = new LsMsgPackOptions
       {
         UseInexedSchema = false,
         StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.All, SerializedFields.Public), new FilterIgnoredAttribute(), new FilterStatic() }
       };
-      LtMsgPackSerializer runtime = Create(options, -1);
-      LtMsgPackSerializer compiled = Create(options, 0);
+      LsMsgPackSerializer runtime = Create(options, -1);
+      LsMsgPackSerializer compiled = Create(options, 0);
       CrHidden hidden = CrHidden.Create(5, "secret");
       hidden.Counter = 9;
       byte[] data = runtime.Serialize(hidden);

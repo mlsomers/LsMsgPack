@@ -1,5 +1,5 @@
 using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -8,7 +8,7 @@ namespace LsMsgPackTypeScript
 {
   /// <summary>
   /// Writes the hot-load schema set: the schemas the server will write for the response types (version 2, as the client asks for them), made by the server's own code
-  /// (<see cref="LtMsgPackHttpSerializer.PrepareSchema"/> with the server's options and <see cref="MsgPackOptions.CompleteSchemas"/>), so they have the ids the server's responses refer to.
+  /// (<see cref="LsMsgPackHttpSerializer.PrepareSchema"/> with the server's options and <see cref="MsgPackOptions.CompleteSchemas"/>), so they have the ids the server's responses refer to.
   /// The client holds them from the start: the first response of each type is a reference (18 bytes) instead of the schema.
   /// </summary>
   internal static class SchemaSetWriter
@@ -23,10 +23,10 @@ namespace LsMsgPackTypeScript
     /// <summary>
     /// The schemas of the roots (a root without classes has none: nothing to hold).
     /// </summary>
-    internal static List<Prepared> Prepare(LtMsgPackHttpOptions options, IEnumerable<Type> roots, List<string> warnings)
+    internal static List<Prepared> Prepare(LsMsgPackHttpOptions options, IEnumerable<Type> roots, List<string> warnings)
     {
       List<Prepared> prepared = new List<Prepared>();
-      LtMsgPackHttpSerializer serializer = new LtMsgPackHttpSerializer(options);
+      LsMsgPackHttpSerializer serializer = new LsMsgPackHttpSerializer(options);
       if (!serializer.NegotiatesSchemas || !serializer.DescribesSchemas || !options.CompleteSchemas)
       {
         warnings.Add("The server's options do not negotiate complete schemas of version 2 (NegotiateSchemas, DescribeSchemas, CompleteSchemas and the indexed schema): no schema set is written.");

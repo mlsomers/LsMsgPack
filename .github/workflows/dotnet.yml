@@ -43,7 +43,7 @@ jobs:
       with:
         dotnet-version: 10.0.x
     - name: NativeAOT smoke test of the source generator
-      run: bash LtMsgPackAotSmokeTest/run.sh
+      run: bash LsMsgPackAotSmokeTest/run.sh
 
   typescript-client:
 

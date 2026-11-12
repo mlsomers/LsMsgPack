@@ -1,5 +1,5 @@
 ﻿using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using System;
@@ -10,27 +10,27 @@ using System.Threading.Tasks;
 namespace LsMsgPackFormatters
 {
   /// <summary>
-  /// Reads request bodies with the Content-Type application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack, with LtMsgPack (see <see cref="LtMsgPackHttpOptions"/>).
+  /// Reads request bodies with the Content-Type application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack, with LsMsgPack (see <see cref="LsMsgPackHttpOptions"/>).
   /// </summary>
   public class LsMsgPackInputFormatter : InputFormatter
   {
-    private readonly LtMsgPackHttpSerializer Serializer;
+    private readonly LsMsgPackHttpSerializer Serializer;
 
 #if NET8_0_OR_GREATER
     [RequiresUnreferencedCode(LsMsgPackFormatter.RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(LsMsgPackFormatter.RequiresDynamicCodeMessage)]
 #endif
-    public LsMsgPackInputFormatter() : this(new LtMsgPackHttpOptions()) { }
+    public LsMsgPackInputFormatter() : this(new LsMsgPackHttpOptions()) { }
 
     /// <param name="options">Read once, later changes have no effect.</param>
 #if NET8_0_OR_GREATER
     [RequiresUnreferencedCode(LsMsgPackFormatter.RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(LsMsgPackFormatter.RequiresDynamicCodeMessage)]
 #endif
-    public LsMsgPackInputFormatter(LtMsgPackHttpOptions options) : this(new LtMsgPackHttpSerializer(options ?? new LtMsgPackHttpOptions())) { }
+    public LsMsgPackInputFormatter(LsMsgPackHttpOptions options) : this(new LsMsgPackHttpSerializer(options ?? new LsMsgPackHttpOptions())) { }
 
     /// <param name="serializer">Share it with the output formatter (one schema store).</param>
-    public LsMsgPackInputFormatter(LtMsgPackHttpSerializer serializer)
+    public LsMsgPackInputFormatter(LsMsgPackHttpSerializer serializer)
     {
       Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
       for (int t = 0; t < MsgPackMediaTypes.All.Count; t++) // the first one is the default

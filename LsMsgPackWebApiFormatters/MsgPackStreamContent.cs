@@ -1,6 +1,6 @@
 ﻿using LsMsgPack;
-using LtMsgPack.Http;
-using LtMsgPack.Streaming;
+using LsMsgPack.Http;
+using LsMsgPack.Streaming;
 using System;
 using System.IO;
 using System.Net;
@@ -17,12 +17,12 @@ namespace LsMsgPackWebApiFormatters
   /// <summary>
   /// A request body that is a stream (docs/Streaming.md), written while it is sent (without a Content-Length: chunked): the callback gets an asynchronous <see cref="MsgPackStreamWriter"/> with the serializer of the media type.
   /// With application/x-lsmsgpack and schema references each schema is inline the first time and referred to after that (<see cref="MsgPackStreamSchemas.PerStream"/>), so the body needs no schema of the server.
-  /// The Content-Type has <see cref="MsgPackMediaTypes.StreamParameter"/>. The server reads it with <see cref="LtMsgPackHttpSerializer.CreateStreamReader"/> (the formatters read only bodies of known length).
+  /// The Content-Type has <see cref="MsgPackMediaTypes.StreamParameter"/>. The server reads it with <see cref="LsMsgPackHttpSerializer.CreateStreamReader"/> (the formatters read only bodies of known length).
   /// <para>The callback runs each time the content is sent: once, unless a handler sends the request again.</para>
   /// </summary>
   public sealed class MsgPackStreamContent : HttpContent
   {
-    private readonly LtMsgPackHttpSerializer _serializer;
+    private readonly LsMsgPackHttpSerializer _serializer;
     private readonly Func<MsgPackStreamWriter, Task> _write;
     private readonly string _mediaType;
     private readonly MsgPackStreamIndexOptions _index;

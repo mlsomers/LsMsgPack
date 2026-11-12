@@ -3,7 +3,6 @@ using LsMsgPackDebug;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
-using LtMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Newtonsoft.Json.Linq;
 using System;
@@ -110,7 +109,7 @@ namespace LsMsgPackUnitTests
     public enum SsCallsDay { None, Monday, Tuesday }
 
     /// <summary>
-    /// Records the calls of its methods: the serializers call them in the same order and as often (LtMsgPack's typed filter modes and compiled writers as the boxed filters),
+    /// Records the calls of its methods: the serializers call them in the same order and as often (LsMsgPack's typed filter modes and compiled writers as the boxed filters),
     /// for the kinds of members the compiled writers write themselves, one they leave to the runtime (Child), a [DefaultValue] (boxed) and a static method (by reflection).
     /// </summary>
     public class SsCalls
@@ -150,7 +149,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// The sets LtMsgPack calls typed (the method alone, either order with FilterDefaultValues) and one it asks boxed.
+    /// The sets LsMsgPack calls typed (the method alone, either order with FilterDefaultValues) and one it asks boxed.
     /// </summary>
     internal static readonly IMsgPackPropertyIncludeDynamically[][] FilterSets =
     {
@@ -166,16 +165,16 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// The bytes of LsMsgPack, and the calls of the methods of its map layout: its array layout does not ask the filters for a null value (LtMsgPack asks them in both layouts).
+    /// The bytes of LsMsgPack, and the calls of the methods of its map layout: its array layout does not ask the filters for a null value (LsMsgPack asks them in both layouts).
     /// </summary>
     internal static void AssertSameAsLsMsgPack(Func<List<SsCalls>, byte[]> serialize, MsgPackSettings settings, string message)
     {
       List<SsCalls> actual = CallValues();
-      CollectionAssert.AreEqual(Serializers.Ls.Serialize(CallValues(), typeof(List<SsCalls>), settings), serialize(actual), message);
+      CollectionAssert.AreEqual(Serializers.Debug.Serialize(CallValues(), typeof(List<SsCalls>), settings), serialize(actual), message);
 
       List<SsCalls> expected = CallValues();
       MsgPackSettings map = new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseInexedSchema = settings.UseInexedSchema, DynamicFilters = settings.DynamicFilters };
-      Serializers.Ls.Serialize(expected, typeof(List<SsCalls>), map);
+      Serializers.Debug.Serialize(expected, typeof(List<SsCalls>), map);
       for (int t = 0; t < expected.Count; t++)
         CollectionAssert.AreEqual(expected[t].Log, actual[t].Log, message + ", value " + t + ": " + string.Join(" ", actual[t].Log) + " (LsMsgPack: " + string.Join(" ", expected[t].Log) + ")");
     }
@@ -187,7 +186,7 @@ namespace LsMsgPackUnitTests
     [DataRow(ObjectLayout.Array, true)]
     public void CallsTheMethodsAsLsMsgPack(ObjectLayout layout, bool useSchema)
     {
-      if (ReferenceEquals(Serializer, Serializers.Ls))
+      if (ReferenceEquals(Serializer, Serializers.Debug))
         return; // the reference
       foreach (IMsgPackPropertyIncludeDynamically[] filters in FilterSets)
       {
@@ -351,21 +350,21 @@ namespace LsMsgPackUnitTests
           new SsPointHolder() { Point = new SsPoint() { X = 1, Y = 0, Label = "l" } },
         };
         foreach (object value in values)
-          CollectionAssert.AreEqual(Serializers.Ls.Serialize(value, value.GetType(), settings), Serializer.Serialize(value, value.GetType(), settings), $"{value.GetType().Name}, {layout}, schema {useSchema}");
+          CollectionAssert.AreEqual(Serializers.Debug.Serialize(value, value.GetType(), settings), Serializer.Serialize(value, value.GetType(), settings), $"{value.GetType().Name}, {layout}, schema {useSchema}");
       }
     }
+  }
+
+  [TestClass]
+  public class DebugShouldSerializeTests : ShouldSerializeTests
+  {
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
   public class LsShouldSerializeTests : ShouldSerializeTests
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
-  }
-
-  [TestClass]
-  public class LtShouldSerializeTests : ShouldSerializeTests
-  {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
 
     /// <summary>
     /// The compiled writers (compiled with the plan) call the method of a value they write themselves.
@@ -375,7 +374,7 @@ namespace LsMsgPackUnitTests
     [DataRow(ObjectLayout.Array)]
     public void CompiledWriters(ObjectLayout layout)
     {
-      LtMsgPackSerializer compiled = new LtMsgPackSerializer(new LtMsgPackOptions()
+      LsMsgPackSerializer compiled = new LsMsgPackSerializer(new LsMsgPackOptions()
       {
         ObjectLayout = layout,
         DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(), new FilterShouldSerialize() },
@@ -388,7 +387,7 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual("n", compiled.Deserialize<SsConditional>(compiled.Serialize(shown)).Name);
 
       MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = layout, DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(), new FilterShouldSerialize() } };
-      CollectionAssert.AreEqual(Serializers.Ls.Serialize(hidden, settings), compiled.Serialize(hidden));
+      CollectionAssert.AreEqual(Serializers.Debug.Serialize(hidden, settings), compiled.Serialize(hidden));
     }
 
     /// <summary>
@@ -406,7 +405,7 @@ namespace LsMsgPackUnitTests
         IMsgPackPropertyIncludeDynamically[] filters = FilterSets[f];
         foreach (int compileAfter in new[] { -1, 0 })
         {
-          LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions()
+          LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions()
           {
             ObjectLayout = layout,
             UseInexedSchema = useSchema,

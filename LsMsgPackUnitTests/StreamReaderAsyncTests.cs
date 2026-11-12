@@ -1,6 +1,5 @@
 ﻿using LsMsgPack;
-using LtMsgPack;
-using LtMsgPack.Streaming;
+using LsMsgPack.Streaming;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections;
@@ -20,12 +19,12 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class StreamReaderAsyncTests
   {
-    private static LtMsgPackSerializer Plain()
+    private static LsMsgPackSerializer Plain()
     {
-      return new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
     }
 
-    private static byte[] Write(Action<MsgPackStreamWriter> write, LtMsgPackSerializer serializer = null, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, MsgPackStreamIndexOptions index = null)
+    private static byte[] Write(Action<MsgPackStreamWriter> write, LsMsgPackSerializer serializer = null, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, MsgPackStreamIndexOptions index = null)
     {
       MemoryStream ms = new MemoryStream();
       using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer ?? Plain(), schemas, true, index))
@@ -33,13 +32,13 @@ namespace LsMsgPackUnitTests
       return ms.ToArray();
     }
 
-    private static MsgPackStreamReader SyncReader(byte[] bytes, LtMsgPackSerializer serializer = null)
+    private static MsgPackStreamReader SyncReader(byte[] bytes, LsMsgPackSerializer serializer = null)
     {
       return new MsgPackStreamReader(new MemoryStream(bytes), serializer ?? Plain());
     }
 
     /// <param name="wholeReads">The stream returns all it can per read, so values are usually buffered whole (the fast paths), otherwise 1 to 3 bytes</param>
-    private static MsgPackStreamReader AsyncReader(byte[] bytes, LtMsgPackSerializer serializer = null, bool wholeReads = false)
+    private static MsgPackStreamReader AsyncReader(byte[] bytes, LsMsgPackSerializer serializer = null, bool wholeReads = false)
     {
       return new MsgPackStreamReader(new AsyncOnlyStream(bytes, wholeReads), serializer ?? Plain());
     }
@@ -303,7 +302,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public async Task ObjectsWithTheirSchema()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions());
       byte[] bytes = Write(w =>
       {
         for (int n = 1; n <= 3; n++)
@@ -326,7 +325,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public async Task PerStreamRegistersTheInlineSchemas()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { WriteSchemaReference = true, SchemaStore = new SchemaStore() });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = new SchemaStore() });
       byte[] bytes = Write(w =>
       {
         for (int n = 1; n <= 3; n++)
@@ -334,7 +333,7 @@ namespace LsMsgPackUnitTests
       }, serializer, MsgPackStreamSchemas.PerStream);
       Assert.AreEqual(0xD8, bytes[(int)(Write(w => w.WriteObject(Order(1)), serializer, MsgPackStreamSchemas.PerStream).Length)], "the second object refers to the schema");
 
-      using (MsgPackStreamReader reader = AsyncReader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = new SchemaStore() })))
+      using (MsgPackStreamReader reader = AsyncReader(bytes, new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = new SchemaStore() })))
       {
         for (int n = 1; n <= 3; n++)
           AreEqual(Order(n), await reader.ReadObjectAsync<SwOrder>());
@@ -387,9 +386,9 @@ namespace LsMsgPackUnitTests
             w.WriteObject(order);
           w.WriteObject<SwOrder>(null);
           w.WriteEnd();
-        }, new LtMsgPackSerializer(new LtMsgPackOptions { WriteSchemaReference = true, SchemaStore = store, CompleteSchemas = true }), mode, new MsgPackStreamIndexOptions { PointInterval = 2 });
+        }, new LsMsgPackSerializer(new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = store, CompleteSchemas = true }), mode, new MsgPackStreamIndexOptions { PointInterval = 2 });
 
-        LtMsgPackSerializer reading = new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = mode == MsgPackStreamSchemas.External ? store : new SchemaStore() });
+        LsMsgPackSerializer reading = new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = mode == MsgPackStreamSchemas.External ? store : new SchemaStore() });
         using (MsgPackStreamReader reader = AsyncReader(bytes, reading))
         {
           await reader.ReadHeadAsync<List<SwOrder>>();
@@ -414,7 +413,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public async Task HeadOfNil()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions());
       byte[] bytes = serializer.Serialize<List<SwOrder>>(null);
       CollectionAssert.AreEqual(new byte[] { 0xC0 }, bytes);
       using (MsgPackStreamReader reader = SyncReader(bytes, serializer))
@@ -438,7 +437,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public async Task ObjectsFromTheBuffer_SameAsSynchronous()
     {
-      foreach (LtMsgPackSerializer serializer in new[] { new LtMsgPackSerializer(), Plain() })
+      foreach (LsMsgPackSerializer serializer in new[] { new LsMsgPackSerializer(), Plain() })
       {
         byte[] bytes = Write(w =>
         {
@@ -532,7 +531,7 @@ namespace LsMsgPackUnitTests
       foreach (string hex in new[] { "c1 91", "c1 ff", "c1 90 01 c1", "c1 c0", "92 01 c1 c0", "c1 80 a1 61 c1 c0", "c1 a0 01 c1 c0", "c1 c4 a1 61 c1 c0", "c1 a0 c1 90 c1 c0 c1 c0",
         "c1 90 c1 90 c1 90 c1 c0 c1 c0 c1 c0", "c1 90 01", "db ff ff ff f0 61 62 63", "dd ff ff ff ff 01", "c1 90 dd ff ff ff ff 01 02 c6 10 00 00 00 01 02 03", "c7 05 03 01", "d8 01 02", "c7 05 05 01", "c1", "92 d4 01", "91 91 91 01", "92 01", "82 a1 61 91 91 01" })
       {
-        LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, MaxDepth = 2 });
+        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, MaxDepth = 2 });
 
         foreach (bool wholeReads in new[] { false, true })
         {

@@ -64,7 +64,7 @@ Put the two media types and an example like this in your API documentation. The 
 
 ## Why these settings
 
-- **`application/msgpack` needs no settings.** It writes every value, and `Guid` and `decimal` as text (`LtMsgPackPresets.Generic()`, the default of `Plain`), so a Python client doesn't have to check for missing keys or decode bytes. If most of your clients use MessagePack-CSharp, set `o.Plain = LtMsgPackPresets.MessagePackCSharp()`: it writes exactly what that library expects ([Compatibility.md](../Compatibility.md)).
+- **`application/msgpack` needs no settings.** It writes every value, and `Guid` and `decimal` as text (`LsMsgPackPresets.Generic()`, the default of `Plain`), so a Python client doesn't have to check for missing keys or decode bytes. If most of your clients use MessagePack-CSharp, set `o.Plain = LsMsgPackPresets.MessagePackCSharp()`: it writes exactly what that library expects ([Compatibility.md](../Compatibility.md)).
 - **The type guard.** Clients of `application/x-lsmsgpack` can send class names for properties declared as an interface or base class, and the server creates those classes. The serializers already refuse a class that doesn't fit the declared type and never load assemblies; the guard also limits it to the classes of your API. Plain MsgPack carries no class names, so it's mostly a safety net there.
 - **`application/x-lsmsgpack` stays available** for your own .NET and TypeScript clients, which get smaller responses and class hierarchies. Nothing to configure.
 

@@ -1,4 +1,4 @@
-﻿using LtMsgPack;
+﻿using LsMsgPack;
 using MessagePack;
 using MessagePack.Resolvers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -79,14 +79,14 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void MessagePackCSharp_SameBytes()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.MessagePackCSharp());
       CollectionAssert.AreEqual(MessagePackSerializer.Serialize(Sample(), ContractlessStandardResolver.Options), lt.Serialize(Sample()));
     }
 
     [TestMethod]
     public void MessagePackCSharp_BothWays()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.MessagePackCSharp());
       AssertSame(Sample(), MessagePackSerializer.Deserialize<IopFieldModel>(lt.Serialize(Sample()), ContractlessStandardResolver.Options), "MessagePack-CSharp reads ours");
       AssertSame(Sample(), lt.Deserialize<IopFieldModel>(MessagePackSerializer.Serialize(Sample(), ContractlessStandardResolver.Options)), "we read MessagePack-CSharp's");
     }
@@ -94,14 +94,14 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void Nerdbank_SameBytes()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.Nerdbank());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.Nerdbank());
       CollectionAssert.AreEqual(Nerdbank.Serialize<IopFieldModel, IopFieldShapes>(Sample()), lt.Serialize(Sample()));
     }
 
     [TestMethod]
     public void Nerdbank_BothWays()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.Nerdbank());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.Nerdbank());
       AssertSame(Sample(), Nerdbank.Deserialize<IopFieldModel, IopFieldShapes>(lt.Serialize(Sample())), "Nerdbank reads ours");
       AssertSame(Sample(), lt.Deserialize<IopFieldModel>(Nerdbank.Serialize<IopFieldModel, IopFieldShapes>(Sample())), "we read Nerdbank's");
     }
@@ -109,7 +109,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void Generic_DefaultFieldsOnly()
     {
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(LtMsgPackPresets.Generic());
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(LsMsgPackPresets.Generic());
       Assert.AreEqual("{\"Name\":\"n\"}", MessagePackSerializer.ConvertToJson(lt.Serialize(Sample())), "no attributed fields in the model");
     }
 

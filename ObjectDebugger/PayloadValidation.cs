@@ -213,7 +213,7 @@ namespace ObjectDebugger
         if (WithoutArraySuffix(names[t]).IndexOfAny(UnsafeNameChars) >= 0)
         {
           issues.Add(new ValidationItem(at, ValidationSeverity.SecurityVulnerability, 0, where, " names the type \"", typeName,
-            "\" with an assembly name or bracketed generic arguments. LsMsgPack and LtMsgPack never write such names and refuse to read them: Type.GetType would load the assembly it names, which runs its code (see docs/security.md). The data was made by another writer or by hand, possibly to attack a reader."));
+            "\" with an assembly name or bracketed generic arguments. LsMsgPack and LsMsgPack never write such names and refuse to read them: Type.GetType would load the assembly it names, which runs its code (see docs/security.md). The data was made by another writer or by hand, possibly to attack a reader."));
           return false;
         }
       }

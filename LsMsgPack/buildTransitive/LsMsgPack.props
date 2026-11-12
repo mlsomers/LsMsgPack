@@ -1,0 +1,18 @@
+<Project>
+  <!-- The MSBuild properties LsMsgPack's source generator reads (see docs/SourceGenerator.md), e.g.
+       <LsMsgPackGenerate>Serializable;DataContract;JsonSerializable</LsMsgPackGenerate> (or AllTypes),
+       <LsMsgPackContextName>MyApp.MsgPackContext</LsMsgPackContextName>, <LsMsgPackAutoRegister>false</LsMsgPackAutoRegister>,
+       <LsMsgPackNonPublicProperties>All</LsMsgPackNonPublicProperties> (None, Attributed: the default) -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="LsMsgPackGenerate" />
+    <CompilerVisibleProperty Include="LsMsgPackContextName" />
+    <CompilerVisibleProperty Include="LsMsgPackAutoRegister" />
+    <CompilerVisibleProperty Include="LsMsgPackNonPublicProperties" />
+    <CompilerVisibleProperty Include="RootNamespace" />
+    <!-- LSMP110 (types only known at runtime) is reported for projects that are trimmed or compiled ahead of time -->
+    <CompilerVisibleProperty Include="PublishTrimmed" />
+    <CompilerVisibleProperty Include="PublishAot" />
+    <CompilerVisibleProperty Include="IsAotCompatible" />
+    <CompilerVisibleProperty Include="IsTrimmable" />
+  </ItemGroup>
+</Project>

@@ -51,7 +51,7 @@ namespace LsMsgPack.Meta
           return;
         dictionary.Clear();
         foreach (DictionaryEntry entry in entries)
-          dictionary[entry.Key] = entry.Value; // the target may compare its keys otherwise (e.g. ignoring case): the last one wins, as LtMsgPack reads duplicate keys
+          dictionary[entry.Key] = entry.Value; // the target may compare its keys otherwise (e.g. ignoring case): the last one wins, as LsMsgPack reads duplicate keys
         return;
       }
 

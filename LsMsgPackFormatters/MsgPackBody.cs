@@ -1,6 +1,6 @@
 ﻿#if NET8_0_OR_GREATER
 using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
@@ -14,12 +14,12 @@ using System.Threading.Tasks;
 namespace LsMsgPackFormatters
 {
   /// <summary>
-  /// The body of a minimal API request, as a <c>[FromBody]</c> parameter of a controller with the formatters: read with LtMsgPack when the Content-Type is one of <see cref="MsgPackMediaTypes"/>,
-  /// as JSON for a JSON Content-Type (the JSON options of minimal APIs, <c>ConfigureHttpJsonOptions</c>). The serializer is the one <see cref="LsMsgPackFormatter.AddLsMsgPack(Microsoft.Extensions.DependencyInjection.IServiceCollection, Action{LtMsgPackHttpOptions})"/> registers.
+  /// The body of a minimal API request, as a <c>[FromBody]</c> parameter of a controller with the formatters: read with LsMsgPack when the Content-Type is one of <see cref="MsgPackMediaTypes"/>,
+  /// as JSON for a JSON Content-Type (the JSON options of minimal APIs, <c>ConfigureHttpJsonOptions</c>). The serializer is the one <see cref="LsMsgPackFormatter.AddLsMsgPack(Microsoft.Extensions.DependencyInjection.IServiceCollection, Action{LsMsgPackHttpOptions})"/> registers.
   /// <code>app.MapPost("/orders", (MsgPackBody&lt;Order&gt; order) =&gt; MsgPackResults.MsgPack(Save(order.Value)));</code>
   /// <para>An empty body (or nil, or JSON null) is no value: a <c>MsgPackBody&lt;T&gt;?</c> parameter (or one with a default value) is then null, any other one is answered with 400 by ASP.NET Core.
   /// A body that cannot be read throws a <see cref="BadHttpRequestException"/> with 400, another Content-Type one with 415 (the server answers with that status code).
-  /// With <see cref="LtMsgPackHttpOptions.ReportDifferences"/> the differences are in <see cref="ReadDifferencesExtensions.GetReadDifferences"/> and logged, as the input formatter does.</para>
+  /// With <see cref="LsMsgPackHttpOptions.ReportDifferences"/> the differences are in <see cref="ReadDifferencesExtensions.GetReadDifferences"/> and logged, as the input formatter does.</para>
   /// </summary>
   /// <typeparam name="T">The type the body is read into</typeparam>
   public sealed class MsgPackBody<T> : IBindableFromHttpContext<MsgPackBody<T>>, IEndpointParameterMetadataProvider
@@ -30,7 +30,7 @@ namespace LsMsgPackFormatters
     private static readonly string[] ContentTypes = MsgPackResult<T>.ContentTypes;
 
     /// <summary>
-    /// The logger of the differences (<see cref="LtMsgPackHttpOptions.ReportDifferences"/>).
+    /// The logger of the differences (<see cref="LsMsgPackHttpOptions.ReportDifferences"/>).
     /// </summary>
     private const string LoggerCategory = "LsMsgPackFormatters.MsgPackBody";
 
@@ -65,7 +65,7 @@ namespace LsMsgPackFormatters
       string contentType = request.ContentType;
       if (MsgPackMediaTypes.IsSupported(contentType))
       {
-        LtMsgPackHttpSerializer serializer = LsMsgPackFormatter.MinimalApiSerializer(context);
+        LsMsgPackHttpSerializer serializer = LsMsgPackFormatter.MinimalApiSerializer(context);
         return await MsgPackRequest.ReadAsync(context, (context, serializer), static (s, data) => data.Count == 0 ? null : Read(s.context, s.serializer, data));
       }
       if (request.HasJsonContentType())
@@ -74,7 +74,7 @@ namespace LsMsgPackFormatters
     }
 
     /// <returns>null for nil</returns>
-    private static MsgPackBody<T> Read(HttpContext context, LtMsgPackHttpSerializer serializer, ArraySegment<byte> data)
+    private static MsgPackBody<T> Read(HttpContext context, LsMsgPackHttpSerializer serializer, ArraySegment<byte> data)
     {
       object model;
       try

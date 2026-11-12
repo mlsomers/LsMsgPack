@@ -6,7 +6,7 @@ Reads the `application/x-lsmsgpack` responses of [LsMsgPack's ASP.NET formatters
 - polymorphic values get the properties of their actual class, and its name in `$type`;
 - the schema (the property names) is sent once, then the server refers to it;
 - optional generated models ([lsmsgpack-ts](https://github.com/mlsomers/LsMsgPack/blob/master/docs/TypeScriptModels.md)): instances of TypeScript classes with the values the .NET constructors set, typed request bodies, and the server's schemas held before the first request.
-- streams ([MsgPackStreamReader and MsgPackStreamWriter](https://github.com/mlsomers/LsMsgPack/blob/master/docs/TypeScriptClient.md#streams)): large tables read row by row as they arrive, arrays of unknown length, and the index of LtMsgPack's streams to go to a row directly (a `Blob`, a file or HTTP range requests).
+- streams ([MsgPackStreamReader and MsgPackStreamWriter](https://github.com/mlsomers/LsMsgPack/blob/master/docs/TypeScriptClient.md#streams)): large tables read row by row as they arrive, arrays of unknown length, and the index of LsMsgPack's streams to go to a row directly (a `Blob`, a file or HTTP range requests).
 
 No dependencies. Request bodies are sent as plain MsgPack (`application/msgpack`), with `$type` as the type id: polymorphic bodies work too.
 

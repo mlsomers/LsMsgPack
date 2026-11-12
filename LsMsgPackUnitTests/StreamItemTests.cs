@@ -1,8 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPackDebug;
 using LsMsgPack.Streaming;
-using LtMsgPack;
-using LtMsgPack.Streaming;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -200,9 +198,9 @@ namespace LsMsgPackUnitTests
       Assert.IsTrue(new MsgPackSettings { ReadStreams = true }.Clone().ReadStreams);
     }
 
-    private static LtMsgPackSerializer Plain()
+    private static LsMsgPackSerializer Plain()
     {
-      return new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
     }
 
     private static SwOrder Order(int n)
@@ -213,7 +211,7 @@ namespace LsMsgPackUnitTests
       return order;
     }
 
-    private static byte[] Write(Action<MsgPackStreamWriter> write, MsgPackStreamIndexOptions index, LtMsgPackSerializer serializer = null, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject)
+    private static byte[] Write(Action<MsgPackStreamWriter> write, MsgPackStreamIndexOptions index, LsMsgPackSerializer serializer = null, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject)
     {
       MemoryStream ms = new MemoryStream();
       using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer ?? Plain(), schemas, true, index))
@@ -257,7 +255,7 @@ namespace LsMsgPackUnitTests
       }
     }
 
-    private static List<MsgPackStreamIndex> LtIndexes(byte[] bytes)
+    private static List<MsgPackStreamIndex> LsIndexes(byte[] bytes)
     {
       using (MsgPackStreamReader reader = new MsgPackStreamReader(new MemoryStream(bytes), Plain()))
         return reader.ReadIndexes().ToList();
@@ -311,7 +309,7 @@ namespace LsMsgPackUnitTests
     public void TheIndexItsTailAndTheSidecars()
     {
       byte[] bytes = Write(Entries(5), new MsgPackStreamIndexOptions { CheckpointInterval = 2, PointInterval = 2, Observer = new SidecarObserver() });
-      List<MsgPackStreamIndex> expected = LtIndexes(bytes);
+      List<MsgPackStreamIndex> expected = LsIndexes(bytes);
       Assert.HasCount(3, expected);
 
       MpRoot root = MsgPackItem.UnpackMultiple(bytes, Streams());
@@ -358,7 +356,7 @@ namespace LsMsgPackUnitTests
     {
       byte[] bytes = Write(Entries(3), new MsgPackStreamIndexOptions { CheckpointInterval = 2 });
       byte[] moved = Enumerable.Repeat((byte)0xC0, 100).Concat(bytes).ToArray(); // nils before it
-      List<MsgPackStreamIndex> expected = LtIndexes(moved);
+      List<MsgPackStreamIndex> expected = LsIndexes(moved);
       Assert.AreEqual(100L, expected[0].Entries[0].Offset);
 
       List<MpStreamIndex> indexes = MsgPackItem.UnpackMultiple(moved, Streams()).OfType<MpStreamIndex>().ToList();
@@ -375,16 +373,16 @@ namespace LsMsgPackUnitTests
     public void ADamagedIndexDoesNotMatchItsCrc()
     {
       byte[] bytes = Write(Entries(2), new MsgPackStreamIndexOptions());
-      int writer = IndexOf(bytes, Encoding.ASCII.GetBytes("LtMsgPack"));
+      int writer = IndexOf(bytes, Encoding.ASCII.GetBytes("LsMsgPack"));
       Assert.IsGreaterThan(0, writer);
       bytes[writer] = (byte)'X'; // still a valid index, but not the one the tail describes
 
       MpStreamIndex index = MsgPackItem.UnpackMultiple(bytes, Streams()).OfType<MpStreamIndex>().Single();
       Assert.IsNotNull(index.Index);
-      StringAssert.StartsWith(index.Index.Writer, "XtMsgPack");
+      StringAssert.StartsWith(index.Index.Writer, "XsMsgPack");
       Assert.IsFalse(index.Tail.CrcMatches);
       StringAssert.Contains(index.ToString(), "does not match");
-      Assert.IsEmpty(LtIndexes(bytes)); // LtMsgPack does not use it
+      Assert.IsEmpty(LsIndexes(bytes)); // LsMsgPack does not use it
 #if KEEPTRACK
       MsgPackValidation.ValidationItem[] issues = MsgPackValidation.ValidateItem(index, 1000);
       Assert.IsTrue(issues.Any(i => i.Severity == MsgPackValidation.ValidationSeverity.Error && i.Message.Contains("does not match the CRC-32")), string.Join("; ", issues.Select(i => i.Message)));

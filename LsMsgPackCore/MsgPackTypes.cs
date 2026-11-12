@@ -5,7 +5,7 @@ using System.Reflection;
 namespace LsMsgPack
 {
   /// <summary>
-  /// The type names the data can use (type ids and the names of the indexed schema), shared by LsMsgPack and LtMsgPack (see docs/schema.md, polymorphic class-hierarchy support).
+  /// The type names the data can use (type ids and the names of the indexed schema), shared by LsMsgPack and LsMsgPack (see docs/schema.md, polymorphic class-hierarchy support).
   /// <para>The readers find the types reachable from the type they read (generic arguments, element types, base types, public properties) by themselves. Types that are not reachable,
   /// such as the implementations of an interface in another assembly or the classes of values declared as object, need their assembly registered here once (or allowed by an
   /// <see cref="TypeResolving.Types.AllowedTypesGuard"/>, which registers what it allows).</para>

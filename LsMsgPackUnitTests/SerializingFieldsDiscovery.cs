@@ -617,15 +617,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsSerializingFieldsDiscovery : SerializingFieldsDiscovery
+  public class DebugSerializingFieldsDiscovery : SerializingFieldsDiscovery
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtSerializingFieldsDiscovery : SerializingFieldsDiscovery
+  public class LsSerializingFieldsDiscovery : SerializingFieldsDiscovery
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

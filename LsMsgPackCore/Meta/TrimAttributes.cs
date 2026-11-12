@@ -1,5 +1,5 @@
 ﻿// The trim and AOT attributes for the .NET Standard builds, which do not have them. ILLink and ILC recognize them by name, so a trimmed app that picks a
-// .NET Standard build (e.g. .NET 6 or 7) gets the same warnings as one using the net8.0 build. Internal: LtMsgPack uses these (InternalsVisibleTo), it does not declare its own.
+// .NET Standard build (e.g. .NET 6 or 7) gets the same warnings as one using the net8.0 build. Internal: LsMsgPack uses these (InternalsVisibleTo), it does not declare its own.
 #if !NET5_0_OR_GREATER
 using System;
 

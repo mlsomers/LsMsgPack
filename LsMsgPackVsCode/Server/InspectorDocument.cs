@@ -109,7 +109,7 @@ namespace LsMsgPackInspector
         PreservePackages = true,
         ContinueProcessingOnBreakingError = settings.ContinueOnError,
         EndianAction = settings.Endian,
-        ReadStreams = true, // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
+        ReadStreams = true, // values of unknown length and the index of a stream, as LsMsgPack's MsgPackStreamWriter writes them
         TruncateValuesLargerThan = settings.LargeValueLimit
       };
 

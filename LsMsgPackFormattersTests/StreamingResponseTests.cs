@@ -2,9 +2,7 @@
 using LsMsgPackDebug;
 using LsMsgPack.Streaming;
 using LsMsgPackFormatters;
-using LtMsgPack;
-using LtMsgPack.Http;
-using LtMsgPack.Streaming;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -139,7 +137,7 @@ namespace LsMsgPackFormattersTests
       }));
     }
 
-    private static async Task<(IHost host, HttpClient client)> StartAsync(Action<LtMsgPackHttpOptions> options = null)
+    private static async Task<(IHost host, HttpClient client)> StartAsync(Action<LsMsgPackHttpOptions> options = null)
     {
       IHost host = await new HostBuilder()
         .ConfigureWebHost(web => web
@@ -173,14 +171,14 @@ namespace LsMsgPackFormattersTests
       return await response.Content.ReadAsByteArrayAsync();
     }
 
-    private static LtMsgPackSerializer LsReader => new LtMsgPackSerializer(LtMsgPackPresets.LsMsgPack());
+    private static LsMsgPackSerializer LsReader => new LsMsgPackSerializer(LsMsgPackPresets.LsMsgPack());
 
-    private static LtMsgPackSerializer PlainReader => new LtMsgPackSerializer(MsgPackMediaTypes.ToPlain(new LtMsgPackOptions()));
+    private static LsMsgPackSerializer PlainReader => new LsMsgPackSerializer(MsgPackMediaTypes.ToPlain(new LsMsgPackOptions()));
 
     /// <summary>
     /// Reads the stream of an IAsyncEnumerable&lt;Order&gt;: a head, then an array of unknown length.
     /// </summary>
-    private static List<Order> ReadOrders(byte[] body, LtMsgPackSerializer serializer)
+    private static List<Order> ReadOrders(byte[] body, LsMsgPackSerializer serializer)
     {
       List<Order> orders = new List<Order>();
       using (MsgPackStreamReader reader = new MsgPackStreamReader(new MemoryStream(body), serializer))
@@ -224,7 +222,7 @@ namespace LsMsgPackFormattersTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
         Assert.That(response.Content.Headers.ContentType.ToString(), Is.EqualTo("application/x-lsmsgpack; stream=unknown-length"));
         Assert.That(response.Headers.Vary, Does.Contain("Accept"));
-        Assert.That(response.Headers.GetValues(LtMsgPackHttpSerializer.SchemaHeader).Single(), Has.Length.EqualTo(32), "The schema of the head");
+        Assert.That(response.Headers.GetValues(LsMsgPackHttpSerializer.SchemaHeader).Single(), Has.Length.EqualTo(32), "The schema of the head");
         byte[] body = await response.Content.ReadAsByteArrayAsync();
 
         List<Order> orders = ReadOrders(body, LsReader);
@@ -300,18 +298,18 @@ namespace LsMsgPackFormattersTests
       using (host)
       {
         HttpResponseMessage list = await client.SendAsync(Get("/streaming/orders", MsgPackMediaTypes.XLsMsgPack));
-        string schemaId = list.Headers.GetValues(LtMsgPackHttpSerializer.SchemaHeader).Single();
+        string schemaId = list.Headers.GetValues(LsMsgPackHttpSerializer.SchemaHeader).Single();
 
         HttpRequestMessage request = Get("/streaming/orders-async", LsStream);
-        request.Headers.Add(LtMsgPackHttpSerializer.SchemasHeader, schemaId);
+        request.Headers.Add(LsMsgPackHttpSerializer.SchemasHeader, schemaId);
         HttpResponseMessage response = await client.SendAsync(request);
-        Assert.That(response.Headers.GetValues(LtMsgPackHttpSerializer.SchemaHeader).Single(), Is.EqualTo(schemaId), "The schema of List<Order>");
-        Assert.That(response.Headers.Vary, Does.Contain(LtMsgPackHttpSerializer.SchemasHeader).And.Contain("Accept"));
+        Assert.That(response.Headers.GetValues(LsMsgPackHttpSerializer.SchemaHeader).Single(), Is.EqualTo(schemaId), "The schema of List<Order>");
+        Assert.That(response.Headers.Vary, Does.Contain(LsMsgPackHttpSerializer.SchemasHeader).And.Contain("Accept"));
         byte[] body = await response.Content.ReadAsByteArrayAsync();
         Assert.That(body[0], Is.EqualTo(0xD8), "A reference");
         Assert.That(body.Skip(SchemaStore.ReferenceLength).Take(2), Is.EqualTo(new byte[] { 0xC1, 0x90 }));
 
-        LtMsgPackHttpSerializer clientSide = new LtMsgPackHttpSerializer(); // what a client learned from the first response
+        LsMsgPackHttpSerializer clientSide = new LsMsgPackHttpSerializer(); // what a client learned from the first response
         byte[] listBody = await list.Content.ReadAsByteArrayAsync();
         Assert.That(clientSide.LearnSchema(new Uri("http://localhost/streaming/orders"), schemaId, listBody, 0, listBody.Length, MsgPackMediaTypes.XLsMsgPack), Is.True);
         Assert.That(ReadOrders(body, clientSide.For(MsgPackMediaTypes.XLsMsgPack)).Select(o => o.Id), Is.EqualTo(new[] { 1, 2, 3 }));
@@ -397,12 +395,12 @@ namespace LsMsgPackFormattersTests
         Assert.That(response.Content.Headers.ContentType.ToString(), Is.EqualTo(mediaType + "; stream=unknown-length"));
         byte[] body = await response.Content.ReadAsByteArrayAsync();
 
-        LtMsgPackSerializer serializer = MsgPackMediaTypes.IsLsMsgPack(mediaType) ? LsReader : PlainReader;
+        LsMsgPackSerializer serializer = MsgPackMediaTypes.IsLsMsgPack(mediaType) ? LsReader : PlainReader;
         if (MsgPackMediaTypes.IsLsMsgPack(mediaType))
         {
-          LtMsgPackOptions options = LtMsgPackPresets.LsMsgPack();
+          LsMsgPackOptions options = LsMsgPackPresets.LsMsgPack();
           options.SchemaStore = new SchemaStore(); // PerStream: the reader registers the inline schemas for the references after them
-          serializer = new LtMsgPackSerializer(options);
+          serializer = new LsMsgPackSerializer(options);
         }
         using (MsgPackStreamReader reader = new MsgPackStreamReader(new MemoryStream(body), serializer))
         {

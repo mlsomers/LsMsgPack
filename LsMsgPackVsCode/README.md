@@ -46,7 +46,7 @@ The agent asks where the program is paused (`msgpack_debug_status`), which varia
 
 ## Streams
 
-Streams written by LtMsgPack's `MsgPackStreamWriter` (or the TypeScript client) are shown as such: arrays, maps, strings and bin of unknown length (the escape sequences `C1 90` ... `C1 C0` in red in the hex view, the chunks of a string in the tree), the index of the stream with its entries and fields (**idx**), its tail (**tail**, the CRC-32 is checked) and sidecars. In the objects pane the payloads are named after their entries.
+Streams written by LsMsgPack's `MsgPackStreamWriter` (or the TypeScript client) are shown as such: arrays, maps, strings and bin of unknown length (the escape sequences `C1 90` ... `C1 C0` in red in the hex view, the chunks of a string in the tree), the index of the stream with its entries and fields (**idx**), its tail (**tail**, the CRC-32 is checked) and sidecars. In the objects pane the payloads are named after their entries.
 
 ## Files and text
 

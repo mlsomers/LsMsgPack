@@ -347,7 +347,7 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// MessagePack-CSharp's bin of a big integer (<c>LtMsgPackOptions.BigIntegerFormat.Binary</c>): little-endian two's complement, BigInteger.ToByteArray() or the 16 bytes of an Int128 or UInt128.
+    /// MessagePack-CSharp's bin of a big integer (<c>LsMsgPackOptions.BigIntegerFormat.Binary</c>): little-endian two's complement, BigInteger.ToByteArray() or the 16 bytes of an Int128 or UInt128.
     /// </summary>
     internal static byte[] BigIntegerBinary(object value)
     {

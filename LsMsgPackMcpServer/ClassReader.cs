@@ -463,7 +463,7 @@ namespace LsMsgPackMcp
     {
       string name = assembly.GetName().Name ?? string.Empty;
       return name.StartsWith("System", StringComparison.Ordinal) || name.StartsWith("Microsoft", StringComparison.Ordinal) || name == "netstandard" || name == "mscorlib"
-        || name.StartsWith("LsMsgPack", StringComparison.Ordinal) || name == "LtMsgPack";
+        || name.StartsWith("LsMsgPack", StringComparison.Ordinal);
     }
 
     #endregion

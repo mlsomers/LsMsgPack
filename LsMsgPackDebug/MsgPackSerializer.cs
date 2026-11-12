@@ -15,7 +15,7 @@ namespace LsMsgPackDebug
   public static partial class MsgPackSerializer
   {
     /// <summary>
-    /// Makes the types of the assembly known by their names, for type ids the reader cannot find by itself (the same as <see cref="MsgPackTypes.CacheAssemblyTypes(Assembly)"/>, shared with LtMsgPack).
+    /// Makes the types of the assembly known by their names, for type ids the reader cannot find by itself (the same as <see cref="MsgPackTypes.CacheAssemblyTypes(Assembly)"/>, shared with LsMsgPack).
     /// </summary>
     public static void CacheAssemblyTypes(Assembly assembly)
     {

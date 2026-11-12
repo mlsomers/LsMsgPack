@@ -25,7 +25,7 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// A <c>Func&lt;OwnerType, bool&gt;</c> calling the method, for a serializer that calls it typed (LtMsgPack's ShouldSerialize filter modes); null with <see cref="OwnerType"/>.
+    /// A <c>Func&lt;OwnerType, bool&gt;</c> calling the method, for a serializer that calls it typed (LsMsgPack's ShouldSerialize filter modes); null with <see cref="OwnerType"/>.
     /// </summary>
     internal virtual Delegate Typed
     {

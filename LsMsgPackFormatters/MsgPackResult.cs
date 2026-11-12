@@ -1,7 +1,7 @@
 ﻿#if NET8_0_OR_GREATER
 using LsMsgPack;
-using LtMsgPack.Http;
-using LtMsgPack.Streaming;
+using LsMsgPack.Http;
+using LsMsgPack.Streaming;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
@@ -17,7 +17,7 @@ namespace LsMsgPackFormatters
   /// <summary>
   /// The result of a minimal API endpoint, as <c>Ok(value)</c> of a controller with the formatters: MsgPack when the Accept header asks for it (<see cref="MsgPackMediaTypes"/>), JSON otherwise
   /// (the JSON options of minimal APIs, <c>ConfigureHttpJsonOptions</c>). Create it with <see cref="MsgPackResults.MsgPack{T}(T, int?)"/> or <c>Results.Extensions.MsgPack(value)</c>;
-  /// the serializer is the one <see cref="LsMsgPackFormatter.AddLsMsgPack(Microsoft.Extensions.DependencyInjection.IServiceCollection, Action{LtMsgPackHttpOptions})"/> registers.
+  /// the serializer is the one <see cref="LsMsgPackFormatter.AddLsMsgPack(Microsoft.Extensions.DependencyInjection.IServiceCollection, Action{LsMsgPackHttpOptions})"/> registers.
   /// <para>The response varies with the Accept header (<c>Vary: Accept</c>), and for application/x-lsmsgpack with the schemas the client holds, as the output formatter's.</para>
   /// </summary>
   /// <typeparam name="T">The declared type: with application/x-lsmsgpack a value of another class gets a type id, as for the declared result type of an action (object: the value's class)</typeparam>
@@ -53,7 +53,7 @@ namespace LsMsgPackFormatters
     {
       if (httpContext is null)
         throw new ArgumentNullException(nameof(httpContext));
-      LtMsgPackHttpSerializer serializer = LsMsgPackFormatter.MinimalApiSerializer(httpContext);
+      LsMsgPackHttpSerializer serializer = LsMsgPackFormatter.MinimalApiSerializer(httpContext);
       HttpResponse response = httpContext.Response;
       if (StatusCode.HasValue)
         response.StatusCode = StatusCode.Value;

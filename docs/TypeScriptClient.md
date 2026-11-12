@@ -129,7 +129,7 @@ const api = new LsMsgPackClient({ baseUrl, store });
 
 ## Streams
 
-`MsgPackStreamReader` and `MsgPackStreamWriter` read and write the streams of LtMsgPack's stream writer and reader (see [Streaming.md](Streaming.md)): values one after another, arrays, maps, str and bin of unknown length, a table as one schema (a head) followed by its rows, and an index at the end of the stream. Use them for data too large to hold at once: the rows are read as they arrive.
+`MsgPackStreamReader` and `MsgPackStreamWriter` read and write the streams of LsMsgPack's stream writer and reader (see [Streaming.md](Streaming.md)): values one after another, arrays, maps, str and bin of unknown length, a table as one schema (a head) followed by its rows, and an index at the end of the stream. Use them for data too large to hold at once: the rows are read as they arrive.
 
 ```ts
 import { LsMsgPackClient } from '@lsmsgpack/client';
@@ -189,7 +189,7 @@ Not supported: writing heads or the indexed schema, a byte order other than the 
 
 ## The server
 
-Nothing to change: the [ASP.NET Core, Web API and MVC 5 formatters](WebFormatters.md) support it (`LtMsgPackHttpOptions.DescribeSchemas`, `CompleteSchemas` and, for camelCase request bodies, `PropertyNameCaseInsensitive`, on by default).
+Nothing to change: the [ASP.NET Core, Web API and MVC 5 formatters](WebFormatters.md) support it (`LsMsgPackHttpOptions.DescribeSchemas`, `CompleteSchemas` and, for camelCase request bodies, `PropertyNameCaseInsensitive`, on by default).
 
 **Cross-origin requests** (the page is not served by the API's origin) need CORS to allow the request header and expose the response header:
 
@@ -275,7 +275,7 @@ The client keeps an inline schema only when its hash equals the `MsgPack-Schema`
 
 One invoice: JSON 4022 bytes (1048 gzipped), schema reference 2111 bytes (810 gzipped, -23%). The described schema is about 300 bytes larger than the plain one and is sent once per client and schema (with the generated schema set: never).
 
-Writing the same objects as a request body: `JSON.stringify` 1230-1250 µs (1580 µs with the UTF-8 encoding), this client 1100-1190 µs, with the models 1110-1230 µs, @msgpack/msgpack 2400-2450 µs. In the browser both formats cost about the same; the server reads MsgPack about 3.5x faster than System.Text.Json reads JSON (LtMsgPack, names).
+Writing the same objects as a request body: `JSON.stringify` 1230-1250 µs (1580 µs with the UTF-8 encoding), this client 1100-1190 µs, with the models 1110-1230 µs, @msgpack/msgpack 2400-2450 µs. In the browser both formats cost about the same; the server reads MsgPack about 3.5x faster than System.Text.Json reads JSON (LsMsgPack, names).
 
 ## Generic classes
 

@@ -1,0 +1,39 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\Packaging.props" />
+
+  <PropertyGroup>
+    <!-- The same targets as LsMsgPack: 2.1 and net8.0 for IAsyncEnumerable, the trim and AOT analyzers -->
+    <TargetFrameworks>netstandard2.0;netstandard2.1;net8.0</TargetFrameworks>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RootNamespace>LsMsgPack.Data</RootNamespace>
+    <PackageId>LsMsgPack.Data</PackageId>
+    <PackageTags>$(PackageTags);ado.net;datareader;database;dump;backup</PackageTags>
+    <Description>Rows of an ADO.NET data reader as MsgPack without a class in between (result sets and table dumps as LsMsgPack streams, with an index for files), dumps read back as a DbDataReader (e.g. for SqlBulkCopy), and rows into objects.</Description>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)'=='net8.0'">
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='ReleaseKeepTrack'">
+    <Optimize>True</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PrivateAssets none: the analyzers of LsMsgPack.Core and LsMsgPack's source generator reach the projects that reference this package -->
+    <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj" PrivateAssets="none" />
+  </ItemGroup>
+
+  <!-- This package uses the internals of LsMsgPack and LsMsgPack.Core (InternalsVisibleTo), which may change in any release: it depends on exactly the version it was built with ([x.y.z], not >= x.y.z) -->
+  <Target Name="ExactProjectReferenceVersions" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ExactProjectReferenceVersions Include="@(_ProjectReferencesWithVersions)" ProjectVersion="[%(_ProjectReferencesWithVersions.ProjectVersion)]" />
+      <_ProjectReferencesWithVersions Remove="@(_ProjectReferencesWithVersions)" />
+      <_ProjectReferencesWithVersions Include="@(_ExactProjectReferenceVersions)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

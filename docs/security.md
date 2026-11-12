@@ -1,6 +1,6 @@
 ﻿# Security: type injection
 
-LsMsgPackDebug and LtMsgPack support polymorphic object models out of the box: when a value's type differs from its declared type, a type id is written, and when reading, that type id picks the class to create (see [Schema, type ids and polymorphic class hierarchies](schema.md)). This document explains what that means when you read data from a source you don't trust, what the serializers do to protect you, and what you should do yourself.
+LsMsgPackDebug and LsMsgPack support polymorphic object models out of the box: when a value's type differs from its declared type, a type id is written, and when reading, that type id picks the class to create (see [Schema, type ids and polymorphic class hierarchies](schema.md)). This document explains what that means when you read data from a source you don't trust, what the serializers do to protect you, and what you should do yourself.
 
 - [The threat](#the-threat)
 - [What the schema hashes do and don't protect](#what-the-schema-hashes-do-and-dont-protect)
@@ -65,7 +65,7 @@ settings.TypeGuard = new AllowedTypesGuard()
   .Allow(typeof(PluginShape));       // and single types from elsewhere
 ```
 
-`MsgPackOptions.TypeGuard` (`IMsgPackTypeGuard`, null by default) decides which types the data may pick. It's consulted after the type resolvers and the indexed schema have resolved the type, and before anything creates it. If the guard refuses the type, deserializing throws a `MsgPackException` that names the type and the property. It's part of the options, so it works the same in LsMsgPackDebug (`MsgPackSettings`), LtMsgPack (`LtMsgPackOptions`) and the web formatters. Use `MsgPackOptions.Default_TypeGuard` to set it for all settings created afterwards.
+`MsgPackOptions.TypeGuard` (`IMsgPackTypeGuard`, null by default) decides which types the data may pick. It's consulted after the type resolvers and the indexed schema have resolved the type, and before anything creates it. If the guard refuses the type, deserializing throws a `MsgPackException` that names the type and the property. It's part of the options, so it works the same in LsMsgPackDebug (`MsgPackSettings`), LsMsgPack (`LsMsgPackOptions`) and the web formatters. Use `MsgPackOptions.Default_TypeGuard` to set it for all settings created afterwards.
 
 The guard is only asked when the data picks a different type than the declared one. Values of their declared type are never checked, even with `AddTypeIdOption.Always`.
 
@@ -113,7 +113,7 @@ The web formatters read request bodies, so they read data from clients. Set the 
 
 ```csharp
 AllowedTypesGuard guard = new AllowedTypesGuard().AllowAssemblyOf(typeof(Invoice));
-LtMsgPackHttpOptions options = new LtMsgPackHttpOptions();
+LsMsgPackHttpOptions options = new LsMsgPackHttpOptions();
 options.XLsMsgPack.TypeGuard = guard;
 options.Plain.TypeGuard = guard;
 ```

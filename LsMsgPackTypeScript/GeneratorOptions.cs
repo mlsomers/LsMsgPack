@@ -1,4 +1,4 @@
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System.Reflection;
 using System.Text.Json;
 
@@ -49,6 +49,6 @@ namespace LsMsgPackTypeScript
     /// <summary>
     /// The options of the server's formatters (the static filters, property order and type names decide the models and the schemas).
     /// </summary>
-    internal LtMsgPackHttpOptions Http = new LtMsgPackHttpOptions();
+    internal LsMsgPackHttpOptions Http = new LsMsgPackHttpOptions();
   }
 }

@@ -1,5 +1,5 @@
 ﻿using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Http;
 using System;
 #if NET8_0_OR_GREATER
@@ -10,7 +10,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using LtMsgPack.Streaming;
+using LsMsgPack.Streaming;
 #endif
 using System.Threading.Tasks;
 
@@ -23,13 +23,13 @@ namespace LsMsgPackFormatters
   {
     /// <param name="mediaType">The Content-Type of the response (set by the caller), one of <see cref="MsgPackMediaTypes.All"/></param>
     /// <param name="varyAccept">The caller chose the format by the Accept header: <c>Vary: Accept</c> also without version 2 of the schema</param>
-    internal static async Task WriteAsync(HttpContext context, LtMsgPackHttpSerializer serializer, object value, Type declaredType, string mediaType, bool varyAccept)
+    internal static async Task WriteAsync(HttpContext context, LsMsgPackHttpSerializer serializer, object value, Type declaredType, string mediaType, bool varyAccept)
     {
       bool lsMsgPack = MsgPackMediaTypes.IsLsMsgPack(mediaType);
       bool negotiated = serializer.NegotiatesSchemas && lsMsgPack;
       bool describes = serializer.DescribesSchemas && lsMsgPack;
       HttpRequest request = context.Request;
-      string clientSchemas = negotiated ? request.Headers[LtMsgPackHttpSerializer.SchemasHeader].ToString() : null;
+      string clientSchemas = negotiated ? request.Headers[LsMsgPackHttpSerializer.SchemasHeader].ToString() : null;
       bool described = describes && MsgPackMediaTypes.AcceptsDescribedSchema(request.Headers["Accept"].ToString());
 #if NET8_0_OR_GREATER
       Type element = AsyncElementType(value, declaredType);
@@ -58,7 +58,7 @@ namespace LsMsgPackFormatters
       if (negotiated || accept)
         response.Headers.Append("Vary", Vary(negotiated, accept));
       if (negotiated && !(payload.SchemaId is null))
-        response.Headers[LtMsgPackHttpSerializer.SchemaHeader] = payload.SchemaId;
+        response.Headers[LsMsgPackHttpSerializer.SchemaHeader] = payload.SchemaId;
       response.ContentLength = payload.Length;
 #if NETCOREAPP3_0_OR_GREATER
       System.IO.Pipelines.PipeWriter writer = response.BodyWriter; // copied into the buffers of the response, one flush
@@ -94,14 +94,14 @@ namespace LsMsgPackFormatters
     /// <para>The head and items go out when the next item is not there yet (after the first one: an exception before it still gets an error response), and every <see cref="MsgPackStreamWriter.FlushThreshold"/> bytes.
     /// An exception after that aborts the response: the array has no end, so the client finds the data cut off.</para>
     /// </summary>
-    private static async Task StreamAsync(HttpContext context, LtMsgPackHttpSerializer serializer, object value, AsyncBuffer buffer, string mediaType, string clientSchemas, bool described, bool negotiated)
+    private static async Task StreamAsync(HttpContext context, LsMsgPackHttpSerializer serializer, object value, AsyncBuffer buffer, string mediaType, string clientSchemas, bool described, bool negotiated)
     {
       MsgPackStreamHead head = serializer.PrepareStreamHead(buffer.ListType, mediaType, clientSchemas, described);
       HttpResponse response = context.Response;
       response.ContentType = string.Concat(mediaType, "; ", MsgPackMediaTypes.StreamParameter);
       response.Headers.Append("Vary", Vary(negotiated, true));
       if (!(head.SchemaId is null))
-        response.Headers[LtMsgPackHttpSerializer.SchemaHeader] = head.SchemaId;
+        response.Headers[LsMsgPackHttpSerializer.SchemaHeader] = head.SchemaId;
       response.ContentLength = null;
 
       CancellationToken cancellationToken = context.RequestAborted;
@@ -200,13 +200,13 @@ namespace LsMsgPackFormatters
     }
 #endif
 
-    private const string VarySchemasAndAccept = LtMsgPackHttpSerializer.SchemasHeader + ", Accept";
+    private const string VarySchemasAndAccept = LsMsgPackHttpSerializer.SchemasHeader + ", Accept";
 
     private static string Vary(bool negotiated, bool accept)
     {
       if (!negotiated)
         return "Accept";
-      return accept ? VarySchemasAndAccept : LtMsgPackHttpSerializer.SchemasHeader;
+      return accept ? VarySchemasAndAccept : LsMsgPackHttpSerializer.SchemasHeader;
     }
   }
 }

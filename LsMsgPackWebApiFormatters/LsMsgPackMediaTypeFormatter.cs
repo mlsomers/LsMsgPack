@@ -1,5 +1,5 @@
 ﻿using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
@@ -13,35 +13,35 @@ using System.Threading.Tasks;
 namespace LsMsgPackWebApiFormatters
 {
   /// <summary>
-  /// Reads and writes application/msgpack, application/x-msgpack (plain MsgPack) and application/x-lsmsgpack with LtMsgPack (see <see cref="LtMsgPackHttpOptions"/>).
+  /// Reads and writes application/msgpack, application/x-msgpack (plain MsgPack) and application/x-lsmsgpack with LsMsgPack (see <see cref="LsMsgPackHttpOptions"/>).
   /// <para>Server side (ASP.NET Web API 2): <c>config.Formatters.Add(new LsMsgPackMediaTypeFormatter());</c></para>
   /// <para>Client side (HttpClient): <c>new ObjectContent&lt;T&gt;(value, formatter, MsgPackMediaTypes.XLsMsgPack)</c> and <c>response.Content.ReadAsAsync&lt;T&gt;(new[] { formatter })</c>.
   /// Create the HttpClient with <c>new HttpClient(formatter.CreateHandler())</c> so application/x-lsmsgpack responses refer to the schemas the client already received instead of repeating them.</para>
-  /// <para>Trimmed and NativeAOT apps: <c>new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options))</c>, with the context of LtMsgPack's source generator.</para>
+  /// <para>Trimmed and NativeAOT apps: <c>new LsMsgPackMediaTypeFormatter(new LsMsgPackHttpSerializer(AppMsgPackContext.Default, options))</c>, with the context of LsMsgPack's source generator.</para>
   /// </summary>
   public class LsMsgPackMediaTypeFormatter : MediaTypeFormatter
   {
-    private readonly LtMsgPackHttpSerializer Serializer;
+    private readonly LsMsgPackHttpSerializer Serializer;
 
     /// <summary>
-    /// Server side, per request: the request header <see cref="LtMsgPackHttpSerializer.SchemasHeader"/> (the schemas the client holds, may be null). Null for the shared instance and on the client.
+    /// Server side, per request: the request header <see cref="LsMsgPackHttpSerializer.SchemasHeader"/> (the schemas the client holds, may be null). Null for the shared instance and on the client.
     /// </summary>
     private readonly RequestSchemas ServerRequest;
 
-    private const string RequiresUnreferencedCodeMessage = "Without generated code the serializer reads the properties and constructors of the types by reflection, trimming may remove them. Pass an LtMsgPackHttpSerializer created with the context of LtMsgPack's source generator.";
-    private const string RequiresDynamicCodeMessage = "Without generated code the serializer instantiates its generic code for the types at runtime, NativeAOT may not have it. Pass an LtMsgPackHttpSerializer created with the context of LtMsgPack's source generator.";
+    private const string RequiresUnreferencedCodeMessage = "Without generated code the serializer reads the properties and constructors of the types by reflection, trimming may remove them. Pass an LsMsgPackHttpSerializer created with the context of LsMsgPack's source generator.";
+    private const string RequiresDynamicCodeMessage = "Without generated code the serializer instantiates its generic code for the types at runtime, NativeAOT may not have it. Pass an LsMsgPackHttpSerializer created with the context of LsMsgPack's source generator.";
 
     [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(RequiresDynamicCodeMessage)]
-    public LsMsgPackMediaTypeFormatter() : this(new LtMsgPackHttpOptions()) { }
+    public LsMsgPackMediaTypeFormatter() : this(new LsMsgPackHttpOptions()) { }
 
     /// <param name="options">Read once, later changes have no effect.</param>
     [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(RequiresDynamicCodeMessage)]
-    public LsMsgPackMediaTypeFormatter(LtMsgPackHttpOptions options) : this(new LtMsgPackHttpSerializer(options ?? new LtMsgPackHttpOptions())) { }
+    public LsMsgPackMediaTypeFormatter(LsMsgPackHttpOptions options) : this(new LsMsgPackHttpSerializer(options ?? new LsMsgPackHttpOptions())) { }
 
-    /// <param name="serializer">E.g. <c>new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options)</c> (with the code of LtMsgPack's source generator)</param>
-    public LsMsgPackMediaTypeFormatter(LtMsgPackHttpSerializer serializer)
+    /// <param name="serializer">E.g. <c>new LsMsgPackHttpSerializer(AppMsgPackContext.Default, options)</c> (with the code of LsMsgPack's source generator)</param>
+    public LsMsgPackMediaTypeFormatter(LsMsgPackHttpSerializer serializer)
     {
       Serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
       for (int t = 0; t < MsgPackMediaTypes.All.Count; t++) // the first one is the default
@@ -57,7 +57,7 @@ namespace LsMsgPackWebApiFormatters
     /// <summary>
     /// The serializer shared by this formatter and its handler (<see cref="CreateHandler"/>).
     /// </summary>
-    public LtMsgPackHttpSerializer HttpSerializer
+    public LsMsgPackHttpSerializer HttpSerializer
     {
       get { return Serializer; }
     }
@@ -101,7 +101,7 @@ namespace LsMsgPackWebApiFormatters
     {
       if (request is null || !(Serializer.NegotiatesSchemas || Serializer.DescribesSchemas) || !MsgPackMediaTypes.IsLsMsgPack(mediaType?.MediaType))
         return this;
-      string schemas = Serializer.NegotiatesSchemas && request.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemasHeader, out System.Collections.Generic.IEnumerable<string> values) ? string.Join(",", values) : null;
+      string schemas = Serializer.NegotiatesSchemas && request.Headers.TryGetValues(LsMsgPackHttpSerializer.SchemasHeader, out System.Collections.Generic.IEnumerable<string> values) ? string.Join(",", values) : null;
       bool described = Serializer.DescribesSchemas && MsgPackMediaTypes.AcceptsDescribedSchema(request.Headers.Accept.ToString());
       return new LsMsgPackMediaTypeFormatter(this, new RequestSchemas(schemas, described));
     }
@@ -163,7 +163,7 @@ namespace LsMsgPackWebApiFormatters
     /// <returns>False (an exception filter)</returns>
     private static bool ReportFailure(HttpContent content, Exception ex)
     {
-      ReadDifferences differences = LtMsgPackHttpSerializer.DifferencesOf(ex);
+      ReadDifferences differences = LsMsgPackHttpSerializer.DifferencesOf(ex);
       if (differences != null)
         ReadDifferencesExtensions.Set(content, differences);
       return false;
@@ -184,7 +184,7 @@ namespace LsMsgPackWebApiFormatters
       {
         // Web API buffers ObjectContent before sending the headers, so they can still be set. A formatter cannot set response headers (Vary),
         // so a response that only this client can read expires at once, for caches (either version of the schema is read by any client: the .NET readers take both).
-        content.Headers.TryAddWithoutValidation(LtMsgPackHttpSerializer.SchemaHeader, payload.SchemaId);
+        content.Headers.TryAddWithoutValidation(LsMsgPackHttpSerializer.SchemaHeader, payload.SchemaId);
         if (payload.IsReference)
           content.Headers.Expires = new DateTimeOffset(1970, 1, 1, 0, 0, 0, TimeSpan.Zero);
       }

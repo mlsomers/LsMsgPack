@@ -18,7 +18,7 @@ namespace LsMsgPackDebug
     internal const string ContentKey = MsgPackOptions.ContentKey;
 
     /// <summary>
-    /// Converts an unpacked value (<see cref="MsgPackItem.UnpackedValue"/>) into the type it will be assigned to (see <see cref="ValueConverter"/>, shared with LtMsgPack).
+    /// Converts an unpacked value (<see cref="MsgPackItem.UnpackedValue"/>) into the type it will be assigned to (see <see cref="ValueConverter"/>, shared with LsMsgPack).
     /// </summary>
     private static object ConvertDeserializeValue(object val, Type assignType, MsgPackSettings settings, FullPropertyInfo prop)
     {

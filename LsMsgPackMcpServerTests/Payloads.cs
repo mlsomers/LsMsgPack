@@ -1,8 +1,6 @@
 using LsMsgPack;
 using LsMsgPackDebug;
 using LsMsgPack.Streaming;
-using LtMsgPack;
-using LtMsgPack.Streaming;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -100,11 +98,11 @@ namespace LsMsgPackMcpServerTests
     }
 
     /// <summary>
-    /// A stream as LtMsgPack's MsgPackStreamWriter writes it: three invoices (each an entry, the schema inline once, then referenced), a table (a head and an array of unknown length of lines), and the index.
+    /// A stream as LsMsgPack's MsgPackStreamWriter writes it: three invoices (each an entry, the schema inline once, then referenced), a table (a head and an array of unknown length of lines), and the index.
     /// </summary>
     public static byte[] Stream()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { WriteSchemaReference = true, SchemaStore = new SchemaStore() });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = new SchemaStore() });
       MemoryStream ms = new MemoryStream();
       using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer, MsgPackStreamSchemas.PerStream, true, new MsgPackStreamIndexOptions { PointInterval = 2 }))
       {

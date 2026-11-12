@@ -8,12 +8,12 @@ Data your .NET app stores for a short while and can always recreate: a distribut
 
 | | |
 |---|---|
-| Package | `LtMsgPack` (plus the source generator in it, for speed) |
-| Serializer | `LtMsgPackSerializer`: the defaults, or without the schema for the smallest entries |
+| Package | `LsMsgPack` (plus the source generator in it, for speed) |
+| Serializer | `LsMsgPackSerializer`: the defaults, or without the schema for the smallest entries |
 | Keep in mind | put a version of your classes in the cache key |
 
 ```
-dotnet add package LtMsgPack
+dotnet add package LsMsgPack
 ```
 
 ## Two choices
@@ -21,9 +21,9 @@ dotnet add package LtMsgPack
 ### A. The defaults (safe, recommended to start with)
 
 ```csharp
-using LtMsgPack;
+using LsMsgPack;
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(); // keep one for the whole app
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(); // keep one for the whole app
 ```
 
 Every entry carries a small schema with the property names of its classes, so a new version of your app reads entries an old version wrote (and the other way around, during a deploy where old and new servers share the cache). Nothing to think about.
@@ -31,7 +31,7 @@ Every entry carries a small schema with the property names of its classes, so a 
 ### B. Without the schema (smallest and fastest)
 
 ```csharp
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions
 {
   UseInexedSchema = false // objects are only their values, in the order of their properties
 });
@@ -55,9 +55,9 @@ public class OrderCache
   private static readonly string Version = typeof(Order).Assembly.ManifestModule.ModuleVersionId.ToString("N").Substring(0, 8);
 
   private readonly IDistributedCache _cache;
-  private readonly LtMsgPackSerializer _serializer;
+  private readonly LsMsgPackSerializer _serializer;
 
-  public OrderCache(IDistributedCache cache, LtMsgPackSerializer serializer)
+  public OrderCache(IDistributedCache cache, LsMsgPackSerializer serializer)
   {
     _cache = cache;
     _serializer = serializer;
@@ -77,18 +77,18 @@ public class OrderCache
 
 A hand-written version number (`"order:v7:..."`) works too, if you remember to raise it. With choice A the version is optional: old entries are still read correctly, the version only stops you from using stale *content* after a change in how it's computed.
 
-Register the serializer once: `builder.Services.AddSingleton(new LtMsgPackSerializer());`.
+Register the serializer once: `builder.Services.AddSingleton(new LsMsgPackSerializer());`.
 
 ## Optional: the source generator
 
-LtMsgPack contains a source generator that writes the serialization code of your classes at compile time. With a JIT a cache doesn't need it for speed: LtMsgPack compiles the same writers and readers at runtime once a class has been written or read 1000 times. The generator is for NativeAOT, trimming and the first objects of each class.
+LsMsgPack contains a source generator that writes the serialization code of your classes at compile time. With a JIT a cache doesn't need it for speed: LsMsgPack compiles the same writers and readers at runtime once a class has been written or read 1000 times. The generator is for NativeAOT, trimming and the first objects of each class.
 
 ```csharp
-[LtMsgPackSerializable(typeof(Order))]
-[LtMsgPackSerializable(typeof(UserProfile))]
-public partial class CacheMsgPackContext : LtMsgPackContext { }
+[LsMsgPackSerializable(typeof(Order))]
+[LsMsgPackSerializable(typeof(UserProfile))]
+public partial class CacheMsgPackContext : LsMsgPackContext { }
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(CacheMsgPackContext.Default, new LtMsgPackOptions { UseInexedSchema = false });
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(CacheMsgPackContext.Default, new LsMsgPackOptions { UseInexedSchema = false });
 ```
 
 The bytes are the same with or without it. See [Add-ons](Extras.md#trimmed-and-aot-apps-and-more-speed).

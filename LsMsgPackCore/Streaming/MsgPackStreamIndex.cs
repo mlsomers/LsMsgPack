@@ -61,7 +61,7 @@ namespace LsMsgPack.Streaming
     public MsgPackStreamIndexStatus Status { get; set; }
 
     /// <summary>
-    /// What wrote the stream, e.g. "LtMsgPack 2026.10.31.1" (as Parquet's created_by), to tell the output of a faulty version apart. Null: not written.
+    /// What wrote the stream, e.g. "LsMsgPack 2026.10.31.1" (as Parquet's created_by), to tell the output of a faulty version apart. Null: not written.
     /// </summary>
     public string Writer { get; set; }
 

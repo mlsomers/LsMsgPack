@@ -295,7 +295,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// Custom property id resolvers: LtMsgPack reads the objects as LsMsgPack does (LsMsgPack.Core), which collects the differences too.
+    /// Custom property id resolvers: LsMsgPack reads the objects as LsMsgPack does (LsMsgPack.Core), which collects the differences too.
     /// </summary>
     [TestMethod]
     [DataRow("names")]
@@ -665,15 +665,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsReportingDifferencesTests : ReportingDifferencesTests
+  public class DebugReportingDifferencesTests : ReportingDifferencesTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtReportingDifferencesTests : ReportingDifferencesTests
+  public class LsReportingDifferencesTests : ReportingDifferencesTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]
@@ -707,9 +707,9 @@ namespace LsMsgPackUnitTests
 
     private static void Compare<T>(byte[] bytes, MsgPackSettings settings)
     {
-      Serializers.Ls.Deserialize<T>(bytes, settings, out ReadDifferences ls);
-      Serializers.Lt.Deserialize<T>(bytes, settings, out ReadDifferences lt);
-      CollectionAssert.AreEqual(Normalized(ls), Normalized(lt), $"LsMsgPack:\r\n{ls}\r\nLtMsgPack:\r\n{lt}");
+      Serializers.Debug.Deserialize<T>(bytes, settings, out ReadDifferences ls);
+      Serializers.Ls.Deserialize<T>(bytes, settings, out ReadDifferences lt);
+      CollectionAssert.AreEqual(Normalized(ls), Normalized(lt), $"LsMsgPack:\r\n{ls}\r\nLsMsgPack:\r\n{lt}");
     }
 
     [TestMethod]
@@ -737,9 +737,9 @@ namespace LsMsgPackUnitTests
       }
 
       if (schema != "reference" && (schema != "names" || layout == ObjectLayout.Map)) // the names are in the bytes
-        Compare<DifferencesWriter.DiffPenDto>(ReportingDifferencesTests.PenWithUnknownTypes(Serializers.Ls, settings), settings);
+        Compare<DifferencesWriter.DiffPenDto>(ReportingDifferencesTests.PenWithUnknownTypes(Serializers.Debug, settings), settings);
 
-      Compare<DifferencesReader.DiffErrorsEntity>(ReportingDifferencesTests.Errors(Serializers.Ls, settings), settings);
+      Compare<DifferencesReader.DiffErrorsEntity>(ReportingDifferencesTests.Errors(Serializers.Debug, settings), settings);
     }
   }
 }

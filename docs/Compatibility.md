@@ -13,36 +13,36 @@ MsgPack standardizes the value types (integers, strings, binary data, arrays, ma
 
 LsMsgPackDebug always needs `UseInexedSchema = false`, and for writing `ObjectLayout = ObjectLayout.Map` (objects are arrays by default), see below.
 
-LtMsgPack (`LtMsgPackSerializer`) writes the same bytes as LsMsgPackDebug with the same settings and reads the same data, so everything here applies to it too (the interop tests run against both) (custom extensions are `LtExtension<T>` there, with the same bytes as LsMsgPackDebug's `ICustomExt` for the same type code).
+LsMsgPack (`LsMsgPackSerializer`) writes the same bytes as LsMsgPackDebug with the same settings and reads the same data, so everything here applies to it too (the interop tests run against both) (custom extensions are `LsExtension<T>` there, with the same bytes as LsMsgPackDebug's `ICustomExt` for the same type code).
 
-## LtMsgPack presets
+## LsMsgPack presets
 
-LtMsgPack has ready-made options that match the **default settings** of other libraries (`LtMsgPackPresets`, every call returns new options). The other side only has to read and write objects as maps keyed by property names (MessagePack-CSharp: the contractless resolver or `[MessagePackObject(true)]`), nothing else needs configuring there. Tested by `PresetTests` in `LsMsgPackInteropTests`.
+LsMsgPack has ready-made options that match the **default settings** of other libraries (`LsMsgPackPresets`, every call returns new options). The other side only has to read and write objects as maps keyed by property names (MessagePack-CSharp: the contractless resolver or `[MessagePackObject(true)]`), nothing else needs configuring there. Tested by `PresetTests` in `LsMsgPackInteropTests`.
 
 | Preset | Writes | Tested |
 |---|---|---|
-| `LtMsgPackPresets.MessagePackCSharp()` | names, every value, no type ids, public fields (after the properties), Guid and decimal as strings, `DateTimeOffset` as `[clock time, offset in minutes]` (the offset is kept), `DateTimeKind.Unspecified` taken as UTC, `BigInteger`, `Int128` and `UInt128` as bin (little-endian) | the same bytes as `ContractlessStandardResolver.Options` for the 100 invoices, a class with `DateTimeOffset`, `Guid`, `decimal`, and one with big integers; a class with public fields (`PresetFieldTests`); both directions |
-| `LtMsgPackPresets.Nerdbank()` | names, every value, no type ids, public fields (after the properties), decimal as extension type 4, reads Nerdbank's Guid (extension type 2); Guids are written as bin 16, which Nerdbank reads. `DateTimeOffset` is LsMsgPack's default, the same as Nerdbank's | the invoices and a class with public fields with a default `MessagePackSerializer`, both directions |
-| `LtMsgPackPresets.Generic()` | Python, JavaScript, Go, Rust...: names, every value, no type ids, only the fields that opt in (`[DataMember]`, `[JsonInclude]`...), Guid and decimal as strings, dates as timestamps (also `DateTimeOffset`, the offset is lost) | the values as MessagePack-CSharp reads them untyped |
-| `LtMsgPackPresets.LsMsgPack()` | LsMsgPack's defaults (the indexed schema) | `CrossLibraryTests` |
+| `LsMsgPackPresets.MessagePackCSharp()` | names, every value, no type ids, public fields (after the properties), Guid and decimal as strings, `DateTimeOffset` as `[clock time, offset in minutes]` (the offset is kept), `DateTimeKind.Unspecified` taken as UTC, `BigInteger`, `Int128` and `UInt128` as bin (little-endian) | the same bytes as `ContractlessStandardResolver.Options` for the 100 invoices, a class with `DateTimeOffset`, `Guid`, `decimal`, and one with big integers; a class with public fields (`PresetFieldTests`); both directions |
+| `LsMsgPackPresets.Nerdbank()` | names, every value, no type ids, public fields (after the properties), decimal as extension type 4, reads Nerdbank's Guid (extension type 2); Guids are written as bin 16, which Nerdbank reads. `DateTimeOffset` is LsMsgPack's default, the same as Nerdbank's | the invoices and a class with public fields with a default `MessagePackSerializer`, both directions |
+| `LsMsgPackPresets.Generic()` | Python, JavaScript, Go, Rust...: names, every value, no type ids, only the fields that opt in (`[DataMember]`, `[JsonInclude]`...), Guid and decimal as strings, dates as timestamps (also `DateTimeOffset`, the offset is lost) | the values as MessagePack-CSharp reads them untyped |
+| `LsMsgPackPresets.LsMsgPack()` | LsMsgPack's defaults (the indexed schema) | `CrossLibraryTests` |
 
 ```csharp
-using LtMsgPack;
+using LsMsgPack;
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(LsMsgPackPresets.MessagePackCSharp());
 byte[] bytes = serializer.Serialize(invoice); // read by MessagePackSerializer.Deserialize<Invoice>(bytes, ContractlessStandardResolver.Options)
 ```
 
-The presets use these LtMsgPack options (the defaults write what LsMsgPack writes; `UnspecifiedDateTimeKind` is shared with LsMsgPackDebug):
+The presets set these options of LsMsgPack (its defaults are what `LsMsgPackPresets.LsMsgPack()` writes; `UnspecifiedDateTimeKind` is shared with LsMsgPackDebug):
 
 - `GuidFormat`: `Binary` (bin 16, default) or `String` (36 characters, "D" format; reading then accepts both).
 - `DecimalFormat`: `Extension` (the decimal extension, default) or `String` (invariant culture, also when a decimal extension is registered; strings are always read).
 - `DateTimeOffsetFormat` (Core, shared with LsMsgPackDebug): `TimestampAndOffset` (`[the moment as a timestamp, the offset in minutes]`, default, Nerdbank's bytes), `Timestamp` (the moment, the offset is lost) or `ClockTimeAndOffset` (MessagePack-CSharp's array). Reading takes a timestamp in any format; the two arrays look the same, so the array is read as the option says.
 - `BigIntegerFormat`: `Extension` (an integer when the value fits in 64 bits, otherwise extension type -2, default) or `Binary` (MessagePack-CSharp's bin; reading accepts every format).
 - `UnspecifiedDateTimeKind`: `Utc` (default, as MessagePack-CSharp) or `Local`. For reading see `DateTime` in [LsMsgPackDebug settings](#lsmsgpackdebug-settings).
-- `LtMsgPack.Extensions.NerdbankGuidExtension`: reads Nerdbank's Guid (extension type 2, big-endian).
+- `LsMsgPack.Extensions.NerdbankGuidExtension`: reads Nerdbank's Guid (extension type 2, big-endian).
 
-The web formatters use `Generic()` for the plain media types by default, set another preset with `AddLsMsgPackSerializerFormatters(o => o.Plain = LtMsgPackPresets.MessagePackCSharp())`, see [WebFormatters.md](WebFormatters.md).
+The web formatters use `Generic()` for the plain media types by default, set another preset with `AddLsMsgPackSerializerFormatters(o => o.Plain = LsMsgPackPresets.MessagePackCSharp())`, see [WebFormatters.md](WebFormatters.md).
 
 ## LsMsgPackDebug settings
 
@@ -92,7 +92,7 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 | tuples (`Tuple<...>`, `ValueTuple<...>`) | array of the items, the 8th item (the rest) is an array of its own | the same bytes | tested, also Nerdbank |
 | multidimensional arrays | `[length0, length1, ..., [items]]` | the same bytes | tested (Nerdbank: nested arrays) |
 | `BitArray`, immutable and frozen collections | array (of booleans), array or map | the same bytes | tested (`BitArray`, `ImmutableArray`, `ImmutableList`, `ImmutableDictionary`) |
-| `BigInteger`, `Int128`, `UInt128` | integer when it fits in 64 bits, otherwise extension type -2 (big-endian two's complement, as short as possible) | bin, little-endian (always 16 bytes for `Int128`) | LsMsgPackDebug reads the bin, `BigIntegerFormat.Binary` (LtMsgPack) writes it. Nerdbank: integers too, beyond 64 bits its own extension types 3, 5 and 6 |
+| `BigInteger`, `Int128`, `UInt128` | integer when it fits in 64 bits, otherwise extension type -2 (big-endian two's complement, as short as possible) | bin, little-endian (always 16 bytes for `Int128`) | LsMsgPackDebug reads the bin, `BigIntegerFormat.Binary` (LsMsgPack) writes it. Nerdbank: integers too, beyond 64 bits its own extension types 3, 5 and 6 |
 | `Guid` | bin 16 in the byte order of `Guid.ToByteArray()` | a string of 36 characters | LsMsgPackDebug reads the string, configure MessagePack-CSharp to read bin 16 (`NativeGuidResolver` writes the same bytes as LsMsgPackDebug) |
 | `decimal` | extension type 1: the 16 bytes of `System.Decimal` | a string (`"1234.50"`) | LsMsgPackDebug reads the string, MessagePack-CSharp needs a formatter for the extension |
 | `DateTimeOffset` | `[the moment as a timestamp, the offset in minutes]` (Nerdbank's bytes) | `[the clock time as a timestamp, the offset in minutes]` | the same shape, another moment: `DateTimeOffsetFormat.ClockTimeAndOffset` writes MessagePack-CSharp's bytes (tested) |
@@ -335,7 +335,7 @@ The same rules apply: read and write objects as maps keyed by the property names
 
 [Fields](schema.md#fields) are written after the properties. `SerializedFields.Public` writes the public ones, the default `Attributed` only those with an attribute that opts them in.
 
-- MessagePack-CSharp (contractless) and Nerdbank.MessagePack write public fields after the properties: `LtMsgPackPresets.MessagePackCSharp()` and `Nerdbank()` set `SerializedFields.Public` and write the same bytes (`PresetFieldTests`). `Generic()` keeps `Attributed`.
+- MessagePack-CSharp (contractless) and Nerdbank.MessagePack write public fields after the properties: `LsMsgPackPresets.MessagePackCSharp()` and `Nerdbank()` set `SerializedFields.Public` and write the same bytes (`PresetFieldTests`). `Generic()` keeps `Attributed`.
 - Json.NET writes public fields too, but **before** the properties and `PropertyOrder` can't put fields first: with `SerializedFields.Public` maps have the same names, arrays differ in their positions. `[NonSerialized]` fields are left out by `FilterIgnoredAttribute.LikeNewtonsoft` (`PresetFieldTests.Newtonsoft_*`).
 - System.Text.Json writes fields only with `IncludeFields` (the public ones: `Public`) or `[JsonInclude]` (also non-public ones, since .NET 8: `Attributed`), after the properties, in the same order as LsMsgPackDebug (`PresetFieldTests.SystemTextJson_IncludeFieldsAndJsonInclude`).
 

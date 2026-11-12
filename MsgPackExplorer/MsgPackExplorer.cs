@@ -216,7 +216,7 @@ namespace MsgPackExplorer
                 PreservePackages = true,
                 ContinueProcessingOnBreakingError = _continueOnError,
                 EndianAction = _endianHandling,
-                ReadStreams = true, // values of unknown length and the index of a stream, as LtMsgPack's MsgPackStreamWriter writes them
+                ReadStreams = true, // values of unknown length and the index of a stream, as LsMsgPack's MsgPackStreamWriter writes them
                 TruncateValuesLargerThan = MsgPackSettings.PracticalDebuggingLimit
             };
         }

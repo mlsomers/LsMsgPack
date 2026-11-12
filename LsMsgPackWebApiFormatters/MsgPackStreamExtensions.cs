@@ -1,6 +1,6 @@
 ﻿using LsMsgPack;
-using LtMsgPack.Http;
-using LtMsgPack.Streaming;
+using LsMsgPack.Http;
+using LsMsgPack.Streaming;
 using System;
 using System.IO;
 using System.Net;
@@ -71,7 +71,7 @@ namespace LsMsgPackWebApiFormatters
     /// <summary>
     /// A reader of the response body, as it arrives (send the request with <see cref="HttpCompletionOption.ResponseHeadersRead"/>, otherwise HttpClient buffers it first).
     /// It reads streams (<see cref="MsgPackMediaTypes.IsStream"/>) and ordinary MsgPack bodies alike: <see cref="MsgPackStreamReader.ReadHeadAsync{TRoot}"/> also reads the payload of a <c>List&lt;T&gt;</c> in parts.
-    /// The schema of a head is learned (<see cref="LtMsgPackHttpSerializer.CreateStreamReader"/>), so the next requests advertise it. An empty body (204 No Content) is an empty stream.
+    /// The schema of a head is learned (<see cref="LsMsgPackHttpSerializer.CreateStreamReader"/>), so the next requests advertise it. An empty body (204 No Content) is an empty stream.
     /// Dispose the reader: it closes the body. The response is disposed when this throws.
     /// </summary>
     /// <exception cref="MsgPackHttpException">The status code is not a success (with the problem details or text of the body)</exception>
@@ -93,7 +93,7 @@ namespace LsMsgPackWebApiFormatters
         if (!MsgPackMediaTypes.IsSupported(mediaType))
           throw await MsgPackHttpClientExtensions.NotMsgPackAsync(content, mediaType, CancellationToken.None).ConfigureAwait(false);
         Stream body = await content.ReadAsStreamAsync().ConfigureAwait(false);
-        return formatter.HttpSerializer.CreateStreamReader(body, mediaType, response.RequestMessage?.RequestUri, LsMsgPackSchemaHandler.HeaderValue(response, LtMsgPackHttpSerializer.SchemaHeader));
+        return formatter.HttpSerializer.CreateStreamReader(body, mediaType, response.RequestMessage?.RequestUri, LsMsgPackSchemaHandler.HeaderValue(response, LsMsgPackHttpSerializer.SchemaHeader));
       }
       catch
       {

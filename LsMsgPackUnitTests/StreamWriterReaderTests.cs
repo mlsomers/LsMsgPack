@@ -1,6 +1,5 @@
 ﻿using LsMsgPack;
-using LtMsgPack;
-using LtMsgPack.Streaming;
+using LsMsgPack.Streaming;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -34,17 +33,17 @@ namespace LsMsgPackUnitTests
     public class SwCircle : SwShape { public double Radius { get; set; } }
     public class SwSquare : SwShape { public double Side { get; set; } }
 
-    private static LtMsgPackSerializer Plain()
+    private static LsMsgPackSerializer Plain()
     {
-      return new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
     }
 
-    private static LtMsgPackSerializer WithReferences(SchemaStore store)
+    private static LsMsgPackSerializer WithReferences(SchemaStore store)
     {
-      return new LtMsgPackSerializer(new LtMsgPackOptions { WriteSchemaReference = true, SchemaStore = store });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = store });
     }
 
-    private static byte[] Write(Action<MsgPackStreamWriter> write, LtMsgPackSerializer serializer = null, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject)
+    private static byte[] Write(Action<MsgPackStreamWriter> write, LsMsgPackSerializer serializer = null, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject)
     {
       MemoryStream ms = new MemoryStream();
       using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer ?? Plain(), schemas, true))
@@ -52,7 +51,7 @@ namespace LsMsgPackUnitTests
       return ms.ToArray();
     }
 
-    private static MsgPackStreamReader Reader(byte[] bytes, LtMsgPackSerializer serializer = null)
+    private static MsgPackStreamReader Reader(byte[] bytes, LsMsgPackSerializer serializer = null)
     {
       return new MsgPackStreamReader(new TrickleStream(bytes), serializer ?? Plain());
     }
@@ -71,7 +70,7 @@ namespace LsMsgPackUnitTests
     /// <summary>
     /// The tokens as text, e.g. "ArrayStart(-1) Integer:1 ArrayEnd".
     /// </summary>
-    private static string Tokens(byte[] bytes, LtMsgPackSerializer serializer = null)
+    private static string Tokens(byte[] bytes, LsMsgPackSerializer serializer = null)
     {
       StringBuilder text = new StringBuilder();
       using (MsgPackStreamReader reader = Reader(bytes, serializer))
@@ -229,7 +228,7 @@ namespace LsMsgPackUnitTests
     {
       DateTime date = new DateTime(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
       Guid guid = Guid.NewGuid();
-      LtMsgPackSerializer serializer = Plain();
+      LsMsgPackSerializer serializer = Plain();
       byte[] bytes = Write(w =>
       {
         w.WriteArrayHeader(5);
@@ -266,7 +265,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ValuesWithTypeIdsAlways()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Always });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Always });
       Guid guid = Guid.NewGuid();
       DateTime date = new DateTime(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
       CollectionAssert.AreEqual(serializer.Serialize(guid), Write(w => w.Write(guid), serializer));
@@ -315,7 +314,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void OtherByteOrder()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EndianAction = EndianAction.NeverSwap });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EndianAction = EndianAction.NeverSwap });
       string text = new string('x', 300);
       byte[] bytes = Write(w =>
       {
@@ -497,7 +496,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ObjectsWithTheirSchema()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions());
       List<long> positions = new List<long> { 0 };
       byte[] bytes = Write(w =>
       {
@@ -529,7 +528,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ObjectsLongerThanTheBuffer()
     {
-      foreach (LtMsgPackSerializer serializer in new[] { new LtMsgPackSerializer(new LtMsgPackOptions()), Plain() })
+      foreach (LsMsgPackSerializer serializer in new[] { new LsMsgPackSerializer(new LsMsgPackOptions()), Plain() })
       {
         int[] sizes = { 3, 2000, 10, 5000, 1 }; // the buffer starts with 16 KiB: compacted and grown while an object is read whole
         byte[] bytes = Write(w =>
@@ -550,14 +549,14 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void PerObjectWithASerializerThatRefersToSchemas()
     {
-      LtMsgPackSerializer serializer = WithReferences(new SchemaStore());
+      LsMsgPackSerializer serializer = WithReferences(new SchemaStore());
       byte[] bytes = Write(w =>
       {
         w.WriteObject(Order(1));
         w.WriteObject(Order(2));
       }, serializer);
 
-      using (MsgPackStreamReader reader = Reader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions()))) // no store: every schema is inline
+      using (MsgPackStreamReader reader = Reader(bytes, new LsMsgPackSerializer(new LsMsgPackOptions()))) // no store: every schema is inline
       {
         AreEqual(Order(1), reader.ReadObject<SwOrder>());
         AreEqual(Order(2), reader.ReadObject<SwOrder>());
@@ -569,7 +568,7 @@ namespace LsMsgPackUnitTests
     public void PerStreamWritesASchemaOnce()
     {
       SchemaStore store = new SchemaStore();
-      LtMsgPackSerializer serializer = WithReferences(store);
+      LsMsgPackSerializer serializer = WithReferences(store);
       List<long> positions = new List<long> { 0 };
       MsgPackStreamWriter used = null;
       byte[] bytes = Write(w =>
@@ -588,14 +587,14 @@ namespace LsMsgPackUnitTests
       }
       Assert.HasCount(1, used.ReferencedSchemas);
 
-      using (MsgPackStreamReader reader = Reader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = new SchemaStore() }))) // learns the schema from the stream
+      using (MsgPackStreamReader reader = Reader(bytes, new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = new SchemaStore() }))) // learns the schema from the stream
       {
         for (int n = 1; n <= 3; n++)
           AreEqual(Order(n), reader.ReadObject<SwOrder>());
         Assert.IsTrue(reader.AtEnd);
       }
 
-      using (MsgPackStreamReader reader = Reader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions())))
+      using (MsgPackStreamReader reader = Reader(bytes, new LsMsgPackSerializer(new LsMsgPackOptions())))
       {
         AreEqual(Order(1), reader.ReadObject<SwOrder>());
         Assert.ThrowsExactly<MsgPackException>(() => reader.ReadObject<SwOrder>()); // a reference needs a store
@@ -605,7 +604,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void PerStreamWritesAGrownSchemaAgain()
     {
-      LtMsgPackSerializer serializer = WithReferences(new SchemaStore());
+      LsMsgPackSerializer serializer = WithReferences(new SchemaStore());
       List<long> positions = new List<long> { 0 };
       MsgPackStreamWriter used = null;
       SwShape[] shapes = { new SwCircle { Name = "c", Radius = 1 }, new SwCircle { Name = "d", Radius = 2 }, new SwSquare { Name = "s", Side = 3 }, new SwSquare { Name = "t", Side = 4 } };
@@ -620,7 +619,7 @@ namespace LsMsgPackUnitTests
       CollectionAssert.AreEqual(new[] { true, false, true, false }, inline);
       Assert.HasCount(2, used.ReferencedSchemas);
 
-      using (MsgPackStreamReader reader = Reader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = new SchemaStore() })))
+      using (MsgPackStreamReader reader = Reader(bytes, new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = new SchemaStore() })))
       {
         for (int t = 0; t < shapes.Length; t++)
         {
@@ -635,7 +634,7 @@ namespace LsMsgPackUnitTests
     public void ExternalSchemas()
     {
       SchemaStore store = new SchemaStore();
-      LtMsgPackSerializer serializer = WithReferences(store);
+      LsMsgPackSerializer serializer = WithReferences(store);
       MsgPackStreamWriter used = null;
       List<long> positions = new List<long> { 0 };
       byte[] bytes = Write(w =>
@@ -651,7 +650,7 @@ namespace LsMsgPackUnitTests
 
       SchemaStore readers = new SchemaStore();
       readers.Register(store.GetSchema(id)); // kept apart from the stream
-      LtMsgPackSerializer reading = new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = readers });
+      LsMsgPackSerializer reading = new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = readers });
       AreEqual(Order(2), reading.Deserialize<SwOrder>(bytes, (int)positions[1], (int)(positions[2] - positions[1])));
       using (MsgPackStreamReader reader = Reader(bytes, reading))
       {
@@ -663,7 +662,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ObjectsInAnArrayOfUnknownLength()
     {
-      LtMsgPackSerializer serializer = Plain();
+      LsMsgPackSerializer serializer = Plain();
       byte[] bytes = Write(w =>
       {
         w.WriteArrayStart();
@@ -695,7 +694,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ObjectsFromTheBuffer_SameStateAsTokenByToken()
     {
-      foreach (LtMsgPackSerializer serializer in new[] { new LtMsgPackSerializer(), Plain() })
+      foreach (LsMsgPackSerializer serializer in new[] { new LsMsgPackSerializer(), Plain() })
       {
         byte[] bytes = Write(w =>
         {
@@ -716,7 +715,7 @@ namespace LsMsgPackUnitTests
         StringAssert.Contains(expected, "Customer 6");
       }
 
-      LtMsgPackSerializer plain = Plain(); // without the indexed schema objects are read anywhere: keys and values of a map
+      LsMsgPackSerializer plain = Plain(); // without the indexed schema objects are read anywhere: keys and values of a map
       byte[] map = Write(w =>
       {
         w.WriteMapHeader(2);
@@ -738,7 +737,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ValuesFromTheBuffer_SameStateAsTokenByToken()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer();
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer();
       byte[] bytes = Write(w =>
       {
         w.WriteArrayHeader(3);
@@ -784,7 +783,7 @@ namespace LsMsgPackUnitTests
       StringAssert.Contains(expected, "Customer 3 False");
     }
 
-    private static string Trace(MsgPackStreamReader reader, LtMsgPackSerializer serializer)
+    private static string Trace(MsgPackStreamReader reader, LsMsgPackSerializer serializer)
     {
       StringBuilder text = new StringBuilder();
       using (reader)
@@ -842,7 +841,7 @@ namespace LsMsgPackUnitTests
     {
       foreach (EndianAction endian in new[] { EndianAction.SwapIfCurrentSystemIsLittleEndian, EndianAction.NeverSwap })
       {
-        LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EndianAction = endian });
+        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EndianAction = endian });
         SwOrder expected = Order(20);
         expected.Customer = new string('c', 100);
         byte[] bytes = Write(w =>
@@ -880,7 +879,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ObjectsOnlyAtTheRootWithTheIndexedSchema()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions());
       MemoryStream ms = new MemoryStream();
       using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer, MsgPackStreamSchemas.PerObject, true))
       {
@@ -899,7 +898,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ModesThatReferNeedReferences()
     {
-      Assert.ThrowsExactly<ArgumentException>(() => new MsgPackStreamWriter(new MemoryStream(), new LtMsgPackSerializer(new LtMsgPackOptions()), MsgPackStreamSchemas.PerStream));
+      Assert.ThrowsExactly<ArgumentException>(() => new MsgPackStreamWriter(new MemoryStream(), new LsMsgPackSerializer(new LsMsgPackOptions()), MsgPackStreamSchemas.PerStream));
       Assert.ThrowsExactly<ArgumentException>(() => new MsgPackStreamWriter(new MemoryStream(), Plain(), MsgPackStreamSchemas.External));
     }
 
@@ -920,9 +919,9 @@ namespace LsMsgPackUnitTests
       public object Content { get; set; }
     }
 
-    private static LtMsgPackSerializer Complete(SchemaStore store, SchemaVersion version = SchemaVersion.Names)
+    private static LsMsgPackSerializer Complete(SchemaStore store, SchemaVersion version = SchemaVersion.Names)
     {
-      return new LtMsgPackSerializer(new LtMsgPackOptions { WriteSchemaReference = true, SchemaStore = store, CompleteSchemas = true, SchemaVersion = version });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = store, CompleteSchemas = true, SchemaVersion = version });
     }
 
     private static List<SwOrder> Orders(int count)
@@ -943,7 +942,7 @@ namespace LsMsgPackUnitTests
       foreach (MsgPackStreamSchemas mode in new[] { MsgPackStreamSchemas.PerObject, MsgPackStreamSchemas.PerStream, MsgPackStreamSchemas.External })
       {
         SchemaStore store = new SchemaStore();
-        LtMsgPackSerializer serializer = Complete(store);
+        LsMsgPackSerializer serializer = Complete(store);
         byte[] bytes = Write(w =>
         {
           w.WriteHead<List<SwOrder>>();
@@ -958,7 +957,7 @@ namespace LsMsgPackUnitTests
           : Write(w => w.WriteObject(orders), serializer, mode); // the schema inline in place of the reference
         Assert.AreEqual(Hex(expected), Hex(bytes), mode.ToString());
 
-        LtMsgPackSerializer reading = new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = store });
+        LsMsgPackSerializer reading = new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = store });
         List<SwOrder> read = reading.Deserialize<List<SwOrder>>(bytes);
         for (int t = 0; t < orders.Count; t++)
           AreEqual(orders[t], read[t]);
@@ -969,7 +968,7 @@ namespace LsMsgPackUnitTests
     public void HeadWithoutAStoreWritesTheCompleteSchemaInline()
     {
       List<SwOrder> orders = Orders(2);
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions()); // no store, no complete schemas: the head makes them
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions()); // no store, no complete schemas: the head makes them
       byte[] bytes = Write(w =>
       {
         w.WriteHead<List<SwOrder>>();
@@ -1000,7 +999,7 @@ namespace LsMsgPackUnitTests
           w.WriteEnd();
         }, Complete(store), mode);
 
-        LtMsgPackSerializer reading = new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = mode == MsgPackStreamSchemas.External ? store : new SchemaStore() });
+        LsMsgPackSerializer reading = new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = mode == MsgPackStreamSchemas.External ? store : new SchemaStore() });
         using (MsgPackStreamReader reader = Reader(bytes, reading)) // row by row
         {
           reader.ReadHead<List<SwOrder>>();
@@ -1038,7 +1037,7 @@ namespace LsMsgPackUnitTests
     {
       Dictionary<string, List<SwOrder>> tables = new Dictionary<string, List<SwOrder>> { { "first", Orders(2) }, { "second", Orders(3) } };
       SchemaStore store = new SchemaStore();
-      LtMsgPackSerializer serializer = Complete(store);
+      LsMsgPackSerializer serializer = Complete(store);
       byte[] known = Write(w =>
       {
         w.WriteHead<Dictionary<string, List<SwOrder>>>();
@@ -1068,7 +1067,7 @@ namespace LsMsgPackUnitTests
         w.WriteEnd();
       }, serializer);
 
-      using (MsgPackStreamReader reader = Reader(unknown, new LtMsgPackSerializer(new LtMsgPackOptions())))
+      using (MsgPackStreamReader reader = Reader(unknown, new LsMsgPackSerializer(new LsMsgPackOptions())))
       {
         reader.ReadHead<Dictionary<string, List<SwOrder>>>();
         reader.Read(); // MapStart
@@ -1094,7 +1093,7 @@ namespace LsMsgPackUnitTests
     {
       SwReport report = new SwReport { Title = "October", Orders = Orders(3), Total = 3 };
       SchemaStore store = new SchemaStore();
-      LtMsgPackSerializer serializer = Complete(store);
+      LsMsgPackSerializer serializer = Complete(store);
       byte[] bytes = Write(w =>
       {
         w.WriteHead<SwReport>();
@@ -1107,7 +1106,7 @@ namespace LsMsgPackUnitTests
       }, serializer, MsgPackStreamSchemas.External);
       Assert.AreEqual(Hex(serializer.Serialize(report)), Hex(bytes));
 
-      using (MsgPackStreamReader reader = Reader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = store })))
+      using (MsgPackStreamReader reader = Reader(bytes, new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = store })))
       {
         reader.ReadHead<SwReport>();
         reader.Read(); // ArrayStart
@@ -1130,7 +1129,7 @@ namespace LsMsgPackUnitTests
     {
       List<SwShape> shapes = new List<SwShape> { new SwCircle { Name = "c", Radius = 1 }, new SwSquare { Name = "s", Side = 2 }, new SwShape { Name = "plain" }, new SwCircle { Name = "d", Radius = 3 } };
       SchemaStore store = new SchemaStore();
-      LtMsgPackSerializer serializer = Complete(store);
+      LsMsgPackSerializer serializer = Complete(store);
       byte[] bytes = Write(w =>
       {
         w.WriteHead<List<SwShape>>();
@@ -1140,7 +1139,7 @@ namespace LsMsgPackUnitTests
       }, serializer, MsgPackStreamSchemas.External);
       Assert.AreEqual(Hex(serializer.Serialize(shapes)), Hex(bytes));
 
-      using (MsgPackStreamReader reader = Reader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = store })))
+      using (MsgPackStreamReader reader = Reader(bytes, new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = store })))
       {
         reader.ReadHead<List<SwShape>>();
         reader.Read();
@@ -1158,7 +1157,7 @@ namespace LsMsgPackUnitTests
     public void HeadWithTheDescribedSchema()
     {
       List<SwOrder> orders = Orders(3);
-      LtMsgPackSerializer serializer = Complete(new SchemaStore(), SchemaVersion.Described);
+      LsMsgPackSerializer serializer = Complete(new SchemaStore(), SchemaVersion.Described);
       byte[] known = Write(w =>
       {
         w.WriteHead<List<SwOrder>>();
@@ -1176,7 +1175,7 @@ namespace LsMsgPackUnitTests
           w.WriteObject(order);
         w.WriteEnd();
       }, serializer);
-      using (MsgPackStreamReader reader = Reader(unknown, new LtMsgPackSerializer(new LtMsgPackOptions())))
+      using (MsgPackStreamReader reader = Reader(unknown, new LsMsgPackSerializer(new LsMsgPackOptions())))
       {
         reader.ReadHead<List<SwOrder>>();
         reader.Read();
@@ -1190,7 +1189,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void PerStreamWritesTheSchemaOfAHeadOnce()
     {
-      LtMsgPackSerializer serializer = WithReferences(new SchemaStore());
+      LsMsgPackSerializer serializer = WithReferences(new SchemaStore());
       List<long> positions = new List<long> { 0 };
       MsgPackStreamWriter used = null;
       byte[] bytes = Write(w =>
@@ -1213,7 +1212,7 @@ namespace LsMsgPackUnitTests
       Assert.HasCount(1, used.ReferencedSchemas); // the schema of List<SwOrder> has the same entries as the one of SwOrder (version 1 does not name the root)
       Assert.AreEqual(0xD8, bytes[positions[2]], "the whole object refers to it too");
 
-      using (MsgPackStreamReader reader = Reader(bytes, new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = new SchemaStore() })))
+      using (MsgPackStreamReader reader = Reader(bytes, new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = new SchemaStore() })))
       {
         for (int part = 0; part < 2; part++)
         {
@@ -1234,7 +1233,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void HeadWithoutTheIndexedSchemaWritesNothing()
     {
-      LtMsgPackSerializer serializer = Plain();
+      LsMsgPackSerializer serializer = Plain();
       byte[] withHead = Write(w =>
       {
         w.WriteHead<List<SwOrder>>();
@@ -1265,7 +1264,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void HeadRefusesAValueItsSchemaDoesNotHave()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions());
       byte[] bytes = Write(w =>
       {
         w.WriteHead<List<SwBag>>();
@@ -1293,7 +1292,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void HeadsOnlyBeforeARootValue()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions());
       MemoryStream ms = new MemoryStream();
       using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer, MsgPackStreamSchemas.PerObject, true))
       {
@@ -1360,7 +1359,7 @@ namespace LsMsgPackUnitTests
 
     private static void Invalid(string hex, int maxDepth = 256)
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, MaxDepth = maxDepth });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, MaxDepth = maxDepth });
       using (MsgPackStreamReader reader = Reader(Hex(hex), serializer))
         Assert.ThrowsExactly<MsgPackException>(() => { while (reader.Read()) { } }, hex);
       using (MsgPackStreamReader reader = Reader(Hex(hex), serializer))

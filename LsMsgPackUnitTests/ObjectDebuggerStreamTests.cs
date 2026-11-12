@@ -1,8 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPackDebug;
 using LsMsgPack.Streaming;
-using LtMsgPack;
-using LtMsgPack.Streaming;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using ObjectDebugger;
 using System;
@@ -28,10 +26,10 @@ namespace LsMsgPackUnitTests
       return order;
     }
 
-    private static byte[] Write(Action<MsgPackStreamWriter> write, LtMsgPackOptions options, MsgPackStreamSchemas schemas, MsgPackStreamIndexOptions index)
+    private static byte[] Write(Action<MsgPackStreamWriter> write, LsMsgPackOptions options, MsgPackStreamSchemas schemas, MsgPackStreamIndexOptions index)
     {
       MemoryStream ms = new MemoryStream();
-      using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, new LtMsgPackSerializer(options), schemas, true, index))
+      using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, new LsMsgPackSerializer(options), schemas, true, index))
         write(writer);
       return ms.ToArray();
     }
@@ -66,7 +64,7 @@ namespace LsMsgPackUnitTests
           w.BeginEntry("order " + n);
           w.WriteObject(Order(n));
         }
-      }, new LtMsgPackOptions { WriteSchemaReference = true, SchemaStore = new SchemaStore() }, MsgPackStreamSchemas.PerStream, new MsgPackStreamIndexOptions());
+      }, new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = new SchemaStore() }, MsgPackStreamSchemas.PerStream, new MsgPackStreamIndexOptions());
       MpRoot items = Unpack(bytes);
 
       RootObject root = new RootObject();
@@ -106,7 +104,7 @@ namespace LsMsgPackUnitTests
         for (int n = 1; n <= 3; n++)
           w.WriteObject(Order(n));
         w.WriteEnd();
-      }, new LtMsgPackOptions { SchemaVersion = SchemaVersion.Described, WriteSchemaReference = true, SchemaStore = new SchemaStore() }, MsgPackStreamSchemas.PerStream, new MsgPackStreamIndexOptions());
+      }, new LsMsgPackOptions { SchemaVersion = SchemaVersion.Described, WriteSchemaReference = true, SchemaStore = new SchemaStore() }, MsgPackStreamSchemas.PerStream, new MsgPackStreamIndexOptions());
 
       RootObject root = new RootObject();
       root.Reconstruct(Unpack(bytes), null, bytes);
@@ -129,7 +127,7 @@ namespace LsMsgPackUnitTests
       byte[] bytes = Write(w =>
       {
         w.Write("one value");
-      }, new LtMsgPackOptions { UseInexedSchema = false }, MsgPackStreamSchemas.PerObject, new MsgPackStreamIndexOptions());
+      }, new LsMsgPackOptions { UseInexedSchema = false }, MsgPackStreamSchemas.PerObject, new MsgPackStreamIndexOptions());
       MpRoot items = Unpack(bytes);
       Assert.HasCount(3, items); // the value, the index, its tail
       Assert.IsEmpty(RootObject.FindSchemaItems(items));
@@ -141,7 +139,7 @@ namespace LsMsgPackUnitTests
 
 #if KEEPTRACK
       List<MsgPackItem> found = new List<MsgPackItem>();
-      new ItemSearch("LtMsgPack", false).FindAll(items, found);
+      new ItemSearch("LsMsgPack", false).FindAll(items, found);
       Assert.IsTrue(found.Any(i => i is MpString), "the writer in the index is searched");
 #endif
     }

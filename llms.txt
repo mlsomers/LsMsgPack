@@ -4,19 +4,19 @@
 
 Key facts:
 
-- Use the `LtMsgPack` package to serialize: `dotnet add package LtMsgPack`, then `byte[] data = LtMsgPackSerializer.Default.Serialize(order);` and `Order copy = LtMsgPackSerializer.Default.Deserialize<Order>(data);` (namespace `LtMsgPack`). On the invoice benchmark it writes about 3x and reads about 5x as fast as System.Text.Json, with 35-47% smaller payloads.
+- Use the `LsMsgPack` package to serialize: `dotnet add package LsMsgPack`, then `byte[] data = LsMsgPackSerializer.Default.Serialize(order);` and `Order copy = LsMsgPackSerializer.Default.Deserialize<Order>(data);` (namespace `LsMsgPack`). On the invoice benchmark it writes about 3x and reads about 5x as fast as System.Text.Json, with 35-47% smaller payloads.
 - The `LsMsgPackDebug` package writes and reads the same bytes but builds a tree of MsgPack items, for inspecting data: slower, only use it for that.
 - ASP.NET Core: `dotnet add package LsMsgPack.AspNetCore`, then `services.AddControllers().AddLsMsgPackSerializerFormatters();` (minimal APIs: `AddLsMsgPack()` and `MsgPackResults.MsgPack(value)`). Media types `application/msgpack`, `application/x-msgpack` (plain MsgPack) and `application/x-lsmsgpack` (indexed schema with type ids).
 - Polymorphism needs no attributes: a type id is written where a value's type differs from the declared type. Data written by older or newer versions of the classes still loads.
 - Properties are serialized; fields when they opt in (`[DataMember]`, `[JsonInclude]`...) or with `SerializedFields.Public`/`All` in the static filters, after the properties: [schema.md#fields](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/schema.md#fields).
-- Presets for exchanging data with MessagePack-CSharp, Nerdbank.MessagePack and non-.NET libraries: `LtMsgPackPresets.MessagePackCSharp()`, `Nerdbank()`, `Generic()`.
+- Presets for exchanging data with MessagePack-CSharp, Nerdbank.MessagePack and non-.NET libraries: `LsMsgPackPresets.MessagePackCSharp()`, `Nerdbank()`, `Generic()`.
 - Targets .NET Standard 2.0 and 2.1 (.NET Framework 4.6.2+, .NET, MAUI, Avalonia...) and .NET 8; a source generator covers NativeAOT, Blazor WebAssembly and trimming.
 
 ## Getting started
 
 - [README](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/README.md): overview, which package to use, the NuGet packages and how they depend on each other
 - [Setup wizard](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Wizard/README.md): a few questions (files or network, who reads the data, JavaScript or not) leading to the packages, settings and code for a case
-- [LtMsgPack package](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/LtMsgPack/README.md): the fast serializer, usage, settings, presets, source generator, untrusted data
+- [LsMsgPack package](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/LsMsgPack/README.md): the fast serializer, usage, settings, presets, source generator, untrusted data
 - [Client applications](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/ClientApps.md): saving and loading files and calling web services from WinForms, WPF, MAUI and Avalonia apps
 
 ## Docs
@@ -24,10 +24,10 @@ Key facts:
 - [Web formatters](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/WebFormatters.md): ASP.NET Core, Web API 2 / HttpClient and MVC 5 formatters, settings per media type, schema negotiation
 - [Schema, type ids and polymorphism](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/schema.md): how objects look on the wire, the indexed schema, type ids, what each option costs
 - [Compatibility](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Compatibility.md): settings to exchange data with MessagePack-CSharp, Nerdbank.MessagePack, Python, JavaScript and others, tested by the interop tests
-- [Comparison](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Comparison.md): LtMsgPack vs MessagePack-CSharp vs Nerdbank.MessagePack, benchmarks in each library's fastest setup and when to pick which
+- [Comparison](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Comparison.md): LsMsgPack vs MessagePack-CSharp vs Nerdbank.MessagePack, benchmarks in each library's fastest setup and when to pick which
 - [Source generator](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/SourceGenerator.md): compile-time plans for NativeAOT, WebAssembly AOT, iOS and trimming
 - [Streaming](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Streaming.md): MsgPackStreamWriter and MsgPackStreamReader, values of unknown length, tables with one schema, async reading
-- [Data readers](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/DataReader.md): LtMsgPack.Data, ADO.NET result sets and table dumps as MsgPack streams, dumps read back as a DbDataReader
+- [Data readers](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/DataReader.md): LsMsgPack.Data, ADO.NET result sets and table dumps as MsgPack streams, dumps read back as a DbDataReader
 - [Reading differences](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/ReadDifferences.md): finding out what didn't match between the data and the classes while reading
 - [Security](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/security.md): type injection through type ids and how to restrict the types data can create
 - [Analyzers](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Analyzers.md): LSMP001-010, values lost to defaults, public fields that are not serialized, places where data picks the type

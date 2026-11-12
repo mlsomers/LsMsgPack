@@ -1,6 +1,6 @@
 using LsMsgPack;
 using LsMsgPackMvc;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System.Linq;
 using NUnit.Framework;
 using System.Web.Mvc;
@@ -27,7 +27,7 @@ namespace LsMsgPackMvcTests
     {
       FakeRequest request = new FakeRequest(null, null, acceptTypes);
       if (!(clientSchemas is null))
-        request.Headers.Add(LtMsgPackHttpSerializer.SchemasHeader, clientSchemas);
+        request.Headers.Add(LsMsgPackHttpSerializer.SchemasHeader, clientSchemas);
       ControllerContext context = Fake.Context(request);
       result.ExecuteResult(context);
       return (FakeHttpContext)context.HttpContext;
@@ -90,11 +90,11 @@ namespace LsMsgPackMvcTests
     [Test]
     public void SchemaReferenceWhenTheClientHoldsTheSchema()
     {
-      LtMsgPackHttpSerializer serializer = new LtMsgPackHttpSerializer();
+      LsMsgPackHttpSerializer serializer = new LsMsgPackHttpSerializer();
       FakeHttpContext first = Execute(new LsMsgPackResult(SampleOrder) { Serializer = serializer }, MsgPackMediaTypes.XLsMsgPack);
-      string schemaId = first.ResponseHeaders[LtMsgPackHttpSerializer.SchemaHeader];
+      string schemaId = first.ResponseHeaders[LsMsgPackHttpSerializer.SchemaHeader];
       Assert.That(schemaId, Has.Length.EqualTo(32));
-      Assert.That(first.ResponseHeaders["Vary"], Is.EqualTo(LtMsgPackHttpSerializer.SchemasHeader + ", Accept")); // Accept: version 2 of the schema (DescribeSchemas)
+      Assert.That(first.ResponseHeaders["Vary"], Is.EqualTo(LsMsgPackHttpSerializer.SchemasHeader + ", Accept")); // Accept: version 2 of the schema (DescribeSchemas)
       Assert.That(first.ResponseBody, Is.EqualTo(MsgPackSerializer.Serialize(SampleOrder)));
 
       FakeHttpContext second = ExecuteWithSchemas(new LsMsgPackResult(SampleOrder) { Serializer = serializer }, schemaId, MsgPackMediaTypes.XLsMsgPack);

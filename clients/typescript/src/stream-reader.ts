@@ -1,4 +1,4 @@
-// Reads MsgPack values one after another from a stream (a fetch body, a ReadableStream, a file, a Blob), as LtMsgPack's MsgPackStreamReader:
+// Reads MsgPack values one after another from a stream (a fetch body, a ReadableStream, a file, a Blob), as LsMsgPack's MsgPackStreamReader:
 // tokens, values read whole, objects with their schema (inline or a reference, see docs/Streaming.md), the schema of a head for the root value that follows it,
 // values of unknown length (the escape sequences of msgpack/msgpack#347), and the index at the end of the stream (with a random access source).
 //

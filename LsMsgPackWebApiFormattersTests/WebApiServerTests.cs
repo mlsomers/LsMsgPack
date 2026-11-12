@@ -108,7 +108,7 @@ namespace LsMsgPackWebApiFormattersTests
     {
       HttpConfiguration config = new HttpConfiguration();
       config.MapHttpAttributeRoutes();
-      config.Formatters.Add(new LsMsgPackMediaTypeFormatter(new LtMsgPack.Http.LtMsgPackHttpOptions() { ReportDifferences = true }));
+      config.Formatters.Add(new LsMsgPackMediaTypeFormatter(new LsMsgPack.Http.LsMsgPackHttpOptions() { ReportDifferences = true }));
       using (HttpServer reporting = new HttpServer(config))
       using (HttpClient reportingClient = new HttpClient(reporting) { BaseAddress = new Uri("http://localhost/") })
       {

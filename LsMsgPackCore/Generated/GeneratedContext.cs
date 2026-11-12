@@ -7,7 +7,7 @@ using System.Threading;
 namespace LsMsgPack.Generated
 {
   /// <summary>
-  /// The code the source generator wrote for a set of types (the base of LtMsgPack's <c>LtMsgPackContext</c>): accessors, creators and the generic instantiations of the serializers.
+  /// The code the source generator wrote for a set of types (the base of LsMsgPack's <c>LsMsgPackContext</c>): accessors, creators and the generic instantiations of the serializers.
   /// <para>The types are listed by the generated override of <see cref="AddTypes"/>, which is only called when the version of the generated code is supported (see <see cref="GeneratedContract"/>).
   /// Each is described when it is first looked up (<see cref="Describe"/>): with accessors for every property of every type a context costs too much to load at once (86 types, 1060 properties: 190 ms before the first value).</para>
   /// </summary>
@@ -41,7 +41,7 @@ namespace LsMsgPack.Generated
     }
 
     /// <summary>
-    /// Generated: adds the descriptions of the types (created by the factories of the serializer, e.g. LtMsgPack.Generated.GeneratedValues).
+    /// Generated: adds the descriptions of the types (created by the factories of the serializer, e.g. LsMsgPack.Generated.GeneratedValues).
     /// </summary>
     protected abstract void AddTypes(GeneratedTypeSet types);
 
@@ -87,7 +87,7 @@ namespace LsMsgPack.Generated
         }
         catch (Exception ex) when (ex is TypeLoadException || ex is MissingMemberException) // generated against members this runtime does not have
         {
-          Trace.TraceWarning($"LtMsgPack: the code generated in {GetType().FullName} does not fit this runtime ({ex.Message}). It is not used (rebuild with this version of LtMsgPack to use it).");
+          Trace.TraceWarning($"LsMsgPack: the code generated in {GetType().FullName} does not fit this runtime ({ex.Message}). It is not used (rebuild with this version of LsMsgPack to use it).");
         }
         types.Numbers[position] = -1; // once
         Volatile.Write(ref types.Described[position], generated);
@@ -104,7 +104,7 @@ namespace LsMsgPack.Generated
 
         GeneratedTypeSet types = new GeneratedTypeSet();
         if (!GeneratedContract.IsSupported(_contractVersion))
-          Trace.TraceWarning($"LtMsgPack: the code generated in {GetType().FullName} is for version {_contractVersion} of the generated code, this runtime supports {GeneratedContract.MinSupported} to {GeneratedContract.Current}. It is not used (rebuild with this version of LtMsgPack to use it).");
+          Trace.TraceWarning($"LsMsgPack: the code generated in {GetType().FullName} is for version {_contractVersion} of the generated code, this runtime supports {GeneratedContract.MinSupported} to {GeneratedContract.Current}. It is not used (rebuild with this version of LsMsgPack to use it).");
         else
         {
           try
@@ -114,7 +114,7 @@ namespace LsMsgPack.Generated
           catch (Exception ex) when (ex is TypeLoadException || ex is MissingMemberException) // generated against members this runtime does not have
           {
             types = new GeneratedTypeSet();
-            Trace.TraceWarning($"LtMsgPack: the code generated in {GetType().FullName} does not fit this runtime ({ex.Message}). It is not used (rebuild with this version of LtMsgPack to use it).");
+            Trace.TraceWarning($"LsMsgPack: the code generated in {GetType().FullName} does not fit this runtime ({ex.Message}). It is not used (rebuild with this version of LsMsgPack to use it).");
           }
         }
         types.Freeze();

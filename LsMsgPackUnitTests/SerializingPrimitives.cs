@@ -204,15 +204,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsSerializingPrimitives : SerializingPrimitives
+  public class DebugSerializingPrimitives : SerializingPrimitives
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtSerializingPrimitives : SerializingPrimitives
+  public class LsSerializingPrimitives : SerializingPrimitives
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

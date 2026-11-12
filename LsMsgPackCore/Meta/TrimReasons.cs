@@ -2,7 +2,7 @@
 {
   /// <summary>
   /// Why the reflection of the serializers is still correct in trimmed and NativeAOT apps: the justifications of their <c>UnconditionalSuppressMessage</c> attributes (see docs/SourceGenerator.md, "Trimming and NativeAOT").
-  /// <para>The serializers that run without generated code are annotated where they are created (LtMsgPackSerializer's constructors without a context: RequiresUnreferencedCode and RequiresDynamicCode),
+  /// <para>The serializers that run without generated code are annotated where they are created (LsMsgPackSerializer's constructors without a context: RequiresUnreferencedCode and RequiresDynamicCode),
   /// so the warnings that remain inside are about what the generated code covers.</para>
   /// </summary>
   internal static class TrimReasons
@@ -10,7 +10,7 @@
     /// <summary>
     /// Reflection over the types of the values: the application's classes and the framework types they use.
     /// </summary>
-    internal const string ModelTypes = "Reflects over the types of the values: the generated code keeps the properties and constructors of the classes it describes (DynamicDependency) and LTMP010 names those it misses; without generated code the serializer's constructor requires unreferenced code.";
+    internal const string ModelTypes = "Reflects over the types of the values: the generated code keeps the properties and constructors of the classes it describes (DynamicDependency) and LSMP110 names those it misses; without generated code the serializer's constructor requires unreferenced code.";
 
     /// <summary>
     /// Names in the data (type ids, schema entries).
@@ -40,6 +40,6 @@
     /// <summary>
     /// A fallback for types without generated code.
     /// </summary>
-    internal const string Fallback = "Only used for types without generated code: without a context the serializer's constructor requires unreferenced and dynamic code, with one LTMP010 names the types it does not cover.";
+    internal const string Fallback = "Only used for types without generated code: without a context the serializer's constructor requires unreferenced and dynamic code, with one LSMP110 names the types it does not cover.";
   }
 }

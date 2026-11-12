@@ -80,7 +80,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// The extension as the serializer keeps it (LsMsgPack: MpExt, LtMsgPack: MsgPackExtension).
+    /// The extension as the serializer keeps it (LsMsgPack: MpExt, LsMsgPack: MsgPackExtension).
     /// </summary>
     private void AssertUnknownExtension(object value)
     {
@@ -117,15 +117,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsUnknownExtensions : UnknownExtensions
+  public class DebugUnknownExtensions : UnknownExtensions
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtUnknownExtensions : UnknownExtensions
+  public class LsUnknownExtensions : UnknownExtensions
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

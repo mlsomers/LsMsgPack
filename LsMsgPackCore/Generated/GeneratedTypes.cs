@@ -21,7 +21,7 @@ namespace LsMsgPack.Generated
     private static ConcurrentDictionary<Type, GeneratedType> _found = new ConcurrentDictionary<Type, GeneratedType>();
 
     /// <summary>
-    /// Registers generated code for the whole process (LsMsgPack's property accessors and creators, and LtMsgPack unless <c>LtMsgPackOptions.UseRegisteredContexts</c> is off).
+    /// Registers generated code for the whole process (LsMsgPack's property accessors and creators, and LsMsgPack unless <c>LsMsgPackOptions.UseRegisteredContexts</c> is off).
     /// The first registered context that describes a type is used for it.
     /// </summary>
     public static void Register(GeneratedContext context)

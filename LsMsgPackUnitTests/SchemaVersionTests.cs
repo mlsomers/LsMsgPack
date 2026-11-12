@@ -256,15 +256,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsSchemaVersionTests : SchemaVersionTests
+  public class DebugSchemaVersionTests : SchemaVersionTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtSchemaVersionTests : SchemaVersionTests
+  public class LsSchemaVersionTests : SchemaVersionTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

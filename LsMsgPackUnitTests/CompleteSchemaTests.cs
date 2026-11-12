@@ -1,6 +1,5 @@
 ﻿using LsMsgPack;
 using LsMsgPackDebug;
-using LtMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -156,24 +155,24 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsCompleteSchemaTests : CompleteSchemaTests
+  public class DebugCompleteSchemaTests : CompleteSchemaTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtCompleteSchemaTests : CompleteSchemaTests
+  public class LsCompleteSchemaTests : CompleteSchemaTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
 
     [TestMethod]
     public void PrepareSchemaGivesTheIdOfTheFirstValue()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true, CompleteSchemas = true });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true, CompleteSchemas = true });
       SchemaId prepared = serializer.PrepareSchema(typeof(CpDrawing));
       byte[] payload = serializer.Serialize(new CpDrawing());
       Assert.AreEqual(prepared, new SchemaId(payload.Skip(2).Take(SchemaId.Length).ToArray()));
-      Assert.ThrowsExactly<InvalidOperationException>(() => new LtMsgPackSerializer(new LtMsgPackOptions()).PrepareSchema(typeof(CpDrawing)));
+      Assert.ThrowsExactly<InvalidOperationException>(() => new LsMsgPackSerializer(new LsMsgPackOptions()).PrepareSchema(typeof(CpDrawing)));
     }
 
     [TestMethod]
@@ -186,8 +185,8 @@ namespace LsMsgPackUnitTests
         MsgPackSettings lsSettings = new MsgPackSettings() { SchemaStore = ls, WriteSchemaReference = true, CompleteSchemas = true, SchemaVersion = version };
         MsgPackSettings ltSettings = new MsgPackSettings() { SchemaStore = lt, WriteSchemaReference = true, CompleteSchemas = true, SchemaVersion = version };
         CpDrawing drawing = new CpDrawing() { Id = 1, Shapes = new List<ICpShape>() { new CpCircle() { Radius = 1 } } };
-        byte[] lsBytes = Serializers.Ls.Serialize(drawing, lsSettings);
-        byte[] ltBytes = Serializers.Lt.Serialize(drawing, ltSettings);
+        byte[] lsBytes = Serializers.Debug.Serialize(drawing, lsSettings);
+        byte[] ltBytes = Serializers.Ls.Serialize(drawing, ltSettings);
         CollectionAssert.AreEqual(lsBytes, ltBytes, version.ToString());
         CollectionAssert.AreEqual(ls.GetSchema(ls.GetSchemaIds()[0]), lt.GetSchema(lt.GetSchemaIds()[0]), version.ToString());
       }

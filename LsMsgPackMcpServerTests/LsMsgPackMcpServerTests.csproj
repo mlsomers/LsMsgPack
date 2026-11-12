@@ -28,7 +28,7 @@
     <ProjectReference Include="..\LsMsgPackDebug\LsMsgPackDebug.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
     <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
     <!-- Writes the streams the tests decode (MsgPackStreamWriter) -->
-    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
   </ItemGroup>
 
 </Project>

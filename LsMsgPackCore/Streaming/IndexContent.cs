@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace LsMsgPack.Streaming
 {
   /// <summary>
-  /// Reads the index of a stream from its plain values, and its tail (<see cref="MsgPackStreamIndex"/> describes the layout): shared by LtMsgPack (IndexFormat, which also writes them) and LsMsgPack's item reader (MpStreamIndex, with MsgPackSettings.ReadStreams).
+  /// Reads the index of a stream from its plain values, and its tail (<see cref="MsgPackStreamIndex"/> describes the layout): shared by LsMsgPack (IndexFormat, which also writes them) and LsMsgPack's item reader (MpStreamIndex, with MsgPackSettings.ReadStreams).
   /// </summary>
   internal static class IndexContent
   {

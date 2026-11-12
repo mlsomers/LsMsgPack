@@ -393,7 +393,7 @@ namespace LsMsgPackDebug {
 
     /// <summary>
     /// The slots to allocate for a count of items read from a header. A header of a few bytes can claim billions of items: a count the rest
-    /// of the data cannot hold throws before anything is allocated (as LtMsgPack does). Under KEEPTRACK (the explorers show truncated data
+    /// of the data cannot hold throws before anything is allocated (as LsMsgPack does). Under KEEPTRACK (the explorers show truncated data
     /// up to where it ends) it gets the slots the rest of the data can fill instead, plus one for the error at its end: every item takes at
     /// least one byte, an error included, except the one at the end of the data, which ends the loop.
     /// Only streams that know their length are checked, the others end with "Unexpected end of data." when the items do not arrive.

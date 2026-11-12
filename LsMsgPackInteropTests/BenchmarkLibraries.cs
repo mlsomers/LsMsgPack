@@ -1,7 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPackDebug;
 using LsMsgPackUnitTests;
-using LtMsgPack;
 using MessagePack;
 using MessagePack.Resolvers;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -87,12 +86,12 @@ namespace LsMsgPackInteropTests
   }
 
   /// <summary>
-  /// Compares LtMsgPack with MessagePack-CSharp and Nerdbank.MessagePack on the invoices of BenchmarkInvoices (System.Text.Json is the baseline), each in its fastest documented setup:
+  /// Compares LsMsgPack with MessagePack-CSharp and Nerdbank.MessagePack on the invoices of BenchmarkInvoices (System.Text.Json is the baseline), each in its fastest documented setup:
   /// <list type="bullet">
   /// <item>MessagePack-CSharp: [MessagePackObject] types with the formatters of its source generator (GeneratedMessagePackResolver), integer keys (arrays, its recommendation) or keyAsPropertyName (maps).
-  /// The "native" row also takes NativeGuidResolver and NativeDecimalResolver (binary instead of strings, what LtMsgPack writes).</item>
+  /// The "native" row also takes NativeGuidResolver and NativeDecimalResolver (binary instead of strings, what LsMsgPack writes).</item>
   /// <item>Nerdbank.MessagePack: the shapes of PolyType's source generator, PerfOverSchemaStability for arrays, its defaults for maps.</item>
-  /// <item>LtMsgPack: the plain classes (no attributes), with the runtime's plans and with the code of its source generator (TestMsgPackContext).</item>
+  /// <item>LsMsgPack: the plain classes (no attributes), with the runtime's plans and with the code of its source generator (TestMsgPackContext).</item>
   /// </list>
   /// The "no attributes" rows are what each library does with plain classes without any setup: MessagePack-CSharp contractless (code emitted at runtime), Nerdbank with PolyType's reflection provider.
   /// <para>Results are written to the test output (docs/Comparison.md has a run), timings are not asserted.</para>
@@ -285,22 +284,22 @@ namespace LsMsgPackInteropTests
       ITypeShape<Invoice> reflectedInvoice = ReflectionTypeShapeProvider.Default.GetTypeShape<Invoice>();
       ITypeShape<Address> reflectedAddress = ReflectionTypeShapeProvider.Default.GetTypeShape<Address>();
 
-      LtMsgPackContext[] generated = new LtMsgPackContext[] { TestMsgPackContext.Default };
-      LtMsgPackSerializer ltDefault = new LtMsgPackSerializer(new LtMsgPackOptions());
-      LtMsgPackSerializer ltDefaultGen = new LtMsgPackSerializer(new LtMsgPackOptions() { Contexts = generated, UseRegisteredContexts = false });
-      LtMsgPackSerializer ltArrays = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration });
-      LtMsgPackSerializer ltArraysGen = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration, Contexts = generated, UseRegisteredContexts = false });
-      LtMsgPackSerializer ltNames = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
-      LtMsgPackSerializer ltNamesGen = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, Contexts = generated, UseRegisteredContexts = false });
-      LtMsgPackSerializer ltIndexedMap = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map });
+      LsMsgPackContext[] generated = new LsMsgPackContext[] { TestMsgPackContext.Default };
+      LsMsgPackSerializer ltDefault = new LsMsgPackSerializer(new LsMsgPackOptions());
+      LsMsgPackSerializer ltDefaultGen = new LsMsgPackSerializer(new LsMsgPackOptions() { Contexts = generated, UseRegisteredContexts = false });
+      LsMsgPackSerializer ltArrays = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration });
+      LsMsgPackSerializer ltArraysGen = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration, Contexts = generated, UseRegisteredContexts = false });
+      LsMsgPackSerializer ltNames = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      LsMsgPackSerializer ltNamesGen = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, Contexts = generated, UseRegisteredContexts = false });
+      LsMsgPackSerializer ltIndexedMap = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map });
 
       // The presets write what the other libraries write (asserted in Prepare)
-      LtMsgPackOptions mpArrays = LtMsgPackPresets.MessagePackCSharp();
+      LsMsgPackOptions mpArrays = LsMsgPackPresets.MessagePackCSharp();
       mpArrays.ObjectLayout = ObjectLayout.Array;
       mpArrays.PropertyOrder = PropertyOrder.Declaration;
-      LtMsgPackSerializer ltLikeMpArrays = new LtMsgPackSerializer(mpArrays);
-      LtMsgPackSerializer ltLikeMp = new LtMsgPackSerializer(LtMsgPackPresets.MessagePackCSharp());
-      LtMsgPackSerializer ltLikeNerdbank = new LtMsgPackSerializer(LtMsgPackPresets.Nerdbank());
+      LsMsgPackSerializer ltLikeMpArrays = new LsMsgPackSerializer(mpArrays);
+      LsMsgPackSerializer ltLikeMp = new LsMsgPackSerializer(LsMsgPackPresets.MessagePackCSharp());
+      LsMsgPackSerializer ltLikeNerdbank = new LsMsgPackSerializer(LsMsgPackPresets.Nerdbank());
 
       JsonSerializerOptions stj = new JsonSerializerOptions();
 
@@ -320,19 +319,19 @@ namespace LsMsgPackInteropTests
         new Candidate<Invoice, Address>("Nerdbank PerfOverSchemaStability, shapes",
           i => nbArrays.Serialize<Invoice, BenchmarkShapes>(i), b => nbArrays.Deserialize<Invoice, BenchmarkShapes>(b),
           a => nbArrays.Serialize<Address, BenchmarkShapes>(a), b => nbArrays.Deserialize<Address, BenchmarkShapes>(b)),
-        new Candidate<Invoice, Address>("LtMsgPack MessagePackCSharp preset, arrays", // the bytes of the first row
+        new Candidate<Invoice, Address>("LsMsgPack MessagePackCSharp preset, arrays", // the bytes of the first row
           i => ltLikeMpArrays.Serialize(i), b => ltLikeMpArrays.Deserialize<Invoice>(b),
           a => ltLikeMpArrays.Serialize(a), b => ltLikeMpArrays.Deserialize<Address>(b)),
-        new Candidate<Invoice, Address>("LtMsgPack arrays, no schema",
+        new Candidate<Invoice, Address>("LsMsgPack arrays, no schema",
           i => ltArrays.Serialize(i), b => ltArrays.Deserialize<Invoice>(b),
           a => ltArrays.Serialize(a), b => ltArrays.Deserialize<Address>(b)),
-        new Candidate<Invoice, Address>("LtMsgPack arrays, no schema, generated",
+        new Candidate<Invoice, Address>("LsMsgPack arrays, no schema, generated",
           i => ltArraysGen.Serialize(i), b => ltArraysGen.Deserialize<Invoice>(b),
           a => ltArraysGen.Serialize(a), b => ltArraysGen.Deserialize<Address>(b)),
-        new Candidate<Invoice, Address>("LtMsgPack default (arrays, schema)",
+        new Candidate<Invoice, Address>("LsMsgPack default (arrays, schema)",
           i => ltDefault.Serialize(i), b => ltDefault.Deserialize<Invoice>(b),
           a => ltDefault.Serialize(a), b => ltDefault.Deserialize<Address>(b)),
-        new Candidate<Invoice, Address>("LtMsgPack default, generated",
+        new Candidate<Invoice, Address>("LsMsgPack default, generated",
           i => ltDefaultGen.Serialize(i), b => ltDefaultGen.Deserialize<Invoice>(b),
           a => ltDefaultGen.Serialize(a), b => ltDefaultGen.Deserialize<Address>(b)),
 
@@ -343,24 +342,24 @@ namespace LsMsgPackInteropTests
         new Candidate<Invoice, Address>("Nerdbank names, shapes",
           i => nbMaps.Serialize<Invoice, BenchmarkShapes>(i), b => nbMaps.Deserialize<Invoice, BenchmarkShapes>(b),
           a => nbMaps.Serialize<Address, BenchmarkShapes>(a), b => nbMaps.Deserialize<Address, BenchmarkShapes>(b)),
-        new Candidate<Invoice, Address>("LtMsgPack Nerdbank preset",
+        new Candidate<Invoice, Address>("LsMsgPack Nerdbank preset",
           i => ltLikeNerdbank.Serialize(i), b => ltLikeNerdbank.Deserialize<Invoice>(b),
           a => ltLikeNerdbank.Serialize(a), b => ltLikeNerdbank.Deserialize<Address>(b)),
-        new Candidate<Invoice, Address>("LtMsgPack names",
+        new Candidate<Invoice, Address>("LsMsgPack names",
           i => ltNames.Serialize(i), b => ltNames.Deserialize<Invoice>(b),
           a => ltNames.Serialize(a), b => ltNames.Deserialize<Address>(b)),
-        new Candidate<Invoice, Address>("LtMsgPack names, generated",
+        new Candidate<Invoice, Address>("LsMsgPack names, generated",
           i => ltNamesGen.Serialize(i), b => ltNamesGen.Deserialize<Invoice>(b),
           a => ltNamesGen.Serialize(a), b => ltNamesGen.Deserialize<Address>(b)),
-        new Candidate<Invoice, Address>("LtMsgPack maps, indexed schema",
+        new Candidate<Invoice, Address>("LsMsgPack maps, indexed schema",
           i => ltIndexedMap.Serialize(i), b => ltIndexedMap.Deserialize<Invoice>(b),
           a => ltIndexedMap.Serialize(a), b => ltIndexedMap.Deserialize<Address>(b)),
 
-        // Plain classes without attributes or generated code (the LtMsgPack rows above without "generated" are that too)
+        // Plain classes without attributes or generated code (the LsMsgPack rows above without "generated" are that too)
         new Candidate<Invoice, Address>("MessagePack-CSharp contractless",
           i => MessagePackSerializer.Serialize(i, mpContractless), b => MessagePackSerializer.Deserialize<Invoice>(b, mpContractless),
           a => MessagePackSerializer.Serialize(a, mpContractless), b => MessagePackSerializer.Deserialize<Address>(b, mpContractless)),
-        new Candidate<Invoice, Address>("LtMsgPack MessagePackCSharp preset", // the bytes of contractless
+        new Candidate<Invoice, Address>("LsMsgPack MessagePackCSharp preset", // the bytes of contractless
           i => ltLikeMp.Serialize(i), b => ltLikeMp.Deserialize<Invoice>(b),
           a => ltLikeMp.Serialize(a), b => ltLikeMp.Deserialize<Address>(b)),
         new Candidate<Invoice, Address>("Nerdbank names, reflection",
@@ -435,8 +434,8 @@ namespace LsMsgPackInteropTests
         bytes[c] = candidates[c].Prepare();
 
       // Like for like: the presets write the bytes of the library they are named after
-      AssertSameBytes(candidates, "MessagePack-CSharp [Key(n)], generated", "LtMsgPack MessagePackCSharp preset, arrays");
-      AssertSameBytes(candidates, "MessagePack-CSharp contractless", "LtMsgPack MessagePackCSharp preset");
+      AssertSameBytes(candidates, "MessagePack-CSharp [Key(n)], generated", "LsMsgPack MessagePackCSharp preset, arrays");
+      AssertSameBytes(candidates, "MessagePack-CSharp contractless", "LsMsgPack MessagePackCSharp preset");
       return candidates;
     }
 

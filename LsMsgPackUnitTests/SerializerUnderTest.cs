@@ -1,8 +1,7 @@
 ﻿using LsMsgPack;
 using LsMsgPackDebug;
 using LsMsgPackDebug.Types.Extensions;
-using LtMsgPack;
-using LtMsgPack.Extensions;
+using LsMsgPack.Extensions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Concurrent;
@@ -12,8 +11,8 @@ using System.IO;
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// A serializer the shared tests run against: LsMsgPack (<see cref="LsSerializer"/>) or LtMsgPack (<see cref="LtSerializer"/>).
-  /// <para>The tests describe the settings with <see cref="MsgPackSettings"/>, the adapter of LtMsgPack copies the format settings (<see cref="MsgPackOptions"/>) into LtMsgPackOptions.
+  /// A serializer the shared tests run against: LsMsgPack (<see cref="DebugSerializer"/>) or LsMsgPack (<see cref="LsSerializer"/>).
+  /// <para>The tests describe the settings with <see cref="MsgPackSettings"/>, the adapter of LsMsgPack copies the format settings (<see cref="MsgPackOptions"/>) into LsMsgPackOptions.
   /// The other overloads of MsgPackSerializer are extension methods (<see cref="SerializerUnderTestExtensions"/>), so a test calls <c>Serializer.Serialize(...)</c> like it called <c>MsgPackSerializer.Serialize(...)</c>.</para>
   /// </summary>
   public interface ISerializerUnderTest
@@ -42,7 +41,7 @@ namespace LsMsgPackUnitTests
     object Deserialize(Type type, byte[] source, MsgPackSettings settings, out ReadDifferences differences);
 
     /// <summary>
-    /// Whether the value is an extension the serializer has no custom extension for (LsMsgPack: MpExt, LtMsgPack: MsgPackExtension).
+    /// Whether the value is an extension the serializer has no custom extension for (LsMsgPack: MpExt, LsMsgPack: MsgPackExtension).
     /// </summary>
     bool IsUnknownExtension(object value, out sbyte typeCode, out byte[] data);
   }
@@ -85,16 +84,16 @@ namespace LsMsgPackUnitTests
 
   public static class Serializers
   {
+    public static readonly ISerializerUnderTest Debug = new DebugSerializer();
     public static readonly ISerializerUnderTest Ls = new LsSerializer();
-    public static readonly ISerializerUnderTest Lt = new LtSerializer();
 
     /// <summary>
-    /// LtMsgPack with the code of the source generator (TestMsgPackContext: all classes of the test assembly, see GeneratedContext.cs).
+    /// LsMsgPack with the code of the source generator (TestMsgPackContext: all classes of the test assembly, see GeneratedContext.cs).
     /// </summary>
-    public static readonly ISerializerUnderTest Gen = new LtSerializer(TestMsgPackContext.Default);
+    public static readonly ISerializerUnderTest Gen = new LsSerializer(TestMsgPackContext.Default);
   }
 
-  public sealed class LsSerializer : ISerializerUnderTest
+  public sealed class DebugSerializer : ISerializerUnderTest
   {
     public string Name { get { return "LsMsgPackDebug"; } }
 
@@ -126,32 +125,32 @@ namespace LsMsgPackUnitTests
     public override string ToString() { return Name; }
   }
 
-  public sealed class LtSerializer : ISerializerUnderTest
+  public sealed class LsSerializer : ISerializerUnderTest
   {
-    private readonly ConcurrentDictionary<object, LtMsgPackSerializer> _serializers = new ConcurrentDictionary<object, LtMsgPackSerializer>();
-    private readonly LtMsgPackContext[] _contexts;
+    private readonly ConcurrentDictionary<object, LsMsgPackSerializer> _serializers = new ConcurrentDictionary<object, LsMsgPackSerializer>();
+    private readonly LsMsgPackContext[] _contexts;
 
     /// <param name="context">The code of the source generator to use, null: none (the plans the serializer builds at runtime)</param>
-    public LtSerializer(LtMsgPackContext context = null)
+    public LsSerializer(LsMsgPackContext context = null)
     {
-      _contexts = context is null ? new LtMsgPackContext[0] : new[] { context };
+      _contexts = context is null ? new LsMsgPackContext[0] : new[] { context };
     }
 
-    public string Name { get { return _contexts.Length == 0 ? "LtMsgPack" : "LtMsgPack (generated)"; } }
+    public string Name { get { return _contexts.Length == 0 ? "LsMsgPack" : "LsMsgPack (generated)"; } }
 
     /// <summary>
     /// A serializer with the format settings of the MsgPackSettings (cached per combination of their values, a serializer builds its plans once).
     /// </summary>
-    internal LtMsgPackSerializer For(MsgPackSettings settings)
+    internal LsMsgPackSerializer For(MsgPackSettings settings)
     {
       if (settings is null)
         settings = new MsgPackSettings();
 
-      LtExtension[] extensions = Extensions(settings.CustomExtentionTypes);
+      LsExtension[] extensions = Extensions(settings.CustomExtentionTypes);
       object key = (settings.UseInexedSchema, settings.DynamicallyCompact, settings.EndianAction, settings.AddTypeIdOptions,
         settings.TypeResolvers, settings.StaticFilters, settings.DynamicFilters, settings.PropertyNameResolvers,
         (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.IgnoreCycles));
-      return _serializers.GetOrAdd(key, k => new LtMsgPackSerializer(new LtMsgPackOptions()
+      return _serializers.GetOrAdd(key, k => new LsMsgPackSerializer(new LsMsgPackOptions()
       {
         UseInexedSchema = settings.UseInexedSchema,
         DynamicallyCompact = settings.DynamicallyCompact,
@@ -184,26 +183,26 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// The LtExtension that writes and reads the same bytes as a custom extension of LsMsgPack (null: none known). The decimal extension is known, tests add their own.
+    /// The LsExtension that writes and reads the same bytes as a custom extension of LsMsgPack (null: none known). The decimal extension is known, tests add their own.
     /// </summary>
-    public static readonly List<Func<ICustomExt, LtExtension>> ExtensionEquivalents = new List<Func<ICustomExt, LtExtension>>()
+    public static readonly List<Func<ICustomExt, LsExtension>> ExtensionEquivalents = new List<Func<ICustomExt, LsExtension>>()
     {
       ext => ext is MpDecimal dec ? new DecimalExtension(dec.TypeSpecifier) : null
     };
 
-    private static LtExtension[] Extensions(ICustomExt[] custom)
+    private static LsExtension[] Extensions(ICustomExt[] custom)
     {
       if (custom is null)
-        return new LtExtension[0];
+        return new LsExtension[0];
 
-      LtExtension[] extensions = new LtExtension[custom.Length];
+      LsExtension[] extensions = new LsExtension[custom.Length];
       for (int t = 0; t < custom.Length; t++)
       {
-        foreach (Func<ICustomExt, LtExtension> equivalent in ExtensionEquivalents)
+        foreach (Func<ICustomExt, LsExtension> equivalent in ExtensionEquivalents)
           if ((extensions[t] = equivalent(custom[t])) != null)
             break;
         if (extensions[t] is null)
-          Assert.Inconclusive($"LtMsgPack has no equivalent of the custom extension {custom[t].GetType().Name} (add one to {nameof(LtSerializer)}.{nameof(ExtensionEquivalents)}).");
+          Assert.Inconclusive($"LsMsgPack has no equivalent of the custom extension {custom[t].GetType().Name} (add one to {nameof(LsSerializer)}.{nameof(ExtensionEquivalents)}).");
       }
       return extensions;
     }

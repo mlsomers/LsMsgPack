@@ -10,7 +10,7 @@
 	  <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <PackageId>LsMsgPackDebug</PackageId>
     <RootNamespace>LsMsgPackDebug</RootNamespace>
-    <Description>MessagePack (MsgPack) serializer for .NET classes that also gives you the tree of MsgPack items of any payload, to inspect MsgPack data even without the classes. Writes and reads the same data as LtMsgPack, the much faster package to use when you only need to serialize.</Description>
+    <Description>MessagePack (MsgPack) serializer for .NET classes that also gives you the tree of MsgPack items of any payload, to inspect MsgPack data even without the classes. Writes and reads the same data as LsMsgPack, the much faster package to use when you only need to serialize.</Description>
     <PackageTags>$(PackageTags);polymorphism;schema;inspection;debugging</PackageTags>
   </PropertyGroup>
 

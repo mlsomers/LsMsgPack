@@ -291,8 +291,8 @@ namespace LsMsgPack.Analyzers
   /// </summary>
   internal sealed class KnownSymbols
   {
+    public readonly INamedTypeSymbol DebugSerializer;
     public readonly INamedTypeSymbol LsSerializer;
-    public readonly INamedTypeSymbol LtSerializer;
     public readonly INamedTypeSymbol HttpSerializer;
     public readonly INamedTypeSymbol SerializableAttribute;
     public readonly INamedTypeSymbol DefaultValueAttribute;
@@ -316,10 +316,10 @@ namespace LsMsgPack.Analyzers
 
     public KnownSymbols(Compilation compilation)
     {
-      LsSerializer = compilation.GetTypeByMetadataName("LsMsgPackDebug.MsgPackSerializer");
-      LtSerializer = compilation.GetTypeByMetadataName("LtMsgPack.LtMsgPackSerializer");
-      HttpSerializer = compilation.GetTypeByMetadataName("LtMsgPack.Http.LtMsgPackHttpSerializer");
-      SerializableAttribute = compilation.GetTypeByMetadataName("LtMsgPack.LtMsgPackSerializableAttribute");
+      DebugSerializer = compilation.GetTypeByMetadataName("LsMsgPackDebug.MsgPackSerializer");
+      LsSerializer = compilation.GetTypeByMetadataName("LsMsgPack.LsMsgPackSerializer");
+      HttpSerializer = compilation.GetTypeByMetadataName("LsMsgPack.Http.LsMsgPackHttpSerializer");
+      SerializableAttribute = compilation.GetTypeByMetadataName("LsMsgPack.LsMsgPackSerializableAttribute");
       DefaultValueAttribute = compilation.GetTypeByMetadataName("System.ComponentModel.DefaultValueAttribute");
       SystemType = compilation.GetTypeByMetadataName("System.Type");
 
@@ -360,7 +360,7 @@ namespace LsMsgPack.Analyzers
     /// </summary>
     public bool IsEmpty
     {
-      get { return LsSerializer is null && LtSerializer is null && HttpSerializer is null; }
+      get { return DebugSerializer is null && LsSerializer is null && HttpSerializer is null; }
     }
   }
 
@@ -457,7 +457,7 @@ namespace LsMsgPack.Analyzers
       if (container is null)
         return;
 
-      if (Same(container, known.LsSerializer) || Same(container, known.LtSerializer) || Same(container, known.HttpSerializer))
+      if (Same(container, known.DebugSerializer) || Same(container, known.LsSerializer) || Same(container, known.HttpSerializer))
       {
         bool reads = method.Name.StartsWith("Deserialize", StringComparison.Ordinal);
         if (!reads && method.Name != "Serialize" && method.Name != "SerializeObject")
@@ -595,7 +595,7 @@ namespace LsMsgPack.Analyzers
     }
 
     /// <summary>
-    /// <c>[LtMsgPackSerializable(typeof(T))]</c> on a context of LtMsgPack's source generator.
+    /// <c>[LsMsgPackSerializable(typeof(T))]</c> on a context of LsMsgPack's source generator.
     /// </summary>
     public static void FromAttributes(INamedTypeSymbol type, KnownSymbols known, List<SerializedUse> uses)
     {
@@ -606,7 +606,7 @@ namespace LsMsgPack.Analyzers
         if (!Same(attribute.AttributeClass, known.SerializableAttribute) || attribute.ConstructorArguments.Length == 0)
           continue;
         if (attribute.ConstructorArguments[0].Value is ITypeSymbol listed)
-          uses.Add(new SerializedUse(listed, false, attribute.ApplicationSyntaxReference?.GetSyntax().GetLocation(), "LtMsgPackSerializable"));
+          uses.Add(new SerializedUse(listed, false, attribute.ApplicationSyntaxReference?.GetSyntax().GetLocation(), "LsMsgPackSerializable"));
       }
     }
 

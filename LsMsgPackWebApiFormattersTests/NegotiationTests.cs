@@ -2,7 +2,7 @@ using LsMsgPack;
 using LsMsgPackDebug;
 using LsMsgPackFormatters;
 using LsMsgPackWebApiFormatters;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -55,7 +55,7 @@ namespace LsMsgPackWebApiFormattersTests
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-      SchemasHeaders.Add(request.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemasHeader, out IEnumerable<string> values) ? string.Join(",", values) : null);
+      SchemasHeaders.Add(request.Headers.TryGetValues(LsMsgPackHttpSerializer.SchemasHeader, out IEnumerable<string> values) ? string.Join(",", values) : null);
       AcceptHeaders.Add(request.Headers.Accept.ToString());
       if (!(request.Content is null))
         Requests.Add(await request.Content.ReadAsByteArrayAsync());
@@ -254,7 +254,7 @@ namespace LsMsgPackWebApiFormattersTests
     {
       using (IHost host = await StartAspNetCore())
       {
-        LtMsgPackHttpOptions options = new LtMsgPackHttpOptions();
+        LsMsgPackHttpOptions options = new LsMsgPackHttpOptions();
         options.XLsMsgPack.SchemaStore = new SchemaStore() { MaxSchemas = 0 };
         LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter(options);
         Recorder recorder = new Recorder(host.GetTestServer().CreateHandler());
@@ -320,10 +320,10 @@ namespace LsMsgPackWebApiFormattersTests
           HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "webapi/order");
           request.Headers.TryAddWithoutValidation("Accept", accept);
           if (!(schemas is null))
-            request.Headers.Add(LtMsgPackHttpSerializer.SchemasHeader, schemas);
+            request.Headers.Add(LsMsgPackHttpSerializer.SchemasHeader, schemas);
           HttpResponseMessage response = await client.SendAsync(request);
           byte[] body = await response.Content.ReadAsByteArrayAsync();
-          return (body, response.Content.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemaHeader, out IEnumerable<string> values) ? string.Join(",", values) : null, response);
+          return (body, response.Content.Headers.TryGetValues(LsMsgPackHttpSerializer.SchemaHeader, out IEnumerable<string> values) ? string.Join(",", values) : null, response);
         }
 
         const string Described = "application/x-lsmsgpack; schema=described, application/x-lsmsgpack; q=0.9"; // as the TypeScript client asks

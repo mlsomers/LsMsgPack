@@ -18,7 +18,7 @@ namespace ObjectDebugger
     Medium,
     /// <summary>Several maps with the same names as keys: records of one type</summary>
     High,
-    /// <summary>Written by LsMsgPack or LtMsgPack from objects: an indexed schema (or a reference to one), or a type id</summary>
+    /// <summary>Written by LsMsgPack or LsMsgPack from objects: an indexed schema (or a reference to one), or a type id</summary>
     Certain
   }
 

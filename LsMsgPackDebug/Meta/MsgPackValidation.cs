@@ -155,7 +155,7 @@ namespace LsMsgPackDebug
                 int used = ExtLength(item);
                 issues.Add(new ValidationItem(item, ValidationSeverity.Warning, used > asInt ? used - asInt : 0,
                   "This big integer (extension type -2) fits in 64 bits and should have been stored as an integer (", asInt, " bytes instead of ", used,
-                  "). LsMsgPack and LtMsgPack read both, other implementations may only read an integer here."));
+                  "). LsMsgPack and LsMsgPack read both, other implementations may only read an integer here."));
                 return;
             }
 

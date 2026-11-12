@@ -1,6 +1,6 @@
 ﻿# Schema, type ids and polymorphic class hierarchies
 
-LsMsgPack serializes .NET objects the same way the XML and JSON serializers do: as maps of property names and values. How those maps look on the wire is controlled by a couple of settings in `MsgPackSettings`. This document explains each option, what it costs and when to use it.
+LsMsgPack and LsMsgPackDebug serialize .NET objects the same way the XML and JSON serializers do: as maps of property names and values, and write the same bytes. How those maps look on the wire is controlled by a couple of settings: `LsMsgPackOptions` for LsMsgPack and `MsgPackSettings` for LsMsgPackDebug (both derive from `MsgPackOptions` in LsMsgPack.Core). The code samples below use `MsgPackSettings` (LsMsgPackDebug); `LsMsgPackOptions` has the same properties. This document explains each option, what it costs and when to use it.
 
 - [The options at a glance](#the-options-at-a-glance)
 - [Plain maps](#plain-maps)
@@ -71,7 +71,7 @@ Cons:
 - Property names are repeated for every object, which makes large collections big.
 - No type information is included. A property declared as an interface, an abstract class or `object` can't be deserialized unless a custom [type resolver](#resolving-by-signature) recognizes the type from its properties. For the example above, reading it back throws *"Cannot create an instance of an interface or abstract type"*.
 
-This is what the web formatters send for `application/msgpack` and `application/x-msgpack`, with every value and `Guid` and `decimal` as text (`LtMsgPackPresets.Generic()`, see [Web formatters](WebFormatters.md)).
+This is what the web formatters send for `application/msgpack` and `application/x-msgpack`, with every value and `Guid` and `decimal` as text (`LsMsgPackPresets.Generic()`, see [Web formatters](WebFormatters.md)).
 
 Type ids
 --------
@@ -139,7 +139,7 @@ Cons:
 A .NET reader only needs the names: its classes know the rest. A reader without the classes (e.g. JavaScript) can't tell from a `nil` whether the writer left out `0`, `false` or `null`, or whether a nested array is an object or a list. Version 2 of the schema tells it:
 
 ```csharp
-var settings = new MsgPackSettings { SchemaVersion = SchemaVersion.Described }; // also LtMsgPackOptions; SchemaVersion.Names (version 1) is the default
+var settings = new MsgPackSettings { SchemaVersion = SchemaVersion.Described }; // also LsMsgPackOptions; SchemaVersion.Names (version 1) is the default
 ```
 
 ```
@@ -162,7 +162,7 @@ Types:
 - `["struct", k]`: a struct of entry `k` (its default is an object, not `null`). `["struct", [items]]`: a struct the schema has no entry for (only written as its default so far), with its properties as an entry has them.
 - `["list", T]`, `["dict", K, V]`, `["pair", K, V]`, `["tuple", T1, T2, ...]` (the 8th item of a long tuple is a nested tuple).
 
-Both versions are read by both serializers with any settings: `SchemaVersion` only decides what is written. The version is part of the schema id (SHA-256 over the version byte and the schema), so the same classes have different ids in version 1 and 2. Readers tell the versions apart by the last entry `""`. Version 2 is larger (5 to 10 bytes per property), and with a `SchemaStore` it's made once per schema; inline, LtMsgPack keeps the ones it made, while LsMsgPackDebug makes it for every call. MsgPack Explorer, the VS Code extension and the MCP server show the declared types, use them instead of inferring the types of objects, and show the defaults of left-out values.
+Both versions are read by both serializers with any settings: `SchemaVersion` only decides what is written. The version is part of the schema id (SHA-256 over the version byte and the schema), so the same classes have different ids in version 1 and 2. Readers tell the versions apart by the last entry `""`. Version 2 is larger (5 to 10 bytes per property), and with a `SchemaStore` it's made once per schema; inline, LsMsgPack keeps the ones it made, while LsMsgPackDebug makes it for every call. MsgPack Explorer, the VS Code extension and the MCP server show the declared types, use them instead of inferring the types of objects, and show the defaults of left-out values.
 
 Polymorphic class-hierarchy support
 -----------------------------------
@@ -192,7 +192,7 @@ public IEnumerable<object> Pets { get; set; } = new HashSet<IPet> { new Cat(), n
 MsgPackTypes.CacheAssemblyTypes(typeof(IPet));  // LsMsgPack.Core, for both serializers
 ```
 
-`MsgPackSerializer.CacheAssemblyTypes` (LsMsgPackDebug) and `LtMsgPackSerializer.CacheAssemblyTypes` (LtMsgPack) do the same: there is one cache. A [type guard](security.md) registers what it allows: `new AllowedTypesGuard().AllowAssemblyOf(typeof(IPet))` makes the types of that assembly known by name as well, `Allow(typeof(Cat))` only `Cat`.
+`MsgPackSerializer.CacheAssemblyTypes` (LsMsgPackDebug) and `LsMsgPackSerializer.CacheAssemblyTypes` (LsMsgPack) do the same: there is one cache. A [type guard](security.md) registers what it allows: `new AllowedTypesGuard().AllowAssemblyOf(typeof(IPet))` makes the types of that assembly known by name as well, `Allow(typeof(Cat))` only `Cat`.
 
 The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins), and nothing you deserialize reaches them: register each of them. `Deserialize<List<Cat>>()` finds `Cat` (it's reachable from the root type).
 
@@ -318,17 +318,17 @@ MsgPackSettings settings = new MsgPackSettings()
 };
 ```
 
-The methods are looked up once per property, and only the properties that have one are checked per object: LtMsgPack writes the others with its usual code (generated or compiled). With `FilterShouldSerialize` alone or together with `FilterDefaultValues`, it calls an instance method of a class typed, also in its compiled writers (a list of objects with 3 such methods among 8 properties writes as fast as without them); with other dynamic filters, for structs and for static methods the value is boxed for the filters. The source generator keeps the methods of the classes it describes when the application is trimmed.
+The methods are looked up once per property, and only the properties that have one are checked per object: LsMsgPack writes the others with its usual code (generated or compiled). With `FilterShouldSerialize` alone or together with `FilterDefaultValues`, it calls an instance method of a class typed, also in its compiled writers (a list of objects with 3 such methods among 8 properties writes as fast as without them); with other dynamic filters, for structs and for static methods the value is boxed for the filters. The source generator keeps the methods of the classes it describes when the application is trimmed.
 
 ### Cycles
 
 An object that refers back to an object containing it (a parent, the object itself) is a cycle: by default writing it throws a `MsgPackException` at `MaxDepth` (256 levels). Break it where it starts with `[JsonIgnore]` or a [ShouldSerialize method](#shouldserialize-methods), or set `IgnoreCycles`: a reference to an object that is being written is then written as nil, as System.Text.Json's `ReferenceHandler.IgnoreCycles` does (also in maps: the key stays, with nil). Read back, that reference is null.
 
 ```csharp
-MsgPackSettings settings = new MsgPackSettings() { IgnoreCycles = true }; // LtMsgPackOptions too
+MsgPackSettings settings = new MsgPackSettings() { IgnoreCycles = true }; // LsMsgPackOptions too
 ```
 
-Only the objects on the current path count: an object referenced from two places side by side (not containing each other) is written twice, there are no references in the data. Objects with properties are tracked (not structs and collections); LtMsgPack does not track a class whose properties are all numbers, strings, enums, dates, Guids or `byte[]` (nothing below it can be it). The option costs time per tracked object (LtMsgPack, a tree of small nodes: about 7 ns per node, 11-16% more in the map layout, 15-21% in the array layout), so it is off by default.
+Only the objects on the current path count: an object referenced from two places side by side (not containing each other) is written twice, there are no references in the data. Objects with properties are tracked (not structs and collections); LsMsgPack does not track a class whose properties are all numbers, strings, enums, dates, Guids or `byte[]` (nothing below it can be it). The option costs time per tracked object (LsMsgPack, a tree of small nodes: about 7 ns per node, 11-16% more in the map layout, 15-21% in the array layout), so it is off by default.
 
 ### Ignoring the same properties as another serializer
 
@@ -390,9 +390,9 @@ public class Money
 
 - **The constructor**: the one with `[JsonConstructor]` (System.Text.Json or Json.NET) or `[SerializationConstructor]` (MessagePack-CSharp). Without one, it's the only public constructor, if the type has no public parameterless constructor. With several public constructors and none marked, no constructor is called: the properties without a setter are [computed properties](#computed-and-get-only-properties) (written, not read), those with a private setter are left out.
 - **Parameters and properties**: a parameter takes the property with the same name (ignoring case, the exact name first) and the same type. The constructor is used when it takes a property without a public setter, and for a class (or a marked constructor) when each of its parameters takes a property or has a default value. A constructor with a parameter for something else (a service, a value no property holds) isn't called: such a class is created without a constructor. A struct whose properties all have setters is created by its default constructor, as System.Text.Json does.
-- **Reading**: the values are read first, then the constructor is called, then the properties it does not take are set (LtMsgPack calls the constructor as soon as the values of its parameters are read, and sets the properties after them directly). A property the data does not have (left out as a default value, or after the end of a trimmed array) passes the value the writer leaves out: its type's default, or its `[DefaultValue]` (as a nil sets it), not the parameter's default. A parameter that takes no property gets its default value. An exception of the constructor is passed on as it is.
+- **Reading**: the values are read first, then the constructor is called, then the properties it does not take are set (LsMsgPack calls the constructor as soon as the values of its parameters are read, and sets the properties after them directly). A property the data does not have (left out as a default value, or after the end of a trimmed array) passes the value the writer leaves out: its type's default, or its `[DefaultValue]` (as a nil sets it), not the parameter's default. A parameter that takes no property gets its default value. An exception of the constructor is passed on as it is.
 - A constructor that takes a property without a public setter is called also with `ObjectCreation.Uninitialized`: the values can't be set otherwise. Other classes are created uninitialized with that setting.
-- The code of the source generator writes these types but doesn't read them: LtMsgPack's runtime readers do.
+- The code of the source generator writes these types but doesn't read them: LsMsgPack's runtime readers do.
 - Not for framework types (refused, or written as their plain value), collections, or anonymous types (whose fields are set).
 
 Computed and get-only properties
@@ -467,7 +467,7 @@ settings.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNon
 ```
 
 - **`SerializedFields.Attributed`** (the default): the fields, public or not, with an attribute that opts them in, the same attributes as for [non-public properties](#non-public-properties): `[JsonInclude]`, `[JsonProperty]`, `[DataMember]`, `[Key]`, `[PropertyShape]` and any other attribute with "Include" in its name. This covers the classic `[DataContract]` class with private `[DataMember]` fields.
-- **`SerializedFields.Public`**: every public instance field, and the attributed non-public ones. MessagePack-CSharp (contractless), Nerdbank.MessagePack, Json.NET, XmlSerializer and System.Text.Json with `IncludeFields` write public fields too; the presets `LtMsgPackPresets.MessagePackCSharp()` and `Nerdbank()` set this (see [Compatibility](Compatibility.md)).
+- **`SerializedFields.Public`**: every public instance field, and the attributed non-public ones. MessagePack-CSharp (contractless), Nerdbank.MessagePack, Json.NET, XmlSerializer and System.Text.Json with `IncludeFields` write public fields too; the presets `LsMsgPackPresets.MessagePackCSharp()` and `Nerdbank()` set this (see [Compatibility](Compatibility.md)).
 - **`SerializedFields.All`**: every instance field, private, protected and internal ones too, also those of base classes.
 - **`SerializedFields.None`**: no fields (except the framework structs below).
 - Without a `FilterNonSettable` in the static filters, the attributed fields are serialized.
@@ -486,8 +486,8 @@ Readers need the same setting. A reader without it skips these fields with the i
 Choosing your settings
 ----------------------
 
-- **Only LsMsgPack on both sides** (your own client and server, files, caches, queues): keep the defaults. The indexed schema with `IfAmbiguious` type ids gives the smallest data and full polymorphism.
+- **Only LsMsgPack (or LsMsgPackDebug) on both sides** (your own client and server, files, caches, queues): keep the defaults. The indexed schema with `IfAmbiguious` type ids gives the smallest data and full polymorphism.
 - **Other MsgPack implementations need to read the data**: set `UseInexedSchema = false`. Keep `IfAmbiguious` if you have polymorphic properties (the others can ignore the `""` key), or use `Never` for fully plain maps.
 - **Reading data from other implementations**: `UseInexedSchema = false`. If the data contains polymorphic values without type ids, add a [signature resolver](#resolving-by-signature).
 - **Class names may change, or you want shorter ids without a schema**: use `XmlRootAttributeTypeResolver` or a [custom type resolver](#custom-type-resolvers).
-- **Web APIs**: the [web formatters](WebFormatters.md) handle this per request. `application/msgpack` is plain MsgPack for everyone (or a preset for another library), and `application/x-lsmsgpack` uses the schema between LsMsgPack / LtMsgPack endpoints.
+- **Web APIs**: the [web formatters](WebFormatters.md) handle this per request. `application/msgpack` is plain MsgPack for everyone (or a preset for another library), and `application/x-lsmsgpack` uses the schema between LsMsgPack or LsMsgPackDebug endpoints.

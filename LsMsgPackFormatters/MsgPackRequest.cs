@@ -1,5 +1,5 @@
 ﻿using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -21,7 +21,7 @@ namespace LsMsgPackFormatters
 #if NETCOREAPP3_0_OR_GREATER
     /// <summary>
     /// Buffers the body asynchronously in the pipe of the request (the deserializer reads synchronously, which ASP.NET Core does not allow on the request stream)
-    /// and passes it to <paramref name="read"/> in one piece: in place when it is in one buffer (LtMsgPack copies what it keeps), otherwise a pooled copy. Empty when the body is.
+    /// and passes it to <paramref name="read"/> in one piece: in place when it is in one buffer (LsMsgPack copies what it keeps), otherwise a pooled copy. Empty when the body is.
     /// </summary>
     internal static async Task<TResult> ReadAsync<TState, TResult>(HttpContext context, TState state, Func<TState, ArraySegment<byte>, TResult> read)
     {
@@ -58,11 +58,11 @@ namespace LsMsgPackFormatters
 #endif
 
     /// <summary>
-    /// The differences between the body and the classes (<see cref="LtMsgPackHttpOptions.ReportDifferences"/>): in the features of the request (<see cref="ReadDifferencesExtensions.GetReadDifferences"/>)
-    /// and logged, as a warning with <see cref="LtMsgPackHttpOptions.LogDifferencesAsWarning"/>, otherwise at the Debug level (clients sending extra properties would fill the logs).
+    /// The differences between the body and the classes (<see cref="LsMsgPackHttpOptions.ReportDifferences"/>): in the features of the request (<see cref="ReadDifferencesExtensions.GetReadDifferences"/>)
+    /// and logged, as a warning with <see cref="LsMsgPackHttpOptions.LogDifferencesAsWarning"/>, otherwise at the Debug level (clients sending extra properties would fill the logs).
     /// </summary>
     /// <param name="category">Of the logger</param>
-    internal static void Report(HttpContext context, LtMsgPackHttpSerializer serializer, Type type, ReadDifferences differences, string category)
+    internal static void Report(HttpContext context, LsMsgPackHttpSerializer serializer, Type type, ReadDifferences differences, string category)
     {
       context.Features.Set(differences);
       ILogger logger = context.RequestServices?.GetService<ILoggerFactory>()?.CreateLogger(category);
@@ -76,12 +76,12 @@ namespace LsMsgPackFormatters
     }
 
     /// <summary>
-    /// Reports the differences an exception of <see cref="LtMsgPackHttpSerializer.DeserializeBody"/> carries.
+    /// Reports the differences an exception of <see cref="LsMsgPackHttpSerializer.DeserializeBody"/> carries.
     /// </summary>
     /// <returns>False (for an exception filter)</returns>
-    internal static bool ReportFailure(HttpContext context, LtMsgPackHttpSerializer serializer, Type type, Exception ex, string category)
+    internal static bool ReportFailure(HttpContext context, LsMsgPackHttpSerializer serializer, Type type, Exception ex, string category)
     {
-      ReadDifferences differences = LtMsgPackHttpSerializer.DifferencesOf(ex);
+      ReadDifferences differences = LsMsgPackHttpSerializer.DifferencesOf(ex);
       if (differences != null)
         Report(context, serializer, type, differences, category);
       return false;

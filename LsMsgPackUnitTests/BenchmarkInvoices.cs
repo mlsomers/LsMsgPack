@@ -13,7 +13,7 @@ using System.Threading;
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// Compares the performance and payload size of LsMsgPack and LtMsgPack with System.Text.Json (the baseline, with its default options as ASP.NET Core uses it) using a set of typical invoices.
+  /// Compares the performance and payload size of LsMsgPack and LsMsgPack with System.Text.Json (the baseline, with its default options as ASP.NET Core uses it) using a set of typical invoices.
   /// <para>System.Text.Json with source generation and Json.NET are listed as well.</para>
   /// <para>Results are written to the test output; timings are not asserted since they depend on the machine (and build configuration).</para>
   /// </summary>
@@ -266,22 +266,22 @@ namespace LsMsgPackUnitTests
       SchemaStore store = new SchemaStore(); // one store for writing and reading: in practice the reader has its own, holding the writer's schemas
       MsgPackSettings reference = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store, WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map };
       MsgPackSettings inlineStore = new MsgPackSettings() { UseInexedSchema = true, SchemaStore = store, ObjectLayout = ObjectLayout.Map };
-      LtMsgPack.LtMsgPackSerializer ltIndexed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map });
-      LtMsgPack.LtMsgPackSerializer ltReference = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map });
-      LtMsgPack.LtMsgPackSerializer ltNamed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      LsMsgPack.LsMsgPackSerializer ltIndexed = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map });
+      LsMsgPack.LsMsgPackSerializer ltReference = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map });
+      LsMsgPack.LsMsgPackSerializer ltNamed = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
       MsgPackSettings indexedArrays = new MsgPackSettings() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array };
-      LtMsgPack.LtMsgPackSerializer ltIndexedArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array });
-      LtMsgPack.LtMsgPackSerializer ltReferenceArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array });
-      LtMsgPack.LtMsgPackSerializer ltIndexedTrimmed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array, TrimTrailingNulls = true });
-      LtMsgPack.LtMsgPackSerializer ltPositional = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration });
+      LsMsgPack.LsMsgPackSerializer ltIndexedArrays = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array });
+      LsMsgPack.LsMsgPackSerializer ltReferenceArrays = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array });
+      LsMsgPack.LsMsgPackSerializer ltIndexedTrimmed = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array, TrimTrailingNulls = true });
+      LsMsgPack.LsMsgPackSerializer ltPositional = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration });
 
       // With the code of the source generator (TestMsgPackContext, see GeneratedContext.cs)
-      LtMsgPack.LtMsgPackContext[] generated = new LtMsgPack.LtMsgPackContext[] { TestMsgPackContext.Default };
-      LtMsgPack.LtMsgPackSerializer genIndexed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map, Contexts = generated, UseRegisteredContexts = false });
-      LtMsgPack.LtMsgPackSerializer genNamed = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, Contexts = generated, UseRegisteredContexts = false });
-      LtMsgPack.LtMsgPackSerializer genIndexedArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array, Contexts = generated, UseRegisteredContexts = false });
-      LtMsgPack.LtMsgPackSerializer genReferenceArrays = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array, Contexts = generated, UseRegisteredContexts = false });
-      LtMsgPack.LtMsgPackSerializer genPositional = new LtMsgPack.LtMsgPackSerializer(new LtMsgPack.LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration, Contexts = generated, UseRegisteredContexts = false });
+      LsMsgPack.LsMsgPackContext[] generated = new LsMsgPack.LsMsgPackContext[] { TestMsgPackContext.Default };
+      LsMsgPack.LsMsgPackSerializer genIndexed = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map, Contexts = generated, UseRegisteredContexts = false });
+      LsMsgPack.LsMsgPackSerializer genNamed = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, Contexts = generated, UseRegisteredContexts = false });
+      LsMsgPack.LsMsgPackSerializer genIndexedArrays = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array, Contexts = generated, UseRegisteredContexts = false });
+      LsMsgPack.LsMsgPackSerializer genReferenceArrays = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array, Contexts = generated, UseRegisteredContexts = false });
+      LsMsgPack.LsMsgPackSerializer genPositional = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration, Contexts = generated, UseRegisteredContexts = false });
 
       JsonSerializerOptions stj = new JsonSerializerOptions(); // one instance, it caches the metadata
 
@@ -322,17 +322,17 @@ namespace LsMsgPackUnitTests
           b => MsgPackSerializer.Deserialize<Invoice>(b, named),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack (indexed schema)",
+        new Candidate<byte[]>("LsMsgPack (indexed schema)",
           i => ltIndexed.Serialize(i),
           b => ltIndexed.Deserialize<Invoice>(b),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack (schema reference)",
+        new Candidate<byte[]>("LsMsgPack (schema reference)",
           i => ltReference.Serialize(i),
           b => ltReference.Deserialize<Invoice>(b),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack (property names)",
+        new Candidate<byte[]>("LsMsgPack (property names)",
           i => ltNamed.Serialize(i),
           b => ltNamed.Deserialize<Invoice>(b),
           b => b.Length),
@@ -343,48 +343,48 @@ namespace LsMsgPackUnitTests
           b => MsgPackSerializer.Deserialize<Invoice>(b, indexedArrays),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack (arrays, indexed)",
+        new Candidate<byte[]>("LsMsgPack (arrays, indexed)",
           i => ltIndexedArrays.Serialize(i),
           b => ltIndexedArrays.Deserialize<Invoice>(b),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack (arrays, trimmed)", // indexed schema, TrimTrailingNulls (the invoices end with values that are never left out)
+        new Candidate<byte[]>("LsMsgPack (arrays, trimmed)", // indexed schema, TrimTrailingNulls (the invoices end with values that are never left out)
           i => ltIndexedTrimmed.Serialize(i),
           b => ltIndexedTrimmed.Deserialize<Invoice>(b),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack (arrays, reference)",
+        new Candidate<byte[]>("LsMsgPack (arrays, reference)",
           i => ltReferenceArrays.Serialize(i),
           b => ltReferenceArrays.Deserialize<Invoice>(b),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack (arrays, no schema)", // positional only: the reader needs the same order
+        new Candidate<byte[]>("LsMsgPack (arrays, no schema)", // positional only: the reader needs the same order
           i => ltPositional.Serialize(i),
           b => ltPositional.Deserialize<Invoice>(b),
           b => b.Length),
 
         // The same with the code of the source generator
-        new Candidate<byte[]>("LtMsgPack generated (indexed schema)",
+        new Candidate<byte[]>("LsMsgPack generated (indexed schema)",
           i => genIndexed.Serialize(i),
           b => genIndexed.Deserialize<Invoice>(b),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack generated (property names)",
+        new Candidate<byte[]>("LsMsgPack generated (property names)",
           i => genNamed.Serialize(i),
           b => genNamed.Deserialize<Invoice>(b),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack generated (arrays, indexed)",
+        new Candidate<byte[]>("LsMsgPack generated (arrays, indexed)",
           i => genIndexedArrays.Serialize(i),
           b => genIndexedArrays.Deserialize<Invoice>(b),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack generated (arrays, reference)",
+        new Candidate<byte[]>("LsMsgPack generated (arrays, reference)",
           i => genReferenceArrays.Serialize(i),
           b => genReferenceArrays.Deserialize<Invoice>(b),
           b => b.Length),
 
-        new Candidate<byte[]>("LtMsgPack generated (arrays, no schema)",
+        new Candidate<byte[]>("LsMsgPack generated (arrays, no schema)",
           i => genPositional.Serialize(i),
           b => genPositional.Deserialize<Invoice>(b),
           b => b.Length)

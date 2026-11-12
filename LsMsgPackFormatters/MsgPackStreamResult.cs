@@ -1,7 +1,7 @@
 ﻿#if NET8_0_OR_GREATER
 using LsMsgPack;
-using LtMsgPack.Http;
-using LtMsgPack.Streaming;
+using LsMsgPack.Http;
+using LsMsgPack.Streaming;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
@@ -20,7 +20,7 @@ namespace LsMsgPackFormatters
   /// A response body that is a stream (docs/Streaming.md), written by the action or endpoint with a <see cref="MsgPackStreamWriter"/> while it is sent: values of unknown length, several root values,
   /// heads, objects with their schemas, an index. For data too large to buffer, or produced while it is written (the rows of a query). For a controller action and a minimal API endpoint.
   /// <para>The media type is the MsgPack one the Accept header asks for, application/x-lsmsgpack when it asks for none (there is no JSON), with <see cref="MsgPackMediaTypes.StreamParameter"/> in the Content-Type.
-  /// The writer has the serializer of that media type (the output formatter's, or the one of <see cref="LsMsgPackFormatter.AddLsMsgPack(IServiceCollection, Action{LtMsgPackHttpOptions})"/>): with application/x-lsmsgpack and schema references
+  /// The writer has the serializer of that media type (the output formatter's, or the one of <see cref="LsMsgPackFormatter.AddLsMsgPack(IServiceCollection, Action{LsMsgPackHttpOptions})"/>): with application/x-lsmsgpack and schema references
   /// each schema is inline the first time and referred to after that (<see cref="MsgPackStreamSchemas.PerStream"/>).</para>
   /// <para>The writer is asynchronous (it never writes to the response synchronously, which ASP.NET Core does not allow): write the values, and await <see cref="MsgPackStreamWriter.FlushIfFullAsync"/>
   /// (or <see cref="MsgPackStreamWriter.WriteObjectAsync{T}(T, CancellationToken)"/>) after each one or each row, which sends the buffer at <see cref="MsgPackStreamWriter.FlushThreshold"/> and waits while the client is slow,
@@ -52,17 +52,17 @@ namespace LsMsgPackFormatters
       if (context is null)
         throw new ArgumentNullException(nameof(context));
       HttpContext httpContext = context.HttpContext;
-      return WriteAsync(httpContext, FormatterSerializer(httpContext) ?? httpContext.RequestServices?.GetService<LtMsgPackHttpSerializer>());
+      return WriteAsync(httpContext, FormatterSerializer(httpContext) ?? httpContext.RequestServices?.GetService<LsMsgPackHttpSerializer>());
     }
 
     public Task ExecuteAsync(HttpContext httpContext)
     {
       if (httpContext is null)
         throw new ArgumentNullException(nameof(httpContext));
-      return WriteAsync(httpContext, httpContext.RequestServices?.GetService<LtMsgPackHttpSerializer>() ?? FormatterSerializer(httpContext));
+      return WriteAsync(httpContext, httpContext.RequestServices?.GetService<LsMsgPackHttpSerializer>() ?? FormatterSerializer(httpContext));
     }
 
-    private static LtMsgPackHttpSerializer FormatterSerializer(HttpContext httpContext)
+    private static LsMsgPackHttpSerializer FormatterSerializer(HttpContext httpContext)
     {
       IList<Microsoft.AspNetCore.Mvc.Formatters.IOutputFormatter> formatters = httpContext.RequestServices?.GetService<IOptions<MvcOptions>>()?.Value.OutputFormatters;
       if (formatters is null)
@@ -75,10 +75,10 @@ namespace LsMsgPackFormatters
       return null;
     }
 
-    private async Task WriteAsync(HttpContext httpContext, LtMsgPackHttpSerializer serializer)
+    private async Task WriteAsync(HttpContext httpContext, LsMsgPackHttpSerializer serializer)
     {
       if (serializer is null)
-        throw new InvalidOperationException("No LtMsgPackHttpSerializer: MsgPackStreamResult needs the formatters (AddLsMsgPackSerializerFormatters) or builder.Services.AddLsMsgPack().");
+        throw new InvalidOperationException("No LsMsgPackHttpSerializer: MsgPackStreamResult needs the formatters (AddLsMsgPackSerializerFormatters) or builder.Services.AddLsMsgPack().");
 
       HttpResponse response = httpContext.Response;
       if (StatusCode.HasValue)

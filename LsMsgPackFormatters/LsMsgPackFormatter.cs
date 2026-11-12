@@ -1,5 +1,5 @@
-﻿using LtMsgPack;
-using LtMsgPack.Http;
+﻿using LsMsgPack;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -10,15 +10,15 @@ using System.Diagnostics.CodeAnalysis;
 namespace LsMsgPackFormatters
 {
   /// <summary>
-  /// Registers the formatters. Trimmed and NativeAOT apps: use the overloads taking the context of LtMsgPack's source generator (see <see cref="LtMsgPackSerializer(LtMsgPackContext, LtMsgPackOptions)"/>).
+  /// Registers the formatters. Trimmed and NativeAOT apps: use the overloads taking the context of LsMsgPack's source generator (see <see cref="LsMsgPackSerializer(LsMsgPackContext, LsMsgPackOptions)"/>).
   /// </summary>
   public static partial class LsMsgPackFormatter
   {
-    internal const string RequiresUnreferencedCodeMessage = "Without generated code the serializer reads the properties and constructors of the types by reflection, trimming may remove them. Use the overload taking the context of LtMsgPack's source generator.";
-    internal const string RequiresDynamicCodeMessage = "Without generated code the serializer instantiates its generic code for the types at runtime, NativeAOT may not have it. Use the overload taking the context of LtMsgPack's source generator.";
+    internal const string RequiresUnreferencedCodeMessage = "Without generated code the serializer reads the properties and constructors of the types by reflection, trimming may remove them. Use the overload taking the context of LsMsgPack's source generator.";
+    internal const string RequiresDynamicCodeMessage = "Without generated code the serializer instantiates its generic code for the types at runtime, NativeAOT may not have it. Use the overload taking the context of LsMsgPack's source generator.";
 
     /// <summary>
-    /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter (LtMsgPack with the default <see cref="LtMsgPackHttpOptions"/>)
+    /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter (LsMsgPack with the default <see cref="LsMsgPackHttpOptions"/>)
     /// </summary>
     /// <param name="builder">Mvc Builder</param>
     /// <returns>same Mvc Builder as input (for dasy-chaining)</returns>
@@ -38,13 +38,13 @@ namespace LsMsgPackFormatters
     /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter
     /// </summary>
     /// <param name="builder">Mvc Builder</param>
-    /// <param name="setupAction">Manipulate the settings here, e.g. <c>o =&gt; o.Plain = LtMsgPackPresets.MessagePackCSharp()</c>.</param>
+    /// <param name="setupAction">Manipulate the settings here, e.g. <c>o =&gt; o.Plain = LsMsgPackPresets.MessagePackCSharp()</c>.</param>
     /// <returns>same Mvc Builder as input (for dasy-chaining)</returns>
 #if NET8_0_OR_GREATER
     [RequiresUnreferencedCode(LsMsgPackFormatter.RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(LsMsgPackFormatter.RequiresDynamicCodeMessage)]
 #endif
-    public static IMvcBuilder AddLsMsgPackSerializerFormatters(this IMvcBuilder builder, Action<LtMsgPackHttpOptions> setupAction)
+    public static IMvcBuilder AddLsMsgPackSerializerFormatters(this IMvcBuilder builder, Action<LsMsgPackHttpOptions> setupAction)
     {
       builder.Services.Configure(setupAction);
       builder.Services.TryAddEnumerable(ServiceDescriptor.Transient<IConfigureOptions<MvcOptions>, LsMsgPackSettingsSetup>());
@@ -53,19 +53,19 @@ namespace LsMsgPackFormatters
     }
 
     /// <summary>
-    /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter with the code of LtMsgPack's source generator (for trimmed and NativeAOT apps, see <see cref="LtMsgPackSerializer(LtMsgPackContext, LtMsgPackOptions)"/>).
+    /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter with the code of LsMsgPack's source generator (for trimmed and NativeAOT apps, see <see cref="LsMsgPackSerializer(LsMsgPackContext, LsMsgPackOptions)"/>).
     /// </summary>
     /// <param name="builder">Mvc Builder</param>
     /// <param name="context">E.g. <c>AppMsgPackContext.Default</c></param>
-    /// <param name="setupAction">Manipulate the settings here (null: the defaults), e.g. <c>o =&gt; o.Plain = LtMsgPackPresets.MessagePackCSharp()</c>.</param>
+    /// <param name="setupAction">Manipulate the settings here (null: the defaults), e.g. <c>o =&gt; o.Plain = LsMsgPackPresets.MessagePackCSharp()</c>.</param>
     /// <returns>same Mvc Builder as input (for dasy-chaining)</returns>
-    public static IMvcBuilder AddLsMsgPackSerializerFormatters(this IMvcBuilder builder, LtMsgPackContext context, Action<LtMsgPackHttpOptions> setupAction = null)
+    public static IMvcBuilder AddLsMsgPackSerializerFormatters(this IMvcBuilder builder, LsMsgPackContext context, Action<LsMsgPackHttpOptions> setupAction = null)
     {
       if (context is null)
         throw new ArgumentNullException(nameof(context));
       if (setupAction != null)
         builder.Services.Configure(setupAction);
-      builder.Services.AddTransient<IConfigureOptions<MvcOptions>>(services => new LsMsgPackSettingsSetup(services.GetRequiredService<IOptions<LtMsgPackHttpOptions>>(), context));
+      builder.Services.AddTransient<IConfigureOptions<MvcOptions>>(services => new LsMsgPackSettingsSetup(services.GetRequiredService<IOptions<LsMsgPackHttpOptions>>(), context));
 
       return builder;
     }
@@ -81,7 +81,7 @@ namespace LsMsgPackFormatters
 #endif
     public static MvcOptions AddLsMsgPackSerializerFormatters(this MvcOptions options)
     {
-      return options.AddLsMsgPackSerializerFormatters(new LtMsgPackHttpOptions());
+      return options.AddLsMsgPackSerializerFormatters(new LsMsgPackHttpOptions());
     }
 
     /// <summary>
@@ -94,25 +94,25 @@ namespace LsMsgPackFormatters
     [RequiresUnreferencedCode(LsMsgPackFormatter.RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(LsMsgPackFormatter.RequiresDynamicCodeMessage)]
 #endif
-    public static MvcOptions AddLsMsgPackSerializerFormatters(this MvcOptions options, LtMsgPackHttpOptions settings)
+    public static MvcOptions AddLsMsgPackSerializerFormatters(this MvcOptions options, LsMsgPackHttpOptions settings)
     {
-      return options.AddFormatters(new LtMsgPackHttpSerializer(settings ?? new LtMsgPackHttpOptions()));
+      return options.AddFormatters(new LsMsgPackHttpSerializer(settings ?? new LsMsgPackHttpOptions()));
     }
 
     /// <summary>
-    /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter with the code of LtMsgPack's source generator (for trimmed and NativeAOT apps, see <see cref="LtMsgPackSerializer(LtMsgPackContext, LtMsgPackOptions)"/>).
+    /// Adds the LsMsgPackInputFormatter and LsMsgPackOutputFormatter with the code of LsMsgPack's source generator (for trimmed and NativeAOT apps, see <see cref="LsMsgPackSerializer(LsMsgPackContext, LsMsgPackOptions)"/>).
     /// </summary>
     /// <param name="options">MvcOptions</param>
     /// <param name="context">E.g. <c>AppMsgPackContext.Default</c></param>
     /// <param name="settings">The settings per media type (null: the defaults)</param>
     /// <returns>THe same MvcOptions as the input (for dasy-chaining)</returns>
-    public static MvcOptions AddLsMsgPackSerializerFormatters(this MvcOptions options, LtMsgPackContext context, LtMsgPackHttpOptions settings = null)
+    public static MvcOptions AddLsMsgPackSerializerFormatters(this MvcOptions options, LsMsgPackContext context, LsMsgPackHttpOptions settings = null)
     {
-      return options.AddFormatters(new LtMsgPackHttpSerializer(context, settings ?? new LtMsgPackHttpOptions()));
+      return options.AddFormatters(new LsMsgPackHttpSerializer(context, settings ?? new LsMsgPackHttpOptions()));
     }
 
     /// <param name="serializer">Shared, so both formatters use one schema store</param>
-    private static MvcOptions AddFormatters(this MvcOptions options, LtMsgPackHttpSerializer serializer)
+    private static MvcOptions AddFormatters(this MvcOptions options, LsMsgPackHttpSerializer serializer)
     {
       options.InputFormatters.Add(new LsMsgPackInputFormatter(serializer));
       options.OutputFormatters.Add(new LsMsgPackOutputFormatter(serializer));
@@ -122,16 +122,16 @@ namespace LsMsgPackFormatters
 
   public class LsMsgPackSettingsSetup:IConfigureOptions<MvcOptions>
   {
-    private readonly LtMsgPackHttpOptions _options;
-    private readonly LtMsgPackContext _context;
+    private readonly LsMsgPackHttpOptions _options;
+    private readonly LsMsgPackContext _context;
 
-    public LsMsgPackSettingsSetup(IOptions<LtMsgPackHttpOptions> options)
+    public LsMsgPackSettingsSetup(IOptions<LsMsgPackHttpOptions> options)
     {
       _options = options.Value;
     }
 
-    /// <param name="context">The code of LtMsgPack's source generator</param>
-    internal LsMsgPackSettingsSetup(IOptions<LtMsgPackHttpOptions> options, LtMsgPackContext context)
+    /// <param name="context">The code of LsMsgPack's source generator</param>
+    internal LsMsgPackSettingsSetup(IOptions<LsMsgPackHttpOptions> options, LsMsgPackContext context)
     {
       _options = options.Value;
       _context = context;

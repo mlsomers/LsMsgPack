@@ -145,15 +145,15 @@ namespace LsMsgPackInteropTests
   }
 
   [TestClass]
-  public class LsNerdbankTests : NerdbankTests
+  public class DebugNerdbankTests : NerdbankTests
   {
-    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Ls; } }
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtNerdbankTests : NerdbankTests
+  public class LsNerdbankTests : NerdbankTests
   {
-    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Lt; } }
+    protected override LsMsgPackUnitTests.ISerializerUnderTest Serializer { get { return LsMsgPackUnitTests.Serializers.Ls; } }
   }
 
   [TestClass]

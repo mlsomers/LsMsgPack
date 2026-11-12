@@ -8,7 +8,7 @@ namespace LsMsgPack.TypeResolving.Filters
   /// as Json.NET does. The method is public (instance or static), takes no parameters and belongs to the class that declares the member (declared there or inherited, overrides are called);
   /// {Name} is the .NET name of the member. A method declared by a derived class for an inherited member is not called, as in Json.NET.
   /// <para>Add it to <see cref="MsgPackOptions.DynamicFilters"/> (with the other dynamic filters, e.g. <see cref="FilterDefaultValues"/>). Only the members that have such a method are checked:
-  /// LtMsgPack writes the others with its usual (generated or compiled) code.</para>
+  /// LsMsgPack writes the others with its usual (generated or compiled) code.</para>
   /// <para>This filter type only affects writing.</para>
   /// </summary>
   public class FilterShouldSerialize : IMsgPackPropertyIncludeWithOwner

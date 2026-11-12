@@ -2,7 +2,6 @@
 using LsMsgPackDebug;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
-using LtMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -65,7 +64,7 @@ namespace LsMsgPackUnitTests
       public ICyLink Next { get; set; }
     }
 
-    // Only numbers and strings: LtMsgPack does not track it (nothing below it can be it), a derived class referring back is tracked through the boxed path
+    // Only numbers and strings: LsMsgPack does not track it (nothing below it can be it), a derived class referring back is tracked through the boxed path
     public class CyPlain
     {
       public int X { get; set; }
@@ -206,7 +205,7 @@ namespace LsMsgPackUnitTests
       foreach (MsgPackSettings settings in AllSettings())
       {
         byte[] bytes = Serializer.Serialize(holder, settings);
-        CollectionAssert.AreEqual(Serializers.Ls.Serialize(holder, settings), bytes, $"{settings.ObjectLayout}, trimmed {settings.TrimTrailingNulls}, schema {settings.UseInexedSchema}");
+        CollectionAssert.AreEqual(Serializers.Debug.Serialize(holder, settings), bytes, $"{settings.ObjectLayout}, trimmed {settings.TrimTrailingNulls}, schema {settings.UseInexedSchema}");
         CyPlainHolder read = Serializer.Deserialize<CyPlainHolder>(bytes, settings);
         Assert.AreEqual(1, read.Item.X);
         Assert.IsNull(((CyPlainBack)read.Item).Back);
@@ -222,7 +221,7 @@ namespace LsMsgPackUnitTests
       CyGroup group = Group();
       var value = new { Title = "t", Group = group, Again = group.Discounts[0] };
       foreach (MsgPackSettings settings in AllSettings())
-        CollectionAssert.AreEqual(Serializers.Ls.Serialize(value, settings), Serializer.Serialize(value, settings));
+        CollectionAssert.AreEqual(Serializers.Debug.Serialize(value, settings), Serializer.Serialize(value, settings));
     }
 
     [TestMethod]
@@ -257,7 +256,7 @@ namespace LsMsgPackUnitTests
       values.Add(person);
       foreach (MsgPackSettings settings in AllSettings())
         foreach (object value in values)
-          CollectionAssert.AreEqual(Serializers.Ls.Serialize(value, value.GetType(), settings), Serializer.Serialize(value, value.GetType(), settings), $"{value.GetType().Name}, {settings.ObjectLayout}, trimmed {settings.TrimTrailingNulls}, schema {settings.UseInexedSchema}");
+          CollectionAssert.AreEqual(Serializers.Debug.Serialize(value, value.GetType(), settings), Serializer.Serialize(value, value.GetType(), settings), $"{value.GetType().Name}, {settings.ObjectLayout}, trimmed {settings.TrimTrailingNulls}, schema {settings.UseInexedSchema}");
     }
 
     [TestMethod]
@@ -265,14 +264,14 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = Settings(ObjectLayout.Map, true);
       settings.DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(), new FilterShouldSerialize() };
-      CollectionAssert.AreEqual(Serializers.Ls.Serialize(Tree(), settings), Serializer.Serialize(Tree(), settings));
+      CollectionAssert.AreEqual(Serializers.Debug.Serialize(Tree(), settings), Serializer.Serialize(Tree(), settings));
     }
   }
 
   [TestClass]
-  public class LsCycleTests : CycleTests
+  public class DebugCycleTests : CycleTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
 
     /// <summary>
     /// A serialization inside another (here by a getter, e.g. a custom extension) does not see the objects of the outer one: its root is not nil.
@@ -313,9 +312,9 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LtCycleTests : CycleTests
+  public class LsCycleTests : CycleTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
 
     /// <summary>
     /// The compiled writers (compiled with the plan) write nested objects through the handlers, which track them.
@@ -325,9 +324,9 @@ namespace LsMsgPackUnitTests
     [DataRow(ObjectLayout.Array)]
     public void CompiledWriters(ObjectLayout layout)
     {
-      LtMsgPackSerializer compiled = new LtMsgPackSerializer(new LtMsgPackOptions() { ObjectLayout = layout, IgnoreCycles = true, CompileWritersAfter = 0, UseRegisteredContexts = false });
+      LsMsgPackSerializer compiled = new LsMsgPackSerializer(new LsMsgPackOptions() { ObjectLayout = layout, IgnoreCycles = true, CompileWritersAfter = 0, UseRegisteredContexts = false });
       for (int t = 0; t < 3; t++)
-        CollectionAssert.AreEqual(Serializers.Ls.Serialize(Tree(), new MsgPackSettings() { ObjectLayout = layout, IgnoreCycles = true }), compiled.Serialize(Tree()));
+        CollectionAssert.AreEqual(Serializers.Debug.Serialize(Tree(), new MsgPackSettings() { ObjectLayout = layout, IgnoreCycles = true }), compiled.Serialize(Tree()));
     }
   }
 

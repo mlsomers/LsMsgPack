@@ -1,7 +1,5 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Streaming;
-using LtMsgPack;
-using LtMsgPack.Streaming;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -52,9 +50,9 @@ namespace LsMsgPackUnitTests
       return order;
     }
 
-    private static LtMsgPackSerializer Indexed()
+    private static LsMsgPackSerializer Indexed()
     {
-      return new LtMsgPackSerializer(new LtMsgPackOptions());
+      return new LsMsgPackSerializer(new LsMsgPackOptions());
     }
 
     private static MsgPackStreamIndexOptions Index()

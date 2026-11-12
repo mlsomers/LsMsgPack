@@ -7,7 +7,7 @@ Which package
 
 | Package | Use it when |
 |---|---|
-| `LtMsgPack` | Normal use: saving and loading files, calling web services, caches, queues. It's several times faster than LsMsgPackDebug and System.Text.Json (see the [README](../README.md#which-package)). |
+| `LsMsgPack` | Normal use: saving and loading files, calling web services, caches, queues. It's several times faster than LsMsgPackDebug and System.Text.Json (see the [README](../README.md#which-package)). |
 | `LsMsgPackDebug` | You want to look inside MsgPack data in your app: `MsgPackItem.Unpack` gives you the tree of MsgPack items (maps, arrays, strings...) of any MsgPack payload, also data you don't have classes for. |
 
 Both write and read exactly the same data with the same settings, so a file written by one can be read by the other.
@@ -31,12 +31,12 @@ MyClass message = new MyClass()
 };
 ```
 
-With **LtMsgPack** (create one serializer per set of options and keep it, it's thread-safe and builds its plans per type once):
+With **LsMsgPack** (create one serializer per set of options and keep it, it's thread-safe and builds its plans per type once):
 
 ```csharp
-using LtMsgPack;
+using LsMsgPack;
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(); // or LtMsgPackSerializer.Default
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(); // or LsMsgPackSerializer.Default
 
 byte[] buffer = serializer.Serialize(message);
 MyClass returnMsg = serializer.Deserialize<MyClass>(buffer);
@@ -54,13 +54,13 @@ MyClass returnMsg = MsgPackSerializer.Deserialize<MyClass>(buffer);
 MpRoot items = MsgPackItem.UnpackMultiple(buffer);
 ```
 
-The settings are in `LtMsgPackOptions` (LtMsgPack) and `MsgPackSettings` (LsMsgPackDebug). Both derive from `MsgPackOptions`, so the format settings have the same names. The defaults are a good choice when only your own application reads the data. See [schema.md](schema.md) for what they do.
+The settings are in `LsMsgPackOptions` (LsMsgPack) and `MsgPackSettings` (LsMsgPackDebug). Both derive from `MsgPackOptions`, so the format settings have the same names. The defaults are a good choice when only your own application reads the data. See [schema.md](schema.md) for what they do.
 
 Saving and loading files
 ------------------------
 
 ```csharp
-LtMsgPackSerializer serializer = new LtMsgPackSerializer();
+LsMsgPackSerializer serializer = new LsMsgPackSerializer();
 
 // Save
 byte[] data = serializer.Serialize(document);
@@ -77,7 +77,7 @@ Things to keep in mind for files:
 - **Versions of your app**: with the indexed schema (the default) every file starts with the names of its properties, and the reader looks properties up by name. Files written by an older or newer version of your classes still load: added properties keep the value the constructor gave them, removed ones are skipped. Without the schema (`UseInexedSchema = false`) set `ObjectLayout = ObjectLayout.Map`, or the reader's property order must match the writer's.
 - **Keep the schema in the file.** `WriteSchemaReference` replaces the schema by an 18 byte reference to a schema held in a `SchemaStore`. That makes files unreadable unless you also keep the store (`SchemaStore.Export` / `Import`), so leave it off for files.
 - **Polymorphic documents** (a `List<IShape>` holding circles and squares) work out of the box: a type id (the short class name) is written where the type differs from the declared type. Renaming such a class breaks old files, so give them stable ids with `[XmlRoot("...")]` and the `XmlRootAttributeTypeResolver`, or your own type resolver. See [schema.md](schema.md#polymorphic-class-hierarchy-support), also for when the reader needs `CacheAssemblyTypes`.
-- **Exchanging files with other programs** (Python, JavaScript, another MsgPack library): use a preset, e.g. `new LtMsgPackSerializer(LtMsgPackPresets.Generic())`, see [Compatibility.md](Compatibility.md).
+- **Exchanging files with other programs** (Python, JavaScript, another MsgPack library): use a preset, e.g. `new LsMsgPackSerializer(LsMsgPackPresets.Generic())`, see [Compatibility.md](Compatibility.md).
 - **Looking inside a file** while developing: open it in MsgPack Explorer (see the [README](../README.md)).
 
 Calling a web service
@@ -104,7 +104,7 @@ Order saved = await response.Content.ReadFromMsgPackAsync<Order>(formatter);
 **Any other server** that speaks MsgPack (or when you'd rather not depend on `System.Net.Http.Formatting`): serialize yourself with the settings the server expects:
 
 ```csharp
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(LtMsgPackPresets.Generic()); // plain maps, see Compatibility.md
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(LsMsgPackPresets.Generic()); // plain maps, see Compatibility.md
 
 ByteArrayContent content = new ByteArrayContent(serializer.Serialize(order));
 content.Headers.ContentType = new MediaTypeHeaderValue(MsgPackMediaTypes.MsgPack);
@@ -116,15 +116,15 @@ Order saved = serializer.Deserialize<Order>(await response.Content.ReadAsByteArr
 Trimming and AOT
 ----------------
 
-With LtMsgPack, use its [source generator](SourceGenerator.md) for apps that are trimmed (iOS, Android or desktop apps published with full trimming) or compiled ahead of time (NativeAOT, WebAssembly AOT), and create the serializer with the context:
+With LsMsgPack, use its [source generator](SourceGenerator.md) for apps that are trimmed (iOS, Android or desktop apps published with full trimming) or compiled ahead of time (NativeAOT, WebAssembly AOT), and create the serializer with the context:
 
 ```csharp
-[LtMsgPackSerializable(typeof(Order))]
-public partial class AppMsgPackContext : LtMsgPackContext { }
+[LsMsgPackSerializable(typeof(Order))]
+public partial class AppMsgPackContext : LsMsgPackContext { }
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(AppMsgPackContext.Default, new LtMsgPackOptions());
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(AppMsgPackContext.Default, new LsMsgPackOptions());
 ```
 
-The generated code keeps the model classes when trimming (.NET 5 and later) and creates what LtMsgPack would otherwise create at runtime, which NativeAOT can't do (without it, LtMsgPack fails under NativeAOT). On WebAssembly AOT (Blazor) it is also several times faster. The constructors without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`: the analyzers of a trimmed or AOT project warn where they are used (see [Trimming and NativeAOT](SourceGenerator.md#trimming-and-nativeaot)).
+The generated code keeps the model classes when trimming (.NET 5 and later) and creates what LsMsgPack would otherwise create at runtime, which NativeAOT can't do (without it, LsMsgPack fails under NativeAOT). On WebAssembly AOT (Blazor) it is also several times faster. The constructors without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`: the analyzers of a trimmed or AOT project warn where they are used (see [Trimming and NativeAOT](SourceGenerator.md#trimming-and-nativeaot)).
 
 LsMsgPackDebug (the item tree serializer, meant for debugging) finds the properties of your classes through reflection. In a trimmed app, make sure the trimmer keeps the model classes and their properties, for example by marking the assembly with your models as a root: `<TrimmerRootAssembly Include="MyApp.Models" />`.

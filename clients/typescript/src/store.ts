@@ -1,5 +1,5 @@
 // Keeps the schemas received from servers, so the next requests can say which ones the client holds (request header MsgPack-Schemas)
-// and the server refers to them (18 bytes) instead of sending them. As LtMsgPackHttpSerializer.GetSchemasHeader / LearnSchema on the .NET side.
+// and the server refers to them (18 bytes) instead of sending them. As LsMsgPackHttpSerializer.GetSchemasHeader / LearnSchema on the .NET side.
 
 import { Schema } from './schema.js';
 

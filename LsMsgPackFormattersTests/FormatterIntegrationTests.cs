@@ -1,8 +1,7 @@
 ﻿using LsMsgPack;
 using LsMsgPackDebug;
 using LsMsgPackFormatters;
-using LtMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
@@ -256,17 +255,17 @@ namespace LsMsgPackFormattersTests
     [Test]
     public void WritersAndReadersAreCompiledAtOnce_ForBothMediaTypes()
     {
-      LtMsgPackHttpSerializer defaults = new LtMsgPackHttpSerializer();
+      LsMsgPackHttpSerializer defaults = new LsMsgPackHttpSerializer();
       Assert.That(defaults.For(MsgPackMediaTypes.XLsMsgPack).Options.CompileWritersAfter, Is.EqualTo(0));
       Assert.That(defaults.For(MsgPackMediaTypes.MsgPack).Options.CompileWritersAfter, Is.EqualTo(0));
       Assert.That(defaults.For(MsgPackMediaTypes.XLsMsgPack).Options.CompileReadersAfter, Is.EqualTo(0));
       Assert.That(defaults.For(MsgPackMediaTypes.MsgPack).Options.CompileReadersAfter, Is.EqualTo(0));
 
       // The formatters' settings replace the values of the media types' options
-      LtMsgPackOptions plain = LtMsgPackPresets.MessagePackCSharp();
+      LsMsgPackOptions plain = LsMsgPackPresets.MessagePackCSharp();
       plain.CompileWritersAfter = -1;
       plain.CompileReadersAfter = -1;
-      LtMsgPackHttpSerializer configured = new LtMsgPackHttpSerializer(new LtMsgPackHttpOptions { Plain = plain, CompileWritersAfter = 50, CompileReadersAfter = 70 });
+      LsMsgPackHttpSerializer configured = new LsMsgPackHttpSerializer(new LsMsgPackHttpOptions { Plain = plain, CompileWritersAfter = 50, CompileReadersAfter = 70 });
       Assert.That(configured.For(MsgPackMediaTypes.XLsMsgPack).Options.CompileWritersAfter, Is.EqualTo(50));
       Assert.That(configured.For(MsgPackMediaTypes.MsgPack).Options.CompileWritersAfter, Is.EqualTo(50));
       Assert.That(configured.For(MsgPackMediaTypes.XLsMsgPack).Options.CompileReadersAfter, Is.EqualTo(70));
@@ -334,7 +333,7 @@ namespace LsMsgPackFormattersTests
     }
 
     /// <summary>
-    /// The TypeScript client with propertyNames: 'camelCase' writes { id, customer, amounts }: read as Order (LtMsgPackHttpOptions.PropertyNameCaseInsensitive, on by default).
+    /// The TypeScript client with propertyNames: 'camelCase' writes { id, customer, amounts }: read as Order (LsMsgPackHttpOptions.PropertyNameCaseInsensitive, on by default).
     /// </summary>
     [TestCase(true)]
     [TestCase(false)]
@@ -564,13 +563,13 @@ namespace LsMsgPackFormattersTests
       HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, path);
       request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(MsgPackMediaTypes.XLsMsgPack));
       if (!(schemas is null))
-        request.Headers.Add(LtMsgPackHttpSerializer.SchemasHeader, schemas);
+        request.Headers.Add(LsMsgPackHttpSerializer.SchemasHeader, schemas);
       return request;
     }
 
     private static string SchemaHeader(HttpResponseMessage response)
     {
-      return response.Headers.TryGetValues(LtMsgPackHttpSerializer.SchemaHeader, out IEnumerable<string> values) ? values.Single() : null;
+      return response.Headers.TryGetValues(LsMsgPackHttpSerializer.SchemaHeader, out IEnumerable<string> values) ? values.Single() : null;
     }
 
     private static bool IsReference(byte[] body)
@@ -589,7 +588,7 @@ namespace LsMsgPackFormattersTests
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK));
         byte[] body = await response.Content.ReadAsByteArrayAsync();
         Assert.That(IsReference(body), Is.False);
-        Assert.That(response.Headers.Vary, Does.Contain(LtMsgPackHttpSerializer.SchemasHeader));
+        Assert.That(response.Headers.Vary, Does.Contain(LsMsgPackHttpSerializer.SchemasHeader));
         Assert.That(SchemaHeader(response), Has.Length.EqualTo(32));
         Assert.That(((Dog)MsgPackSerializer.Deserialize<Animal>(body)).Barks, Is.EqualTo(3), "LsMsgPack reads it without a store");
       }
@@ -601,7 +600,7 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync();
       using (host)
       {
-        LtMsgPackHttpSerializer clientSide = new LtMsgPackHttpSerializer();
+        LsMsgPackHttpSerializer clientSide = new LsMsgPackHttpSerializer();
         Uri server = new Uri("http://localhost/");
 
         HttpResponseMessage first = await client.SendAsync(Get("/test/order", clientSide.GetSchemasHeader(server)));
@@ -643,7 +642,7 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(o => o.CompleteSchemas = false)); // a complete schema has Cat already
       using (host)
       {
-        LtMsgPackHttpSerializer clientSide = new LtMsgPackHttpSerializer();
+        LsMsgPackHttpSerializer clientSide = new LsMsgPackHttpSerializer();
         Uri server = new Uri("http://localhost/");
 
         HttpResponseMessage dog = await client.SendAsync(Get("/test/animal", null));
@@ -671,13 +670,13 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync();
       using (host)
       {
-        LtMsgPackHttpSerializer clientSide = new LtMsgPackHttpSerializer();
+        LsMsgPackHttpSerializer clientSide = new LsMsgPackHttpSerializer();
         Uri server = new Uri("http://localhost/");
 
         HttpResponseMessage dog = await client.SendAsync(Get("/test/animal", null));
         byte[] dogBody = await dog.Content.ReadAsByteArrayAsync();
         clientSide.LearnSchema(server, SchemaHeader(dog), dogBody, 0, dogBody.Length, MsgPackMediaTypes.XLsMsgPack);
-        Assert.That(SchemaHeader(dog), Is.EqualTo(new LtMsgPackHttpSerializer().PrepareSchema(typeof(Animal), false).ToString()), "Known before the first response: the same in every process");
+        Assert.That(SchemaHeader(dog), Is.EqualTo(new LsMsgPackHttpSerializer().PrepareSchema(typeof(Animal), false).ToString()), "Known before the first response: the same in every process");
 
         HttpResponseMessage cat = await client.SendAsync(Get("/test/cat", clientSide.GetSchemasHeader(server))); // Cat is in the schema already: a reference
         byte[] catBody = await cat.Content.ReadAsByteArrayAsync();
@@ -754,7 +753,7 @@ namespace LsMsgPackFormattersTests
     [Test]
     public async Task PresetForPlainMediaTypes()
     {
-      (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(settings => settings.Plain = LtMsgPackPresets.MessagePackCSharp()));
+      (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(settings => settings.Plain = LsMsgPackPresets.MessagePackCSharp()));
       using (host)
       {
         HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "/test/receipt");

@@ -1,5 +1,5 @@
 using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 
@@ -24,7 +24,7 @@ namespace LsMsgPackWebApiFormatters
     }
 
     /// <summary>
-    /// What did not match between the body and the classes it was read into by <see cref="LsMsgPackMediaTypeFormatter"/> (with <see cref="LtMsgPackHttpOptions.ReportDifferences"/>),
+    /// What did not match between the body and the classes it was read into by <see cref="LsMsgPackMediaTypeFormatter"/> (with <see cref="LsMsgPackHttpOptions.ReportDifferences"/>),
     /// null when it matched or was not read by it. Also when reading failed: the differences found until the error (without paths).
     /// </summary>
     public static ReadDifferences GetReadDifferences(this HttpContent content)

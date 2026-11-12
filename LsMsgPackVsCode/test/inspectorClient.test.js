@@ -72,7 +72,7 @@ test('load, search, settings and errors', { skip }, async () => {
     const map = await client.load('m', Buffer.from([0x84, 0x01, 0x02, 0xc1, 0x03, 0x04, 0x05, 0x06, 0x07]).toString('base64'), settings);
     assert.ok(!map.items.some((item) => item.text === 'NULL'), JSON.stringify(map.items.map((item) => item.text)));
 
-    // A stream (LtMsgPack's MsgPackStreamWriter): values of unknown length (0xC1 escapes), then its index (ext 3) and the tail
+    // A stream (LsMsgPack's MsgPackStreamWriter): values of unknown length (0xC1 escapes), then its index (ext 3) and the tail
     const body = Buffer.from('92c1a0a26162a163c1c0c19001c1c0', 'hex'); // ["abc" in 2 chunks, [1] of unknown length]
     // [version 1, status Complete, writer, previous tail, hash algorithm: nil, no schemas, entries: [[offset 0, length]]]
     const content = Buffer.from([0x97, 0x01, 0x00, 0xc0, 0xc0, 0xc0, 0x90, 0x91, 0x92, 0x00, body.length]);

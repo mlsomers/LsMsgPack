@@ -5,7 +5,6 @@ using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.TypeResolving.Names;
-using LtMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections;
@@ -20,7 +19,7 @@ using System.Text;
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// LtMsgPack writes the same bytes as LsMsgPack and reads the same values, for a corpus of values in all settings.
+  /// LsMsgPack writes the same bytes as LsMsgPack and reads the same values, for a corpus of values in all settings.
   /// </summary>
   [TestClass]
   public class CrossLibraryTests
@@ -94,7 +93,7 @@ namespace LsMsgPackUnitTests
       public string Y { get; set; }
     }
 
-    // Structs as games use them (LtMsgPack writes and reads them with the object plans, boxed once): floats, nesting, defaults, nullables, collections, type ids
+    // Structs as games use them (LsMsgPack writes and reads them with the object plans, boxed once): floats, nesting, defaults, nullables, collections, type ids
 
     public struct XlVec { public float X { get; set; } public float Y { get; set; } public float Z { get; set; } }
 
@@ -398,7 +397,7 @@ namespace LsMsgPackUnitTests
       values.Add(new object[] { System.Numerics.Vector2.One, new System.Numerics.Vector4(1, 2, 3, 4), new System.Numerics.Plane(1, 0, 0, 2), System.Numerics.Matrix3x2.CreateRotation(1) });
       values.Add(new XlNoMembersHolder { Inner = new XlNoMembers { Unattributed = 3 }, After = 2 }); // an object without serialized members (an empty map, no schema entry)
 
-      // Arrays and lists of numbers (LtMsgPack writes and reads int, long, float and double in bulk) and dates: every format and its boundaries, more values than one block
+      // Arrays and lists of numbers (LsMsgPack writes and reads int, long, float and double in bulk) and dates: every format and its boundaries, more values than one block
       int[] bulkInts = { 0, 1, 31, 32, 127, 128, 255, 256, 32767, 32768, 65535, 65536, int.MaxValue, -1, -31, -32, -33, -128, -129, -32768, -32769, int.MinValue };
       long[] longs = { 0, 1, 127, 128, 255, 256, 65535, 65536, int.MaxValue, 2147483648L, uint.MaxValue, 4294967296L, long.MaxValue, -1, -32, -33, -128, -129, -32768, -32769, int.MinValue, -2147483649L, long.MinValue };
       float[] floats = { 0f, -0.0f, 1.5f, -2.25f, float.NaN, float.PositiveInfinity, float.NegativeInfinity, float.MaxValue, float.MinValue, float.Epsilon };
@@ -472,7 +471,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings ls = new MsgPackSettings();
       Configure(ls, endian, compact, mode, layout);
-      LtMsgPackOptions ltOptions = new LtMsgPackOptions();
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions();
       Configure(ltOptions, endian, compact, mode, layout);
       CompareCorpus(ls, ltOptions);
     }
@@ -483,7 +482,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings ls = new MsgPackSettings();
       Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout, order);
-      LtMsgPackOptions ltOptions = new LtMsgPackOptions();
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions();
       Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout, order);
       CompareCorpus(ls, ltOptions);
     }
@@ -497,7 +496,7 @@ namespace LsMsgPackUnitTests
       {
         MsgPackSettings ls = new MsgPackSettings() { DateTimeOffsetFormat = format };
         Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode);
-        LtMsgPackOptions ltOptions = new LtMsgPackOptions() { DateTimeOffsetFormat = format };
+        LsMsgPackOptions ltOptions = new LsMsgPackOptions() { DateTimeOffsetFormat = format };
         Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode);
         CompareCorpus(ls, ltOptions);
       }
@@ -511,7 +510,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings ls = new MsgPackSettings() { TrimTrailingNulls = true };
       Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, ObjectLayout.Array);
-      LtMsgPackOptions ltOptions = new LtMsgPackOptions() { TrimTrailingNulls = true };
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions() { TrimTrailingNulls = true };
       Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, ObjectLayout.Array);
       CompareCorpus(ls, ltOptions);
     }
@@ -534,7 +533,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings ls = new MsgPackSettings() { SchemaVersion = SchemaVersion.Described };
       Configure(ls, endian, compact, mode, layout);
-      LtMsgPackOptions ltOptions = new LtMsgPackOptions() { SchemaVersion = SchemaVersion.Described };
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions() { SchemaVersion = SchemaVersion.Described };
       Configure(ltOptions, endian, compact, mode, layout);
       CompareCorpus(ls, ltOptions);
     }
@@ -557,12 +556,12 @@ namespace LsMsgPackUnitTests
       IMsgPackPropertyIncludeStatically[] filters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, nonPublic), new FilterIgnoredAttribute(), new FilterStatic() };
       MsgPackSettings ls = new MsgPackSettings() { StaticFilters = filters };
       Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
-      LtMsgPackOptions ltOptions = new LtMsgPackOptions() { StaticFilters = filters };
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions() { StaticFilters = filters };
       Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
       CompareCorpus(ls, ltOptions);
 
       List<string> differences = new List<string>();
-      foreach ((string which, LtMsgPackSerializer lt) in LtAndGenerated(ltOptions))
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
       {
         Compare(which + " account", SerializingNonPublicProperties.NppAccount.Sample(), typeof(SerializingNonPublicProperties.NppAccount), ls, lt, differences);
         Compare(which + " private", GeneratedCodeTests.GcPrivate.Sample(), typeof(GeneratedCodeTests.GcPrivate), ls, lt, differences);
@@ -588,12 +587,12 @@ namespace LsMsgPackUnitTests
       IMsgPackPropertyIncludeStatically[] filters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.None, fields), new FilterIgnoredAttribute(), new FilterStatic() };
       MsgPackSettings ls = new MsgPackSettings() { StaticFilters = filters };
       Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
-      LtMsgPackOptions ltOptions = new LtMsgPackOptions() { StaticFilters = filters };
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions() { StaticFilters = filters };
       Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
       CompareCorpus(ls, ltOptions);
 
       List<string> differences = new List<string>();
-      foreach ((string which, LtMsgPackSerializer lt) in LtAndGenerated(ltOptions))
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
       {
         Compare(which + " account", SerializingFields.FldAccount.Sample(), typeof(SerializingFields.FldAccount), ls, lt, differences);
         Compare(which + " point", new SerializingFields.FldPoint() { X = 1, Y = -2, Label = "p" }, typeof(SerializingFields.FldPoint), ls, lt, differences);
@@ -605,31 +604,31 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// LtMsgPack with the options, as it builds its plans at runtime, with writers and readers compiled at runtime from the first object (CompileWritersAfter and CompileReadersAfter = 0)
+    /// LsMsgPack with the options, as it builds its plans at runtime, with writers and readers compiled at runtime from the first object (CompileWritersAfter and CompileReadersAfter = 0)
     /// and with the code of the source generator (TestMsgPackContext).
     /// </summary>
-    private static IEnumerable<(string Name, LtMsgPackSerializer Serializer)> LtAndGenerated(LtMsgPackOptions options)
+    private static IEnumerable<(string Name, LsMsgPackSerializer Serializer)> LsAndGenerated(LsMsgPackOptions options)
     {
-      LtMsgPackOptions runtime = options.Clone();
+      LsMsgPackOptions runtime = options.Clone();
       runtime.UseRegisteredContexts = false;
       runtime.CompileWritersAfter = -1;
       runtime.CompileReadersAfter = -1;
-      yield return ("Lt", new LtMsgPackSerializer(runtime));
-      LtMsgPackOptions compiled = options.Clone();
+      yield return ("Ls", new LsMsgPackSerializer(runtime));
+      LsMsgPackOptions compiled = options.Clone();
       compiled.UseRegisteredContexts = false;
       compiled.CompileWritersAfter = 0;
       compiled.CompileReadersAfter = 0;
-      yield return ("Compiled", new LtMsgPackSerializer(compiled));
-      LtMsgPackOptions generated = options.Clone();
-      generated.Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default };
+      yield return ("Compiled", new LsMsgPackSerializer(compiled));
+      LsMsgPackOptions generated = options.Clone();
+      generated.Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default };
       generated.UseRegisteredContexts = false;
-      yield return ("Gen", new LtMsgPackSerializer(generated));
+      yield return ("Gen", new LsMsgPackSerializer(generated));
     }
 
-    private void CompareCorpus(MsgPackSettings ls, LtMsgPackOptions ltOptions)
+    private void CompareCorpus(MsgPackSettings ls, LsMsgPackOptions ltOptions)
     {
       List<string> differences = new List<string>();
-      foreach ((string which, LtMsgPackSerializer lt) in LtAndGenerated(ltOptions))
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
       {
         int n = 0;
         foreach (object value in Corpus())
@@ -652,7 +651,7 @@ namespace LsMsgPackUnitTests
       XlRenamed value = new XlRenamed { A = "a", Ignored = "x", B = 3, Child = new XlRenamed { A = "c", B = 4 }, Kids = new List<XlRenamed> { new XlRenamed { B = 9 }, new XlRenamed { A = "k" } } };
 
       List<string> differences = new List<string>();
-      foreach ((string which, LtMsgPackSerializer lt) in LtAndGenerated(new LtMsgPackOptions { UseInexedSchema = schema, PropertyNameResolvers = ls.PropertyNameResolvers }))
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(new LsMsgPackOptions { UseInexedSchema = schema, PropertyNameResolvers = ls.PropertyNameResolvers }))
         Compare(which + " renamed", value, typeof(XlRenamed), ls, lt, differences);
       Assert.IsEmpty(differences, string.Join("\n", differences));
     }
@@ -666,7 +665,7 @@ namespace LsMsgPackUnitTests
       {
         MsgPackSettings ls = new MsgPackSettings { UseInexedSchema = schema, AddTypeIdOptions = option };
         List<string> differences = new List<string>();
-        foreach ((string which, LtMsgPackSerializer lt) in LtAndGenerated(new LtMsgPackOptions { UseInexedSchema = schema, AddTypeIdOptions = option }))
+        foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(new LsMsgPackOptions { UseInexedSchema = schema, AddTypeIdOptions = option }))
         {
           int n = 0;
           foreach (object value in Corpus().Where(v => !(v is Array a && a.Length > 1000) && !(v is IDictionary d && d.Count > 1000)))
@@ -686,7 +685,7 @@ namespace LsMsgPackUnitTests
       {
         MsgPackSettings ls = new MsgPackSettings { UseInexedSchema = schema, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
         List<string> differences = new List<string>();
-        foreach ((string which, LtMsgPackSerializer lt) in LtAndGenerated(new LtMsgPackOptions { UseInexedSchema = schema, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] }))
+        foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(new LsMsgPackOptions { UseInexedSchema = schema, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] }))
         {
           int n = 0;
           foreach (object value in Corpus().Where(v => !(v is Array a && a.Length > 1000) && !(v is IDictionary d && d.Count > 1000)))
@@ -701,7 +700,7 @@ namespace LsMsgPackUnitTests
     {
       foreach (bool schema in new[] { false, true })
       {
-        LtMsgPackSerializer lt = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = schema });
+        LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = schema });
         MemoryStream ms = new MemoryStream();
         lt.Serialize(new XlCircle { Name = "one" }, ms);
         lt.Serialize(new XlCircle { Name = "two" }, ms);
@@ -742,7 +741,7 @@ namespace LsMsgPackUnitTests
       SchemaStore store = new SchemaStore();
       MsgPackSettings ls = new MsgPackSettings { SchemaStore = store, WriteSchemaReference = true };
       XlShapes shapes = (XlShapes)Corpus().First(v => v is XlShapes);
-      foreach ((string which, LtMsgPackSerializer lt) in LtAndGenerated(new LtMsgPackOptions { SchemaStore = store, WriteSchemaReference = true }))
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(new LsMsgPackOptions { SchemaStore = store, WriteSchemaReference = true }))
       {
         byte[] fromLs = MsgPackSerializer.Serialize(shapes, ls);
         byte[] fromLt = lt.Serialize(shapes);
@@ -751,13 +750,13 @@ namespace LsMsgPackUnitTests
       }
     }
 
-    private static void Compare(string name, object value, Type declared, MsgPackSettings ls, LtMsgPackSerializer lt, List<string> differences)
+    private static void Compare(string name, object value, Type declared, MsgPackSettings ls, LsMsgPackSerializer lt, List<string> differences)
     {
       string lsBytes = Try(() => MsgPackSerializer.Serialize(value, declared, ls), out byte[] lsData);
       string ltBytes = Try(() => lt.Serialize(value, declared), out byte[] ltData);
       if (lsBytes != ltBytes)
       {
-        differences.Add($"{name}: bytes differ\n  Ls {Short(lsBytes)}\n  Lt {Short(ltBytes)}");
+        differences.Add($"{name}: bytes differ\n  Debug {Short(lsBytes)}\n  Ls {Short(ltBytes)}");
         return;
       }
       if (lsData is null)
@@ -768,7 +767,7 @@ namespace LsMsgPackUnitTests
       if (lsRead.StartsWith("EX ", StringComparison.Ordinal) && ltRead.StartsWith("EX ", StringComparison.Ordinal))
         return; // both refuse the data (they may stop at another property: LsMsgPack sets the properties from last to first)
       if (lsRead != ltRead)
-        differences.Add($"{name}: read differs\n  Ls {Short(lsRead)}\n  Lt {Short(ltRead)}");
+        differences.Add($"{name}: read differs\n  Debug {Short(lsRead)}\n  Ls {Short(ltRead)}");
     }
 
     private static string Short(string text)
@@ -814,7 +813,7 @@ namespace LsMsgPackUnitTests
       if (t.IsPrimitive || o is decimal || t.IsEnum || o is Guid || o is TimeSpan || o is Uri) return t.Name + ":" + Convert.ToString(o, CultureInfo.InvariantCulture);
       if (t.FullName.StartsWith("System.DateOnly", StringComparison.Ordinal) || t.FullName.StartsWith("System.TimeOnly", StringComparison.Ordinal)) return t.Name + ":" + o;
       if (o is MpExt ext) return "ext(" + ext.TypeSpecifier + ":" + BitConverter.ToString((byte[])ext.Value) + ")";
-      if (o is LtMsgPack.Extensions.MsgPackExtension lext) return "ext(" + lext.TypeCode + ":" + BitConverter.ToString(lext.Data) + ")";
+      if (o is LsMsgPack.Extensions.MsgPackExtension lext) return "ext(" + lext.TypeCode + ":" + BitConverter.ToString(lext.Data) + ")";
       if (o is IEnumerable en)
       {
         List<string> parts = new List<string>();

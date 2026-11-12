@@ -417,15 +417,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsCachedSchemaTests : CachedSchemaTests
+  public class DebugCachedSchemaTests : CachedSchemaTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtCachedSchemaTests : CachedSchemaTests
+  public class LsCachedSchemaTests : CachedSchemaTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

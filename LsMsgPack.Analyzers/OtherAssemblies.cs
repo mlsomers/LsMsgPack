@@ -91,7 +91,6 @@ namespace LsMsgPack.Analyzers
         case "LsMsgPack":
         case "LsMsgPackDebug":
         case "LsMsgPack.Core":
-        case "LtMsgPack":
         case "LsMsgPackFormatters":
         case "LsMsgPackWebApiFormatters":
         case "LsMsgPackMvc":

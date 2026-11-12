@@ -249,7 +249,7 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// A type of the framework that would be written as an object with properties but has no settable ones (e.g. Lazy&lt;T&gt;, Index): its values would be written as an empty map
     /// and read back as the default, without an error. The serializers write the framework types they know by themselves (see FrameworkTypeInfo), anything else of the framework that has no settable state is refused.
-    /// <para>Checked once per type, when the serializers plan to write or read an object of it. A custom extension for the type (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions) is asked first, so it can still be written that way.</para>
+    /// <para>Checked once per type, when the serializers plan to write or read an object of it. A custom extension for the type (MsgPackSettings.CustomExtentionTypes, LsMsgPackOptions.Extensions) is asked first, so it can still be written that way.</para>
     /// </summary>
     internal static void ThrowIfUnsupportedFrameworkType(Type type)
     {
@@ -300,10 +300,10 @@ namespace LsMsgPack.Meta
 
       if (IsJsonDocumentType(type))
         return $"{type.FullName} is not supported: MsgPack has no form for a JSON document. Hold the JSON as a string (JsonElement.GetRawText(), JsonNode.ToJsonString(), JsonDocument.Parse(text)) or its values in a class of your own, "
-          + "or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions).";
+          + "or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LsMsgPackOptions.Extensions).";
 
       return $"{type.FullName} is not supported: it has no settable properties, so it would be written as an empty map and read back as its default value. "
-        + "Serialize the values it holds (in a class of your own), or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LtMsgPackOptions.Extensions).";
+        + "Serialize the values it holds (in a class of your own), or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LsMsgPackOptions.Extensions).";
     }
 
     /// <summary>

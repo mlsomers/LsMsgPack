@@ -163,7 +163,7 @@ namespace LsMsgPackDebug
 
     /// <summary>
     /// Reads count bytes into the buffer. <see cref="Stream.Read(byte[], int, int)"/> may return fewer bytes than requested (e.g. network streams), so keep reading until all bytes arrived.
-    /// <para>Data that ends before all bytes arrived throws (as LtMsgPack does): zeroing the rest made truncated data read as other values without an error.</para>
+    /// <para>Data that ends before all bytes arrived throws (as LsMsgPack does): zeroing the rest made truncated data read as other values without an error.</para>
     /// </summary>
     protected static void ReadExactly(Stream data, byte[] buffer, int count)
     {

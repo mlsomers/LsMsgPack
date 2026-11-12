@@ -1,4 +1,4 @@
-﻿using LtMsgPack;
+﻿using LsMsgPack;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
@@ -67,7 +67,7 @@ namespace LsMsgPackTsTestServer
     }
 
     /// <summary>
-    /// What a .NET client reads from the bytes the formatters write (LtMsgPack with the same preset: properties the data does not set keep their constructor values), as System.Text.Json.
+    /// What a .NET client reads from the bytes the formatters write (LsMsgPack with the same preset: properties the data does not set keep their constructor values), as System.Text.Json.
     /// The models of lsmsgpack-ts make the TypeScript client read the same.
     /// </summary>
     [HttpGet("dotnet/{name}")]
@@ -84,7 +84,7 @@ namespace LsMsgPackTsTestServer
       };
       if (value is null)
         return NotFound();
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(LtMsgPackPresets.LsMsgPack());
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(LsMsgPackPresets.LsMsgPack());
       object read = serializer.Deserialize(value.GetType(), serializer.Serialize(value, value.GetType()));
       return camel ? new JsonResult(read, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, IncludeFields = true }) : new JsonResult(read);
     }

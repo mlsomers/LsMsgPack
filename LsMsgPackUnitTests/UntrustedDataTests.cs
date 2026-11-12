@@ -108,7 +108,7 @@ namespace LsMsgPackUnitTests
 
     private void AssertTooDeep(byte[] bytes, MsgPackSettings settings)
     {
-      if (KeepTrack && Serializer is LsSerializer) // errors become MpError items instead of exceptions
+      if (KeepTrack && Serializer is DebugSerializer) // errors become MpError items instead of exceptions
       {
         Assert.AreEqual("MpError", MsgPackItem.Unpack(new System.IO.MemoryStream(bytes), settings).GetType().Name);
         return;
@@ -138,7 +138,7 @@ namespace LsMsgPackUnitTests
     /// <param name="items">The items of the complete payload: 2 with the indexed schema (the schema and the body)</param>
     private void AssertTruncated<T>(byte[] bytes, MsgPackSettings settings, int items, string what)
     {
-      if (KeepTrack && Serializer is LsSerializer) // errors become MpError items instead of exceptions (Deserialize can not return them as a T)
+      if (KeepTrack && Serializer is DebugSerializer) // errors become MpError items instead of exceptions (Deserialize can not return them as a T)
       {
         MpRoot read = MsgPackItem.UnpackMultiple(bytes, settings);
         Assert.IsTrue(read.Count < items || read.Any(i => i.GetType().Name == "MpError"), what);
@@ -149,7 +149,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// LsMsgPack used to read the missing bytes as zeros: "a3 41" became "A\0\0" and "cd 01" 256, without an error (LtMsgPack threw).
+    /// LsMsgPack used to read the missing bytes as zeros: "a3 41" became "A\0\0" and "cd 01" 256, without an error (LsMsgPack threw).
     /// </summary>
     [TestMethod]
     [DataRow("a3 41")] // fixstr of 3
@@ -208,7 +208,7 @@ namespace LsMsgPackUnitTests
     public void ClaimedCount_ReadUpToTheEnd(string hex, object[] expected)
     {
       byte[] bytes = Hex(hex);
-      if (!(KeepTrack && Serializer is LsSerializer))
+      if (!(KeepTrack && Serializer is DebugSerializer))
       {
         MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<object>(bytes, MapsWithoutSchema()));
         StringAssert.Contains(ex.ToString(), "more than the remaining");
@@ -294,15 +294,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsUntrustedDataTests : UntrustedDataTests
+  public class DebugUntrustedDataTests : UntrustedDataTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtUntrustedDataTests : UntrustedDataTests
+  public class LsUntrustedDataTests : UntrustedDataTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

@@ -1,5 +1,5 @@
 using LsMsgPack;
-using LtMsgPack.Http;
+using LsMsgPack.Http;
 using System;
 using System.Net.Http.Headers;
 using System.Web;
@@ -8,7 +8,7 @@ using System.Web.Mvc;
 namespace LsMsgPackMvc
 {
   /// <summary>
-  /// Writes the data as application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack, with LtMsgPack (see <see cref="LtMsgPackHttpOptions"/>).
+  /// Writes the data as application/msgpack, application/x-msgpack (plain MsgPack) or application/x-lsmsgpack, with LsMsgPack (see <see cref="LsMsgPackHttpOptions"/>).
   /// <para>Unless <see cref="ContentType"/> is set, the media type is chosen from the request's Accept header, application/msgpack is used when none of them is accepted.</para>
   /// </summary>
   public class LsMsgPackResult : ActionResult
@@ -38,7 +38,7 @@ namespace LsMsgPackMvc
     /// <summary>
     /// The serializers per media type, defaults to <see cref="LsMsgPackMvc.Serializer"/> (create one per set of options and keep it).
     /// </summary>
-    public LtMsgPackHttpSerializer Serializer { get; set; }
+    public LsMsgPackHttpSerializer Serializer { get; set; }
 
     public override void ExecuteResult(ControllerContext context)
     {
@@ -46,11 +46,11 @@ namespace LsMsgPackMvc
         throw new ArgumentNullException(nameof(context));
 
       string mediaType = ContentType ?? Negotiate(context.HttpContext.Request);
-      LtMsgPackHttpSerializer serializer = Serializer ?? LsMsgPackMvc.Serializer;
+      LsMsgPackHttpSerializer serializer = Serializer ?? LsMsgPackMvc.Serializer;
       bool lsMsgPack = MsgPackMediaTypes.IsLsMsgPack(mediaType);
       bool negotiated = serializer.NegotiatesSchemas && lsMsgPack;
       bool describes = serializer.DescribesSchemas && lsMsgPack;
-      string clientSchemas = negotiated ? context.HttpContext.Request.Headers[LtMsgPackHttpSerializer.SchemasHeader] : null;
+      string clientSchemas = negotiated ? context.HttpContext.Request.Headers[LsMsgPackHttpSerializer.SchemasHeader] : null;
       bool described = describes && MsgPackMediaTypes.AcceptsDescribedSchema(context.HttpContext.Request.Headers["Accept"]);
 
       MsgPackPayload payload = serializer.Serialize(Data, DeclaredType ?? Data?.GetType(), mediaType, clientSchemas, described);
@@ -58,9 +58,9 @@ namespace LsMsgPackMvc
       HttpResponseBase response = context.HttpContext.Response;
       response.ContentType = mediaType;
       if (negotiated || describes) // version 2 of the schema depends on the Accept header
-        response.AppendHeader("Vary", !negotiated ? "Accept" : describes ? LtMsgPackHttpSerializer.SchemasHeader + ", Accept" : LtMsgPackHttpSerializer.SchemasHeader);
+        response.AppendHeader("Vary", !negotiated ? "Accept" : describes ? LsMsgPackHttpSerializer.SchemasHeader + ", Accept" : LsMsgPackHttpSerializer.SchemasHeader);
       if (negotiated && !(payload.SchemaId is null))
-        response.AppendHeader(LtMsgPackHttpSerializer.SchemaHeader, payload.SchemaId);
+        response.AppendHeader(LsMsgPackHttpSerializer.SchemaHeader, payload.SchemaId);
       payload.WriteTo(response.OutputStream);
     }
 

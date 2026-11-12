@@ -65,7 +65,7 @@ namespace LsMsgPackDebug
     private static CyclePath _cyclePath;
 
     /// <summary>
-    /// <see cref="MsgPackOptions.IgnoreCycles"/>: an object that contains itself is nil where it is met again (LtMsgPack: CycleHandler, Serializer.WriteBoxed).
+    /// <see cref="MsgPackOptions.IgnoreCycles"/>: an object that contains itself is nil where it is met again (LsMsgPack: CycleHandler, Serializer.WriteBoxed).
     /// </summary>
     private static MsgPackItem SerializeTracked(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
     {
@@ -274,7 +274,7 @@ namespace LsMsgPackDebug
         else
         {
           values[t] = SerializeObject(value, settings, prop, depth + 1, byNames);
-          if (!(values[t] is MpNull)) // a cycle (IgnoreCycles) is nil too: trimmed like the others (LtMsgPack checks the byte written)
+          if (!(values[t] is MpNull)) // a cycle (IgnoreCycles) is nil too: trimmed like the others (LsMsgPack checks the byte written)
             count = t + 1;
         }
       }

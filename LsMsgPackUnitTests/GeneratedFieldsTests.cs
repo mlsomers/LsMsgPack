@@ -4,7 +4,6 @@ using LsMsgPack.Generated;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
-using LtMsgPack;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -17,7 +16,7 @@ using System.Runtime.Serialization;
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// The source generator's code for fields (contract version 4): its members mirror the runtime's (FullPropertyInfo.GetMembers), and its field accessors are used by LtMsgPack and LsMsgPack.
+  /// The source generator's code for fields (contract version 4): its members mirror the runtime's (FullPropertyInfo.GetMembers), and its field accessors are used by LsMsgPack and LsMsgPack.
   /// The test assembly's context is generated with SerializedFields.All (GeneratedContext.cs): the options decide which fields are serialized.
   /// </summary>
   [TestClass]
@@ -92,12 +91,12 @@ namespace LsMsgPackUnitTests
 
     private const BindingFlags Internal = BindingFlags.Instance | BindingFlags.NonPublic;
 
-    private static object Inner(LtMsgPackSerializer serializer)
+    private static object Inner(LsMsgPackSerializer serializer)
     {
-      return typeof(LtMsgPackSerializer).GetField("_serializer", Internal).GetValue(serializer);
+      return typeof(LsMsgPackSerializer).GetField("_serializer", Internal).GetValue(serializer);
     }
 
-    private static object Code(LtMsgPackSerializer serializer, Type type)
+    private static object Code(LsMsgPackSerializer serializer, Type type)
     {
       object inner = Inner(serializer);
       return inner.GetType().GetMethod("GeneratedCode", Internal).Invoke(inner, new object[] { type });
@@ -125,11 +124,11 @@ namespace LsMsgPackUnitTests
       return new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, nonPublic, fields), new FilterIgnoredAttribute(), new FilterStatic() };
     }
 
-    private static LtMsgPackSerializer Serializer(bool generated, SerializedFields fields, bool schema = false, ObjectLayout layout = ObjectLayout.Array)
+    private static LsMsgPackSerializer Serializer(bool generated, SerializedFields fields, bool schema = false, ObjectLayout layout = ObjectLayout.Array)
     {
-      return new LtMsgPackSerializer(new LtMsgPackOptions()
+      return new LsMsgPackSerializer(new LsMsgPackOptions()
       {
-        Contexts = generated ? new LtMsgPackContext[] { TestMsgPackContext.Default } : null,
+        Contexts = generated ? new LsMsgPackContext[] { TestMsgPackContext.Default } : null,
         UseRegisteredContexts = false,
         UseInexedSchema = schema,
         ObjectLayout = layout,
@@ -144,9 +143,9 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Members_AsTheRuntimeSeesThem()
     {
-      LtMsgPackSerializer serializer = Serializer(true, SerializedFields.Attributed);
+      LsMsgPackSerializer serializer = Serializer(true, SerializedFields.Attributed);
       MemberSelection all = new MemberSelection(NonPublicProperties.All, SerializedFields.All);
-      LtMsgPackOptions defaults = new LtMsgPackOptions();
+      LsMsgPackOptions defaults = new LsMsgPackOptions();
       List<string> differences = new List<string>();
       List<string> unrolledDifferences = new List<string>();
       int compared = 0, withFields = 0;
@@ -273,8 +272,8 @@ namespace LsMsgPackUnitTests
           foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
           {
             string what = $"{fields} schema={schema} {layout}";
-            LtMsgPackSerializer runtime = Serializer(false, fields, schema, layout);
-            LtMsgPackSerializer generated = Serializer(true, fields, schema, layout);
+            LsMsgPackSerializer runtime = Serializer(false, fields, schema, layout);
+            LsMsgPackSerializer generated = Serializer(true, fields, schema, layout);
             byte[] expected = runtime.Serialize(Item());
             CollectionAssert.AreEqual(expected, generated.Serialize(Item()), what + ": bytes");
             Assert.AreEqual(Values(runtime.Deserialize<GfItem>(expected)), Values(generated.Deserialize<GfItem>(expected)), what + ": values");
@@ -297,20 +296,20 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Fields_TheGeneratedCodeIsUsed()
     {
-      LtMsgPackSerializer serializer = Serializer(true, SerializedFields.All);
+      LsMsgPackSerializer serializer = Serializer(true, SerializedFields.All);
       GfItem read = serializer.Deserialize<GfItem>(serializer.Serialize(Item()));
       Assert.AreEqual("n|2.5|" + Item().When.Ticks + "|Other|4|a|8|5|6|11111111-2222-3333-4444-555555555555|0|t|3|s|p", Values(read), "[NonSerialized] left out, the readonly int skipped, the readonly list filled");
 
       object inner = Inner(serializer);
       object plan = inner.GetType().GetMethod("Plan", Internal).Invoke(inner, new object[] { typeof(GfItem), false });
-      LtMsgPack.Generated.GeneratedWritePlan generated = (LtMsgPack.Generated.GeneratedWritePlan)plan.GetType().GetField("GeneratedPlan", Internal).GetValue(plan);
+      LsMsgPack.Generated.GeneratedWritePlan generated = (LsMsgPack.Generated.GeneratedWritePlan)plan.GetType().GetField("GeneratedPlan", Internal).GetValue(plan);
       Assert.IsNotNull(generated, "the generated writer is used");
       Assert.DoesNotContain(-1, generated.Ids, "every field is a generated member");
 
       object readPlan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { typeof(GfItem) });
-      foreach (LtMsgPack.Reading.PropReader reader in (LtMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
+      foreach (LsMsgPack.Reading.PropReader reader in (LsMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
       {
-        FullPropertyInfo info = (FullPropertyInfo)typeof(LtMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader);
+        FullPropertyInfo info = (FullPropertyInfo)typeof(LsMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader);
         bool runtime = info.Name == nameof(GfItem.Tags) || info.Name == nameof(GfItem.Filled) || info.Name == nameof(GfItem.Computed); // a collection, readonly fields
         Assert.AreEqual(runtime, reader.GeneratedId < 0, info.Name);
       }
@@ -322,7 +321,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Fields_TheGeneratedAccessorsAreUsed()
     {
-      LtMsgPackSerializer serializer = Serializer(true, SerializedFields.All);
+      LsMsgPackSerializer serializer = Serializer(true, SerializedFields.All);
       object inner = Inner(serializer);
       foreach ((Type type, string name) in new[] { (typeof(GfItem), "_secret"), (typeof(GfItem), nameof(GfItem.Name)), (typeof(GfPoint), "_tag"), (typeof(GfPoint), nameof(GfPoint.X)), (typeof(Vector3), nameof(Vector3.X)) })
       {
@@ -366,11 +365,11 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void DefaultCheck_PrivateMembers_ThroughUnsafeAccessors()
     {
-      LtMsgPackSerializer serializer = Serializer(true, SerializedFields.Attributed);
+      LsMsgPackSerializer serializer = Serializer(true, SerializedFields.Attributed);
       object code = Code(serializer, typeof(GfPrivateDefaults));
-      LtMsgPack.Generated.GeneratedCapabilities capabilities = (LtMsgPack.Generated.GeneratedCapabilities)code.GetType().GetField("Capabilities", Internal | BindingFlags.Public).GetValue(code);
-      Assert.AreNotEqual(LtMsgPack.Generated.GeneratedCapabilities.None, capabilities & LtMsgPack.Generated.GeneratedCapabilities.IsDefault, "a generated default check");
-      LtMsgPack.Generated.GeneratedStructCode<GfPrivateDefaults> typed = (LtMsgPack.Generated.GeneratedStructCode<GfPrivateDefaults>)code;
+      LsMsgPack.Generated.GeneratedCapabilities capabilities = (LsMsgPack.Generated.GeneratedCapabilities)code.GetType().GetField("Capabilities", Internal | BindingFlags.Public).GetValue(code);
+      Assert.AreNotEqual(LsMsgPack.Generated.GeneratedCapabilities.None, capabilities & LsMsgPack.Generated.GeneratedCapabilities.IsDefault, "a generated default check");
+      LsMsgPack.Generated.GeneratedStructCode<GfPrivateDefaults> typed = (LsMsgPack.Generated.GeneratedStructCode<GfPrivateDefaults>)code;
       GfPrivateDefaults[] values = { default(GfPrivateDefaults), new GfPrivateDefaults(1, 0, null), new GfPrivateDefaults(0, -0.0, null), new GfPrivateDefaults(0, double.NaN, null), new GfPrivateDefaults(0, 0, ""),
         new GfPrivateDefaults(0, 0, null) { Visible = 2 } };
       for (int t = 0; t < values.Length; t++)
@@ -396,8 +395,8 @@ namespace LsMsgPackUnitTests
       public void SetNumber(int value) { _number = value; }
     }
 
-    [LtMsgPackSerializable(typeof(GfRegistered))]
-    public partial class GfRegisteredContext : LtMsgPackContext { }
+    [LsMsgPackSerializable(typeof(GfRegistered))]
+    public partial class GfRegisteredContext : LsMsgPackContext { }
 
     [TestMethod]
     public void Ls_UsesRegisteredFieldAccessors()

@@ -2,7 +2,7 @@
 
 LsMsgPackDebug is the package to inspect and debug MsgPack data with the item tree. It is also a MsgPack serializer for .NET classes, used like the xml and json serializers. It gives you the tree of MsgPack items (maps, arrays, strings...) of any payload, so you can inspect MsgPack data in your app, even when you don't have the classes.
 
-**Only need to serialize?** Use [LtMsgPack](https://www.nuget.org/packages/LtMsgPack): it writes and reads exactly the same data with the same settings, about 10x as fast, because it skips the item tree. LsMsgPackDebug is about 2-4x slower than System.Text.Json.
+**Only need to serialize?** Use [LsMsgPack](https://www.nuget.org/packages/LsMsgPack): it writes and reads exactly the same data with the same settings, about 10x as fast, because it skips the item tree. LsMsgPackDebug is about 2-4x slower than System.Text.Json.
 
 - **Indexed schema** (on by default): each message lists its types and property names once, and the body refers to them by index. Messages are smaller, and data written by older or newer versions of your classes still loads.
 - **Polymorphism** out of the box: a type id is written where a value's type differs from the declared type (a `List<IShape>` holding circles and squares), without extra attributes.

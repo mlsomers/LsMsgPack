@@ -4,8 +4,6 @@ using LsMsgPack.Generated;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Interfaces;
-using LtMsgPack;
-using LtMsgPack.Generated;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -16,7 +14,7 @@ using System.Reflection;
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// The code of LtMsgPack's source generator is used (not only equivalent: see the Gen* tests and CrossLibraryTests), and ignored when it does not fit.
+  /// The code of LsMsgPack's source generator is used (not only equivalent: see the Gen* tests and CrossLibraryTests), and ignored when it does not fit.
   /// </summary>
   [TestClass]
   public partial class GeneratedCodeTests // partial: GcRegisteredContext is nested in it
@@ -57,9 +55,9 @@ namespace LsMsgPackUnitTests
 
     private const BindingFlags Internal = BindingFlags.Instance | BindingFlags.NonPublic;
 
-    private static object Inner(LtMsgPackSerializer serializer)
+    private static object Inner(LsMsgPackSerializer serializer)
     {
-      return typeof(LtMsgPackSerializer).GetField("_serializer", Internal).GetValue(serializer);
+      return typeof(LsMsgPackSerializer).GetField("_serializer", Internal).GetValue(serializer);
     }
 
     private static GcPerson Sample()
@@ -67,13 +65,13 @@ namespace LsMsgPackUnitTests
       return new GcPerson() { Name = "Ann", Age = 41, Favorite = GcColor.Blue, Born = new DateTime(1985, 3, 4, 0, 0, 0, DateTimeKind.Utc), Friends = new List<GcPerson>() { new GcPerson() { Name = "Bob" } } };
     }
 
-    private static void AssertSameAsRuntime(LtMsgPackOptions options, GcPerson value)
+    private static void AssertSameAsRuntime(LsMsgPackOptions options, GcPerson value)
     {
-      LtMsgPackOptions runtime = options.Clone();
+      LsMsgPackOptions runtime = options.Clone();
       runtime.Contexts = null;
       runtime.UseRegisteredContexts = false;
-      byte[] expected = new LtMsgPackSerializer(runtime).Serialize(value);
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+      byte[] expected = new LsMsgPackSerializer(runtime).Serialize(value);
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
       byte[] actual = serializer.Serialize(value);
       CollectionAssert.AreEqual(expected, actual);
       GcPerson read = serializer.Deserialize<GcPerson>(actual);
@@ -94,7 +92,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Lt_UsesTheGeneratedAccessorsAndConstructor()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false });
       byte[] data = serializer.Serialize(Sample());
       serializer.Deserialize<GcPerson>(data);
 
@@ -119,7 +117,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Lt_WithoutContexts_DoesNotUseGeneratedCode()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { UseRegisteredContexts = false, UseInexedSchema = false });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { UseRegisteredContexts = false, UseInexedSchema = false });
       serializer.Serialize(Sample());
       object inner = Inner(serializer);
       object plan = inner.GetType().GetMethod("Plan", Internal).Invoke(inner, new object[] { typeof(GcPerson), true });
@@ -133,7 +131,7 @@ namespace LsMsgPackUnitTests
     {
       foreach (bool schema in new[] { false, true })
         foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
-          AssertSameAsRuntime(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = schema, ObjectLayout = layout }, Sample());
+          AssertSameAsRuntime(new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = schema, ObjectLayout = layout }, Sample());
     }
 
     #region The generated writers and readers (tier 2)
@@ -207,35 +205,35 @@ namespace LsMsgPackUnitTests
       };
     }
 
-    private static IEnumerable<(string Name, LtMsgPackOptions Options)> OptionVariants()
+    private static IEnumerable<(string Name, LsMsgPackOptions Options)> OptionVariants()
     {
       foreach (bool schema in new[] { false, true })
         foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
         {
           string name = (schema ? "schema " : "names ") + layout;
-          yield return (name, new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout });
-          yield return (name + " not compact", new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, DynamicallyCompact = false });
-          yield return (name + " no filters", new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] });
-          yield return (name + " custom filters", new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new LsMsgPack.TypeResolving.Filters.FilterNullValues() } });
-          yield return (name + " other formats", new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, GuidFormat = GuidFormat.String, DecimalFormat = DecimalFormat.String, UnspecifiedDateTimeKind = DateTimeKind.Utc, ReadDateTimeKind = DateTimeKind.Utc });
-          yield return (name + " little endian", new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, EndianAction = EndianAction.NeverSwap });
-          yield return (name + " type ids always", new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, AddTypeIdOptions = AddTypeIdOption.Always });
-          yield return (name + " decimal type 5", new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, Extensions = new LtMsgPack.Extensions.LtExtension[] { new LtMsgPack.Extensions.DecimalExtension(5) } });
-          yield return (name + " order", new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, PropertyOrder = PropertyOrder.Alphabetical });
+          yield return (name, new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout });
+          yield return (name + " not compact", new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, DynamicallyCompact = false });
+          yield return (name + " no filters", new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] });
+          yield return (name + " custom filters", new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new LsMsgPack.TypeResolving.Filters.FilterNullValues() } });
+          yield return (name + " other formats", new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, GuidFormat = GuidFormat.String, DecimalFormat = DecimalFormat.String, UnspecifiedDateTimeKind = DateTimeKind.Utc, ReadDateTimeKind = DateTimeKind.Utc });
+          yield return (name + " little endian", new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, EndianAction = EndianAction.NeverSwap });
+          yield return (name + " type ids always", new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, AddTypeIdOptions = AddTypeIdOption.Always });
+          yield return (name + " decimal type 5", new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, Extensions = new LsMsgPack.Extensions.LsExtension[] { new LsMsgPack.Extensions.DecimalExtension(5) } });
+          yield return (name + " order", new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, PropertyOrder = PropertyOrder.Alphabetical });
           if (layout == ObjectLayout.Array)
-            yield return (name + " trimmed", new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = true });
+            yield return (name + " trimmed", new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = true });
         }
     }
 
-    private static LtMsgPackSerializer WithCode(LtMsgPackOptions options, bool generated)
+    private static LsMsgPackSerializer WithCode(LsMsgPackOptions options, bool generated)
     {
-      LtMsgPackOptions copy = options.Clone();
-      copy.Contexts = generated ? new LtMsgPackContext[] { TestMsgPackContext.Default } : null;
+      LsMsgPackOptions copy = options.Clone();
+      copy.Contexts = generated ? new LsMsgPackContext[] { TestMsgPackContext.Default } : null;
       copy.UseRegisteredContexts = false;
-      return new LtMsgPackSerializer(copy);
+      return new LsMsgPackSerializer(copy);
     }
 
-    private static string Read(LtMsgPackSerializer serializer, byte[] data, LtMsgPackSerializer dumper)
+    private static string Read(LsMsgPackSerializer serializer, byte[] data, LsMsgPackSerializer dumper)
     {
       try
       {
@@ -251,8 +249,8 @@ namespace LsMsgPackUnitTests
     public void AllKinds_SameBytesAndValuesAsTheRuntime_InEveryOptionVariant()
     {
       List<string> differences = new List<string>();
-      LtMsgPackSerializer dumper = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
-      foreach ((string name, LtMsgPackOptions options) in OptionVariants())
+      LsMsgPackSerializer dumper = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      foreach ((string name, LsMsgPackOptions options) in OptionVariants())
       {
         foreach (bool defaults in new[] { false, true })
         {
@@ -320,7 +318,7 @@ namespace LsMsgPackUnitTests
     public void NestedValues_SameBytesAndValuesAsTheRuntime_InEveryOptionVariant()
     {
       List<string> differences = new List<string>();
-      foreach ((string name, LtMsgPackOptions options) in OptionVariants())
+      foreach ((string name, LsMsgPackOptions options) in OptionVariants())
       {
         foreach (GcNestedValues value in new[] { NestedValues(), new GcNestedValues() })
         {
@@ -345,12 +343,12 @@ namespace LsMsgPackUnitTests
     {
       // the generated readers meet formats they do not read themselves (other number formats, strings for Guids and decimals, ...): the runtime reads those values
       List<string> differences = new List<string>();
-      LtMsgPackSerializer dumper = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
-      List<(string Name, LtMsgPackOptions Options)> variants = new List<(string, LtMsgPackOptions)>(OptionVariants());
-      foreach ((string writerName, LtMsgPackOptions writer) in variants)
+      LsMsgPackSerializer dumper = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      List<(string Name, LsMsgPackOptions Options)> variants = new List<(string, LsMsgPackOptions)>(OptionVariants());
+      foreach ((string writerName, LsMsgPackOptions writer) in variants)
       {
         byte[] data = WithCode(writer, false).Serialize(AllKinds(false));
-        foreach ((string readerName, LtMsgPackOptions reader) in variants)
+        foreach ((string readerName, LsMsgPackOptions reader) in variants)
         {
           if (reader.UseInexedSchema != writer.UseInexedSchema)
             continue;
@@ -366,7 +364,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void OutOfRangeAndOtherFormats_FailAndConvertAsTheRuntime()
     {
-      LtMsgPackSerializer names = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      LsMsgPackSerializer names = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
       Dictionary<string, object>[] maps = new[]
       {
         new Dictionary<string, object>() { { "S8", 300 } }, // overflow
@@ -385,7 +383,7 @@ namespace LsMsgPackUnitTests
         byte[] data = names.Serialize(map);
         foreach (ObjectLayout layout in new[] { ObjectLayout.Map, ObjectLayout.Array })
         {
-          LtMsgPackOptions options = new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = layout };
+          LsMsgPackOptions options = new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = layout };
           string expected = Read(WithCode(options, false), data, names);
           string actual = Read(WithCode(options, true), data, names);
           Assert.AreEqual(expected, actual, string.Join(", ", map.Keys) + " " + layout);
@@ -393,7 +391,7 @@ namespace LsMsgPackUnitTests
       }
     }
 
-    private static object WritePlan(LtMsgPackSerializer serializer, Type type, bool names)
+    private static object WritePlan(LsMsgPackSerializer serializer, Type type, bool names)
     {
       object inner = Inner(serializer);
       object plan = inner.GetType().GetMethod("Plan", Internal).Invoke(inner, new object[] { type, names });
@@ -403,7 +401,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void TheGeneratedWriterAndReader_AreUsed()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false });
       serializer.Deserialize<GcAllKinds>(serializer.Serialize(AllKinds(false)));
 
       object generated = WritePlan(serializer, typeof(GcAllKinds), true);
@@ -412,14 +410,14 @@ namespace LsMsgPackUnitTests
       Assert.IsTrue((bool)generated.GetType().GetField("UnrolledMap", Internal).GetValue(generated), "maps are written in sequence too");
       object code = generated.GetType().GetField("Code", Internal).GetValue(generated);
       Assert.IsNotNull(code.GetType().GetMethod("WriteUnrolledMapPart1", BindingFlags.Instance | BindingFlags.NonPublic), "a class of more than 16 members is written by parts (the JIT's inline budget per method)");
-      int[] ids = ((LtMsgPack.Generated.GeneratedWritePlan)generated).Ids;
+      int[] ids = ((LsMsgPack.Generated.GeneratedWritePlan)generated).Ids;
       Assert.DoesNotContain(-1, ids, "every property is a generated member (the runtime writes the ones of kind None, at their position)");
 
       object inner = Inner(serializer);
       object readPlan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { typeof(GcAllKinds) });
-      foreach (LtMsgPack.Reading.PropReader reader in (LtMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
+      foreach (LsMsgPack.Reading.PropReader reader in (LsMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
       {
-        string name = ((FullPropertyInfo)typeof(LtMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader)).PropertyInfo.Name;
+        string name = ((FullPropertyInfo)typeof(LsMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader)).PropertyInfo.Name;
         bool runtime = name == nameof(GcAllKinds.Offset) || name == nameof(GcAllKinds.Bytes) || name == nameof(GcAllKinds.Child) || name == nameof(GcAllKinds.Numbers)
           || name == nameof(GcAllKinds.ReadOnly); // computed: written by the generated code, skipped by the runtime
         Assert.AreEqual(runtime, reader.GeneratedId < 0, name);
@@ -464,14 +462,14 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ReadMap_OtherKeys_SameAsTheRuntime()
     {
-      LtMsgPackOptions Options(bool generated)
+      LsMsgPackOptions Options(bool generated)
       {
-        return new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false, Contexts = generated ? new LtMsgPackContext[] { TestMsgPackContext.Default } : null };
+        return new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false, Contexts = generated ? new LsMsgPackContext[] { TestMsgPackContext.Default } : null };
       }
-      LtMsgPackSerializer runtime = new LtMsgPackSerializer(Options(false));
-      LtMsgPackSerializer generated = new LtMsgPackSerializer(Options(true));
+      LsMsgPackSerializer runtime = new LsMsgPackSerializer(Options(false));
+      LsMsgPackSerializer generated = new LsMsgPackSerializer(Options(true));
 
-      string Read(LtMsgPackSerializer serializer, byte[] data)
+      string Read(LsMsgPackSerializer serializer, byte[] data)
       {
         try
         {
@@ -511,7 +509,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ComputedTypes_LeftOutAsPredicted()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false });
       Assert.AreEqual(3, serializer.Deserialize<GcComputedType>(serializer.Serialize(new GcComputedType())).Id);
 
       object generated = WritePlan(serializer, typeof(GcComputedType), true);
@@ -558,19 +556,19 @@ namespace LsMsgPackUnitTests
     {
       foreach (LsMsgPack.TypeResolving.Filters.NonPublicProperties nonPublic in new[] { LsMsgPack.TypeResolving.Filters.NonPublicProperties.Attributed, LsMsgPack.TypeResolving.Filters.NonPublicProperties.All })
       {
-        LtMsgPackOptions options = new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false };
+        LsMsgPackOptions options = new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false };
         options.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All, nonPublic),
           new LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute(), new LsMsgPack.TypeResolving.Filters.FilterStatic() };
-        LtMsgPackOptions runtime = options.Clone();
+        LsMsgPackOptions runtime = options.Clone();
         runtime.Contexts = null;
 
-        LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+        LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
         byte[] data = serializer.Serialize(GcPrivate.Sample());
-        CollectionAssert.AreEqual(new LtMsgPackSerializer(runtime).Serialize(GcPrivate.Sample()), data, nonPublic.ToString());
+        CollectionAssert.AreEqual(new LsMsgPackSerializer(runtime).Serialize(GcPrivate.Sample()), data, nonPublic.ToString());
         string expected = nonPublic == LsMsgPack.TypeResolving.Filters.NonPublicProperties.All ? "n|s|11111111-2222-3333-4444-555555555555|2.5|7|3" : "n|s|11111111-2222-3333-4444-555555555555|2.5|0|3";
         Assert.AreEqual(expected, serializer.Deserialize<GcPrivate>(data).Values(), nonPublic.ToString());
 
-        LtMsgPack.Generated.GeneratedWritePlan plan = (LtMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcPrivate), false);
+        LsMsgPack.Generated.GeneratedWritePlan plan = (LsMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcPrivate), false);
         Assert.IsNotNull(plan, "the generated writer is used");
         object code = Inner(serializer).GetType().GetMethod("GeneratedCode", Internal).Invoke(Inner(serializer), new object[] { typeof(GcPrivate) });
         Array members = (Array)code.GetType().GetField("Members", Internal | BindingFlags.Public).GetValue(code);
@@ -583,25 +581,25 @@ namespace LsMsgPackUnitTests
 
         object inner = Inner(serializer);
         object readPlan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { typeof(GcPrivate) });
-        foreach (LtMsgPack.Reading.PropReader reader in (LtMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
-          Assert.IsGreaterThanOrEqualTo(0, reader.GeneratedId, ((FullPropertyInfo)typeof(LtMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader)).PropertyInfo.Name);
+        foreach (LsMsgPack.Reading.PropReader reader in (LsMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
+          Assert.IsGreaterThanOrEqualTo(0, reader.GeneratedId, ((FullPropertyInfo)typeof(LsMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader)).PropertyInfo.Name);
       }
     }
 
     [TestMethod]
     public void OptionsTheGeneratedCodeDoesNotFit_AreLeftToTheRuntime()
     {
-      LtMsgPackOptions options = new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false,
-        Extensions = new LtMsgPack.Extensions.LtExtension[] { new GcDecimalAsDouble() } };
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+      LsMsgPackOptions options = new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false,
+        Extensions = new LsMsgPack.Extensions.LsExtension[] { new GcDecimalAsDouble() } };
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
       serializer.Serialize(AllKinds(false));
-      LtMsgPack.Generated.GeneratedWritePlan plan = (LtMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcAllKinds), true);
+      LsMsgPack.Generated.GeneratedWritePlan plan = (LsMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcAllKinds), true);
       Assert.IsFalse((bool)plan.GetType().GetField("Unrolled", Internal).GetValue(plan), "a decimal is a custom extension with these options: not unrolled");
       Assert.Contains(-1, plan.Ids, "the decimals are written by the runtime");
 
-      options.Extensions = LtMsgPackOptions.Default_Extensions;
+      options.Extensions = LsMsgPackOptions.Default_Extensions;
       options.DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new LsMsgPack.TypeResolving.Filters.FilterNullValues() };
-      serializer = new LtMsgPackSerializer(options);
+      serializer = new LsMsgPackSerializer(options);
       serializer.Serialize(AllKinds(false));
       Assert.IsNull(WritePlan(serializer, typeof(GcAllKinds), true), "custom dynamic filters: the runtime writes");
     }
@@ -609,19 +607,19 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void OtherFormatsAndTrimming_AreWrittenByTheGeneratedCode()
     {
-      LtMsgPackOptions options = LtMsgPackPresets.Generic();
-      options.Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default };
+      LsMsgPackOptions options = LsMsgPackPresets.Generic();
+      options.Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default };
       options.UseRegisteredContexts = false;
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
       serializer.Serialize(AllKinds(false));
-      LtMsgPack.Generated.GeneratedWritePlan plan = (LtMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcAllKinds), true);
+      LsMsgPack.Generated.GeneratedWritePlan plan = (LsMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcAllKinds), true);
       Assert.IsTrue((bool)plan.GetType().GetField("UnrolledMap", Internal).GetValue(plan), "Guids and decimals as strings (the Generic() preset): maps unrolled");
       Assert.DoesNotContain(-1, plan.Ids, "the generated code writes the Guids and decimals in these formats");
       Assert.IsTrue(plan.GuidString && plan.DecimalString);
 
-      serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false, TrimTrailingNulls = true });
+      serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false, TrimTrailingNulls = true });
       serializer.Serialize(AllKinds(false));
-      plan = (LtMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcAllKinds), true);
+      plan = (LsMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcAllKinds), true);
       Assert.IsFalse((bool)plan.GetType().GetField("Unrolled", Internal).GetValue(plan));
       Assert.IsTrue((bool)plan.GetType().GetField("UnrolledTrimmed", Internal).GetValue(plan), "trimmed arrays are written in sequence");
       object code = plan.GetType().GetField("Code", Internal).GetValue(plan);
@@ -631,16 +629,16 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void OtherFormats_AreReadByTheGeneratedCode()
     {
-      LtMsgPackOptions options = LtMsgPackPresets.Generic();
-      options.Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default };
+      LsMsgPackOptions options = LsMsgPackPresets.Generic();
+      options.Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default };
       options.UseRegisteredContexts = false;
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
       serializer.Deserialize<GcAllKinds>(serializer.Serialize(AllKinds(false)));
       object inner = Inner(serializer);
       object readPlan = inner.GetType().GetMethod("GetReadPlan", Internal).Invoke(inner, new object[] { typeof(GcAllKinds) });
-      foreach (LtMsgPack.Reading.PropReader reader in (LtMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
+      foreach (LsMsgPack.Reading.PropReader reader in (LsMsgPack.Reading.PropReader[])readPlan.GetType().GetField("Props", Internal).GetValue(readPlan))
       {
-        string name = ((FullPropertyInfo)typeof(LtMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader)).PropertyInfo.Name;
+        string name = ((FullPropertyInfo)typeof(LsMsgPack.Reading.PropReader).GetField("Info", Internal).GetValue(reader)).PropertyInfo.Name;
         if (name == nameof(GcAllKinds.Id) || name == nameof(GcAllKinds.MaybeId) || name == nameof(GcAllKinds.Money) || name == nameof(GcAllKinds.MaybeMoney))
           Assert.IsGreaterThanOrEqualTo(0, reader.GeneratedId, name + ": Guids and decimals as strings (GeneratedCapabilities.ReadFormats)");
       }
@@ -661,9 +659,9 @@ namespace LsMsgPackUnitTests
         "0f8fad5b-d9cb-469f-a165-7086772895\u00e9", "{0x0f8fad5b,0xd9cb,0x469f,{0xa1,0x65,0x70,0x86,0x77,0x28,0x95,0x0e}}", "", "not a guid"
       };
       string[] decimals = { "12.50", "-0", "0.0000000000000000000000000001", "79228162514264337593543950335", "1e3", " 5", "5 ", "1,000.5", "12.5.1", "", "x" };
-      LtMsgPackOptions options = LtMsgPackPresets.Generic();
-      LtMsgPackSerializer plain = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
-      LtMsgPackSerializer dumper = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      LsMsgPackOptions options = LsMsgPackPresets.Generic();
+      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      LsMsgPackSerializer dumper = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
       List<string> differences = new List<string>();
       List<Dictionary<string, object>> values = new List<Dictionary<string, object>>();
       for (int t = 0; t < guids.Length; t++)
@@ -685,7 +683,7 @@ namespace LsMsgPackUnitTests
     /// <summary>
     /// A decimal extension the generated code does not write (only the built-in one).
     /// </summary>
-    public sealed class GcDecimalAsDouble : LtMsgPack.Extensions.LtExtension<decimal>
+    public sealed class GcDecimalAsDouble : LsMsgPack.Extensions.LsExtension<decimal>
     {
       public override sbyte TypeCode { get { return 9; } }
       public override int GetMaxLength(decimal value) { return 8; }
@@ -726,7 +724,7 @@ namespace LsMsgPackUnitTests
       public Guid Id { get; set; }
     }
 
-    private static string ReadAs<T>(LtMsgPackSerializer serializer, byte[] data, LtMsgPackSerializer dumper)
+    private static string ReadAs<T>(LsMsgPackSerializer serializer, byte[] data, LsMsgPackSerializer dumper)
     {
       try
       {
@@ -741,7 +739,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void RollingUpgrade_OtherClassShapes_ReadAsTheRuntime()
     {
-      LtMsgPackSerializer dumper = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      LsMsgPackSerializer dumper = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
       GcVersion1 old = new GcVersion1() { Name = "one", Age = 1, Color = GcColor.Blue, Children = new List<GcVersion1>() { new GcVersion1() { Name = "kid", Age = 2 } } };
       GcVersion2 newer = new GcVersion2() { Score = 9.5m, Age = 3, Name = "two", Added = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), Children = new List<GcVersion2>() { new GcVersion2() { Name = "kid" } } };
       GcVersion1Appended appended = new GcVersion1Appended() { Name = "three", Age = 4, Color = GcColor.Green, Score = 1m, Id = Guid.NewGuid() };
@@ -749,9 +747,9 @@ namespace LsMsgPackUnitTests
       foreach (bool schema in new[] { false, true })
         foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
         {
-          LtMsgPackOptions options = new LtMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout };
-          LtMsgPackSerializer runtime = WithCode(options, false);
-          LtMsgPackSerializer generated = WithCode(options, true);
+          LsMsgPackOptions options = new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout };
+          LsMsgPackSerializer runtime = WithCode(options, false);
+          LsMsgPackSerializer generated = WithCode(options, true);
           string mode = (schema ? "schema " : "names ") + layout;
           byte[] fromOld = runtime.Serialize(old);
           byte[] fromNewer = runtime.Serialize(newer);
@@ -856,7 +854,7 @@ namespace LsMsgPackUnitTests
       };
     }
 
-    private static string ReadStructs(LtMsgPackSerializer serializer, byte[] data, LtMsgPackSerializer dumper)
+    private static string ReadStructs(LsMsgPackSerializer serializer, byte[] data, LsMsgPackSerializer dumper)
     {
       try
       {
@@ -872,8 +870,8 @@ namespace LsMsgPackUnitTests
     public void Structs_SameBytesAndValuesAsTheRuntime_InEveryOptionVariant()
     {
       List<string> differences = new List<string>();
-      LtMsgPackSerializer dumper = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
-      foreach ((string name, LtMsgPackOptions options) in OptionVariants())
+      LsMsgPackSerializer dumper = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      foreach ((string name, LsMsgPackOptions options) in OptionVariants())
       {
         foreach (bool defaults in new[] { false, true })
         {
@@ -898,12 +896,12 @@ namespace LsMsgPackUnitTests
     public void Structs_DataOfOtherOptions_ReadAsTheRuntimeReadsIt()
     {
       List<string> differences = new List<string>();
-      LtMsgPackSerializer dumper = new LtMsgPackSerializer(new LtMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
-      List<(string Name, LtMsgPackOptions Options)> variants = new List<(string, LtMsgPackOptions)>(OptionVariants());
-      foreach ((string writerName, LtMsgPackOptions writer) in variants)
+      LsMsgPackSerializer dumper = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      List<(string Name, LsMsgPackOptions Options)> variants = new List<(string, LsMsgPackOptions)>(OptionVariants());
+      foreach ((string writerName, LsMsgPackOptions writer) in variants)
       {
         byte[] data = WithCode(writer, false).Serialize(Structs(false));
-        foreach ((string readerName, LtMsgPackOptions reader) in variants)
+        foreach ((string readerName, LsMsgPackOptions reader) in variants)
         {
           if (reader.UseInexedSchema != writer.UseInexedSchema)
             continue;
@@ -921,7 +919,7 @@ namespace LsMsgPackUnitTests
     {
       foreach (bool names in new[] { true, false })
       {
-        LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = !names });
+        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = !names });
         serializer.Deserialize<GcStructHolder>(serializer.Serialize(Structs(false)));
         object inner = Inner(serializer);
 
@@ -955,18 +953,18 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Structs_NonPublicProperties_ThroughUnsafeAccessorsByReference()
     {
-      LtMsgPackOptions options = new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false };
+      LsMsgPackOptions options = new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, UseInexedSchema = false };
       options.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All, LsMsgPack.TypeResolving.Filters.NonPublicProperties.Attributed),
         new LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute(), new LsMsgPack.TypeResolving.Filters.FilterStatic() };
-      LtMsgPackOptions runtime = options.Clone();
+      LsMsgPackOptions runtime = options.Clone();
       runtime.Contexts = null;
 
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(options);
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
       byte[] data = serializer.Serialize(Structs(false));
-      CollectionAssert.AreEqual(new LtMsgPackSerializer(runtime).Serialize(Structs(false)), data);
+      CollectionAssert.AreEqual(new LsMsgPackSerializer(runtime).Serialize(Structs(false)), data);
       Assert.AreEqual(9, serializer.Deserialize<GcStructHolder>(data).Value.GetHidden());
 
-      LtMsgPack.Generated.GeneratedWritePlan plan = (LtMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcStruct), true);
+      LsMsgPack.Generated.GeneratedWritePlan plan = (LsMsgPack.Generated.GeneratedWritePlan)WritePlan(serializer, typeof(GcStruct), true);
       object code = Inner(serializer).GetType().GetMethod("GeneratedCode", Internal).Invoke(Inner(serializer), new object[] { typeof(GcStruct) });
       Array members = (Array)code.GetType().GetField("Members", Internal | BindingFlags.Public).GetValue(code);
       bool hidden = false;
@@ -984,8 +982,8 @@ namespace LsMsgPackUnitTests
 
     #region Registered for the process (LsMsgPack's accessors and creators)
 
-    [LtMsgPackSerializable(typeof(GcRegistered))]
-    public partial class GcRegisteredContext : LtMsgPackContext { }
+    [LsMsgPackSerializable(typeof(GcRegistered))]
+    public partial class GcRegisteredContext : LsMsgPackContext { }
 
     [TestMethod]
     public void Ls_UsesRegisteredAccessorsAndConstructor()
@@ -1004,7 +1002,7 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual("x", read.Name);
       Assert.AreEqual(5, read.Number);
 
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(); // UseRegisteredContexts: on by default
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(); // UseRegisteredContexts: on by default
       Assert.AreEqual(5, lt.Deserialize<GcRegistered>(lt.Serialize(value)).Number);
     }
 
@@ -1019,8 +1017,8 @@ namespace LsMsgPackUnitTests
       public GcRegisteredStruct Value { get; set; }
     }
 
-    [LtMsgPackSerializable(typeof(GcRegisteredStructHolder))]
-    public partial class GcRegisteredStructContext : LtMsgPackContext { }
+    [LsMsgPackSerializable(typeof(GcRegisteredStructHolder))]
+    public partial class GcRegisteredStructContext : LsMsgPackContext { }
 
     [TestMethod]
     public void Ls_UsesRegisteredStructAccessors()
@@ -1041,15 +1039,15 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual("x", read.Value.Name);
       Assert.AreEqual(5, read.Value.Number);
 
-      LtMsgPackSerializer lt = new LtMsgPackSerializer(); // UseRegisteredContexts: on by default
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(); // UseRegisteredContexts: on by default
       Assert.AreEqual(5, lt.Deserialize<GcRegisteredStructHolder>(lt.Serialize(value)).Value.Number);
     }
 
-    [LtMsgPackSerializable(typeof(GcByConstructor))]
-    public partial class GcConstructorContext : LtMsgPackContext { }
+    [LsMsgPackSerializable(typeof(GcByConstructor))]
+    public partial class GcConstructorContext : LsMsgPackContext { }
 
-    [LtMsgPackSerializable(typeof(GcIsolated))]
-    public partial class GcIsolatedContext : LtMsgPackContext { }
+    [LsMsgPackSerializable(typeof(GcIsolated))]
+    public partial class GcIsolatedContext : LsMsgPackContext { }
 
     /// <summary>
     /// The constructor for trimmed and NativeAOT apps: its context is asked first, and registered (LsMsgPack.Core creates collections and objects with the registered code).
@@ -1057,9 +1055,9 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ContextConstructor_IsAskedFirstAndRegistered()
     {
-      // Not TestMsgPackContext: registered, it would make the Ls and Lt runs of other tests use generated code
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(GcConstructorContext.Default, new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { GcRegisteredContext.Default }, UseRegisteredContexts = true });
-      CollectionAssert.AreEqual(new LtMsgPackContext[] { GcConstructorContext.Default, GcRegisteredContext.Default }, serializer.Options.Contexts);
+      // Not TestMsgPackContext: registered, it would make the Debug and Ls runs of other tests use generated code
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(GcConstructorContext.Default, new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { GcRegisteredContext.Default }, UseRegisteredContexts = true });
+      CollectionAssert.AreEqual(new LsMsgPackContext[] { GcConstructorContext.Default, GcRegisteredContext.Default }, serializer.Options.Contexts);
       Assert.IsNotNull(GeneratedTypes.Find(typeof(GcByConstructor)), "registered");
 
       GcByConstructor value = new GcByConstructor() { Name = "x", Numbers = new HashSet<int>() { 1, 2 } };
@@ -1069,12 +1067,12 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// UseRegisteredContexts off: the serializer neither uses the registered code nor adds its own (the Ls and Lt test runs keep the runtime paths).
+    /// UseRegisteredContexts off: the serializer neither uses the registered code nor adds its own (the Debug and Ls test runs keep the runtime paths).
     /// </summary>
     [TestMethod]
     public void ContextConstructor_WithoutTheRegistry_DoesNotRegister()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(GcIsolatedContext.Default, new LtMsgPackOptions() { UseRegisteredContexts = false });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(GcIsolatedContext.Default, new LsMsgPackOptions() { UseRegisteredContexts = false });
       Assert.IsNull(GeneratedTypes.Find(typeof(GcIsolated)));
       Assert.AreEqual("y", serializer.Deserialize<GcIsolated>(serializer.Serialize(new GcIsolated() { Name = "y" })).Name);
       Assert.IsNull(GeneratedTypes.Find(typeof(GcIsolated)));
@@ -1083,7 +1081,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void HttpSerializer_PassesTheContextToBothMediaTypes()
     {
-      LtMsgPack.Http.LtMsgPackHttpSerializer http = new LtMsgPack.Http.LtMsgPackHttpSerializer(GcConstructorContext.Default, new LtMsgPack.Http.LtMsgPackHttpOptions());
+      LsMsgPack.Http.LsMsgPackHttpSerializer http = new LsMsgPack.Http.LsMsgPackHttpSerializer(GcConstructorContext.Default, new LsMsgPack.Http.LsMsgPackHttpOptions());
       Assert.AreSame(GcConstructorContext.Default, http.For(MsgPackMediaTypes.XLsMsgPack).Options.Contexts[0]);
       Assert.AreSame(GcConstructorContext.Default, http.For(MsgPackMediaTypes.MsgPack).Options.Contexts[0]);
     }
@@ -1091,9 +1089,9 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ContextConstructor_RefusesNull()
     {
-      Assert.ThrowsExactly<ArgumentNullException>(() => new LtMsgPackSerializer((LtMsgPackContext)null));
-      Assert.ThrowsExactly<ArgumentNullException>(() => new LtMsgPackSerializer((LtMsgPackContext)null, new LtMsgPackOptions()));
-      Assert.ThrowsExactly<ArgumentNullException>(() => new LtMsgPackSerializer(GcIsolatedContext.Default, null));
+      Assert.ThrowsExactly<ArgumentNullException>(() => new LsMsgPackSerializer((LsMsgPackContext)null));
+      Assert.ThrowsExactly<ArgumentNullException>(() => new LsMsgPackSerializer((LsMsgPackContext)null, new LsMsgPackOptions()));
+      Assert.ThrowsExactly<ArgumentNullException>(() => new LsMsgPackSerializer(GcIsolatedContext.Default, null));
     }
 
     #endregion
@@ -1103,7 +1101,7 @@ namespace LsMsgPackUnitTests
     /// <summary>
     /// A context written by hand, as generated code of another version would be.
     /// </summary>
-    private sealed class HandWritten : LtMsgPackContext
+    private sealed class HandWritten : LsMsgPackContext
     {
       private readonly Action<GeneratedTypeSet> _add;
 
@@ -1131,7 +1129,7 @@ namespace LsMsgPackUnitTests
     {
       HandWritten context = new HandWritten(version, AddPerson);
       Assert.IsFalse(context.IsUsable);
-      AssertSameAsRuntime(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { context }, UseRegisteredContexts = false }, Sample());
+      AssertSameAsRuntime(new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { context }, UseRegisteredContexts = false }, Sample());
     }
 
     [TestMethod]
@@ -1139,7 +1137,7 @@ namespace LsMsgPackUnitTests
     {
       HandWritten context = new HandWritten(GeneratedContract.Current, types => { throw new MissingMethodException("GeneratedValues", "Future"); });
       Assert.IsFalse(context.IsUsable);
-      AssertSameAsRuntime(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { context }, UseRegisteredContexts = false }, Sample());
+      AssertSameAsRuntime(new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { context }, UseRegisteredContexts = false }, Sample());
     }
 
     [TestMethod]
@@ -1150,7 +1148,7 @@ namespace LsMsgPackUnitTests
         GeneratedValues.Property<GcStale, long>("Name", o => { throw new InvalidOperationException("the type changed: must not be used"); }, null), // generated when Name was a long
         GeneratedValues.Property<GcStale, int>("Number", o => { numberGetter = true; return o.Number; }, (o, v) => o.Number = v),
         GeneratedValues.Property<GcStale, int>("Removed", o => { throw new InvalidOperationException("gone"); }, null))));
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions() { Contexts = new LtMsgPackContext[] { context }, UseRegisteredContexts = false });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { Contexts = new LsMsgPackContext[] { context }, UseRegisteredContexts = false });
       GcStale read = serializer.Deserialize<GcStale>(serializer.Serialize(new GcStale() { Name = "n", Number = 3 }));
       Assert.AreEqual("n", read.Name);
       Assert.AreEqual(3, read.Number);

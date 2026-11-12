@@ -103,7 +103,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// The first objects it was found on (at most <see cref="ReadDifferences.MaxSamples"/>): the objects with the unknown property or extra value, or the objects holding the object that was skipped (<see cref="DifferenceKind.UnmatchedClass"/>).
-    /// <para>In the order they were read: LsMsgPack converts the values of a collection or object from the last to the first, so with more than <see cref="ReadDifferences.MaxSamples"/> it keeps others than LtMsgPack.
+    /// <para>In the order they were read: LsMsgPack converts the values of a collection or object from the last to the first, so with more than <see cref="ReadDifferences.MaxSamples"/> it keeps others than LsMsgPack.
     /// Their paths are found in <see cref="ReadDifferences.Root"/> (<see cref="ReadDifferences.PathOf"/>), the report lists them in the order of the graph.</para>
     /// </summary>
     public IReadOnlyList<object> Samples { get { return _samples; } }

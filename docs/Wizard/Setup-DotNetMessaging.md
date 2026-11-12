@@ -8,13 +8,13 @@ Your .NET programs exchange messages through a broker (RabbitMQ, Azure Service B
 
 | | |
 |---|---|
-| Package | `LtMsgPack` |
-| Serializer | `LtMsgPackSerializer` with the default options, one per app |
+| Package | `LsMsgPack` |
+| Serializer | `LsMsgPackSerializer` with the default options, one per app |
 | Format | the indexed schema in every message, type ids where needed |
 | Keep in mind | messages outlive deployments; several message types can share one queue through an interface |
 
 ```
-dotnet add package LtMsgPack
+dotnet add package LsMsgPack
 ```
 
 ## The code
@@ -23,9 +23,9 @@ The serializer turns a message into a `byte[]`; every transport can carry that. 
 
 ```csharp
 using LsMsgPack;
-using LtMsgPack;
+using LsMsgPack;
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(); // one for the whole app, thread-safe
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(); // one for the whole app, thread-safe
 
 // Producer
 ServiceBusMessage message = new ServiceBusMessage(serializer.Serialize(orderPlaced))
@@ -67,7 +67,7 @@ The class name (`OrderCancelled`) becomes part of your message contract: renamin
 
 ## Why these settings
 
-- **Every message carries its own schema** (the property names of its classes, once). A consumer that starts tomorrow, or a new version of it, reads a message without knowing anything about the producer's version. LtMsgPack recognizes a schema it has seen before by its bytes, so reading the same schema again costs almost nothing.
+- **Every message carries its own schema** (the property names of its classes, once). A consumer that starts tomorrow, or a new version of it, reads a message without knowing anything about the producer's version. LsMsgPack recognizes a schema it has seen before by its bytes, so reading the same schema again costs almost nothing.
 - **Values are matched by name**, through that schema: a producer that already has a new property and a consumer that doesn't yet (or the other way around) still understand each other.
 - **No schema references.** `WriteSchemaReference` replaces the schema by an 18-byte reference to a schema held in memory. That's right for HTTP responses, where the client says which schemas it has; a message in a queue may be read by a process that never saw the schema, so keep the schema in the message.
 
@@ -83,9 +83,9 @@ Messages wait in queues, and services are deployed one at a time, so old and new
 
 - **Messages that can't be read** (a corrupt body, an incompatible change) throw a `MsgPackException`. Catch it and move the message to a dead-letter queue rather than retrying it forever.
 - **Who can write to the queue?** If only your services can, the messages are trusted. If other parties or clients can publish (a public WebSocket, a shared broker), treat them as untrusted: see [Add-ons](Extras.md#reading-data-you-dont-trust).
-- **Very small, very frequent messages**: the schema is a fixed cost per message. For a message that is one small object, `new LtMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }` (the property names in the object, no schema) is about as small and just as tolerant to changes; set the same on both sides.
+- **Very small, very frequent messages**: the schema is a fixed cost per message. For a message that is one small object, `new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }` (the property names in the object, no schema) is about as small and just as tolerant to changes; set the same on both sides.
 - **Dates arrive in UTC** (`Kind = Utc`).
-- Consumers in other languages on the same queue? Then use the [plain format](Setup-FilesPlain.md) (`LtMsgPackPresets.Generic()`); the settings there apply to messages just as well.
+- Consumers in other languages on the same queue? Then use the [plain format](Setup-FilesPlain.md) (`LsMsgPackPresets.Generic()`); the settings there apply to messages just as well.
 
 ## Next
 

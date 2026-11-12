@@ -1,13 +1,13 @@
 # LsMsgPack.AspNet.WebApi
 
-MsgPack `MediaTypeFormatter` for ASP.NET Web API 2 and for `HttpClient` (`GetFromMsgPackAsync` / `PostAsMsgPackAsync`, or `ObjectContent` / `ReadAsAsync`) on any platform. Serializing is done by [LtMsgPack](https://www.nuget.org/packages/LtMsgPack), which reads and writes several times faster than System.Text.Json.
+MsgPack `MediaTypeFormatter` for ASP.NET Web API 2 and for `HttpClient` (`GetFromMsgPackAsync` / `PostAsMsgPackAsync`, or `ObjectContent` / `ReadAsAsync`) on any platform. Serializing is done by [LsMsgPack](https://www.nuget.org/packages/LsMsgPack), which reads and writes several times faster than System.Text.Json.
 
 It speaks the same formats as [LsMsgPack.AspNetCore](https://www.nuget.org/packages/LsMsgPack.AspNetCore) and [LsMsgPack.AspNet.Mvc](https://www.nuget.org/packages/LsMsgPack.AspNet.Mvc), so a client using this package can talk to a server using either of them.
 
 | Media type | Format |
 |---|---|
 | `application/msgpack`, `application/x-msgpack` | Plain MsgPack, readable by any MsgPack implementation: maps keyed by property names, every value, `Guid` and `decimal` as text, dates as timestamps (a `DateTimeOffset` loses its offset). |
-| `application/x-lsmsgpack` | The indexed schema with type ids: smaller, polymorphic, and with the schema sent only once per client. Use this between LsMsgPackDebug / LtMsgPack endpoints. |
+| `application/x-lsmsgpack` | The indexed schema with type ids: smaller, polymorphic, and with the schema sent only once per client. Use this between endpoints that use LsMsgPack (or LsMsgPackDebug). |
 
 ## ASP.NET Web API 2
 
@@ -56,7 +56,7 @@ With `IHttpClientFactory`, add the handler without an inner handler (the factory
 
 When your classes differ from the server's (other names or namespaces, e.g. an SDK with its own models), create the handler with `formatter.CreateHandler(true)`: it asks for the described schema, by which the reader pairs your classes with the server's ([details](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#schema-version-2-for-clients-without-the-classes)).
 
-Settings are passed as `new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpOptions { ... })`. In trimmed or AOT apps (e.g. iOS), use the code of LtMsgPack's source generator: `new LsMsgPackMediaTypeFormatter(new LtMsgPackHttpSerializer(AppMsgPackContext.Default, options))` (the constructors without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`, see [Trimming and NativeAOT](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md#trimming-and-nativeaot)). With `ReportDifferences = true`, `response.GetReadDifferences()` (on the server `Request.GetReadDifferences()`) says what didn't match between the body and your classes, for example properties of another version of the models.
+Settings are passed as `new LsMsgPackMediaTypeFormatter(new LsMsgPackHttpOptions { ... })`. In trimmed or AOT apps (e.g. iOS), use the code of LsMsgPack's source generator: `new LsMsgPackMediaTypeFormatter(new LsMsgPackHttpSerializer(AppMsgPackContext.Default, options))` (the constructors without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`, see [Trimming and NativeAOT](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SourceGenerator.md#trimming-and-nativeaot)). With `ReportDifferences = true`, `response.GetReadDifferences()` (on the server `Request.GetReadDifferences()`) says what didn't match between the body and your classes, for example properties of another version of the models.
 
 ## Documentation
 

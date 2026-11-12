@@ -73,12 +73,12 @@ namespace LsMsgPackInteropTests
   }
 
   [TestClass]
-  public static class LtEquivalents
+  public static class LsEquivalents
   {
     [AssemblyInitialize]
     public static void Register(TestContext context)
     {
-      LsMsgPackUnitTests.LtSerializer.ExtensionEquivalents.Add(ext => ext is NerdbankGuidExtension ? new LtMsgPack.Extensions.NerdbankGuidExtension() : null); // LtMsgPack has it built in
+      LsMsgPackUnitTests.LsSerializer.ExtensionEquivalents.Add(ext => ext is NerdbankGuidExtension ? new LsMsgPack.Extensions.NerdbankGuidExtension() : null); // LsMsgPack has it built in
     }
   }
 }

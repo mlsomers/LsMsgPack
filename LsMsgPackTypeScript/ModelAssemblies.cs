@@ -102,7 +102,7 @@ namespace LsMsgPackTypeScript
     /// </summary>
     internal static bool IsUsers(Assembly assembly)
     {
-      if (assembly.IsDynamic || assembly == typeof(ModelAssemblies).Assembly || assembly == typeof(LsMsgPack.MsgPackOptions).Assembly || assembly == typeof(LtMsgPack.LtMsgPackSerializer).Assembly)
+      if (assembly.IsDynamic || assembly == typeof(ModelAssemblies).Assembly || assembly == typeof(LsMsgPack.MsgPackOptions).Assembly || assembly == typeof(LsMsgPack.LsMsgPackSerializer).Assembly)
         return false;
       string name = assembly.GetName().Name ?? string.Empty;
       return !(name.StartsWith("System", StringComparison.Ordinal) || name.StartsWith("Microsoft", StringComparison.Ordinal) || name == "netstandard" || name == "mscorlib");

@@ -599,7 +599,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// PropertyNameCaseInsensitive with the keys of JsonNamingPolicy.CamelCase (LtMsgPack compares them as bytes) in another order than the reader's properties,
+    /// PropertyNameCaseInsensitive with the keys of JsonNamingPolicy.CamelCase (LsMsgPack compares them as bytes) in another order than the reader's properties,
     /// one that is no camelCase name (urlvalue2) and a left out default value (left).
     /// </summary>
     [TestMethod]
@@ -675,15 +675,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsDeserializingEdgeCases : DeserializingEdgeCases
+  public class DebugDeserializingEdgeCases : DeserializingEdgeCases
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtDeserializingEdgeCases : DeserializingEdgeCases
+  public class LsDeserializingEdgeCases : DeserializingEdgeCases
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

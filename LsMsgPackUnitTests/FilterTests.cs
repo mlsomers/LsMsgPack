@@ -299,15 +299,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsFilterTests : FilterTests
+  public class DebugFilterTests : FilterTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtFilterTests : FilterTests
+  public class LsFilterTests : FilterTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

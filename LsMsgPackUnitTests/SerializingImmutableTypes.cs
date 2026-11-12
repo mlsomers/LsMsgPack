@@ -161,7 +161,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// The property the constructor takes comes after the others: their values are read before the object exists (LtMsgPack collects them), then set.
+    /// The property the constructor takes comes after the others: their values are read before the object exists (LsMsgPack collects them), then set.
     /// </summary>
     public class ImmLateName
     {
@@ -410,15 +410,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsSerializingImmutableTypes : SerializingImmutableTypes
+  public class DebugSerializingImmutableTypes : SerializingImmutableTypes
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtSerializingImmutableTypes : SerializingImmutableTypes
+  public class LsSerializingImmutableTypes : SerializingImmutableTypes
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

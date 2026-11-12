@@ -55,7 +55,7 @@ lsmsgpack-ts --assembly Shop.Api/bin/Release/net8.0/Shop.Api.dll --solution Shop
 
 - `--solution` finds the classes the way the analyzers do: the results and parameters of your controller actions (and minimal APIs). Instead, or as well, name them: `--root "List<Shop.Invoice>"` for a response type, `--request Shop.Order` for a request body.
 - It writes `models.ts` (the classes) and `models.schemas.ts` (the schemas the server will send, so the client has them before its first request).
-- Server with custom formatter options? Pass them with `--options Shop.Api.MsgPackSetup.Options` (a static member returning your `LtMsgPackHttpOptions`), so the models have the same properties.
+- Server with custom formatter options? Pass them with `--options Shop.Api.MsgPackSetup.Options` (a static member returning your `LsMsgPackHttpOptions`), so the models have the same properties.
 
 What you get (abridged):
 
@@ -142,7 +142,7 @@ socket.onmessage = e => handle(decoder.decode(new Uint8Array(e.data)).value);
 socket.send(encode(order, { models }));
 ```
 
-On the server, write the messages with `new LtMsgPackSerializer(new LtMsgPackOptions { SchemaVersion = SchemaVersion.Described })` (each message has its schema), and read what the browser sends with a plain reader (`encode` writes plain MsgPack): `MsgPackMediaTypes.ToPlain(new LtMsgPackOptions())` with `PropertyNameCaseInsensitive = true`.
+On the server, write the messages with `new LsMsgPackSerializer(new LsMsgPackOptions { SchemaVersion = SchemaVersion.Described })` (each message has its schema), and read what the browser sends with a plain reader (`encode` writes plain MsgPack): `MsgPackMediaTypes.ToPlain(new LsMsgPackOptions())` with `PropertyNameCaseInsensitive = true`.
 
 ## Watch out
 

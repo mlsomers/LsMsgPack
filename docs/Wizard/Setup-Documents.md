@@ -8,24 +8,24 @@ Files that your .NET app saves and opens again, also after updates: documents, p
 
 | | |
 |---|---|
-| Package | `LtMsgPack` |
-| Serializer | `LtMsgPackSerializer` with the default options |
+| Package | `LsMsgPack` |
+| Serializer | `LsMsgPackSerializer` with the default options |
 | Format | the indexed schema (property names once per file), type ids where needed |
 | Keep in mind | keep the schema in the file, give polymorphic classes stable names, keep a test file per release |
 
 ```
-dotnet add package LtMsgPack
+dotnet add package LsMsgPack
 ```
 
 ## The code
 
 ```csharp
-using LtMsgPack;
+using LsMsgPack;
 
 public static class DocumentFiles
 {
   // One serializer for the whole app: it's thread-safe and learns your classes once.
-  private static readonly LtMsgPackSerializer Serializer = new LtMsgPackSerializer();
+  private static readonly LsMsgPackSerializer Serializer = new LsMsgPackSerializer();
 
   public static async Task SaveAsync(Drawing drawing, string path)
   {
@@ -88,7 +88,7 @@ The defaults were chosen for exactly this case, so there's nothing to set:
 using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.TypeResolving.Names;
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions
 {
   PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new AttributePropertyNameResolver() }
 });
@@ -100,7 +100,7 @@ public class Drawing
 }
 ```
 
-LtMsgPack reads and writes classes with custom names on a somewhat slower path, so only do this when you need it.
+LsMsgPack reads and writes classes with custom names on a somewhat slower path, so only do this when you need it.
 
 **Stable names for polymorphic classes.** By default the type id is the short class name (`Circle`). Rename `Circle` to `Ellipse` and old files name a class that no longer exists. Give such classes a name of their own with `[XmlRoot]` and the `XmlRootAttributeTypeResolver`. Use the current class name when you add it to a released app, and you can rename the class freely afterwards:
 
@@ -112,7 +112,7 @@ using LsMsgPack.TypeResolving.Types;
 XmlRootAttributeTypeResolver shapeNames = new XmlRootAttributeTypeResolver();
 shapeNames.RegisterAssembly(typeof(IShape).Assembly);
 
-LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions
 {
   TypeResolvers = new IMsgPackTypeResolver[] { shapeNames }
 });

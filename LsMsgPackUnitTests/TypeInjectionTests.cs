@@ -242,7 +242,7 @@ namespace LsMsgPackUnitTests
       InjectionHolderTyped allowed = Serializer.Deserialize<InjectionHolderTyped>(bytes, Settings(schema, new AllowedTypesGuard().AllowAssemblyOf(typeof(IInjectionShape))));
       Assert.AreEqual(3, ((InjectionSquare)allowed.Shape).Side);
 
-      // Assignable, but not allowed (LtMsgPack reads this one without LsMsgPack's way)
+      // Assignable, but not allowed (LsMsgPack reads this one without LsMsgPack's way)
       Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<InjectionHolderTyped>(bytes, Settings(schema, new AllowedTypesGuard())));
     }
 
@@ -353,15 +353,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsTypeInjectionTests : TypeInjectionTests
+  public class DebugTypeInjectionTests : TypeInjectionTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtTypeInjectionTests : TypeInjectionTests
+  public class LsTypeInjectionTests : TypeInjectionTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

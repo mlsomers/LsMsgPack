@@ -268,15 +268,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsSerializingFields : SerializingFields
+  public class DebugSerializingFields : SerializingFields
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtSerializingFields : SerializingFields
+  public class LsSerializingFields : SerializingFields
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

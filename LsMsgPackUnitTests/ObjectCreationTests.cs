@@ -199,7 +199,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// Used to fall back to an uninitialized instance. Repeated past the calls after which LtMsgPack compiles the constructor call (PropertyAccessor.CompileAfterCalls).
+    /// Used to fall back to an uninitialized instance. Repeated past the calls after which LsMsgPack compiles the constructor call (PropertyAccessor.CompileAfterCalls).
     /// </summary>
     [TestMethod]
     [DataRow(ObjectCreation.Constructor)]
@@ -290,15 +290,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsObjectCreationTests : ObjectCreationTests
+  public class DebugObjectCreationTests : ObjectCreationTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtObjectCreationTests : ObjectCreationTests
+  public class LsObjectCreationTests : ObjectCreationTests
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

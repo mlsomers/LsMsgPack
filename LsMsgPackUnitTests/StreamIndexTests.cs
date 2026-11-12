@@ -1,7 +1,5 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Streaming;
-using LtMsgPack;
-using LtMsgPack.Streaming;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
@@ -19,9 +17,9 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class StreamIndexTests
   {
-    private static LtMsgPackSerializer Plain()
+    private static LsMsgPackSerializer Plain()
     {
-      return new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
     }
 
     private static SwOrder Order(int n)
@@ -44,7 +42,7 @@ namespace LsMsgPackUnitTests
       }
     }
 
-    private static byte[] Write(Action<MsgPackStreamWriter> write, MsgPackStreamIndexOptions index, LtMsgPackSerializer serializer = null, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, int flushThreshold = 64 * 1024)
+    private static byte[] Write(Action<MsgPackStreamWriter> write, MsgPackStreamIndexOptions index, LsMsgPackSerializer serializer = null, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, int flushThreshold = 64 * 1024)
     {
       MemoryStream ms = new MemoryStream();
       using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer ?? Plain(), schemas, true, index))
@@ -55,7 +53,7 @@ namespace LsMsgPackUnitTests
       return ms.ToArray();
     }
 
-    private static IReadOnlyList<MsgPackStreamIndex> Indexes(byte[] bytes, bool search = false, LtMsgPackSerializer serializer = null)
+    private static IReadOnlyList<MsgPackStreamIndex> Indexes(byte[] bytes, bool search = false, LsMsgPackSerializer serializer = null)
     {
       using (MsgPackStreamReader reader = new MsgPackStreamReader(new MemoryStream(bytes), serializer ?? Plain()))
         return reader.ReadIndexes(search);
@@ -126,7 +124,7 @@ namespace LsMsgPackUnitTests
       MsgPackStreamIndex index = indexes[0];
       Assert.AreEqual(MsgPackStreamIndexStatus.Complete, index.Status);
       Assert.AreEqual(MsgPackStreamIndex.CurrentVersion, index.Version);
-      StringAssert.StartsWith(index.Writer, "LtMsgPack ");
+      StringAssert.StartsWith(index.Writer, "LsMsgPack ");
       Assert.IsNull(index.PreviousTail);
       Assert.AreEqual("test", index.Metadata["source"]);
       Assert.AreEqual(positions[4], index.Offset);
@@ -264,7 +262,7 @@ namespace LsMsgPackUnitTests
       foreach (bool unknown in new[] { true, false })
       {
         SchemaStore store = new SchemaStore();
-        LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { WriteSchemaReference = true, SchemaStore = store });
+        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = store });
         byte[] bytes = Write(w =>
         {
           w.WriteObject(Order(1000)); // an entry before the table
@@ -293,7 +291,7 @@ namespace LsMsgPackUnitTests
         CollectionAssert.AreEqual(new long[] { 0, 10, 20, 30, 40, 50, 55, 60, 70, 80, 90 }, table.Points.Select(p => p.Element).ToArray());
         Assert.AreEqual(new DateTime(2026, 10, 31, 0, 0, 55, DateTimeKind.Utc), table.Points[6].Key);
 
-        LtMsgPackSerializer reading = new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = new SchemaStore() }); // learns the schemas from the stream through the index
+        LsMsgPackSerializer reading = new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = new SchemaStore() }); // learns the schemas from the stream through the index
         using (MsgPackStreamReader reader = new MsgPackStreamReader(new MemoryStream(bytes), reading))
         {
           IReadOnlyList<MsgPackStreamIndex> indexes = reader.ReadIndexes();
@@ -325,7 +323,7 @@ namespace LsMsgPackUnitTests
     public void TheIndexLocatesTheSchemasOfPerStream()
     {
       SchemaStore store = new SchemaStore();
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions { WriteSchemaReference = true, SchemaStore = store });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = store });
       byte[] bytes = Write(w =>
       {
         for (int n = 1; n <= 3; n++)
@@ -336,7 +334,7 @@ namespace LsMsgPackUnitTests
       Assert.IsNotEmpty(index.Schemas);
       Assert.AreEqual(index.Entries[0].Offset, index.Schemas[0].Offset); // inline in the first entry
 
-      LtMsgPackSerializer reading = new LtMsgPackSerializer(new LtMsgPackOptions { SchemaStore = new SchemaStore() });
+      LsMsgPackSerializer reading = new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = new SchemaStore() });
       using (MsgPackStreamReader reader = new MsgPackStreamReader(new MemoryStream(bytes), reading))
       {
         reader.Seek(index.Entries[2]);
@@ -393,7 +391,7 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(index.Offset, index.Entries[1].Offset + index.Entries[1].Length);
       Assert.ThrowsExactly<InvalidOperationException>(() => MsgPackStreamWriter.Append(new MemoryStream(bytes.ToArray()), Plain()));
 
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions());
       bytes = Write(w =>
       {
         w.WriteObject(Order(1));
@@ -412,7 +410,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ARefusedRootValueIsNoInterruption()
     {
-      LtMsgPackSerializer serializer = new LtMsgPackSerializer(new LtMsgPackOptions());
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions());
       byte[] bytes = Write(w =>
       {
         w.WriteObject(Order(1));
@@ -520,7 +518,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void TheIndexIgnoresTheByteOrderOfTheStream()
     {
-      LtMsgPackSerializer swapped = new LtMsgPackSerializer(new LtMsgPackOptions { UseInexedSchema = false, EndianAction = EndianAction.NeverSwap });
+      LsMsgPackSerializer swapped = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, EndianAction = EndianAction.NeverSwap });
       Action<MsgPackStreamWriter> write = w =>
       {
         w.BeginEntry(300);

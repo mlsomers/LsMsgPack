@@ -49,15 +49,15 @@ namespace LsMsgPackUnitTests
   }
 
   [TestClass]
-  public class LsSerializingGenericTypes : SerializingGenericTypes
+  public class DebugSerializingGenericTypes : SerializingGenericTypes
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Debug; } }
   }
 
   [TestClass]
-  public class LtSerializingGenericTypes : SerializingGenericTypes
+  public class LsSerializingGenericTypes : SerializingGenericTypes
   {
-    protected override ISerializerUnderTest Serializer { get { return Serializers.Lt; } }
+    protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
   }
 
   [TestClass]

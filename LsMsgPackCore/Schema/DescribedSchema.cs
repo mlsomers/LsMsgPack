@@ -68,7 +68,7 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// The schema of rows written without a class (LtMsgPack's SerializeRows of a data reader): one entry with the columns as its properties, and the root a list of it,
+    /// The schema of rows written without a class (LsMsgPack's SerializeRows of a data reader): one entry with the columns as its properties, and the root a list of it,
     /// the same bytes as <see cref="Write(ByteWriter, List{ComplexTypeDef}, Type, MsgPackOptions, MsgPackOptions)"/> of a <c>List&lt;T&gt;</c> of a class with these properties.
     /// </summary>
     /// <param name="typeName">The name of the entry, null when no row was written (no entry, as for an empty list)</param>
@@ -217,7 +217,7 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// An object with properties (written as an array or map of its values), not a value the serializers write otherwise. In the order of LtMsgPack's TypeKinds.Classify (LsMsgPack's MsgPackItem.Pack).
+    /// An object with properties (written as an array or map of its values), not a value the serializers write otherwise. In the order of LsMsgPack's TypeKinds.Classify (LsMsgPack's MsgPackItem.Pack).
     /// </summary>
     internal static bool IsObject(Type type, MsgPackOptions settings)
     {
@@ -247,7 +247,7 @@ namespace LsMsgPack
         return;
       }
 
-      if (type == typeof(decimal)) // a custom extension (the built-in decimal extension) or a string (LtMsgPack's DecimalFormat.String)
+      if (type == typeof(decimal)) // a custom extension (the built-in decimal extension) or a string (LsMsgPack's DecimalFormat.String)
       {
         Kind("decimal");
         return;

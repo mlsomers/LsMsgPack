@@ -252,7 +252,7 @@ export class Writer {
           return this.typedObject(o, Object.keys(o), depth);
         }
         if (typeof v !== 'string') throw typePropertyError(v);
-        this.u8(0xa0); // the key "": the type id, first (LtMsgPack's fast path, System.Text.Json also wants it first)
+        this.u8(0xa0); // the key "": the type id, first (LsMsgPack's fast path, System.Text.Json also wants it first)
         this.string(v);
       } else {
         this.key(k);
