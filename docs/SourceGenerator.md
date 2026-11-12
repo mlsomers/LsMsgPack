@@ -88,7 +88,7 @@ Three ways, and they can be combined:
 LtMsgPackSerializer serializer = new LtMsgPackSerializer(AppMsgPackContext.Default, new LtMsgPackOptions());
 ```
 
-- **Registered for the process (C# 9 and later):** the generated module initializer registers the contexts of the assembly when it is loaded. Every `LtMsgPackSerializer` then uses them, without code changes. LsMsgPack uses their property accessors and constructor calls too. Switch it off with `<LtMsgPackAutoRegister>false</LtMsgPackAutoRegister>` or `[assembly: LtMsgPackGenerate(AutoRegister = false)]`.
+- **Registered for the process (C# 9 and later):** the generated module initializer registers the contexts of the assembly when it is loaded. Every `LtMsgPackSerializer` then uses them, without code changes. LsMsgPackDebug uses their property accessors and constructor calls too. Switch it off with `<LtMsgPackAutoRegister>false</LtMsgPackAutoRegister>` or `[assembly: LtMsgPackGenerate(AutoRegister = false)]`.
 - **In the options**, which also works for C# 7.3 and .NET Framework projects:
 
 ```csharp

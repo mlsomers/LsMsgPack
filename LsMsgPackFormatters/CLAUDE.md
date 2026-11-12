@@ -1,6 +1,6 @@
 # Web formatters
 
-`LsMsgPackFormatters` (ASP.NET Core), `LsMsgPackWebApiFormatters` (Web API 2 + HttpClient) and `LsMsgPackMvc` (MVC 5 on .NET Framework) use **LtMsgPack**, not LsMsgPack (class and package names kept). docs/WebFormatters.md. They share `LtMsgPack/Http/`:
+`LsMsgPackFormatters` (ASP.NET Core), `LsMsgPackWebApiFormatters` (Web API 2 + HttpClient) and `LsMsgPackMvc` (MVC 5 on .NET Framework) use **LtMsgPack**, not LsMsgPackDebug (class and package names kept). docs/WebFormatters.md. They share `LtMsgPack/Http/`:
 
 - `LtMsgPackHttpOptions` (`XLsMsgPack` for application/x-lsmsgpack, `Plain` for application/msgpack and x-msgpack, `LtMsgPackPresets.Generic()` by default, `NegotiateSchemas`, `CompleteSchemas` and `PropertyNameCaseInsensitive`: on by default, set on both options' copies; `CompileWritersAfter` and `CompileReadersAfter` 0 by default, replace both options' values: a server writes and reads its types many times, and compiling after the JIT optimized `ObjectPlan.Write` with the runtime's loop measured ~4% slower on arrays than compiling at once) and `LtMsgPackHttpSerializer` (one per registration, input and output share it and its `SchemaStore`).
 - **Schema negotiation** for x-lsmsgpack responses: request header `MsgPack-Schemas` (ids the client holds), response header `MsgPack-Schema` + `Vary`; the server writes with `WriteSchemaReference` and replaces the reference by the schema (`SchemaStore.GetInlineSchema`) when the client does not hold it or the schema is not longer than the reference. The client side is `LsMsgPackSchemaHandler` (`formatter.CreateHandler()`; `CreateDelegatingHandler()` without an inner handler for IHttpClientFactory, which refuses handlers that have one), which registers inline schemas (`SchemaStore.RegisterInline`) per server; `RequestDescribedSchemas` (`CreateHandler(true)`) adds `x-lsmsgpack; schema=described` to the Accept header, for clients with other classes. Request bodies always carry the schema inline (by design, docs/WebFormatters.md).
@@ -25,4 +25,4 @@ docs/WebFormatters.md "Streams with HttpClient". The package also targets netsta
 
 ## Tests
 
-The formatter test projects also reference LsMsgPack, to check the bytes against it (no configuration mapping, see the root CLAUDE.md). `LsMsgPackMvcTests` (net472) builds but cannot run on Linux.
+The formatter test projects also reference LsMsgPackDebug, to check the bytes against it (no configuration mapping, see the root CLAUDE.md). `LsMsgPackMvcTests` (net472) builds but cannot run on Linux.

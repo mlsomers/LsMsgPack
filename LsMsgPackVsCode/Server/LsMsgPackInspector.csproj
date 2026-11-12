@@ -43,7 +43,7 @@
        without the solution properties the references of ObjectDebugger keep it too) -->
   <ItemGroup>
     <ProjectReference Include="..\..\ObjectDebugger\ObjectDebugger.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
-    <ProjectReference Include="..\..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <ProjectReference Include="..\..\LsMsgPackDebug\LsMsgPackDebug.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
     <ProjectReference Include="..\..\LsMsgPackCore\LsMsgPack.Core.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
   </ItemGroup>
 

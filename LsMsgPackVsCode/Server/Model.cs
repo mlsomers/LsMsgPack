@@ -14,7 +14,7 @@ namespace LsMsgPackInspector
     /// <summary>
     /// The parts of the data that are not in the hex view (the middle of values that are too large for practical debugging, also the rest of a file beyond what is kept), in the order of the data.
     /// </summary>
-    public LsMsgPack.SkippedRange[] Skipped { get; set; }
+    public LsMsgPackDebug.SkippedRange[] Skipped { get; set; }
 
     /// <summary>
     /// The bytes of the hex view (the data without <see cref="Skipped"/>), null when that is all the data the extension sent.

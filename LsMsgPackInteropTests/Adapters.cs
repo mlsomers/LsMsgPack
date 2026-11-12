@@ -1,5 +1,6 @@
 ﻿using LsMsgPack;
-using LsMsgPack.Types.Extensions;
+using LsMsgPackDebug;
+using LsMsgPackDebug.Types.Extensions;
 using MessagePack;
 using MessagePack.Formatters;
 using Microsoft.VisualStudio.TestTools.UnitTesting;

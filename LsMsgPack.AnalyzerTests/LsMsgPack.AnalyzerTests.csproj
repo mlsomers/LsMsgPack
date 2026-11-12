@@ -22,7 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPack.Analyzers\LsMsgPack.Analyzers.csproj" />
     <ProjectReference Include="..\LsMsgPack.Analyzers.CodeFixes\LsMsgPack.Analyzers.CodeFixes.csproj" />
-    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" />
+    <ProjectReference Include="..\LsMsgPackDebug\LsMsgPackDebug.csproj" />
     <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
     <ProjectReference Include="..\LsMsgPackFormatters\LsMsgPackFormatters.csproj" />
     <ProjectReference Include="..\LsMsgPackWebApiFormatters\LsMsgPackWebApiFormatters.csproj" />

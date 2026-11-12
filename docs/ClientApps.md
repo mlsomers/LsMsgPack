@@ -7,8 +7,8 @@ Which package
 
 | Package | Use it when |
 |---|---|
-| `LtMsgPack` | Normal use: saving and loading files, calling web services, caches, queues. It's several times faster than LsMsgPack and System.Text.Json (see the [README](../README.md#which-package)). |
-| `LsMsgPack` | You want to look inside MsgPack data in your app: `MsgPackItem.Unpack` gives you the tree of MsgPack items (maps, arrays, strings...) of any MsgPack payload, also data you don't have classes for. |
+| `LtMsgPack` | Normal use: saving and loading files, calling web services, caches, queues. It's several times faster than LsMsgPackDebug and System.Text.Json (see the [README](../README.md#which-package)). |
+| `LsMsgPackDebug` | You want to look inside MsgPack data in your app: `MsgPackItem.Unpack` gives you the tree of MsgPack items (maps, arrays, strings...) of any MsgPack payload, also data you don't have classes for. |
 
 Both write and read exactly the same data with the same settings, so a file written by one can be read by the other.
 
@@ -42,10 +42,10 @@ byte[] buffer = serializer.Serialize(message);
 MyClass returnMsg = serializer.Deserialize<MyClass>(buffer);
 ```
 
-With **LsMsgPack**:
+With **LsMsgPackDebug**:
 
 ```csharp
-using LsMsgPack;
+using LsMsgPackDebug;
 
 byte[] buffer = MsgPackSerializer.Serialize(message);
 MyClass returnMsg = MsgPackSerializer.Deserialize<MyClass>(buffer);
@@ -54,7 +54,7 @@ MyClass returnMsg = MsgPackSerializer.Deserialize<MyClass>(buffer);
 MpRoot items = MsgPackItem.UnpackMultiple(buffer);
 ```
 
-The settings are in `LtMsgPackOptions` (LtMsgPack) and `MsgPackSettings` (LsMsgPack). Both derive from `MsgPackOptions`, so the format settings have the same names. The defaults are a good choice when only your own application reads the data. See [schema.md](schema.md) for what they do.
+The settings are in `LtMsgPackOptions` (LtMsgPack) and `MsgPackSettings` (LsMsgPackDebug). Both derive from `MsgPackOptions`, so the format settings have the same names. The defaults are a good choice when only your own application reads the data. See [schema.md](schema.md) for what they do.
 
 Saving and loading files
 ------------------------
@@ -127,4 +127,4 @@ LtMsgPackSerializer serializer = new LtMsgPackSerializer(AppMsgPackContext.Defau
 
 The generated code keeps the model classes when trimming (.NET 5 and later) and creates what LtMsgPack would otherwise create at runtime, which NativeAOT can't do (without it, LtMsgPack fails under NativeAOT). On WebAssembly AOT (Blazor) it is also several times faster. The constructors without a context are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`: the analyzers of a trimmed or AOT project warn where they are used (see [Trimming and NativeAOT](SourceGenerator.md#trimming-and-nativeaot)).
 
-LsMsgPack (the item tree serializer, meant for debugging) finds the properties of your classes through reflection. In a trimmed app, make sure the trimmer keeps the model classes and their properties, for example by marking the assembly with your models as a root: `<TrimmerRootAssembly Include="MyApp.Models" />`.
+LsMsgPackDebug (the item tree serializer, meant for debugging) finds the properties of your classes through reflection. In a trimmed app, make sure the trimmer keeps the model classes and their properties, for example by marking the assembly with your models as a root: `<TrimmerRootAssembly Include="MyApp.Models" />`.

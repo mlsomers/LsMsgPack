@@ -1,6 +1,6 @@
 ﻿# Analyzers
 
-The `LsMsgPack.Core` package includes analyzers, so every project that references `LsMsgPack`, `LtMsgPack` or one of the web formatter packages gets them. They warn about these things in the classes you serialize:
+The `LsMsgPack.Core` package includes analyzers, so every project that references `LsMsgPackDebug`, `LtMsgPack` or one of the web formatter packages gets them. They warn about these things in the classes you serialize:
 
 - **Values that are lost** because a left-out default doesn't match what the constructor sets (LSMP001 to LSMP003), or because null can't be told apart from a left-out value (LSMP006). Code fixes add or correct the `[DefaultValue]`.
 - **Places where the data picks the type** that a reader creates (LSMP004, LSMP005), see [security.md](security.md).

@@ -1,0 +1,369 @@
+﻿using LsMsgPack;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Xml.Serialization;
+using LsMsgPack.Meta;
+
+namespace LsMsgPackDebug
+{
+  [Serializable]
+  public class MpInt : MsgPackItem
+  {
+    public MpInt() : base() { }
+    public MpInt(MsgPackSettings settings) : base(settings) { }
+
+    private MsgPackTypeId typeId = MsgPackTypeId.MpBytePart;
+    private ulong uvalue;
+    private long svalue;
+
+    public static readonly MsgPackTypeId[] SignedTypeIds = new MsgPackTypeId[] { MsgPackTypeId.MpSByte, MsgPackTypeId.MpShort, MsgPackTypeId.MpInt, MsgPackTypeId.MpLong };
+
+    /// <summary>
+    /// Note! will just return false if the value is positive
+    /// </summary>
+    private bool IsSigned()
+    {
+      if (_settings._dynamicallyCompact) return svalue < 0;
+      if (((byte)typeId & 0xE0) == 0xE0) return true; // 5-bit negative integer
+      if (((byte)typeId & 0x7F) == 0) return false; // 7-bit positive integer
+      return typeId == MsgPackTypeId.MpSByte || typeId == MsgPackTypeId.MpShort || typeId == MsgPackTypeId.MpInt || typeId == MsgPackTypeId.MpLong; // SignedTypeIds
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    [Browsable(false)]
+    [XmlIgnore]
+    public MsgPackTypeId PreservedType
+    {
+      get { return typeId; }
+    }
+
+    public override MsgPackTypeId TypeId
+    {
+      get
+      {
+        if (_settings._dynamicallyCompact)
+        {
+          if (IsSigned())
+          {
+            if ((svalue >= -0x20) && ((svalue <= 0x1F))) return MsgPackTypeId.MpSBytePart; // negative fixint: -32 to -1
+            if ((svalue >= sbyte.MinValue) && (svalue <= sbyte.MaxValue)) return MsgPackTypeId.MpSByte;
+            if ((svalue >= short.MinValue) && (svalue <= short.MaxValue)) return MsgPackTypeId.MpShort;
+            if ((svalue >= int.MinValue) && (svalue <= int.MaxValue)) return MsgPackTypeId.MpInt;
+            return MsgPackTypeId.MpLong;
+          }
+          else
+          {
+            if (uvalue <= 0x7F) return MsgPackTypeId.MpBytePart;
+            if (uvalue <= 255) return MsgPackTypeId.MpUByte;
+            if (uvalue <= 0xFFFF) return MsgPackTypeId.MpUShort;
+            if (uvalue <= 0xFFFFFFFF) return MsgPackTypeId.MpUInt;
+            return MsgPackTypeId.MpULong;
+          }
+        }
+        else
+        {
+          if (typeId == MsgPackTypeId.MpSBytePart && svalue >= 0)
+            return MsgPackTypeId.MpBytePart; // a small positive sbyte, the negative fixint cannot hold it
+          return typeId;
+        }
+      }
+    }
+
+    internal MpInt SetEnumVal(object value)
+    {
+      Type valuesType = value.GetType();
+      Type typ = Enum.GetUnderlyingType(valuesType);
+      if (typ == typeof(int)) Value = (int)value;
+      else if (typ == typeof(short)) Value = (short)value;
+      else if (typ == typeof(byte)) Value = (byte)value;
+      else if (typ == typeof(sbyte)) Value = (sbyte)value;
+      else if (typ == typeof(long)) Value = (long)value;
+      else if (typ == typeof(uint)) Value = (uint)value;
+      else if (typ == typeof(ushort)) Value = (ushort)value;
+      else if (typ == typeof(ulong)) Value = (ulong)value;
+      else throw new MsgPackException($"Unable to convert \"{value}\" (\"{typ}\") to an integer type");
+      return this;
+    }
+
+    public override object Value
+    {
+      get
+      {
+        switch (typeId)
+        {
+          case MsgPackTypeId.MpSBytePart:
+          case MsgPackTypeId.MpSByte:
+            return Convert.ToSByte(svalue);
+          case MsgPackTypeId.MpShort:
+            return Convert.ToInt16(svalue);
+          case MsgPackTypeId.MpInt:
+            return Convert.ToInt32(svalue);
+          case MsgPackTypeId.MpLong:
+            return Convert.ToInt64(svalue);
+          case MsgPackTypeId.MpBytePart:
+          case MsgPackTypeId.MpUByte:
+            return Convert.ToByte(uvalue);
+          case MsgPackTypeId.MpUShort:
+            return Convert.ToUInt16(uvalue);
+          case MsgPackTypeId.MpUInt:
+            return Convert.ToUInt32(uvalue);
+          case MsgPackTypeId.MpULong:
+            return uvalue;
+          default:
+            if (svalue != 0) return svalue;
+            return uvalue;
+        }
+      }
+      set
+      { // preseve original type in typeId
+        if (value is sbyte)
+        {
+          typeId = ((sbyte)value >= -0x20) && ((sbyte)value <= 0x1F) ? MsgPackTypeId.MpSBytePart : MsgPackTypeId.MpSByte; // a fixint (see TypeId for the positive ones)
+          svalue = Convert.ToInt64(value);
+          uvalue = 0;
+        }
+        else if (value is Int16)
+        {
+          typeId = MsgPackTypeId.MpShort;
+          svalue = Convert.ToInt64(value);
+          uvalue = 0;
+        }
+        else if (value is Int32)
+        {
+          typeId = MsgPackTypeId.MpInt;
+          svalue = Convert.ToInt64(value);
+          uvalue = 0;
+        }
+        else if (value is Int64)
+        {
+          typeId = MsgPackTypeId.MpLong;
+          svalue = Convert.ToInt64(value);
+          uvalue = 0;
+        }
+        else if (value is byte)
+        {
+          typeId = ((byte)value <= 0x7F) ? MsgPackTypeId.MpBytePart : MsgPackTypeId.MpUByte;
+          svalue = 0;
+          uvalue = Convert.ToUInt64(value);
+        }
+        else if (value is ushort)
+        {
+          typeId = MsgPackTypeId.MpUShort;
+          svalue = 0;
+          uvalue = Convert.ToUInt64(value);
+        }
+        else if (value is uint)
+        {
+          typeId = MsgPackTypeId.MpUInt;
+          svalue = 0;
+          uvalue = Convert.ToUInt64(value);
+        }
+        else if (value is ulong)
+        {
+          typeId = MsgPackTypeId.MpULong;
+          svalue = 0;
+          uvalue = Convert.ToUInt64(value);
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
+        } else if(value.GetType().IsEnum) {
+#else
+        } else if (value.GetType().IsEnum()) {
+#endif
+          SetEnumVal(value);
+        }
+        else throw new MsgPackException($"Unable to convert \"{value}\" to an integer type");
+
+        if (svalue > 0 && uvalue == 0)
+        {
+          uvalue = (ulong)svalue;
+        }
+      }
+    }
+
+    public override T GetTypedValue<T>()
+    {
+      Type targetType = typeof(T);
+#if !(SILVERLIGHT || WINDOWS_PHONE || NETFX_CORE || PORTABLE)
+      if(targetType.IsEnum) {
+#else
+      if (targetType.IsEnum()) {
+#endif
+        return (T)Enum.ToObject(targetType, Value);
+      }
+      if (targetType == typeof(sbyte)
+        || targetType == typeof(short)
+        || targetType == typeof(int)
+        || targetType == typeof(long)
+        || targetType == typeof(byte)
+        || targetType == typeof(ushort)
+        || targetType == typeof(uint)
+        || targetType == typeof(ulong))
+      {
+        if (_settings._dynamicallyCompact)
+        { // Direct cast may not be allowed in this case
+          return (T)Convert.ChangeType(Value, typeof(T));
+        }
+        else
+        {
+          return (T)Value;
+        }
+      }
+      return base.GetTypedValue<T>();
+    }
+
+    public override byte[] ToBytes()
+    {
+      ByteWriter bytes = new ByteWriter(9);
+      WriteValue(bytes);
+      return bytes.ToArray();
+    }
+
+    internal override void WriteTo(ByteWriter target)
+    {
+      if (GetType() != typeof(MpInt)) // a derived type may override ToBytes
+      {
+        base.WriteTo(target);
+        return;
+      }
+      WriteValue(target);
+    }
+
+    private void WriteValue(ByteWriter bytes)
+    {
+      MsgPackTypeId targetType = TypeId;
+      byte type = (byte)targetType;
+      if (_settings._dynamicallyCompact || targetType == MsgPackTypeId.MpBytePart || targetType == MsgPackTypeId.MpSBytePart)
+      {
+        if ((type & 0x7F) == 0) { bytes.Write((byte)(type | Convert.ToByte(uvalue))); return; }
+        if ((type & 0xE0) == 0xE0) { bytes.Write((byte)(type | (BitConverter.IsLittleEndian ? (byte)svalue : (byte)(svalue >> 56)))); return; } // first byte of BitConverter.GetBytes(svalue)
+      }
+
+      bytes.Write(type);
+      switch (targetType)
+      {
+        case MsgPackTypeId.MpSByte:
+          bytes.Write((byte)Convert.ToSByte(svalue));
+          break;
+        case MsgPackTypeId.MpShort:
+          bytes.WriteEndian((ushort)Convert.ToInt16(svalue), 2, Settings);
+          break;
+        case MsgPackTypeId.MpInt:
+          bytes.WriteEndian((uint)Convert.ToInt32(svalue), 4, Settings);
+          break;
+        case MsgPackTypeId.MpLong:
+          bytes.WriteEndian((ulong)svalue, 8, Settings);
+          break;
+        case MsgPackTypeId.MpUByte:
+          bytes.Write(Convert.ToByte(uvalue));
+          break;
+        case MsgPackTypeId.MpUShort:
+          bytes.WriteEndian(Convert.ToUInt16(uvalue), 2, Settings);
+          break;
+        case MsgPackTypeId.MpUInt:
+          bytes.WriteEndian(Convert.ToUInt32(uvalue), 4, Settings);
+          break;
+        case MsgPackTypeId.MpULong:
+          bytes.WriteEndian(uvalue, 8, Settings);
+          break;
+      }
+    }
+
+    public override MsgPackItem Read(MsgPackTypeId typeId, System.IO.Stream data)
+    {
+      svalue = 0; // in case of reuse
+      this.typeId = typeId;
+      if (((byte)typeId & 0xE0) == 0xE0)
+      { // 5-bit negative integer
+        svalue = (sbyte)typeId;
+        this.typeId = MsgPackTypeId.MpSBytePart;
+        if (svalue > 0) uvalue = (ulong)svalue;
+        return this;
+      }
+      if (((byte)typeId & 0x80) == 0)
+      { // 7-bit positive integer
+        uvalue = ((uint)((byte)typeId & 0x7F));
+        this.typeId = MsgPackTypeId.MpBytePart;
+        return this;
+      }
+      byte[] final;
+      switch ((MsgPackTypeId)typeId)
+      {
+        case MsgPackTypeId.MpSByte:
+          svalue = unchecked((sbyte)ReadByteExactly(data));
+          if (svalue > 0) uvalue = (ulong)svalue;
+          return this;
+        case MsgPackTypeId.MpUByte:
+          uvalue = ReadByteExactly(data);
+          return this;
+
+        case MsgPackTypeId.MpShort:
+        case MsgPackTypeId.MpUShort:
+          final = Settings.Buffers.Bytes2;
+          break;
+        case MsgPackTypeId.MpInt:
+        case MsgPackTypeId.MpUInt:
+          final = Settings.Buffers.Bytes4;
+          break;
+        case MsgPackTypeId.MpLong:
+        case MsgPackTypeId.MpULong:
+          final = Settings.Buffers.Bytes8;
+          break;
+        default:
+          throw new MsgPackException($"The type {GetOfficialTypeName(typeId)} is not supported.", data.Position - 1, typeId);
+      }
+
+      ReadExactly(data, final, final.Length);
+      ReorderIfLittleEndian(Settings, final); // in place, the (per thread) buffer is only used here
+
+      switch (typeId)
+      {
+        case MsgPackTypeId.MpShort:
+          svalue = BitConverter.ToInt16(final, 0);
+          break;
+        case MsgPackTypeId.MpInt:
+          svalue = BitConverter.ToInt32(final, 0);
+          break;
+        case MsgPackTypeId.MpLong:
+          svalue = BitConverter.ToInt64(final, 0);
+          break;
+        case MsgPackTypeId.MpUShort:
+          uvalue = BitConverter.ToUInt16(final, 0);
+          break;
+        case MsgPackTypeId.MpUInt:
+          uvalue = BitConverter.ToUInt32(final, 0);
+          break;
+        case MsgPackTypeId.MpULong:
+          uvalue = BitConverter.ToUInt64(final, 0);
+          break;
+        default:
+          throw new MsgPackException($"The type {GetOfficialTypeName(typeId)} is not supported.", data.Position - 1, typeId);
+      }
+      if (svalue > 0) uvalue = (ulong)svalue;
+      return this;
+    }
+
+    public static int GetByteLengthForType(MsgPackTypeId intType)
+    {
+      switch (intType)
+      {
+        case MsgPackTypeId.MpSBytePart:
+        case MsgPackTypeId.MpBytePart: return 1;
+        case MsgPackTypeId.MpSByte:
+        case MsgPackTypeId.MpUByte: return 2;
+        case MsgPackTypeId.MpShort:
+        case MsgPackTypeId.MpUShort: return 3;
+        case MsgPackTypeId.MpInt:
+        case MsgPackTypeId.MpUInt: return 5;
+        case MsgPackTypeId.MpLong:
+        case MsgPackTypeId.MpULong: return 9;
+      }
+      throw new MsgPackException($"The type {GetOfficialTypeName(intType)} is not an integer type.", 0, intType);
+    }
+
+    public override string ToString()
+    {
+      return
+        $"Integer ({GetOfficialTypeName(typeId)}) with the value {(IsSigned() ? svalue.ToString() : uvalue.ToString())}";
+    }
+  }
+}

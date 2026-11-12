@@ -9,7 +9,7 @@ REPO=$(git -C "$SRC" rev-parse --show-toplevel)
 mkdir -p "$WORK"
 rm -rf "$WORK/baseline" "$WORK/base.txt" && mkdir -p "$WORK/baseline"
 GENERATOR=""; git -C "$REPO" cat-file -e "$BASE_REF:LtMsgPack.Generator" 2>/dev/null && GENERATOR=LtMsgPack.Generator # the gen-* candidates in the base too
-git -C "$REPO" archive "$BASE_REF" LsMsgPackNetStandard LsMsgPackCore LtMsgPack LsMsgPackFormatters $GENERATOR CommonAssemblyInfo.cs Packaging.props | tar -x -C "$WORK/baseline"
+git -C "$REPO" archive "$BASE_REF" LsMsgPackDebug LsMsgPackCore LtMsgPack LsMsgPackFormatters $GENERATOR CommonAssemblyInfo.cs Packaging.props | tar -x -C "$WORK/baseline"
 echo "$BASE_REF ($(git -C "$REPO" rev-parse --short "$BASE_REF"))" > "$WORK/baseline/REF"
 sed 's/CreateInvoices(5)/CreateInvoices(100)/' "$SRC/EquivModel.cs" > "$WORK/WebModel.cs"
 
@@ -35,7 +35,7 @@ PROJ
 for v in new base; do
   ROOT=$REPO; [ $v = base ] && ROOT=$WORK/baseline
   LIBS="    <ProjectReference Include=\"$ROOT/LtMsgPack/LtMsgPack.csproj\" />
-    <ProjectReference Include=\"$ROOT/LsMsgPackNetStandard/LsMsgPack.csproj\" />"
+    <ProjectReference Include=\"$ROOT/LsMsgPackDebug/LsMsgPackDebug.csproj\" />"
   GEN_ITEMS=""; GEN_PROPS=""
   if [ -f "$ROOT/LtMsgPack.Generator/LtMsgPack.Generator.csproj" ]; then # the source generator: the gen-* candidates
     GEN_ITEMS="    <ProjectReference Include=\"$ROOT/LtMsgPack.Generator/LtMsgPack.Generator.csproj\" OutputItemType=\"Analyzer\" ReferenceOutputAssembly=\"false\" />"

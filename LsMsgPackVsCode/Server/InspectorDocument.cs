@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using ObjectDebugger;
 using System;
 using System.Collections;

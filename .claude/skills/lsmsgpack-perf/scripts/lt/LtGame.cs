@@ -5,6 +5,7 @@
 // "fields*" (the model with [DataMember] fields) and "vector3*" (System.Numerics.Vector3) only exist when it serializes fields (FIELDS, set by setup.sh).
 using LtMsgPack;
 using LsMsgPack;
+using LsMsgPackDebug;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;

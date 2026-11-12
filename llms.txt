@@ -5,7 +5,7 @@
 Key facts:
 
 - Use the `LtMsgPack` package to serialize: `dotnet add package LtMsgPack`, then `byte[] data = LtMsgPackSerializer.Default.Serialize(order);` and `Order copy = LtMsgPackSerializer.Default.Deserialize<Order>(data);` (namespace `LtMsgPack`). On the invoice benchmark it writes about 3x and reads about 5x as fast as System.Text.Json, with 35-47% smaller payloads.
-- The `LsMsgPack` package (the repository's name) writes and reads the same bytes but builds a tree of MsgPack items, for inspecting data: slower, only use it for that.
+- The `LsMsgPackDebug` package writes and reads the same bytes but builds a tree of MsgPack items, for inspecting data: slower, only use it for that.
 - ASP.NET Core: `dotnet add package LsMsgPack.AspNetCore`, then `services.AddControllers().AddLsMsgPackSerializerFormatters();` (minimal APIs: `AddLsMsgPack()` and `MsgPackResults.MsgPack(value)`). Media types `application/msgpack`, `application/x-msgpack` (plain MsgPack) and `application/x-lsmsgpack` (indexed schema with type ids).
 - Polymorphism needs no attributes: a type id is written where a value's type differs from the declared type. Data written by older or newer versions of the classes still loads.
 - Properties are serialized; fields when they opt in (`[DataMember]`, `[JsonInclude]`...) or with `SerializedFields.Public`/`All` in the static filters, after the properties: [schema.md#fields](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/schema.md#fields).
@@ -43,5 +43,5 @@ Key facts:
 ## Optional
 
 - [Architecture](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Architecture.md): the projects, how the serializers work, class diagrams
-- [LsMsgPack package](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/LsMsgPackNetStandard/README.md): the item-tree serializer for inspecting data
+- [LsMsgPackDebug package](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/LsMsgPackDebug/README.md): the item-tree serializer for inspecting data
 - [npm package](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/clients/typescript/README.md): @lsmsgpack/client

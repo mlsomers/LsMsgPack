@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPack.Streaming;
 using System;
 using System.Collections.Generic;

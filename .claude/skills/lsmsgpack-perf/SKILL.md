@@ -1,6 +1,6 @@
 ﻿---
 name: lsmsgpack-perf
-description: Measure and verify performance changes to the LsMsgPack and LtMsgPack serializers (and LsMsgPack.Core and the web formatters they share). Use before and after optimizing or refactoring anything in LsMsgPackNetStandard, LtMsgPack, LsMsgPackCore or the formatters (packing, unpacking, the indexed schema, property access, caches), to profile with perf, to A/B benchmark against master and to prove the serialized bytes and round trips are unchanged.
+description: Measure and verify performance changes to the LsMsgPackDebug and LtMsgPack serializers (and LsMsgPack.Core and the web formatters they share). Use before and after optimizing or refactoring anything in LsMsgPackDebug, LtMsgPack, LsMsgPackCore or the formatters (packing, unpacking, the indexed schema, property access, caches), to profile with perf, to A/B benchmark against master and to prove the serialized bytes and round trips are unchanged.
 ---
 
 # Performance work on LsMsgPack
@@ -44,15 +44,15 @@ It also counts first chance exceptions, which should stay 0.
 The numbers for the user come from the unit test (their table format):
 
 ```bash
-dotnet test LsMsgPackNetStandardUnitTests/LsMsgPackUnitTests.csproj -c Release --filter "TestCategory=Benchmark" --logger "console;verbosity=detailed"
+dotnet test LsMsgPackUnitTests/LsMsgPackUnitTests.csproj -c Release --filter "TestCategory=Benchmark" --logger "console;verbosity=detailed"
 ```
 
 ## LtMsgPack, Core and the formatters (`scripts/lt/`)
 
-The same approach for LtMsgPack, with System.Text.Json as the baseline. A change to Core needs both harnesses (LsMsgPack's above and these).
+The same approach for LtMsgPack, with System.Text.Json as the baseline. A change to Core needs both harnesses (LsMsgPackDebug's above and these).
 
 ```bash
-.claude/skills/lsmsgpack-perf/scripts/lt/setup.sh <work dir> [base ref]     # bench-, equiv- and web- new/base (the base gets LtMsgPack, Core, LsMsgPack and LsMsgPackFormatters)
+.claude/skills/lsmsgpack-perf/scripts/lt/setup.sh <work dir> [base ref]     # bench-, equiv- and web- new/base (the base gets LtMsgPack, Core, LsMsgPackDebug and LsMsgPackFormatters)
 .claude/skills/lsmsgpack-perf/scripts/lt/compare.sh <work dir>              # ~15 s, 97k lines: must stay identical
 .claude/skills/lsmsgpack-perf/scripts/lt/bench.sh <work dir> write 5 2 "lt-default lt-map-named"   # alternating base/new
 dotnet <work dir>/bench-new/bin/Release/net8.0/bench-new.dll table 3        # all candidates vs System.Text.Json (invoices)

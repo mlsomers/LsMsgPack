@@ -1,5 +1,6 @@
 ﻿// Byte and round trip equivalence of LtMsgPack (and its HTTP serializer): run against two builds and diff the output.
 using LsMsgPack;
+using LsMsgPackDebug;
 using LtMsgPack;
 using LtMsgPack.Http;
 using System;

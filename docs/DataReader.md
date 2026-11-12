@@ -104,7 +104,7 @@ byte[] data = serializer.SerializeRows<Order>(reader);   // or SerializeRows(rea
 List<Order> orders = serializer.Deserialize<List<Order>>(data);
 ```
 
-- The bytes are the same as `Serialize(List<T>)` of a class with a property per column: the column names, the field types, `Nullable` for value types, in the column order. So any reader of that list reads them (LsMsgPack included), without the escape sequences of streams.
+- The bytes are the same as `Serialize(List<T>)` of a class with a property per column: the column names, the field types, `Nullable` for value types, in the column order. So any reader of that list reads them (LsMsgPackDebug included), without the escape sequences of streams.
 - The rows are buffered, because the array header needs their number before them. For large results use the stream writer.
 - The schema is inline, or a reference with `WriteSchemaReference` (the schema is added to the `SchemaStore`). An empty result has the schema of an empty list.
 - Custom dynamic filters are not supported (`NotSupportedException`).

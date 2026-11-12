@@ -1,6 +1,7 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackUnitTests;
-using LsMsgPack.Types.Extensions;
+using LsMsgPackDebug.Types.Extensions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PolyType;
 using System;

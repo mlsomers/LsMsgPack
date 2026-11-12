@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LtMsgPack.Data;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;

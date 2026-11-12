@@ -4,6 +4,7 @@
 //        <exe> small <seconds>                    per call cost of a single Address / tiny object
 // The gen-* candidates use the code of LtMsgPack's source generator (BenchContext), only when the library has it (setup.sh defines GENERATED for the "new" build then).
 using LsMsgPack;
+using LsMsgPackDebug;
 using LtMsgPack;
 using LtMsgPack.Http;
 using System;

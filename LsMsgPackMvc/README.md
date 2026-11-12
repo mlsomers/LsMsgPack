@@ -7,7 +7,7 @@ It speaks the same formats as [LsMsgPack.AspNetCore](https://www.nuget.org/packa
 | Media type | Format |
 |---|---|
 | `application/msgpack`, `application/x-msgpack` | Plain MsgPack, readable by any MsgPack implementation: maps keyed by property names, every value, `Guid` and `decimal` as text, dates as timestamps (a `DateTimeOffset` loses its offset). |
-| `application/x-lsmsgpack` | The indexed schema with type ids: smaller, polymorphic, and with the schema sent only once per client. Use this between LsMsgPack / LtMsgPack endpoints. |
+| `application/x-lsmsgpack` | The indexed schema with type ids: smaller, polymorphic, and with the schema sent only once per client. Use this between LsMsgPackDebug / LtMsgPack endpoints. |
 
 ## Usage
 

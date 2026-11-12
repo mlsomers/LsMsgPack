@@ -1,0 +1,879 @@
+﻿using LsMsgPack;
+using LsMsgPackDebug;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using ObjectDebugger;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+
+namespace LsMsgPackUnitTests
+{
+  /// <summary>
+  /// <see cref="RootObject.Reconstruct"/>: the object tree read back from the data alone, without the types.
+  /// </summary>
+  [TestClass]
+  public class ObjectDebuggerTests
+  {
+    public class OdAddress
+    {
+      public string Street { get; set; }
+      public int Number { get; set; }
+      public string City { get; set; }
+    }
+
+    public class OdLine
+    {
+      public string Product { get; set; }
+      public int Quantity { get; set; }
+      public decimal Price { get; set; }
+    }
+
+    public class OdInvoice
+    {
+      public int Id { get; set; }
+      public string Customer { get; set; }
+      public OdAddress Billing { get; set; }
+      public OdAddress Shipping { get; set; }
+      public List<OdLine> Lines { get; set; }
+      public DateTime Date { get; set; }
+      public List<string> Tags { get; set; }
+    }
+
+    public abstract class OdAnimal
+    {
+      public string Name { get; set; }
+    }
+
+    public class OdDog : OdAnimal
+    {
+      public bool Barks { get; set; }
+    }
+
+    public class OdCat : OdAnimal
+    {
+      public int Lives { get; set; }
+    }
+
+    public class OdZoo
+    {
+      public List<OdAnimal> Animals { get; set; }
+      public object Anything { get; set; }
+    }
+
+    public class OdName
+    {
+      public string First { get; set; }
+      public string Last { get; set; }
+    }
+
+    /// <summary>
+    /// All values are objects (looks like a collection), the same type twice.
+    /// </summary>
+    public class OdShipment
+    {
+      public OdAddress From { get; set; }
+      public OdAddress To { get; set; }
+      public List<List<int>> Boxes { get; set; }
+      public OdName Contact { get; set; }
+      public List<OdLine> Empty { get; set; }
+    }
+
+    public class OdDiscountLine : OdLine
+    {
+      public string Code { get; set; }
+    }
+
+    /// <summary>
+    /// A list holding an object of a derived type (wrapped for its type id) and a dictionary with integer keys (like property indexes).
+    /// </summary>
+    public class OdOrder
+    {
+      public int Id { get; set; }
+      public string Customer { get; set; }
+      public DateTime Date { get; set; }
+      public OdAddress Billing { get; set; }
+      public List<OdLine> Lines { get; set; }
+      public Dictionary<int, string> Notes { get; set; }
+    }
+
+    public class OdStamped
+    {
+      public DateTimeOffset Offset { get; set; }
+      public List<DateTimeOffset> History { get; set; }
+      public List<OdAddress> Addresses { get; set; }
+    }
+
+    /// <summary>
+    /// Written like a DateTimeOffset: [timestamp, small integer].
+    /// </summary>
+    public class OdTimed
+    {
+      public DateTime At { get; set; }
+      public short Minutes { get; set; }
+    }
+
+    public class OdTimedHolder
+    {
+      public OdTimed First { get; set; }
+      public List<OdTimed> More { get; set; }
+      public OdName Contact { get; set; }
+    }
+
+    private static OdInvoice CreateInvoice()
+    {
+      return new OdInvoice()
+      {
+        Id = 42,
+        Customer = "Alice",
+        Billing = new OdAddress() { Street = "Main street", Number = 1, City = "Springfield" },
+        Shipping = new OdAddress() { Street = "Side street", Number = 22, City = "Shelbyville" },
+        Lines = new List<OdLine>()
+        {
+          new OdLine() { Product = "Apple", Quantity = 3, Price = 0.5m },
+          new OdLine() { Product = "Pear", Quantity = 1, Price = 0.75m }
+        },
+        Date = new DateTime(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc),
+        Tags = new List<string>() { "fruit", "fresh" }
+      };
+    }
+
+    private static MsgPackSettings Settings(ObjectLayout layout, bool schema)
+    {
+      return new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = schema };
+    }
+
+    /// <summary>
+    /// Unpacks the way the explorer does (with KEEPTRACK the items of arrays and maps are kept, so the values refer to their items).
+    /// </summary>
+    private static RootObject Reconstruct(byte[] bytes, SchemaStore store = null)
+    {
+      MsgPackSettings settings = new MsgPackSettings();
+      PropertyInfo preserve = typeof(MsgPackSettings).GetProperty("PreservePackages"); // only with KEEPTRACK
+      if (preserve != null)
+        preserve.SetValue(settings, true);
+
+      RootObject root = new RootObject();
+      root.Reconstruct(MsgPackItem.UnpackMultiple(bytes, settings), store);
+      return root;
+    }
+
+    private static PrimitiveObject Member(ComplexObject obj, string name)
+    {
+      PrimitiveObject member = obj.Members.FirstOrDefault(m => m.Name == name);
+      Assert.IsNotNull(member, $"{obj.Path} has no member {name}, it has: {string.Join(", ", obj.Members.Select(m => m.Name))}");
+      return member;
+    }
+
+    private static ComplexObject Complex(ComplexObject obj, string name)
+    {
+      ComplexObject member = Member(obj, name) as ComplexObject;
+      Assert.IsNotNull(member, $"{obj.Path}.{name} is not an object or collection");
+      return member;
+    }
+
+    private static void AssertValue(object expected, ComplexObject obj, string name)
+    {
+      PrimitiveObject member = Member(obj, name);
+      Assert.IsNull(member.Error, member.Error);
+      Assert.AreEqual(Convert.ToString(expected, System.Globalization.CultureInfo.InvariantCulture), Convert.ToString(member.Value, System.Globalization.CultureInfo.InvariantCulture), member.Path);
+    }
+
+    private static void AssertNoIssues(RootObject root)
+    {
+      Assert.IsNull(root.Error, root.Error);
+      Assert.AreEqual(0, root.Warnings.Count, string.Join(Environment.NewLine, root.Warnings));
+      foreach (PrimitiveObject member in All(root))
+        Assert.IsNull(member.Error, $"{member.Path}: {member.Error}");
+    }
+
+    private static IEnumerable<PrimitiveObject> All(ComplexObject obj)
+    {
+      foreach (PrimitiveObject member in obj.Members)
+      {
+        yield return member;
+        if (member is ComplexObject complex)
+          foreach (PrimitiveObject child in All(complex))
+            yield return child;
+      }
+    }
+
+    /// <param name="typed">With a schema the type names are known (inferred when there is no type id)</param>
+    private static void AssertInvoice(RootObject root, bool typed)
+    {
+      AssertNoIssues(root);
+      Assert.AreEqual(ObjectKind.Object, root.Kind);
+      AssertValue(42, root, "Id");
+      AssertValue("Alice", root, "Customer");
+
+      ComplexObject billing = Complex(root, "Billing");
+      Assert.AreEqual(ObjectKind.Object, billing.Kind);
+      AssertValue("Main street", billing, "Street");
+      AssertValue(1, billing, "Number");
+      AssertValue("Springfield", billing, "City");
+
+      ComplexObject shipping = Complex(root, "Shipping");
+      AssertValue("Side street", shipping, "Street");
+      AssertValue(22, shipping, "Number");
+
+      ComplexObject lines = Complex(root, "Lines");
+      Assert.AreEqual(ObjectKind.Collection, lines.Kind);
+      Assert.AreEqual(2, lines.Members.Count);
+      ComplexObject line = Complex(lines, "[1]");
+      Assert.AreEqual(ObjectKind.Object, line.Kind);
+      AssertValue("Pear", line, "Product");
+      AssertValue(1, line, "Quantity");
+      AssertValue(0.75m, line, "Price");
+      StringAssert.EndsWith(Member(line, "Price").Path, "Lines[1].Price");
+
+      ComplexObject tags = Complex(root, "Tags");
+      Assert.AreEqual(ObjectKind.Collection, tags.Kind);
+      AssertValue("fresh", tags, "[1]");
+
+      Assert.AreEqual(new DateTime(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc), ((DateTime)Member(root, "Date").Value).ToUniversalTime());
+
+      CollectionAssert.AreEqual(new[] { "Billing", "Shipping", "Lines", "Tags" }, root.Children.Select(c => c.Name).ToArray());
+      CollectionAssert.AreEqual(new[] { "Id", "Customer", "Date" }, root.PrimitiveProperties.Select(c => c.Name).ToArray());
+
+      if (!typed)
+        return;
+      Assert.AreEqual(nameof(OdInvoice), root.Type);
+      Assert.AreEqual(nameof(OdAddress), billing.Type);
+      Assert.AreEqual(nameof(OdAddress), shipping.Type);
+      Assert.AreEqual(nameof(OdLine), line.Type);
+      Assert.IsTrue(line.TypeIsGuess);
+    }
+
+    /// <summary>
+    /// A DateTimeOffset ([timestamp, offset]) has the shape of an object of a type with two (or more) properties that was not seen yet:
+    /// taken for one, the real objects of that type no longer fit it.
+    /// </summary>
+    [TestMethod]
+    public void DateTimeOffset_NotTakenForTheNextType()
+    {
+      OdStamped stamped = new OdStamped()
+      {
+        Offset = new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.FromHours(2)),
+        // Not 2 or 3: a list of arrays of that length also fits OdStamped (its first two values are arrays too)
+        History = new List<DateTimeOffset>()
+        {
+          new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 2, 1, 0, 0, 0, TimeSpan.FromMinutes(-150)),
+          new DateTimeOffset(2026, 3, 1, 0, 0, 0, TimeSpan.FromHours(1)), new DateTimeOffset(2026, 4, 1, 0, 0, 0, TimeSpan.FromHours(2))
+        },
+        Addresses = new List<OdAddress>() { new OdAddress() { Street = "Main street", Number = 1, City = "Springfield" }, new OdAddress() { Street = "Side street", Number = 2, City = "Shelbyville" } }
+      };
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+      {
+        RootObject root = Reconstruct(MsgPackSerializer.Serialize(stamped, Settings(layout, true)));
+        AssertNoIssues(root);
+        Assert.AreEqual(nameof(OdStamped), root.Type, layout.ToString());
+
+        ComplexObject offset = Complex(root, nameof(OdStamped.Offset));
+        Assert.AreEqual(ObjectKind.Collection, offset.Kind, layout.ToString());
+        Assert.AreEqual("DateTimeOffset", offset.Type, layout.ToString());
+        Assert.IsTrue(offset.TypeIsGuess);
+        AssertValue(120, offset, "[1]");
+
+        ComplexObject history = Complex(root, nameof(OdStamped.History));
+        Assert.AreEqual("DateTimeOffset", Complex(history, "[1]").Type, layout.ToString());
+        AssertValue(-150, Complex(history, "[1]"), "[1]");
+
+        ComplexObject address = Complex(Complex(root, nameof(OdStamped.Addresses)), "[1]");
+        Assert.AreEqual(nameof(OdAddress), address.Type, layout.ToString());
+        AssertValue("Shelbyville", address, nameof(OdAddress.City));
+      }
+    }
+
+    /// <summary>
+    /// A class written like a DateTimeOffset stays an object when nothing contradicts it.
+    /// </summary>
+    [TestMethod]
+    public void ClassShapedLikeDateTimeOffset_StaysAnObject()
+    {
+      DateTime at = new DateTime(2026, 10, 10, 12, 0, 0, DateTimeKind.Utc);
+      OdTimedHolder holder = new OdTimedHolder()
+      {
+        First = new OdTimed() { At = at, Minutes = 60 },
+        More = new List<OdTimed>() { new OdTimed() { At = at, Minutes = 5 }, new OdTimed() { At = at, Minutes = 6 } },
+        Contact = new OdName() { First = "Ann", Last = "Smith" }
+      };
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+      {
+        RootObject root = Reconstruct(MsgPackSerializer.Serialize(holder, Settings(layout, true)));
+        AssertNoIssues(root);
+        ComplexObject first = Complex(root, nameof(OdTimedHolder.First));
+        Assert.AreEqual(nameof(OdTimed), first.Type, layout.ToString());
+        AssertValue(60, first, nameof(OdTimed.Minutes));
+        Assert.AreEqual(nameof(OdTimed), Complex(Complex(root, nameof(OdTimedHolder.More)), "[1]").Type, layout.ToString());
+        Assert.AreEqual(nameof(OdName), Complex(root, nameof(OdTimedHolder.Contact)).Type, layout.ToString());
+      }
+    }
+
+    [TestMethod]
+    public void ArraysWithInlineSchema()
+    {
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Array, true)));
+
+      Assert.IsNotNull(root.Schema);
+      Assert.AreEqual(SchemaSource.Inline, root.Schema.Source);
+      CollectionAssert.AreEqual(new[] { nameof(OdInvoice), nameof(OdAddress), nameof(OdLine) }, root.Schema.Types.Select(t => t.Name).ToArray());
+      AssertInvoice(root, true);
+    }
+
+    [TestMethod]
+    public void MapsWithInlineSchema()
+    {
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Map, true)));
+      AssertInvoice(root, true);
+    }
+
+    private static MsgPackSettings Described(ObjectLayout layout)
+    {
+      MsgPackSettings settings = Settings(layout, true);
+      settings.SchemaVersion = SchemaVersion.Described;
+      return settings;
+    }
+
+    /// <summary>
+    /// Version 2 of the schema declares the types: nothing is inferred.
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Array)]
+    [DataRow(ObjectLayout.Map)]
+    public void Described_TypesAreDeclared(ObjectLayout layout)
+    {
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), Described(layout)));
+      Assert.AreEqual(2, root.Schema.Version);
+      Assert.AreEqual(nameof(OdInvoice), root.Schema.RootType.Format(root.Schema.Types));
+      CollectionAssert.AreEqual(new[] { nameof(OdInvoice), nameof(OdAddress), nameof(OdLine) }, root.Schema.Types.Select(t => t.Name).ToArray());
+      SchemaType invoice = root.Schema.Types[0];
+      CollectionAssert.AreEqual(new[] { "Id", "Customer", "Billing", "Shipping", "Lines", "Date", "Tags" }, invoice.Properties);
+      Assert.AreEqual("Id: int, Customer: string, Billing: OdAddress, Shipping: OdAddress, Lines: list<OdLine>, Date: datetime, Tags: list<string>", invoice.Describe(root.Schema.Types));
+
+      AssertNoIssues(root);
+      Assert.AreEqual(nameof(OdInvoice), root.Type);
+      Assert.IsFalse(root.TypeIsGuess);
+      foreach (PrimitiveObject member in All(root))
+        Assert.IsFalse(member.TypeIsGuess, member.Path);
+
+      ComplexObject lines = Complex(root, "Lines");
+      Assert.AreEqual(ObjectKind.Collection, lines.Kind);
+      Assert.AreEqual("list<OdLine>", lines.DeclaredTypeText);
+      ComplexObject line = Complex(lines, "[1]");
+      Assert.AreEqual(nameof(OdLine), line.Type);
+      AssertValue("Pear", line, "Product");
+      AssertValue(0.75m, line, "Price");
+      Assert.AreEqual("decimal", Member(line, "Price").DeclaredTypeText);
+      Assert.AreEqual(nameof(OdAddress), Complex(root, "Shipping").Type);
+      Assert.AreEqual("datetime", Member(root, "Date").DeclaredTypeText);
+      AssertValue("fresh", Complex(root, "Tags"), "[1]");
+    }
+
+    /// <summary>
+    /// A left out value (nil with the array layout) of a value type: the default a reader gets.
+    /// </summary>
+    [TestMethod]
+    public void Described_LeftOutValues_HaveTheirDefault()
+    {
+      OdInvoice invoice = CreateInvoice();
+      invoice.Id = 0;
+      invoice.Customer = null;
+      invoice.Date = default(DateTime);
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(invoice, Described(ObjectLayout.Array)));
+      AssertNoIssues(root);
+      Assert.AreEqual("0", Member(root, "Id").DefaultText);
+      Assert.IsNull(Member(root, "Customer").DefaultText, "a string left out is null");
+      Assert.AreEqual("0001-01-01T00:00:00", Member(root, "Date").DefaultText);
+    }
+
+    [TestMethod]
+    public void Described_ListRoot_AndReference()
+    {
+      List<OdLine> lines = CreateInvoice().Lines;
+      SchemaStore store = new SchemaStore();
+      MsgPackSettings settings = Described(ObjectLayout.Array);
+      settings.SchemaStore = store;
+      settings.WriteSchemaReference = true;
+      byte[] bytes = MsgPackSerializer.Serialize(lines, settings);
+
+      RootObject missing = Reconstruct(bytes);
+      Assert.IsFalse(missing.Schema.IsAvailable);
+
+      RootObject root = Reconstruct(bytes, store);
+      AssertNoIssues(root);
+      Assert.AreEqual(SchemaSource.Reference, root.Schema.Source);
+      Assert.AreEqual(2, root.Schema.Version);
+      Assert.AreEqual("list<OdLine>", root.Schema.RootType.Format(root.Schema.Types));
+      Assert.AreEqual(ObjectKind.Collection, root.Kind);
+      ComplexObject line = Complex(root, "[0]");
+      Assert.AreEqual(nameof(OdLine), line.Type);
+      Assert.IsFalse(line.TypeIsGuess);
+      AssertValue("Apple", line, "Product");
+    }
+
+    /// <summary>
+    /// A DateTimeOffset is declared as such (no need to tell it from a type with two properties), the content of a wrapped collection has its element type.
+    /// </summary>
+    [TestMethod]
+    public void Described_DateTimeOffsetAndWrappedCollection()
+    {
+      OdStamped stamped = new OdStamped()
+      {
+        Offset = new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.FromHours(2)),
+        History = new List<DateTimeOffset>() { new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) },
+        Addresses = new List<OdAddress>() { new OdAddress() { Street = "Main street", Number = 1, City = "Springfield" } }
+      };
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(stamped, Described(ObjectLayout.Array)));
+      AssertNoIssues(root);
+      ComplexObject offset = Complex(root, nameof(OdStamped.Offset));
+      Assert.AreEqual("DateTimeOffset", offset.Type);
+      Assert.IsFalse(offset.TypeIsGuess);
+      Assert.AreEqual("dto", Complex(Complex(root, nameof(OdStamped.History)), "[0]").DeclaredTypeText);
+
+      OdZoo zoo = new OdZoo() { Animals = new List<OdAnimal>() { new OdDog() { Name = "Rex" } }, Anything = new List<int>() { 7 } };
+      root = Reconstruct(MsgPackSerializer.Serialize(zoo, Described(ObjectLayout.Array)));
+      AssertNoIssues(root);
+      ComplexObject anything = Complex(root, nameof(OdZoo.Anything));
+      Assert.AreEqual("any", anything.DeclaredTypeText);
+      Assert.AreEqual(ObjectKind.Collection, anything.Kind);
+      Assert.AreEqual("int", Member(anything, "[0]").DeclaredTypeText);
+      ComplexObject dog = Complex(Complex(root, nameof(OdZoo.Animals)), "[0]");
+      Assert.AreEqual(nameof(OdDog), dog.Type);
+      AssertValue("Rex", dog, nameof(OdDog.Name));
+    }
+
+#if KEEPTRACK
+    /// <summary>
+    /// A map cut off by the end of the data keeps slots for the entries it claims: they were taken for keys that are not property indexes,
+    /// the root became a dictionary and every inferred type moved one entry of the schema up (Billing an OdInvoice, the lines OdAddresses).
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map)]
+    [DataRow(ObjectLayout.Array)]
+    public void Truncated_TypesInferredFromWhatWasRead(ObjectLayout layout)
+    {
+      byte[] bytes = MsgPackSerializer.Serialize(CreateInvoice(), Settings(layout, true));
+      byte[] truncated = new byte[bytes.Length - 16]; // in Date: Tags is not read
+      Array.Copy(bytes, truncated, truncated.Length);
+      MsgPackSettings settings = new MsgPackSettings() { PreservePackages = true, ContinueProcessingOnBreakingError = true };
+      RootObject root = new RootObject();
+      root.Reconstruct(MsgPackItem.UnpackMultiple(truncated, settings), null);
+
+      Assert.AreEqual(ObjectKind.Object, root.Kind);
+      Assert.AreEqual(nameof(OdInvoice), root.Type);
+      ComplexObject billing = Complex(root, "Billing");
+      Assert.AreEqual(nameof(OdAddress), billing.Type);
+      AssertValue("Springfield", billing, "City");
+      Assert.AreEqual(nameof(OdLine), Complex(Complex(root, "Lines"), "[1]").Type);
+      Assert.AreEqual(0, root.Warnings.Count, string.Join(Environment.NewLine, root.Warnings)); // "No value was matched with these types of the schema: OdLine"
+    }
+#endif
+
+    [TestMethod]
+    public void MapsWithoutSchema()
+    {
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Map, false)));
+
+      Assert.IsNull(root.Schema);
+      AssertInvoice(root, false);
+    }
+
+    [TestMethod]
+    public void ArraysWithoutSchema_ValuesByPosition()
+    {
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Array, false)));
+
+      // Nothing tells the names, so the objects are shown as their values
+      AssertNoIssues(root);
+      AssertValue(42, root, "[0]");
+      AssertValue("Springfield", Complex(root, "[2]"), "[2]");
+    }
+
+    [TestMethod]
+    public void TrimmedTrailingNulls()
+    {
+      OdInvoice invoice = CreateInvoice();
+      invoice.Billing.City = null;
+      MsgPackSettings settings = Settings(ObjectLayout.Array, true);
+      settings.TrimTrailingNulls = true;
+
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(invoice, settings));
+
+      ComplexObject billing = Complex(root, "Billing");
+      Assert.AreEqual(nameof(OdAddress), billing.Type);
+      Assert.AreEqual(2, billing.Members.Count);
+      AssertValue("Side street", Complex(root, "Shipping"), "Street");
+    }
+
+    [TestMethod]
+    public void SchemaReference()
+    {
+      SchemaStore store = new SchemaStore();
+      MsgPackSettings settings = Settings(ObjectLayout.Array, true);
+      settings.SchemaStore = store;
+      settings.WriteSchemaReference = true;
+      byte[] bytes = MsgPackSerializer.Serialize(CreateInvoice(), settings);
+
+      RootObject withStore = Reconstruct(bytes, store);
+      Assert.AreEqual(SchemaSource.Reference, withStore.Schema.Source);
+      Assert.IsTrue(withStore.Schema.IsAvailable);
+      Assert.AreEqual(store.GetSchemaIds()[0].ToString(), withStore.Schema.Id);
+      AssertInvoice(withStore, true);
+
+      // Without the schema there are no names, but the data is still shown
+      RootObject withoutStore = Reconstruct(bytes);
+      Assert.IsFalse(withoutStore.Schema.IsAvailable);
+      Assert.IsNull(withoutStore.Error, withoutStore.Error);
+      AssertValue("Alice", withoutStore, "[1]");
+    }
+
+    [TestMethod]
+    public void TypeIds()
+    {
+      OdZoo zoo = new OdZoo()
+      {
+        Animals = new List<OdAnimal>() { new OdDog() { Name = "Rex", Barks = true }, new OdCat() { Name = "Tom", Lives = 9 } },
+        Anything = 12.5m // not a primitive, so it gets a type id
+      };
+
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+        foreach (bool schema in new[] { true, false })
+        {
+          RootObject root = Reconstruct(MsgPackSerializer.Serialize(zoo, Settings(layout, schema)));
+          string context = $"{layout}, schema {schema}";
+          Assert.IsNull(root.Error, context);
+
+          bool names = layout == ObjectLayout.Map || schema; // arrays without the schema have no names
+          ComplexObject animals = Complex(root, names ? "Animals" : "[0]");
+          ComplexObject dog = Complex(animals, "[0]");
+          ComplexObject cat = Complex(animals, "[1]");
+          Assert.AreEqual(nameof(OdDog), dog.Type, context);
+          Assert.IsFalse(dog.TypeIsGuess, context);
+          Assert.AreEqual(nameof(OdCat), cat.Type, context);
+
+          PrimitiveObject anything = Member(root, names ? "Anything" : "[1]");
+          Assert.AreEqual("Decimal", anything.Type, context);
+          Assert.AreEqual(12.5m, anything.Value, context);
+
+          if (!names)
+            continue;
+          AssertValue("Rex", dog, "Name");
+          AssertValue(true, dog, "Barks");
+          AssertValue(9, cat, "Lives");
+        }
+    }
+
+    /// <summary>
+    /// The default settings (indexed schema, arrays): the list was taken for an object of the next type of the schema (its elements, an array
+    /// and a wrapped object, differ in kind), and the dictionary for an object whose values have other kinds (Date "two").
+    /// </summary>
+    [TestMethod]
+    public void PolymorphicListAndIntegerKeys()
+    {
+      OdOrder order = new OdOrder()
+      {
+        Id = 1234,
+        Customer = "Alice",
+        Date = new DateTime(2026, 10, 8, 12, 0, 0, DateTimeKind.Utc),
+        Billing = new OdAddress() { Street = "Main street", Number = 12, City = "Amsterdam" },
+        Lines = new List<OdLine>() { new OdLine() { Product = "Pen", Quantity = 2, Price = 1.5m }, new OdDiscountLine() { Product = "Promo", Quantity = 1, Price = -1, Code = "X1" } },
+        Notes = new Dictionary<int, string>() { { 1, "one" }, { 2, "two" } }
+      };
+
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+      {
+        RootObject root = Reconstruct(MsgPackSerializer.Serialize(order, Settings(layout, true)));
+        string context = layout.ToString();
+        Assert.IsNull(root.Error, context);
+        Assert.AreEqual(nameof(OdOrder), root.Type, context);
+
+        ComplexObject lines = Complex(root, "Lines");
+        Assert.AreEqual(ObjectKind.Collection, lines.Kind, context);
+        ComplexObject line = Complex(lines, "[0]");
+        Assert.AreEqual(nameof(OdLine), line.Type, context);
+        AssertValue("Pen", line, "Product");
+        ComplexObject discount = Complex(lines, "[1]");
+        Assert.AreEqual(nameof(OdDiscountLine), discount.Type, context);
+        Assert.IsFalse(discount.TypeIsGuess, context);
+        AssertValue("X1", discount, "Code");
+
+        ComplexObject notes = Complex(root, "Notes");
+        Assert.AreEqual(ObjectKind.Dictionary, notes.Kind, context);
+        AssertValue("two", notes, "2");
+      }
+    }
+
+    [TestMethod]
+    public void CollectionAndPrimitiveRoots()
+    {
+      List<OdLine> lines = CreateInvoice().Lines;
+      RootObject list = Reconstruct(MsgPackSerializer.Serialize(lines, Settings(ObjectLayout.Array, true)));
+      Assert.AreEqual(ObjectKind.Collection, list.Kind);
+      AssertValue("Apple", Complex(list, "[0]"), "Product");
+
+      // An empty schema and one byte
+      RootObject number = Reconstruct(MsgPackSerializer.Serialize(5, Settings(ObjectLayout.Array, true)));
+      Assert.AreEqual(ObjectKind.Value, number.Kind);
+      Assert.AreEqual(5, Convert.ToInt32(number.Value));
+
+      Dictionary<string, OdAddress> byName = new Dictionary<string, OdAddress>() { { "home", CreateInvoice().Billing } };
+      RootObject dictionary = Reconstruct(MsgPackSerializer.Serialize(byName, Settings(ObjectLayout.Array, true)));
+      Assert.AreEqual(ObjectKind.Dictionary, dictionary.Kind);
+      ComplexObject home = Complex(dictionary, "home");
+      Assert.AreEqual(nameof(OdAddress), home.Type);
+      AssertValue("Main street", home, "Street");
+    }
+
+    [TestMethod]
+    public void InferringLookalikes()
+    {
+      OdShipment shipment = new OdShipment()
+      {
+        From = new OdAddress() { Street = "A", Number = 1, City = "X" },
+        To = new OdAddress() { Street = "B", Number = 2, City = "Y" },
+        Boxes = new List<List<int>>() { new List<int>() { 1, 2 }, new List<int>() { 3 } },
+        Contact = new OdName() { First = "Bob", Last = "Smith" },
+        Empty = new List<OdLine>()
+      };
+
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+      {
+        RootObject root = Reconstruct(MsgPackSerializer.Serialize(shipment, Settings(layout, true)));
+        string context = layout.ToString();
+        AssertNoIssues(root);
+        Assert.AreEqual(nameof(OdShipment), root.Type, context);
+        Assert.AreEqual(nameof(OdAddress), Complex(root, "To").Type, context);
+        AssertValue("Y", Complex(root, "To"), "City");
+        ComplexObject boxes = Complex(root, "Boxes");
+        Assert.AreEqual(ObjectKind.Collection, boxes.Kind, context);
+        AssertValue(3, Complex(boxes, "[1]"), "[0]");
+        Assert.AreEqual(nameof(OdName), Complex(root, "Contact").Type, context);
+        AssertValue("Smith", Complex(root, "Contact"), "Last");
+        Assert.AreEqual(ObjectKind.Collection, Complex(root, "Empty").Kind, context);
+      }
+    }
+
+    [TestMethod]
+    public void BenchmarkInvoices_AllLayouts()
+    {
+      MethodInfo create = typeof(BenchmarkInvoices).GetMethod("CreateInvoices", BindingFlags.NonPublic | BindingFlags.Static);
+      BenchmarkInvoices.Invoice[] invoices = (BenchmarkInvoices.Invoice[])create.Invoke(null, new object[] { 6 });
+
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+        foreach (bool trim in new[] { false, true })
+        {
+          MsgPackSettings settings = Settings(layout, true);
+          settings.TrimTrailingNulls = trim;
+          RootObject root = Reconstruct(MsgPackSerializer.Serialize(new List<BenchmarkInvoices.Invoice>(invoices), settings));
+          string context = $"{layout}, trim {trim}";
+          AssertNoIssues(root);
+          Assert.AreEqual(ObjectKind.Collection, root.Kind, context);
+          Assert.AreEqual(invoices.Length, root.Members.Count, context);
+
+          for (int t = 0; t < invoices.Length; t++)
+          {
+            ComplexObject invoice = Complex(root, $"[{t}]");
+            Assert.AreEqual(nameof(BenchmarkInvoices.Invoice), invoice.Type, context);
+            AssertValue(invoices[t].InvoiceNumber, invoice, "InvoiceNumber");
+
+            ComplexObject customer = Complex(invoice, "Customer");
+            Assert.AreEqual(nameof(BenchmarkInvoices.Customer), customer.Type, context);
+            AssertValue(invoices[t].Customer.Email, customer, "Email");
+            Assert.AreEqual(nameof(BenchmarkInvoices.Address), Complex(customer, "ShippingAddress").Type, context);
+            AssertValue(invoices[t].Customer.ShippingAddress.City, Complex(customer, "ShippingAddress"), "City");
+
+            ComplexObject lines = Complex(invoice, "Lines");
+            Assert.AreEqual(invoices[t].Lines.Count, lines.Members.Count, context);
+            ComplexObject line = Complex(lines, "[0]");
+            Assert.AreEqual(nameof(BenchmarkInvoices.InvoiceLine), line.Type, context);
+            AssertValue(invoices[t].Lines[0].LineTotal, line, "LineTotal");
+          }
+        }
+    }
+
+    [TestMethod]
+    public void SeveralPayloads()
+    {
+      MsgPackSettings settings = Settings(ObjectLayout.Array, true);
+      byte[] first = MsgPackSerializer.Serialize(CreateInvoice(), settings);
+      byte[] second = MsgPackSerializer.Serialize(CreateInvoice().Billing, settings);
+
+      RootObject root = Reconstruct(first.Concat(second).ToArray());
+
+      Assert.AreEqual(ObjectKind.Sequence, root.Kind);
+      Assert.AreEqual(2, root.Members.Count);
+      AssertInvoice((RootObject)root.Members[0], true);
+      RootObject address = (RootObject)root.Members[1];
+      Assert.AreEqual(nameof(OdAddress), address.Type);
+      AssertValue("Springfield", address, "City");
+    }
+
+    [TestMethod]
+    public void FindSchemaItems()
+    {
+      MsgPackSettings inline = Settings(ObjectLayout.Array, true);
+      MsgPackSettings reference = Settings(ObjectLayout.Array, true);
+      reference.SchemaStore = new SchemaStore();
+      reference.WriteSchemaReference = true;
+      byte[] first = MsgPackSerializer.Serialize(CreateInvoice(), inline);
+      byte[] second = MsgPackSerializer.Serialize(CreateInvoice().Billing, reference);
+
+      MpRoot root = MsgPackItem.UnpackMultiple(first.Concat(second).ToArray(), new MsgPackSettings());
+      List<MsgPackItem> schemas = RootObject.FindSchemaItems(root);
+
+      Assert.HasCount(2, schemas);
+      Assert.AreSame(root[0], schemas[0]);
+      Assert.IsInstanceOfType(schemas[0], typeof(MpMap));
+      Assert.AreSame(root[2], schemas[1]);
+      Assert.IsInstanceOfType(schemas[1], typeof(MpExt));
+
+      Assert.IsEmpty(RootObject.FindSchemaItems(MsgPackItem.UnpackMultiple(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Map, false)), new MsgPackSettings())));
+    }
+
+    [TestMethod]
+    public void ItemReferences()
+    {
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Map, true)));
+      Assert.IsNotNull(root.FirstItemRef);
+      Assert.IsNotNull(root.LastItemRef);
+
+      if (typeof(MsgPackSettings).GetProperty("PreservePackages") is null)
+        return; // without KEEPTRACK the items of arrays and maps are not kept
+
+      PrimitiveObject customer = Member(root, "Customer");
+      Assert.IsInstanceOfType(customer.FirstItemRef, typeof(MpInt)); // the key: the property index
+      Assert.IsInstanceOfType(customer.LastItemRef, typeof(MpString));
+      Assert.AreEqual("Alice", customer.LastItemRef.Value);
+    }
+
+    /// <summary>
+    /// <see cref="ItemSearch"/> (the search of the explorers and of the VS Code extension): strings containing the text and the values it converts to.
+    /// </summary>
+    [TestMethod]
+    public void SearchItems()
+    {
+      MsgPackSettings settings = new MsgPackSettings();
+      PropertyInfo preserve = typeof(MsgPackSettings).GetProperty("PreservePackages");
+      if (preserve is null)
+        return; // without KEEPTRACK the items of arrays and maps are not kept, only the root's own items are searched
+      preserve.SetValue(settings, true);
+      MpRoot data = MsgPackItem.UnpackMultiple(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Map, true)), settings);
+
+      List<MsgPackItem> Find(string text, bool matchCase = false)
+      {
+        List<MsgPackItem> matches = new List<MsgPackItem>();
+        Assert.IsTrue(new ItemSearch(text, matchCase).FindAll(data, matches));
+        return matches;
+      }
+
+      List<MsgPackItem> found = Find("alice");
+      Assert.HasCount(1, found);
+      Assert.AreEqual("Alice", found[0].Value);
+      Assert.IsEmpty(Find("alice", true));
+      Assert.HasCount(2, Find("street", true)); // Main street, Side street (not the property name Street of the schema)
+
+      Assert.IsTrue(Find("42").Any(item => item is MpInt && Convert.ToInt32(item.Value) == 42));
+      Assert.HasCount(1, Find("0.75")); // a decimal (extension type 1, not registered by the explorers)
+      Assert.HasCount(1, Find("2026-10-01 12:00:00Z")); // the timestamp, to the second
+      Assert.HasCount(1, Find("2026-10-01 12:00")); // without an offset: the clock time as shown (UTC, the default ReadDateTimeKind)
+      Assert.HasCount(1, Find("2026-10-01 14:00:00+02:00")); // the same moment
+      Assert.IsEmpty(Find("2026-10-01 11:00"));
+      Assert.IsEmpty(Find("true"));
+
+      // Stopped: the matches found so far are kept
+      List<MsgPackItem> partial = new List<MsgPackItem>();
+      MsgPackItem[] many = Enumerable.Range(0, 3000).Select(t => (MsgPackItem)new MpString(new MsgPackSettings()) { Value = "x" }).ToArray();
+      Assert.IsFalse(new ItemSearch("x", false).FindAll(new MpRoot(new MsgPackSettings(), many), partial, () => true));
+      Assert.HasCount(1022, partial); // stopped at the 1024th item visited, the root was the first
+    }
+
+    /// <summary>
+    /// The explorers open the objects pane from <see cref="ObjectConfidence.High"/> on (<see cref="ObjectAssessment"/>): written from objects by LsMsgPack, or records written in other languages (no schema).
+    /// </summary>
+    [TestMethod]
+    public void AssessWrittenByLsMsgPack()
+    {
+      OdZoo zoo = new OdZoo() { Animals = new List<OdAnimal>() { new OdDog() { Name = "Rex", Barks = true } } };
+      SchemaStore store = new SchemaStore();
+      MsgPackSettings reference = Settings(ObjectLayout.Array, true);
+      reference.SchemaStore = store;
+      reference.WriteSchemaReference = true;
+
+      Assert.AreEqual(ObjectConfidence.Certain, Assess(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Array, true))));
+      Assert.AreEqual(ObjectConfidence.Certain, Assess(MsgPackSerializer.Serialize(CreateInvoice(), reference))); // even without the store
+      Assert.AreEqual(ObjectConfidence.Certain, Assess(MsgPackSerializer.Serialize(zoo, Settings(ObjectLayout.Map, false))));
+      Assert.AreEqual(ObjectConfidence.Certain, Assess(MsgPackSerializer.Serialize(zoo, Settings(ObjectLayout.Array, false)))); // { "": typeId, "@": [values] }
+      Assert.AreEqual(ObjectConfidence.High, Assess(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Map, false)))); // two addresses, two lines
+      Assert.AreEqual(ObjectConfidence.None, Assess(MsgPackSerializer.Serialize(CreateInvoice(), Settings(ObjectLayout.Array, false)))); // no names in the data
+
+      ObjectAssessment assessment = ObjectAssessment.Assess(null);
+      Assert.AreEqual(ObjectConfidence.None, assessment.Confidence);
+      Assert.AreEqual(string.Empty, assessment.Reason);
+    }
+
+    [TestMethod]
+    public void AssessPlainData()
+    {
+      // Records, as Python or JavaScript write a list of dicts / objects
+      object[] people = new object[]
+      {
+        Map("name", "Alice", "age", 30, "email", "alice@example.com"),
+        Map("email", "bob@example.com", "name", "Bob", "age", 41) // another order
+      };
+      ObjectAssessment records = AssessBytes(Plain(people));
+      Assert.AreEqual(ObjectConfidence.High, records.Confidence, records.Reason);
+      StringAssert.Contains(records.Reason, "age, email, name");
+
+      Assert.AreEqual(ObjectConfidence.High, Assess(Plain(Map("from", Map("city", "Paris", "zip", "75001"), "to", Map("city", "Lyon", "zip", "69001")))));
+      Assert.AreEqual(ObjectConfidence.High, Assess(Plain(Map("user_id", 1, "items", new object[] { Map("sku", "A1", "qty", 2), Map("sku", "B2", "qty", 1) }))));
+
+      // One object: names with values of different kinds
+      Assert.AreEqual(ObjectConfidence.Medium, Assess(Plain(Map("id", 7, "title", "Hello", "tags", new object[] { "a", "b" }, "draft", false))));
+
+      // Dictionaries: values of one kind, or keys that are data
+      Assert.AreEqual(ObjectConfidence.Low, Assess(Plain(Map("apples", 3, "pears", 5.5, "plums", 1))));
+      Assert.AreEqual(ObjectConfidence.Low, Assess(Plain(Map("3f2504e0-4f89-11d3-9a0c-0305e82c3301", "x", "8c0e6b4e-2b52-4a0c-a7c4-1f1c2c3d4e5f", 2))));
+      Assert.AreEqual(ObjectConfidence.Low, Assess(Plain(new object[] { Map("2026-10-01", 3, "count", "x"), Map("2026-10-01", 4, "count", "y") })));
+      Assert.AreEqual(ObjectConfidence.Low, Assess(Plain(Map("New York", "x", "Amsterdam", 1))));
+
+      // Nothing to name
+      Assert.AreEqual(ObjectConfidence.None, Assess(Plain(new object[] { 1, "two", new object[] { 3.0, true } })));
+      Assert.AreEqual(ObjectConfidence.None, Assess(Plain(Map(1, "one", 2, "two"))));
+      Assert.AreEqual(ObjectConfidence.None, Assess(Plain(Map())));
+      Assert.AreEqual(ObjectConfidence.None, Assess(Plain("text")));
+    }
+
+    private static ObjectConfidence Assess(byte[] bytes)
+    {
+      return AssessBytes(bytes).Confidence;
+    }
+
+    private static ObjectAssessment AssessBytes(byte[] bytes)
+    {
+      MsgPackSettings settings = new MsgPackSettings();
+      PropertyInfo preserve = typeof(MsgPackSettings).GetProperty("PreservePackages"); // only with KEEPTRACK
+      if (preserve != null)
+        preserve.SetValue(settings, true);
+
+      // As the explorers pass it: a single item when there is only one
+      MpRoot root = MsgPackItem.UnpackMultiple(bytes, settings);
+      return ObjectAssessment.Assess(root.Count == 1 ? root[0] : root);
+    }
+
+    private static KeyValuePair<object, object>[] Map(params object[] keysAndValues)
+    {
+      KeyValuePair<object, object>[] entries = new KeyValuePair<object, object>[keysAndValues.Length / 2];
+      for (int t = 0; t < entries.Length; t++)
+        entries[t] = new KeyValuePair<object, object>(keysAndValues[t * 2], keysAndValues[t * 2 + 1]);
+      return entries;
+    }
+
+    /// <summary>
+    /// Maps and arrays without anything LsMsgPack adds (type ids, schema), as other libraries write them.
+    /// </summary>
+    private static byte[] Plain(object value)
+    {
+      return MsgPackItem.Pack(value, new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.Never }).ToBytes();
+    }
+  }
+}

@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackUnitTests;
 using LtMsgPack;
 using MessagePack;

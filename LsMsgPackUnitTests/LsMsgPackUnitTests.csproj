@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+  </PropertyGroup>
+
+  <!-- Tests of what only exists in the KeepTrack builds of the library (validation) -->
+  <PropertyGroup Condition="$(Configuration.EndsWith('KeepTrack'))">
+    <DefineConstants>$(DefineConstants);KEEPTRACK</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.5.2" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.5.2" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+    <PackageReference Include="NUnit" Version="4.6.1" />
+    <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LsMsgPackDebug\LsMsgPackDebug.csproj" />
+    <ProjectReference Include="..\LtMsgPack\LtMsgPack.csproj" />
+    <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj" />
+    <!-- LtMsgPack's source generator, as the package adds it: the code of TestMsgPackContext (GeneratedContext.cs) for the Gen* tests -->
+    <ProjectReference Include="..\LtMsgPack.Generator\LtMsgPack.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <Import Project="..\LtMsgPack\buildTransitive\LtMsgPack.props" />
+
+</Project>

@@ -1,6 +1,6 @@
 ﻿# LsMsgPack.Core
 
-The parts shared by the [LtMsgPack](https://www.nuget.org/packages/LtMsgPack) and [LsMsgPack](https://www.nuget.org/packages/LsMsgPack) MsgPack serializers. You don't need to add it yourself: both serializers depend on it.
+The parts shared by the [LtMsgPack](https://www.nuget.org/packages/LtMsgPack) and [LsMsgPackDebug](https://www.nuget.org/packages/LsMsgPackDebug) MsgPack serializers. You don't need to add it yourself: both serializers depend on it.
 
 Its types are in the `LsMsgPack.*` namespaces, so they work the same with either serializer:
 

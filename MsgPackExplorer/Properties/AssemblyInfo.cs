@@ -25,7 +25,7 @@ In order to use this tool as a Fiddler plugin, copy the following files to the F
 
 MsgPackExplorer.exe
 LsMsgPackFiddlerInspector.dll
-LsMsgPack.dll
+LsMsgPackDebug.dll
 
 Restart fiddler and you should see a MsgPack option in the Inspectors list.
 
@@ -37,7 +37,7 @@ In order to debug byte arrays directly in visual studio copy the following files
 
 MsgPackExplorer.exe
 LsMsgPackVisualStudioPlugin.dll
-LsMsgPack.dll
+LsMsgPackDebug.dll
 
 After restarting Visual Studio you should be able to choose the new debugger by hovering over a byte[] variable.
 ")]

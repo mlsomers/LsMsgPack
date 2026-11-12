@@ -162,7 +162,7 @@ Types:
 - `["struct", k]`: a struct of entry `k` (its default is an object, not `null`). `["struct", [items]]`: a struct the schema has no entry for (only written as its default so far), with its properties as an entry has them.
 - `["list", T]`, `["dict", K, V]`, `["pair", K, V]`, `["tuple", T1, T2, ...]` (the 8th item of a long tuple is a nested tuple).
 
-Both versions are read by both serializers with any settings: `SchemaVersion` only decides what is written. The version is part of the schema id (SHA-256 over the version byte and the schema), so the same classes have different ids in version 1 and 2. Readers tell the versions apart by the last entry `""`. Version 2 is larger (5 to 10 bytes per property), and with a `SchemaStore` it's made once per schema; inline, LtMsgPack keeps the ones it made, while LsMsgPack makes it for every call. MsgPack Explorer, the VS Code extension and the MCP server show the declared types, use them instead of inferring the types of objects, and show the defaults of left-out values.
+Both versions are read by both serializers with any settings: `SchemaVersion` only decides what is written. The version is part of the schema id (SHA-256 over the version byte and the schema), so the same classes have different ids in version 1 and 2. Readers tell the versions apart by the last entry `""`. Version 2 is larger (5 to 10 bytes per property), and with a `SchemaStore` it's made once per schema; inline, LtMsgPack keeps the ones it made, while LsMsgPackDebug makes it for every call. MsgPack Explorer, the VS Code extension and the MCP server show the declared types, use them instead of inferring the types of objects, and show the defaults of left-out values.
 
 Polymorphic class-hierarchy support
 -----------------------------------
@@ -192,7 +192,7 @@ public IEnumerable<object> Pets { get; set; } = new HashSet<IPet> { new Cat(), n
 MsgPackTypes.CacheAssemblyTypes(typeof(IPet));  // LsMsgPack.Core, for both serializers
 ```
 
-`MsgPackSerializer.CacheAssemblyTypes` (LsMsgPack) and `LtMsgPackSerializer.CacheAssemblyTypes` (LtMsgPack) do the same: there is one cache. A [type guard](security.md) registers what it allows: `new AllowedTypesGuard().AllowAssemblyOf(typeof(IPet))` makes the types of that assembly known by name as well, `Allow(typeof(Cat))` only `Cat`.
+`MsgPackSerializer.CacheAssemblyTypes` (LsMsgPackDebug) and `LtMsgPackSerializer.CacheAssemblyTypes` (LtMsgPack) do the same: there is one cache. A [type guard](security.md) registers what it allows: `new AllowedTypesGuard().AllowAssemblyOf(typeof(IPet))` makes the types of that assembly known by name as well, `Allow(typeof(Cat))` only `Cat`.
 
 The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins), and nothing you deserialize reaches them: register each of them. `Deserialize<List<Cat>>()` finds `Cat` (it's reachable from the root type).
 

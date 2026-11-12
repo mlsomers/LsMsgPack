@@ -89,6 +89,7 @@ namespace LsMsgPack.Analyzers
       switch (assembly.Name)
       {
         case "LsMsgPack":
+        case "LsMsgPackDebug":
         case "LsMsgPack.Core":
         case "LtMsgPack":
         case "LsMsgPackFormatters":

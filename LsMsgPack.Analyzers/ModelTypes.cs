@@ -316,7 +316,7 @@ namespace LsMsgPack.Analyzers
 
     public KnownSymbols(Compilation compilation)
     {
-      LsSerializer = compilation.GetTypeByMetadataName("LsMsgPack.MsgPackSerializer");
+      LsSerializer = compilation.GetTypeByMetadataName("LsMsgPackDebug.MsgPackSerializer");
       LtSerializer = compilation.GetTypeByMetadataName("LtMsgPack.LtMsgPackSerializer");
       HttpSerializer = compilation.GetTypeByMetadataName("LtMsgPack.Http.LtMsgPackHttpSerializer");
       SerializableAttribute = compilation.GetTypeByMetadataName("LtMsgPack.LtMsgPackSerializableAttribute");

@@ -38,7 +38,7 @@ Measurements read = serializer.Deserialize<Measurements>(await File.ReadAllBytes
 
 ## Why these settings
 
-The default format of LtMsgPack starts every file with a schema, which only LtMsgPack and LsMsgPack understand: Python's `unpackb` reads that schema as the whole file and stops with "extra data". The presets switch to what every MsgPack library reads:
+The default format of LtMsgPack starts every file with a schema, which only LtMsgPack and LsMsgPackDebug understand: Python's `unpackb` reads that schema as the whole file and stops with "extra data". The presets switch to what every MsgPack library reads:
 
 - **Objects as maps of names.** `{"Title": "Run 1", "Count": 3}`, exactly like JSON but binary. Any library turns that into a dictionary (Python `dict`, JavaScript object, Go `map` or struct).
 - **Every value is written**, also `0`, `false` and `null`. The default format leaves those out to save space, but a Python script would then find keys missing.

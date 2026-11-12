@@ -17,7 +17,7 @@ The server decodes with the library itself (the KEEPTRACK build, like MsgPack Ex
 ```mermaid
 flowchart LR
   agent[AI agent<br/>VS Code chat, Claude Code, Visual Studio...] -- MCP stdio --> server[lsmsgpack-mcp<br/>LsMsgPackMcpServer]
-  server -- decode --> lib[LsMsgPack KEEPTRACK<br/>+ ObjectDebugger]
+  server -- decode --> lib[LsMsgPackDebug KEEPTRACK<br/>+ ObjectDebugger]
   server -- "TCP 127.0.0.1, token<br/>status / locals / read" --> code[VS Code extension<br/>src/mcpBridge.ts, src/mcp.ts]
   server -- same protocol --> vs[Visual Studio package<br/>McpBridge.cs, DebuggerBridgeHandler.cs]
   code -- DAP evaluate --> app1[debugged program]
@@ -32,7 +32,7 @@ flowchart LR
 | `TextRenderer.cs` | The text: summary, schema, objects view, items view, issues, explaining an offset, search. |
 | `IdeBridge.cs` | Finds the IDEs (environment or lock files) and sends them requests. |
 | `ByteText.cs` | Bytes written as text, the same formats as the VS Code extension's `bytesFromText.ts`. |
-| `ClassReader.cs` | `msgpack_read_as_class`: writes the payload (and the schemas) to a temporary folder and runs this program again (`read-as-worker`, with `DOTNET_ROLL_FORWARD=LatestMajor`). The worker loads the user's assembly with its `deps.json` and the shared frameworks of its `runtimeconfig.json`, reads with LsMsgPack (`ReadErrors = ReportAndContinue`, the indexed schema when the payload has one) and writes the `ReadDifferences` report and the object as JSON. A separate process because it runs the user's code, because the assembly may need a newer runtime, and because LsMsgPack's type name caches are global (a rebuilt assembly would meet the types of the previous build). |
+| `ClassReader.cs` | `msgpack_read_as_class`: writes the payload (and the schemas) to a temporary folder and runs this program again (`read-as-worker`, with `DOTNET_ROLL_FORWARD=LatestMajor`). The worker loads the user's assembly with its `deps.json` and the shared frameworks of its `runtimeconfig.json`, reads with LsMsgPackDebug (`ReadErrors = ReportAndContinue`, the indexed schema when the payload has one) and writes the `ReadDifferences` report and the object as JSON. A separate process because it runs the user's code, because the assembly may need a newer runtime, and because LsMsgPackDebug's type name caches are global (a rebuilt assembly would meet the types of the previous build). |
 | `Program.cs` | No arguments (or `mcp`): the server. Otherwise the command line: `decode`, `explain`, `search`, `read-as`, `debug status/locals/read` (and the worker of `ClassReader`). |
 
 ### The output

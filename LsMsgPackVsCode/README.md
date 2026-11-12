@@ -55,7 +55,7 @@ Streams written by LtMsgPack's `MsgPackStreamWriter` (or the TypeScript client) 
 
 ## Requirements
 
-The data is read by the LsMsgPack library itself (the same code as the Visual Studio visualizer), in small .NET programs that come with the extension (the inspector, and the MCP server for AI agents). It needs the **.NET runtime 8 or later** (`dotnet` on the PATH, or set `lsmsgpack.dotnetPath`).
+The data is read by the LsMsgPackDebug library itself (the same code as the Visual Studio visualizer), in small .NET programs that come with the extension (the inspector, and the MCP server for AI agents). It needs the **.NET runtime 8 or later** (`dotnet` on the PATH, or set `lsmsgpack.dotnetPath`).
 
 ## Settings
 

@@ -1,6 +1,6 @@
 ﻿# Web formatters (ASP.NET and HttpClient)
 
-Three packages let controllers receive and return MsgPack the same way they handle JSON. They serialize with [LtMsgPack](../README.md#which-package), which writes the same data as LsMsgPack, only faster.
+Three packages let controllers receive and return MsgPack the same way they handle JSON. They serialize with [LtMsgPack](../README.md#which-package), which writes the same data as LsMsgPackDebug, only faster.
 
 | Scenario | NuGet package | Targets | Namespace |
 |---|---|---|---|

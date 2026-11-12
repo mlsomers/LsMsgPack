@@ -51,7 +51,7 @@ namespace MsgPackExplorer {
     };
 
     private static readonly string[] files = new[] {
-      "LsMsgPack.dll",
+      "LsMsgPackDebug.dll",
       "LsMsgPack.Core.dll",
       "ObjectDebugger.dll",
       "LsMsgPackFiddlerInspector.dll",
@@ -59,7 +59,7 @@ namespace MsgPackExplorer {
     };
 
     private static readonly string[] filesVs = new[] {
-      "LsMsgPack.dll",
+      "LsMsgPackDebug.dll",
       "LsMsgPack.Core.dll",
       "ObjectDebugger.dll",
       "LsMsgPackVisualStudioPlugin.dll",

@@ -104,4 +104,4 @@ MsgPack is binary, so you can't read it in a text editor. These tools show it as
 
 They also validate the data: for example, they flag places where the data picks a class for a property declared as `object`.
 
-In your own code, the `LsMsgPack` package gives you the same tree: `MsgPackItem.Unpack(bytes)` returns the maps, arrays and values of any MsgPack data, also without classes. It writes and reads the same data as LtMsgPack, only slower, so use it for inspecting, not as your serializer.
+In your own code, the `LsMsgPackDebug` package gives you the same tree: `MsgPackItem.Unpack(bytes)` returns the maps, arrays and values of any MsgPack data, also without classes. It writes and reads the same data as LtMsgPack, only slower, so use it for inspecting, not as your serializer.

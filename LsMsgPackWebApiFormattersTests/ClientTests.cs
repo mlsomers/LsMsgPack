@@ -1,4 +1,5 @@
 using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackWebApiFormatters;
 using NUnit.Framework;
 using System;

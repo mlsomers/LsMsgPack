@@ -11,7 +11,7 @@ namespace LsMsgPack.AnalyzerTests
   [TestClass]
   public class AnalyzerTests
   {
-    private const string Usings = "using System;\nusing System.Collections;\nusing System.Collections.Generic;\nusing System.ComponentModel;\nusing LsMsgPack;\nusing LtMsgPack;\n";
+    private const string Usings = "using System;\nusing System.Collections;\nusing System.Collections.Generic;\nusing System.ComponentModel;\nusing LsMsgPack;\nusing LsMsgPackDebug;\nusing LtMsgPack;\n";
 
     private static void AssertDiagnostics(string source, params string[] expected)
     {

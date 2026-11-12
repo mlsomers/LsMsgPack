@@ -58,7 +58,7 @@
   <!-- Offsets, MpError items and validation only exist in the KeepTrack builds of the library: as LsMsgPackInspector, whatever configuration this project is built in -->
   <ItemGroup>
     <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
-    <ProjectReference Include="..\LsMsgPackNetStandard\LsMsgPack.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <ProjectReference Include="..\LsMsgPackDebug\LsMsgPackDebug.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
     <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
   </ItemGroup>
 

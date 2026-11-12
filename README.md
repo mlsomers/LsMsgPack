@@ -15,7 +15,7 @@ byte[] data = LtMsgPack.LtMsgPackSerializer.Default.Serialize(order);
 Order copy = LtMsgPack.LtMsgPackSerializer.Default.Deserialize<Order>(data);
 ```
 
-**LtMsgPack** is the serializer to use: about 3-5x as fast as System.Text.Json, with 35-47% smaller payloads. The `LsMsgPack` package (the repository's name) is the slower one that builds a tree of MsgPack items for inspecting data, see [which package](#which-package). For ASP.NET, add [a formatter](#aspnet-integration) instead, it brings LtMsgPack along.
+**LtMsgPack** is the serializer to use: about 3-5x as fast as System.Text.Json, with 35-47% smaller payloads. The `LsMsgPackDebug` package is the slower one that builds a tree of MsgPack items for inspecting data, see [which package](#which-package). For ASP.NET, add [a formatter](#aspnet-integration) instead, it brings LtMsgPack along.
 
 **Not sure where to start?** The [setup wizard](docs/Wizard/README.md) asks a few questions (files or network, who reads the data, JavaScript or not) and ends with the packages, settings and code for your case.
 
@@ -45,14 +45,14 @@ Which package
 There are two serializers. They write exactly the same data with the same settings and read each other's output:
 
 - **LtMsgPack** (`LtMsgPack`): use this for normal use. It writes and reads directly from and to your objects. On the invoices of the benchmark it writes and reads about 4.5-5.5x as fast as System.Text.Json, with 35-47% smaller payloads. It also has presets for exchanging data with MessagePack-CSharp, Nerdbank.MessagePack and non-.NET libraries. The web formatters use it. How it compares with MessagePack-CSharp and Nerdbank.MessagePack (benchmarks, and when to pick which): [docs/Comparison.md](docs/Comparison.md).
-- **LsMsgPack** (`LsMsgPack`): use this when you really want to inspect MsgPack data in your app. It builds a tree of MsgPack items (maps, arrays, strings...) that you can walk, for any payload, also when you don't have the classes. That makes it much slower: about 2-4x slower than System.Text.Json.
+- **LsMsgPackDebug** (`LsMsgPackDebug`): use this when you really want to inspect MsgPack data in your app. It builds a tree of MsgPack items (maps, arrays, strings...) that you can walk, for any payload, also when you don't have the classes. That makes it much slower: about 2-4x slower than System.Text.Json.
 
 ### NuGet packages
 
 ```mermaid
 graph BT
   Core["LsMsgPack.Core<br/><i>settings, schema, type resolving</i>"]
-  Ls["LsMsgPack<br/><i>item tree, inspecting</i>"]
+  Ls["LsMsgPackDebug<br/><i>item tree, inspecting</i>"]
   Lt["LtMsgPack<br/><i>fast serializer</i>"]
   AspNetCore["LsMsgPack.AspNetCore"]
   WebApi["LsMsgPack.AspNet.WebApi"]
@@ -79,7 +79,7 @@ graph BT
   Mvc -.-> AspNetMvc
 ```
 
-Solid arrows are the packages of this repository, dotted ones external dependencies. The web formatters depend on LtMsgPack only, so add `LsMsgPack` yourself when you want to inspect data. Both serializers share `LsMsgPack.Core` and its namespaces (`LsMsgPack.*`), so attributes, type resolvers and filters work with either. `LtMsgPack.Data` writes the rows of ADO.NET data readers as MsgPack and reads dumps back as a `DbDataReader`, see [docs/DataReader.md](docs/DataReader.md).
+Solid arrows are the packages of this repository, dotted ones external dependencies. The web formatters depend on LtMsgPack only, so add `LsMsgPackDebug` yourself when you want to inspect data. Both serializers share `LsMsgPack.Core` and its namespaces (`LsMsgPack.*`), so attributes, type resolvers and filters work with either. `LtMsgPack.Data` writes the rows of ADO.NET data readers as MsgPack and reads dumps back as a `DbDataReader`, see [docs/DataReader.md](docs/DataReader.md).
 
 Not in the diagram, because they aren't referenced by your code: the .NET tools `LsMsgPack.Mcp` ([`lsmsgpack-mcp`](#ai-agents-mcp), MsgPack for AI agents) and `LsMsgPack.TypeScript` ([`lsmsgpack-ts`](#typescript), TypeScript models for the web formatters), which bring their own copies of the libraries, and the npm package [`@lsmsgpack/client`](#typescript).
 
@@ -122,7 +122,7 @@ In order to use this tool as a Fiddler plugin, copy the following files to the F
 
 - MsgPackExplorer.exe
 - LsMsgPackFiddlerInspector.dll
-- LsMsgPack.dll
+- LsMsgPackDebug.dll
 - LsMsgPack.Core.dll
 - System.Memory.dll
 - System.Buffers.dll
@@ -158,7 +158,7 @@ TypeScript
 Source documentation
 --------------------
 
-The repository holds the shared core (`LsMsgPack.Core`), the two serializers (`LsMsgPack` with its item tree, `LtMsgPack` without it), the web formatters, MsgPack Explorer with its Fiddler and Visual Studio wrappers, the VS Code extension, and their tests. See [docs/Architecture.md](docs/Architecture.md) for what each project does, how the serializers work, and the class diagrams.
+The repository holds the shared core (`LsMsgPack.Core`), the two serializers (`LsMsgPackDebug` with its item tree, `LtMsgPack` without it), the web formatters, MsgPack Explorer with its Fiddler and Visual Studio wrappers, the VS Code extension, and their tests. See [docs/Architecture.md](docs/Architecture.md) for what each project does, how the serializers work, and the class diagrams.
 
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/yellow_img.png)](https://www.buymeacoffee.com/mlsomers)

@@ -6,6 +6,7 @@ Pass an `out ReadDifferences` to `Deserialize` to find out what didn't match:
 
 ```csharp
 using LsMsgPack;
+using LsMsgPackDebug;
 
 Order order = MsgPackSerializer.Deserialize<Order>(data, settings, out ReadDifferences differences);
 if (differences != null)
@@ -85,5 +86,5 @@ Collecting costs little while the data matches: the serializers only take note w
 
 - **The paths are looked up when you ask for them.** If you change the objects in between (move them, replace a list), a sample may be found at another path, or not at all ("not found"). A sample that is a struct is a copy and isn't found either.
 - **When reading throws** (`FailFast`, or one of the errors that always throw), the differences found until then are on the exception: `ex.Data[ReadDifferences.ExceptionDataKey]` (no `Root`, so no paths). That's often the cause: a property that wasn't set because its name was misspelled.
-- **LsMsgPack and LtMsgPack report the same differences** with the same counts. The order of the differences and of their samples can differ (LsMsgPack converts the values of a collection from the last to the first). With more than 10 occurrences they may keep other samples. The report lists the samples in the order of the graph.
+- **LsMsgPackDebug and LtMsgPack report the same differences** with the same counts. The order of the differences and of their samples can differ (LsMsgPackDebug converts the values of a collection from the last to the first). With more than 10 occurrences they may keep other samples. The report lists the samples in the order of the graph.
 - The report is per call. Settings and serializers are shared by threads, the differences belong to the call that read them.

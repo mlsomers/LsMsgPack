@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPackDebug;
 using LsMsgPackFormatters;
 using LsMsgPackWebApiFormatters;
 using Microsoft.AspNetCore.Builder;

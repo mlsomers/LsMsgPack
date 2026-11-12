@@ -1,11 +1,12 @@
 ﻿#if KEEPTRACK
 using LsMsgPack;
+using LsMsgPackDebug;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
-using static LsMsgPack.MsgPackValidation;
+using static LsMsgPackDebug.MsgPackValidation;
 
 namespace ObjectDebugger
 {

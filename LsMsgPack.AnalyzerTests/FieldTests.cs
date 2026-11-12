@@ -10,6 +10,7 @@ using System.Collections.Immutable;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using LsMsgPackDebug;
 using static LsMsgPack.AnalyzerTests.AnalyzerHarness;
 
 namespace LsMsgPack.AnalyzerTests
@@ -21,7 +22,7 @@ namespace LsMsgPack.AnalyzerTests
   [TestClass]
   public class FieldTests
   {
-    private const string Usings = "using System;\nusing System.Collections;\nusing System.Collections.Generic;\nusing System.ComponentModel;\nusing System.Runtime.Serialization;\nusing LsMsgPack;\nusing LtMsgPack;\n";
+    private const string Usings = "using System;\nusing System.Collections;\nusing System.Collections.Generic;\nusing System.ComponentModel;\nusing System.Runtime.Serialization;\nusing LsMsgPack;\nusing LsMsgPackDebug;\nusing LtMsgPack;\n";
     private const string Write = "public static class Use { public static byte[] Write(Model m) => MsgPackSerializer.Serialize(m); }\n";
 
     private static void AssertDiagnostics(ImmutableArray<Diagnostic> diagnostics, params string[] expected)

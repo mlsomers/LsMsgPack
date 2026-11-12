@@ -6,7 +6,7 @@ Fast MsgPack serializer for .NET classes, used like the xml and json serializers
 - **Polymorphism** out of the box: a type id is written where a value's type differs from the declared type (a `List<IShape>` holding circles and squares), without extra attributes.
 - **Fields** are serialized when they opt in (`[DataMember]`, `[JsonInclude]`...), or all public ones with a setting, after the properties: [schema.md](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md#fields).
 - **Presets** for exchanging data with MessagePack-CSharp, Nerdbank.MessagePack and non-.NET libraries (Python, JavaScript...).
-- Writes and reads exactly the same data as the [LsMsgPack](https://www.nuget.org/packages/LsMsgPack) serializer with the same settings.
+- Writes and reads exactly the same data as the [LsMsgPackDebug](https://www.nuget.org/packages/LsMsgPackDebug) serializer with the same settings.
 - Targets .NET Standard 2.0 and 2.1: .NET Framework 4.6.2+, .NET, MAUI, Avalonia...
 
 ## Usage

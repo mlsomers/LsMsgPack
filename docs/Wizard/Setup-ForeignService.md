@@ -8,7 +8,7 @@ Your .NET app talks to a server, feed or device someone else built, and its MsgP
 
 | | |
 |---|---|
-| Package | `LtMsgPack` (and `LsMsgPack` while you figure out the format) |
+| Package | `LtMsgPack` (and `LsMsgPackDebug` while you figure out the format) |
 | Settings | the preset of their library, adjusted to their names and layout |
 | Transport | `HttpClient` with `ByteArrayContent`, or whatever they use |
 | Keep in mind | look at real bytes first; their data is untrusted |
@@ -114,7 +114,7 @@ if (differences != null)
 - **Their data is untrusted.** Declare the types you expect (no `object` properties), and see [Add-ons](Extras.md#reading-data-you-dont-trust). Other libraries rarely write LsMsgPack's class names, so the main risk (data that picks your classes) hardly applies, but it still could.
 - **Dates**: MsgPack timestamps are UTC moments, read as `DateTime` with `Kind = Utc`. Dates sent as text (`"2026-10-29T12:00:00Z"`) are not parsed: declare such a property as `string` and convert it yourself.
 - **Extensions you don't know** (their own type codes) can only be read into a `byte[]` (or `object`) property; another property type throws. For a known one, add a custom extension (`LtExtension<T>`, see [Compatibility.md](../Compatibility.md)).
-- Only reading their data and not sure of its shape yet? `MsgPackItem.Unpack(bytes)` of the `LsMsgPack` package gives you the tree of maps, arrays and values to explore in code.
+- Only reading their data and not sure of its shape yet? `MsgPackItem.Unpack(bytes)` of the `LsMsgPackDebug` package gives you the tree of maps, arrays and values to explore in code.
 
 ## Next
 
