@@ -12,6 +12,7 @@ GENERATOR=""; git -C "$REPO" cat-file -e "$BASE_REF:LsMsgPack.Generator" 2>/dev/
 git -C "$REPO" archive "$BASE_REF" LsMsgPackDebug LsMsgPackCore LsMsgPack LsMsgPackFormatters $GENERATOR CommonAssemblyInfo.cs Packaging.props | tar -x -C "$WORK/baseline"
 echo "$BASE_REF ($(git -C "$REPO" rev-parse --short "$BASE_REF"))" > "$WORK/baseline/REF"
 sed 's/CreateInvoices(5)/CreateInvoices(100)/' "$SRC/EquivModel.cs" > "$WORK/WebModel.cs"
+"$SRC/many-types.sh" > "$WORK/LsManyTypes.cs" # the 200 root types of LsMany.cs
 
 make_project() { # name, files, repo root, extra project content, extra properties
   rm -rf "$WORK/$1" && mkdir -p "$WORK/$1"
@@ -45,6 +46,7 @@ for v in new base; do
 $GEN_ITEMS" "$GEN_PROPS"
   make_project equiv-$v "$SRC/LsEquiv.cs $SRC/EquivModel.cs" "$ROOT" "$LIBS"
   make_project shapes-$v "$SRC/LsShapes.cs" "$ROOT" "$LIBS"
+  make_project many-$v "$SRC/LsMany.cs $WORK/LsManyTypes.cs" "$ROOT" "$LIBS"
   GAME_PROPS="$GEN_PROPS"
   if [ -f "$ROOT/LsMsgPackCore/TypeResolving/Filters/SerializedFields.cs" ]; then # serialized fields: the fields-* and vector3-* candidates
     GAME_DEFINES="FIELDS"; if [ -n "$GEN_PROPS" ]; then GAME_DEFINES="FIELDS;GENERATED"; fi

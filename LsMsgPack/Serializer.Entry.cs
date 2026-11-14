@@ -13,7 +13,10 @@ namespace LsMsgPack
 {
   internal sealed partial class Serializer
   {
-    private readonly ConcurrentDictionary<Type, FullPropertyInfo> _rootInfos = new ConcurrentDictionary<Type, FullPropertyInfo>();
+    /// <summary>
+    /// The entry of every root type written (types do not go stale): behind the recent ones of each thread (<see cref="WriteContext.Entries"/>), so any number of root types allocates nothing after their first call.
+    /// </summary>
+    private readonly ConcurrentDictionary<Type, WriteRootEntry> _rootEntries = new ConcurrentDictionary<Type, WriteRootEntry>();
 
     [ThreadStatic]
     private static WriteState _threadState;
@@ -71,11 +74,76 @@ namespace LsMsgPack
       _threadState = state;
     }
 
-    private FullPropertyInfo RootInfo(Type type)
+    /// <summary>
+    /// What the calls look up for one declared root type, one per type and serializer (<see cref="_rootEntries"/>), the recent ones of a thread in <see cref="WriteContext.Entry"/> and <see cref="WriteContext.Entries"/>
+    /// (the hash of a <see cref="Type"/> is a call into the runtime). Threads share it: each field is set once (the same value, a race sets it twice) or checked by the reader before it is used.
+    /// </summary>
+    internal sealed class WriteRootEntry
     {
-      if (_rootInfos.TryGetValue(type, out FullPropertyInfo info))
-        return info;
-      return _rootInfos.GetOrAdd(type, t => new FullPropertyInfo(t));
+      internal readonly Type AssignedTo;
+      internal readonly FullPropertyInfo Info;
+
+      /// <summary>
+      /// The handler of the typed writer, a ValueHandler&lt;T&gt; of <see cref="AssignedTo"/> (see LsMsgPackSerializer.TypedWriter), null until it is first used.
+      /// </summary>
+      internal object Handler;
+
+      /// <summary>
+      /// The info of the value's type of the boxed writer (<see cref="WriteRoot"/>), last seen (checked: a value of another type replaces it).
+      /// </summary>
+      internal WriteTypeInfo TypeInfo;
+
+      /// <summary>
+      /// Schema references: the writer sessions of the root type in the store (the store's session state of a root type never changes; checked against the options' store)
+      /// and the shared settings of the session written with last (checked: a grown one replaces it).
+      /// </summary>
+      internal WriterHit Writer;
+      internal SessionShared Shared;
+
+      internal WriteRootEntry(Type type)
+      {
+        AssignedTo = type;
+        Info = new FullPropertyInfo(type);
+      }
+    }
+
+    private const int WriteRootEntryCount = 8;
+
+    /// <summary>
+    /// The entry of <paramref name="assignedTo"/>: one the context's thread used recently, otherwise the serializer's (made at the first call of the type), which takes a slot of the thread's (the oldest goes).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)] // the calls of one root type never get here
+    private WriteRootEntry EntryOf(WriteContext c, Type assignedTo)
+    {
+      WriteRootEntry previous = c.Entry;
+      WriteRootEntry[] entries = c.Entries;
+      if (entries != null)
+      {
+        for (int t = 0; t < entries.Length; t++) // forwards: they are filled in order, the first empty one ends the search
+        {
+          WriteRootEntry candidate = entries[t];
+          if (candidate is null)
+            break;
+          if (ReferenceEquals(candidate.AssignedTo, assignedTo))
+            return c.Entry = candidate;
+        }
+      }
+
+      if (!_rootEntries.TryGetValue(assignedTo, out WriteRootEntry entry))
+        entry = _rootEntries.GetOrAdd(assignedTo, t => new WriteRootEntry(t));
+      if (previous != null) // a second root type on this thread: from now on the recent ones are kept
+      {
+        if (entries is null)
+        {
+          c.Entries = entries = new WriteRootEntry[WriteRootEntryCount];
+          entries[0] = previous;
+          c.NextEntry = 1;
+        }
+        int next = c.NextEntry;
+        entries[next] = entry;
+        c.NextEntry = next + 1 == entries.Length ? 0 : next + 1;
+      }
+      return c.Entry = entry;
     }
 
     /// <summary>
@@ -124,9 +192,10 @@ namespace LsMsgPack
         if (!ReferenceEquals(c.W, state.Body)) // the fields of the context mostly keep their values: a comparison is cheaper than storing a reference (a write barrier)
           c.W = state.Body;
         c.W.Reset(Options);
-        FullPropertyInfo root = c.RootInfo;
-        if (root is null || root.AssignedToType != assignedTo) // calls on a thread usually write the same root type: no lookup (the hash of a Type is a call into the runtime)
-          c.RootInfo = root = RootInfo(assignedTo);
+        WriteRootEntry entry = c.Entry;
+        if (entry is null || entry.AssignedTo != assignedTo) // calls on a thread usually write the same root type
+          entry = EntryOf(c, assignedTo);
+        FullPropertyInfo root = entry.Info;
 
         if (!Options._useInexedSchema || isNull) // null is serialized without a schema
         {
@@ -145,14 +214,19 @@ namespace LsMsgPack
             throw new MsgPackException("MsgPackSettings.WriteSchemaReference needs a MsgPackSettings.SchemaStore to keep the schema in.");
 
           // The published session of the root type, shared with other calls (as SchemaStore.RunWriter, without its allocations)
-          SchemaStore.SessionState writer = WriterState(store, assignedTo);
-          SchemaSession current = writer.Current;
+          WriterHit hit = entry.Writer;
+          if (hit is null || !ReferenceEquals(hit.Store, store))
+            entry.Writer = hit = new WriterHit(store, store.GetWriter(assignedTo, Options)); // once per root type
+          SchemaSession current = hit.State.Current;
           if (current != null)
           {
             try
             {
+              SessionShared shared = entry.Shared;
+              if (shared is null || !ReferenceEquals(shared.Session, current))
+                entry.Shared = shared = WriterShared(current);
               c.Mode = IdMode.Session;
-              c.IdSettings = WriterShared(current).Settings(Options);
+              c.IdSettings = shared.Settings(Options);
               write(c, root);
               Output(current.Reference, current.Reference.Length, true, c.W, target, sink, out result);
               return;
@@ -315,9 +389,10 @@ namespace LsMsgPack
       {
         WriteContext c = state.Context;
         c.Root = value;
-        FullPropertyInfo root = c.RootInfo;
-        if (root is null || root.AssignedToType != assignedTo)
-          c.RootInfo = root = RootInfo(assignedTo);
+        WriteRootEntry entry = c.Entry;
+        if (entry is null || entry.AssignedTo != assignedTo)
+          entry = EntryOf(c, assignedTo);
+        FullPropertyInfo root = entry.Info;
         try
         {
           WriteBody(c, state, depth, WriterShared(head.Session).Settings(Options), write, root);
@@ -358,25 +433,21 @@ namespace LsMsgPack
     #endregion
 
     /// <summary>
-    /// The writer sessions of the root type read last: (store, root type) to SessionState, which SchemaStore.GetWriter finds by a key of the settings, which do not change.
-    /// </summary>
-    private volatile WriterHit _lastWriter;
-
-    /// <summary>
     /// The inline schemas of <see cref="SchemaVersion.Described"/>, made once per root type and sequence of types.
     /// </summary>
     private readonly DescribedInlineSchemas _described = new DescribedInlineSchemas();
 
-    private sealed class WriterHit
+    /// <summary>
+    /// The writer sessions of a root type in a store (<see cref="WriteRootEntry.Writer"/>): SchemaStore.GetWriter finds them by a key of the settings, which do not change.
+    /// </summary>
+    internal sealed class WriterHit
     {
       internal readonly SchemaStore Store;
-      internal readonly Type Root;
       internal readonly SchemaStore.SessionState State;
 
-      internal WriterHit(SchemaStore store, Type root, SchemaStore.SessionState state)
+      internal WriterHit(SchemaStore store, SchemaStore.SessionState state)
       {
         Store = store;
-        Root = root;
         State = state;
       }
     }
@@ -392,28 +463,6 @@ namespace LsMsgPack
       _lastWriterSession = last;
       return last;
     }
-
-    private SchemaStore.SessionState WriterState(SchemaStore store, Type root)
-    {
-      WriterHit last = _lastWriter;
-      if (last != null && last.Root == root && ReferenceEquals(last.Store, store))
-        return last.State;
-      // Another root type than the last call's: its hit is kept, so a server writing several root types in turn allocates nothing (the store's session state of a root type never changes)
-      if (_writerHits.TryGetValue(root, out last) && ReferenceEquals(last.Store, store))
-      {
-        _lastWriter = last;
-        return last.State;
-      }
-      last = new WriterHit(store, root, store.GetWriter(root, Options));
-      _writerHits[root] = last;
-      _lastWriter = last;
-      return last.State;
-    }
-
-    /// <summary>
-    /// The <see cref="WriterHit"/> per root type (the store is the options' one), for the calls that do not write the root type of the last one.
-    /// </summary>
-    private readonly ConcurrentDictionary<Type, WriterHit> _writerHits = new ConcurrentDictionary<Type, WriterHit>();
 
     /// <param name="reference">The head is a reference to a schema of the store (<see cref="SchemaStore.ReferenceLength"/> bytes)</param>
     private static void Output(byte[] head, int headLength, bool reference, MsgPackWriter body, Stream target, IPayloadSink sink, out byte[] result)

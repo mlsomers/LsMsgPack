@@ -206,14 +206,13 @@ namespace LsMsgPack
           c.W.Nil();
         else
         {
+          Serializer.WriteRootEntry entry = c.Entry; // the entry of typeof(T), the declared type of root
+          object kept = entry.Handler;
           Writing.ValueHandler<T> handler;
-          if (ReferenceEquals(c.RootHandlerOf, root)) // the previous call on this thread had this root type (usually the case): no casts, in shared generic code each is a lookup and a walk over the base classes
-            handler = Unsafe.As<Writing.ValueHandler<T>>(c.RootHandler);
+          if (kept != null) // no casts: in shared generic code each is a lookup and a walk over the base classes
+            handler = Unsafe.As<Writing.ValueHandler<T>>(kept);
           else
-          {
-            c.RootHandler = handler = c.Serializer.Handler<T>(null);
-            c.RootHandlerOf = root;
-          }
+            entry.Handler = handler = c.Serializer.Handler<T>(null);
           if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct) // a struct, in the slot of Serialize below
             handler.Write(c, Unsafe.As<RootSlot<T>>(value).Value, root);
           else

@@ -570,9 +570,10 @@ namespace LsMsgPack
       }
 
       Type type = value.GetType();
-      WriteTypeInfo info = c.RootTypeInfo;
+      WriteRootEntry entry = c.Entry; // the entry of the declared type: its values usually have one type
+      WriteTypeInfo info = entry.TypeInfo;
       if (info is null || info.Type != type) // calls on a thread usually write the same root type: no lookup
-        c.RootTypeInfo = info = GetTypeInfo(type);
+        entry.TypeInfo = info = GetTypeInfo(type);
       WriteBoxedAs(c, value, type, info, root);
     }
 

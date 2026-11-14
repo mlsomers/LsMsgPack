@@ -46,13 +46,15 @@ namespace LsMsgPack.Writing
     internal object Root;
 
     /// <summary>
-    /// What the previous call on this thread looked up for its root (calls usually write the same root type), the context belongs to one serializer:
-    /// the info of the declared type, the handler of the typed writer (a ValueHandler&lt;T&gt;, see LsMsgPackSerializer.TypedWriter) and the type of the boxed one (Serializer.WriteRoot).
+    /// What the calls on this thread looked up for the root type of this call (calls usually write the same root type), the context belongs to one serializer: see <see cref="Serializer.WriteRootEntry"/>.
     /// </summary>
-    internal FullPropertyInfo RootInfo;
-    internal object RootHandler;
-    internal FullPropertyInfo RootHandlerOf; // the root info (one per type) RootHandler was looked up for
-    internal WriteTypeInfo RootTypeInfo;
+    internal Serializer.WriteRootEntry Entry;
+
+    /// <summary>
+    /// The entries of the root types written on this thread before (<see cref="Serializer.EntryOf"/>), made when a second root type shows up: a server writing several kinds of messages in turn looks up nothing.
+    /// </summary>
+    internal Serializer.WriteRootEntry[] Entries;
+    internal int NextEntry; // where the next root type goes when all of Entries are taken
     internal IdMode Mode;
     internal InlineSchema Inline;
 
@@ -193,15 +195,42 @@ namespace LsMsgPack.Writing
             infos = last.Infos;
             return last.Keys;
           }
-
-          infos = FullPropertyInfo.GetSerializedProps(plan.Type, IdSettings);
-          if (infos.Length != plan.Props.Length)
-            throw new InvalidOperationException($"The properties of {plan.Type.FullName} differ from the ones of the schema session.");
-          byte[][] keys = Serializer.SessionKeys(infos);
-          if (IdSettings._schemaFrozen) // shared by the calls that use the session (see Serializer.SessionShared), a session of one call is not worth it
-            plan.LastSession = new ObjectPlan.SessionIds(IdSettings, infos, keys);
-          return keys;
+          return SessionIdsOfAnother(plan, out infos);
       }
+    }
+
+    /// <summary>
+    /// <see cref="BeginObject"/> in another session than the plan's last one: the plan's table of sessions first (a class below several root types is written in the session of each), then the session itself.
+    /// </summary>
+    private byte[][] SessionIdsOfAnother(ObjectPlan plan, out FullPropertyInfo[] infos)
+    {
+      MsgPackOptions settings = IdSettings;
+      ObjectPlan.SessionIds previous = plan.PreviousSession;
+      ObjectPlan.SessionIds known = previous != null && ReferenceEquals(previous.Settings, settings) ? previous : plan.KnownSession(settings);
+      if (known != null)
+      {
+        plan.PreviousSession = plan.LastSession; // each is checked before it is used: another thread may swap them at the same time
+        plan.LastSession = known;
+        infos = known.Infos;
+        return known.Keys;
+      }
+
+      infos = FullPropertyInfo.GetSerializedProps(plan.Type, settings);
+      if (infos.Length != plan.Props.Length)
+        throw new InvalidOperationException($"The properties of {plan.Type.FullName} differ from the ones of the schema session.");
+      byte[][] keys = Serializer.SessionKeys(infos);
+      if (settings._schemaFrozen) // shared by the calls that use the session (see Serializer.SessionShared), a session of one call is not worth it
+      {
+        ObjectPlan.SessionIds ids = new ObjectPlan.SessionIds(settings, infos, keys);
+        ObjectPlan.SessionIds last = plan.LastSession;
+        if (last != null) // a second session: from now on they are kept
+        {
+          ids = plan.KeepSession(last, ids);
+          plan.PreviousSession = last;
+        }
+        plan.LastSession = ids;
+      }
+      return keys;
     }
 
     /// <summary>

@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace LsMsgPack
 {
@@ -36,6 +37,75 @@ namespace LsMsgPack
     /// </summary>
     private volatile SchemaHit _lastSchema;
 
+    /// <summary>
+    /// Every schema read that the store keeps (so as many as the store's entries), by its <see cref="SchemaKey"/>: behind <see cref="_lastSchema"/> and the recent ones (<see cref="RecentReads.Schemas"/>),
+    /// a reader of any number of root types finds a schema without copying it (a reference) or with a hash of its bytes instead of a copy (inline), and allocates nothing.
+    /// </summary>
+    private readonly ConcurrentDictionary<SchemaKey, SchemaHit> _knownSchemas = new ConcurrentDictionary<SchemaKey, SchemaHit>();
+
+    /// <summary>
+    /// A reference: its schema id; an inline schema: a hash of its bytes and their length. The bytes of the hit are compared before it is used, so a hash that two schemas share only costs the lookups of the store.
+    /// </summary>
+    private struct SchemaKey : IEquatable<SchemaKey>
+    {
+      private readonly long _a, _b;
+      private readonly int _length;
+
+      private SchemaKey(long a, long b, int length)
+      {
+        _a = a;
+        _b = b;
+        _length = length;
+      }
+
+      /// <param name="length">The schema's bytes, or the reference (<see cref="SchemaStore.ReferenceLength"/> bytes, starting with fixext 16)</param>
+      internal static SchemaKey Of(byte[] buffer, int offset, int length)
+      {
+        ReadOnlySpan<byte> bytes = new ReadOnlySpan<byte>(buffer, offset, length);
+        if (length == SchemaStore.ReferenceLength && bytes[0] == (byte)MsgPackTypeId.MpFExt16) // an inline schema starts with a map
+          return new SchemaKey(MemoryMarshal.Read<long>(bytes.Slice(2)), MemoryMarshal.Read<long>(bytes.Slice(2 + 8)), -1);
+
+        ulong hash = 0xCBF29CE484222325UL;
+        int t = 0;
+        for (; t + 8 <= length; t += 8)
+          hash = RotateLeft(hash ^ MemoryMarshal.Read<ulong>(bytes.Slice(t)), 29) * 0x9E3779B97F4A7C15UL;
+        for (; t < length; t++)
+          hash = (hash ^ bytes[t]) * 0x100000001B3UL;
+        return new SchemaKey(unchecked((long)hash), 0, length);
+      }
+
+      private static ulong RotateLeft(ulong value, int bits)
+      {
+        return (value << bits) | (value >> (64 - bits));
+      }
+
+      public bool Equals(SchemaKey other)
+      {
+        return _a == other._a && _b == other._b && _length == other._length;
+      }
+
+      public override bool Equals(object obj)
+      {
+        return obj is SchemaKey other && Equals(other);
+      }
+
+      public override int GetHashCode()
+      {
+        return unchecked((int)_a ^ (int)(_a >> 32) ^ (int)_b ^ _length);
+      }
+    }
+
+    /// <returns>The known schema whose bytes (or reference) are these, null when there is none</returns>
+    private SchemaHit KnownSchema(byte[] buffer, int offset, int length)
+    {
+      if (_knownSchemas.IsEmpty) // one schema so far: the last one, compared already
+        return null;
+      if (!_knownSchemas.TryGetValue(SchemaKey.Of(buffer, offset, length), out SchemaHit hit) || hit.Bytes.Length != length || !new ReadOnlySpan<byte>(buffer, offset, length).SequenceEqual(hit.Bytes))
+        return null;
+      AddRecentSchema(hit);
+      return hit;
+    }
+
     private sealed class SchemaHit
     {
       /// <summary>
@@ -50,6 +120,11 @@ namespace LsMsgPack
       /// </summary>
       internal readonly SchemaStore.SessionState State;
 
+      /// <summary>
+      /// The shared settings and binding of the session it was read with last (checked before it is used: a grown session replaces it).
+      /// </summary>
+      internal SessionShared Shared;
+
       internal SchemaHit(byte[] bytes, SchemaStore.Entry entry, MsgPackOptions lengthSettings, SchemaStore.SessionState state)
       {
         Bytes = bytes;
@@ -63,7 +138,7 @@ namespace LsMsgPack
     /// What the calls with a frozen (published) session share: the settings using the session, and for reading the binding of the schema to the local types.
     /// Only read, by any number of threads: LsMsgPack does not change settings while it uses them.
     /// </summary>
-    private sealed class SessionShared
+    internal sealed class SessionShared
     {
       internal readonly SchemaSession Session;
       private BoundSchema _bound;
@@ -120,10 +195,15 @@ namespace LsMsgPack
       private int _nextSession;
 
       /// <summary>
-      /// The root types read since there were two (at most <see cref="Size"/>, added and never removed: types do not go stale): their assemblies are cached, and they keep their reader, so a switch of
-      /// the root type is a comparison of references instead of lookups by the type (the hash of a Type is a call into the runtime). Other root types do the lookups after each switch.
+      /// The first <see cref="Size"/> root types read since there were two (added and never removed: types do not go stale): their assemblies are cached, and they keep their reader, so a switch of
+      /// the root type is a comparison of references instead of lookups by the type (the hash of a Type is a call into the runtime). The others are in <see cref="Others"/>.
       /// </summary>
       internal RootEntry[] Roots = new RootEntry[0];
+
+      /// <summary>
+      /// All root types read since there were two, for the ones after <see cref="Roots"/>: one lookup instead of those of the cached assemblies and the reader.
+      /// </summary>
+      internal readonly ConcurrentDictionary<Type, RootEntry> Others = new ConcurrentDictionary<Type, RootEntry>();
 
       internal void AddSchema(SchemaHit hit)
       {
@@ -141,12 +221,13 @@ namespace LsMsgPack
 
       internal void AddRoot(Type type)
       {
+        RootEntry entry = Others.GetOrAdd(type, t => new RootEntry(t));
         RootEntry[] roots = Roots;
         if (roots.Length < Size) // a copy, other threads read the array (one that adds at the same time may get lost, it comes back)
         {
           RootEntry[] more = new RootEntry[roots.Length + 1];
           Array.Copy(roots, more, roots.Length);
-          more[roots.Length] = new RootEntry(type);
+          more[roots.Length] = entry;
           Roots = more;
         }
       }
@@ -445,6 +526,11 @@ namespace LsMsgPack
             return;
           }
         }
+        if (recent.Others.ContainsKey(type)) // its assemblies are cached
+        {
+          _cachedRoot = type;
+          return;
+        }
       }
       // The names in the data (type ids, the schema) are resolved in the cached assemblies: the ones of the types the root type reaches (the T of List<T>...)
       TypeResolver.CacheAssembly(type.Assembly, type.Name); // as MsgPackSerializer.CacheAssemblyTypes(type)
@@ -476,8 +562,10 @@ namespace LsMsgPack
           if (entry.Type == type)
             return entry.Reader ?? (entry.Reader = Reader(type)); // a race makes it twice: Reader returns the same one
         }
+        if (recent.Others.TryGetValue(type, out RootEntry other))
+          return other.Reader ?? (other.Reader = Reader(type));
       }
-      return Reader(type); // one root type, a type of a body (the stream reader), or more root types than the entries
+      return Reader(type); // one root type, or a type of a body (the stream reader)
     }
 
     #endregion
@@ -564,24 +652,26 @@ namespace LsMsgPack
     private object DeserializeWithSchema(ReadContext c, Type type)
     {
       MsgPackReader r = c.R;
-      if (!ReadSchema(r, out SchemaStore.Entry schema, out MsgPackOptions lengthSettings, out SchemaStore.SessionState state, out byte[] raw))
+      if (!ReadSchema(r, out SchemaStore.Entry schema, out MsgPackOptions lengthSettings, out SchemaStore.SessionState state, out byte[] raw, out SchemaHit hit))
         return null; // null is serialized without a schema
-      return ReadWithSchema(c, type, type, r.Pos, schema, lengthSettings, state, raw);
+      return ReadWithSchema(c, type, type, r.Pos, schema, lengthSettings, state, raw, hit);
     }
 
     /// <summary>
     /// Reads the schema at the start of a payload (inline or a reference) and finds it in the store.
     /// </summary>
     /// <param name="schema">null when it is not cached (the store is full, or does not cache inline schemas): then <paramref name="raw"/> has its bytes</param>
-    /// <param name="state">The reader sessions of the schema when it was the one read last, otherwise null</param>
+    /// <param name="state">The reader sessions of the schema when it is a known one, otherwise null</param>
+    /// <param name="hit">The known schema (<see cref="SchemaHit"/>), otherwise null</param>
     /// <returns>false for nil (null is serialized without a schema), the reader is then after it</returns>
-    private bool ReadSchema(MsgPackReader r, out SchemaStore.Entry schema, out MsgPackOptions lengthSettings, out SchemaStore.SessionState state, out byte[] raw)
+    private bool ReadSchema(MsgPackReader r, out SchemaStore.Entry schema, out MsgPackOptions lengthSettings, out SchemaStore.SessionState state, out byte[] raw, out SchemaHit hit)
     {
       if (r.Pos >= r.End)
         throw MsgPackReader.EndOfData();
 
       state = null;
       raw = null;
+      hit = null;
       int first = r.Buf[r.Pos];
       if (first == 0xC0)
       {
@@ -600,6 +690,7 @@ namespace LsMsgPack
       }
       if (last != null)
       {
+        hit = last;
         schema = last.Entry;
         lengthSettings = last.LengthSettings;
         state = last.State;
@@ -612,6 +703,17 @@ namespace LsMsgPack
         sbyte extType = unchecked((sbyte)r.Buf[r.Pos + 1]);
         if (extType != SchemaStore.ReferenceExtensionType)
           throw new MsgPackException($"Expected the data to start with an indexed schema (a map) or a reference to one (extension type {SchemaStore.ReferenceExtensionType}) but found extension type {extType}. Was it serialized with MsgPackSettings.UseInexedSchema = false?", 0, MsgPackTypeId.MpFExt16);
+
+        SchemaHit known = KnownSchema(r.Buf, r.Pos, SchemaStore.ReferenceLength);
+        if (known != null)
+        {
+          hit = known;
+          schema = known.Entry;
+          lengthSettings = known.LengthSettings;
+          state = known.State;
+          r.Pos += SchemaStore.ReferenceLength;
+          return true;
+        }
 
         SchemaId id = new SchemaId(Slice(r.Buf, r.Pos + 2, SchemaId.Length));
         SchemaStore store = Options._schemaStore;
@@ -626,6 +728,15 @@ namespace LsMsgPack
       {
         int start = r.Pos;
         r.Skip(0);
+        SchemaHit known = KnownSchema(r.Buf, start, r.Pos - start);
+        if (known != null)
+        {
+          hit = known;
+          schema = known.Entry;
+          lengthSettings = known.LengthSettings;
+          state = known.State;
+          return true;
+        }
         raw = Slice(r.Buf, start, r.Pos - start);
         SchemaStore store = Options._schemaStore ?? _inlineStore;
         if (!store.TryGetInline(raw, out schema))
@@ -645,7 +756,8 @@ namespace LsMsgPack
     /// </summary>
     /// <param name="root">The root type of the payload, which pairs the reader's classes with the schema's (<see cref="SerializationRules.BindReaderTypes"/>)</param>
     /// <param name="type">The type of the value that is read: <paramref name="root"/>, or a part of its body (<see cref="Streaming.MsgPackStreamReader.ReadHead{TRoot}"/>)</param>
-    private object ReadWithSchema(ReadContext c, Type root, Type type, int bodyStart, SchemaStore.Entry schema, MsgPackOptions lengthSettings, SchemaStore.SessionState state, byte[] raw)
+    /// <param name="hit">The known schema, null when it is not (yet) one: it keeps the shared session it was read with last</param>
+    private object ReadWithSchema(ReadContext c, Type root, Type type, int bodyStart, SchemaStore.Entry schema, MsgPackOptions lengthSettings, SchemaStore.SessionState state, byte[] raw, SchemaHit hit)
     {
       if (schema is null) // not cached (the store is full, or does not cache inline schemas): a session for this call
       {
@@ -657,14 +769,20 @@ namespace LsMsgPack
       {
         state = schema.GetReader(Options);
         if (raw != null)
-          AddSchemaHit(new SchemaHit(raw, schema, lengthSettings, state)); // the store keeps its entries
+          AddSchemaHit(hit = new SchemaHit(raw, schema, lengthSettings, state)); // the store keeps its entries
       }
 
       // The published session, shared with other calls (as Entry.RunReader, without its allocations)
       SchemaSession current = state.Current;
       if (current != null)
       {
-        SessionShared reading = Shared(current);
+        SessionShared reading = hit?.Shared;
+        if (reading is null || !ReferenceEquals(reading.Session, current)) // the first read of the schema, or its session grew (threads may set it in turn: each checks it)
+        {
+          reading = Shared(current);
+          if (hit != null)
+            hit.Shared = reading;
+        }
         try
         {
           return ReadBody(c, root, type, bodyStart, reading.Bound, reading.Settings(Options));
@@ -735,7 +853,7 @@ namespace LsMsgPack
       try
       {
         MsgPackReader r = c.R;
-        if (!ReadSchema(r, out SchemaStore.Entry schema, out MsgPackOptions lengthSettings, out SchemaStore.SessionState state, out byte[] raw))
+        if (!ReadSchema(r, out SchemaStore.Entry schema, out MsgPackOptions lengthSettings, out SchemaStore.SessionState state, out byte[] raw, out SchemaHit unused))
           throw NotASchema(0xC0);
         if (r.Pos != end)
           throw new MsgPackException("The schema is followed by more data.", r.Pos, MsgPackTypeId.NeverUsed);
@@ -775,7 +893,7 @@ namespace LsMsgPack
           c.Differences = differences;
         c.IntoSlot = intoSlot;
         c.Unusual = SlowObjects || differences != null;
-        object result = ReadWithSchema(c, root, type, offset, head.Schema, head.LengthSettings, head.State, head.Raw);
+        object result = ReadWithSchema(c, root, type, offset, head.Schema, head.LengthSettings, head.State, head.Raw, null);
         consumed = c.R.Pos;
         return result;
       }
@@ -833,7 +951,24 @@ namespace LsMsgPack
       return null;
     }
 
+    /// <summary>
+    /// A schema the store keeps, read for the first time: known from now on (<see cref="_knownSchemas"/>), and the last one.
+    /// </summary>
     private void AddSchemaHit(SchemaHit hit)
+    {
+      SchemaHit previous = _lastSchema;
+      if (previous != null) // a second schema: from now on they are known (the first one too)
+      {
+        _knownSchemas.TryAdd(SchemaKey.Of(previous.Bytes, 0, previous.Bytes.Length), previous);
+        _knownSchemas.TryAdd(SchemaKey.Of(hit.Bytes, 0, hit.Bytes.Length), hit); // a hash that is taken already: this one is looked up in the store each time
+      }
+      AddRecentSchema(hit);
+    }
+
+    /// <summary>
+    /// Makes <paramref name="hit"/> the last schema, and keeps it in the recent ones once there are two.
+    /// </summary>
+    private void AddRecentSchema(SchemaHit hit)
     {
       SchemaHit previous = _lastSchema;
       _lastSchema = hit;

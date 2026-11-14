@@ -66,6 +66,40 @@ namespace LsMsgPack.Writing
     /// </summary>
     internal volatile SessionIds LastSession;
 
+    /// <summary>
+    /// The ids <see cref="LastSession"/> replaced: two root types written in turn with this class below both swap them, more go to the table (<see cref="KnownSession"/>).
+    /// </summary>
+    internal volatile SessionIds PreviousSession;
+
+    /// <summary>
+    /// The ids per frozen session's settings, made when a second session shows up (a class below several root types is written with the session of each, any number of them): <see cref="LastSession"/> is the one used last.
+    /// Weak, so the sessions a grown one replaced can go; a lookup takes no lock and allocates nothing.
+    /// </summary>
+    private ConditionalWeakTable<MsgPackOptions, SessionIds> _sessionTable;
+
+    /// <returns>The ids kept for the session's settings, null when there are none</returns>
+    internal SessionIds KnownSession(MsgPackOptions settings)
+    {
+      ConditionalWeakTable<MsgPackOptions, SessionIds> table = Volatile.Read(ref _sessionTable);
+      return table != null && table.TryGetValue(settings, out SessionIds known) ? known : null;
+    }
+
+    /// <summary>
+    /// Keeps <paramref name="ids"/> (and <paramref name="previous"/>, the last ones until now) in the table, made by the first caller.
+    /// </summary>
+    /// <returns><paramref name="ids"/>, or the ids another thread kept for the same session first</returns>
+    internal SessionIds KeepSession(SessionIds previous, SessionIds ids)
+    {
+      ConditionalWeakTable<MsgPackOptions, SessionIds> table = Volatile.Read(ref _sessionTable);
+      if (table is null)
+      {
+        ConditionalWeakTable<MsgPackOptions, SessionIds> made = new ConditionalWeakTable<MsgPackOptions, SessionIds>();
+        table = Interlocked.CompareExchange(ref _sessionTable, made, null) ?? made;
+      }
+      table.GetValue(previous.Settings, s => previous); // (in a method of its own: the closure is made where the method starts)
+      return table.GetValue(ids.Settings, s => ids);
+    }
+
     internal sealed class SessionIds
     {
       internal readonly MsgPackOptions Settings;
