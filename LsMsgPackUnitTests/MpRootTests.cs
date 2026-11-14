@@ -10,8 +10,21 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     [DataRow(false, 11, 1, "hello")]
     [DataRow(true, 7, 1, "hello")]
-    [DataRow(false, 13, (byte)0, new object[] { (short)597, (short)492 }, new object[0], (byte)0, (byte)0, "\u0001")] // the items as params (an object[] would be one item); the shorts stay shorts: 3 bytes each
     public void RoundTripTest(bool dynamicallyCompact, int expectedLength, params object[] items)
+    {
+      RoundTrip(dynamicallyCompact, expectedLength, items);
+    }
+
+    /// <summary>
+    /// Not a DataRow: Visual Studio's Test Explorer serializes the rows during discovery, the shorts in the nested array came back as ints (5 bytes each).
+    /// </summary>
+    [TestMethod]
+    public void RoundTripNestedArrays()
+    {
+      RoundTrip(false, 13, (byte)0, new object[] { (short)597, (short)492 }, new object[0], (byte)0, (byte)0, "\u0001"); // the shorts stay shorts: 3 bytes each
+    }
+
+    private static void RoundTrip(bool dynamicallyCompact, int expectedLength, params object[] items)
     {
       MpRoot root = MsgPackItem.PackMultiple(dynamicallyCompact, items);
       byte[] bytes = root.ToBytes();
