@@ -86,6 +86,17 @@ namespace LsMsgPack.Data
     }
 
     /// <summary>
+    /// <see cref="MsgPackDataReader(MsgPackStreamReader, MsgPackStreamEntry, bool)"/> with asynchronous reads (the index from <see cref="MsgPackStreamReader.ReadIndexesAsync"/>).
+    /// </summary>
+    public static async Task<MsgPackDataReader> OpenAsync(MsgPackStreamReader reader, MsgPackStreamEntry entry, bool leaveOpen = false, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      MsgPackDataReader data = new MsgPackDataReader(reader, entry ?? throw new ArgumentNullException(nameof(entry)), leaveOpen, false);
+      reader.Seek(entry);
+      await data.OpenTableAsync(cancellationToken).ConfigureAwait(false);
+      return data;
+    }
+
+    /// <summary>
     /// The name of the current table: the identifier of its index entry when opened at one, otherwise the name of its rows in the schema.
     /// </summary>
     public string TableName { get { return _tableName; } }
@@ -215,10 +226,15 @@ namespace LsMsgPack.Data
     {
       if (await _reader.AtEndAsync(cancellationToken).ConfigureAwait(false))
         return false;
+      await OpenTableAsync(cancellationToken).ConfigureAwait(false);
+      return true;
+    }
+
+    private async Task OpenTableAsync(CancellationToken cancellationToken)
+    {
       await _reader.ReadHeadAsync(typeof(object), cancellationToken).ConfigureAwait(false);
       Begin(await _reader.ReadAsync(cancellationToken).ConfigureAwait(false));
       _hasRows = !await _reader.AtEndAsync(cancellationToken).ConfigureAwait(false);
-      return true;
     }
 
     public override bool NextResult()

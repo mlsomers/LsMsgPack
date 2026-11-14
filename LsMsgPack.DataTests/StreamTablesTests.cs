@@ -10,6 +10,7 @@ using System.Data;
 using System.Data.Common;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace LsMsgPack.DataTests
@@ -219,6 +220,73 @@ namespace LsMsgPack.DataTests
           AssertSameResultSets(expected, read, 3, false);
         }
       }
+    }
+
+    /// <summary>
+    /// <see cref="TableDump_ReadAtEntry_ExactTypes_AndSequentially"/> with the async methods (ReadIndexesAsync, OpenAsync at the entry, ReadAsync), from a stream that refuses synchronous reads.
+    /// </summary>
+    [TestMethod]
+    public async Task Async_ReadAtEntry()
+    {
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer();
+      using (SqliteConnection connection = Database())
+      {
+        byte[] dump = Dump(connection, serializer, new MsgPackStreamIndexOptions() { PointInterval = 100 }).ToArray();
+        using (MsgPackStreamReader reader = new MsgPackStreamReader(new AsyncSeekStream(dump), serializer))
+        {
+          MsgPackStreamEntry orders = (await reader.ReadIndexesAsync()).SelectMany(i => i.Entries).Single(e => "Orders".Equals(e.Identifier));
+          using (MsgPackDataReader read = await MsgPackDataReader.OpenAsync(reader, orders, leaveOpen: true))
+          using (DbDataReader expected = Query(connection, "SELECT Id, CustomerId, Amount, Note FROM Orders ORDER BY CustomerId, Id"))
+          {
+            Assert.AreEqual("Orders", read.TableName);
+            Assert.AreEqual("INTEGER", read.GetDataTypeName(0));
+            int rows = 0;
+            while (expected.Read())
+            {
+              Assert.IsTrue(await read.ReadAsync());
+              for (int t = 0; t < expected.FieldCount; t++)
+                Assert.AreEqual(expected.GetValue(t), read.GetValue(t), "row " + rows + " column " + t);
+              rows++;
+            }
+            Assert.AreEqual(2500, rows);
+            Assert.IsFalse(await read.ReadAsync());
+            Assert.IsFalse(await read.NextResultAsync(), "one table");
+          }
+
+          // into the rows of the table
+          reader.Seek(orders);
+          await reader.ReadHeadAsync<List<OrderRow>>();
+          await reader.ReadAsync(); // ArrayStart
+          await reader.SeekElementAsync(orders, 1234);
+          OrderRow row = await reader.ReadObjectAsync<OrderRow>();
+          using (DbDataReader all = Query(connection, "SELECT Id, CustomerId, Amount, Note FROM Orders ORDER BY CustomerId, Id"))
+            Assert.AreEqual(new LsMsgPackSerializer().ReadRows<OrderRow>(all)[1234].Id, row.Id);
+        }
+      }
+    }
+
+    /// <summary>
+    /// Seeks, refuses synchronous reads, at most 7 bytes per read.
+    /// </summary>
+    private sealed class AsyncSeekStream : Stream
+    {
+      private readonly MemoryStream _inner;
+      public AsyncSeekStream(byte[] bytes) { _inner = new MemoryStream(bytes); }
+      public override bool CanRead { get { return true; } }
+      public override bool CanSeek { get { return true; } }
+      public override bool CanWrite { get { return false; } }
+      public override long Length { get { return _inner.Length; } }
+      public override long Position { get { return _inner.Position; } set { _inner.Position = value; } }
+      public override void Flush() { }
+      public override int Read(byte[] buffer, int offset, int count) { throw new InvalidOperationException("A synchronous read."); }
+      public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+      {
+        await Task.Yield();
+        return _inner.Read(buffer, offset, Math.Min(count, 7));
+      }
+      public override long Seek(long offset, SeekOrigin origin) { return _inner.Seek(offset, origin); }
+      public override void SetLength(long value) { throw new NotSupportedException(); }
+      public override void Write(byte[] buffer, int offset, int count) { throw new NotSupportedException(); }
     }
 
     /// <summary>

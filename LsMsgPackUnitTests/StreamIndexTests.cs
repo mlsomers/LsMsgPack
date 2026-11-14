@@ -2,10 +2,15 @@
 using LsMsgPack.Streaming;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using SwOrder = LsMsgPackUnitTests.StreamWriterReaderTests.SwOrder;
 using SwLine = LsMsgPackUnitTests.StreamWriterReaderTests.SwLine;
 
@@ -53,10 +58,92 @@ namespace LsMsgPackUnitTests
       return ms.ToArray();
     }
 
+    /// <summary>
+    /// The indexes as <see cref="MsgPackStreamReader.ReadIndexes"/> reads them, checked against <see cref="MsgPackStreamReader.ReadIndexesAsync"/> (the same indexes or the same error, no synchronous reads).
+    /// </summary>
     private static IReadOnlyList<MsgPackStreamIndex> Indexes(byte[] bytes, bool search = false, LsMsgPackSerializer serializer = null)
     {
-      using (MsgPackStreamReader reader = new MsgPackStreamReader(new MemoryStream(bytes), serializer ?? Plain()))
-        return reader.ReadIndexes(search);
+      IReadOnlyList<MsgPackStreamIndex> indexes;
+      try
+      {
+        using (MsgPackStreamReader reader = new MsgPackStreamReader(new MemoryStream(bytes), serializer ?? Plain()))
+          indexes = reader.ReadIndexes(search);
+      }
+      catch (Exception ex)
+      {
+        Exception async = null;
+        try
+        {
+          IndexesAsync(bytes, search, serializer).GetAwaiter().GetResult();
+        }
+        catch (Exception e)
+        {
+          async = e;
+        }
+        Assert.IsNotNull(async, "ReadIndexesAsync did not throw " + ex.GetType().Name);
+        Assert.AreEqual(ex.GetType(), async.GetType());
+        Assert.AreEqual(ex.Message, async.Message);
+        throw;
+      }
+      Assert.AreEqual(Describe(indexes), Describe(IndexesAsync(bytes, search, serializer).GetAwaiter().GetResult()));
+      return indexes;
+    }
+
+    private static async Task<IReadOnlyList<MsgPackStreamIndex>> IndexesAsync(byte[] bytes, bool search, LsMsgPackSerializer serializer)
+    {
+      AsyncSeekStream stream = new AsyncSeekStream(bytes);
+      stream.Position = 3; // somewhere in the first value: the reader stays there
+      using (MsgPackStreamReader reader = new MsgPackStreamReader(stream, serializer ?? Plain()))
+      {
+        IReadOnlyList<MsgPackStreamIndex> indexes = await reader.ReadIndexesAsync(search);
+        Assert.AreEqual(3, stream.Position);
+        return indexes;
+      }
+    }
+
+    /// <summary>
+    /// Everything the indexes hold, as text.
+    /// </summary>
+    private static string Describe(IReadOnlyList<MsgPackStreamIndex> indexes)
+    {
+      StringBuilder text = new StringBuilder();
+      for (int i = 0; i < indexes.Count; i++)
+      {
+        MsgPackStreamIndex index = indexes[i];
+        text.Append(string.Join(" | ", index.Offset, index.Length, index.Version, index.Status, index.Writer, index.PreviousTail, index.HashAlgorithm, PlainText(index.Metadata))).Append('\n');
+        for (int t = 0; t < index.Schemas.Count; t++)
+          text.Append("  schema ").Append(string.Join(" | ", index.Schemas[t].Id, index.Schemas[t].Offset, index.Schemas[t].Length)).Append('\n');
+        for (int t = 0; t < index.Entries.Count; t++)
+        {
+          MsgPackStreamEntry e = index.Entries[t];
+          text.Append("  entry ").Append(string.Join(" | ", e.Offset, e.Length, PlainText(e.Identifier), e.ContentType, PlainText(e.Modified), PlainText(e.Hash), e.ElementCount,
+            e.SidecarOffset, e.SidecarLength, PlainText(e.Metadata), e.Incomplete)).Append('\n');
+          if (e.Points != null)
+            for (int n = 0; n < e.Points.Count; n++)
+              text.Append("    point ").Append(string.Join(" | ", e.Points[n].Element, e.Points[n].Offset, PlainText(e.Points[n].Key))).Append('\n');
+        }
+      }
+      return text.ToString();
+    }
+
+    private static string PlainText(object value)
+    {
+      switch (value)
+      {
+        case null: return "nil";
+        case string s: return "\"" + s + "\"";
+        case byte[] bytes: return "0x" + Convert.ToHexString(bytes);
+        case DateTime d: return d.ToString("O", CultureInfo.InvariantCulture) + " " + d.Kind;
+        case KeyValuePair<object, object>[] pairs: return "{" + string.Join(", ", pairs.Select(p => PlainText(p.Key) + ": " + PlainText(p.Value))) + "}";
+        case IDictionary dictionary:
+          List<string> entries = new List<string>();
+          foreach (DictionaryEntry entry in dictionary) // the IDictionary enumerator: a generic dictionary's own one returns KeyValuePairs
+            entries.Add(PlainText(entry.Key) + ": " + PlainText(entry.Value));
+          return "{" + string.Join(", ", entries) + "}";
+        case IList list: return "[" + string.Join(", ", list.Cast<object>().Select(PlainText)) + "]";
+        case IFormattable formattable: return value.GetType().Name + " " + formattable.ToString(null, CultureInfo.InvariantCulture);
+      }
+      return value.GetType().Name + " " + value;
     }
 
     private static List<MsgPackStreamEntry> Entries(IReadOnlyList<MsgPackStreamIndex> indexes)
@@ -312,6 +399,68 @@ namespace LsMsgPackUnitTests
           Assert.IsTrue(reader.Read());
           Assert.AreEqual(MsgPackTokenType.ArrayEnd, reader.TokenType);
           Assert.AreEqual(0, reader.Depth);
+        }
+      }
+    }
+
+    /// <summary>
+    /// <see cref="PointsLeadIntoTheRowsOfATable"/> with the async methods, from a stream that refuses synchronous reads: ReadIndexesAsync registers the schemas, Seek and SeekElementAsync go to the rows.
+    /// </summary>
+    [TestMethod]
+    public async Task PointsLeadIntoTheRowsOfATable_Async()
+    {
+      foreach (bool unknown in new[] { true, false })
+      {
+        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = new SchemaStore() });
+        byte[] bytes = Write(w =>
+        {
+          w.WriteObject(Order(1000));
+          w.BeginEntry("table");
+          w.WriteHead<List<SwOrder>>();
+          if (unknown)
+            w.WriteArrayStart();
+          else
+            w.WriteArrayHeader(100);
+          for (int n = 0; n < 100; n++)
+          {
+            if (n == 55)
+              w.AddPoint(n);
+            w.WriteObject(Order(n));
+          }
+          if (unknown)
+            w.WriteEnd();
+        }, new MsgPackStreamIndexOptions { PointInterval = 10 }, serializer, MsgPackStreamSchemas.PerStream);
+
+        LsMsgPackSerializer reading = new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = new SchemaStore() });
+        using (MsgPackStreamReader reader = new MsgPackStreamReader(new AsyncSeekStream(bytes), reading))
+        {
+          Assert.IsTrue(await reader.ReadAsync()); // the first token of the first entry
+          MsgPackTokenType first = reader.TokenType;
+          IReadOnlyList<MsgPackStreamIndex> indexes = await reader.ReadIndexesAsync();
+          Assert.AreEqual(first, reader.TokenType, "the reader stays where it was");
+          MsgPackStreamEntry table = indexes[0].Entries[1];
+          Assert.HasCount(11, table.Points);
+
+          reader.Seek(table);
+          await reader.ReadHeadAsync<List<SwOrder>>();
+          Assert.IsTrue(await reader.ReadAsync());
+          Assert.AreEqual(MsgPackTokenType.ArrayStart, reader.TokenType);
+          foreach (long row in new long[] { 57, 99, 3, 55, 56, 0, 1 })
+          {
+            await reader.SeekElementAsync(table, row);
+            AreEqual(Order((int)row), await reader.ReadObjectAsync<SwOrder>());
+          }
+          await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => reader.SeekElementAsync(new MsgPackStreamEntry(), 0)); // no array
+          await Assert.ThrowsExactlyAsync<ArgumentOutOfRangeException>(() => reader.SeekElementAsync(table, 100));
+          await reader.SeekElementAsync(table, 95);
+          int count = 0;
+          while (!await reader.AtEndAsync())
+            AreEqual(Order(95 + count++), await reader.ReadObjectAsync<SwOrder>());
+          Assert.AreEqual(5, count);
+          Assert.IsTrue(await reader.ReadAsync());
+          Assert.AreEqual(MsgPackTokenType.ArrayEnd, reader.TokenType);
+          Assert.AreEqual(0, reader.Depth);
+          await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => reader.SeekElementAsync(table, 0)); // not in the array
         }
       }
     }
@@ -621,6 +770,32 @@ namespace LsMsgPackUnitTests
       bytes.Add(0xA4);
       bytes.AddRange("LSIX"u8.ToArray());
       return bytes.ToArray();
+    }
+
+    /// <summary>
+    /// Seeks, refuses synchronous reads and returns 1 to 3 bytes per read, every other one completed asynchronously: the async methods must not read synchronously.
+    /// </summary>
+    private sealed class AsyncSeekStream : Stream
+    {
+      private readonly MemoryStream _inner;
+      private int _reads;
+      public AsyncSeekStream(byte[] bytes) { _inner = new MemoryStream(bytes); }
+      public override bool CanRead { get { return true; } }
+      public override bool CanSeek { get { return true; } }
+      public override bool CanWrite { get { return false; } }
+      public override long Length { get { return _inner.Length; } }
+      public override long Position { get { return _inner.Position; } set { _inner.Position = value; } }
+      public override void Flush() { }
+      public override int Read(byte[] buffer, int offset, int count) { throw new NotSupportedException("A synchronous read."); }
+      public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+      {
+        if ((_reads++ & 1) == 0)
+          await Task.Yield();
+        return _inner.Read(buffer, offset, Math.Min(count, 1 + _reads % 3));
+      }
+      public override long Seek(long offset, SeekOrigin origin) { return _inner.Seek(offset, origin); }
+      public override void SetLength(long value) { throw new NotSupportedException(); }
+      public override void Write(byte[] buffer, int offset, int count) { throw new NotSupportedException(); }
     }
 
     /// <summary>

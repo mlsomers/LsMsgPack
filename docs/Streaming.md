@@ -145,7 +145,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(response, serializer
 - `ReadElementsAsync<T>()` (.NET Standard 2.1 and .NET 8) returns the elements of an array as an `IAsyncEnumerable<T>`, each read as `ReadObjectAsync<T>` reads it: at its `ArrayStart`, or before it (then it reads that first). The reader is at the `ArrayEnd` afterwards.
 - The values of a token (`GetInt64()`, `GetBoolean()`, `GetDouble()`...) need no reading. The data of a str, bin or extension isn't buffered by `ReadAsync` (it may be large): read it with `GetStringAsync()`, `GetBytesAsync()` or `GetValueAsync()` (an extension, a timestamp). `GetDateTime()` and `GetExtension()` would read it synchronously.
 - `AtEndAsync()` in an array of unknown length needs one byte when the next value doesn't start with `0xC1`, so a source that waits after a small element doesn't keep it waiting.
-- The index (`ReadIndexes`, `Seek`, `SeekElement`) is read synchronously: it needs a stream that seeks, e.g. a file.
+- The index has `ReadIndexesAsync()` and `SeekElementAsync()`. `Seek(entry)` and `Seek(entry, point)` read nothing (they set the position, the next read starts there), so they serve the async methods too. The index needs a stream that seeks, e.g. a file.
 - They take a bit longer than the synchronous methods on data that is already there (a `MemoryStream`): each value is passed twice, once to know that it is buffered, once to read it.
 
 ## Objects and their schema
@@ -235,6 +235,8 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
   Row row = reader.ReadObject<Row>();
 }
 ```
+
+The same with asynchronous reads: `await reader.ReadIndexesAsync()`, `reader.Seek(orders)` (it reads nothing), `await reader.ReadHeadAsync<List<Row>>()`, `await reader.ReadAsync()`, `await reader.SeekElementAsync(orders, 123456)`, `await reader.ReadObjectAsync<Row>()`.
 
 **Entries** (`MsgPackStreamEntry`): the writer fills in `Offset` and `Length` (the bytes of the root value, its schema or head included), `ElementCount` for an array, `Points`, `Hash`. `BeginEntry(identifier, contentType)` names the next root value and returns its entry, to which `Modified` and `Metadata` can be added. The identifier is a string or an integer and doesn't have to be unique (when several entries have the same one, the last one is the current one). Metadata holds plain values: null, bool, integers, floats, strings, `byte[]`, `DateTime`, and lists and dictionaries of them. Stream-wide metadata goes in `MsgPackStreamIndexOptions.Metadata`.
 
