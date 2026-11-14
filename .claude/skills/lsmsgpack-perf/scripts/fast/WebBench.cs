@@ -1,7 +1,6 @@
 // End-to-end: ASP.NET Core (TestServer, in process) with the LsMsgPack formatters vs System.Text.Json.
 // Usage: <exe> <seconds per case>
 using LsMsgPack;
-using LsMsgPackDebug;
 using LsMsgPackFormatters;
 using LsMsgPack.Http;
 using Microsoft.AspNetCore.Builder;
