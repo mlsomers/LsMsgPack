@@ -540,6 +540,11 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal volatile BoundSchema.Cached LastBinding;
 
+    /// <summary>
+    /// The binding <see cref="LastBinding"/> replaced: two root types read in turn with a class below both swap them, more go to the schema's table.
+    /// </summary>
+    internal volatile BoundSchema.Cached PreviousBinding;
+
     /// <param name="generated">The constructor call of the source generator, null when there is none</param>
     /// <summary>
     /// The reader of the source generator (see LsMsgPackContext), null when there is none: the <see cref="Props"/> with a <see cref="PropReader.GeneratedId"/> are read by it.
@@ -1583,13 +1588,18 @@ namespace LsMsgPack.Reading
   internal sealed class BoundSchema
   {
     private readonly IndexedSchemaTypeResolver _schema;
-    private readonly ConcurrentDictionary<ReadPlan, PropReader[]> _bindings = new ConcurrentDictionary<ReadPlan, PropReader[]>();
-    private static readonly PropReader[] NotBound = new PropReader[0];
+    /// <summary>
+    /// The binding of each plan read with this schema (<see cref="Cached.Props"/> null: the type is not in the schema), behind <see cref="ReadPlan.LastBinding"/>: a class below several root types
+    /// finds its binding to the schema of each by one lookup, without allocating.
+    /// </summary>
+    private readonly ConcurrentDictionary<ReadPlan, Cached> _bindings = new ConcurrentDictionary<ReadPlan, Cached>();
 
     /// <summary>
     /// Used by many calls (a frozen session), the plans remember their binding to it.
     /// </summary>
     private readonly bool _shared;
+
+    internal bool Shared { get { return _shared; } }
 
     internal BoundSchema(IndexedSchemaTypeResolver schema, bool shared)
     {
@@ -1631,19 +1641,27 @@ namespace LsMsgPack.Reading
       Cached last = plan.LastBinding;
       if (last != null && ReferenceEquals(last.Schema, this))
         return last.Props;
-
-      PropReader[] props = Bind(plan);
-      if (_shared)
-        plan.LastBinding = new Cached(this, props);
-      return props;
+      return BindingOfAnother(plan, last);
     }
 
-    private PropReader[] Bind(ReadPlan plan)
+    private PropReader[] BindingOfAnother(ReadPlan plan, Cached last)
     {
-      if (_bindings.TryGetValue(plan, out PropReader[] bound))
-        return ReferenceEquals(bound, NotBound) ? null : bound;
+      Cached previous = plan.PreviousBinding;
+      Cached cached = previous != null && ReferenceEquals(previous.Schema, this) ? previous : Bind(plan);
+      if (_shared)
+      {
+        plan.PreviousBinding = last; // each is checked before it is used: another thread may swap them at the same time
+        plan.LastBinding = cached;
+      }
+      return cached.Props;
+    }
 
-      bound = NotBound;
+    private Cached Bind(ReadPlan plan)
+    {
+      if (_bindings.TryGetValue(plan, out Cached cached))
+        return cached;
+
+      PropReader[] bound = null;
       if (_schema.TryGetDef(plan.Type, out ComplexTypeDef def) && !def.IsCollection)
       {
         bound = new PropReader[def.Props.Count];
@@ -1652,8 +1670,7 @@ namespace LsMsgPack.Reading
         if (plan.CaseInsensitive)
           BindIgnoringCase(bound, plan, def);
       }
-      _bindings.TryAdd(plan, bound);
-      return ReferenceEquals(bound, NotBound) ? null : bound;
+      return _bindings.GetOrAdd(plan, new Cached(this, bound)); // another thread's binding is the same
     }
 
     /// <summary>

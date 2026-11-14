@@ -1,4 +1,4 @@
-using LsMsgPack;
+﻿using LsMsgPack;
 using LsMsgPack.Meta;
 using LsMsgPack.Generated;
 using LsMsgPack.IO;
@@ -102,21 +102,68 @@ namespace LsMsgPack.Reading
     /// or their binding to a schema, which is in the order of the writer's class) up to the first one that is another property, or none (a class with other properties).
     /// </summary>
     /// <returns>The number of positions the compiled code reads; the runtime's loop reads the ones after them</returns>
+    /// <param name="c">Its <see cref="ReadContext.Bound"/> says whether <paramref name="props"/> is the binding to a shared schema (kept), or to the schema of one call (a new array per call)</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal int Limit(PropReader[] props)
+    internal int Limit(PropReader[] props, ReadContext c)
     {
       Order last = _last;
-      return ReferenceEquals(last.Props, props) ? last.Limit : Check(props);
+      return ReferenceEquals(last.Props, props) ? last.Limit : Check(props, c);
+    }
+
+    /// <summary>
+    /// The arrays checked before <see cref="_last"/> (the bindings to shared schemas), made when a second one shows up (a class below several root types is bound to the schema of each, any number of them).
+    /// Weak, so the bindings to the schemas a grown one replaced can go; a lookup takes no lock and allocates nothing.
+    /// </summary>
+    private ConditionalWeakTable<PropReader[], Order> _orders;
+
+    /// <summary>
+    /// The array <see cref="_last"/> replaced (a binding to a shared schema): two root types read in turn with this class below both swap them, more go to <see cref="_orders"/>.
+    /// </summary>
+    private Order _previous;
+
+    /// <returns><paramref name="order"/>, or the one another thread kept for the same array first</returns>
+    private Order Keep(Order previous, Order order)
+    {
+      ConditionalWeakTable<PropReader[], Order> orders = Volatile.Read(ref _orders);
+      if (orders is null)
+      {
+        ConditionalWeakTable<PropReader[], Order> made = new ConditionalWeakTable<PropReader[], Order>();
+        orders = Interlocked.CompareExchange(ref _orders, made, null) ?? made;
+      }
+      orders.GetValue(previous.Props, p => previous); // (in a method of its own: the closure is made where the method starts)
+      return orders.GetValue(order.Props, p => order);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private int Check(PropReader[] props)
+    private int Check(PropReader[] props, ReadContext c)
     {
+      Order previous = _previous;
+      if (previous != null && ReferenceEquals(previous.Props, props))
+      {
+        _previous = _last; // each is checked before it is used: another thread may swap them at the same time
+        _last = previous;
+        return previous.Limit;
+      }
+      ConditionalWeakTable<PropReader[], Order> orders = Volatile.Read(ref _orders);
+      if (orders != null && orders.TryGetValue(props, out Order known))
+      {
+        _previous = _last;
+        _last = known;
+        return known.Limit;
+      }
+
       PropReader[] own = _props;
       int limit = 0;
       while (limit < own.Length && limit < props.Length && ReferenceEquals(props[limit], own[limit]))
         limit++;
-      _last = new Order(props, limit); // one store: other threads read the pair
+      Order order = new Order(props, limit); // one store: other threads read the pair
+      BoundSchema bound = c.Bound;
+      if (bound is null || bound.Shared) // the arrays of a schema of one call are not seen again
+      {
+        order = Keep(_last, order);
+        _previous = _last;
+      }
+      _last = order;
       return limit;
     }
 
@@ -195,7 +242,7 @@ namespace LsMsgPack.Reading
         _reads.Ask(false);
       else
       {
-        int limit = _reads.Limit(props);
+        int limit = _reads.Limit(props, c);
         direct = items < limit ? items : limit;
         positional(c, Unsafe.As<T>(target), props, direct, p); // an instance of the plan's type
       }
@@ -268,7 +315,7 @@ namespace LsMsgPack.Reading
         _reads.Ask(false);
       else
       {
-        int limit = _reads.Limit(props);
+        int limit = _reads.Limit(props, c);
         direct = items < limit ? items : limit;
         positional(c, ref target, props, direct, p);
       }

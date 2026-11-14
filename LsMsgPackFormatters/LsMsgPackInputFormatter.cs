@@ -3,6 +3,7 @@ using LsMsgPack.Http;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Formatters;
 using System;
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading.Tasks;
@@ -40,9 +41,9 @@ namespace LsMsgPackFormatters
     public override async Task<InputFormatterResult> ReadRequestBodyAsync(InputFormatterContext context)
     {
 #if NETCOREAPP3_0_OR_GREATER
-      return await MsgPackRequest.ReadAsync(context.HttpContext, (formatter: this, context), static (s, data) => data.Count == 0
+      return await MsgPackRequest.ReadAsync(context.HttpContext, (formatter: this, context), static (s, data) => data.IsEmpty
         ? (s.context.TreatEmptyInputAsDefaultValue ? InputFormatterResult.Success(s.formatter.GetDefaultValueForType(s.context.ModelType)) : InputFormatterResult.NoValue())
-        : s.formatter.Deserialize(s.context, data.Array, data.Offset, data.Count));
+        : s.formatter.Deserialize(s.context, data));
 #else
       // Buffer the body asynchronously, the deserializer reads synchronously which ASP.NET Core does not allow on the request stream.
       long? contentLength = context.HttpContext.Request.ContentLength;
@@ -51,7 +52,7 @@ namespace LsMsgPackFormatters
       if (body.Length == 0)
         return context.TreatEmptyInputAsDefaultValue ? InputFormatterResult.Success(GetDefaultValueForType(context.ModelType)) : InputFormatterResult.NoValue();
 
-      return Deserialize(context, body.GetBuffer(), 0, (int)body.Length);
+      return Deserialize(context, new ReadOnlySequence<byte>(body.GetBuffer(), 0, (int)body.Length));
 #endif
     }
 
@@ -62,11 +63,11 @@ namespace LsMsgPackFormatters
     private const int MaxPresized = 1024 * 1024;
 #endif
 
-    private InputFormatterResult Deserialize(InputFormatterContext context, byte[] data, int offset, int count)
+    private InputFormatterResult Deserialize(InputFormatterContext context, in ReadOnlySequence<byte> data)
     {
       try
       {
-        object model = Serializer.DeserializeBody(context.ModelType, data, offset, count, context.HttpContext.Request.ContentType, out ReadDifferences differences);
+        object model = Serializer.DeserializeBody(context.ModelType, data, context.HttpContext.Request.ContentType, out ReadDifferences differences);
         if (differences != null)
           Report(context, differences);
         if (!(model is null) && !context.ModelType.IsInstanceOfType(model)) // The deserializer passes through values it cannot convert (eg. a string where a map was expected)

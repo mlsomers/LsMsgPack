@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 namespace LsMsgPack.Http
 {
   /// <summary>
-  /// A serialized body in (at most) two parts: the schema, when it is sent inline in place of a reference, and the rest of the data. Write both, in this order.
+  /// A serialized body in (at most) two parts: the head (the schema, or the reference to it) and the rest of the data. Write both, in this order.
   /// </summary>
   public struct MsgPackPayload
   {
@@ -19,12 +19,12 @@ namespace LsMsgPack.Http
     }
 
     /// <summary>
-    /// The schema (empty when there is none or the body starts with a reference to it).
+    /// The head: the schema sent inline, or the reference to the schema the client holds (<see cref="IsReference"/>). Empty when the data has no schema (property names, null).
     /// </summary>
     public ArraySegment<byte> Schema { get; }
 
     /// <summary>
-    /// The data (after the schema).
+    /// The data (after the head).
     /// </summary>
     public ArraySegment<byte> Body { get; }
 
@@ -39,7 +39,7 @@ namespace LsMsgPack.Http
     public bool IsReference { get; }
 
     /// <summary>
-    /// The number of bytes of the schema and the data.
+    /// The number of bytes of the head and the data.
     /// </summary>
     public int Length
     {

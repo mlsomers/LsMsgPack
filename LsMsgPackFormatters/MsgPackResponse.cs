@@ -50,25 +50,34 @@ namespace LsMsgPackFormatters
       }
 #endif
 
-      // Serialize to a buffer and write it asynchronously, ASP.NET Core does not allow synchronous writes to the response stream.
-      MsgPackPayload payload = serializer.Serialize(value, declaredType, mediaType, clientSchemas, described);
-
       HttpResponse response = context.Response;
       bool accept = describes || varyAccept; // version 2 of the schema depends on the Accept header
+#if NETCOREAPP3_0_OR_GREATER
+      // The payload is copied from the serializer's buffers into those of the response (no byte[] of it), the headers set first; ASP.NET Core does not allow synchronous writes to the response stream, so one asynchronous flush
+      serializer.Serialize(value, declaredType, mediaType, clientSchemas, described, (response, negotiated, accept), static (s, payload) =>
+      {
+        SetHeaders(s.response, payload, s.negotiated, s.accept);
+        System.IO.Pipelines.PipeWriter writer = s.response.BodyWriter;
+        if (payload.Schema.Count > 0)
+          System.Buffers.BuffersExtensions.Write(writer, new ReadOnlySpan<byte>(payload.Schema.Array, payload.Schema.Offset, payload.Schema.Count));
+        System.Buffers.BuffersExtensions.Write(writer, new ReadOnlySpan<byte>(payload.Body.Array, payload.Body.Offset, payload.Body.Count));
+      });
+      await response.BodyWriter.FlushAsync(context.RequestAborted);
+#else
+      // Serialize to a buffer and write it asynchronously, ASP.NET Core does not allow synchronous writes to the response stream.
+      MsgPackPayload payload = serializer.Serialize(value, declaredType, mediaType, clientSchemas, described);
+      SetHeaders(response, payload, negotiated, accept);
+      await payload.WriteToAsync(response.Body, context.RequestAborted);
+#endif
+    }
+
+    private static void SetHeaders(HttpResponse response, MsgPackPayload payload, bool negotiated, bool accept)
+    {
       if (negotiated || accept)
         response.Headers.Append("Vary", Vary(negotiated, accept));
       if (negotiated && !(payload.SchemaId is null))
         response.Headers[LsMsgPackHttpSerializer.SchemaHeader] = payload.SchemaId;
       response.ContentLength = payload.Length;
-#if NETCOREAPP3_0_OR_GREATER
-      System.IO.Pipelines.PipeWriter writer = response.BodyWriter; // copied into the buffers of the response, one flush
-      if (payload.Schema.Count > 0)
-        System.Buffers.BuffersExtensions.Write(writer, new ReadOnlySpan<byte>(payload.Schema.Array, payload.Schema.Offset, payload.Schema.Count));
-      System.Buffers.BuffersExtensions.Write(writer, new ReadOnlySpan<byte>(payload.Body.Array, payload.Body.Offset, payload.Body.Count));
-      await writer.FlushAsync(context.RequestAborted);
-#else
-      await payload.WriteToAsync(response.Body, context.RequestAborted);
-#endif
     }
 
 #if NET8_0_OR_GREATER

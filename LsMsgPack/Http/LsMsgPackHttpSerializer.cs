@@ -1,6 +1,8 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Streaming;
+using LsMsgPack.IO;
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -222,7 +224,7 @@ namespace LsMsgPack.Http
       string hex = Hex(id);
       byte[] schema = _store.GetInlineSchema(id, _lsOptions); // the store has every schema it wrote
       if (schema.Length > SchemaStore.ReferenceLength && Holds(clientSchemas, hex)) // a small schema is sent anyway: it is shorter than the reference
-        return new MsgPackPayload(default(ArraySegment<byte>), new ArraySegment<byte>(data), hex, true);
+        return new MsgPackPayload(new ArraySegment<byte>(data, 0, SchemaStore.ReferenceLength), new ArraySegment<byte>(data, SchemaStore.ReferenceLength, data.Length - SchemaStore.ReferenceLength), hex, true);
 
       return new MsgPackPayload(new ArraySegment<byte>(schema), new ArraySegment<byte>(data, SchemaStore.ReferenceLength, data.Length - SchemaStore.ReferenceLength), hex, false);
     }
@@ -281,6 +283,95 @@ namespace LsMsgPack.Http
       return new MsgPackStreamWriter(body, serializer, references ? MsgPackStreamSchemas.PerStream : MsgPackStreamSchemas.PerObject, true, index, asynchronous);
     }
 
+    /// <summary>
+    /// Serializes a response body as <see cref="Serialize(object, Type, string, string, bool)"/> does, without a byte[] of it: <paramref name="write"/> gets the payload in the serializer's buffers of this thread,
+    /// valid only until it returns. Set the headers there (<see cref="MsgPackPayload.SchemaId"/>, <see cref="MsgPackPayload.Length"/>), then copy the payload, e.g. into <c>HttpResponse.BodyWriter</c>.
+    /// <para><paramref name="write"/> is called once, and not at all when serializing fails. Pass what it needs as <paramref name="state"/> (a static lambda: no closure per response).</para>
+    /// </summary>
+    /// <param name="declaredType">The type the value is declared as (a type id is added when the value's type differs), null: the value's type</param>
+    /// <param name="mediaType">The Content-Type of the response</param>
+    /// <param name="clientSchemas">The request header <see cref="SchemasHeader"/> (null when there is none): the body refers to its schema when the client holds it</param>
+    /// <param name="describedSchema">The client asked for version 2 of the schema, ignored unless <see cref="DescribesSchemas"/></param>
+    public void Serialize<TState>(object value, Type declaredType, string mediaType, string clientSchemas, bool describedSchema, TState state, Action<TState, MsgPackPayload> write)
+    {
+      if (write is null)
+        throw new ArgumentNullException(nameof(write));
+      bool lsMsgPack = MsgPackMediaTypes.IsLsMsgPack(mediaType);
+      LsMsgPackSerializer serializer = !lsMsgPack ? _plain : describedSchema && !(_described is null) ? _described : _lsMsgPack;
+      PayloadSink<TState> sink = PayloadSink<TState>.Rent(this, lsMsgPack, clientSchemas, state, write);
+      try
+      {
+        serializer.Implementation.Serialize(declaredType ?? value?.GetType() ?? typeof(object), value, LsMsgPackSerializer.BoxedWriter, null, out byte[] unused, sink);
+      }
+      finally
+      {
+        sink.Return();
+      }
+    }
+
+    /// <summary>
+    /// The payload of <see cref="Serialize{TState}"/> from the parts the serializer hands its sink, negotiated as <see cref="Serialize(object, Type, string, string, bool)"/> does with the whole payload (the same bytes).
+    /// </summary>
+    /// <param name="head">The schema, the reference to it (<paramref name="reference"/>), or nothing (<paramref name="headLength"/> 0)</param>
+    private MsgPackPayload Payload(byte[] head, int headLength, bool reference, MsgPackWriter body, bool lsMsgPack, string clientSchemas)
+    {
+      ArraySegment<byte> rest = new ArraySegment<byte>(body.Buf, 0, body.Pos);
+      ArraySegment<byte> written = headLength == 0 ? default(ArraySegment<byte>) : new ArraySegment<byte>(head, 0, headLength);
+      if (!reference || !lsMsgPack || !_negotiate)
+        return new MsgPackPayload(written, rest, null, false);
+
+      SchemaId id = new SchemaId(head, 2);
+      string hex = Hex(id);
+      byte[] schema = _store.GetInlineSchema(id, _lsOptions);
+      if (schema.Length > SchemaStore.ReferenceLength && Holds(clientSchemas, hex))
+        return new MsgPackPayload(written, rest, hex, true);
+      return new MsgPackPayload(new ArraySegment<byte>(schema), rest, hex, false);
+    }
+
+    /// <summary>
+    /// Hands the parts of a payload to the callback of <see cref="Serialize{TState}"/>. One per thread and type of state, taken while it is used (a nested call gets a new one): no sink per response.
+    /// </summary>
+    private sealed class PayloadSink<TState> : IPayloadSink
+    {
+      [ThreadStatic]
+      private static PayloadSink<TState> _free;
+
+      private LsMsgPackHttpSerializer _owner;
+      private bool _lsMsgPack;
+      private string _clientSchemas;
+      private TState _state;
+      private Action<TState, MsgPackPayload> _write;
+
+      internal static PayloadSink<TState> Rent(LsMsgPackHttpSerializer owner, bool lsMsgPack, string clientSchemas, TState state, Action<TState, MsgPackPayload> write)
+      {
+        PayloadSink<TState> sink = _free ?? new PayloadSink<TState>();
+        _free = null;
+        sink._owner = owner;
+        sink._lsMsgPack = lsMsgPack;
+        sink._clientSchemas = clientSchemas;
+        sink._state = state;
+        sink._write = write;
+        return sink;
+      }
+
+      /// <summary>
+      /// Drops the references (the state may hold the request) and keeps the sink for the next call on this thread.
+      /// </summary>
+      internal void Return()
+      {
+        _owner = null;
+        _clientSchemas = null;
+        _state = default(TState);
+        _write = null;
+        _free = this;
+      }
+
+      public void Write(byte[] head, int headLength, bool reference, MsgPackWriter body)
+      {
+        _write(_state, _owner.Payload(head, headLength, reference, body, _lsMsgPack, _clientSchemas));
+      }
+    }
+
     private static MsgPackPayload Whole(byte[] data)
     {
       return new MsgPackPayload(default(ArraySegment<byte>), new ArraySegment<byte>(data), null, false);
@@ -331,6 +422,19 @@ namespace LsMsgPack.Http
         return Deserialize(type, data, offset, count, mediaType, out differences);
       differences = null;
       return Deserialize(type, data, offset, count, mediaType);
+    }
+
+    /// <summary>
+    /// <see cref="DeserializeBody(Type, byte[], int, int, string, out ReadDifferences)"/> of a body in buffers (e.g. what the request's <c>PipeReader</c> holds): read in place when it is one segment of an array,
+    /// otherwise from a pooled copy that is cleared afterwards (see <see cref="LsMsgPackSerializer.Deserialize{T}(in ReadOnlySequence{byte})"/>).
+    /// </summary>
+    public object DeserializeBody(Type type, in ReadOnlySequence<byte> data, string mediaType, out ReadDifferences differences)
+    {
+      LsMsgPackSerializer serializer = For(mediaType);
+      if (_reportDifferences)
+        return serializer.Deserialize(type, data, out differences);
+      differences = null;
+      return serializer.Deserialize(type, data);
     }
 
     /// <summary>

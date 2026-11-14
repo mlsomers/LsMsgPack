@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Metadata;
 using System;
+using System.Buffers;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -66,7 +67,7 @@ namespace LsMsgPackFormatters
       if (MsgPackMediaTypes.IsSupported(contentType))
       {
         LsMsgPackHttpSerializer serializer = LsMsgPackFormatter.MinimalApiSerializer(context);
-        return await MsgPackRequest.ReadAsync(context, (context, serializer), static (s, data) => data.Count == 0 ? null : Read(s.context, s.serializer, data));
+        return await MsgPackRequest.ReadAsync(context, (context, serializer), static (s, data) => data.IsEmpty ? null : Read(s.context, s.serializer, data));
       }
       if (request.HasJsonContentType())
         return await ReadJsonAsync(context);
@@ -74,12 +75,12 @@ namespace LsMsgPackFormatters
     }
 
     /// <returns>null for nil</returns>
-    private static MsgPackBody<T> Read(HttpContext context, LsMsgPackHttpSerializer serializer, ArraySegment<byte> data)
+    private static MsgPackBody<T> Read(HttpContext context, LsMsgPackHttpSerializer serializer, in ReadOnlySequence<byte> data)
     {
       object model;
       try
       {
-        model = serializer.DeserializeBody(typeof(T), data.Array, data.Offset, data.Count, context.Request.ContentType, out ReadDifferences differences);
+        model = serializer.DeserializeBody(typeof(T), data, context.Request.ContentType, out ReadDifferences differences);
         if (differences != null)
           MsgPackRequest.Report(context, serializer, typeof(T), differences, LoggerCategory);
       }
