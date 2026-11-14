@@ -180,8 +180,9 @@ namespace LsMsgPack
             return (ValueReader)Instantiate(type, typeof(ListReader<>), type.GenericTypeArguments[0], this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
           {
-            if (InBulk(type.GenericTypeArguments[0]))
-              return (ValueReader)WithBulkElement(type.GenericTypeArguments[0], new BulkReaders(this, BulkCollection.Set));
+            ValueReader bulk = InBulk(type.GenericTypeArguments[0]) ? (ValueReader)CreateInBulk(type, type.GenericTypeArguments[0], BulkCollection.Set, new BulkReaders(this)) : null;
+            if (bulk != null)
+              return bulk;
             ValueReader set = (ValueReader)InstantiateCollection(type, typeof(HashSetReader<>), type.GenericTypeArguments, this);
             if (set != null)
               return set;
@@ -215,30 +216,35 @@ namespace LsMsgPack
     private ValueReader NumberReader(Type type)
     {
       Type element = Bulk(type, out bool list);
-      return element is null ? null : (ValueReader)WithBulkElement(element, new BulkReaders(this, list ? BulkCollection.List : BulkCollection.Array));
+      return element is null ? null : (ValueReader)CreateInBulk(type, element, list ? BulkCollection.List : BulkCollection.Array, new BulkReaders(this));
     }
 
     private struct BulkReaders : IBulkCreator
     {
       private readonly Serializer _serializer;
-      private readonly BulkCollection _collection;
 
-      internal BulkReaders(Serializer serializer, BulkCollection collection)
+      internal BulkReaders(Serializer serializer)
       {
         _serializer = serializer;
-        _collection = collection;
       }
 
-      public object Create<T>() where T : unmanaged
+      public object Array<T>() where T : unmanaged
       {
-        byte code = _serializer.DecimalCode(typeof(T));
-        if (_collection == BulkCollection.Set)
-          return new NumberSetReader<T>(_serializer.Reader<T>(), code);
+        return new NumberArrayReader<T>(_serializer.Reader<T>(), _serializer.DecimalCode(typeof(T)));
+      }
+
+      public object List<T>() where T : unmanaged
+      {
 #if NET8_0_OR_GREATER
-        if (_collection == BulkCollection.List)
-          return new NumberListReader<T>(_serializer.Reader<T>(), code);
+        return new NumberListReader<T>(_serializer.Reader<T>(), _serializer.DecimalCode(typeof(T)));
+#else
+        return null;
 #endif
-        return new NumberArrayReader<T>(_serializer.Reader<T>(), code);
+      }
+
+      public object Set<T>() where T : unmanaged
+      {
+        return new NumberSetReader<T>(_serializer.Reader<T>(), _serializer.DecimalCode(typeof(T)));
       }
     }
 

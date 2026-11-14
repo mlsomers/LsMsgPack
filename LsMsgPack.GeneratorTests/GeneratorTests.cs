@@ -175,10 +175,10 @@ namespace Shelf
       Assert.IsEmpty(result.CompileProblems, string.Join("\n", result.CompileProblems.Select(p => p.ToString()))); // no empty switch blocks (CS1522)
       string code = result.AllGenerated;
       foreach (string expected in new[] {
-        "Array<int>()", // the elements are read into an array
+        ".Array<int>()", // the elements are read into an array (for Core's conversions: not in bulk)
         "Array<string>()",
         "Array<global::System.Collections.Generic.KeyValuePair<string, int>>()", // an immutable dictionary's factory takes the pairs
-        "List<int>()", // created for IList<int>
+        ".BulkList<int>()", // created for IList<int>, read in bulk
         "CollectionInterface<global::System.Collections.Generic.IList<int>>()", // their typed readers
         "HashSet<string>()",
         "Dictionary<string, double>()",
@@ -190,6 +190,61 @@ namespace Shelf
         "DynamicDependency(global::System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.PublicMethods, typeof(global::System.Collections.Immutable.ImmutableArray))" })
         Assert.Contains(expected, code, expected);
       Assert.DoesNotContain("Array<global::System.Collections.Generic.KeyValuePair<string, double>>()", code, "A dictionary is filled by its Add");
+    }
+
+    private const string BulkModel = @"
+using System;
+using System.Collections.Generic;
+using LsMsgPack;
+
+namespace Numbers
+{
+  public enum Color { Red, Green }
+
+  public class Series
+  {
+    public int[] Ints { get; set; }
+    public List<long> Longs { get; set; }
+    public HashSet<Guid> Ids { get; set; }
+    public List<sbyte> Signed { get; set; }
+    public decimal[] Amounts { get; set; }
+    public IList<double> Implied { get; set; }
+    public HashSet<float> Floats { get; set; }
+    public float[] FloatArray { get; set; }
+    public List<int?> Nullables { get; set; }
+    public List<Color> Colors { get; set; }
+    public List<DateTime> Dates { get; set; }
+    public sbyte[] Bin { get; set; }
+  }
+
+  [LsMsgPackSerializable(typeof(Series))]
+  public partial class NumbersMsgPackContext : LsMsgPackContext { }
+}
+";
+
+    [TestMethod]
+    public void BulkCollections_OnlyTheElementTypesUsed()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(BulkModel);
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      foreach (string expected in new[] {
+        ".BulkArray<int>()",
+        ".BulkList<long>()",
+        ".BulkHashSet<global::System.Guid>()",
+        ".BulkList<sbyte>()",
+        ".BulkArray<decimal>()",
+        ".BulkList<double>()", // created for IList<double>
+        ".Array<double>()", // only the elements of the interface: for Core's conversions, not in bulk
+        ".Array<global::System.Guid>()", // the elements of the set
+        ".BulkHashSet<float>()",
+        ".BulkArray<float>()", // also a property: in bulk, though it is the elements of the set too
+        ".List<int?>()",
+        ".List<global::Numbers.Color>()",
+        ".List<global::System.DateTime>()" })
+        Assert.Contains(expected, code, expected);
+      foreach (string unexpected in new[] { ".BulkArray<double>()", ".BulkArray<long>()", ".BulkArray<global::System.Guid>()", ".Array<sbyte>()", ".BulkArray<sbyte>()" })
+        Assert.DoesNotContain(unexpected, code, unexpected);
     }
 
     [TestMethod]

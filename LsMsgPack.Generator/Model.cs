@@ -190,7 +190,8 @@ namespace LsMsgPack.Generator
     bool KeepPublicFields = false, // KeepMetadata also keeps its public fields (it declares some: the runtime finds them by reflection, in any mode that serializes them)
     bool KeepNonPublicFields = false, // and its non-public fields (it declares some the runtime may serialize in GenerateOptions.Fields)
     EquatableArray<PropertyModel> DefaultAccessors = default, // the members IsDefault reads through UnsafeAccessors (its placeholders \u0001n\u0001)
-    EquatableArray<StringValue> KeptMethods = default); // the ShouldSerialize{Name}() methods it declares (FilterShouldSerialize finds them by name): kept by a DynamicDependency each
+    EquatableArray<StringValue> KeptMethods = default, // the ShouldSerialize{Name}() methods it declares (FilterShouldSerialize finds them by name): kept by a DynamicDependency each
+    bool Bulk = false); // Array, List, HashSet: of an element type the runtime writes and reads in bulk (GeneratedValues.BulkArray...)
 
   /// <summary>
   /// A context class: one written by the user (with LsMsgPackSerializable attributes), or the one of the assembly (LsMsgPackGenerate, MSBuild properties).

@@ -49,7 +49,7 @@ What each library adds to an app, with its dependencies. Generated code isn't co
 | .NET 10 | $\color{#247200}\text{581.1 KB (2 dlls)}$ | $\color{#009600}\textbf{434.3 KB (3)}$ | $\color{#960000}\text{1,048.0 KB (3)}$ |
 | .NET 8 | $\color{#207600}\text{581.1 KB (2)}$ | $\color{#009600}\textbf{433.8 KB (3)}$ | $\color{#960000}\text{1,129.0 KB (4)}$ |
 | .NET Framework 4.8 | $\color{#009600}\textbf{863.9 KB (6)}$ | $\color{#0F8700}\text{1,035.5 KB (10)}$ | $\color{#960000}\text{2,529.8 KB (15)}$ |
-| NativeAOT, .NET 10, linux-x64: growth of the executable, including the generated code of one small class | $\color{#286E00}\text{2.96 MB}$ | $\color{#960000}\text{4.19 MB}$ | $\color{#009600}\textbf{2.52 MB}$ |
+| NativeAOT, .NET 10, linux-x64: growth of the executable, including the generated code of one small class | $\color{#286E00}\text{2.78 MB}$ | $\color{#960000}\text{4.19 MB}$ | $\color{#009600}\textbf{2.52 MB}$ |
 | NuGet download, not deployed as a whole | $\color{#009600}\textbf{988.8 KB}$ | $\color{#1A7C00}\text{1,342.8 KB}$ | $\color{#960000}\text{3,017.1 KB}$ |
 
 - **Debug symbols:** on .NET 8 and later, LsMsgPack's dlls include 97.2 KB of embedded debug symbols and the other two libraries' none. Without those LsMsgPack would be about 484 KB.

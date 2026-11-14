@@ -246,8 +246,9 @@ namespace LsMsgPack
             return Instantiate(type, typeof(ListHandler<>), type.GenericTypeArguments[0], this);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
           {
-            if (InBulk(type.GenericTypeArguments[0]))
-              return WithBulkElement(type.GenericTypeArguments[0], new BulkHandlers(this, BulkCollection.Set));
+            object bulk = InBulk(type.GenericTypeArguments[0]) ? CreateInBulk(type, type.GenericTypeArguments[0], BulkCollection.Set, new BulkHandlers(this)) : null;
+            if (bulk != null)
+              return bulk;
             return InstantiateCollection(type, typeof(HashSetHandler<>), type.GenericTypeArguments, this) ?? Boxed(type);
           }
           return Boxed(type);
@@ -283,56 +284,92 @@ namespace LsMsgPack
     private object NumberHandler(Type type)
     {
       Type element = Bulk(type, out bool list);
-      return element is null ? null : WithBulkElement(element, new BulkHandlers(this, list ? BulkCollection.List : BulkCollection.Array));
+      return element is null ? null : CreateInBulk(type, element, list ? BulkCollection.List : BulkCollection.Array, new BulkHandlers(this));
     }
 
     internal enum BulkCollection { Array, List, Set }
 
     /// <summary>
-    /// Creates the handler or reader of a collection of a <see cref="InBulk"/> element type (one switch over the types for every kind of collection, without dynamic code).
+    /// Creates the handler or reader of a collection of a <see cref="InBulk(Type)"/> element type, of one kind of collection each (so a generated description instantiates only its own).
     /// </summary>
     internal interface IBulkCreator
     {
-      object Create<T>() where T : unmanaged;
+      object Array<T>() where T : unmanaged;
+
+      /// <returns>null before net8.0 (lists are not written in bulk there, see <see cref="Bulk"/>)</returns>
+      object List<T>() where T : unmanaged;
+
+      object Set<T>() where T : unmanaged;
     }
 
-    internal static object WithBulkElement<TCreator>(Type element, TCreator creator) where TCreator : struct, IBulkCreator
+    /// <summary>
+    /// The handler or reader in bulk of <paramref name="type"/>: created by its generated description (<see cref="LsMsgPack.Generated.GeneratedValues.BulkArray{T}"/>...), otherwise by one switch over the element types
+    /// for every kind of collection, without dynamic code. Only where the runtime has dynamic code: the switch instantiates every element type for every kind, which NativeAOT would all compile
+    /// into the app (197 KB), so there the test of <see cref="RuntimeFeature.IsDynamicCodeSupported"/> itself (a constant for ILC) leaves it out, and only the types the source generator saw are in bulk.
+    /// </summary>
+    /// <returns>null when it is not created: the collection is written and read per value (a context of an older generator, a type it did not describe)</returns>
+    internal object CreateInBulk<TCreator>(Type type, Type element, BulkCollection collection, TCreator creator) where TCreator : struct, IBulkCreator
     {
-      if (element == typeof(int)) return creator.Create<int>();
-      if (element == typeof(long)) return creator.Create<long>();
-      if (element == typeof(float)) return creator.Create<float>();
-      if (element == typeof(double)) return creator.Create<double>();
-      if (element == typeof(sbyte)) return creator.Create<sbyte>();
-      if (element == typeof(short)) return creator.Create<short>();
-      if (element == typeof(ushort)) return creator.Create<ushort>();
-      if (element == typeof(uint)) return creator.Create<uint>();
-      if (element == typeof(ulong)) return creator.Create<ulong>();
-      if (element == typeof(bool)) return creator.Create<bool>();
-      if (element == typeof(Guid)) return creator.Create<Guid>();
-      return creator.Create<decimal>();
+      if (Generated(type) is LsMsgPack.Generated.IGeneratedBulk generated)
+        return generated.Create(creator);
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      if (!RuntimeFeature.IsDynamicCodeSupported)
+        return null;
+#endif
+      return WithBulkElement(element, collection, creator);
+    }
+
+    private static object WithBulkElement<TCreator>(Type element, BulkCollection collection, TCreator creator) where TCreator : struct, IBulkCreator
+    {
+      if (element == typeof(int)) return Create<int, TCreator>(collection, creator);
+      if (element == typeof(long)) return Create<long, TCreator>(collection, creator);
+      if (element == typeof(float)) return Create<float, TCreator>(collection, creator);
+      if (element == typeof(double)) return Create<double, TCreator>(collection, creator);
+      if (element == typeof(sbyte)) return Create<sbyte, TCreator>(collection, creator);
+      if (element == typeof(short)) return Create<short, TCreator>(collection, creator);
+      if (element == typeof(ushort)) return Create<ushort, TCreator>(collection, creator);
+      if (element == typeof(uint)) return Create<uint, TCreator>(collection, creator);
+      if (element == typeof(ulong)) return Create<ulong, TCreator>(collection, creator);
+      if (element == typeof(bool)) return Create<bool, TCreator>(collection, creator);
+      if (element == typeof(Guid)) return Create<Guid, TCreator>(collection, creator);
+      return Create<decimal, TCreator>(collection, creator);
+    }
+
+    private static object Create<T, TCreator>(BulkCollection collection, TCreator creator) where T : unmanaged where TCreator : struct, IBulkCreator
+    {
+      if (collection == BulkCollection.Set)
+        return creator.Set<T>();
+      if (collection == BulkCollection.List)
+        return creator.List<T>();
+      return creator.Array<T>();
     }
 
     private struct BulkHandlers : IBulkCreator
     {
       private readonly Serializer _serializer;
-      private readonly BulkCollection _collection;
 
-      internal BulkHandlers(Serializer serializer, BulkCollection collection)
+      internal BulkHandlers(Serializer serializer)
       {
         _serializer = serializer;
-        _collection = collection;
       }
 
-      public object Create<T>() where T : unmanaged
+      public object Array<T>() where T : unmanaged
       {
-        byte code = _serializer.DecimalCode(typeof(T));
-        if (_collection == BulkCollection.Set)
-          return new NumberSetHandler<T>(_serializer, code);
+        return new NumberArrayHandler<T>(_serializer, _serializer.DecimalCode(typeof(T)));
+      }
+
+      public object List<T>() where T : unmanaged
+      {
 #if NET8_0_OR_GREATER
-        if (_collection == BulkCollection.List)
-          return new NumberListHandler<T>(_serializer, code);
+        return new NumberListHandler<T>(_serializer, _serializer.DecimalCode(typeof(T)));
+#else
+        return null;
 #endif
-        return new NumberArrayHandler<T>(_serializer, code);
+      }
+
+      public object Set<T>() where T : unmanaged
+      {
+        return new NumberSetHandler<T>(_serializer, _serializer.DecimalCode(typeof(T)));
       }
     }
 
