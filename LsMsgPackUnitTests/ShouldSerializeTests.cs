@@ -165,18 +165,15 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// The bytes of LsMsgPack, and the calls of the methods of its map layout: its array layout does not ask the filters for a null value (LsMsgPack asks them in both layouts).
+    /// The bytes and the calls of the methods of LsMsgPackDebug with the same settings (the array layouts do not ask the filters for a null value: it is nil either way).
     /// </summary>
-    internal static void AssertSameAsLsMsgPack(Func<List<SsCalls>, byte[]> serialize, MsgPackSettings settings, string message)
+    internal static void AssertSameAsDebug(Func<List<SsCalls>, byte[]> serialize, MsgPackSettings settings, string message)
     {
       List<SsCalls> actual = CallValues();
-      CollectionAssert.AreEqual(Serializers.Debug.Serialize(CallValues(), typeof(List<SsCalls>), settings), serialize(actual), message);
-
       List<SsCalls> expected = CallValues();
-      MsgPackSettings map = new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseInexedSchema = settings.UseInexedSchema, DynamicFilters = settings.DynamicFilters };
-      Serializers.Debug.Serialize(expected, typeof(List<SsCalls>), map);
+      CollectionAssert.AreEqual(Serializers.Debug.Serialize(expected, typeof(List<SsCalls>), settings), serialize(actual), message);
       for (int t = 0; t < expected.Count; t++)
-        CollectionAssert.AreEqual(expected[t].Log, actual[t].Log, message + ", value " + t + ": " + string.Join(" ", actual[t].Log) + " (LsMsgPack: " + string.Join(" ", expected[t].Log) + ")");
+        CollectionAssert.AreEqual(expected[t].Log, actual[t].Log, message + ", value " + t + ": " + string.Join(" ", actual[t].Log) + " (LsMsgPackDebug: " + string.Join(" ", expected[t].Log) + ")");
     }
 
     [TestMethod]
@@ -184,14 +181,14 @@ namespace LsMsgPackUnitTests
     [DataRow(ObjectLayout.Map, true)]
     [DataRow(ObjectLayout.Array, false)]
     [DataRow(ObjectLayout.Array, true)]
-    public void CallsTheMethodsAsLsMsgPack(ObjectLayout layout, bool useSchema)
+    public void CallsTheMethodsAsDebug(ObjectLayout layout, bool useSchema)
     {
       if (ReferenceEquals(Serializer, Serializers.Debug))
         return; // the reference
       foreach (IMsgPackPropertyIncludeDynamically[] filters in FilterSets)
       {
         MsgPackSettings settings = Settings(layout, useSchema, filters);
-        AssertSameAsLsMsgPack(values => Serializer.Serialize(values, typeof(List<SsCalls>), settings), settings, $"{layout}, schema {useSchema}, {Describe(filters)}");
+        AssertSameAsDebug(values => Serializer.Serialize(values, typeof(List<SsCalls>), settings), settings, $"{layout}, schema {useSchema}, {Describe(filters)}");
       }
     }
 
@@ -315,6 +312,45 @@ namespace LsMsgPackUnitTests
       }
     }
 
+    /// <summary>
+    /// Records the properties it is asked for (":null" for a null value), includes everything.
+    /// </summary>
+    private sealed class AskedFilter : IMsgPackPropertyIncludeDynamically
+    {
+      internal readonly List<string> Asked = new List<string>();
+
+      public bool IncludeProperty(FullPropertyInfo propertyInfo, object value)
+      {
+        lock (Asked)
+          Asked.Add(propertyInfo.Name + (value is null ? ":null" : ""));
+        return true;
+      }
+    }
+
+    /// <summary>
+    /// Custom filters are asked as LsMsgPackDebug asks them: for every value of a map, not for a null array item (nil either way). A class and a struct (boxed filters).
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map)]
+    [DataRow(ObjectLayout.Array)]
+    public void CustomFiltersAskedAsDebug(ObjectLayout layout)
+    {
+      if (ReferenceEquals(Serializer, Serializers.Debug))
+        return; // the reference
+      object[] values =
+      {
+        new List<SsConditional>() { new SsConditional() { Name = null, Count = 1, Always = "a" }, new SsConditional() { Name = "n", Count = 0, Always = null } },
+        new List<SsPointHolder>() { new SsPointHolder() { Point = new SsPoint() { X = 1, Label = null } }, new SsPointHolder() { Point = new SsPoint() { X = 2, Label = "l" } } },
+      };
+      for (int t = 0; t < values.Length; t++)
+      {
+        AskedFilter expected = new AskedFilter();
+        AskedFilter actual = new AskedFilter();
+        CollectionAssert.AreEqual(Serializers.Debug.Serialize(values[t], values[t].GetType(), Settings(layout, false, expected)), Serializer.Serialize(values[t], values[t].GetType(), Settings(layout, false, actual)), layout + ", value " + t);
+        CollectionAssert.AreEqual(expected.Asked, actual.Asked, layout + ", value " + t + ": " + string.Join(" ", actual.Asked) + " (LsMsgPackDebug: " + string.Join(" ", expected.Asked) + ")");
+      }
+    }
+
     [TestMethod]
     public void OwnerFiltersGetTheOwner()
     {
@@ -391,7 +427,7 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// The runtime's plans (typed filter modes of the property writers) and the compiled writers: the bytes and the calls of LsMsgPack, and the compiled writer is used.
+    /// The runtime's plans (typed filter modes of the property writers) and the compiled writers: the bytes and the calls of LsMsgPackDebug, and the compiled writer is used.
     /// </summary>
     [TestMethod]
     [DataRow(ObjectLayout.Map, false)]
@@ -414,7 +450,7 @@ namespace LsMsgPackUnitTests
             UseRegisteredContexts = false
           });
           string message = $"{layout}, schema {useSchema}, {Describe(filters)}, compile after {compileAfter}";
-          AssertSameAsLsMsgPack(values => lt.Serialize(values), new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema, DynamicFilters = filters }, message);
+          AssertSameAsDebug(values => lt.Serialize(values), new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema, DynamicFilters = filters }, message);
           bool custom = f == FilterSets.Length - 1; // FilterDefaultValues(true): custom filters, not compiled
           Assert.AreEqual(compileAfter == 0 && !custom ? "CompiledObjectCode" : null, CompiledWriterTests.WriterOf(lt, typeof(SsCalls), !useSchema), message);
         }

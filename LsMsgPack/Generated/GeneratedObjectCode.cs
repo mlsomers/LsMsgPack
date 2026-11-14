@@ -540,7 +540,7 @@ namespace LsMsgPack.Generated
       {
         if (filter == FilterBoxed)
         {
-          if (!_props[position].IncludeBoxed(value, info, null))
+          if ((key != null || value != null) && !_props[position].IncludeBoxed(value, info, null)) // a null array item is not asked (see PropWriter.IncludeBoxed)
             return false;
         }
         else if (!handler.IncludeByDefault(value, info))

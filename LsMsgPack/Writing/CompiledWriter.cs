@@ -471,7 +471,7 @@ namespace LsMsgPack.Writing
         Expression written = key is ConstantExpression // the constant null: an array item
           ? Expression.Block(WriteValue(member, v, null), Expression.Constant(true))
           : Expression.Block(Expression.Call(W, nameof(MsgPackWriter.Raw), null, key), WriteValue(member, v, null), Expression.Constant(true));
-        Expression leftOut = LeftOut(id, member, v);
+        Expression leftOut = LeftOut(id, member, v, key is ConstantExpression);
         if (leftOut != null)
           written = Expression.Condition(leftOut, Expression.Constant(false), written);
         return Expression.Block(Expression.Assign(v, Get(id)), written);
@@ -496,7 +496,7 @@ namespace LsMsgPack.Writing
         GeneratedMember member = _members[id];
         ParameterExpression v = Value(member.PropertyType);
         Expression write = WriteValue(member, v, written);
-        Expression leftOut = LeftOut(id, member, v);
+        Expression leftOut = LeftOut(id, member, v, true);
         if (leftOut != null)
           write = Expression.IfThenElse(leftOut, Nil(), write);
         return Expression.Block(Expression.Assign(v, Get(id)), write);
@@ -506,14 +506,19 @@ namespace LsMsgPack.Writing
       /// The dynamic filters for the member's value (read before, as the runtime's PropWriter reads it before the filters): FilterDefaultValues and the ShouldSerialize method,
       /// in the order of the typed filter mode (Serializer.TypedShouldSerializeFilter).
       /// </summary>
+      /// <param name="item">An array item: the method is not called for a null value (nil either way, see PropWriter.IncludeBoxed)</param>
       /// <returns>A bool, true when the value is left out; null without filters</returns>
-      private Expression LeftOut(int id, GeneratedMember member, Expression v)
+      private Expression LeftOut(int id, GeneratedMember member, Expression v, bool item)
       {
         Expression omitted = _filter ? Omitted(member, v) : null;
         MethodInfo call = _calls?.Methods[id];
         if (call is null)
           return omitted;
         Expression skip = Expression.Not(Expression.Call(O, call)); // virtual when the method is, as the delegate calls it
+        if (item && member.Nullable)
+          skip = Expression.AndAlso(Expression.Property(v, "HasValue"), skip);
+        else if (item && !v.Type.IsValueType)
+          skip = Expression.AndAlso(Expression.NotEqual(v, Expression.Constant(null, v.Type)), skip);
         if (omitted is null)
           return skip;
         return _calls.DefaultsFirst ? Expression.OrElse(omitted, skip) : Expression.OrElse(skip, omitted);
