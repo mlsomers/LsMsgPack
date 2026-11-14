@@ -39,6 +39,7 @@ namespace LsMsgPackUnitTests
 
     public class XlNoMembers { public int Unattributed; } // a public field without an attribute: not serialized by default (SerializedFields.Attributed)
     public class XlNoMembersHolder { public XlNoMembers Inner { get; set; } public int After { get; set; } }
+    public class XlDecimals { public decimal A { get; set; } public decimal B { get; set; } [DefaultValue(typeof(decimal), "1.5")] public decimal C { get; set; } = 1.5m; public decimal? N { get; set; } }
 
     public class XlNested
     {
@@ -601,6 +602,82 @@ namespace LsMsgPackUnitTests
         Compare(which + " readonly", readOnly, typeof(SerializingFields.FldReadOnly), ls, lt, differences);
       }
       Assert.IsEmpty(differences, string.Join("\n", differences));
+    }
+
+    /// <summary>
+    /// Zeros with a sign or a scale (FilterDefaultValues leaves them out), small and large scales, the extremes.
+    /// </summary>
+    private static readonly decimal[] DecimalCases = { 0m, new decimal(0, 0, 0, true, 0), 0.00m, new decimal(0, 0, 0, true, 3), 1.5m, -1.5m, 0.0000000000000000000000000001m, 123456789.123456789m,
+      decimal.MaxValue, decimal.MinValue, new decimal(0, 1, 0, false, 0), new decimal(0, 0, 1, false, 28) };
+
+    private static IEnumerable<object[]> DecimalSettings()
+    {
+      foreach (bool filterDefaults in new[] { true, false })
+        foreach (SchemaMode mode in Enum.GetValues(typeof(SchemaMode)))
+          foreach (ObjectLayout layout in Enum.GetValues(typeof(ObjectLayout)))
+            yield return new object[] { filterDefaults, mode, layout };
+    }
+
+    /// <summary>
+    /// Decimal properties: LsMsgPack's typed property writers write the built-in extension themselves (PropWriter's decimal path), with and without FilterDefaultValues, next to a [DefaultValue] and a nullable.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(DecimalSettings))]
+    public void SameBytesAndValuesDecimals(bool filterDefaults, SchemaMode mode, ObjectLayout layout)
+    {
+      MsgPackSettings ls = new MsgPackSettings();
+      Configure(ls, ls.EndianAction, ls.DynamicallyCompact, mode, layout);
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions();
+      Configure(ltOptions, ltOptions.EndianAction, ltOptions.DynamicallyCompact, mode, layout);
+      if (!filterDefaults)
+      {
+        ls.DynamicFilters = new IMsgPackPropertyIncludeDynamically[0];
+        ltOptions.DynamicFilters = new IMsgPackPropertyIncludeDynamically[0];
+      }
+
+      List<string> differences = new List<string>();
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
+      {
+        for (int t = 0; t < DecimalCases.Length; t++)
+        {
+          decimal value = DecimalCases[t];
+          XlDecimals d = new XlDecimals { A = value, B = -value, C = value, N = value };
+          Compare($"{which} {value.ToString(CultureInfo.InvariantCulture)}", d, typeof(XlDecimals), ls, lt, differences);
+        }
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences.Take(40)));
+    }
+
+    /// <summary>
+    /// Decimals in the formats LsMsgPackDebug does not have: the typed property writers leave them to the decimal's handler. The same bytes as the compiled writers, and the same values read back.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void DecimalsInOtherFormats_SameAsCompiled(bool customExtension)
+    {
+      LsMsgPackOptions options = new LsMsgPackOptions();
+      if (customExtension)
+        options.Extensions = new LsMsgPack.Extensions.LsExtension[] { new GeneratedCodeTests.GcDecimalAsDouble() };
+      else
+        options.DecimalFormat = DecimalFormat.String;
+
+      List<(string Name, LsMsgPackSerializer Serializer)> serializers = LsAndGenerated(options).ToList();
+      for (int t = 0; t < DecimalCases.Length; t++)
+      {
+        decimal value = DecimalCases[t];
+        if (customExtension && Math.Abs(value) > 1e15m)
+          continue; // through a double: the extremes overflow when read back
+        XlDecimals d = new XlDecimals { A = value, B = -value, C = value, N = value };
+        byte[] expected = serializers[0].Serializer.Serialize(d);
+        string read = DumpProps(serializers[0].Serializer.Deserialize<XlDecimals>(expected), typeof(XlDecimals), 0);
+        for (int s = 1; s < serializers.Count; s++)
+        {
+          string message = $"{serializers[s].Name} {value.ToString(CultureInfo.InvariantCulture)}";
+          CollectionAssert.AreEqual(expected, serializers[s].Serializer.Serialize(d), message);
+          Assert.AreEqual(read, DumpProps(serializers[s].Serializer.Deserialize<XlDecimals>(expected), typeof(XlDecimals), 0), message);
+        }
+      }
     }
 
     /// <summary>

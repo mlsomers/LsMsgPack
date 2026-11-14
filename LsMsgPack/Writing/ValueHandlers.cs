@@ -290,6 +290,14 @@ namespace LsMsgPack.Writing
       _typeCode = unchecked((byte)extension.TypeCode);
     }
 
+    /// <summary>
+    /// The type code of the built-in extension (written without asking it, see <see cref="PropWriter{TTarget, TValue, TFilter}"/>), -1 for another extension.
+    /// </summary>
+    internal int BuiltInCode
+    {
+      get { return _builtIn ? _typeCode : -1; }
+    }
+
     internal override void Write(WriteContext c, decimal value, FullPropertyInfo assignedTo)
     {
       if (_builtIn)
