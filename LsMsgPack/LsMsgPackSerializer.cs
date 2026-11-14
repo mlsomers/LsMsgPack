@@ -2,9 +2,11 @@
 using LsMsgPack.Meta;
 using LsMsgPack.IO;
 using System;
+using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Reflection;
 
 namespace LsMsgPack
@@ -168,6 +170,29 @@ namespace LsMsgPack
       _serializer.Serialize(assignedTo ?? value?.GetType() ?? typeof(object), value, BoxedWriter, target, out byte[] result);
     }
 
+    /// <summary>
+    /// Writes the payload to <paramref name="target"/>, e.g. a <c>PipeWriter</c> or an <c>ArrayBufferWriter&lt;byte&gt;</c> that is reused: the bytes of <see cref="Serialize{T}(T)"/> without allocating them.
+    /// <para>The payload is copied into the target when it is complete, so nothing is written when serializing fails. The target is not flushed.</para>
+    /// </summary>
+    public void Serialize<T>(T value, IBufferWriter<byte> target)
+    {
+      if (target is null)
+        throw new ArgumentNullException(nameof(target));
+      if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct)
+        TypedWriter<T>.SerializeInSlot(_serializer, value, target);
+      else
+        _serializer.Serialize(typeof(T), value, TypedWriter<T>.Write, target);
+    }
+
+    /// <inheritdoc cref="Serialize{T}(T, IBufferWriter{byte})"/>
+    /// <param name="assignedTo">The declared type the value is assigned to (see <see cref="Serialize(object, Type)"/>). Null: the type of the value.</param>
+    public void Serialize(object value, Type assignedTo, IBufferWriter<byte> target)
+    {
+      if (target is null)
+        throw new ArgumentNullException(nameof(target));
+      _serializer.Serialize(assignedTo ?? value?.GetType() ?? typeof(object), value, BoxedWriter, target);
+    }
+
     // The writers of the root value (in WriteContext.Root), without a closure per call
 
     internal static readonly Action<Writing.WriteContext, LsMsgPack.Meta.FullPropertyInfo> BoxedWriter = (c, root) => c.Serializer.WriteRoot(c, root);
@@ -216,7 +241,27 @@ namespace LsMsgPack
       }
 
       /// <summary>
-      /// <see cref="Serializer.SerializeBody"/> of a struct value, as <see cref="SerializeInSlot"/>.
+      /// <see cref="SerializeInSlot(Serializer, in T, Stream, out byte[], IPayloadSink)"/> into an <see cref="IBufferWriter{T}"/>, through the sink of the thread's state.
+      /// </summary>
+      internal static void SerializeInSlot(Serializer serializer, in T value, IBufferWriter<byte> target)
+      {
+        Serializer.WriteState state = serializer.RentState();
+        BufferSink sink = state.SinkFor(target);
+        RootSlot<T> slot = RootSlot<T>.Of(ref state.Slot);
+        slot.Value = value;
+        try
+        {
+          serializer.Serialize(state, typeof(T), slot, Write, null, out byte[] unused, sink);
+        }
+        finally
+        {
+          slot.Clear();
+          sink.Target = null;
+        }
+      }
+
+      /// <summary>
+      /// <see cref="Serializer.SerializeBody"/> of a struct value, as <see cref="SerializeInSlot(Serializer, in T, Stream, out byte[], IPayloadSink)"/>.
       /// </summary>
       internal static void SerializeBodyInSlot(Serializer serializer, Serializer.WriterHead head, in T value, int depth, IPayloadSink sink)
       {
@@ -300,6 +345,41 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// Reads the data in place when it is in an array (as <see cref="Deserialize{T}(byte[], int, int)"/>), otherwise from a pooled copy (cleared afterwards). The objects read do not refer to the data.
+    /// <para>There is no <c>ReadOnlySpan&lt;byte&gt;</c> overload: the reader works on arrays, so it would always copy. Pass the memory a span comes from (<c>array.AsMemory(offset, count)</c>, <c>memory.Slice(...)</c>).</para>
+    /// </summary>
+    public T Deserialize<T>(ReadOnlyMemory<byte> data)
+    {
+      if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct)
+        return RootSlot<T>.Take(Deserialize(typeof(T), data, null, true));
+      object result = Deserialize(typeof(T), data, null);
+      return result is null ? default(T) : (T)result;
+    }
+
+    /// <summary>
+    /// Reads the data in place when it is one segment of an array (e.g. a <c>PipeReader</c>'s buffer holding the whole payload), otherwise from a pooled copy (cleared afterwards). The objects read do not refer to the data.
+    /// </summary>
+    public T Deserialize<T>(in ReadOnlySequence<byte> data)
+    {
+      if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct)
+        return RootSlot<T>.Take(Deserialize(typeof(T), data, null, true));
+      object result = Deserialize(typeof(T), data, null);
+      return result is null ? default(T) : (T)result;
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(ReadOnlyMemory{byte})"/>
+    public object Deserialize(Type type, ReadOnlyMemory<byte> data)
+    {
+      return Deserialize(type, data, null);
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(in ReadOnlySequence{byte})"/>
+    public object Deserialize(Type type, in ReadOnlySequence<byte> data)
+    {
+      return Deserialize(type, data, null);
+    }
+
+    /// <summary>
     /// Reads the data like <see cref="Deserialize{T}(byte[])"/>, and reports what did not match between the data and the classes: unknown properties, extra values,
     /// type ids that are not found and values that could not be read (errors, see <see cref="MsgPackOptions.ReadErrors"/>), counted per class and name.
     /// </summary>
@@ -363,6 +443,108 @@ namespace LsMsgPack
       }
       differences = found.IsEmpty ? null : found;
       return result;
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], out ReadDifferences)"/>
+    public T Deserialize<T>(ReadOnlyMemory<byte> data, out ReadDifferences differences)
+    {
+      object result = Deserialize(typeof(T), data, out differences);
+      return result is null ? default(T) : (T)result;
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], out ReadDifferences)"/>
+    public T Deserialize<T>(in ReadOnlySequence<byte> data, out ReadDifferences differences)
+    {
+      object result = Deserialize(typeof(T), data, out differences);
+      return result is null ? default(T) : (T)result;
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], out ReadDifferences)"/>
+    public object Deserialize(Type type, ReadOnlyMemory<byte> data, out ReadDifferences differences)
+    {
+      ReadDifferences found = new ReadDifferences(_serializer.Options);
+      object result;
+      try // ReadDifferences.Collect without the delegate (a closure per call)
+      {
+        result = found.Collected(Deserialize(type, data, found));
+      }
+      catch (Exception ex) when (found.AttachTo(ex))
+      {
+        throw; // not reached, the filter attaches the differences and passes it on as it is
+      }
+      differences = found.IsEmpty ? null : found;
+      return result;
+    }
+
+    /// <inheritdoc cref="Deserialize{T}(byte[], out ReadDifferences)"/>
+    public object Deserialize(Type type, in ReadOnlySequence<byte> data, out ReadDifferences differences)
+    {
+      ReadDifferences found = new ReadDifferences(_serializer.Options);
+      object result;
+      try // ReadDifferences.Collect without the delegate (a closure per call)
+      {
+        result = found.Collected(Deserialize(type, data, found));
+      }
+      catch (Exception ex) when (found.AttachTo(ex))
+      {
+        throw; // not reached, the filter attaches the differences and passes it on as it is
+      }
+      differences = found.IsEmpty ? null : found;
+      return result;
+    }
+
+    /// <param name="intoSlot">A struct root value is returned in a slot (see <see cref="RootSlot{T}.Take"/>)</param>
+    private object Deserialize(Type type, ReadOnlyMemory<byte> data, ReadDifferences differences, bool intoSlot = false)
+    {
+      if (MemoryMarshal.TryGetArray(data, out ArraySegment<byte> segment)) // read in place
+        return _serializer.Deserialize(type, segment.Array, segment.Offset, segment.Offset + segment.Count, out int consumed, differences, intoSlot);
+      return DeserializeCopy(type, data.Span, differences, intoSlot); // e.g. native memory
+    }
+
+    /// <param name="intoSlot">A struct root value is returned in a slot (see <see cref="RootSlot{T}.Take"/>)</param>
+    private object Deserialize(Type type, in ReadOnlySequence<byte> data, ReadDifferences differences, bool intoSlot = false)
+    {
+      if (data.IsSingleSegment)
+        return Deserialize(type, data.First, differences, intoSlot);
+      return DeserializeCopy(type, data, differences, intoSlot);
+    }
+
+    /// <summary>
+    /// Reads a copy of the data in an array of the shared pool. The reader copies everything it keeps (binary data, schemas, names), so nothing read refers to the array; it is cleared before it goes back, so the data does not linger in the pool.
+    /// <para>From the span itself: wrapping the memory in a ReadOnlySequence first cost about 40 ns more per call (a state of 45 bytes, .NET 8).</para>
+    /// </summary>
+    private object DeserializeCopy(Type type, ReadOnlySpan<byte> data, ReadDifferences differences, bool intoSlot)
+    {
+      byte[] copy = ArrayPool<byte>.Shared.Rent(data.Length);
+      try
+      {
+        data.CopyTo(copy);
+        return _serializer.Deserialize(type, copy, 0, data.Length, out int consumed, differences, intoSlot);
+      }
+      finally
+      {
+        new Span<byte>(copy, 0, data.Length).Clear();
+        ArrayPool<byte>.Shared.Return(copy);
+      }
+    }
+
+    /// <inheritdoc cref="DeserializeCopy(Type, ReadOnlySpan{byte}, ReadDifferences, bool)"/>
+    private object DeserializeCopy(Type type, in ReadOnlySequence<byte> data, ReadDifferences differences, bool intoSlot)
+    {
+      if (data.Length > int.MaxValue)
+        throw new ArgumentOutOfRangeException(nameof(data), $"The data is {data.Length} bytes, more than an array can hold.");
+      int length = (int)data.Length;
+      byte[] copy = ArrayPool<byte>.Shared.Rent(length);
+      try
+      {
+        data.CopyTo(copy);
+        return _serializer.Deserialize(type, copy, 0, length, out int consumed, differences, intoSlot);
+      }
+      finally
+      {
+        new Span<byte>(copy, 0, length).Clear();
+        ArrayPool<byte>.Shared.Return(copy);
+      }
     }
 
     /// <param name="intoSlot">A struct root value is returned in a slot (see <see cref="RootSlot{T}.Take"/>)</param>

@@ -19,10 +19,9 @@ dotnet add package LsMsgPack
 
 ## The code
 
-The serializer turns a message into a `byte[]`; every transport can carry that. With Azure Service Bus, for example:
+The serializer turns a message into a `byte[]`; every transport can carry that. It also writes to an `IBufferWriter<byte>` (a `PipeWriter`, a reused `ArrayBufferWriter<byte>`) and reads a `ReadOnlyMemory<byte>` or `ReadOnlySequence<byte>`, for transports that hand those out. With Azure Service Bus, for example:
 
 ```csharp
-using LsMsgPack;
 using LsMsgPack;
 
 LsMsgPackSerializer serializer = new LsMsgPackSerializer(); // one for the whole app, thread-safe
@@ -37,7 +36,7 @@ await sender.SendMessageAsync(message);
 // Consumer
 processor.ProcessMessageAsync += async args =>
 {
-  OrderPlaced order = serializer.Deserialize<OrderPlaced>(args.Message.Body.ToArray());
+  OrderPlaced order = serializer.Deserialize<OrderPlaced>(args.Message.Body.ToMemory()); // read in place, no copy
   await Handle(order);
 };
 ```

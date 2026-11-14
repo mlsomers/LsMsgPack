@@ -198,7 +198,7 @@ namespace LsMsgPackInteropTests
   /// The libraries of <see cref="BenchmarkLibraries"/> (in the same setups) on the messages of a multiplayer game with 16 players:
   /// a client sends its own <see cref="PlayerState"/> (a few numbers) every tick and receives a <see cref="WorldSnapshot"/> with the states of the 15 others.
   /// Lots of small messages, so the cost per call and the size of every message count, not the throughput on large data.
-  /// <para>Each message is written to a new byte[] ("Write") and to a buffer that is reused ("Send": an ArrayBufferWriter, or a MemoryStream for LsMsgPack, which has no IBufferWriter overload), as a game loop would to keep the garbage collector quiet.
+  /// <para>Each message is written to a new byte[] ("Write") and to a buffer that is reused ("Send": an ArrayBufferWriter for every library), as a game loop would to keep the garbage collector quiet.
   /// The schema reference rows get the writer's schemas once, as in a handshake when connecting.</para>
   /// <para>The "Vec3 class" rows are LsMsgPack with <see cref="Vec3C"/>: LsMsgPack writes and reads struct values in place (by reference, with the runtime's typed accessors or the generated code), compared with a class.</para>
   /// <para>Results are written to the test output (docs/Comparison.md has a run), timings are not asserted.</para>
@@ -402,7 +402,7 @@ namespace LsMsgPackInteropTests
       }
     }
 
-    /// <summary>A reused output buffer for the libraries that write to an IBufferWriter</summary>
+    /// <summary>A reused output buffer (an IBufferWriter)</summary>
     private sealed class Outbox
     {
       private readonly ArrayBufferWriter<byte> _buffer = new ArrayBufferWriter<byte>(4096);
@@ -414,20 +414,6 @@ namespace LsMsgPackInteropTests
       }
 
       public int Length => _buffer.WrittenCount;
-    }
-
-    /// <summary>LsMsgPack writes to a Stream: a MemoryStream that is reused</summary>
-    private sealed class StreamOutbox
-    {
-      private readonly MemoryStream _stream = new MemoryStream(4096);
-
-      public Stream Clear()
-      {
-        _stream.SetLength(0);
-        return _stream;
-      }
-
-      public int Length => (int)_stream.Length;
     }
 
     private static ICandidate MessagePackCSharp<TState, TSnapshot>(string name, MessagePackSerializerOptions options)
@@ -475,7 +461,7 @@ namespace LsMsgPackInteropTests
         }
         reader = new LsMsgPackSerializer(receiving);
       }
-      StreamOutbox outbox = new StreamOutbox();
+      Outbox outbox = new Outbox();
       return new Candidate<TState, TSnapshot>(name,
         s => writer.Serialize(s), b => reader.Deserialize<TState>(b), s => { writer.Serialize(s, outbox.Clear()); return outbox.Length; },
         w => writer.Serialize(w), b => reader.Deserialize<TSnapshot>(b), w => { writer.Serialize(w, outbox.Clear()); return outbox.Length; });

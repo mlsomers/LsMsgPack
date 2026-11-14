@@ -4,6 +4,7 @@ using LsMsgPack.TypeResolving.Types;
 using LsMsgPack.IO;
 using LsMsgPack.Writing;
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -32,6 +33,18 @@ namespace LsMsgPack
       /// The slot of the last struct root type (see <see cref="RootSlot"/>, LsMsgPackSerializer.TypedWriter).
       /// </summary>
       internal RootSlot Slot;
+
+      private BufferSink _sink;
+
+      /// <summary>
+      /// The sink of this thread that copies the payload into <paramref name="target"/> (no sink per call). The caller sets its <see cref="BufferSink.Target"/> to null at the end.
+      /// </summary>
+      internal BufferSink SinkFor(IBufferWriter<byte> target)
+      {
+        BufferSink sink = _sink ?? (_sink = new BufferSink());
+        sink.Target = target;
+        return sink;
+      }
     }
 
     /// <summary>
@@ -75,6 +88,23 @@ namespace LsMsgPack
     internal void Serialize(Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, Stream target, out byte[] result, IPayloadSink sink = null)
     {
       Serialize(RentState(), assignedTo, value, write, target, out result, sink);
+    }
+
+    /// <summary>
+    /// Writes the payload into <paramref name="target"/> when it is complete (nothing when writing fails), through the <see cref="BufferSink"/> of the thread's state.
+    /// </summary>
+    internal void Serialize(Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, IBufferWriter<byte> target)
+    {
+      WriteState state = RentState();
+      BufferSink sink = state.SinkFor(target);
+      try
+      {
+        Serialize(state, assignedTo, value, write, null, out byte[] unused, sink);
+      }
+      finally
+      {
+        sink.Target = null; // the state of the thread does not keep the target alive
+      }
     }
 
     /// <inheritdoc cref="Serialize(Type, object, Action{WriteContext, FullPropertyInfo}, Stream, out byte[], IPayloadSink)"/>
@@ -368,10 +398,22 @@ namespace LsMsgPack
       WriterHit last = _lastWriter;
       if (last != null && last.Root == root && ReferenceEquals(last.Store, store))
         return last.State;
-      SchemaStore.SessionState state = store.GetWriter(root, Options);
-      _lastWriter = new WriterHit(store, root, state);
-      return state;
+      // Another root type than the last call's: its hit is kept, so a server writing several root types in turn allocates nothing (the store's session state of a root type never changes)
+      if (_writerHits.TryGetValue(root, out last) && ReferenceEquals(last.Store, store))
+      {
+        _lastWriter = last;
+        return last.State;
+      }
+      last = new WriterHit(store, root, store.GetWriter(root, Options));
+      _writerHits[root] = last;
+      _lastWriter = last;
+      return last.State;
     }
+
+    /// <summary>
+    /// The <see cref="WriterHit"/> per root type (the store is the options' one), for the calls that do not write the root type of the last one.
+    /// </summary>
+    private readonly ConcurrentDictionary<Type, WriterHit> _writerHits = new ConcurrentDictionary<Type, WriterHit>();
 
     /// <param name="reference">The head is a reference to a schema of the store (<see cref="SchemaStore.ReferenceLength"/> bytes)</param>
     private static void Output(byte[] head, int headLength, bool reference, MsgPackWriter body, Stream target, IPayloadSink sink, out byte[] result)
@@ -405,5 +447,44 @@ namespace LsMsgPack
   internal interface IPayloadSink
   {
     void Write(byte[] head, int headLength, bool reference, MsgPackWriter body);
+  }
+
+  /// <summary>
+  /// Copies the payload into an <see cref="IBufferWriter{T}"/> (LsMsgPackSerializer.Serialize to an IBufferWriter): in one piece when the target gives a span that large, otherwise in the pieces it gives.
+  /// </summary>
+  internal sealed class BufferSink : IPayloadSink
+  {
+    internal IBufferWriter<byte> Target;
+
+    public void Write(byte[] head, int headLength, bool reference, MsgPackWriter body)
+    {
+      IBufferWriter<byte> target = Target;
+      int total = headLength + body.Pos;
+      Span<byte> span = target.GetSpan(total);
+      if (span.Length >= total)
+      {
+        if (headLength > 0)
+          new ReadOnlySpan<byte>(head, 0, headLength).CopyTo(span);
+        new ReadOnlySpan<byte>(body.Buf, 0, body.Pos).CopyTo(span.Slice(headLength));
+        target.Advance(total);
+        return;
+      }
+      Put(target, new ReadOnlySpan<byte>(head, 0, headLength));
+      Put(target, new ReadOnlySpan<byte>(body.Buf, 0, body.Pos));
+    }
+
+    private static void Put(IBufferWriter<byte> target, ReadOnlySpan<byte> data)
+    {
+      while (data.Length > 0)
+      {
+        Span<byte> span = target.GetSpan(data.Length);
+        if (span.Length == 0)
+          throw new InvalidOperationException($"The {nameof(IBufferWriter<byte>)} returned an empty span.");
+        int count = Math.Min(span.Length, data.Length);
+        data.Slice(0, count).CopyTo(span);
+        target.Advance(count);
+        data = data.Slice(count);
+      }
+    }
   }
 }

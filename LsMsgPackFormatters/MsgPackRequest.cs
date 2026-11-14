@@ -7,7 +7,6 @@ using System;
 #if NETCOREAPP3_0_OR_GREATER
 using System.Buffers;
 using System.IO.Pipelines;
-using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 #endif
 
@@ -21,9 +20,10 @@ namespace LsMsgPackFormatters
 #if NETCOREAPP3_0_OR_GREATER
     /// <summary>
     /// Buffers the body asynchronously in the pipe of the request (the deserializer reads synchronously, which ASP.NET Core does not allow on the request stream)
-    /// and passes it to <paramref name="read"/> in one piece: in place when it is in one buffer (LsMsgPack copies what it keeps), otherwise a pooled copy. Empty when the body is.
+    /// and passes it to <paramref name="read"/> as the pipe holds it: <see cref="LsMsgPackHttpSerializer.DeserializeBody(Type, in ReadOnlySequence{byte}, string, out ReadDifferences)"/>
+    /// reads one segment in place (LsMsgPack copies what it keeps), more from a pooled copy it clears. Empty when the body is.
     /// </summary>
-    internal static async Task<TResult> ReadAsync<TState, TResult>(HttpContext context, TState state, Func<TState, ArraySegment<byte>, TResult> read)
+    internal static async Task<TResult> ReadAsync<TState, TResult>(HttpContext context, TState state, Func<TState, ReadOnlySequence<byte>, TResult> read)
     {
       PipeReader reader = context.Request.BodyReader;
       ReadResult result = await reader.ReadAsync(context.RequestAborted);
@@ -34,24 +34,12 @@ namespace LsMsgPackFormatters
       }
 
       ReadOnlySequence<byte> body = result.Buffer;
-      byte[] rented = null;
       try
       {
-        if (body.Length == 0)
-          return read(state, new ArraySegment<byte>(Array.Empty<byte>()));
-
-        if (!body.IsSingleSegment || !MemoryMarshal.TryGetArray(body.First, out ArraySegment<byte> data))
-        {
-          rented = ArrayPool<byte>.Shared.Rent(checked((int)body.Length));
-          body.CopyTo(rented);
-          data = new ArraySegment<byte>(rented, 0, (int)body.Length);
-        }
-        return read(state, data);
+        return read(state, body);
       }
       finally
       {
-        if (rented != null)
-          ArrayPool<byte>.Shared.Return(rented);
         reader.AdvanceTo(body.End);
       }
     }

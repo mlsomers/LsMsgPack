@@ -89,9 +89,88 @@ namespace LsMsgPack
     private volatile SessionShared _lastSession;
 
     /// <summary>
+    /// The caches for reading several root types in turn, made when a second root type, schema or session shows up: a reader of one root type allocates nothing more than before
+    /// (the arrays made with the serializer, and a root entry before the plans and readers were made, moved those in the heap: reading game snapshots varied 2-5% between processes).
+    /// </summary>
+    private volatile RecentReads _recent;
+
+    private RecentReads Recent()
+    {
+      return _recent ?? (_recent = new RecentReads()); // a race may make two, one is lost: it is a cache
+    }
+
+    private sealed class RecentReads
+    {
+      /// <summary>
+      /// The number of entries of each cache, a power of 2.
+      /// </summary>
+      internal const int Size = 8;
+
+      /// <summary>
+      /// The schemas read before, compared when the payload does not start with <see cref="_lastSchema"/>: a reader of several root types in turn (a server receiving several kinds of request bodies)
+      /// finds its schema without measuring, copying and looking it up. A ring that replaces its oldest entry (a grown schema has a new id, the old one stops coming); entries are only replaced, never changed.
+      /// </summary>
+      internal readonly SchemaHit[] Schemas = new SchemaHit[Size];
+      private int _nextSchema;
+
+      /// <summary>
+      /// The shared sessions used before <see cref="_lastSession"/>, a ring as <see cref="Schemas"/> (a grown session replaces the old one).
+      /// </summary>
+      internal readonly SessionShared[] Sessions = new SessionShared[Size];
+      private int _nextSession;
+
+      /// <summary>
+      /// The root types read since there were two (at most <see cref="Size"/>, added and never removed: types do not go stale): their assemblies are cached, and they keep their reader, so a switch of
+      /// the root type is a comparison of references instead of lookups by the type (the hash of a Type is a call into the runtime). Other root types do the lookups after each switch.
+      /// </summary>
+      internal RootEntry[] Roots = new RootEntry[0];
+
+      internal void AddSchema(SchemaHit hit)
+      {
+        int next = _nextSchema; // a race may skip or overwrite a slot: it is a cache
+        _nextSchema = next + 1;
+        Schemas[next & (Size - 1)] = hit;
+      }
+
+      internal void AddSession(SessionShared shared)
+      {
+        int next = _nextSession;
+        _nextSession = next + 1;
+        Sessions[next & (Size - 1)] = shared;
+      }
+
+      internal void AddRoot(Type type)
+      {
+        RootEntry[] roots = Roots;
+        if (roots.Length < Size) // a copy, other threads read the array (one that adds at the same time may get lost, it comes back)
+        {
+          RootEntry[] more = new RootEntry[roots.Length + 1];
+          Array.Copy(roots, more, roots.Length);
+          more[roots.Length] = new RootEntry(type);
+          Roots = more;
+        }
+      }
+    }
+
+    /// <summary>
     /// The type whose assembly was cached last (see <see cref="DeserializeWithSchema"/>).
     /// </summary>
     private volatile Type _cachedRoot;
+
+    private sealed class RootEntry
+    {
+      internal readonly Type Type;
+
+      /// <summary>
+      /// Set when the type is first read as the root (not when its assemblies are cached: the reader is made where it was before).
+      /// </summary>
+      internal ValueReader Reader;
+
+      internal RootEntry(Type type)
+      {
+        Type = type;
+      }
+    }
 
     /// <summary>
     /// The type of a value in a body whose assembly was cached last (see <see cref="DeserializeBody"/>).
@@ -311,9 +390,94 @@ namespace LsMsgPack
       SessionShared last = _lastSession;
       if (last != null && ReferenceEquals(last.Session, session))
         return last;
-      last = _sessions.GetValue(session, s => new SessionShared(s));
-      _lastSession = last;
-      return last;
+      return SharedOfAnother(session);
+    }
+
+    /// <summary>
+    /// <see cref="Shared"/> of another session than the last one: the recent ones first, then the table.
+    /// </summary>
+    private SessionShared SharedOfAnother(SchemaSession session)
+    {
+      SessionShared previous = _lastSession;
+      RecentReads recent = _recent;
+      if (recent != null)
+      {
+        SessionShared[] sessions = recent.Sessions;
+        for (int t = sessions.Length - 1; t >= 0; t--) // the order does not matter, each session is in it once (or twice after a race, the same answer)
+        {
+          SessionShared candidate = sessions[t]; // read once: another thread may replace it
+          if (candidate != null && ReferenceEquals(candidate.Session, session))
+          {
+            _lastSession = candidate;
+            return candidate;
+          }
+        }
+      }
+      SessionShared shared = _sessions.GetValue(session, s => new SessionShared(s));
+      if (previous != null) // another session than the one so far: from now on they are kept
+      {
+        if (recent is null)
+        {
+          recent = Recent();
+          recent.AddSession(previous);
+        }
+        recent.AddSession(shared);
+      }
+      _lastSession = shared;
+      return shared;
+    }
+
+    /// <summary>
+    /// Caches the assemblies the names in the data may refer to (once per root type when there are several, see <see cref="RecentReads.Roots"/>), and makes it <see cref="_cachedRoot"/>.
+    /// </summary>
+    private void CacheRoot(Type type)
+    {
+      Type previous = _cachedRoot;
+      RecentReads recent = _recent;
+      if (recent != null)
+      {
+        RootEntry[] roots = recent.Roots;
+        for (int t = roots.Length - 1; t >= 0; t--)
+        {
+          if (roots[t].Type == type)
+          {
+            _cachedRoot = type;
+            return;
+          }
+        }
+      }
+      // The names in the data (type ids, the schema) are resolved in the cached assemblies: the ones of the types the root type reaches (the T of List<T>...)
+      TypeResolver.CacheAssembly(type.Assembly, type.Name); // as MsgPackSerializer.CacheAssemblyTypes(type)
+      TypeResolver.CacheReachableAssemblies(type);
+      if (previous != null) // a second root type: from now on the root types are kept
+      {
+        if (recent is null)
+        {
+          recent = Recent();
+          recent.AddRoot(previous); // its assemblies are cached
+        }
+        recent.AddRoot(type);
+      }
+      _cachedRoot = type;
+    }
+
+    /// <summary>
+    /// The reader of the root type, kept in its <see cref="RootEntry"/> when it has one.
+    /// </summary>
+    private ValueReader RootReader(Type type)
+    {
+      RecentReads recent = _recent;
+      if (recent != null)
+      {
+        RootEntry[] roots = recent.Roots;
+        for (int t = roots.Length - 1; t >= 0; t--)
+        {
+          RootEntry entry = roots[t];
+          if (entry.Type == type)
+            return entry.Reader ?? (entry.Reader = Reader(type)); // a race makes it twice: Reader returns the same one
+        }
+      }
+      return Reader(type); // one root type, a type of a body (the stream reader), or more root types than the entries
     }
 
     #endregion
@@ -333,12 +497,7 @@ namespace LsMsgPack
         return DeserializeCollecting(type, buffer, offset, end, out consumed);
 
       if (type != _cachedRoot)
-      {
-        // The names in the data (type ids, the schema) are resolved in the cached assemblies: the ones of the types the root type reaches (the T of List<T>...)
-        TypeResolver.CacheAssembly(type.Assembly, type.Name); // as MsgPackSerializer.CacheAssemblyTypes(type)
-        TypeResolver.CacheReachableAssemblies(type);
-        _cachedRoot = type;
-      }
+        CacheRoot(type);
 
       ReadContext c = RentContext(buffer, offset, end);
       try
@@ -433,7 +592,13 @@ namespace LsMsgPack
       }
 
       SchemaHit last = _lastSchema;
-      if (last != null && StartsWith(r, last.Bytes)) // a MsgPack value ends where its bytes end, so a payload starting with the bytes of the schema (or reference) starts with that schema
+      if (last is null || !StartsWith(r, last.Bytes)) // a MsgPack value ends where its bytes end, so a payload starting with the bytes of the schema (or reference) starts with that schema
+      {
+        last = RecentSchema(r);
+        if (last != null)
+          _lastSchema = last; // the next payload of its root type finds it first
+      }
+      if (last != null)
       {
         schema = last.Entry;
         lengthSettings = last.LengthSettings;
@@ -492,7 +657,7 @@ namespace LsMsgPack
       {
         state = schema.GetReader(Options);
         if (raw != null)
-          _lastSchema = new SchemaHit(raw, schema, lengthSettings, state); // the store keeps its entries
+          AddSchemaHit(new SchemaHit(raw, schema, lengthSettings, state)); // the store keeps its entries
       }
 
       // The published session, shared with other calls (as Entry.RunReader, without its allocations)
@@ -596,11 +761,7 @@ namespace LsMsgPack
         return DeserializeBodyCollecting(head, root, type, buffer, offset, end, out consumed);
 
       if (root != _cachedRoot)
-      {
-        TypeResolver.CacheAssembly(root.Assembly, root.Name);
-        TypeResolver.CacheReachableAssemblies(root);
-        _cachedRoot = root;
-      }
+        CacheRoot(root);
       if (type != root && type != _cachedBodyType) // the elements of a body are usually of one type: one lookup
       {
         TypeResolver.CacheAssembly(type.Assembly, type.Name);
@@ -643,7 +804,7 @@ namespace LsMsgPack
       {
         if (c.RootType != type) // calls on a thread usually read the same root type: no lookup (the hash of a Type is a call into the runtime)
         {
-          c.RootReader = Reader(type);
+          c.RootReader = RootReader(type);
           c.RootType = type;
         }
         if (c.IntoSlot) // a struct of a typed call, read without a box
@@ -654,6 +815,37 @@ namespace LsMsgPack
       {
         return unconverted.Value;
       }
+    }
+
+    /// <returns>The recent schema the payload starts with (see <see cref="RecentReads.Schemas"/>), null when it starts with none of them</returns>
+    private SchemaHit RecentSchema(MsgPackReader r)
+    {
+      RecentReads recent = _recent;
+      if (recent is null)
+        return null;
+      SchemaHit[] schemas = recent.Schemas;
+      for (int t = schemas.Length - 1; t >= 0; t--) // the order does not matter: at most one starts the payload (the last one is compared again, it failed already)
+      {
+        SchemaHit hit = schemas[t]; // read once: another thread may replace it
+        if (hit != null && StartsWith(r, hit.Bytes))
+          return hit;
+      }
+      return null;
+    }
+
+    private void AddSchemaHit(SchemaHit hit)
+    {
+      SchemaHit previous = _lastSchema;
+      _lastSchema = hit;
+      RecentReads recent = _recent;
+      if (recent is null)
+      {
+        if (previous is null) // the first schema
+          return;
+        recent = Recent(); // another schema than the one so far: from now on they are kept
+        recent.AddSchema(previous);
+      }
+      recent.AddSchema(hit);
     }
 
     private static bool StartsWith(MsgPackReader r, byte[] bytes)
