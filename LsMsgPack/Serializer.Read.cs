@@ -320,7 +320,8 @@ namespace LsMsgPack
     /// <param name="end">The end of the data in the buffer</param>
     /// <param name="consumed">The position after the payload</param>
     /// <param name="differences">Collects the differences between the data and the classes, null when not asked for</param>
-    internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null)
+    /// <param name="intoSlot">A struct root value of <paramref name="type"/> is read into the context's slot, which is returned instead of a box (<see cref="ReadContext.IntoSlot"/>, read it with <see cref="RootSlot{T}.Take"/>: the paths that collect the differences or errors return the boxed value)</param>
+    internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false)
     {
       if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
         return DeserializeCollecting(type, buffer, offset, end, out consumed);
@@ -338,6 +339,7 @@ namespace LsMsgPack
       {
         if (differences != null) // the fields of a reused context mostly keep their values: a comparison is cheaper than storing a reference (a write barrier)
           c.Differences = differences;
+        c.IntoSlot = intoSlot;
         c.Unusual = SlowObjects || differences != null;
         object result;
         if (!Options._useInexedSchema)
@@ -581,7 +583,8 @@ namespace LsMsgPack
     /// </summary>
     /// <param name="root">The root type of the head</param>
     /// <param name="type">The declared type of the value</param>
-    internal object DeserializeBody(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null)
+    /// <param name="intoSlot">As in <see cref="Deserialize"/></param>
+    internal object DeserializeBody(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false)
     {
       if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
         return DeserializeBodyCollecting(head, root, type, buffer, offset, end, out consumed);
@@ -603,6 +606,7 @@ namespace LsMsgPack
       {
         if (differences != null)
           c.Differences = differences;
+        c.IntoSlot = intoSlot;
         c.Unusual = SlowObjects || differences != null;
         object result = ReadWithSchema(c, root, type, offset, head.Schema, head.LengthSettings, head.State, head.Raw);
         consumed = c.R.Pos;
@@ -636,6 +640,8 @@ namespace LsMsgPack
           c.RootReader = Reader(type);
           c.RootType = type;
         }
+        if (c.IntoSlot) // a struct of a typed call, read without a box
+          return c.RootReader.ReadIntoSlot(c);
         return c.RootReader.ReadBoxed(c, null);
       }
       catch (RootValue unconverted)

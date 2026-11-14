@@ -83,6 +83,16 @@ namespace LsMsgPack.Reading
     internal Type RootType;
     internal ValueReader RootReader;
 
+    /// <summary>
+    /// The root value of this call is read into <see cref="Slot"/> instead of a box (a struct of a typed call, see <see cref="RootSlot"/>).
+    /// </summary>
+    internal bool IntoSlot;
+
+    /// <summary>
+    /// The slot of the last struct root type read with this context (it is reused per thread, a nested call has its own).
+    /// </summary>
+    internal RootSlot Slot;
+
     internal ReadContext(Serializer serializer)
     {
       Serializer = serializer;
@@ -99,6 +109,11 @@ namespace LsMsgPack.Reading
   {
     /// <param name="assignedTo">The property the value is assigned to, null for the root and elements (as LsMsgPack)</param>
     internal abstract object ReadBoxed(ReadContext c, FullPropertyInfo assignedTo);
+
+    /// <summary>
+    /// Reads the root value into the context's <see cref="RootSlot{T}"/> and returns the slot (<see cref="ReadContext.IntoSlot"/>).
+    /// </summary>
+    internal abstract object ReadIntoSlot(ReadContext c);
   }
 
   /// <summary>
@@ -111,6 +126,13 @@ namespace LsMsgPack.Reading
     internal override object ReadBoxed(ReadContext c, FullPropertyInfo assignedTo)
     {
       return Read(c, assignedTo);
+    }
+
+    internal sealed override object ReadIntoSlot(ReadContext c)
+    {
+      RootSlot<T> slot = RootSlot<T>.Of(ref c.Slot);
+      slot.Value = Read(c, null);
+      return slot;
     }
 
     /// <summary>

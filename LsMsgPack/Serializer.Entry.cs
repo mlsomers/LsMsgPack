@@ -6,6 +6,7 @@ using LsMsgPack.Writing;
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Runtime.CompilerServices;
 
 namespace LsMsgPack
 {
@@ -19,16 +20,24 @@ namespace LsMsgPack
     /// <summary>
     /// The writers and context of the calls on one thread, reused (taken while a call runs, so a nested call gets its own).
     /// </summary>
-    private sealed class WriteState
+    internal sealed class WriteState
     {
       internal Serializer Owner;
       internal WriteContext Context;
       internal MsgPackWriter Body = new MsgPackWriter(1024);
       internal MsgPackWriter Schema = new MsgPackWriter(256);
       internal InlineSchema Inline = new InlineSchema();
+
+      /// <summary>
+      /// The slot of the last struct root type (see <see cref="RootSlot"/>, LsMsgPackSerializer.TypedWriter).
+      /// </summary>
+      internal RootSlot Slot;
     }
 
-    private WriteState RentState()
+    /// <summary>
+    /// The state of this thread (taken until the call returns it), or a new one. The Serialize overloads taking a state return it.
+    /// </summary>
+    internal WriteState RentState()
     {
       WriteState state = _threadState;
       _threadState = null;
@@ -59,14 +68,21 @@ namespace LsMsgPack
     /// <summary>
     /// Writes the payload: the value (names mode), or the schema (or a reference to it) followed by the value.
     /// </summary>
-    /// <param name="value">The value, written by <paramref name="write"/> (it is <see cref="WriteContext.Root"/>)</param>
+    /// <param name="value">The value, written by <paramref name="write"/> (it is <see cref="WriteContext.Root"/>): a struct of a typed call is in a <see cref="RootSlot{T}"/></param>
     /// <param name="write">Writes the value (typed or boxed), may run twice with a schema reference (when the cached schema grows)</param>
     /// <param name="sink">Gets the payload instead of <paramref name="target"/> or <paramref name="result"/> (the stream writer)</param>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)] // no call more for the calls without a state
     internal void Serialize(Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, Stream target, out byte[] result, IPayloadSink sink = null)
+    {
+      Serialize(RentState(), assignedTo, value, write, target, out result, sink);
+    }
+
+    /// <inheritdoc cref="Serialize(Type, object, Action{WriteContext, FullPropertyInfo}, Stream, out byte[], IPayloadSink)"/>
+    /// <param name="state">From <see cref="RentState"/>, returned at the end (LsMsgPackSerializer.TypedWriter puts a struct root in its slot first)</param>
+    internal void Serialize(WriteState state, Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, Stream target, out byte[] result, IPayloadSink sink = null)
     {
       result = null;
       bool isNull = value is null;
-      WriteState state = RentState();
       try
       {
         WriteContext c = state.Context;
@@ -255,9 +271,16 @@ namespace LsMsgPack
     /// <param name="assignedTo">The declared type of the value (a type id is added when the value's type differs)</param>
     /// <param name="depth">The nesting of the value in the stream (for <see cref="MsgPackOptions.MaxDepth"/>)</param>
     /// <exception cref="InvalidOperationException">The value needs a class or property the schema of the head does not have, nothing was written</exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SerializeBody(WriterHead head, Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, int depth, IPayloadSink sink)
     {
-      WriteState state = RentState();
+      SerializeBody(RentState(), head, assignedTo, value, write, depth, sink);
+    }
+
+    /// <inheritdoc cref="SerializeBody(WriterHead, Type, object, Action{WriteContext, FullPropertyInfo}, int, IPayloadSink)"/>
+    /// <param name="state">From <see cref="RentState"/>, returned at the end</param>
+    internal void SerializeBody(WriteState state, WriterHead head, Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, int depth, IPayloadSink sink)
+    {
       try
       {
         WriteContext c = state.Context;
@@ -275,7 +298,7 @@ namespace LsMsgPack
           WriteBody(c, state, depth, grown.Apply(head.Settings), write, root);
           byte[] schema = grown.Resolver.Pack(SchemaBytes.Canonical, head.Root, head.Settings); // as SchemaStore.PublishWriter
           if (SchemaId.Compute(schema, head.Settings._schemaVersion) != head.Id)
-            throw new InvalidOperationException($"The {(value is null ? "value" : value.GetType().Name)} declared as {assignedTo.Name} needs a class the schema written in the head does not have: a value declared as object, or a class of an assembly that {head.Root.Name} does not reach (see {nameof(MsgPackOptions.CompleteSchemas)}). Nothing was written for it.");
+            throw new InvalidOperationException($"The {(value is null ? "value" : RootSlot.TypeOf(value).Name)} declared as {assignedTo.Name} needs a class the schema written in the head does not have: a value declared as object, or a class of an assembly that {head.Root.Name} does not reach (see {nameof(MsgPackOptions.CompleteSchemas)}). Nothing was written for it.");
           grown.Freeze();
           head.Session = grown;
         }

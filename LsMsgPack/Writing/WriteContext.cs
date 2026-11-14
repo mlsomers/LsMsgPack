@@ -41,7 +41,7 @@ namespace LsMsgPack.Writing
     public MsgPackWriter W;
 
     /// <summary>
-    /// The value of the Serialize call.
+    /// The value of the Serialize call: a struct of a typed call is in a <see cref="RootSlot{T}"/> (see LsMsgPackSerializer.TypedWriter), other values as they are (boxed for untyped calls).
     /// </summary>
     internal object Root;
 

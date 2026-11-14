@@ -593,7 +593,14 @@ namespace LsMsgPack.Streaming
       bool body = ObjectValue(out Serializer.WriterHead head);
       try
       {
-        if (head != null)
+        if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct) // a struct, in a slot instead of a box
+        {
+          if (head != null)
+            LsMsgPackSerializer.TypedWriter<T>.SerializeBodyInSlot(_serializer, head, value, _depth, this);
+          else
+            LsMsgPackSerializer.TypedWriter<T>.SerializeInSlot(_serializer, value, null, out byte[] unused, this);
+        }
+        else if (head != null)
           _serializer.SerializeBody(head, typeof(T), value, LsMsgPackSerializer.TypedWriter<T>.Write, _depth, this);
         else
           _serializer.Serialize(typeof(T), value, LsMsgPackSerializer.TypedWriter<T>.Write, null, out byte[] unused, this);

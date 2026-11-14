@@ -710,7 +710,9 @@ namespace LsMsgPack.Streaming
     /// <exception cref="MsgPackException">The stream ends (see <see cref="AtEnd"/>), or the data is not valid</exception>
     public T ReadObject<T>()
     {
-      object result = ReadObject(typeof(T));
+      if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct) // a struct is read into a slot instead of a box
+        return RootSlot<T>.Take(ReadObject(typeof(T), true));
+      object result = ReadObject(typeof(T), false);
       return result is null ? default(T) : (T)result;
     }
 
@@ -721,6 +723,12 @@ namespace LsMsgPack.Streaming
     {
       if (type is null)
         throw new ArgumentNullException(nameof(type));
+      return ReadObject(type, false);
+    }
+
+    /// <param name="intoSlot">A struct value is returned in a slot (see <see cref="RootSlot{T}.Take"/>)</param>
+    private object ReadObject(Type type, bool intoSlot)
+    {
       ThrowIfDisposed();
       PassPayload();
       bool withSchema = _options._useInexedSchema;
@@ -769,8 +777,8 @@ namespace LsMsgPack.Streaming
         _token = MsgPackTokenType.None;
         _length = 0;
         if (head != null)
-          return _serializer.DeserializeBody(head, root, type, data, offset, end, out int used);
-        return _serializer.Deserialize(type, data, offset, end, out int consumed);
+          return _serializer.DeserializeBody(head, root, type, data, offset, end, out int used, null, intoSlot);
+        return _serializer.Deserialize(type, data, offset, end, out int consumed, null, intoSlot);
       }
       finally
       {
