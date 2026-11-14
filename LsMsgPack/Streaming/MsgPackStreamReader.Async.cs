@@ -11,7 +11,7 @@ using System.Runtime.CompilerServices;
 namespace LsMsgPack.Streaming
 {
   // The async methods read ahead asynchronously until the buffer holds what a synchronous step needs (a token, a value read whole), then run that step without I/O (_noIo):
-  // the parsing and the checks are the synchronous ones. Only what reads the stream is here twice: TryEnsure, PassPayload, SkipStreamValues, PastStreamValues, AtEnd.
+  // the parsing and the checks are the synchronous ones. Only what reads the stream is here twice: TryEnsure, PassPayload, SkipStreamValues, PastStreamValues, AtEnd, and the reading of the index (IndexFormat.ReadAllAsync, ReadIndexesAsync, SeekElementAsync).
   public sealed partial class MsgPackStreamReader
   {
     private bool _noIo; // a synchronous step of an async method runs: what it needs is buffered
@@ -599,6 +599,69 @@ namespace LsMsgPack.Streaming
       lengths[0xD8] = 18;
       return lengths;
     }
+
+    #region Index
+
+    /// <summary>
+    /// <see cref="ReadIndexes"/>, reading the stream asynchronously: the indexes of the stream, the first one first, and the schemas they locate registered in the serializer's <see cref="SchemaStore"/>.
+    /// The reader stays where it was. Needs a stream that seeks.
+    /// </summary>
+    /// <param name="searchBackwards">When the stream does not end with a tail: search backwards for the last one (this reads a stream without an index completely, from the end).</param>
+    /// <exception cref="MsgPackException">An index matches its CRC-32 but is not valid (offsets outside of the stream, points out of order, a newer version...)</exception>
+    public async Task<IReadOnlyList<MsgPackStreamIndex>> ReadIndexesAsync(bool searchBackwards = false, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      ThrowIfDisposed();
+      ThrowIfNotSeekable();
+      long resume = _source.Position; // the buffer holds the data up to here
+      try
+      {
+        List<MsgPackStreamIndex> indexes = (await IndexFormat.ReadAllAsync(_source, searchBackwards, cancellationToken).ConfigureAwait(false)).Indexes;
+        if (_options._schemaStore != null)
+        {
+          for (int i = 0; i < indexes.Count; i++)
+          {
+            List<MsgPackStreamSchemaLocation> schemas = indexes[i].Schemas;
+            for (int t = 0; t < schemas.Count; t++)
+            {
+              if (!schemas[t].Offset.HasValue)
+                continue; // External: the store has it, or not
+              byte[] schema = new byte[schemas[t].Length];
+              _source.Position = schemas[t].Offset.Value;
+              if (!await IndexFormat.ReadExactlyAsync(_source, schema, schema.Length, cancellationToken).ConfigureAwait(false))
+                throw SchemaCutOff(schemas[t]);
+              Register(schema, 0, schema.Length);
+            }
+          }
+        }
+        return indexes;
+      }
+      finally
+      {
+        _source.Position = resume;
+      }
+    }
+
+    /// <summary>
+    /// <see cref="SeekElement"/>, reading the stream asynchronously: to the last point before the element (or from where the reader is when that is closer), then past the elements up to it.
+    /// The next value is the element. The reader must be in the array of that entry (<see cref="Depth"/> 1: after its ArrayStart, and its head when it has one).
+    /// </summary>
+    /// <param name="element">The number of the element (0 for the first)</param>
+    public async Task SeekElementAsync(MsgPackStreamEntry entry, long element, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      CheckSeekElement(entry, element);
+      await PassPayloadAsync(cancellationToken).ConfigureAwait(false);
+      for (long current = SeekPointBefore(entry, element); current < element; current++)
+      {
+        if (!await ReadAsync(cancellationToken).ConfigureAwait(false))
+          throw EndOfData();
+        await SkipAsync(cancellationToken).ConfigureAwait(false);
+      }
+      await PassPayloadAsync(cancellationToken).ConfigureAwait(false); // the data of the last element passed
+      _token = MsgPackTokenType.None;
+      _length = 0;
+    }
+
+    #endregion
 
     #region Buffer
 

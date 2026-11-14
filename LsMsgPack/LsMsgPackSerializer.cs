@@ -133,7 +133,11 @@ namespace LsMsgPack
 
     public byte[] Serialize<T>(T value)
     {
-      _serializer.Serialize(typeof(T), value, TypedWriter<T>.Write, null, out byte[] result);
+      byte[] result;
+      if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct) // a struct, in a slot instead of a box
+        TypedWriter<T>.SerializeInSlot(_serializer, value, null, out result);
+      else
+        _serializer.Serialize(typeof(T), value, TypedWriter<T>.Write, null, out result);
       return result;
     }
 
@@ -141,7 +145,10 @@ namespace LsMsgPack
     {
       if (target is null)
         throw new ArgumentNullException(nameof(target));
-      _serializer.Serialize(typeof(T), value, TypedWriter<T>.Write, target, out byte[] result);
+      if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct)
+        TypedWriter<T>.SerializeInSlot(_serializer, value, target, out byte[] unused);
+      else
+        _serializer.Serialize(typeof(T), value, TypedWriter<T>.Write, target, out byte[] result);
     }
 
     /// <summary>
@@ -182,9 +189,49 @@ namespace LsMsgPack
             c.RootHandler = handler = c.Serializer.Handler<T>(null);
             c.RootHandlerOf = root;
           }
-          handler.Write(c, typeof(T).IsValueType ? (T)value : Unsafe.As<object, T>(ref value), root); // value is the T of the public Serialize<T>
+          if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct) // a struct, in the slot of Serialize below
+            handler.Write(c, Unsafe.As<RootSlot<T>>(value).Value, root);
+          else
+            handler.Write(c, typeof(T).IsValueType ? (T)value : Unsafe.As<object, T>(ref value), root); // value is the T of the public Serialize<T> (a nullable struct boxed)
         }
       };
+
+      /// <summary>
+      /// <see cref="Serializer.Serialize"/> of a struct root value (<see cref="RootSlot{T}.IsPlainStruct"/>) in a <see cref="RootSlot{T}"/> instead of a box.
+      /// The callers test <see cref="RootSlot{T}.IsPlainStruct"/> themselves and call the serializer directly for the other types: a call less (in shared generic code each also looks up its type arguments).
+      /// </summary>
+      internal static void SerializeInSlot(Serializer serializer, in T value, Stream target, out byte[] result, IPayloadSink sink = null)
+      {
+        Serializer.WriteState state = serializer.RentState(); // the slot is kept in the state of the thread (a nested call has its own)
+        RootSlot<T> slot = RootSlot<T>.Of(ref state.Slot);
+        slot.Value = value;
+        try
+        {
+          serializer.Serialize(state, typeof(T), slot, Write, target, out result, sink);
+        }
+        finally
+        {
+          slot.Clear();
+        }
+      }
+
+      /// <summary>
+      /// <see cref="Serializer.SerializeBody"/> of a struct value, as <see cref="SerializeInSlot"/>.
+      /// </summary>
+      internal static void SerializeBodyInSlot(Serializer serializer, Serializer.WriterHead head, in T value, int depth, IPayloadSink sink)
+      {
+        Serializer.WriteState state = serializer.RentState();
+        RootSlot<T> slot = RootSlot<T>.Of(ref state.Slot);
+        slot.Value = value;
+        try
+        {
+          serializer.SerializeBody(state, head, typeof(T), slot, Write, depth, sink);
+        }
+        finally
+        {
+          slot.Clear();
+        }
+      }
     }
 
     #endregion
@@ -193,7 +240,11 @@ namespace LsMsgPack
 
     public T Deserialize<T>(byte[] data)
     {
-      object result = Deserialize(typeof(T), data);
+      if (data is null)
+        throw new ArgumentNullException(nameof(data));
+      if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct) // a struct is read into a slot instead of a box
+        return RootSlot<T>.Take(_serializer.Deserialize(typeof(T), data, 0, data.Length, out int read, null, true));
+      object result = _serializer.Deserialize(typeof(T), data, 0, data.Length, out int consumed);
       return result is null ? default(T) : (T)result;
     }
 
@@ -205,6 +256,8 @@ namespace LsMsgPack
         throw new ArgumentNullException(nameof(data));
       if (offset < 0 || count < 0 || data.Length - offset < count)
         throw new ArgumentOutOfRangeException(nameof(count));
+      if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct)
+        return RootSlot<T>.Take(_serializer.Deserialize(typeof(T), data, offset, offset + count, out int read, null, true));
       object result = _serializer.Deserialize(typeof(T), data, offset, offset + count, out int consumed);
       return result is null ? default(T) : (T)result;
     }
@@ -214,6 +267,8 @@ namespace LsMsgPack
     /// </summary>
     public T Deserialize<T>(Stream source)
     {
+      if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct)
+        return RootSlot<T>.Take(Deserialize(typeof(T), source, null, true));
       object result = Deserialize(typeof(T), source);
       return result is null ? default(T) : (T)result;
     }
@@ -310,7 +365,8 @@ namespace LsMsgPack
       return result;
     }
 
-    private object Deserialize(Type type, Stream source, ReadDifferences differences)
+    /// <param name="intoSlot">A struct root value is returned in a slot (see <see cref="RootSlot{T}.Take"/>)</param>
+    private object Deserialize(Type type, Stream source, ReadDifferences differences, bool intoSlot = false)
     {
       if (source is null)
         throw new ArgumentNullException(nameof(source));
@@ -318,13 +374,13 @@ namespace LsMsgPack
       if (source is MemoryStream memory && memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
       {
         int offset = segment.Offset + (int)memory.Position;
-        object result = _serializer.Deserialize(type, segment.Array, offset, segment.Offset + (int)memory.Length, out int consumed, differences);
+        object result = _serializer.Deserialize(type, segment.Array, offset, segment.Offset + (int)memory.Length, out int consumed, differences, intoSlot);
         memory.Position += consumed - offset;
         return result;
       }
 
       byte[] payload = StreamPayload.Read(source, _serializer.Options);
-      return _serializer.Deserialize(type, payload, 0, payload.Length, out int end, differences);
+      return _serializer.Deserialize(type, payload, 0, payload.Length, out int end, differences, intoSlot);
     }
 
     #endregion

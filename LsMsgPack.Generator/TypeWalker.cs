@@ -70,7 +70,40 @@ namespace LsMsgPack.Generator
     {
       while (_queue.Count > 0)
         Visit(_queue.Dequeue());
+      for (int i = _bulkArrays.Count - 1; i >= 0; i--)
+        if (!_direct.Contains(_bulkArrays[i].Array))
+          _types[_bulkArrays[i].Index] = _types[_bulkArrays[i].Index] with { Bulk = false };
       ReportUncovered();
+    }
+
+    /// <summary>
+    /// The arrays described in bulk (<see cref="TypeModel.Bulk"/>), and the arrays reached other than as the elements of a collection (<see cref="AddImplied"/>): an array only reached that way
+    /// is for Core's conversions, which never use the handlers in bulk, so it is described without them (NativeAOT compiles every instantiation a description makes).
+    /// </summary>
+    private readonly List<(ITypeSymbol Array, int Index)> _bulkArrays = new List<(ITypeSymbol, int)>();
+    private readonly HashSet<ITypeSymbol> _direct = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
+
+    /// <summary>
+    /// Whether the runtime writes and reads collections of the type in bulk where the options write the type as such (Serializer.InBulk; an sbyte[] is bin, a leaf).
+    /// </summary>
+    private static bool IsBulkElement(ITypeSymbol element)
+    {
+      switch (element.SpecialType)
+      {
+        case SpecialType.System_Int32:
+        case SpecialType.System_Int64:
+        case SpecialType.System_Single:
+        case SpecialType.System_Double:
+        case SpecialType.System_SByte:
+        case SpecialType.System_Int16:
+        case SpecialType.System_UInt16:
+        case SpecialType.System_UInt32:
+        case SpecialType.System_UInt64:
+        case SpecialType.System_Boolean:
+        case SpecialType.System_Decimal:
+          return true;
+      }
+      return element.MetadataName == "Guid" && element.ContainingType is null && element.ContainingNamespace?.ToDisplayString() == "System";
     }
 
     /// <summary>
@@ -170,12 +203,15 @@ namespace LsMsgPack.Generator
       return false;
     }
 
-    private void Enqueue(ITypeSymbol type)
+    /// <param name="implied">The element array of a collection (<see cref="AddImplied"/>)</param>
+    private void Enqueue(ITypeSymbol type, bool implied = false)
     {
       if (type is null || type.TypeKind == TypeKind.Error || type.TypeKind == TypeKind.Pointer || type.TypeKind == TypeKind.FunctionPointer
         || type.TypeKind == TypeKind.TypeParameter || type.TypeKind == TypeKind.Dynamic || type.IsRefLikeType)
         return;
       type = (ITypeSymbol)type.WithNullableAnnotation(NullableAnnotation.None);
+      if (!implied && type is IArrayTypeSymbol)
+        _direct.Add(type);
       if (_seen.Add(type))
         _queue.Enqueue(type);
     }
@@ -213,7 +249,12 @@ namespace LsMsgPack.Generator
       {
         Enqueue(array.ElementType);
         if (array.Rank == 1)
-          Add(TypeModelKind.Array, name, array.ElementType.ToDisplayString(Format));
+        {
+          bool bulk = IsBulkElement(array.ElementType);
+          if (bulk)
+            _bulkArrays.Add((type, _types.Count));
+          Add(TypeModelKind.Array, name, array.ElementType.ToDisplayString(Format), bulk: bulk);
+        }
         else
           Add(TypeModelKind.Boxed, name);
         return;
@@ -238,7 +279,7 @@ namespace LsMsgPack.Generator
       if (_list != null && SymbolEqualityComparer.Default.Equals(named.OriginalDefinition, _list))
       {
         Enqueue(named.TypeArguments[0]);
-        Add(TypeModelKind.List, name, named.TypeArguments[0].ToDisplayString(Format));
+        Add(TypeModelKind.List, name, named.TypeArguments[0].ToDisplayString(Format), bulk: IsBulkElement(named.TypeArguments[0]));
         return;
       }
 
@@ -259,7 +300,7 @@ namespace LsMsgPack.Generator
         }
         string factory = element is null ? null : FactoryCall(named, element);
         if (IsDefinition(named, "HashSet", 1))
-          Add(TypeModelKind.HashSet, name, named.TypeArguments[0].ToDisplayString(Format));
+          Add(TypeModelKind.HashSet, name, named.TypeArguments[0].ToDisplayString(Format), bulk: IsBulkElement(named.TypeArguments[0]));
         else if (IsDefinition(named, "Dictionary", 2))
           Add(TypeModelKind.Dictionary, name, named.TypeArguments[0].ToDisplayString(Format) + ", " + named.TypeArguments[1].ToDisplayString(Format));
         else if (HasTypedConcrete(named, element))
@@ -349,7 +390,7 @@ namespace LsMsgPack.Generator
       string ns = collection.ContainingNamespace?.ToDisplayString();
       bool immutable = collection.IsGenericType && (ns == "System.Collections.Immutable" || ns == "System.Collections.Frozen");
       if (immutable || !IsDictionary(collection)) // a dictionary is filled by its Add, the factories take the pairs as an array
-        Enqueue(_compilation.CreateArrayTypeSymbol(element));
+        Enqueue(_compilation.CreateArrayTypeSymbol(element), true);
 
       if (collection.TypeKind == TypeKind.Interface || collection.IsAbstract)
       {
@@ -454,12 +495,12 @@ namespace LsMsgPack.Generator
     }
 
     private void Add(TypeModelKind kind, string name, string argument = null, bool creator = false, bool keep = false, List<PropertyModel> properties = null, List<MemberModel> members = null, string factory = null,
-      Kept kept = Kept.None, string isDefault = null, List<PropertyModel> defaultAccessors = null, List<StringValue> keptMethods = null)
+      Kept kept = Kept.None, string isDefault = null, List<PropertyModel> defaultAccessors = null, List<StringValue> keptMethods = null, bool bulk = false)
     {
       _types.Add(new TypeModel(kind, name, argument, creator, keep, (properties ?? new List<PropertyModel>()).ToEquatable(), (members ?? new List<MemberModel>()).ToEquatable(), factory,
         (kept & Kept.NonPublicProperties) != 0, isDefault, (kept & Kept.PublicFields) != 0, (kept & Kept.NonPublicFields) != 0,
         isDefault is null || defaultAccessors is null ? EquatableArray<PropertyModel>.Empty : defaultAccessors.ToEquatable(),
-        keptMethods is null ? EquatableArray<StringValue>.Empty : keptMethods.ToEquatable()));
+        keptMethods is null ? EquatableArray<StringValue>.Empty : keptMethods.ToEquatable(), bulk));
     }
 
     /// <summary>

@@ -547,6 +547,11 @@ namespace LsMsgPack.Writing
       return serializer.Filters == FilterMode.Custom || info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)) || serializer.CallsShouldSerialize(info);
     }
 
+    /// <summary>
+    /// Asks the dynamic filters. The writers ask them (and the ShouldSerialize methods, also typed and in the compiled writers) for every value of a map entry, but not for a null array item
+    /// (<c>key</c> null): a value the filters leave out is nil in the array layout too, so their answer cannot change the bytes, and LsMsgPackDebug's array layout does not ask them either.
+    /// Each writer tests <c>key != null || value != null</c> itself (for a value type the JIT drops it).
+    /// </summary>
     /// <param name="owner">The object owning the property, for the filters that take it (<see cref="IMsgPackPropertyIncludeWithOwner"/>; a struct boxed, see <see cref="Serializer.OwnerFilters"/>)</param>
     internal bool IncludeBoxed(object value, FullPropertyInfo info, object owner)
     {
@@ -663,11 +668,17 @@ namespace LsMsgPack.Writing
     /// </summary>
     private readonly Func<TTarget, bool> _shouldSerialize;
 
+    /// <summary>
+    /// A decimal written by the built-in extension: its type code, -1 otherwise (see <see cref="DecimalCodeOf"/>).
+    /// </summary>
+    private readonly int _decimalCode;
+
     public PropWriter(Serializer serializer, FullPropertyInfo info, MethodInfo get) : base(serializer, info)
     {
       _declared = info;
       _get = (Func<TTarget, TValue>)Delegate.CreateDelegate(typeof(Func<TTarget, TValue>), get);
       _shouldSerialize = ShouldSerializeOf(info);
+      _decimalCode = DecimalCodeOf(serializer, info);
     }
 
     /// <param name="field">Read by a delegate compiled from an expression</param>
@@ -681,6 +692,18 @@ namespace LsMsgPack.Writing
       _declared = info;
       _get = get;
       _shouldSerialize = ShouldSerializeOf(info);
+      _decimalCode = DecimalCodeOf(serializer, info);
+    }
+
+    /// <summary>
+    /// A decimal property without filters or with FilterDefaultValues only, whose handler is the built-in extension: Write writes its 16 bytes itself, as two halves of the value the getter returned
+    /// (x64 Unix returns the decimal in two registers; passing it on as a struct copied it with one 16 byte load of those two stores, stalling store forwarding: ~3% of writing invoices before the writers are compiled).
+    /// </summary>
+    private static int DecimalCodeOf(Serializer serializer, FullPropertyInfo info)
+    {
+      if (typeof(TValue) != typeof(decimal) || (typeof(TFilter) != typeof(NoFilter) && typeof(TFilter) != typeof(DefaultValuesFilter)))
+        return -1;
+      return serializer.Handler<TValue>(info) is DecimalHandler handler ? handler.BuiltInCode : -1;
     }
 
     private static Func<TTarget, bool> ShouldSerializeOf(FullPropertyInfo info)
@@ -703,10 +726,30 @@ namespace LsMsgPack.Writing
         throw;
       }
 
+      if (typeof(TValue) == typeof(decimal) && _decimalCode >= 0)
+      {
+        ulong first = Unsafe.As<TValue, ulong>(ref value); // the flags and the high 32 bits
+        ulong second = Unsafe.Add(ref Unsafe.As<TValue, ulong>(ref value), 1); // the low 64 bits
+        if (typeof(TFilter) == typeof(DefaultValuesFilter) && (Unsafe.Add(ref Unsafe.As<TValue, uint>(ref value), 1) | second) == 0) // DecimalHandler.IsZero: the high 32 bits follow the flags
+          return false;
+        MsgPackWriter w = c.W;
+        if (key != null)
+          w.Raw(key);
+        w.Ensure(18);
+        byte[] b = w.Buf;
+        int at = w.Pos;
+        b[at] = 0xD8; // fixext16, as DecimalHandler.Write
+        b[at + 1] = unchecked((byte)_decimalCode);
+        Unsafe.WriteUnaligned(ref b[at + 2], first);
+        Unsafe.WriteUnaligned(ref b[at + 10], second);
+        w.Pos = at + 18;
+        return true;
+      }
+
       ValueHandler<TValue> handler = _handler ?? (_handler = Serializer.Handler<TValue>(_declared));
       if (typeof(TFilter) == typeof(BoxedFilter))
       {
-        if (!IncludeBoxed(value, info, target))
+        if ((key != null || value != null) && !IncludeBoxed(value, info, target)) // a null array item is nil whatever the filters say: not asked (see IncludeBoxed)
           return false;
       }
       else if (typeof(TFilter) == typeof(DefaultValuesFilter))
@@ -716,12 +759,12 @@ namespace LsMsgPack.Writing
       }
       else if (typeof(TFilter) == typeof(ShouldSerializeFilter))
       {
-        if (!_shouldSerialize(Unsafe.As<TTarget>(target)))
+        if ((key != null || value != null) && !_shouldSerialize(Unsafe.As<TTarget>(target)))
           return false;
       }
       else if (typeof(TFilter) == typeof(ShouldSerializeThenDefaultsFilter))
       {
-        if (!_shouldSerialize(Unsafe.As<TTarget>(target)) || !handler.IncludeByDefault(value, info))
+        if ((key != null || value != null) && (!_shouldSerialize(Unsafe.As<TTarget>(target)) || !handler.IncludeByDefault(value, info)))
           return false;
       }
       else if (typeof(TFilter) == typeof(DefaultsThenShouldSerializeFilter))
@@ -799,7 +842,7 @@ namespace LsMsgPack.Writing
       ValueHandler<TValue> handler = _handler ?? (_handler = Serializer.Handler<TValue>(_declared));
       if (typeof(TFilter) == typeof(BoxedFilter))
       {
-        if (!IncludeBoxed(value, info, Serializer.OwnerFilters ? (object)target : null)) // a copy in a box, only for the filters that take the owner
+        if ((key != null || value != null) && !IncludeBoxed(value, info, Serializer.OwnerFilters ? (object)target : null)) // a copy in a box, only for the filters that take the owner; a null array item is not asked (see IncludeBoxed)
           return false;
       }
       else if (typeof(TFilter) == typeof(DefaultValuesFilter))
@@ -833,7 +876,7 @@ namespace LsMsgPack.Writing
     internal override bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info)
     {
       object value = _declared.GetValue(target);
-      if (!NoFilters && !IncludeBoxed(value, info, target))
+      if (!NoFilters && (key != null || value != null) && !IncludeBoxed(value, info, target)) // a null array item is not asked (see IncludeBoxed)
         return false;
 
       if (key != null)

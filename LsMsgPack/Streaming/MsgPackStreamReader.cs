@@ -14,7 +14,7 @@ namespace LsMsgPack.Streaming
   /// <para>The buffer holds the current token and grows only as far as the data that arrives (a header claiming more than the stream holds costs no more than the stream holds).
   /// A value that is read whole (<see cref="ReadObject{T}"/>, <see cref="GetValue"/>, <see cref="GetString"/>...) is buffered whole.</para>
   /// <para>The index of a stream (<see cref="MsgPackStreamIndex"/>: extension values of types 3 and 4 between the root values, and the tails after them) is skipped. When the stream seeks,
-  /// <see cref="ReadIndexes"/> reads it and <see cref="Seek(MsgPackStreamEntry)"/> / <see cref="SeekElement"/> go to an entry or an element of its array.</para>
+  /// <see cref="ReadIndexes"/> reads it and <see cref="Seek(MsgPackStreamEntry)"/> / <see cref="SeekElement"/> go to an entry or an element of its array (asynchronously: <see cref="ReadIndexesAsync"/>, <see cref="SeekElementAsync"/>).</para>
   /// <para>The async methods (<see cref="ReadAsync"/>, <see cref="ReadObjectAsync{T}"/>...) read the stream asynchronously, for streams that must not be read synchronously (an HTTP response, browsers).</para>
   /// <para>Not thread-safe.</para>
   /// </summary>
@@ -710,7 +710,9 @@ namespace LsMsgPack.Streaming
     /// <exception cref="MsgPackException">The stream ends (see <see cref="AtEnd"/>), or the data is not valid</exception>
     public T ReadObject<T>()
     {
-      object result = ReadObject(typeof(T));
+      if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct) // a struct is read into a slot instead of a box
+        return RootSlot<T>.Take(ReadObject(typeof(T), true));
+      object result = ReadObject(typeof(T), false);
       return result is null ? default(T) : (T)result;
     }
 
@@ -721,6 +723,12 @@ namespace LsMsgPack.Streaming
     {
       if (type is null)
         throw new ArgumentNullException(nameof(type));
+      return ReadObject(type, false);
+    }
+
+    /// <param name="intoSlot">A struct value is returned in a slot (see <see cref="RootSlot{T}.Take"/>)</param>
+    private object ReadObject(Type type, bool intoSlot)
+    {
       ThrowIfDisposed();
       PassPayload();
       bool withSchema = _options._useInexedSchema;
@@ -769,8 +777,8 @@ namespace LsMsgPack.Streaming
         _token = MsgPackTokenType.None;
         _length = 0;
         if (head != null)
-          return _serializer.DeserializeBody(head, root, type, data, offset, end, out int used);
-        return _serializer.Deserialize(type, data, offset, end, out int consumed);
+          return _serializer.DeserializeBody(head, root, type, data, offset, end, out int used, null, intoSlot);
+        return _serializer.Deserialize(type, data, offset, end, out int consumed, null, intoSlot);
       }
       finally
       {
@@ -1046,7 +1054,7 @@ namespace LsMsgPack.Streaming
     /// The indexes of the stream (<see cref="MsgPackStreamIndex"/>), the first one first: each lists the entries since the one before it (checkpoints, appended parts), so together they list all entries.
     /// The offsets in them are positions in the stream (moved along when the stream was moved since it was written). Empty when the stream has no index.
     /// The schemas whose inline copy the indexes locate are registered in the serializer's <see cref="SchemaStore"/>, so entries that refer to them can be read after <see cref="Seek(MsgPackStreamEntry)"/>.
-    /// The reader stays where it was. Needs a stream that seeks.
+    /// The reader stays where it was. Needs a stream that seeks. <see cref="ReadIndexesAsync"/> reads asynchronously.
     /// </summary>
     /// <param name="searchBackwards">When the stream does not end with a tail (a writer that stopped after a checkpoint, a crash): search backwards for the last one.
     /// This reads a stream without an index completely, from the end.</param>
@@ -1058,7 +1066,7 @@ namespace LsMsgPack.Streaming
       long resume = _source.Position; // the buffer holds the data up to here
       try
       {
-        List<MsgPackStreamIndex> indexes = IndexFormat.ReadAll(_source, searchBackwards, out long lastTail, out bool endsWithTail, out long delta);
+        List<MsgPackStreamIndex> indexes = IndexFormat.ReadAll(_source, searchBackwards).Indexes;
         if (_options._schemaStore != null)
         {
           for (int i = 0; i < indexes.Count; i++)
@@ -1070,8 +1078,8 @@ namespace LsMsgPack.Streaming
                 continue; // External: the store has it, or not
               byte[] schema = new byte[schemas[t].Length];
               _source.Position = schemas[t].Offset.Value;
-              if (!ReadExactly(schema))
-                throw new MsgPackException($"The schema at {schemas[t].Offset.Value} that the index locates is cut off.", schemas[t].Offset.Value);
+              if (!IndexFormat.ReadExactly(_source, schema, schema.Length))
+                throw SchemaCutOff(schemas[t]);
               Register(schema, 0, schema.Length);
             }
           }
@@ -1084,8 +1092,14 @@ namespace LsMsgPack.Streaming
       }
     }
 
+    private static MsgPackException SchemaCutOff(MsgPackStreamSchemaLocation schema)
+    {
+      return new MsgPackException($"The schema at {schema.Offset.Value} that the index locates is cut off.", schema.Offset.Value);
+    }
+
     /// <summary>
     /// Goes to an entry of the index (<see cref="ReadIndexes"/>): the next token is the start of its root value (or its head: then read it with <see cref="ReadHead{TRoot}"/>). Needs a stream that seeks.
+    /// It reads nothing (the next read does), so the async methods continue from here as well.
     /// </summary>
     public void Seek(MsgPackStreamEntry entry)
     {
@@ -1102,6 +1116,7 @@ namespace LsMsgPack.Streaming
     /// <summary>
     /// Goes to a point of an entry's sparse index (<see cref="MsgPackStreamEntry.Points"/>): the next value is the element it points to.
     /// The reader must be in the array of that entry (<see cref="Depth"/> 1: after its ArrayStart, and its head when it has one), so it knows the array and the schema of its objects.
+    /// It reads nothing (the next read does), so the async methods continue from here as well.
     /// </summary>
     /// <exception cref="InvalidOperationException">The reader is not in a root array, or the entry is no array</exception>
     public void Seek(MsgPackStreamEntry entry, MsgPackStreamIndexPoint point)
@@ -1127,10 +1142,25 @@ namespace LsMsgPack.Streaming
 
     /// <summary>
     /// Goes to an element of the array of an entry: to the last point before it (<see cref="Seek(MsgPackStreamEntry, MsgPackStreamIndexPoint)"/>), or from where the reader is when that is closer, then passes the elements up to it.
-    /// The next value is the element. The reader must be in the array of that entry, as for <see cref="Seek(MsgPackStreamEntry, MsgPackStreamIndexPoint)"/>.
+    /// The next value is the element. The reader must be in the array of that entry, as for <see cref="Seek(MsgPackStreamEntry, MsgPackStreamIndexPoint)"/>. <see cref="SeekElementAsync"/> reads asynchronously.
     /// </summary>
     /// <param name="element">The number of the element (0 for the first)</param>
     public void SeekElement(MsgPackStreamEntry entry, long element)
+    {
+      CheckSeekElement(entry, element);
+      PassPayload();
+      for (long current = SeekPointBefore(entry, element); current < element; current++)
+      {
+        if (!Read())
+          throw EndOfData();
+        Skip();
+      }
+      PassPayload(); // the data of the last element passed
+      _token = MsgPackTokenType.None;
+      _length = 0;
+    }
+
+    private void CheckSeekElement(MsgPackStreamEntry entry, long element)
     {
       if (entry is null)
         throw new ArgumentNullException(nameof(entry));
@@ -1141,8 +1171,14 @@ namespace LsMsgPack.Streaming
         throw new InvalidOperationException("The entry is no array.");
       if (element < 0 || element >= entry.ElementCount.Value)
         throw new ArgumentOutOfRangeException(nameof(element));
-      PassPayload();
+    }
 
+    /// <summary>
+    /// <see cref="SeekElement"/> after the payload was passed: goes to the last point at or before <paramref name="element"/> when that is closer than where the reader is.
+    /// </summary>
+    /// <returns>The number of the next element</returns>
+    private long SeekPointBefore(MsgPackStreamEntry entry, long element)
+    {
       long current = _frames[0].Unknown ? _frames[0].Count : entry.ElementCount.Value - _frames[0].Count; // the next element
       List<MsgPackStreamIndexPoint> points = entry.Points;
       int best = -1;
@@ -1160,20 +1196,11 @@ namespace LsMsgPack.Streaming
       if (best >= 0 && (current > element || points[best].Element > current))
       {
         Seek(entry, points[best]);
-        current = points[best].Element;
+        return points[best].Element;
       }
-      else if (current > element)
+      if (current > element)
         throw new InvalidOperationException($"The element {element} is before the reader (at {current}) and before the first point of the entry: {nameof(Seek)} to the entry again to read it.");
-
-      for (; current < element; current++)
-      {
-        if (!Read())
-          throw EndOfData();
-        Skip();
-      }
-      PassPayload(); // the data of the last element passed
-      _token = MsgPackTokenType.None;
-      _length = 0;
+      return current;
     }
 
     /// <summary>
@@ -1198,19 +1225,6 @@ namespace LsMsgPack.Streaming
     {
       if (!_source.CanSeek)
         throw new NotSupportedException("The index is read from a stream that seeks (a file, a memory stream; over HTTP: download the entries with range requests).");
-    }
-
-    private bool ReadExactly(byte[] buffer)
-    {
-      int done = 0;
-      while (done < buffer.Length)
-      {
-        int read = _source.Read(buffer, done, buffer.Length - done);
-        if (read <= 0)
-          return false;
-        done += read;
-      }
-      return true;
     }
 
     /// <summary>

@@ -370,10 +370,10 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync();
       using (host)
       {
-        InvalidOperationException before = Assert.ThrowsAsync<InvalidOperationException>(new Func<Task>(() => client.SendAsync(Get("/streaming/failing?after=0", LsStream))));
+        InvalidOperationException before = await Assert.ThrowsAsync<InvalidOperationException>(new Func<Task>(() => client.SendAsync(Get("/streaming/failing?after=0", LsStream))));
         Assert.That(before.Message, Is.EqualTo("The query failed."));
 
-        Assert.CatchAsync<Exception>(new Func<Task>(async () =>
+        await Assert.CatchAsync<Exception>(new Func<Task>(async () =>
         {
           HttpResponseMessage response = await client.SendAsync(Get("/streaming/failing?after=2", LsStream));
           ReadOrders(await response.Content.ReadAsByteArrayAsync(), LsReader);

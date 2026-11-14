@@ -463,16 +463,35 @@ namespace LsMsgPack.Generated
     private readonly Serializer _serializer;
 
     /// <summary>
-    /// The handlers of the properties written by <see cref="Value{T}"/> (per position, a ValueHandler of the property's type), made at the first value: a handler can lead back to this plan's type.
+    /// Per position, what <see cref="Value{T}"/> needs: the handler of the property's type and the filter mode (one element: one bounds check, no load of the PropWriter for the mode).
     /// </summary>
-    private readonly object[] _handlers;
+    private readonly ValueEntry[] _values;
+
+    private struct ValueEntry
+    {
+      /// <summary>
+      /// A ValueHandler of the property's type, made at the first value: a handler can lead back to this plan's type.
+      /// </summary>
+      internal object Handler;
+
+      /// <summary>
+      /// <see cref="FilterNone"/>, <see cref="FilterDefault"/> or <see cref="FilterBoxed"/>, decided when the plan is built.
+      /// </summary>
+      internal byte Filter;
+    }
+
+    private const byte FilterNone = 0;
+    private const byte FilterDefault = 1; // FilterDefaultValues, typed (ValueHandler.IncludeByDefault)
+    private const byte FilterBoxed = 2; // a [DefaultValue]: the properties a filter decides by their owner have no generated member (Serializer.WriteMember)
 
     internal GeneratedWritePlan(Serializer serializer, GeneratedObjectCode code, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool guidString, bool decimalString,
       bool unrolled, bool unrolledMap, bool unrolledTrimmed, PropWriter[] props)
     {
       _serializer = serializer;
       Code = code;
-      _handlers = new object[ids.Length];
+      _values = new ValueEntry[ids.Length];
+      for (int t = 0; t < _values.Length; t++)
+        _values[t].Filter = !filterDefaults ? FilterNone : props[t].BoxedFilters ? FilterBoxed : FilterDefault;
       Ids = ids;
       FilterDefaults = filterDefaults;
       UnspecifiedIsUtc = unspecifiedIsUtc;
@@ -514,12 +533,14 @@ namespace LsMsgPack.Generated
     /// <returns>false when the filters left the value out (nothing was written)</returns>
     public bool Value<T>(int position, WriteContext c, T value, byte[] key, FullPropertyInfo info)
     {
-      ValueHandler<T> handler = Unsafe.As<ValueHandler<T>>(_handlers[position]) ?? CreateHandler<T>(position, info);
-      if (FilterDefaults)
+      ref ValueEntry entry = ref _values[position];
+      ValueHandler<T> handler = Unsafe.As<ValueHandler<T>>(entry.Handler) ?? CreateHandler<T>(position, info);
+      byte filter = entry.Filter;
+      if (filter != FilterNone)
       {
-        if (_props[position].BoxedFilters)
+        if (filter == FilterBoxed)
         {
-          if (!_props[position].IncludeBoxed(value, info, null)) // a [DefaultValue]: the properties a filter decides by their owner have no generated member (Serializer.WriteMember)
+          if ((key != null || value != null) && !_props[position].IncludeBoxed(value, info, null)) // a null array item is not asked (see PropWriter.IncludeBoxed)
             return false;
         }
         else if (!handler.IncludeByDefault(value, info))
@@ -538,7 +559,7 @@ namespace LsMsgPack.Generated
     private ValueHandler<T> CreateHandler<T>(int position, FullPropertyInfo info)
     {
       ValueHandler<T> handler = _serializer.Handler<T>(info);
-      _handlers[position] = handler;
+      _values[position].Handler = handler;
       return handler;
     }
 

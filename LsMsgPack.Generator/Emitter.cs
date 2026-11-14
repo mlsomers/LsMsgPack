@@ -205,13 +205,13 @@ namespace LsMsgPack.Generator
           w.Line("return " + Values + ".Nullable<" + type.Argument + ">();");
           return;
         case TypeModelKind.List:
-          w.Line("return " + Values + ".List<" + type.Argument + ">();");
+          w.Line("return " + Values + (type.Bulk ? ".BulkList<" : ".List<") + type.Argument + ">();");
           return;
         case TypeModelKind.Array:
-          w.Line("return " + Values + ".Array<" + type.Argument + ">();");
+          w.Line("return " + Values + (type.Bulk ? ".BulkArray<" : ".Array<") + type.Argument + ">();");
           return;
         case TypeModelKind.HashSet:
-          w.Line("return " + Values + ".HashSet<" + type.Argument + ">();");
+          w.Line("return " + Values + (type.Bulk ? ".BulkHashSet<" : ".HashSet<") + type.Argument + ">();");
           return;
         case TypeModelKind.Dictionary:
           w.Line("return " + Values + ".Dictionary<" + type.Argument + ">();");

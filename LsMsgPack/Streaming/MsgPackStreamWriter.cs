@@ -121,11 +121,41 @@ namespace LsMsgPack.Streaming
     /// A writer that appends to a stream (that seeks, reads and writes), e.g. a file opened with FileMode.OpenOrCreate: after its last index, which the new index points to (<see cref="MsgPackStreamIndex.PreviousTail"/>),
     /// so a reader finds the entries of both parts. An empty stream gets an index of its own. The stream is not changed until the writer writes.
     /// <para>A stream without an index is searched backwards completely for one first (to tell it from a stream that was not finished): it gets an index of the appended entries only.</para>
+    /// <para><see cref="AppendAsync"/> reads the index asynchronously and returns an asynchronous writer.</para>
     /// </summary>
     /// <param name="index">The options of the index (copied: <see cref="MsgPackStreamIndexOptions.StartPosition"/> and <see cref="MsgPackStreamIndexOptions.PreviousTail"/> are set from the stream), null: the defaults</param>
     /// <exception cref="InvalidOperationException">The stream continues after its last index (the writer stopped without finishing it: cut it off after that tail first),
     /// or its last index says it was interrupted in the middle of a root value</exception>
     public static MsgPackStreamWriter Append(Stream stream, LsMsgPackSerializer serializer, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, MsgPackStreamIndexOptions index = null, bool leaveOpen = false)
+    {
+      MsgPackStreamIndexOptions options = AppendOptions(stream, serializer, index);
+      long length = stream.Length;
+      ContinueAfter(IndexFormat.ReadAll(stream, true), options, length);
+      stream.Position = length;
+      return new MsgPackStreamWriter(stream, serializer, schemas, leaveOpen, options);
+    }
+
+    /// <summary>
+    /// <see cref="Append"/> with asynchronous reads of the index, for a stream that must not be read or written synchronously (a file opened for asynchronous I/O):
+    /// the writer is asynchronous (it writes in its async methods only, see the constructor's asynchronous), close it with <see cref="DisposeAsync"/>.
+    /// </summary>
+    /// <param name="index">The options of the index (copied: <see cref="MsgPackStreamIndexOptions.StartPosition"/> and <see cref="MsgPackStreamIndexOptions.PreviousTail"/> are set from the stream), null: the defaults</param>
+    /// <exception cref="InvalidOperationException">The stream continues after its last index (the writer stopped without finishing it: cut it off after that tail first),
+    /// or its last index says it was interrupted in the middle of a root value</exception>
+    public static async Task<MsgPackStreamWriter> AppendAsync(Stream stream, LsMsgPackSerializer serializer, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, MsgPackStreamIndexOptions index = null,
+      bool leaveOpen = false, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      MsgPackStreamIndexOptions options = AppendOptions(stream, serializer, index);
+      long length = stream.Length;
+      ContinueAfter(await IndexFormat.ReadAllAsync(stream, true, cancellationToken).ConfigureAwait(false), options, length);
+      stream.Position = length;
+      return new MsgPackStreamWriter(stream, serializer, schemas, leaveOpen, options, asynchronous: true);
+    }
+
+    /// <summary>
+    /// The arguments of <see cref="Append"/> checked, and a copy of the index options without the positions.
+    /// </summary>
+    private static MsgPackStreamIndexOptions AppendOptions(Stream stream, LsMsgPackSerializer serializer, MsgPackStreamIndexOptions index)
     {
       if (stream is null)
         throw new ArgumentNullException(nameof(stream));
@@ -144,22 +174,26 @@ namespace LsMsgPack.Streaming
         options.Writer = index.Writer;
         options.Metadata = index.Metadata;
       }
+      return options;
+    }
 
-      long length = stream.Length;
-      List<MsgPackStreamIndex> indexes = IndexFormat.ReadAll(stream, true, out long lastTail, out bool endsWithTail, out long delta);
+    /// <summary>
+    /// Sets where the appended part starts and the tail its index points to, from the indexes of the stream; refuses a stream that cannot be continued.
+    /// </summary>
+    private static void ContinueAfter(IndexFormat.IndexChain chain, MsgPackStreamIndexOptions options, long length)
+    {
+      List<MsgPackStreamIndex> indexes = chain.Indexes;
       if (indexes.Count == 0)
-        options.StartPosition = length;
-      else
       {
-        if (!endsWithTail)
-          throw new InvalidOperationException($"The stream continues after its last index (its tail at {lastTail}): the writer stopped without finishing it. Cut it off after that tail (at {lastTail + MsgPackStreamIndex.TailLength}) to append to it; the data after it is not indexed.");
-        if (indexes[indexes.Count - 1].Status == MsgPackStreamIndexStatus.Interrupted)
-          throw new InvalidOperationException("The stream was interrupted in the middle of a root value (its last index says so): values appended to it would be read as part of that value.");
-        options.StartPosition = length - delta; // as the writer before counted
-        options.PreviousTail = lastTail - delta;
+        options.StartPosition = length;
+        return;
       }
-      stream.Position = length;
-      return new MsgPackStreamWriter(stream, serializer, schemas, leaveOpen, options);
+      if (!chain.EndsWithTail)
+        throw new InvalidOperationException($"The stream continues after its last index (its tail at {chain.LastTail}): the writer stopped without finishing it. Cut it off after that tail (at {chain.LastTail + MsgPackStreamIndex.TailLength}) to append to it; the data after it is not indexed.");
+      if (indexes[indexes.Count - 1].Status == MsgPackStreamIndexStatus.Interrupted)
+        throw new InvalidOperationException("The stream was interrupted in the middle of a root value (its last index says so): values appended to it would be read as part of that value.");
+      options.StartPosition = length - chain.Delta; // as the writer before counted
+      options.PreviousTail = chain.LastTail - chain.Delta;
     }
 
     #region State
@@ -593,7 +627,14 @@ namespace LsMsgPack.Streaming
       bool body = ObjectValue(out Serializer.WriterHead head);
       try
       {
-        if (head != null)
+        if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct) // a struct, in a slot instead of a box
+        {
+          if (head != null)
+            LsMsgPackSerializer.TypedWriter<T>.SerializeBodyInSlot(_serializer, head, value, _depth, this);
+          else
+            LsMsgPackSerializer.TypedWriter<T>.SerializeInSlot(_serializer, value, null, out byte[] unused, this);
+        }
+        else if (head != null)
           _serializer.SerializeBody(head, typeof(T), value, LsMsgPackSerializer.TypedWriter<T>.Write, _depth, this);
         else
           _serializer.Serialize(typeof(T), value, LsMsgPackSerializer.TypedWriter<T>.Write, null, out byte[] unused, this);

@@ -292,9 +292,9 @@ namespace LsMsgPackWebApiFormattersTests
         using (HttpClient client = new HttpClient(formatter.CreateHandler(host.GetTestServer().CreateHandler())) { BaseAddress = new Uri("http://localhost/") })
         {
           Assert.That(await ToListAsync(client.GetFromMsgPackAsAsyncEnumerable<Order>("streamclient/none", formatter)), Is.Empty);
-          MsgPackHttpException missing = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => ToListAsync(client.GetFromMsgPackAsAsyncEnumerable<Order>("streamclient/missing", formatter))));
+          MsgPackHttpException missing = await Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => ToListAsync(client.GetFromMsgPackAsAsyncEnumerable<Order>("streamclient/missing", formatter))));
           Assert.That(missing.StatusCode, Is.EqualTo(System.Net.HttpStatusCode.NotFound));
-          NotSupportedException json = Assert.ThrowsAsync<NotSupportedException>(new Func<Task>(() => ToListAsync(client.GetFromMsgPackAsAsyncEnumerable<Order>("streamclient/json", formatter))));
+          NotSupportedException json = await Assert.ThrowsAsync<NotSupportedException>(new Func<Task>(() => ToListAsync(client.GetFromMsgPackAsAsyncEnumerable<Order>("streamclient/json", formatter))));
           Assert.That(json.Message, Does.Contain("application/json"));
         }
       }
@@ -313,7 +313,7 @@ namespace LsMsgPackWebApiFormattersTests
         using (HttpClient client = new HttpClient(formatter.CreateHandler(host.GetTestServer().CreateHandler())) { BaseAddress = new Uri("http://localhost/") })
         {
           List<int> ids = new List<int>();
-          Exception error = Assert.CatchAsync<Exception>(new Func<Task>(async () =>
+          Exception error = await Assert.CatchAsync<Exception>(new Func<Task>(async () =>
           {
             await foreach (Order order in client.GetFromMsgPackAsAsyncEnumerable<Order>("streamclient/failing", formatter))
             {

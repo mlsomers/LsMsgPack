@@ -89,6 +89,10 @@ namespace LsMsgPackAotSmokeTest
     public IDictionary<string, Address> ByName { get; set; }
     public ICollection<Vector> Track { get; set; }
     public IEnumerable<long> Totals { get; set; }
+    public int[] Samples { get; set; } // in bulk: only the element types of the context's collections are (run.sh checks the map file)
+    public List<Guid> Keys { get; set; }
+    public decimal[] Prices { get; set; }
+    public List<double> Readings { get; set; }
   }
 
   /// <summary>
@@ -426,7 +430,11 @@ namespace LsMsgPackAotSmokeTest
           Labels = new HashSet<string>() { "l" },
           ByName = new Dictionary<string, Address>() { { "home", home } },
           Track = new List<Vector>() { new Vector() { Y = 2 } },
-          Totals = new long[] { long.MaxValue }
+          Totals = new long[] { long.MaxValue },
+          Samples = new[] { 1, -1, 300, int.MinValue },
+          Keys = new List<Guid>() { new Guid("7d3c1b2a-5e4f-4a6b-9c8d-0e1f2a3b4c5d"), Guid.Empty },
+          Prices = new[] { 12.5m, -0.01m, decimal.MaxValue },
+          Readings = new List<double>() { 0.5, double.NaN, -1e300 }
         }
       };
     }

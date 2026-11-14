@@ -44,7 +44,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 }
 ```
 
-`new MsgPackDataReader(streamReader)` reads the tables one after another as result sets, also from a stream that doesn't seek (`MsgPackDataReader.OpenAsync` for asynchronous reads).
+`new MsgPackDataReader(streamReader)` reads the tables one after another as result sets, also from a stream that doesn't seek (`MsgPackDataReader.OpenAsync` for asynchronous reads; `OpenAsync(streamReader, entry)` at an entry of `ReadIndexesAsync()`).
 
 ## Rows into objects, and one payload
 

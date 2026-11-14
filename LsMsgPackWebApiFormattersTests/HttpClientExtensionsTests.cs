@@ -188,14 +188,14 @@ namespace LsMsgPackWebApiFormattersTests
         {
           Assert.That(await client.GetFromMsgPackAsync<Order>("clientext/none", formatter), Is.Null);
           Assert.That(await client.GetFromMsgPackAsync<int>("clientext/none", formatter), Is.EqualTo(0));
-          MsgPackHttpException missing = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/missing", formatter)));
+          MsgPackHttpException missing = await Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/missing", formatter)));
           Assert.That(missing.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
-          Assert.ThrowsAsync<NotSupportedException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/json", formatter)));
+          await Assert.ThrowsAsync<NotSupportedException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/json", formatter)));
 
           HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, "clientext/stream");
           request.Headers.TryAddWithoutValidation("Accept", MsgPackStreamExtensions.StreamAccept);
           using (HttpResponseMessage response = await client.SendAsync(request))
-            Assert.ThrowsAsync<NotSupportedException>(new Func<Task>(() => response.Content.ReadFromMsgPackAsync<List<Order>>(formatter)));
+            await Assert.ThrowsAsync<NotSupportedException>(new Func<Task>(() => response.Content.ReadFromMsgPackAsync<List<Order>>(formatter)));
           Assert.That(await client.GetFromMsgPackAsync<List<Order>>("clientext/stream", formatter), Has.Count.EqualTo(2), "Not a stream without the parameter");
         }
       }
@@ -210,12 +210,12 @@ namespace LsMsgPackWebApiFormattersTests
         using (HttpClient client = new HttpClient(formatter.CreateHandler(host.GetTestServer().CreateHandler())) { BaseAddress = new Uri("http://localhost/") })
         {
           // NotFound() of an [ApiController]: problem details, JSON although the request asks for MsgPack
-          MsgPackHttpException notFound = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/missingorder", formatter)));
+          MsgPackHttpException notFound = await Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/missingorder", formatter)));
           Assert.That(notFound.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
           Assert.That(((HttpRequestException)notFound).StatusCode, Is.EqualTo(HttpStatusCode.NotFound), "The one of HttpRequestException (.NET 5+)");
           Assert.That(notFound.Body, Is.Empty, "No action: an empty 404");
 
-          MsgPackHttpException problem = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/problem", formatter)));
+          MsgPackHttpException problem = await Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/problem", formatter)));
           Assert.That(problem.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
           Assert.That(problem.ContentType, Does.StartWith("application/problem+json"));
           Assert.That(problem.Title, Is.EqualTo("Locked"));
@@ -229,7 +229,7 @@ namespace LsMsgPackWebApiFormattersTests
           // The automatic 400 of [ApiController]: validation problem details
           using (HttpResponseMessage response = await client.PostAsMsgPackAsync("clientext/validate", new ValidatedOrder() { Count = 9 }, formatter))
           {
-            MsgPackHttpException invalid = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => response.EnsureSuccessStatusCodeAsync()));
+            MsgPackHttpException invalid = await Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => response.EnsureSuccessStatusCodeAsync()));
             Assert.That(invalid.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
             Assert.That(invalid.Title, Is.EqualTo("One or more validation errors occurred."));
             Assert.That(invalid.Errors.Keys, Is.EquivalentTo(new[] { "Customer", "Count" }));
@@ -238,14 +238,14 @@ namespace LsMsgPackWebApiFormattersTests
           }
           using (HttpResponseMessage response = await client.PostAsMsgPackAsync("clientext/validate", new ValidatedOrder() { Count = 9 }, formatter))
           {
-            NotSupportedException notChecked = Assert.ThrowsAsync<NotSupportedException>(new Func<Task>(() => response.Content.ReadFromMsgPackAsync<ValidatedOrder>(formatter)));
+            NotSupportedException notChecked = await Assert.ThrowsAsync<NotSupportedException>(new Func<Task>(() => response.Content.ReadFromMsgPackAsync<ValidatedOrder>(formatter)));
             Assert.That(notChecked.Message, Does.StartWith("The response is application/problem+json, not MsgPack. It starts with: {").And.Contain("One or more validation errors occurred."));
           }
           using (HttpResponseMessage response = await client.PostAsMsgPackAsync("clientext/validate", new ValidatedOrder() { Customer = "c", Count = 2 }, formatter))
             Assert.That(await response.EnsureSuccessStatusCodeAsync(), Is.SameAs(response));
 
           // A value of the action: MsgPack, as the request asks
-          MsgPackHttpException withOrder = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/notfoundorder", formatter)));
+          MsgPackHttpException withOrder = await Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/notfoundorder", formatter)));
           Assert.That(withOrder.ContentType, Does.StartWith(MsgPackMediaTypes.XLsMsgPack));
           Assert.That(withOrder.Text, Is.Null);
           Assert.That(withOrder.Title, Is.Null);
@@ -253,13 +253,13 @@ namespace LsMsgPackWebApiFormattersTests
           Assert.That(withOrder.ReadBody<Order>(formatter).Customer, Is.EqualTo("c8"));
 
           // A text
-          MsgPackHttpException down = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/down", formatter)));
+          MsgPackHttpException down = await Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetFromMsgPackAsync<Order>("clientext/down", formatter)));
           Assert.That(down.StatusCode, Is.EqualTo(HttpStatusCode.ServiceUnavailable));
           Assert.That(down.Text, Is.EqualTo("Down for maintenance"));
           Assert.That(down.Message, Is.EqualTo("Response status code does not indicate success: 503 (Service Unavailable). Down for maintenance"));
 
           // Streams
-          MsgPackHttpException streamProblem = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetMsgPackStreamAsync("clientext/problem", formatter)));
+          MsgPackHttpException streamProblem = await Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => client.GetMsgPackStreamAsync("clientext/problem", formatter)));
           Assert.That(streamProblem.Detail, Is.EqualTo("Order 3 is locked."));
         }
       }
@@ -298,7 +298,7 @@ namespace LsMsgPackWebApiFormattersTests
       using (HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = new ByteArrayContent(new byte[MsgPackHttpException.MaxBodyLength * 2]) })
       {
         response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        MsgPackHttpException large = Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => response.EnsureSuccessStatusCodeAsync()));
+        MsgPackHttpException large = await Assert.ThrowsAsync<MsgPackHttpException>(new Func<Task>(() => response.EnsureSuccessStatusCodeAsync()));
         Assert.That(large.Body, Has.Length.EqualTo(MsgPackHttpException.MaxBodyLength));
         Assert.That(large.Text, Is.Null);
       }

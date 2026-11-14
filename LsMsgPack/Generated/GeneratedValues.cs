@@ -89,6 +89,31 @@ namespace LsMsgPack.Generated
     }
 
     /// <summary>
+    /// <c>T[]</c> of a type the runtime writes and reads in bulk (int, long, float, double, short, ushort, uint, ulong, bool, Guid, decimal), with the handler and reader of <see cref="Array{T}"/> too
+    /// (when the options write the element type otherwise): only the element types of these descriptions are in bulk without dynamic code (NativeAOT).
+    /// </summary>
+    public static GeneratedType BulkArray<T>() where T : unmanaged
+    {
+      return new GeneratedBulkArrayType<T>();
+    }
+
+    /// <summary>
+    /// <c>List&lt;T&gt;</c> of a type the runtime writes and reads in bulk (see <see cref="BulkArray{T}"/>, and sbyte).
+    /// </summary>
+    public static GeneratedType BulkList<T>() where T : unmanaged
+    {
+      return new GeneratedBulkListType<T>();
+    }
+
+    /// <summary>
+    /// <c>HashSet&lt;T&gt;</c> of a type the runtime writes and reads in bulk (see <see cref="BulkList{T}"/>).
+    /// </summary>
+    public static GeneratedType BulkHashSet<T>() where T : unmanaged
+    {
+      return new GeneratedBulkHashSetType<T>();
+    }
+
+    /// <summary>
     /// <c>Dictionary&lt;TKey, TValue&gt;</c>: its typed handler and reader, also without dynamic code.
     /// </summary>
     public static GeneratedType Dictionary<TKey, TValue>()
@@ -284,7 +309,7 @@ namespace LsMsgPack.Generated
     }
   }
 
-  internal sealed class GeneratedListType<T> : LsGeneratedType<List<T>>
+  internal class GeneratedListType<T> : LsGeneratedType<List<T>>
   {
     internal GeneratedListType() : base(() => new List<T>())
     {
@@ -300,7 +325,7 @@ namespace LsMsgPack.Generated
     }
   }
 
-  internal sealed class GeneratedHashSetType<T> : LsGeneratedType<HashSet<T>>
+  internal class GeneratedHashSetType<T> : LsGeneratedType<HashSet<T>>
   {
     internal GeneratedHashSetType() : base(() => new HashSet<T>())
     {
@@ -353,7 +378,7 @@ namespace LsMsgPack.Generated
     }
   }
 
-  internal sealed class GeneratedArrayType<T> : LsGeneratedType<T[]>
+  internal class GeneratedArrayType<T> : LsGeneratedType<T[]>
   {
     internal GeneratedArrayType() : base(null)
     {
@@ -366,6 +391,38 @@ namespace LsMsgPack.Generated
       if (definition == typeof(ArrayReader<>))
         return new ArrayReader<T>((Serializer)argument);
       return base.Instantiate(definition, argument);
+    }
+  }
+
+  /// <summary>
+  /// A collection the runtime writes and reads in bulk (<see cref="GeneratedValues.BulkArray{T}"/>...): the handler or reader of its element type and kind of collection only (Serializer.CreateInBulk).
+  /// </summary>
+  internal interface IGeneratedBulk
+  {
+    object Create<TCreator>(TCreator creator) where TCreator : struct, Serializer.IBulkCreator;
+  }
+
+  internal sealed class GeneratedBulkArrayType<T> : GeneratedArrayType<T>, IGeneratedBulk where T : unmanaged
+  {
+    public object Create<TCreator>(TCreator creator) where TCreator : struct, Serializer.IBulkCreator
+    {
+      return creator.Array<T>();
+    }
+  }
+
+  internal sealed class GeneratedBulkListType<T> : GeneratedListType<T>, IGeneratedBulk where T : unmanaged
+  {
+    public object Create<TCreator>(TCreator creator) where TCreator : struct, Serializer.IBulkCreator
+    {
+      return creator.List<T>();
+    }
+  }
+
+  internal sealed class GeneratedBulkHashSetType<T> : GeneratedHashSetType<T>, IGeneratedBulk where T : unmanaged
+  {
+    public object Create<TCreator>(TCreator creator) where TCreator : struct, Serializer.IBulkCreator
+    {
+      return creator.Set<T>();
     }
   }
 

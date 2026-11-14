@@ -170,7 +170,7 @@ namespace LsMsgPackUnitTests
 
     /// <summary>
     /// Struct values are written and read by reference: nothing is allocated for them (into a reused stream nothing at all), in every layout and id mode.
-    /// A struct as the root value is boxed once per call (the public Deserialize and Serialize take the root as an object).
+    /// A struct as the root value is not boxed either (<see cref="StructRoot_NoAllocation"/>).
     /// <para>Only measured when the code is optimized (Release, ReleaseKeepTrack): the generic code boxes values behind type checks, and only the optimizing JIT removes those boxes. The round trips are checked in every configuration.</para>
     /// </summary>
     [TestMethod]
@@ -356,6 +356,181 @@ namespace LsMsgPackUnitTests
           CollectionAssert.AreEqual(nullables, lt.Deserialize<List<LtsFloats?>>(lt.Serialize(nullables)), setting);
           Assert.AreEqual(default(LtsFloats), lt.Deserialize<LtsFloats>(lt.Serialize<object>(null)), setting + ": nil is the default");
         }
+      }
+    }
+
+    /// <summary>A root struct whose computed property serializes another value of its type, and whose setter reads one: calls nested in a call with the same root type</summary>
+    public struct LtsReentrant
+    {
+      public static LsMsgPackSerializer Nester;
+      public static int LastInner = -1;
+      public int A { get; set; }
+      public string Echo
+      {
+        get { return A > 0 ? Convert.ToBase64String(Nester.Serialize(new LtsReentrant { A = A - 1 })) : null; }
+        set { if (value != null) LastInner = Nester.Deserialize<LtsReentrant>(Convert.FromBase64String(value)).A; }
+      }
+    }
+
+    /// <summary>
+    /// A struct as the root value of the typed calls is held in a reused slot instead of a box (RootSlot): writing and reading it allocates nothing, in every layout and id mode, also through the stream writer and reader.
+    /// <para>Measured only when the code is optimized, as <see cref="Structs_NoAllocation"/>.</para>
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void StructRoot_NoAllocation(bool generated)
+    {
+      LtsVec vec = new LtsVec { X = 1, Y = -2.5f, Z = 3 };
+      MemoryStream stream = new MemoryStream(1024);
+      bool optimized = IsOptimized(typeof(LsMsgPackSerializer)) && IsOptimized(typeof(LsStructTests));
+      foreach (bool schema in new[] { false, true })
+      {
+        foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+        {
+          LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
+            Contexts = generated ? new LsMsgPack.LsMsgPackContext[] { TestMsgPackContext.Default } : null });
+          string setting = $"schema {schema}, {layout}, generated {generated}";
+          byte[] data = lt.Serialize(vec);
+          CollectionAssert.AreEqual(lt.Serialize((object)vec, typeof(LtsVec)), data, setting + ": the same bytes as the boxed call");
+
+          for (int t = 0; t < 3; t++) // warm up
+          {
+            stream.SetLength(0);
+            lt.Serialize(vec, stream);
+            lt.Deserialize<LtsVec>(data);
+          }
+          long before = GC.GetAllocatedBytesForCurrentThread();
+          stream.SetLength(0);
+          lt.Serialize(vec, stream);
+          long written = GC.GetAllocatedBytesForCurrentThread() - before;
+          before = GC.GetAllocatedBytesForCurrentThread();
+          LtsVec read = lt.Deserialize<LtsVec>(data);
+          long readBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+          Assert.AreEqual(vec, read, setting);
+          if (optimized)
+          {
+            Assert.AreEqual(0L, written, setting + ": writing");
+            Assert.AreEqual(0L, readBytes, setting + ": reading");
+          }
+
+          // The stream writer and reader: one value each, the same as the serializer's
+          stream.SetLength(0);
+          using (LsMsgPack.Streaming.MsgPackStreamWriter writer = new LsMsgPack.Streaming.MsgPackStreamWriter(stream, lt, LsMsgPack.Streaming.MsgPackStreamSchemas.PerObject, true))
+            writer.WriteObject(vec);
+          CollectionAssert.AreEqual(data, stream.ToArray(), setting + ": stream writer");
+          using (LsMsgPack.Streaming.MsgPackStreamReader reader = new LsMsgPack.Streaming.MsgPackStreamReader(new MemoryStream(data), lt))
+            Assert.AreEqual(vec, reader.ReadObject<LtsVec>(), setting + ": stream reader");
+        }
+      }
+    }
+
+    /// <summary>
+    /// The typed calls with a struct root (in a slot, not boxed) give the same bytes and values as the boxed calls on every path: nullable structs (still boxed), structs with references,
+    /// alternating root types, calls nested in a call of the same root type, a head's body in a stream, the paths that report differences or collect errors, nil, and a root value that cannot be converted (fails as before).
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void StructRoot_SameAsBoxed(bool generated)
+    {
+      foreach (bool schema in new[] { false, true })
+      {
+        foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+        {
+          LsMsgPackOptions options = new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
+            Contexts = generated ? new LsMsgPack.LsMsgPackContext[] { TestMsgPackContext.Default } : null };
+          LsMsgPackSerializer lt = new LsMsgPackSerializer(options);
+          string setting = $"schema {schema}, {layout}, generated {generated}";
+
+          LtsRefs refs = new LtsRefs { S = "s", Items = new[] { 1, 2, 3 } };
+          byte[] refsData = lt.Serialize(refs);
+          CollectionAssert.AreEqual(lt.Serialize((object)refs, typeof(LtsRefs)), refsData, setting);
+          LtsRefs refsRead = lt.Deserialize<LtsRefs>(refsData);
+          Assert.AreEqual("s", refsRead.S, setting);
+          CollectionAssert.AreEqual(refs.Items, refsRead.Items, setting);
+          refsRead = lt.Deserialize<LtsRefs>(new MemoryStream(refsData));
+          CollectionAssert.AreEqual(refs.Items, refsRead.Items, setting + ": from a stream");
+          byte[] padded = new byte[refsData.Length + 4];
+          Array.Copy(refsData, 0, padded, 2, refsData.Length);
+          Assert.AreEqual("s", lt.Deserialize<LtsRefs>(padded, 2, refsData.Length).S, setting + ": offset and count");
+
+          // Alternating struct root types: each call makes its own slot, the values stay apart
+          LtsFloats floats = new LtsFloats { X = 7, Y = 8 };
+          LtsVec vec = new LtsVec { X = 4 };
+          for (int t = 0; t < 2; t++)
+          {
+            Assert.AreEqual(floats, lt.Deserialize<LtsFloats>(lt.Serialize(floats)), setting);
+            Assert.AreEqual(vec, lt.Deserialize<LtsVec>(lt.Serialize(vec)), setting);
+            Assert.AreEqual(42, lt.Deserialize<int>(lt.Serialize(42)), setting + ": a number as the root");
+          }
+
+          // Nullable structs stay boxed (the box of null is null)
+          LtsFloats? some = floats;
+          Assert.AreEqual(floats, lt.Deserialize<LtsFloats?>(lt.Serialize(some)), setting);
+          Assert.IsNull(lt.Deserialize<LtsFloats?>(lt.Serialize<LtsFloats?>(null)), setting);
+          Assert.AreEqual(default(LtsVec), lt.Deserialize<LtsVec>(lt.Serialize<object>(null)), setting + ": nil is the default");
+
+          // Nested calls of the same root type while the outer one holds its slot
+          LtsReentrant.Nester = lt;
+          LtsReentrant.LastInner = -1;
+          LtsReentrant reentrant = new LtsReentrant { A = 2 };
+          byte[] reentrantData = lt.Serialize(reentrant);
+          CollectionAssert.AreEqual(lt.Serialize((object)reentrant, typeof(LtsReentrant)), reentrantData, setting + ": nested writes");
+          Assert.AreEqual(2, lt.Deserialize<LtsReentrant>(reentrantData).A, setting + ": nested reads");
+          Assert.AreEqual(1, LtsReentrant.LastInner, setting + ": the nested read");
+
+          // The paths that report differences or collect errors read boxed: the same values
+          LtsRefs reported = lt.Deserialize<LtsRefs>(refsData, out ReadDifferences differences);
+          Assert.IsNull(differences, setting);
+          CollectionAssert.AreEqual(refs.Items, reported.Items, setting);
+          LsMsgPackOptions collecting = options.Clone();
+          collecting.ReadErrors = ReadErrorHandling.ReportAndContinue;
+          CollectionAssert.AreEqual(refs.Items, new LsMsgPackSerializer(collecting).Deserialize<LtsRefs>(refsData).Items, setting + ": collecting errors");
+
+          // A root value that cannot be read as the type fails as the boxed call with the cast does
+          byte[] text = lt.Serialize("text");
+          Type boxedFails = Failure(() => { LtsVec unused = (LtsVec)lt.Deserialize(typeof(LtsVec), text); });
+          Assert.IsNotNull(boxedFails, setting);
+          Assert.AreEqual(boxedFails, Failure(() => lt.Deserialize<LtsVec>(text)), setting + ": an unconverted root");
+          Assert.AreEqual(Failure(() => { int unused = (int)lt.Deserialize(typeof(int), text); }), Failure(() => lt.Deserialize<int>(text)), setting + ": an unconverted number");
+          Assert.AreEqual(vec, lt.Deserialize<LtsVec>(lt.Serialize(vec)), setting + ": after a failed call");
+        }
+      }
+
+      // The body of a head: values of a struct in a list, written and read as the list's elements
+      LsMsgPackSerializer heads = new LsMsgPackSerializer(new LsMsgPackOptions() { UseRegisteredContexts = false, Contexts = generated ? new LsMsgPack.LsMsgPackContext[] { TestMsgPackContext.Default } : null });
+      List<LtsVec> list = new List<LtsVec> { new LtsVec { X = 1 }, new LtsVec { Y = 2 }, default(LtsVec) };
+      MemoryStream stream = new MemoryStream();
+      using (LsMsgPack.Streaming.MsgPackStreamWriter writer = new LsMsgPack.Streaming.MsgPackStreamWriter(stream, heads, LsMsgPack.Streaming.MsgPackStreamSchemas.PerObject, true))
+      {
+        writer.WriteHead<List<LtsVec>>();
+        writer.WriteArrayHeader(list.Count);
+        for (int i = 0; i < list.Count; i++)
+          writer.WriteObject(list[i]);
+      }
+      CollectionAssert.AreEqual(list, heads.Deserialize<List<LtsVec>>(stream.ToArray()), "head and body read as one payload");
+      using (LsMsgPack.Streaming.MsgPackStreamReader reader = new LsMsgPack.Streaming.MsgPackStreamReader(new MemoryStream(stream.ToArray()), heads))
+      {
+        reader.ReadHead<List<LtsVec>>();
+        Assert.IsTrue(reader.Read());
+        List<LtsVec> read = new List<LtsVec>();
+        while (!reader.AtEnd)
+          read.Add(reader.ReadObject<LtsVec>());
+        CollectionAssert.AreEqual(list, read, "the body read per element");
+      }
+    }
+
+    private static Type Failure(Action action)
+    {
+      try
+      {
+        action();
+        return null;
+      }
+      catch (Exception ex)
+      {
+        return ex.GetType();
       }
     }
 
