@@ -2,11 +2,9 @@
 using LsMsgPackDebug;
 using LsMsgPackDebug.Types.Extensions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NUnit.Framework;
 
 namespace LsMsgPackUnitTests.Extensions
 {
-  [TestFixture]
   [TestClass]
   public class MpDecimalTest
   {

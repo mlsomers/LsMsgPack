@@ -348,7 +348,7 @@ namespace LsMsgPackFormattersTests
       (IHost host, HttpClient client) = await StartAsync(services => { });
       using (host)
       {
-        InvalidOperationException ex = Assert.ThrowsAsync<InvalidOperationException>((Func<Task>)(() => client.SendAsync(Request(HttpMethod.Get, "/min/order", MsgPackMediaTypes.MsgPack))));
+        InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>((Func<Task>)(() => client.SendAsync(Request(HttpMethod.Get, "/min/order", MsgPackMediaTypes.MsgPack))));
         Assert.That(ex.Message, Does.Contain("AddLsMsgPack()"));
       }
     }

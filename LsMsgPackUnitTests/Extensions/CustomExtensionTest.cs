@@ -2,13 +2,11 @@
 using LsMsgPackDebug;
 using LsMsgPackDebug.Types.Extensions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 
 namespace LsMsgPackUnitTests.Extensions
 {
-  [TestFixture]
   [TestClass]
   public class CustomExtensionTest
   {

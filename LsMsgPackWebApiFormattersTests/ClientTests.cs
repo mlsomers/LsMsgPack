@@ -32,15 +32,15 @@ namespace LsMsgPackWebApiFormattersTests
     }
 
     [Test]
-    public void MalformedInputThrows()
+    public async Task MalformedInputThrows()
     {
-      Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => ReadOrder(Bytes(new byte[] { 0x83, 0xA2, 0x49 }, MsgPackMediaTypes.MsgPack))));
+      await Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => ReadOrder(Bytes(new byte[] { 0x83, 0xA2, 0x49 }, MsgPackMediaTypes.MsgPack))));
     }
 
     [Test]
-    public void WrongTypeThrows()
+    public async Task WrongTypeThrows()
     {
-      Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => ReadOrder(Bytes(new byte[] { 0xA5, 0x68, 0x65, 0x6C, 0x6C, 0x6F }, MsgPackMediaTypes.MsgPack))));
+      await Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => ReadOrder(Bytes(new byte[] { 0xA5, 0x68, 0x65, 0x6C, 0x6C, 0x6F }, MsgPackMediaTypes.MsgPack))));
     }
 
     [Test]
@@ -57,13 +57,13 @@ namespace LsMsgPackWebApiFormattersTests
     }
 
     [Test]
-    public void DifferencesUntilTheError()
+    public async Task DifferencesUntilTheError()
     {
       LsMsgPackMediaTypeFormatter reporting = new LsMsgPackMediaTypeFormatter(new LsMsgPack.Http.LsMsgPackHttpOptions() { ReportDifferences = true });
       byte[] body = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Extra", "x" }, { "Id", 300 } }, new MsgPackSettings() { UseInexedSchema = false });
       HttpContent content = Bytes(body.Take(body.Length - 1).ToArray(), MsgPackMediaTypes.MsgPack); // the Id is cut off
 
-      Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => content.ReadAsAsync<Order>(new MediaTypeFormatter[] { reporting })));
+      await Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => content.ReadAsAsync<Order>(new MediaTypeFormatter[] { reporting })));
       Assert.That(content.GetReadDifferences().Differences.Single().Name, Is.EqualTo("Extra"));
     }
 

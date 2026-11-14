@@ -508,6 +508,7 @@ namespace LsMsgPack.Writing
       /// </summary>
       /// <param name="item">An array item: the method is not called for a null value (nil either way, see PropWriter.IncludeBoxed)</param>
       /// <returns>A bool, true when the value is left out; null without filters</returns>
+      [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)] // Nullable<T>.HasValue by name, as in Omitted
       private Expression LeftOut(int id, GeneratedMember member, Expression v, bool item)
       {
         Expression omitted = _filter ? Omitted(member, v) : null;
