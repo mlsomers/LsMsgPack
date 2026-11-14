@@ -1066,7 +1066,7 @@ namespace LsMsgPack.Streaming
       long resume = _source.Position; // the buffer holds the data up to here
       try
       {
-        List<MsgPackStreamIndex> indexes = IndexFormat.ReadAll(_source, searchBackwards, out long lastTail, out bool endsWithTail, out long delta);
+        List<MsgPackStreamIndex> indexes = IndexFormat.ReadAll(_source, searchBackwards).Indexes;
         if (_options._schemaStore != null)
         {
           for (int i = 0; i < indexes.Count; i++)

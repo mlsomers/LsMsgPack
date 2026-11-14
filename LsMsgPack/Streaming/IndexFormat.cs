@@ -278,34 +278,56 @@ namespace LsMsgPack.Streaming
     #region Reading
 
     /// <summary>
+    /// The indexes of a stream (<see cref="ReadAll"/>), and where the last one is.
+    /// </summary>
+    internal sealed class IndexChain
+    {
+      /// <summary>The first one first</summary>
+      internal readonly List<MsgPackStreamIndex> Indexes = new List<MsgPackStreamIndex>();
+      /// <summary>Where the tail of the last index starts, -1 when there is none</summary>
+      internal long LastTail = -1;
+      /// <summary>The stream ends with the tail of the last index (false: data follows it, or there is none)</summary>
+      internal bool EndsWithTail;
+      /// <summary>How far the stream was moved since the last index was written (its positions minus the writer's)</summary>
+      internal long Delta;
+    }
+
+    /// <summary>
+    /// An index and where its tail was found (<see cref="TryReadAtAsync"/>, <see cref="SearchAsync"/>: async methods have no out parameters).
+    /// </summary>
+    private struct Found
+    {
+      internal MsgPackStreamIndex Index;
+      internal long At;
+      internal long Delta;
+    }
+
+    /// <summary>
     /// The indexes of a stream that seeks, the first one first: the last one from the end (or, with <paramref name="search"/>, searched backwards when the stream does not end with a tail: a writer that stopped after a checkpoint),
     /// the others through <see cref="MsgPackStreamIndex.PreviousTail"/>. Empty when the stream has no index. The offsets in them are positions in the stream.
     /// <see cref="ReadAllAsync"/> is the same with asynchronous reads: keep them equal.
     /// </summary>
-    /// <param name="lastTail">Where the tail of the last index starts, -1 when there is none</param>
-    /// <param name="endsWithTail">The stream ends with the tail of the last index (false: data follows it, or there is none)</param>
-    /// <param name="delta">How far the stream was moved since the last index was written (its positions minus the writer's)</param>
-    internal static List<MsgPackStreamIndex> ReadAll(Stream stream, bool search, out long lastTail, out bool endsWithTail, out long delta)
+    internal static IndexChain ReadAll(Stream stream, bool search)
     {
-      List<MsgPackStreamIndex> indexes = new List<MsgPackStreamIndex>();
+      IndexChain chain = new IndexChain();
       long length = stream.Length;
-      lastTail = -1;
-      endsWithTail = false;
-      delta = 0;
       byte[] tailBytes = new byte[MsgPackStreamIndex.TailLength];
 
       long at = length - MsgPackStreamIndex.TailLength;
+      long delta = 0;
       MsgPackStreamIndex index = null;
       if (at >= 0)
         index = TryReadAt(stream, at, tailBytes, out delta);
       if (index != null)
-        endsWithTail = true;
+        chain.EndsWithTail = true;
       else if (search)
         index = Search(stream, length, tailBytes, out at, out delta);
       if (index is null)
-        return indexes;
+        return chain;
 
-      lastTail = at;
+      chain.LastTail = at;
+      chain.Delta = delta;
+      List<MsgPackStreamIndex> indexes = chain.Indexes;
       indexes.Add(index);
       while (index.PreviousTail.HasValue)
       {
@@ -317,39 +339,45 @@ namespace LsMsgPack.Streaming
         index = before;
       }
       indexes.Reverse();
-      return indexes;
+      return chain;
     }
 
     /// <summary>
-    /// <see cref="ReadAll"/> with asynchronous reads (only the indexes: the appending writer reads synchronously).
+    /// <see cref="ReadAll"/> with asynchronous reads.
     /// </summary>
-    internal static async Task<List<MsgPackStreamIndex>> ReadAllAsync(Stream stream, bool search, CancellationToken cancellationToken)
+    internal static async Task<IndexChain> ReadAllAsync(Stream stream, bool search, CancellationToken cancellationToken)
     {
-      List<MsgPackStreamIndex> indexes = new List<MsgPackStreamIndex>();
+      IndexChain chain = new IndexChain();
       long length = stream.Length;
       byte[] tailBytes = new byte[MsgPackStreamIndex.TailLength];
 
       long at = length - MsgPackStreamIndex.TailLength;
-      MsgPackStreamIndex index = null;
+      Found found = default(Found);
       if (at >= 0)
-        index = await TryReadAtAsync(stream, at, tailBytes, cancellationToken).ConfigureAwait(false);
-      if (index is null && search)
-        index = await SearchAsync(stream, length, tailBytes, cancellationToken).ConfigureAwait(false);
+        found = await TryReadAtAsync(stream, at, tailBytes, cancellationToken).ConfigureAwait(false);
+      if (found.Index != null)
+        chain.EndsWithTail = true;
+      else if (search)
+        found = await SearchAsync(stream, length, tailBytes, cancellationToken).ConfigureAwait(false);
+      MsgPackStreamIndex index = found.Index;
       if (index is null)
-        return indexes;
+        return chain;
 
+      chain.LastTail = found.At;
+      chain.Delta = found.Delta;
+      List<MsgPackStreamIndex> indexes = chain.Indexes;
       indexes.Add(index);
       while (index.PreviousTail.HasValue)
       {
         long previous = PreviousTail(index);
-        MsgPackStreamIndex before = await TryReadAtAsync(stream, previous, tailBytes, cancellationToken).ConfigureAwait(false);
+        MsgPackStreamIndex before = (await TryReadAtAsync(stream, previous, tailBytes, cancellationToken).ConfigureAwait(false)).Index;
         if (before is null)
           throw NoPreviousTail(index, previous);
         indexes.Add(before);
         index = before;
       }
       indexes.Reverse();
-      return indexes;
+      return chain;
     }
 
     /// <summary>
@@ -390,17 +418,18 @@ namespace LsMsgPack.Streaming
     /// <summary>
     /// <see cref="TryReadAt"/> with asynchronous reads.
     /// </summary>
-    private static async Task<MsgPackStreamIndex> TryReadAtAsync(Stream stream, long at, byte[] tailBytes, CancellationToken cancellationToken)
+    private static async Task<Found> TryReadAtAsync(Stream stream, long at, byte[] tailBytes, CancellationToken cancellationToken)
     {
       stream.Position = at;
       if (!await ReadExactlyAsync(stream, tailBytes, MsgPackStreamIndex.TailLength, cancellationToken).ConfigureAwait(false) || !TryTail(tailBytes, at, out IndexContent.Tail tail))
-        return null;
+        return default(Found);
       long start = at - tail.IndexLength;
+      long delta = start - tail.IndexOffset;
       byte[] index = new byte[tail.IndexLength];
       stream.Position = start;
       if (!await ReadExactlyAsync(stream, index, index.Length, cancellationToken).ConfigureAwait(false))
-        return null;
-      return TryParse(index, tail, start, start - tail.IndexOffset);
+        return default(Found);
+      return new Found { Index = TryParse(index, tail, start, delta), At = at, Delta = delta };
     }
 
     /// <summary>
@@ -468,7 +497,7 @@ namespace LsMsgPack.Streaming
     /// <summary>
     /// <see cref="Search"/> with asynchronous reads.
     /// </summary>
-    private static async Task<MsgPackStreamIndex> SearchAsync(Stream stream, long length, byte[] tailBytes, CancellationToken cancellationToken)
+    private static async Task<Found> SearchAsync(Stream stream, long length, byte[] tailBytes, CancellationToken cancellationToken)
     {
       int tailLength = MsgPackStreamIndex.TailLength;
       byte[] buffer = new byte[SearchBlock + tailLength];
@@ -478,21 +507,21 @@ namespace LsMsgPack.Streaming
         long blockStart = Math.Max(0, blockEnd - SearchBlock);
         int count = SearchCount(length, blockStart, blockEnd);
         if (count < tailLength)
-          return null;
+          return default(Found);
         stream.Position = blockStart;
         if (!await ReadExactlyAsync(stream, buffer, count, cancellationToken).ConfigureAwait(false))
-          return null;
+          return default(Found);
         for (int p = count - tailLength; p >= 0; p--)
         {
           if (!MayBeTail(buffer, p))
             continue;
-          MsgPackStreamIndex index = await TryReadAtAsync(stream, blockStart + p, tailBytes, cancellationToken).ConfigureAwait(false);
-          if (index != null)
-            return index;
+          Found found = await TryReadAtAsync(stream, blockStart + p, tailBytes, cancellationToken).ConfigureAwait(false);
+          if (found.Index != null)
+            return found;
         }
         blockEnd = blockStart;
       }
-      return null;
+      return default(Found);
     }
 
     /// <summary>

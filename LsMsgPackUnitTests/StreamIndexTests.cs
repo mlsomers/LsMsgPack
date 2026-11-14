@@ -639,6 +639,70 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
+    /// AppendAsync reads the index asynchronously (a stream that refuses synchronous reads and writes) and writes the same bytes as Append: to an empty stream, one with indexes, one without, a moved one; it refuses the same streams.
+    /// </summary>
+    [TestMethod]
+    public async Task AppendAsync_SameAsAppend()
+    {
+      byte[] empty = new byte[0];
+      byte[] indexed = Write(w =>
+      {
+        w.WriteObject(Order(1));
+        w.WriteObject(Order(2));
+      }, new MsgPackStreamIndexOptions { CheckpointInterval = 1 });
+      byte[] unindexed = Write(w => w.WriteObject(Order(1)), null);
+      byte[] moved = new byte[100].Concat(indexed).ToArray();
+      foreach (byte[] start in new[] { empty, indexed, unindexed, moved })
+      {
+        byte[] expected = await Append(start, false);
+        CollectionAssert.AreEqual(expected, await Append(start, true));
+        List<MsgPackStreamEntry> entries = Entries(Indexes(expected));
+        using (MsgPackStreamReader reader = new MsgPackStreamReader(new AsyncSeekStream(expected), Plain()))
+        {
+          reader.Seek(entries[entries.Count - 1]);
+          AreEqual(Order(9), await reader.ReadObjectAsync<SwOrder>());
+        }
+      }
+
+      byte[] crashed = indexed.Take(indexed.Length - 3).ToArray(); // after the first checkpoint
+      byte[] interrupted = Write(w =>
+      {
+        w.WriteObject(Order(1));
+        w.WriteArrayStart();
+      }, new MsgPackStreamIndexOptions());
+      foreach (byte[] refused in new[] { crashed, interrupted })
+      {
+        InvalidOperationException ex = Assert.ThrowsExactly<InvalidOperationException>(() => MsgPackStreamWriter.Append(new MemoryStream(refused.ToArray()), Plain()));
+        InvalidOperationException async = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => MsgPackStreamWriter.AppendAsync(new AsyncSeekStream(refused, true), Plain()));
+        Assert.AreEqual(ex.Message, async.Message);
+      }
+      await Assert.ThrowsExactlyAsync<ArgumentException>(() => MsgPackStreamWriter.AppendAsync(new AsyncSeekStream(indexed), Plain())); // does not write
+    }
+
+    /// <summary>
+    /// <paramref name="start"/> with two parts appended (the first with a hash and points): with <see cref="MsgPackStreamWriter.Append"/>, or with AppendAsync from a stream that refuses synchronous reads and writes.
+    /// </summary>
+    private static async Task<byte[]> Append(byte[] start, bool async)
+    {
+      MemoryStream file = new MemoryStream();
+      file.Write(start);
+      AsyncSeekStream asyncFile = new AsyncSeekStream(start, true);
+      for (int part = 0; part < 2; part++)
+      {
+        MsgPackStreamIndexOptions index = part == 0 ? new MsgPackStreamIndexOptions { Hasher = new Sha256Hasher(), PointInterval = 2 } : null;
+        MsgPackStreamWriter writer = async ? await MsgPackStreamWriter.AppendAsync(asyncFile, Plain(), index: index, leaveOpen: true) : MsgPackStreamWriter.Append(file, Plain(), index: index, leaveOpen: true);
+        Assert.AreEqual(async, writer.IsAsynchronous);
+        writer.BeginEntry("part " + part);
+        writer.WriteArrayHeader(5);
+        for (int n = 0; n < 5; n++)
+          writer.WriteObject(Order(n));
+        writer.WriteObject(Order(9));
+        await writer.DisposeAsync();
+      }
+      return async ? asyncFile.ToArray() : file.ToArray();
+    }
+
+    /// <summary>
     /// A stream embedded after other data: the offsets move along with it.
     /// </summary>
     [TestMethod]
@@ -773,19 +837,27 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// Seeks, refuses synchronous reads and returns 1 to 3 bytes per read, every other one completed asynchronously: the async methods must not read synchronously.
+    /// Seeks, refuses synchronous reads, writes and flushes, returns 1 to 3 bytes per read, every other one completed asynchronously: the async methods must not use the stream synchronously.
     /// </summary>
     private sealed class AsyncSeekStream : Stream
     {
-      private readonly MemoryStream _inner;
+      private readonly MemoryStream _inner = new MemoryStream();
+      private readonly bool _writable;
       private int _reads;
-      public AsyncSeekStream(byte[] bytes) { _inner = new MemoryStream(bytes); }
+      public AsyncSeekStream(byte[] bytes, bool writable = false)
+      {
+        _inner.Write(bytes, 0, bytes.Length);
+        _inner.Position = 0;
+        _writable = writable;
+      }
+      public byte[] ToArray() { return _inner.ToArray(); }
       public override bool CanRead { get { return true; } }
       public override bool CanSeek { get { return true; } }
-      public override bool CanWrite { get { return false; } }
+      public override bool CanWrite { get { return _writable; } }
       public override long Length { get { return _inner.Length; } }
       public override long Position { get { return _inner.Position; } set { _inner.Position = value; } }
-      public override void Flush() { }
+      public override void Flush() { throw new NotSupportedException("A synchronous flush."); }
+      public override Task FlushAsync(CancellationToken cancellationToken) { return Task.CompletedTask; }
       public override int Read(byte[] buffer, int offset, int count) { throw new NotSupportedException("A synchronous read."); }
       public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
       {
@@ -793,9 +865,16 @@ namespace LsMsgPackUnitTests
           await Task.Yield();
         return _inner.Read(buffer, offset, Math.Min(count, 1 + _reads % 3));
       }
+      public override void Write(byte[] buffer, int offset, int count) { throw new NotSupportedException("A synchronous write."); }
+      public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+      {
+        if (!_writable)
+          throw new NotSupportedException();
+        await Task.Yield();
+        _inner.Write(buffer, offset, count);
+      }
       public override long Seek(long offset, SeekOrigin origin) { return _inner.Seek(offset, origin); }
       public override void SetLength(long value) { throw new NotSupportedException(); }
-      public override void Write(byte[] buffer, int offset, int count) { throw new NotSupportedException(); }
     }
 
     /// <summary>

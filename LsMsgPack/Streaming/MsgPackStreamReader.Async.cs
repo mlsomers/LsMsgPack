@@ -615,7 +615,7 @@ namespace LsMsgPack.Streaming
       long resume = _source.Position; // the buffer holds the data up to here
       try
       {
-        List<MsgPackStreamIndex> indexes = await IndexFormat.ReadAllAsync(_source, searchBackwards, cancellationToken).ConfigureAwait(false);
+        List<MsgPackStreamIndex> indexes = (await IndexFormat.ReadAllAsync(_source, searchBackwards, cancellationToken).ConfigureAwait(false)).Indexes;
         if (_options._schemaStore != null)
         {
           for (int i = 0; i < indexes.Count; i++)
