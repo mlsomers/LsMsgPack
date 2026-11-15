@@ -173,9 +173,11 @@ Suppose you have an interface `IPet` with classes `Cat`, `Dog` and `Fish` that i
 
 To deserialize, the type id has to become a `Type` again. A type id is the short name of the type by default (`Cat`), and it's looked up in this order:
 
-1. Names resolved before (the fastest), and types that `Type.GetType` finds by itself.
-2. The assembly of the declared type (and of its generic arguments): all its types are cached by name the first time. The assemblies of the type you deserialize are cached as well, and of the types it reaches: generic arguments, element types, base classes and the types of public properties (not the framework's), once per type.
-3. The names of all types in the assemblies cached so far.
+1. Names resolved before (the fastest).
+2. Your own classes: a short name that exactly one class of the assemblies cached so far has, outside the framework, is that class, also when a public class of the framework has the same name (your own `Version` class is found, not `System.Version`). The assemblies of the type you deserialize are cached before anything is read, and of the types it reaches: generic arguments, element types, base classes and the types of public properties (not the framework's), once per type.
+3. Types that `Type.GetType` finds by itself, and the public types of the framework's core library and its collection and numerics assemblies.
+4. The assembly of the declared type (and of its generic arguments): all its types are cached by name the first time.
+5. The names of all types in the assemblies cached so far.
 
 So the implementations of `IPet` are found without any registration when they're in the assembly of `IPet` (declared as `IPet`, `List<IPet>`, `IPet[]`...), or in the assembly of the class you deserialize:
 

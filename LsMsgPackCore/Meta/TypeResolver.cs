@@ -497,6 +497,16 @@ namespace LsMsgPack.Meta
       if (typeName.IndexOfAny(UnsafeNameChars) >= 0) // the data must not choose assemblies to load (see docs/security.md)
         throw new MsgPackException($"The type name \"{typeName}\" is not resolved: assembly-qualified names and bracketed generic arguments could load assemblies. Use a custom IMsgPackTypeResolver to resolve such names.");
 
+      // Your own classes before the framework's: a name that exactly one type of the cached assemblies outside the framework has (the model's: every Deserialize caches the
+      // assemblies its root type reaches before it reads a name) is that type, so a model class named like a public framework type wins (maintainer's decision, 2026-11-15),
+      // and the framework's assemblies are not searched for it (loading the types of System.Private.CoreLib took ~15 ms at the first name a process read)
+      result = OwnTypeNamed(typeName);
+      if (result != null)
+      {
+        UsedNameCache.TryAdd(typeName, result);
+        return result;
+      }
+
       // First try offloading this work to the framework...
       result = Visible(Type.GetType(typeName, false, true));
       if (result == null)
@@ -573,6 +583,23 @@ namespace LsMsgPack.Meta
     /// One of the types with the same (short) name. A name in the data names a runtime type, so abstract types and interfaces do not count (e.g. System.Attribute),
     /// nor do types that cannot be assigned to <paramref name="assignedTo"/>. A name that is unique is remembered, a name that fits only one type here is not (it may fit another one elsewhere).
     /// </summary>
+    /// <returns>The one type named <paramref name="typeName"/> (short name) in the cached assemblies that are not the framework's, null when there is none or there are several</returns>
+    private static Type OwnTypeNamed(string typeName)
+    {
+      if (!NameCache.TryGetValue(typeName, out HashSet<Type> choices))
+        return null;
+      Type own = null;
+      foreach (Type choice in choices)
+      {
+        if (IsFrameworkAssembly(choice.Assembly))
+          continue;
+        if (own != null)
+          return null; // several: Pick decides by the declared type
+        own = choice;
+      }
+      return own;
+    }
+
     private static Type Pick(string typeName, HashSet<Type> choices, Type assignedTo)
     {
       if (choices.Count == 1)
@@ -688,6 +715,44 @@ namespace LsMsgPack.Meta
       }
     }
 
+    /// <summary>
+    /// Loads the types of <see cref="NativeAssemblies"/> on the thread pool, once per process (LsMsgPack calls it when a serializer is created), so the first type name or schema
+    /// a process reads finds them loaded: <see cref="CacheAssemblyLocked"/>'s <c>GetExportedTypes</c> of System.Private.CoreLib takes ~15 ms while its types are not loaded, 0.2 ms after.
+    /// Nothing is cached here: the names resolve as they do without it.
+    /// </summary>
+    internal static void LoadNativeTypesInBackground()
+    {
+      if (NativeTypesLoading.Queued != 0 || System.Threading.Interlocked.Exchange(ref NativeTypesLoading.Queued, 1) != 0)
+        return;
+      System.Threading.ThreadPool.UnsafeQueueUserWorkItem(state => LoadNativeTypes(), null); // the caller's ExecutionContext does not flow into it
+    }
+
+    /// <summary>
+    /// The flag of <see cref="LoadNativeTypesInBackground"/> in a class of its own: reading a static field of <see cref="TypeResolver"/> would run its static initializers
+    /// on the caller's thread, among them <see cref="GetNativeAssemblies"/> (which loads System.Collections.Immutable).
+    /// </summary>
+    private static class NativeTypesLoading
+    {
+      internal static int Queued;
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = TrimReasons.TypeNames)]
+    private static void LoadNativeTypes()
+    {
+      try
+      {
+        for (int t = 0; t < NativeAssemblies.Length; t++)
+        {
+          Assembly assembly = NativeAssemblies[t];
+          if (!assembly.IsDynamic && !CachedAssembliesLockFree.ContainsKey(assembly))
+            assembly.GetExportedTypes();
+        }
+      }
+      catch (Exception) // only loads ahead: CacheAssemblyLocked meets the same error when a name needs the assembly
+      {
+      }
+    }
+
     internal static Type CacheAssembly(Assembly assembly, string typeName)
     {
       if (CachedAssembliesLockFree.ContainsKey(assembly)) // assemblies are only added: the answer of the lock below
@@ -709,8 +774,10 @@ namespace LsMsgPack.Meta
       if (string.IsNullOrEmpty(typeName))
         found = typeof(object); // skip the find part, just cache assembly
 
-      Type[] types = assembly.GetTypes();
       bool framework = IsFrameworkAssembly(assembly);
+      // A framework assembly offers only its visible types, which are the exported ones: GetExportedTypes loads only those (System.Private.CoreLib 1287 of 2467 types, cold 24 -> 13 ms,
+      // paid by the first type name or schema read in a process: the names are looked up in NativeAssemblies first)
+      Type[] types = framework && !assembly.IsDynamic ? assembly.GetExportedTypes() : assembly.GetTypes();
       for (int t = types.Length - 1; t >= 0; t--)
       {
         if (framework && !types[t].IsVisible) // see Visible

@@ -81,6 +81,7 @@ namespace LsMsgPack
 
     internal Serializer(LsMsgPackOptions options)
     {
+      TypeResolver.LoadNativeTypesInBackground(); // for the first type name or schema read (once per process, see there)
       Options = options;
       IMsgPackPropertyIncludeDynamicallyArray(options, out Filters);
       _shouldSerialize = options.CallsShouldSerialize;

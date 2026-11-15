@@ -34,6 +34,20 @@ Tests:
 
 Both use the decisions in `LsMsgPack.Core`: which properties are written (filters, property order), when a type id is needed and how it's resolved, and the indexed schema. See [schema.md](schema.md) for the wire formats.
 
+### Startup time
+
+The first call for a type does the one-time work: the plans are built and the JIT compiles the code they run. In a fresh process (.NET 8, one invoice of the [benchmark](Comparison.md) model) the first `Serialize` takes about 50 ms and the first `Deserialize` about 45 ms with the indexed schema (the default) or about 20 ms with property names; System.Text.Json takes about 70 ms and 10 ms. Most of it is JIT. Reading also resolves the type names of the schema and of type ids: your own classes are found in the assemblies the type you deserialize reaches, the names of framework types (a collection as a type id, say) in the public types of the framework, which an `LsMsgPackSerializer` starts loading on the thread pool when it is created (once per process). Create the serializer once, e.g. at startup or as a singleton.
+
+For a command line tool, a serverless function or an app that should start quickly, publish it with ReadyToRun, which compiles the code ahead of time, the NuGet packages included:
+
+```xml
+<PropertyGroup>
+  <PublishReadyToRun>true</PublishReadyToRun>
+</PropertyGroup>
+```
+
+It needs a runtime identifier (`dotnet publish -r linux-x64`, `win-x64`...). Measured the same way, the first `Serialize` then takes about 25 ms and the first `Deserialize` about 20 ms with the schema or about 13 ms with property names; the code reaches full speed as before (the JIT still optimizes it once it runs often). Under NativeAOT nothing is compiled at runtime (see the [source generator](SourceGenerator.md)).
+
 ## Object model (LsMsgPackDebug)
 
 ![Hierarchy](https://github.com/mlsomers/LsMsgPack/blob/master/Hierarchy.png)
