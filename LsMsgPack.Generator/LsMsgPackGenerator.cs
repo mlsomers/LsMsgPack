@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using LsMsgPack.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -44,7 +45,9 @@ namespace LsMsgPack.Generator
       IncrementalValueProvider<GenerateOptions> options = context.CompilationProvider
         .Combine(context.AnalyzerConfigOptionsProvider)
         .Combine(context.ParseOptionsProvider)
-        .Select((input, _) => ReadOptions(input.Left.Left, input.Left.Right, input.Right));
+        .Select((input, _) => ReadOptions(input.Left.Left, input.Left.Right, input.Right))
+        .Combine(Converters(context))
+        .Select((input, _) => input.Left with { Converters = input.Right });
 
       // The walk needs the options (which non-public properties are described): the context classes are combined with them
       IncrementalValuesProvider<ContextModel> declared = context.SyntaxProvider.ForAttributeWithMetadataName(SerializableAttribute,
@@ -62,6 +65,28 @@ namespace LsMsgPack.Generator
     }
 
     #region Options
+
+    /// <summary>
+    /// The converters the code declares or creates, counted as the options' (<see cref="OptionsConverters"/>): only type names are bound, per changed file.
+    /// </summary>
+    private static IncrementalValueProvider<EquatableArray<StringValue>> Converters(IncrementalGeneratorInitializationContext context)
+    {
+      return context.SyntaxProvider.CreateSyntaxProvider(
+        (node, _) => OptionsConverters.IsCandidate(node),
+        (syntax, cancel) =>
+        {
+          INamedTypeSymbol converter = OptionsConverters.Find(syntax.Node, syntax.SemanticModel, cancel, out int kind);
+          return converter is null ? default((string, int)) : (DocumentationCommentId.CreateReferenceId(converter), kind);
+        })
+        .Where(found => found.Item1 != null)
+        .Collect()
+        .Select((found, _) =>
+        {
+          List<string> ids = OptionsConverters.Registered(found.Select(f => new KeyValuePair<string, int>(f.Item1, f.Item2)), StringComparer.Ordinal);
+          ids.Sort(StringComparer.Ordinal);
+          return ids.Select(id => new StringValue(id)).ToEquatable();
+        });
+    }
 
     private static GenerateOptions ReadOptions(Compilation compilation, AnalyzerConfigOptionsProvider config, ParseOptions parse)
     {

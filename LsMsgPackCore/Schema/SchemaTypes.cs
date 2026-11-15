@@ -1,4 +1,5 @@
-﻿using LsMsgPack.Meta;
+﻿using LsMsgPack.Converters;
+using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Filters;
 using System;
 using System.Collections;
@@ -50,6 +51,22 @@ namespace LsMsgPack
       if (type is null || type.IsGenericParameter || type.ContainsGenericParameters || type.IsPointer || type.IsByRef || depth > _settings._maxDepth)
         return;
       type = Nullable.GetUnderlyingType(type) ?? type;
+      MsgPackConverter converter = _settings.ConverterFor(type);
+      if (converter != null) // written as its surrogate: an entry only where a type id names it (without properties, see IndexedSchemaTypeResolver.GetComplex)
+      {
+        if (hasTypeId && _withEntry.Add(type))
+          _entries.Add(type);
+        if (!Visited(type, byNames))
+          return;
+        Visit(converter.SurrogateType, false, depth + 1, byNames);
+        if (!type.IsSealed && !type.IsValueType && !TypeResolver.IsFrameworkAssembly(type.Assembly)) // the classes deriving from it are written as objects, with a type id (a converter is for one exact type)
+        {
+          List<Type> derived = Derived(type);
+          for (int t = 0; t < derived.Count; t++)
+            Visit(derived[t], true, depth + 1, byNames);
+        }
+        return;
+      }
       if (type.IsArray)
       {
         Visit(type.GetElementType(), false, depth + 1, byNames);
@@ -92,13 +109,35 @@ namespace LsMsgPack
 
       if (concrete)
         for (int t = 0; t < props.Length; t++)
-          Visit(props[t].DeclaredType, false, depth + 1, byNames || anonymous);
+        {
+          MsgPackConverter member = props[t].MemberConverter;
+          if (member != null) // its value is written as the surrogate, a value of a class deriving from its type as an object
+            VisitMemberConverted(props[t].DeclaredType, member, depth + 1, byNames || anonymous);
+          else
+            Visit(props[t].DeclaredType, false, depth + 1, byNames || anonymous);
+        }
 
       if (!type.IsSealed && !type.IsValueType && !TypeResolver.IsFrameworkAssembly(type.Assembly))
       {
         List<Type> derived = Derived(type);
         for (int t = 0; t < derived.Count; t++)
           Visit(derived[t], true, depth + 1, byNames);
+      }
+    }
+
+    /// <summary>
+    /// A member with its own converter: the surrogate, and the classes deriving from the member's type (written as objects with a type id). The member's type itself is not visited
+    /// (marking it visited would leave it out where it is written as itself).
+    /// </summary>
+    private void VisitMemberConverted(Type type, MsgPackConverter converter, int depth, bool byNames)
+    {
+      Visit(converter.SurrogateType, false, depth, byNames);
+      type = Nullable.GetUnderlyingType(type) ?? type;
+      if (!type.IsSealed && !type.IsValueType && !TypeResolver.IsFrameworkAssembly(type.Assembly))
+      {
+        List<Type> derived = Derived(type);
+        for (int t = 0; t < derived.Count; t++)
+          Visit(derived[t], true, depth, byNames);
       }
     }
 

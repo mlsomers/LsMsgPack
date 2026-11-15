@@ -1,3 +1,4 @@
+using LsMsgPack.Converters;
 using LsMsgPack;
 using LsMsgPack.Meta;
 using System;
@@ -81,6 +82,13 @@ namespace LsMsgPackTypeScript
       if (type is null || type.IsGenericParameter || type.ContainsGenericParameters || type.IsPointer || type.IsByRef || depth > 64)
         return;
       type = Nullable.GetUnderlyingType(type) ?? type;
+      MsgPackConverter converter = _settings.ConverterFor(type);
+      if (converter != null) // written as its surrogate (as SchemaTypes walks it)
+      {
+        if (_visited.Add(type))
+          Visit(converter.SurrogateType, depth + 1);
+        return;
+      }
       if (type.IsArray)
       {
         Visit(type.GetElementType(), depth + 1);
@@ -152,7 +160,7 @@ namespace LsMsgPackTypeScript
             model.OwnProps.Add(property);
         }
         foreach (FullPropertyInfo prop in props)
-          Visit(prop.DeclaredType, depth + 1);
+          Visit(prop.MemberConverter?.SurrogateType ?? prop.DeclaredType, depth + 1); // a member's own converter: its value is written as the surrogate
       }
 
       if (!type.IsSealed && !type.IsValueType)
@@ -196,11 +204,42 @@ namespace LsMsgPackTypeScript
     /// <summary>
     /// The declared type of a value as the described schema has it (DescribedSchema.WriteType, in its order), with the models for its classes.
     /// </summary>
+    /// <summary>
+    /// The declared type of a property or field as the described schema has it: of its own converter's surrogate when it has one.
+    /// </summary>
+    internal Spec SpecOf(ModelProperty prop)
+    {
+      if (prop.Converter is null)
+        return SpecOf(prop.Type);
+      Spec surrogate = SurrogateSpec(prop.Converter);
+      if (Nullable.GetUnderlyingType(prop.Type) != null)
+        return Spec.Of("?", prop.Type, surrogate);
+      surrogate.FromReference = !prop.Type.IsValueType;
+      return surrogate;
+    }
+
+    /// <summary>
+    /// The surrogate's spec: <c>bin</c> for a binary converter, <c>any</c> when it writes an extension (as DescribedSchema).
+    /// </summary>
+    private Spec SurrogateSpec(MsgPackConverter converter)
+    {
+      if (converter is MsgPackBinaryConverter binary && binary.ExtensionTypeCode != null)
+        return Spec.Kind("any", converter.ConvertedType);
+      return SpecOf(converter.SurrogateType);
+    }
+
     internal Spec SpecOf(Type type)
     {
       Type nullable = Nullable.GetUnderlyingType(type);
       if (nullable != null)
         return Spec.Of("?", type, SpecOf(nullable));
+      MsgPackConverter converter = _settings.ConverterFor(type);
+      if (converter != null) // written as its surrogate
+      {
+        Spec surrogate = SurrogateSpec(converter);
+        surrogate.FromReference = !type.IsValueType;
+        return surrogate;
+      }
       if (type == typeof(decimal))
         return Spec.Kind("decimal", type);
       if (type.IsArray && type.GetArrayRank() > 1)
@@ -343,6 +382,11 @@ namespace LsMsgPackTypeScript
     /// </summary>
     internal readonly NullabilityInfo Nullability;
 
+    /// <summary>
+    /// The member's own [MsgPackConverter] (its value is written as the surrogate), null without one.
+    /// </summary>
+    internal readonly MsgPackConverter Converter;
+
     /// <param name="member">A property or a field</param>
     internal ModelProperty(MemberInfo member)
     {
@@ -350,6 +394,7 @@ namespace LsMsgPackTypeScript
       Member = member;
       FieldInfo field = member as FieldInfo;
       Type = field?.FieldType ?? ((PropertyInfo)member).PropertyType;
+      Converter = FullPropertyInfo.AttributesOf(member).Converter;
       try
       {
         lock (NullabilityContext) // not thread-safe
@@ -377,6 +422,11 @@ namespace LsMsgPackTypeScript
     /// An enum (the kind is its underlying integer).
     /// </summary>
     internal Type Enum;
+
+    /// <summary>
+    /// The surrogate of a converted reference type: null is written as nil, also when the surrogate is a struct (a class converted to a <c>double</c>).
+    /// </summary>
+    internal bool FromReference;
 
     internal static Spec Kind(string kind, Type type)
     {

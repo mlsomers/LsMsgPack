@@ -915,7 +915,7 @@ namespace LsMsgPack.Writing
 
       if (key != null)
         c.W.Raw(key);
-      Serializer.WriteBoxed(c, value, info);
+      Serializer.WriteMemberValue(c, value, info);
       return true;
     }
   }

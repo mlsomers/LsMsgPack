@@ -1234,7 +1234,7 @@ namespace LsMsgPack.Reading
 
     public override void Read(ReadContext c, object target)
     {
-      ValueReader<TValue> reader = _reader ?? (_reader = _serializer.Reader<TValue>());
+      ValueReader<TValue> reader = _reader ?? (_reader = _serializer.ReaderFor<TValue>(Info)); // the member's own converter, if any
       _set(Unsafe.As<TTarget>(target), reader.Read(c, Info)); // an instance of the plan's type: no cast, which in shared generic code is a lookup per property
     }
 
@@ -1287,7 +1287,7 @@ namespace LsMsgPack.Reading
 
     internal override void Read(ReadContext c, ref TTarget target)
     {
-      ValueReader<TValue> reader = _reader ?? (_reader = _serializer.Reader<TValue>());
+      ValueReader<TValue> reader = _reader ?? (_reader = _serializer.ReaderFor<TValue>(Info)); // the member's own converter, if any
       _set(ref target, reader.Read(c, Info)); // the value is read before the setter runs (a nested value of the same struct type has a local or box of its own)
     }
 
@@ -1322,7 +1322,7 @@ namespace LsMsgPack.Reading
 
     public override void Read(ReadContext c, object target)
     {
-      ValueReader reader = _reader ?? (_reader = _serializer.Reader(Info.DeclaredType));
+      ValueReader reader = _reader ?? (_reader = _serializer.ReaderFor(Info.DeclaredType, Info));
       Info.SetValue(target, reader.ReadBoxed(c, Info));
     }
 
@@ -1558,7 +1558,7 @@ namespace LsMsgPack.Reading
           _setter.Read(c, values.Created);
         return;
       }
-      ValueReader reader = _reader ?? (_reader = _serializer.Reader(Info.DeclaredType));
+      ValueReader reader = _reader ?? (_reader = _serializer.ReaderFor(Info.DeclaredType, Info));
       values.Values[_index] = reader.ReadBoxed(c, Info);
       Received(values);
     }

@@ -1,3 +1,4 @@
+using LsMsgPack.Converters;
 using LsMsgPack;
 using System;
 using System.Collections;
@@ -47,11 +48,11 @@ namespace LsMsgPackTypeScript
       object second = model.IsAbstract ? null : Create(model.Type);
       foreach (ModelProperty prop in model.AllProps)
       {
-        Spec spec = _models.SpecOf(prop.Type);
+        Spec spec = _models.SpecOf(prop);
         string value = TypeDefault(spec);
         if (first != null)
         {
-          object x = Read(first, prop), y = Read(second, prop);
+          object x = Surrogate(Read(first, prop), prop), y = Surrogate(Read(second, prop), prop);
           string a = Value(x, spec, depth);
           string b = Value(y, spec, depth);
           if (a == null || b == null)
@@ -141,6 +142,14 @@ namespace LsMsgPackTypeScript
     /// <summary>
     /// A value as a TypeScript expression of the form the client reads it in (the options), null when it has none.
     /// </summary>
+    /// <summary>
+    /// A member's value as it is written: through the member's own converter when it has one.
+    /// </summary>
+    private static object Surrogate(object value, ModelProperty prop)
+    {
+      return value is null || prop.Converter is null || value.GetType() != prop.Converter.ConvertedType ? value : prop.Converter.ToSurrogateBoxed(value);
+    }
+
     internal string Value(object value, Spec spec, int depth)
     {
       if (value is null)
@@ -149,6 +158,9 @@ namespace LsMsgPackTypeScript
         return null;
       if (spec.Name == "?")
         return Value(value, spec.Items[0], depth);
+      MsgPackConverter converter = _models.Settings.ConverterFor(value.GetType());
+      if (converter != null) // the spec is the surrogate's
+        return Value(converter.ToSurrogateBoxed(value), spec, depth + 1);
 
       switch (spec.Name)
       {
@@ -239,7 +251,7 @@ namespace LsMsgPackTypeScript
       List<string> differ = new List<string>();
       foreach (ModelProperty prop in model.AllProps)
       {
-        string v = Value(Read(value, prop), _models.SpecOf(prop.Type), depth + 1);
+        string v = Value(Surrogate(Read(value, prop), prop), _models.SpecOf(prop), depth + 1);
         if (v == null)
           return null;
         if (!defaults.TryGetValue(prop.Name, out string d) || !string.Equals(d, v, StringComparison.Ordinal))

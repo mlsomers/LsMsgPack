@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Converters;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Types;
 using LsMsgPack.Extensions;
@@ -19,6 +20,11 @@ namespace LsMsgPack
   internal sealed partial class Serializer
   {
     private readonly ConcurrentDictionary<Type, ValueReader> _readers = new ConcurrentDictionary<Type, ValueReader>();
+
+    /// <summary>
+    /// The readers of the members' own converters ([MsgPackConverter] on a property or field), by converter.
+    /// </summary>
+    private readonly ConcurrentDictionary<MsgPackConverter, ValueReader> _memberReaders = new ConcurrentDictionary<MsgPackConverter, ValueReader>();
     private readonly ConcurrentDictionary<Type, ReadPlan> _readPlans = new ConcurrentDictionary<Type, ReadPlan>();
     private readonly ConditionalWeakTable<SchemaSession, SessionShared> _sessions = new ConditionalWeakTable<SchemaSession, SessionShared>();
 
@@ -280,6 +286,25 @@ namespace LsMsgPack
       return (ValueReader<T>)Reader(typeof(T));
     }
 
+    /// <summary>
+    /// The reader of a property's or field's value: of its own converter when it has one ([MsgPackConverter] on the member), otherwise of its type.
+    /// </summary>
+    internal ValueReader<T> ReaderFor<T>(FullPropertyInfo declared)
+    {
+      return (ValueReader<T>)ReaderFor(typeof(T), declared);
+    }
+
+    internal ValueReader ReaderFor(Type type, FullPropertyInfo declared)
+    {
+      MsgPackConverter member = declared?.MemberConverter;
+      if (member is null)
+        return Reader(type);
+      ValueReader exact = _memberReaders.TryGetValue(member, out ValueReader found) ? found : _memberReaders.GetOrAdd(member, m => (ValueReader)m.Accept(new ConverterReaders(this)));
+      if (type == member.ConvertedType)
+        return exact;
+      return (ValueReader)Instantiate(type, typeof(NullableReader<>), member.ConvertedType, exact);
+    }
+
     internal ValueReader Reader(Type type)
     {
       if (_readers.TryGetValue(type, out ValueReader reader))
@@ -328,6 +353,8 @@ namespace LsMsgPack
           if (extension != null)
             return extension;
           break;
+        case TypeKind.Converted:
+          return (ValueReader)info.Converter.Accept(new ConverterReaders(this));
         case TypeKind.Enum:
           return (ValueReader)Instantiate(type, typeof(EnumReader<>), type, null);
         case TypeKind.Array:
@@ -435,6 +462,29 @@ namespace LsMsgPack
       if (!typedExtension.IsInstanceOfType(extension))
         return null;
       return (ValueReader)Activator.CreateInstance(typeof(ExtensionReader<>).MakeGenericType(type), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { extension }, null);
+    }
+
+    /// <summary>
+    /// Creates the reader of a converter with its type arguments (see ConverterHandlers).
+    /// </summary>
+    private sealed class ConverterReaders : IMsgPackConverterVisitor<object>
+    {
+      private readonly Serializer _serializer;
+
+      internal ConverterReaders(Serializer serializer)
+      {
+        _serializer = serializer;
+      }
+
+      public object Surrogate<T, TSurrogate>(MsgPackConverter<T, TSurrogate> converter)
+      {
+        return new ConverterReader<T, TSurrogate>(_serializer, converter);
+      }
+
+      public object Binary<T>(MsgPackBinaryConverter<T> converter)
+      {
+        return new BinaryConverterReader<T>(_serializer, converter);
+      }
     }
 
     /// <returns>null when the type is not an object with properties that can be created</returns>

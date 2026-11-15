@@ -55,6 +55,10 @@ namespace LsMsgPack.TypeResolving.Types
       if (newEntry.IsCollection)
         return newEntry;
 
+      // A type with a converter is written as its surrogate: its entry only names it (for a type id), the surrogate's type has its own
+      if (settings.ConverterFor(type) != null)
+        return newEntry;
+
       // Only the names are needed: the property id resolvers (not this one) only for the names they give (see FullPropertyInfo.SchemaName)
       FullPropertyInfo[] props = FullPropertyInfo.GetStaticallyIncludedProps(type, settings);
       newEntry.ParseProps(props, settings);
@@ -235,7 +239,8 @@ namespace LsMsgPack.TypeResolving.Types
     /// <param name="ignoreCase"><see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: a property of the reader without the exact name of one of the writer's follows the one whose name equals its name ignoring case</param>
     /// <param name="selection">The non-public properties and the fields the settings serialize (<see cref="FullPropertyInfo.SelectionOf"/>): followed too</param>
     /// <exception cref="SchemaGrowthException">When a frozen schema would get an entry (a copy remembers it)</exception>
-    internal void BindReaderTypes(Type root, bool ignoreCase, MemberSelection selection)
+    /// <param name="settings">The converters: a value of a type with one is its surrogate (its entry)</param>
+    internal void BindReaderTypes(Type root, bool ignoreCase, MemberSelection selection, MsgPackOptions settings)
     {
       if (_lastBoundRoot == root)
         return;
@@ -245,7 +250,7 @@ namespace LsMsgPack.TypeResolving.Types
         return;
       }
 
-      Dictionary<Type, ComplexTypeDef> aliases = ReaderAliases(root, ignoreCase, selection, out Dictionary<Type, Type[]> ambiguous);
+      Dictionary<Type, ComplexTypeDef> aliases = ReaderAliases(root, ignoreCase, selection, settings, out Dictionary<Type, Type[]> ambiguous);
       bool newAmbiguous = false;
       foreach (Type read in ambiguous.Keys)
         newAmbiguous |= _ambiguous is null || !_ambiguous.ContainsKey(read);
@@ -271,11 +276,11 @@ namespace LsMsgPack.TypeResolving.Types
 
     /// <param name="ambiguous">The reader classes found for more than one writer class, with those writer classes</param>
     [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)]
-    private Dictionary<Type, ComplexTypeDef> ReaderAliases(Type root, bool ignoreCase, MemberSelection selection, out Dictionary<Type, Type[]> ambiguous)
+    private Dictionary<Type, ComplexTypeDef> ReaderAliases(Type root, bool ignoreCase, MemberSelection selection, MsgPackOptions settings, out Dictionary<Type, Type[]> ambiguous)
     {
       Dictionary<Type, ComplexTypeDef> aliases = new Dictionary<Type, ComplexTypeDef>();
       ambiguous = new Dictionary<Type, Type[]>();
-      Type reader = ObjectTypeOf(root, 0);
+      Type reader = ObjectTypeOf(root, 0, settings);
       if (reader is null || ByTypeId.Count == 0 || HasOwnEntry(reader))
         return aliases;
       ComplexTypeDef start = HeldBy(RootDef(), root, reader);
@@ -312,9 +317,9 @@ namespace LsMsgPack.TypeResolving.Types
         for (int t = 0; t < readProps.Length; t++)
         {
           MemberInfo readProp = readProps[t];
-          Type readType = FullPropertyInfo.TypeOf(readProp);
-          Type readValue = ObjectTypeOf(readType, 0);
-          ComplexTypeDef next = readValue is null ? null : HeldBy(ValueDef(def, readProp.Name, ignoreCase, selection), readType, readValue);
+          Type readType = WrittenTypeOf(readProp);
+          Type readValue = ObjectTypeOf(readType, 0, settings);
+          ComplexTypeDef next = readValue is null ? null : HeldBy(ValueDef(def, readProp.Name, ignoreCase, selection, settings), readType, readValue);
           if (next != null)
             pairs.Enqueue(new KeyValuePair<Type, ComplexTypeDef>(readValue, next));
         }
@@ -362,12 +367,12 @@ namespace LsMsgPack.TypeResolving.Types
     /// The entry of the objects the property <paramref name="name"/> of the writer's class of <paramref name="def"/> holds: by the declared type of the writer's property (its class was found),
     /// or by the type a schema of version 2 describes. Null when there is none.
     /// </summary>
-    private ComplexTypeDef ValueDef(ComplexTypeDef def, string name, bool ignoreCase, MemberSelection selection)
+    private ComplexTypeDef ValueDef(ComplexTypeDef def, string name, bool ignoreCase, MemberSelection selection, MsgPackOptions settings)
     {
       if (def.Type != null)
       {
         MemberInfo writtenProp = MemberNamed(def.Type, name, ignoreCase, selection);
-        Type writtenValue = writtenProp is null ? null : ObjectTypeOf(FullPropertyInfo.TypeOf(writtenProp), 0);
+        Type writtenValue = writtenProp is null ? null : ObjectTypeOf(WrittenTypeOf(writtenProp), 0, settings);
         return writtenValue != null && ByType.TryGetValue(writtenValue, out ComplexTypeDef next) ? next : null;
       }
       if (def.ValueEntries is null)
@@ -425,17 +430,29 @@ namespace LsMsgPack.TypeResolving.Types
     /// <summary>
     /// The class of the objects a value of this type holds: itself, the element type of a collection, the value type of a dictionary, the type of a nullable. Null for values that are not objects (numbers, strings...).
     /// </summary>
-    private static Type ObjectTypeOf(Type type, int depth)
+    /// <summary>
+    /// The type a member's value is written as: the surrogate of its own converter ([MsgPackConverter] on the member), otherwise its type.
+    /// </summary>
+    private static Type WrittenTypeOf(MemberInfo member)
+    {
+      return FullPropertyInfo.AttributesOf(member).Converter?.SurrogateType ?? FullPropertyInfo.TypeOf(member);
+    }
+
+    /// <param name="settings">Their converters: a value of a type with one is its surrogate</param>
+    private static Type ObjectTypeOf(Type type, int depth, MsgPackOptions settings)
     {
       if (type is null || depth > 8)
         return null;
       type = Nullable.GetUnderlyingType(type) ?? type;
+      Converters.MsgPackConverter converter = settings?.ConverterFor(type);
+      if (converter != null)
+        return ObjectTypeOf(converter.SurrogateType, depth + 1, settings);
       if (type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(decimal) || type == typeof(object) || type.IsPointer || type.ContainsGenericParameters)
         return null;
       if (ValueConverter.IsCollection(type))
       {
         CollectionInfo collection = CollectionInfo.Get(type);
-        return ObjectTypeOf(collection.IsDictionary ? collection.ValueType : collection.ElementType, depth + 1);
+        return ObjectTypeOf(collection.IsDictionary ? collection.ValueType : collection.ElementType, depth + 1, settings);
       }
       return type;
     }

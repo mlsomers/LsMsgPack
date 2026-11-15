@@ -24,7 +24,8 @@ namespace LsMsgPack.Writing
     RawExtension, // a MsgPackExtension that was read (LsMsgPack writes the MpExt it read as itself)
     DateTimeOffsetMoment, // [the moment as a timestamp, the offset in minutes] (DateTimeOffsetFormat.TimestampAndOffset, the default; DateTimeOffset is a timestamp)
     GuidString, DecimalString, DateTimeOffsetArray, BigIntegerBinary, // the formats of other libraries (LsMsgPackOptions.GuidFormat, DecimalFormat, MsgPackOptions.DateTimeOffsetFormat, BigIntegerFormat)
-    Complex // an object with properties
+    Complex, // an object with properties
+    Converted // a type with a converter (MsgPackOptions.Converters, [MsgPackConverter]): written as its surrogate, decided before everything else
   }
 
   internal static class TypeKinds

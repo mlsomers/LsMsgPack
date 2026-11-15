@@ -23,6 +23,54 @@ namespace LsMsgPackTypeScriptTests
     public int Y { get; set; }
   }
 
+  /// <summary>Written as a string by its converter: the models have the string, not the class.</summary>
+  [LsMsgPack.Converters.MsgPackConverter(typeof(TsMoneyConverter))]
+  public sealed class TsMoney
+  {
+    public decimal Amount { get; set; }
+    public string Currency { get; set; }
+  }
+
+  public sealed class TsMoneyConverter : LsMsgPack.Converters.MsgPackConverter<TsMoney, string>
+  {
+    public override string ToSurrogate(TsMoney value) { return value.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture) + " " + value.Currency; }
+    public override TsMoney FromSurrogate(string surrogate) { string[] parts = surrogate.Split(' '); return new TsMoney { Amount = decimal.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture), Currency = parts[1] }; }
+  }
+
+  public class TsWallet
+  {
+    public TsMoney Balance { get; set; } = new TsMoney { Amount = 5, Currency = "EUR" };
+    public List<TsMoney> History { get; set; }
+    [LsMsgPack.Converters.MsgPackConverter(typeof(TsUnixSeconds))]
+    public DateTime Opened { get; set; } = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    [LsMsgPack.Converters.MsgPackConverter(typeof(TsUnixSeconds))]
+    public DateTime? Closed { get; set; }
+  }
+
+  public sealed class TsUnixSeconds : LsMsgPack.Converters.MsgPackConverter<DateTime, long>
+  {
+    public override long ToSurrogate(DateTime value) { return new DateTimeOffset(value).ToUnixTimeSeconds(); }
+    public override DateTime FromSurrogate(long surrogate) { return DateTimeOffset.FromUnixTimeSeconds(surrogate).UtcDateTime; }
+  }
+
+  /// <summary>Converted by a converter of the options (--options), not by an attribute.</summary>
+  public sealed class TsPercentage
+  {
+    public double Value { get; set; }
+  }
+
+  public sealed class TsPercentageConverter : LsMsgPack.Converters.MsgPackConverter<TsPercentage, double>
+  {
+    public override double ToSurrogate(TsPercentage value) { return value.Value; }
+    public override TsPercentage FromSurrogate(double surrogate) { return new TsPercentage { Value = surrogate }; }
+  }
+
+  public class TsDiscount
+  {
+    public TsPercentage Rate { get; set; } = new TsPercentage { Value = 12.5 };
+    public TsPercentage[] Tiers { get; set; }
+  }
+
   public class TsAddress
   {
     public string Street { get; set; }
@@ -105,6 +153,19 @@ namespace LsMsgPackTypeScriptTests
         LsMsgPackOptions xls = LsMsgPackPresets.LsMsgPack();
         xls.PropertyOrder = PropertyOrder.Alphabetical;
         return new LsMsgPackHttpOptions() { XLsMsgPack = xls };
+      }
+    }
+
+    /// <summary>
+    /// The server's options with a converter of its own (not an attribute on the type).
+    /// </summary>
+    public static LsMsgPackOptions WithConverters
+    {
+      get
+      {
+        LsMsgPackOptions xls = LsMsgPackPresets.LsMsgPack();
+        xls.Converters = new LsMsgPack.Converters.MsgPackConverter[] { new TsPercentageConverter() };
+        return xls;
       }
     }
   }

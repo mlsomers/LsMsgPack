@@ -88,9 +88,10 @@ namespace LsMsgPack.Analyzers
       if (property.IsStatic || property.IsIndexer || property.DeclaredAccessibility != Accessibility.Public || property.GetMethod is null || property.IsImplicitlyDeclared
         || (property.SetMethod != null && property.SetMethod.DeclaredAccessibility != Accessibility.Public))
         return; // what FilterNonSettable and FilterStatic leave out
-      if (!models.Get(context.CancellationToken).Contains(property.ContainingType) || IsIgnored(property))
+      ModelTypes types = models.Get(context.CancellationToken);
+      if (!types.Contains(property.ContainingType) || IsIgnored(property))
         return;
-      AnalyzeMember(context, property, property.Type, property.SetMethod != null, known, others);
+      AnalyzeMember(context, property, property.Type, property.SetMethod != null, known, others, types);
     }
 
     /// <summary>
@@ -100,11 +101,12 @@ namespace LsMsgPack.Analyzers
     private static void AnalyzeField(SymbolAnalysisContext context, KnownSymbols known, Models models, OtherAssemblies others, int mode)
     {
       IFieldSymbol field = (IFieldSymbol)context.Symbol;
-      if (!Fields.IsOfState(field) || !models.Get(context.CancellationToken).Contains(field.ContainingType) || IsIgnored(field))
+      ModelTypes types = models.Get(context.CancellationToken);
+      if (!Fields.IsOfState(field) || !types.Contains(field.ContainingType) || IsIgnored(field))
         return;
       if (Fields.IsSerialized(field, mode))
       {
-        AnalyzeMember(context, field, field.Type, !field.IsReadOnly, known, others);
+        AnalyzeMember(context, field, field.Type, !field.IsReadOnly, known, others, types);
         return;
       }
       if (mode == Fields.Attributed && field.DeclaredAccessibility == Accessibility.Public && !Fields.MarksItsMembers(field.ContainingType) && WouldRoundTrip(field))
@@ -129,19 +131,21 @@ namespace LsMsgPack.Analyzers
     /// The rules for a property or field the serializers write.
     /// </summary>
     /// <param name="settable">Set from the data (a public setter, a field that is not readonly); otherwise written only (GetOnlyProperties), and only LSMP009 applies</param>
-    private static void AnalyzeMember(SymbolAnalysisContext context, ISymbol member, ITypeSymbol type, bool settable, KnownSymbols known, OtherAssemblies others)
+    private static void AnalyzeMember(SymbolAnalysisContext context, ISymbol member, ITypeSymbol type, bool settable, KnownSymbols known, OtherAssemblies others, ModelTypes types)
     {
       string name = string.Concat(member.ContainingType.Name, ".", member.Name);
       Location location = member.Locations[0];
-      ITypeSymbol json = JsonPart(type);
+      ITypeSymbol written = ModelTypes.HasMemberConverter(member, type, out ITypeSymbol surrogate) ? surrogate : type; // a member's own converter writes the surrogate: the type rules are about it (none for binary data)
+      written = types.AsWritten(written); // and the options' converters write theirs, also of elements and type arguments
+      ITypeSymbol json = written is null ? null : JsonPart(written);
       if (json != null)
         context.ReportDiagnostic(Diagnostic.Create(Rules.JsonDocument, location, string.Concat("'", name, "' is declared as ", Display(type)), Display(json)));
       if (!settable)
         return; // without a setter (GetOnlyProperties) or readonly: written, but never set from the data
-      ITypeSymbol open = OpenPart(type);
+      ITypeSymbol open = written is null ? null : OpenPart(written);
       if (open != null)
         context.ReportDiagnostic(Diagnostic.Create(Rules.OpenProperty, location, name, Display(type), Display(open)));
-      INamedTypeSymbol other = others.FindUnchecked(type);
+      INamedTypeSymbol other = written is null ? null : others.FindUnchecked(written);
       if (other != null)
         context.ReportDiagnostic(Diagnostic.Create(Rules.UncheckedModel, location, Display(other), other.ContainingAssembly.Name));
 

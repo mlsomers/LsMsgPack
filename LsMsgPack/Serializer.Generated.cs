@@ -84,7 +84,7 @@ namespace LsMsgPack
       GeneratedMember member = code.Members[id];
       if (member.Kind == GeneratedKind.None || !member.CanWrite)
         return id; // the generated code leaves it to the runtime (at this position)
-      if (info.CustomAttributes.ContainsKey(nameof(System.ComponentModel.DefaultValueAttribute)) || !Fits(member, false, (code.Capabilities & GeneratedCapabilities.WriteFormats) != 0))
+      if (info.CustomAttributes.ContainsKey(nameof(System.ComponentModel.DefaultValueAttribute)) || info.MemberConverter != null || !Fits(member, false, (code.Capabilities & GeneratedCapabilities.WriteFormats) != 0))
         return -1; // the generated code would write it otherwise than these options do
       return id;
     }
@@ -98,7 +98,7 @@ namespace LsMsgPack
       if (id < 0)
         return -1;
       GeneratedMember member = code.Members[id];
-      return member.Kind != GeneratedKind.None && member.CanRead && Fits(member, true, (code.Capabilities & GeneratedCapabilities.ReadFormats) != 0) ? id : -1;
+      return member.Kind != GeneratedKind.None && member.CanRead && info.MemberConverter is null && Fits(member, true, (code.Capabilities & GeneratedCapabilities.ReadFormats) != 0) ? id : -1;
     }
 
     /// <summary>

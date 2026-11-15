@@ -221,5 +221,11 @@ namespace LsMsgPack.Generator
     int NonPublic, // LsMsgPack.TypeResolving.Filters.NonPublicProperties: the non-public properties described (the runtime decides which it serializes)
     int Fields, // LsMsgPack.TypeResolving.Filters.SerializedFields: the fields described (the runtime decides which it serializes)
     bool UnsafeAccessors, // UnsafeAccessorAttribute (.NET 8): non-public accessors and init-only setters are called through it
-    bool Unoptimized); // a Debug build: LSMP111 is reported
+    bool Unoptimized) // a Debug build: LSMP111 is reported
+  {
+    /// <summary>
+    /// The converters counted as the options' (<c>LsMsgPack.CodeAnalysis.OptionsConverters</c>), by their reference ids (<c>DocumentationCommentId</c>, constructed generic types too): their surrogates are described.
+    /// </summary>
+    public EquatableArray<StringValue> Converters { get; init; } = EquatableArray<StringValue>.Empty;
+  }
 }

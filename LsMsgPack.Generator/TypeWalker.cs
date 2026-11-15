@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using LsMsgPack.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using System.Collections.Generic;
 using System.Linq;
@@ -27,6 +28,11 @@ namespace LsMsgPack.Generator
     private readonly int _fields;
     private readonly bool _unsafeAccessors;
 
+    /// <summary>
+    /// The surrogates of the types the options' converters convert (as far as the code shows them, <see cref="OptionsConverters"/>).
+    /// </summary>
+    private readonly Dictionary<ITypeSymbol, List<ITypeSymbol>> _optionsConverters;
+
     /// <param name="within">Where the generated code is (the context class, or the assembly for the context of the assembly): what it can access</param>
     public TypeWalker(Compilation compilation, ISymbol within, string contextName, List<DiagnosticInfo> diagnostics, GenerateOptions options)
     {
@@ -37,6 +43,11 @@ namespace LsMsgPack.Generator
       _nonPublic = options.NonPublic;
       _fields = options.Fields;
       _unsafeAccessors = options.UnsafeAccessors;
+      List<INamedTypeSymbol> converters = new List<INamedTypeSymbol>();
+      foreach (StringValue id in options.Converters)
+        if (DocumentationCommentId.GetFirstSymbolForReferenceId(id.Value, compilation) is INamedTypeSymbol converter)
+          converters.Add(converter);
+      _optionsConverters = OptionsConverters.Map(converters);
       _list = compilation.GetTypeByMetadataName("System.Collections.Generic.List`1");
       _enumerable = compilation.GetSpecialType(SpecialType.System_Collections_Generic_IEnumerable_T);
     }
@@ -241,6 +252,12 @@ namespace LsMsgPack.Generator
 
     private void Visit(ITypeSymbol type)
     {
+      if (_optionsConverters.Count != 0 && _optionsConverters.TryGetValue(type, out List<ITypeSymbol> surrogates))
+      {
+        // A converter of the options: its surrogate is written, so it is described; the type itself too, as usual, for options without that converter
+        for (int s = 0; s < surrogates.Count; s++)
+          Enqueue(surrogates[s]);
+      }
       if (IsLeaf(type) || !IsAccessible(type) || ContainsTypeParameters(type))
         return;
 
@@ -267,6 +284,13 @@ namespace LsMsgPack.Generator
       {
         Enqueue(named.TypeArguments[0]);
         Add(TypeModelKind.Nullable, name, named.TypeArguments[0].ToDisplayString(Format));
+        return;
+      }
+
+      if (HasTypeConverter(named, out ITypeSymbol surrogate)) // written as its surrogate by its converter (the runtime creates it from the attribute): no members of its own, listed so a type id can name it
+      {
+        Enqueue(surrogate);
+        Add(TypeModelKind.Boxed, name);
         return;
       }
 
@@ -843,7 +867,7 @@ namespace LsMsgPack.Generator
             kept |= Kept.NonPublicFields;
           if (IsObsoleteError(field) || !IsAccessible(field.Type))
             continue;
-          Enqueue(field.Type);
+          Enqueue(HasMemberConverter(field, field.Type, out ITypeSymbol fieldSurrogate) ? fieldSurrogate : field.Type); // a member's own converter: its value is written as the surrogate
           RecordPolymorphic(type, field, field.Type);
           bool canGetField = CanGet(type, field, out bool unsafeField);
           bool canSetField = CanSet(type, field);
@@ -860,7 +884,7 @@ namespace LsMsgPack.Generator
 
         if (property.DeclaredAccessibility != Accessibility.Public)
           kept |= Kept.NonPublicProperties;
-        Enqueue(property.Type);
+        Enqueue(HasMemberConverter(property, property.Type, out ITypeSymbol propertySurrogate) ? propertySurrogate : property.Type);
         RecordPolymorphic(type, property, property.Type);
 
         bool canGet = CanGet(type, property, out bool unsafeGet);
@@ -1152,7 +1176,8 @@ namespace LsMsgPack.Generator
         valueType = named.TypeArguments[0];
         nullable = true;
       }
-      string kind = KindOf(valueType, out string underlying);
+      string underlying = null;
+      string kind = HasMemberConverter(member, type, out ITypeSymbol unused) ? "None" : KindOf(valueType, out underlying); // a member's own converter: the runtime's handler writes and reads it
       if (kind == "None")
         nullable = false;
       return new MemberModel(t.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), member.Name, Escape(member.Name),
@@ -1271,6 +1296,51 @@ namespace LsMsgPack.Generator
       foreach (AttributeData attribute in property.GetAttributes())
         if (attribute.AttributeClass != null && (attribute.AttributeClass.Name.IndexOf("Ignore", System.StringComparison.Ordinal) >= 0 || attribute.AttributeClass.ToDisplayString() == "System.NonSerializedAttribute"))
           return true;
+      return false;
+    }
+
+    /// <summary>
+    /// The type's [MsgPackConverter]: true when it has one, with the surrogate type of a MsgPackConverter&lt;T, TSurrogate&gt; (null for a MsgPackBinaryConverter&lt;T&gt;: binary data, nothing to follow).
+    /// The options' converters are in <see cref="_optionsConverters"/>.
+    /// </summary>
+    private static bool HasTypeConverter(INamedTypeSymbol type, out ITypeSymbol surrogate)
+    {
+      return HasConverter(type, type, null, out surrogate);
+    }
+
+    /// <summary>
+    /// A property's or field's own [MsgPackConverter] (its T is the member's type, or the underlying type of a nullable member): true when it has one, with the surrogate type as <see cref="HasTypeConverter"/>.
+    /// </summary>
+    private static bool HasMemberConverter(ISymbol member, ITypeSymbol type, out ITypeSymbol surrogate)
+    {
+      ITypeSymbol underlying = type is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T ? named.TypeArguments[0] : null;
+      return HasConverter(member, type, underlying, out surrogate);
+    }
+
+    /// <param name="converted">The type the converter must convert</param>
+    /// <param name="orConverted">Another type it may convert (the underlying type of a nullable member), null for none</param>
+    private static bool HasConverter(ISymbol symbol, ITypeSymbol converted, ITypeSymbol orConverted, out ITypeSymbol surrogate)
+    {
+      surrogate = null;
+      foreach (AttributeData attribute in symbol.GetAttributes())
+      {
+        if (attribute.AttributeClass?.ToDisplayString() != "LsMsgPack.Converters.MsgPackConverterAttribute" || attribute.ConstructorArguments.Length != 1
+          || !(attribute.ConstructorArguments[0].Value is INamedTypeSymbol converter))
+          continue;
+        for (INamedTypeSymbol t = converter; t != null; t = t.BaseType)
+        {
+          if (t.ContainingNamespace?.ToDisplayString() != "LsMsgPack.Converters")
+            continue;
+          bool surrogateKind = t.Name == "MsgPackConverter" && t.TypeArguments.Length == 2;
+          bool binaryKind = t.Name == "MsgPackBinaryConverter" && t.TypeArguments.Length == 1;
+          if ((surrogateKind || binaryKind)
+            && (SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], converted) || (orConverted != null && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], orConverted))))
+          {
+            surrogate = surrogateKind ? t.TypeArguments[1] : null;
+            return true;
+          }
+        }
+      }
       return false;
     }
 

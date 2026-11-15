@@ -80,6 +80,32 @@ namespace LsMsgPackTypeScriptTests
     }
 
     [TestMethod]
+    public void ConvertedTypesAreTheirSurrogates()
+    {
+      string models = Run("--root", "LsMsgPackTypeScriptTests.TsWallet", "--property-names", "dotnet").Models;
+      string wallet = ClassOf(models, "TsWallet");
+      StringAssert.Contains(wallet, "  Balance: string | null = '5 EUR';");
+      StringAssert.Contains(wallet, "  History: ");
+      StringAssert.Contains(models, "['Balance', 'string']");
+      StringAssert.Contains(models, "['History', ['list', 'string']]");
+      Assert.DoesNotContain("class TsMoney", models, "a converted class has no model");
+      StringAssert.Contains(wallet, "  Opened: number = 1767225600;", "a member's own converter: the surrogate's type and value");
+      StringAssert.Contains(models, "['Opened', 'long']");
+      StringAssert.Contains(models, "['Closed', ['?', 'long']]");
+    }
+
+    [TestMethod]
+    public void ConvertersOfTheOptionsAreTheirSurrogates()
+    {
+      Result result = Run("--root", "LsMsgPackTypeScriptTests.TsDiscount", "--property-names", "dotnet", "--options", "LsMsgPackTypeScriptTests.TsSetup.WithConverters");
+      string discount = ClassOf(result.Models, "TsDiscount");
+      StringAssert.Contains(discount, "  Rate: number | null = 12.5;");
+      StringAssert.Contains(result.Models, "['Rate', 'float']");
+      StringAssert.Contains(result.Models, "['Tiers', ['list', 'float']]");
+      Assert.DoesNotContain("class TsPercentage", result.Models, "a converted class has no model");
+    }
+
+    [TestMethod]
     public void FieldsHaveTheConstructorValues()
     {
       string order = ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--property-names", "dotnet").Models, "TsOrder");

@@ -227,7 +227,7 @@ namespace LsMsgPack.Writing
         }
         canWrite = canWrite && member.DeclaringType.IsAssignableFrom(type) && !propertyType.IsByRef && !propertyType.IsPointer && !IsByRefLike(propertyType);
         Type underlying = Nullable.GetUnderlyingType(propertyType);
-        GeneratedKind kind = canWrite && !infos[t].CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)) ? KindOf(serializer, underlying ?? propertyType) : GeneratedKind.None;
+        GeneratedKind kind = canWrite && !infos[t].CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)) && infos[t].MemberConverter is null ? KindOf(serializer, underlying ?? propertyType) : GeneratedKind.None; // a member's own converter: its handler
         if (serializer.CallsShouldSerialize(infos[t]))
         {
           // Called here when this code writes the value itself and the property writer would call it typed; otherwise the runtime's PropWriter calls it (GeneratedWritePlan.Value has no owner)

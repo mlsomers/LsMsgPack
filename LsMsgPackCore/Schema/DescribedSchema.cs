@@ -1,4 +1,5 @@
-﻿using LsMsgPack.Meta;
+﻿using LsMsgPack.Converters;
+using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Types;
@@ -213,6 +214,14 @@ namespace LsMsgPack
       Type valueType = Nullable.GetUnderlyingType(type) ?? type;
       if (value.GetType() != valueType)
         return null;
+      MsgPackConverter converter = _settings.ConverterFor(valueType, prop);
+      if (converter != null) // the default as the body writes it: its surrogate
+      {
+        value = converter.ToSurrogateBoxed(value);
+        if (value is null)
+          return new byte[] { (byte)MsgPackTypeId.MpNull };
+        type = converter.SurrogateType;
+      }
       return _settings.SerializePlainValue(value, type, _byteOrder._endianAction);
     }
 
@@ -222,6 +231,8 @@ namespace LsMsgPack
     internal static bool IsObject(Type type, MsgPackOptions settings)
     {
       type = Nullable.GetUnderlyingType(type) ?? type;
+      if (settings.ConverterFor(type) != null) // written as its surrogate
+        return false;
       if (type.IsPrimitive || type == typeof(string) || type == typeof(decimal) || type == typeof(byte[]) || type == typeof(sbyte[]) || type == typeof(Guid)
         || type == typeof(DateTime) || type == typeof(DateTimeOffset) || type.IsArray || type.IsEnum)
         return false;
@@ -243,7 +254,17 @@ namespace LsMsgPack
       {
         _bytes.WriteArrayHeader(2, _byteOrder);
         _bytes.WriteString("?", _byteOrder);
-        WriteType(nullable);
+        WriteType(nullable, assignedTo); // a member's converter of the underlying type
+        return;
+      }
+
+      MsgPackConverter converter = _settings.ConverterFor(type, assignedTo);
+      if (converter != null) // written as its surrogate, a value declared as the surrogate type
+      {
+        if (converter is MsgPackBinaryConverter binary && binary.ExtensionTypeCode != null)
+          Kind("any"); // an extension, as the custom extensions
+        else
+          WriteType(converter.SurrogateType, null, elements);
         return;
       }
 

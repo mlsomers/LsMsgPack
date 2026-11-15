@@ -68,6 +68,90 @@ public class Options { public int Port; }
 public static class Use { public static void Write(Model m, Vec v) { MsgPackSerializer.Serialize(m); MsgPackSerializer.Serialize(v); } }
 ";
 
+    /// <summary>
+    /// A type with [MsgPackConverter] is written as its surrogate: its own members get no diagnostics, the surrogate's do.
+    /// </summary>
+    [TestMethod]
+    public void Converters_TheSurrogateIsChecked()
+    {
+      AssertDiagnostics(Analyze(Usings + @"
+[LsMsgPack.Converters.MsgPackConverter(typeof(MoneyConverter))]
+public sealed class Money
+{
+  public decimal Amount;
+  public object Anything { get; set; }
+  public int Retries { get; set; } = 3;
+}
+public class MoneyDto { public string Text; public object Open { get; set; } }
+public sealed class MoneyConverter : LsMsgPack.Converters.MsgPackConverter<Money, MoneyDto>
+{
+  public override MoneyDto ToSurrogate(Money value) => new MoneyDto();
+  public override Money FromSurrogate(MoneyDto surrogate) => new Money();
+}
+public class Model { public Money Total { get; set; } }
+" + Write), "LSMP010 Text", "LSMP004 Open");
+    }
+
+    /// <summary>
+    /// A member's own [MsgPackConverter]: the type rules are about the surrogate it writes (a JSON document written as text is fine, an object surrogate is open).
+    /// </summary>
+    [TestMethod]
+    public void Converters_OnAMember_TheSurrogateIsChecked()
+    {
+      AssertDiagnostics(Analyze(Usings + @"
+public class Box { public int Size { get; set; } }
+public sealed class JsonAsText : LsMsgPack.Converters.MsgPackConverter<System.Text.Json.JsonElement, string>
+{
+  public override string ToSurrogate(System.Text.Json.JsonElement value) => value.GetRawText();
+  public override System.Text.Json.JsonElement FromSurrogate(string surrogate) => System.Text.Json.JsonDocument.Parse(surrogate).RootElement;
+}
+public sealed class AnyBox : LsMsgPack.Converters.MsgPackConverter<Box, object>
+{
+  public override object ToSurrogate(Box value) => value.Size;
+  public override Box FromSurrogate(object surrogate) => new Box();
+}
+public class Model
+{
+  [LsMsgPack.Converters.MsgPackConverter(typeof(JsonAsText))]
+  public System.Text.Json.JsonElement Payload { get; set; }
+  [LsMsgPack.Converters.MsgPackConverter(typeof(AnyBox))]
+  public Box Thing { get; set; }
+  public System.Text.Json.JsonElement Raw { get; set; }
+}
+" + Write), "LSMP004 Thing", "LSMP009 Raw");
+    }
+
+    /// <summary>
+    /// Converters of the options, as far as the code shows them (declared and not named by an attribute, or created): the type rules are about the surrogates, also of elements,
+    /// and the members of a converted type are not checked. Created counts also when an attribute names the converter.
+    /// </summary>
+    [TestMethod]
+    public void Converters_OfTheOptions_TheSurrogateIsChecked()
+    {
+      AssertDiagnostics(Analyze(Usings + @"
+public sealed class JsonAsText : LsMsgPack.Converters.MsgPackConverter<System.Text.Json.JsonElement, string>
+{
+  public override string ToSurrogate(System.Text.Json.JsonElement value) => value.GetRawText();
+  public override System.Text.Json.JsonElement FromSurrogate(string surrogate) => System.Text.Json.JsonDocument.Parse(surrogate).RootElement;
+}
+public class Box { public object Open { get; set; } }
+public sealed class AnyBox : LsMsgPack.Converters.MsgPackConverter<Box, object>
+{
+  public override object ToSurrogate(Box value) => 1;
+  public override Box FromSurrogate(object surrogate) => new Box();
+}
+public static class Setup { public static LsMsgPack.Converters.MsgPackConverter[] Converters => new LsMsgPack.Converters.MsgPackConverter[] { new AnyBox() }; }
+public class Model
+{
+  public System.Text.Json.JsonElement Raw { get; set; }
+  public List<System.Text.Json.JsonElement> Many { get; set; }
+  public Box Thing { get; set; }
+  [LsMsgPack.Converters.MsgPackConverter(typeof(AnyBox))]
+  public Box Extra { get; set; }
+}
+" + Write), "LSMP004 Thing", "LSMP004 Extra");
+    }
+
     [TestMethod]
     public void LeftOut_PublicFieldsThatWouldRoundTrip()
     {
