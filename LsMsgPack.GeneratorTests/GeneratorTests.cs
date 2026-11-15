@@ -813,6 +813,47 @@ namespace F
     /// FilterShouldSerialize finds the ShouldSerialize{Name}() methods by name: each is kept by a DynamicDependency, the methods that do not fit are not.
     /// </summary>
     [TestMethod]
+    public void Converters_TheSurrogateIsDescribed()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(@"
+using LsMsgPack;
+using LsMsgPack.Converters;
+
+namespace Conv
+{
+  [MsgPackConverter(typeof(MoneyConverter))]
+  public sealed class Money
+  {
+    public decimal Amount { get; set; }
+    public Secret Hidden { get; set; }
+  }
+
+  public class Secret { public int Code { get; set; } }
+
+  public class MoneyDto { public string Text { get; set; } }
+
+  public sealed class MoneyConverter : MsgPackConverter<Money, MoneyDto>
+  {
+    public override MoneyDto ToSurrogate(Money value) { return new MoneyDto { Text = value.Amount.ToString() }; }
+    public override Money FromSurrogate(MoneyDto surrogate) { return new Money { Amount = decimal.Parse(surrogate.Text) }; }
+  }
+
+  public class Order
+  {
+    public Money Total { get; set; }
+  }
+
+  [LsMsgPackSerializable(typeof(Order))]
+  public partial class ConvMsgPackContext : LsMsgPackContext { }
+}");
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.Contains("Boxed<global::Conv.Money>()", code, "the converted type is only listed");
+      Assert.Contains("global::Conv.MoneyDto", code, "the surrogate is described");
+      Assert.DoesNotContain("global::Conv.Secret", code, "the converted type's members are not walked");
+    }
+
+    [TestMethod]
     public void ShouldSerializeMethods_Kept()
     {
       GeneratorHarness.Result result = GeneratorHarness.Run(@"

@@ -215,6 +215,16 @@ namespace LsMsgPack.Analyzers
 
         for (int t = 0; t < named.TypeArguments.Length; t++)
           Add(named.TypeArguments[t]);
+
+        ITypeSymbol surrogate = ConverterSurrogate(named);
+        if (surrogate != null) // [MsgPackConverter]: written as its surrogate, its own members are not serialized; classes deriving from it are objects with a type id
+        {
+          Add(surrogate);
+          for (int t = 0; t < _sourceTypes.Count; t++)
+            if (Derives(_sourceTypes[t], named.OriginalDefinition))
+              Add(_sourceTypes[t]);
+          continue;
+        }
         if (!IsInSource(named))
           continue; // the framework's and other assemblies' types: only what they hold (List<Invoice>, Task<Invoice>)
 
@@ -233,6 +243,27 @@ namespace LsMsgPack.Analyzers
           if (Derives(_sourceTypes[t], named.OriginalDefinition))
             Add(_sourceTypes[t]);
       }
+    }
+
+    /// <summary>
+    /// The surrogate type of the converter in the type's [MsgPackConverter] (the TSurrogate of its MsgPackConverter&lt;T, TSurrogate&gt;), null without one (as the generator's TypeWalker.ConverterSurrogate).
+    /// Converters of the options are not seen here.
+    /// </summary>
+    internal static ITypeSymbol ConverterSurrogate(INamedTypeSymbol type)
+    {
+      foreach (AttributeData attribute in type.GetAttributes())
+      {
+        if (attribute.AttributeClass?.ToDisplayString() != "LsMsgPack.Converters.MsgPackConverterAttribute" || attribute.ConstructorArguments.Length != 1
+          || !(attribute.ConstructorArguments[0].Value is INamedTypeSymbol converter))
+          continue;
+        for (INamedTypeSymbol t = converter; t != null; t = t.BaseType)
+        {
+          if (t.Name == "MsgPackConverter" && t.TypeArguments.Length == 2 && t.ContainingNamespace?.ToDisplayString() == "LsMsgPack.Converters"
+            && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], type))
+            return t.TypeArguments[1];
+        }
+      }
+      return null;
     }
 
     private static bool Derives(INamedTypeSymbol type, INamedTypeSymbol baseType)

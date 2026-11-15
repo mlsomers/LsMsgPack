@@ -1,3 +1,4 @@
+using LsMsgPack.Converters;
 using LsMsgPack;
 using System;
 using System.Collections;
@@ -149,6 +150,9 @@ namespace LsMsgPackTypeScript
         return null;
       if (spec.Name == "?")
         return Value(value, spec.Items[0], depth);
+      MsgPackConverter converter = _models.Settings.ConverterFor(value.GetType());
+      if (converter != null) // the spec is the surrogate's
+        return Value(converter.ToSurrogateBoxed(value), spec, depth + 1);
 
       switch (spec.Name)
       {

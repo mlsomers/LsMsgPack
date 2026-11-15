@@ -55,6 +55,10 @@ namespace LsMsgPack.TypeResolving.Types
       if (newEntry.IsCollection)
         return newEntry;
 
+      // A type with a converter is written as its surrogate: its entry only names it (for a type id), the surrogate's type has its own
+      if (settings.ConverterFor(type) != null)
+        return newEntry;
+
       // Only the names are needed: the property id resolvers (not this one) only for the names they give (see FullPropertyInfo.SchemaName)
       FullPropertyInfo[] props = FullPropertyInfo.GetStaticallyIncludedProps(type, settings);
       newEntry.ParseProps(props, settings);

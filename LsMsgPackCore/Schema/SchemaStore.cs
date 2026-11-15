@@ -459,6 +459,7 @@ namespace LsMsgPack
       private readonly PropertyOrder _propertyOrder;
       private readonly SchemaVersion _version; // writers only, 0 for readers
       private readonly bool _complete; // writers only: a complete schema has other entries (in another order) than one made by the values
+      private readonly LsMsgPack.Converters.MsgPackConverter[] _converters; // which types are written as their surrogates (entries of the surrogates, none of the converted types)
 
       internal SessionKey(Type root, MsgPackOptions settings)
       {
@@ -471,6 +472,7 @@ namespace LsMsgPack
         _propertyOrder = settings._propertyOrder;
         _version = root is null ? 0 : settings._schemaVersion;
         _complete = !(root is null) && settings._completeSchemas;
+        _converters = settings._converters;
       }
 
       public bool Equals(SessionKey other)
@@ -483,7 +485,8 @@ namespace LsMsgPack
           && _endianAction == other._endianAction
           && _propertyOrder == other._propertyOrder
           && _version == other._version
-          && _complete == other._complete;
+          && _complete == other._complete
+          && ReferenceEquals(_converters, other._converters);
       }
 
       public override bool Equals(object obj)
@@ -503,6 +506,7 @@ namespace LsMsgPack
           hash = hash * 31 + (int)_endianAction;
           hash = hash * 31 + (int)_propertyOrder;
           hash = hash * 31 + (int)_version;
+          hash = hash * 31 + RuntimeHelpers.GetHashCode(_converters);
           return _complete ? ~hash : hash;
         }
       }

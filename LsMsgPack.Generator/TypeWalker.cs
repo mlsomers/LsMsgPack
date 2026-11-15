@@ -270,6 +270,14 @@ namespace LsMsgPack.Generator
         return;
       }
 
+      ITypeSymbol surrogate = ConverterSurrogate(named);
+      if (surrogate != null) // written as its surrogate by its converter (the runtime creates it from the attribute): no members of its own, listed so a type id can name it
+      {
+        Enqueue(surrogate);
+        Add(TypeModelKind.Boxed, name);
+        return;
+      }
+
       if (named.TypeKind == TypeKind.Enum)
       {
         Add(TypeModelKind.Enum, name);
@@ -1272,6 +1280,27 @@ namespace LsMsgPack.Generator
         if (attribute.AttributeClass != null && (attribute.AttributeClass.Name.IndexOf("Ignore", System.StringComparison.Ordinal) >= 0 || attribute.AttributeClass.ToDisplayString() == "System.NonSerializedAttribute"))
           return true;
       return false;
+    }
+
+    /// <summary>
+    /// The surrogate type of the converter in the type's [MsgPackConverter] (the TSurrogate of its MsgPackConverter&lt;T, TSurrogate&gt;), null without one.
+    /// Converters of the options are not seen here: their surrogate types need a context of their own (docs/Converters.md).
+    /// </summary>
+    private static ITypeSymbol ConverterSurrogate(INamedTypeSymbol type)
+    {
+      foreach (AttributeData attribute in type.GetAttributes())
+      {
+        if (attribute.AttributeClass?.ToDisplayString() != "LsMsgPack.Converters.MsgPackConverterAttribute" || attribute.ConstructorArguments.Length != 1
+          || !(attribute.ConstructorArguments[0].Value is INamedTypeSymbol converter))
+          continue;
+        for (INamedTypeSymbol t = converter; t != null; t = t.BaseType)
+        {
+          if (t.Name == "MsgPackConverter" && t.TypeArguments.Length == 2 && t.ContainingNamespace?.ToDisplayString() == "LsMsgPack.Converters"
+            && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], type))
+            return t.TypeArguments[1];
+        }
+      }
+      return null;
     }
 
     private static bool HasAttribute(ISymbol symbol, string name)

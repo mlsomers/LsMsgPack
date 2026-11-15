@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Converters;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Types;
 using LsMsgPack.Extensions;
@@ -328,6 +329,8 @@ namespace LsMsgPack
           if (extension != null)
             return extension;
           break;
+        case TypeKind.Converted:
+          return (ValueReader)info.Converter.Accept(new ConverterReaders(this));
         case TypeKind.Enum:
           return (ValueReader)Instantiate(type, typeof(EnumReader<>), type, null);
         case TypeKind.Array:
@@ -435,6 +438,24 @@ namespace LsMsgPack
       if (!typedExtension.IsInstanceOfType(extension))
         return null;
       return (ValueReader)Activator.CreateInstance(typeof(ExtensionReader<>).MakeGenericType(type), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { extension }, null);
+    }
+
+    /// <summary>
+    /// Creates the reader of a converter with its type arguments (see ConverterHandlers).
+    /// </summary>
+    private sealed class ConverterReaders : IMsgPackConverterVisitor<object>
+    {
+      private readonly Serializer _serializer;
+
+      internal ConverterReaders(Serializer serializer)
+      {
+        _serializer = serializer;
+      }
+
+      public object Surrogate<T, TSurrogate>(MsgPackConverter<T, TSurrogate> converter)
+      {
+        return new ConverterReader<T, TSurrogate>(_serializer, converter);
+      }
     }
 
     /// <returns>null when the type is not an object with properties that can be created</returns>

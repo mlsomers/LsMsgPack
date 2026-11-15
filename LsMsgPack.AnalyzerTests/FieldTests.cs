@@ -68,6 +68,30 @@ public class Options { public int Port; }
 public static class Use { public static void Write(Model m, Vec v) { MsgPackSerializer.Serialize(m); MsgPackSerializer.Serialize(v); } }
 ";
 
+    /// <summary>
+    /// A type with [MsgPackConverter] is written as its surrogate: its own members get no diagnostics, the surrogate's do.
+    /// </summary>
+    [TestMethod]
+    public void Converters_TheSurrogateIsChecked()
+    {
+      AssertDiagnostics(Analyze(Usings + @"
+[LsMsgPack.Converters.MsgPackConverter(typeof(MoneyConverter))]
+public sealed class Money
+{
+  public decimal Amount;
+  public object Anything { get; set; }
+  public int Retries { get; set; } = 3;
+}
+public class MoneyDto { public string Text; public object Open { get; set; } }
+public sealed class MoneyConverter : LsMsgPack.Converters.MsgPackConverter<Money, MoneyDto>
+{
+  public override MoneyDto ToSurrogate(Money value) => new MoneyDto();
+  public override Money FromSurrogate(MoneyDto surrogate) => new Money();
+}
+public class Model { public Money Total { get; set; } }
+" + Write), "LSMP010 Text", "LSMP004 Open");
+    }
+
     [TestMethod]
     public void LeftOut_PublicFieldsThatWouldRoundTrip()
     {

@@ -1,4 +1,5 @@
-﻿using LsMsgPack.Meta;
+﻿using LsMsgPack.Converters;
+using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Types;
@@ -222,6 +223,8 @@ namespace LsMsgPack
     internal static bool IsObject(Type type, MsgPackOptions settings)
     {
       type = Nullable.GetUnderlyingType(type) ?? type;
+      if (settings.ConverterFor(type) != null) // written as its surrogate
+        return false;
       if (type.IsPrimitive || type == typeof(string) || type == typeof(decimal) || type == typeof(byte[]) || type == typeof(sbyte[]) || type == typeof(Guid)
         || type == typeof(DateTime) || type == typeof(DateTimeOffset) || type.IsArray || type.IsEnum)
         return false;
@@ -244,6 +247,13 @@ namespace LsMsgPack
         _bytes.WriteArrayHeader(2, _byteOrder);
         _bytes.WriteString("?", _byteOrder);
         WriteType(nullable);
+        return;
+      }
+
+      MsgPackConverter converter = _settings.ConverterFor(type);
+      if (converter != null) // written as its surrogate, a value declared as the surrogate type
+      {
+        WriteType(converter.SurrogateType, null, elements);
         return;
       }
 

@@ -80,6 +80,18 @@ namespace LsMsgPackTypeScriptTests
     }
 
     [TestMethod]
+    public void ConvertedTypesAreTheirSurrogates()
+    {
+      string models = Run("--root", "LsMsgPackTypeScriptTests.TsWallet", "--property-names", "dotnet").Models;
+      string wallet = ClassOf(models, "TsWallet");
+      StringAssert.Contains(wallet, "  Balance: string | null = '5 EUR';");
+      StringAssert.Contains(wallet, "  History: ");
+      StringAssert.Contains(models, "['Balance', 'string']");
+      StringAssert.Contains(models, "['History', ['list', 'string']]");
+      Assert.DoesNotContain("class TsMoney", models, "a converted class has no model");
+    }
+
+    [TestMethod]
     public void FieldsHaveTheConstructorValues()
     {
       string order = ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--property-names", "dotnet").Models, "TsOrder");

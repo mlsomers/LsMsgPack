@@ -78,6 +78,7 @@ options.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(IShape));
 - [LsMsgPack vs MessagePack-CSharp vs Nerdbank.MessagePack](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Comparison.md): benchmarks, and when to pick which
 - [Security](https://github.com/mlsomers/LsMsgPack/blob/master/docs/security.md)
 - [Streaming](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Streaming.md): `MsgPackStreamWriter` and `MsgPackStreamReader`, values one after another, arrays and maps of unknown length, an index at the end of the stream to go to any table or row
+- [Converters](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Converters.md): write a type as another type (value objects, types of other libraries, other formats for built-in types)
 - [Reporting differences](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ReadDifferences.md): what didn't match between the data and your classes (`serializer.Deserialize<T>(data, out ReadDifferences differences)`)
 - ASP.NET formatters built on LsMsgPack: [LsMsgPack.AspNetCore](https://www.nuget.org/packages/LsMsgPack.AspNetCore), [LsMsgPack.AspNet.WebApi](https://www.nuget.org/packages/LsMsgPack.AspNet.WebApi), [LsMsgPack.AspNet.Mvc](https://www.nuget.org/packages/LsMsgPack.AspNet.Mvc)
 - Source, issues and MsgPack Explorer (a tool to look inside MsgPack data): [github.com/mlsomers/LsMsgPack](https://github.com/mlsomers/LsMsgPack)

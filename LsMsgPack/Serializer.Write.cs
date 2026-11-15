@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Converters;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Filters;
@@ -256,6 +257,8 @@ namespace LsMsgPack
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
             return InstantiateCollection(type, typeof(DictionaryHandler<,>), type.GenericTypeArguments, this) ?? Boxed(type);
           return Boxed(type);
+        case TypeKind.Converted:
+          return info.Converter.Accept(new ConverterHandlers(this));
         case TypeKind.Complex:
           if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
           {
@@ -404,6 +407,8 @@ namespace LsMsgPack
     /// </summary>
     internal bool InBulk(Type element)
     {
+      if (GetTypeInfo(element).Kind == TypeKind.Converted) // a converter for the element type (which may be any type)
+        return false;
       if (element == typeof(int) || element == typeof(long) || element == typeof(float) || element == typeof(double))
         return true;
       TypeKind kind;
@@ -481,7 +486,7 @@ namespace LsMsgPack
       return _schemaInfos.GetOrAdd(type, t =>
       {
         ComplexTypeDef def = new ComplexTypeDef(0, t, Options); // the name as the schema has it (type resolvers, full or short name)
-        FullPropertyInfo[] props = FullPropertyInfo.GetStaticallyIncludedProps(t, Options);
+        FullPropertyInfo[] props = Options.ConverterFor(t) != null ? new FullPropertyInfo[0] : FullPropertyInfo.GetStaticallyIncludedProps(t, Options); // a converted type only named (IndexedSchemaTypeResolver.GetComplex)
         string[] names = new string[props.Length];
         for (int p = 0; p < props.Length; p++)
           names[p] = props[p].Name;
@@ -511,7 +516,7 @@ namespace LsMsgPack
       {
         WriteContext c = new WriteContext(this) { W = _keyWriter, Mode = IdMode.Names, IdSettings = Options };
         _keyWriter.Reset(Options);
-        WriteBoxed(c, id, null);
+        WriteId(c, id);
         return _keyWriter.ToArray();
       }
     }
@@ -540,6 +545,27 @@ namespace LsMsgPack
     #endregion
 
     #region Writing boxed values (LsMsgPack: SerializeObject)
+
+    /// <summary>
+    /// A property id or type id (a name, a schema index, or what a custom resolver gives), as LsMsgPackDebug packs it (MsgPackItem.Pack, not SerializeObject): never through a converter,
+    /// so a converter for int or string does not change the keys and type ids.
+    /// </summary>
+    internal void WriteId(WriteContext c, object id)
+    {
+      if (id is string name)
+      {
+        c.W.String(name);
+        return;
+      }
+      if (id is int index)
+      {
+        c.W.Int32(index);
+        return;
+      }
+      if (id != null && GetTypeInfo(id.GetType()).Kind == TypeKind.Converted)
+        throw new MsgPackException($"A property or type id of type {id.GetType().FullName}, which has a converter: ids are written as they are, give them another type (the custom IMsgPackPropertyIdResolver or IMsgPackTypeResolver).");
+      WriteBoxed(c, id, null);
+    }
 
     /// <summary>
     /// Writes any value the way LsMsgPack's SerializeObject does: leaf values (wrapped in a map with a type id when assigned to another type, except primitives and strings), collections and objects.
@@ -682,6 +708,10 @@ namespace LsMsgPack
         case TypeKind.MultiArray:
           WriteMultidimensional(c, (Array)value, type, assignedTo);
           return;
+
+        case TypeKind.Converted:
+          WriteConverted(c, value, type, info, assignedTo);
+          return;
       }
 
       if (assignedTo is null || info.NeverWrapped || !SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId))
@@ -695,6 +725,42 @@ namespace LsMsgPack
       c.WriteTypeId(type, assignedTo);
       c.W.String(MsgPackOptions.ContentKey);
       WriteLeaf(c, value, info);
+    }
+
+    /// <summary>
+    /// A value of a type with a converter, boxed (LsMsgPackDebug: SerializeConverted): its surrogate, wrapped as a leaf value is where the declared type differs, the type id first.
+    /// </summary>
+    private void WriteConverted(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
+    {
+      IConvertedWriter writer = info.ConvertedWriter ?? (info.ConvertedWriter = (IConvertedWriter)info.Converter.Accept(new ConverterHandlers(this)));
+      if (assignedTo is null || info.NeverWrapped || !SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId))
+      {
+        writer.WriteBoxed(c, value);
+        return;
+      }
+      c.W.MapHeader(2);
+      c.W.String(MsgPackOptions.TypeIdKey);
+      c.WriteTypeId(type, assignedTo);
+      c.W.String(MsgPackOptions.ContentKey);
+      writer.WriteBoxed(c, value);
+    }
+
+    /// <summary>
+    /// Creates the handler of a converter with its type arguments (no MakeGenericType: NativeAOT sees the instantiations through the converter's type).
+    /// </summary>
+    private sealed class ConverterHandlers : IMsgPackConverterVisitor<object>
+    {
+      private readonly Serializer _serializer;
+
+      internal ConverterHandlers(Serializer serializer)
+      {
+        _serializer = serializer;
+      }
+
+      public object Surrogate<T, TSurrogate>(MsgPackConverter<T, TSurrogate> converter)
+      {
+        return new ConverterHandler<T, TSurrogate>(_serializer, converter);
+      }
     }
 
     private void WriteLeaf(WriteContext c, object value, WriteTypeInfo info)
@@ -1078,6 +1144,16 @@ namespace LsMsgPack
     internal readonly Type Type;
     internal readonly TypeKind Kind;
     internal readonly LsExtension Extension;
+
+    /// <summary>
+    /// The converter of <see cref="TypeKind.Converted"/>.
+    /// </summary>
+    internal readonly MsgPackConverter Converter;
+
+    /// <summary>
+    /// The converter's handler as <see cref="WriteBoxed"/> calls it (also when the handlers are boxed, <c>AddTypeIdOption.Always</c>), set when first used.
+    /// </summary>
+    internal IConvertedWriter ConvertedWriter;
     internal readonly bool NeverWrapped;
     internal readonly FullPropertyInfo ElementInfo;
     internal readonly CollectionInfo Collection;
@@ -1114,7 +1190,8 @@ namespace LsMsgPack
     internal WriteTypeInfo(Type type, LsMsgPackOptions options)
     {
       Type = type;
-      Kind = TypeKinds.Classify(type, options._extensions, out Extension);
+      Converter = options.ConverterFor(type);
+      Kind = Converter != null ? TypeKind.Converted : TypeKinds.Classify(type, options._extensions, out Extension);
       HasAnonymousType = SerializationRules.HasAnonymousType(type);
       NeverHasTypeId = SerializationRules.NeverHasTypeId(type);
       if (Kind == TypeKind.Plain)

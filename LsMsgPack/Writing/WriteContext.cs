@@ -252,7 +252,7 @@ namespace LsMsgPack.Writing
       switch (Mode)
       {
         case IdMode.Names:
-          Serializer.WriteBoxed(this, Serializer.NameTypeId(type, assignedTo), null);
+          Serializer.WriteId(this, Serializer.NameTypeId(type, assignedTo));
           return;
 
         case IdMode.Inline:
@@ -260,7 +260,7 @@ namespace LsMsgPack.Writing
           return;
 
         default:
-          Serializer.WriteBoxed(this, SerializationRules.GetTypeIdentifier(type, IdSettings, assignedTo), null);
+          Serializer.WriteId(this, SerializationRules.GetTypeIdentifier(type, IdSettings, assignedTo));
           return;
       }
     }

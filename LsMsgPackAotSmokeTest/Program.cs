@@ -200,8 +200,49 @@ namespace LsMsgPackAotSmokeTest
     public InitLimits Limits { get; set; }
   }
 
+  /// <summary>
+  /// Written as a string by its converter (created from the attribute; its handler through the converter's generic visitor, no MakeGenericType).
+  /// </summary>
+  [LsMsgPack.Converters.MsgPackConverter(typeof(DiscountConverter))]
+  public sealed class Discount
+  {
+    public decimal Percent { get; set; }
+    public string Code { get; set; }
+  }
+
+  public sealed class DiscountConverter : LsMsgPack.Converters.MsgPackConverter<Discount, string>
+  {
+    public override string ToSurrogate(Discount value) { return value.Percent.ToString(CultureInfo.InvariantCulture) + "%" + value.Code; }
+    public override Discount FromSurrogate(string surrogate) { int at = surrogate.IndexOf('%'); return new Discount { Percent = decimal.Parse(surrogate.Substring(0, at), CultureInfo.InvariantCulture), Code = surrogate.Substring(at + 1) }; }
+  }
+
+  /// <summary>
+  /// Written as a class of its own (the generator describes the surrogate, not this class).
+  /// </summary>
+  [LsMsgPack.Converters.MsgPackConverter(typeof(StampConverter))]
+  public sealed class Postmark
+  {
+    public Postmark(string office, int day) { Office = office; Day = day; }
+    public string Office { get; }
+    public int Day { get; }
+  }
+
+  public class PostmarkDto
+  {
+    public string Office { get; set; }
+    public int Day { get; set; }
+  }
+
+  public sealed class StampConverter : LsMsgPack.Converters.MsgPackConverter<Postmark, PostmarkDto>
+  {
+    public override PostmarkDto ToSurrogate(Postmark value) { return new PostmarkDto { Office = value.Office, Day = value.Day }; }
+    public override Postmark FromSurrogate(PostmarkDto surrogate) { return new Postmark(surrogate.Office, surrogate.Day); }
+  }
+
   public class Invoice
   {
+    public Discount Discount { get; set; }
+    public List<Postmark> Postmarks { get; set; }
     public Guid Id { get; set; }
     public string Number { get; set; }
     public DateTime Date { get; set; }
@@ -398,6 +439,8 @@ namespace LsMsgPackAotSmokeTest
         Stamp = new Circle() { Label = "paid", Radius = 1.5 },
         Shapes = new List<Shape>() { new Square() { Label = "s", Side = 2 }, new Circle() { Radius = 0.25 } },
         Total = 252.47m,
+        Discount = new Discount { Percent = 12.5m, Code = "AUTUMN" },
+        Postmarks = new List<Postmark> { new Postmark("Utrecht", 12), null },
         Urgent = true,
         Payment = new Payment(100.5m) { Note = "first" },
         Signed = new Signature("Clerk", new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc)),
@@ -551,7 +594,9 @@ namespace LsMsgPackAotSmokeTest
         .Append(o.Numbers is null ? "null" : string.Join(",", o.Numbers)).Append(';').Append(Dump(o.Stamp)).Append(';')
         .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent).Append(';').Append(Dump(o.Extras)).Append(';')
         .Append(o.Payment is null ? "null" : $"[{o.Payment.Amount.ToString(CultureInfo.InvariantCulture)} {o.Payment.Note ?? "null"} {o.Payment.Logged}]").Append(';')
-        .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]").Append(';').Append(Dump(o.Route));
+        .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]").Append(';').Append(Dump(o.Route)).Append(';')
+        .Append(o.Discount is null ? "null" : o.Discount.Percent.ToString(CultureInfo.InvariantCulture) + "/" + o.Discount.Code).Append(';')
+        .Append(o.Postmarks is null ? "null" : string.Join(",", o.Postmarks.Select(p => p is null ? "null" : p.Office + "/" + p.Day)));
       return text.ToString();
     }
 

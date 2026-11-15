@@ -6,6 +6,7 @@ using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using LsMsgPack.Converters;
 
 namespace LsMsgPackDebug
 {
@@ -95,6 +96,10 @@ namespace LsMsgPackDebug
       if (!(nullableType is null))
         tType = nullableType;
 
+      MsgPackConverter converter = settings.ConverterFor(tType);
+      if (converter != null)
+        return SerializeConverted(item, tType, converter, settings, assignedTo, depth, byNames);
+
       MsgPackItem packed = MsgPackItem.Pack(item, settings, tType);
 
       // Strings, byte[] and Guid (MpBin) are enumerable but not treated as a collection
@@ -132,6 +137,24 @@ namespace LsMsgPackDebug
       if (settings._ignoreCycles && !tType.IsValueType)
         return SerializeTracked(item, tType, settings, assignedTo, depth, byNames);
       return SerializeComplex(item, tType, settings, assignedTo, depth, byNames);
+    }
+
+    /// <summary>
+    /// A value of a type with a converter (MsgPackOptions.Converters, [MsgPackConverter]): its surrogate, written as a value declared as the surrogate type. Where the declared type differs
+    /// it is wrapped as a leaf value is: { "": typeId, "@": surrogate }, the type id first (the schema gets the converted type before the surrogate's types, as LsMsgPack writes it).
+    /// </summary>
+    private static MsgPackItem SerializeConverted(object item, Type tType, MsgPackConverter converter, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
+    {
+      bool wrap = !(assignedTo?.AssignedToType is null || tType.IsPrimitive || tType == typeof(string) || !SerializationRules.NeedsTypeId(tType, assignedTo, settings));
+      object typeId = wrap ? SerializationRules.GetTypeIdentifier(tType, settings, assignedTo) : null;
+      MsgPackItem content = SerializeObject(converter.ToSurrogateBoxed(item), settings, converter.SurrogateInfo, depth, byNames);
+      if (!wrap)
+        return content;
+      return new MpMap(new KeyValuePair<object, object>[]
+      {
+        new KeyValuePair<object, object>(TypeIdKey, typeId),
+        new KeyValuePair<object, object>(ContentKey, content)
+      }, settings);
     }
 
     private static MsgPackItem SerializeComplex(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)

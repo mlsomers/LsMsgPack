@@ -142,6 +142,32 @@ namespace LsMsgPack.Meta
       return result;
     }
 
+    /// <summary>
+    /// A type id where a type with a converter is declared (or its nullable): whether it names a class deriving from the converter's surrogate type (the surrogate was written with a type id),
+    /// not the declared type or a class deriving from it (written as an object, converters are for one exact type). Only probes: the caller resolves the type again, with the checks.
+    /// </summary>
+    internal static bool NamesSurrogate(object typeId, Converters.MsgPackConverter converter, FullPropertyInfo rootProp, MsgPackOptions settings, Dictionary<object, object> propVals)
+    {
+      Type picked = null;
+      try
+      {
+        for (int t = (settings?._typeResolvers.Length ?? 0) - 1; t >= 0 && picked is null; t--) // the type the id names, whatever is declared (object: no fallback to the declared type)
+        {
+          Type result = settings._typeResolvers[t].Resolve(typeId, typeof(object), rootProp, propVals, settings);
+          if (result != null && !result.ContainsGenericParameters)
+            picked = result;
+        }
+        if (picked is null && typeId is string typeName && !string.IsNullOrWhiteSpace(typeName))
+          picked = ResolveInternal(typeName, typeof(object), settings?.TypeResolvers, false);
+      }
+      catch (Exception) // not found, or a short name of several classes: resolved against the declared type, which reports it
+      {
+        return false;
+      }
+      Type surrogate = Nullable.GetUnderlyingType(converter.SurrogateType) ?? converter.SurrogateType;
+      return picked != null && picked != typeof(object) && !converter.ConvertedType.IsAssignableFrom(picked) && surrogate.IsAssignableFrom(picked);
+    }
+
     private static Type ResolveUnchecked(object typeId, Type assignedTo, FullPropertyInfo rootProp, MsgPackOptions settings, Dictionary<object, object> propVals)
     {
       Type result;

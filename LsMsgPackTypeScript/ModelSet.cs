@@ -1,3 +1,4 @@
+using LsMsgPack.Converters;
 using LsMsgPack;
 using LsMsgPack.Meta;
 using System;
@@ -81,6 +82,13 @@ namespace LsMsgPackTypeScript
       if (type is null || type.IsGenericParameter || type.ContainsGenericParameters || type.IsPointer || type.IsByRef || depth > 64)
         return;
       type = Nullable.GetUnderlyingType(type) ?? type;
+      MsgPackConverter converter = _settings.ConverterFor(type);
+      if (converter != null) // written as its surrogate (as SchemaTypes walks it)
+      {
+        if (_visited.Add(type))
+          Visit(converter.SurrogateType, depth + 1);
+        return;
+      }
       if (type.IsArray)
       {
         Visit(type.GetElementType(), depth + 1);
@@ -201,6 +209,9 @@ namespace LsMsgPackTypeScript
       Type nullable = Nullable.GetUnderlyingType(type);
       if (nullable != null)
         return Spec.Of("?", type, SpecOf(nullable));
+      MsgPackConverter converter = _settings.ConverterFor(type);
+      if (converter != null) // written as its surrogate
+        return SpecOf(converter.SurrogateType);
       if (type == typeof(decimal))
         return Spec.Kind("decimal", type);
       if (type.IsArray && type.GetArrayRank() > 1)

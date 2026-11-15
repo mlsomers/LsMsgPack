@@ -719,6 +719,90 @@ namespace LsMsgPackUnitTests
       Assert.IsEmpty(differences, string.Join("\n", differences.Take(40)));
     }
 
+    /// <summary>
+    /// Converters (MsgPackOptions.Converters and [MsgPackConverter]): the surrogates, type ids of converted values declared as object, classes deriving from a converted class, polymorphic surrogates.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(Settings))]
+    public void SameBytesAndValuesConverters(EndianAction endian, bool compact, SchemaMode mode, ObjectLayout layout)
+    {
+      MsgPackSettings ls = new MsgPackSettings { Converters = ConverterTests.OptionConverters() };
+      Configure(ls, endian, compact, mode, layout);
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions { Converters = ConverterTests.OptionConverters() };
+      Configure(ltOptions, endian, compact, mode, layout);
+
+      List<string> differences = new List<string>();
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
+      {
+        int n = 0;
+        foreach (object value in ConverterTests.Corpus())
+        {
+          n++;
+          foreach (Type declared in new[] { value.GetType(), typeof(object) })
+            Compare($"{which} #{n} {value.GetType().Name} as {declared.Name}", value, declared, ls, lt, differences);
+        }
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences.Take(40)));
+    }
+
+    /// <summary>
+    /// Converters for built-in types (DateTime, int, decimal) in the options, and converters with the other ways of writing type ids and reading (Always, full names, no dynamic filters, collecting the differences).
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(Settings))]
+    public void SameBytesAndValuesConvertedBuiltIns(EndianAction endian, bool compact, SchemaMode mode, ObjectLayout layout)
+    {
+      MsgPackSettings ls = new MsgPackSettings { Converters = ConverterTests.BuiltInConverters() };
+      Configure(ls, endian, compact, mode, layout);
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions { Converters = ConverterTests.BuiltInConverters() };
+      Configure(ltOptions, endian, compact, mode, layout);
+
+      List<string> differences = new List<string>();
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
+      {
+        int n = 0;
+        foreach (object value in ConverterTests.BuiltInCorpus())
+        {
+          n++;
+          foreach (Type declared in new[] { value.GetType(), typeof(object) })
+            Compare($"{which} #{n} {value.GetType().Name} as {declared.Name}", value, declared, ls, lt, differences);
+        }
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences.Take(40)));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ConvertersWithOtherOptions(bool schema)
+    {
+      foreach (AddTypeIdOption option in new[] { AddTypeIdOption.Always, AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, AddTypeIdOption.Never })
+      {
+        foreach (bool filters in new[] { true, false })
+        {
+          MsgPackSettings ls = new MsgPackSettings { UseInexedSchema = schema, AddTypeIdOptions = option, Converters = ConverterTests.OptionConverters() };
+          LsMsgPackOptions ltOptions = new LsMsgPackOptions { UseInexedSchema = schema, AddTypeIdOptions = option, Converters = ConverterTests.OptionConverters() };
+          if (!filters)
+          {
+            ls.DynamicFilters = new IMsgPackPropertyIncludeDynamically[0];
+            ltOptions.DynamicFilters = new IMsgPackPropertyIncludeDynamically[0];
+          }
+          List<string> differences = new List<string>();
+          foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
+          {
+            int n = 0;
+            foreach (object value in ConverterTests.Corpus())
+            {
+              n++;
+              Compare($"{which} {option} filters {filters} #{n} {value.GetType().Name}", value, value.GetType(), ls, lt, differences);
+              Compare($"{which} {option} filters {filters} #{n} {value.GetType().Name} as object", value, typeof(object), ls, lt, differences);
+            }
+          }
+          Assert.IsEmpty(differences, string.Join("\n", differences.Take(40)));
+        }
+      }
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]

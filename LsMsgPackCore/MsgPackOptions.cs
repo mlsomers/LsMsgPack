@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.Serialization;
 using System.Text;
+using LsMsgPack.Converters;
 
 namespace LsMsgPack
 {
@@ -362,6 +363,30 @@ namespace LsMsgPack
     /// </list>
     /// </summary>
     public IMsgPackPropertyIncludeDynamically[] DynamicFilters { get { return _dynamicFilters; } set { _dynamicFilters = value; } }
+
+    internal MsgPackConverter[] _converters = ConverterLookup.None;
+
+    /// <summary>
+    /// Converters that write the values of a type as another type and read them back (see <see cref="MsgPackConverter{T, TSurrogate}"/>), at most one per type; empty by default.
+    /// They are used before <see cref="MsgPackConverterAttribute"/> and before the built-in formats, so a converter can also change how e.g. <see cref="DateTime"/> is written.
+    /// <para>The setter keeps a checked copy: change the converters by setting a new array. Reader and writer need the same converters.</para>
+    /// </summary>
+    /// <exception cref="ArgumentException">Two converters for one type, a converter for object, an interface, an abstract class or a Nullable&lt;T&gt;, or converters that convert a type back into itself</exception>
+    [IgnoreDataMember]
+    public MsgPackConverter[] Converters
+    {
+      get { return (MsgPackConverter[])_converters.Clone(); }
+      set { _converters = ConverterLookup.Checked(value); }
+    }
+
+    /// <summary>
+    /// The converter of values of exactly this type: of <see cref="Converters"/>, otherwise of its <see cref="MsgPackConverterAttribute"/>; null for none.
+    /// </summary>
+    /// <param name="type">A runtime or declared type: a <see cref="Nullable{T}"/> gets the converter of its underlying type</param>
+    internal MsgPackConverter ConverterFor(Type type)
+    {
+      return ConverterLookup.Find(_converters, type);
+    }
 
     /// <summary>
     /// The dynamic filters leave out default values (<see cref="FilterDefaultValues"/>): a nil in the array layout is then the value of [DefaultValue] where a property has one (see FullPropertyInfo.NilValue).

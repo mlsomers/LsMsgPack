@@ -23,6 +23,26 @@ namespace LsMsgPackTypeScriptTests
     public int Y { get; set; }
   }
 
+  /// <summary>Written as a string by its converter: the models have the string, not the class.</summary>
+  [LsMsgPack.Converters.MsgPackConverter(typeof(TsMoneyConverter))]
+  public sealed class TsMoney
+  {
+    public decimal Amount { get; set; }
+    public string Currency { get; set; }
+  }
+
+  public sealed class TsMoneyConverter : LsMsgPack.Converters.MsgPackConverter<TsMoney, string>
+  {
+    public override string ToSurrogate(TsMoney value) { return value.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture) + " " + value.Currency; }
+    public override TsMoney FromSurrogate(string surrogate) { string[] parts = surrogate.Split(' '); return new TsMoney { Amount = decimal.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture), Currency = parts[1] }; }
+  }
+
+  public class TsWallet
+  {
+    public TsMoney Balance { get; set; } = new TsMoney { Amount = 5, Currency = "EUR" };
+    public List<TsMoney> History { get; set; }
+  }
+
   public class TsAddress
   {
     public string Street { get; set; }
