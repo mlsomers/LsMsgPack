@@ -53,6 +53,24 @@ namespace LsMsgPackTypeScriptTests
     public override DateTime FromSurrogate(long surrogate) { return DateTimeOffset.FromUnixTimeSeconds(surrogate).UtcDateTime; }
   }
 
+  /// <summary>Converted by a converter of the options (--options), not by an attribute.</summary>
+  public sealed class TsPercentage
+  {
+    public double Value { get; set; }
+  }
+
+  public sealed class TsPercentageConverter : LsMsgPack.Converters.MsgPackConverter<TsPercentage, double>
+  {
+    public override double ToSurrogate(TsPercentage value) { return value.Value; }
+    public override TsPercentage FromSurrogate(double surrogate) { return new TsPercentage { Value = surrogate }; }
+  }
+
+  public class TsDiscount
+  {
+    public TsPercentage Rate { get; set; } = new TsPercentage { Value = 12.5 };
+    public TsPercentage[] Tiers { get; set; }
+  }
+
   public class TsAddress
   {
     public string Street { get; set; }
@@ -135,6 +153,19 @@ namespace LsMsgPackTypeScriptTests
         LsMsgPackOptions xls = LsMsgPackPresets.LsMsgPack();
         xls.PropertyOrder = PropertyOrder.Alphabetical;
         return new LsMsgPackHttpOptions() { XLsMsgPack = xls };
+      }
+    }
+
+    /// <summary>
+    /// The server's options with a converter of its own (not an attribute on the type).
+    /// </summary>
+    public static LsMsgPackOptions WithConverters
+    {
+      get
+      {
+        LsMsgPackOptions xls = LsMsgPackPresets.LsMsgPack();
+        xls.Converters = new LsMsgPack.Converters.MsgPackConverter[] { new TsPercentageConverter() };
+        return xls;
       }
     }
   }

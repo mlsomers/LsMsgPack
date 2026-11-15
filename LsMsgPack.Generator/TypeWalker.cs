@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using LsMsgPack.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using System.Collections.Generic;
 using System.Linq;
@@ -27,6 +28,11 @@ namespace LsMsgPack.Generator
     private readonly int _fields;
     private readonly bool _unsafeAccessors;
 
+    /// <summary>
+    /// The surrogates of the types the options' converters convert (as far as the code shows them, <see cref="OptionsConverters"/>).
+    /// </summary>
+    private readonly Dictionary<ITypeSymbol, List<ITypeSymbol>> _optionsConverters;
+
     /// <param name="within">Where the generated code is (the context class, or the assembly for the context of the assembly): what it can access</param>
     public TypeWalker(Compilation compilation, ISymbol within, string contextName, List<DiagnosticInfo> diagnostics, GenerateOptions options)
     {
@@ -37,6 +43,11 @@ namespace LsMsgPack.Generator
       _nonPublic = options.NonPublic;
       _fields = options.Fields;
       _unsafeAccessors = options.UnsafeAccessors;
+      List<INamedTypeSymbol> converters = new List<INamedTypeSymbol>();
+      foreach (StringValue id in options.Converters)
+        if (DocumentationCommentId.GetFirstSymbolForReferenceId(id.Value, compilation) is INamedTypeSymbol converter)
+          converters.Add(converter);
+      _optionsConverters = OptionsConverters.Map(converters);
       _list = compilation.GetTypeByMetadataName("System.Collections.Generic.List`1");
       _enumerable = compilation.GetSpecialType(SpecialType.System_Collections_Generic_IEnumerable_T);
     }
@@ -241,6 +252,12 @@ namespace LsMsgPack.Generator
 
     private void Visit(ITypeSymbol type)
     {
+      if (_optionsConverters.Count != 0 && _optionsConverters.TryGetValue(type, out List<ITypeSymbol> surrogates))
+      {
+        // A converter of the options: its surrogate is written, so it is described; the type itself too, as usual, for options without that converter
+        for (int s = 0; s < surrogates.Count; s++)
+          Enqueue(surrogates[s]);
+      }
       if (IsLeaf(type) || !IsAccessible(type) || ContainsTypeParameters(type))
         return;
 
@@ -1284,7 +1301,7 @@ namespace LsMsgPack.Generator
 
     /// <summary>
     /// The type's [MsgPackConverter]: true when it has one, with the surrogate type of a MsgPackConverter&lt;T, TSurrogate&gt; (null for a MsgPackBinaryConverter&lt;T&gt;: binary data, nothing to follow).
-    /// Converters of the options are not seen here.
+    /// The options' converters are in <see cref="_optionsConverters"/>.
     /// </summary>
     private static bool HasTypeConverter(INamedTypeSymbol type, out ITypeSymbol surrogate)
     {

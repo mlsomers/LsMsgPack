@@ -143,6 +143,13 @@ A custom extension (`LsExtension<T>`, or `ICustomExt` in LsMsgPackDebug) writes 
 
 ## Source generator, analyzers and TypeScript models
 
-- **The source generator** sees `[MsgPackConverter]` on types and members: it describes the surrogate type instead of the converted type, and leaves a member with its own converter to the converter. It can't see the converters of the options. For NativeAOT, add their surrogate types to your context: `[LsMsgPackSerializable(typeof(MoneyDto))]`.
-- **The analyzers** don't check the members of a type with `[MsgPackConverter]` (they aren't written), but they do check its surrogate. For a member with its own converter, the rules about types (LSMP004, LSMP008, LSMP009) are about the surrogate: a `JsonElement` property with a converter to `string` is fine.
-- **lsmsgpack-ts** writes the surrogate's TypeScript type for a type or member with `[MsgPackConverter]` (a `Money` property is a `string`, a `DateTime` with a converter to `long` a `number`). Converters of the options aren't known to it.
+The options are set at runtime, so the source generator and the analyzers find their converters in your code instead. A converter counts as one of the options when your project:
+
+- **creates it with `new`** (`new MoneyConverter()`, `new BlitArrayConverter<Vector3>()`, also converters of other libraries), or
+- **declares it**: a class deriving from `MsgPackConverter<T, TSurrogate>` or `MsgPackBinaryConverter<T>`, unless a `[MsgPackConverter(typeof(...))]` names it (then it's that attribute's converter).
+
+A converter that is found but isn't in your options only costs some generated code, or hides a warning. Converters that the project only creates by reflection or dependency injection, or that come from another project and are created there, aren't found: for NativeAOT, add their surrogate types to your context (`[LsMsgPackSerializable(typeof(MoneyDto))]`).
+
+- **The source generator** describes the surrogate type of a type with `[MsgPackConverter]` instead of the type itself, and leaves a member with its own converter to the converter. For a converter of the options, it describes the surrogate as well as the type, since options without that converter write the type itself.
+- **The analyzers** don't check the members of a converted type (they aren't written), but they do check its surrogate. Where a converted type is used, also as an element or generic argument, the rules about types (LSMP004, LSMP008, LSMP009) are about the surrogate: a `JsonElement` property with a converter to `string` is fine.
+- **lsmsgpack-ts** writes the surrogate's TypeScript type for a converted type or member (a `Money` property is a `string`, a `DateTime` with a converter to `long` a `number`). It takes the converters of the options from your server's options (`--options`, see [TypeScript models](TypeScriptModels.md)).

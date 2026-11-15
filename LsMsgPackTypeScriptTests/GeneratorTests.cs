@@ -95,6 +95,17 @@ namespace LsMsgPackTypeScriptTests
     }
 
     [TestMethod]
+    public void ConvertersOfTheOptionsAreTheirSurrogates()
+    {
+      Result result = Run("--root", "LsMsgPackTypeScriptTests.TsDiscount", "--property-names", "dotnet", "--options", "LsMsgPackTypeScriptTests.TsSetup.WithConverters");
+      string discount = ClassOf(result.Models, "TsDiscount");
+      StringAssert.Contains(discount, "  Rate: number | null = 12.5;");
+      StringAssert.Contains(result.Models, "['Rate', 'float']");
+      StringAssert.Contains(result.Models, "['Tiers', ['list', 'float']]");
+      Assert.DoesNotContain("class TsPercentage", result.Models, "a converted class has no model");
+    }
+
+    [TestMethod]
     public void FieldsHaveTheConstructorValues()
     {
       string order = ClassOf(Run("--root", "LsMsgPackTypeScriptTests.TsOrder", "--property-names", "dotnet").Models, "TsOrder");

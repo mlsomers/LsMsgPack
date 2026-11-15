@@ -209,6 +209,20 @@ namespace LsMsgPackTypeScript
     /// <param name="top">A property (not an element)</param>
     internal string TsType(Spec spec, NullabilityInfo nullability, bool top)
     {
+      string type = TsTypeOfKind(spec, nullability, top);
+      if (spec.FromReference && !type.EndsWith(" | null", StringComparison.Ordinal) && type != "unknown")
+        type = OrNull(type, nullability, top); // a converted class with a struct surrogate: its nulls are nil
+      return type;
+    }
+
+    private static string OrNull(string type, NullabilityInfo nullability, bool top)
+    {
+      NullabilityState state = nullability?.ReadState ?? NullabilityState.Unknown;
+      return state == NullabilityState.Nullable || (state == NullabilityState.Unknown && top) ? type + " | null" : type;
+    }
+
+    private string TsTypeOfKind(Spec spec, NullabilityInfo nullability, bool top)
+    {
       string type;
       switch (spec.Name)
       {
@@ -261,8 +275,7 @@ namespace LsMsgPackTypeScript
           type = spec.Interface.TsName;
           break;
       }
-      NullabilityState state = nullability?.ReadState ?? NullabilityState.Unknown;
-      return state == NullabilityState.Nullable || (state == NullabilityState.Unknown && top) ? type + " | null" : type;
+      return OrNull(type, nullability, top);
     }
 
     private static NullabilityInfo ElementOf(Spec list, NullabilityInfo nullability)

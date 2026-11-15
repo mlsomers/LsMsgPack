@@ -212,7 +212,10 @@ namespace LsMsgPackTypeScript
       if (prop.Converter is null)
         return SpecOf(prop.Type);
       Spec surrogate = SurrogateSpec(prop.Converter);
-      return Nullable.GetUnderlyingType(prop.Type) != null ? Spec.Of("?", prop.Type, surrogate) : surrogate;
+      if (Nullable.GetUnderlyingType(prop.Type) != null)
+        return Spec.Of("?", prop.Type, surrogate);
+      surrogate.FromReference = !prop.Type.IsValueType;
+      return surrogate;
     }
 
     /// <summary>
@@ -232,7 +235,11 @@ namespace LsMsgPackTypeScript
         return Spec.Of("?", type, SpecOf(nullable));
       MsgPackConverter converter = _settings.ConverterFor(type);
       if (converter != null) // written as its surrogate
-        return SurrogateSpec(converter);
+      {
+        Spec surrogate = SurrogateSpec(converter);
+        surrogate.FromReference = !type.IsValueType;
+        return surrogate;
+      }
       if (type == typeof(decimal))
         return Spec.Kind("decimal", type);
       if (type.IsArray && type.GetArrayRank() > 1)
@@ -415,6 +422,11 @@ namespace LsMsgPackTypeScript
     /// An enum (the kind is its underlying integer).
     /// </summary>
     internal Type Enum;
+
+    /// <summary>
+    /// The surrogate of a converted reference type: null is written as nil, also when the surrogate is a struct (a class converted to a <c>double</c>).
+    /// </summary>
+    internal bool FromReference;
 
     internal static Spec Kind(string kind, Type type)
     {

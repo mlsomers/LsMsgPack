@@ -240,6 +240,28 @@ namespace LsMsgPackAotSmokeTest
   }
 
   /// <summary>
+  /// Converted by a converter of the options (not an attribute): the generator finds the converter where the code creates it and describes the surrogate, which no context lists.
+  /// </summary>
+  public sealed class Parcel
+  {
+    public Parcel(string code, double weight) { Code = code; Weight = weight; }
+    public string Code { get; }
+    public double Weight { get; }
+  }
+
+  public class ParcelDto
+  {
+    public string Code { get; set; }
+    public double Weight { get; set; }
+  }
+
+  public sealed class ParcelConverter : LsMsgPack.Converters.MsgPackConverter<Parcel, ParcelDto>
+  {
+    public override ParcelDto ToSurrogate(Parcel value) { return new ParcelDto { Code = value.Code, Weight = value.Weight }; }
+    public override Parcel FromSurrogate(ParcelDto surrogate) { return new Parcel(surrogate.Code, surrogate.Weight); }
+  }
+
+  /// <summary>
   /// A member's own converter (on Invoice.Due): created from the member's attribute.
   /// </summary>
   public sealed class UnixSecondsConverter : LsMsgPack.Converters.MsgPackConverter<DateTime, long>
@@ -267,6 +289,7 @@ namespace LsMsgPackAotSmokeTest
     public DateTime? Reminded { get; set; }
     public Discount Discount { get; set; }
     public List<Postmark> Postmarks { get; set; }
+    public Parcel Parcel { get; set; }
     public Guid Id { get; set; }
     public string Number { get; set; }
     public DateTime Date { get; set; }
@@ -309,15 +332,24 @@ namespace LsMsgPackAotSmokeTest
       new LsMsgPack.TypeResolving.Filters.FilterStatic()
     };
 
+    /// <summary>
+    /// The options' converters: writer and reader need the same.
+    /// </summary>
+    private static LsMsgPackOptions Converted(LsMsgPackOptions options)
+    {
+      options.Converters = new LsMsgPack.Converters.MsgPackConverter[] { new ParcelConverter() };
+      return options;
+    }
+
     private static IEnumerable<(string Name, Func<LsMsgPackOptions> Options)> OptionSets()
     {
-      yield return ("default", () => new LsMsgPackOptions());
-      yield return ("names-map", () => new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
-      yield return ("names-array", () => new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array });
-      yield return ("inline-map", () => new LsMsgPackOptions() { ObjectLayout = ObjectLayout.Map });
-      yield return ("reference", () => new LsMsgPackOptions() { SchemaStore = Store, WriteSchemaReference = true });
-      yield return ("trimmed", () => new LsMsgPackOptions() { TrimTrailingNulls = true, DynamicallyCompact = false });
-      yield return ("public-fields", () => new LsMsgPackOptions() { StaticFilters = PublicFields });
+      yield return ("default", () => Converted(new LsMsgPackOptions()));
+      yield return ("names-map", () => Converted(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }));
+      yield return ("names-array", () => Converted(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array }));
+      yield return ("inline-map", () => Converted(new LsMsgPackOptions() { ObjectLayout = ObjectLayout.Map }));
+      yield return ("reference", () => Converted(new LsMsgPackOptions() { SchemaStore = Store, WriteSchemaReference = true }));
+      yield return ("trimmed", () => Converted(new LsMsgPackOptions() { TrimTrailingNulls = true, DynamicallyCompact = false }));
+      yield return ("public-fields", () => Converted(new LsMsgPackOptions() { StaticFilters = PublicFields }));
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Deliberately without generated code: the JIT run writes the expected data with it, the NativeAOT run only reports how it does.")]
@@ -468,6 +500,7 @@ namespace LsMsgPackAotSmokeTest
         Samples = new[] { new Sample { A = 1.5f, B = -2 }, new Sample { A = float.NaN, B = int.MaxValue } },
         Reminded = new DateTime(2026, 12, 7, 9, 0, 0, DateTimeKind.Utc),
         Postmarks = new List<Postmark> { new Postmark("Utrecht", 12), null },
+        Parcel = new Parcel("PX-7", 2.25),
         Urgent = true,
         Payment = new Payment(100.5m) { Note = "first" },
         Signed = new Signature("Clerk", new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc)),
@@ -624,7 +657,8 @@ namespace LsMsgPackAotSmokeTest
         .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]").Append(';').Append(Dump(o.Route)).Append(';')
         .Append(o.Discount is null ? "null" : o.Discount.Percent.ToString(CultureInfo.InvariantCulture) + "/" + o.Discount.Code).Append(';')
         .Append(Time(o.Due)).Append(';').Append(o.Samples is null ? "null" : string.Join(",", o.Samples.Select(x => x.A.ToString("R", CultureInfo.InvariantCulture) + "/" + x.B))).Append(';').Append(o.Reminded.HasValue ? Time(o.Reminded.Value) : "null").Append(';')
-        .Append(o.Postmarks is null ? "null" : string.Join(",", o.Postmarks.Select(p => p is null ? "null" : p.Office + "/" + p.Day)));
+        .Append(o.Postmarks is null ? "null" : string.Join(",", o.Postmarks.Select(p => p is null ? "null" : p.Office + "/" + p.Day))).Append(';')
+        .Append(o.Parcel is null ? "null" : o.Parcel.Code + "/" + o.Parcel.Weight.ToString("R", CultureInfo.InvariantCulture));
       return text.ToString();
     }
 

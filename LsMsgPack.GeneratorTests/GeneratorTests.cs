@@ -853,6 +853,116 @@ namespace Conv
       Assert.DoesNotContain("global::Conv.Secret", code, "the converted type's members are not walked");
     }
 
+    /// <summary>
+    /// Converters of the options, as far as the code shows them: declared classes (unless an attribute names them) and converters created with new (also constructed generic ones).
+    /// Their surrogates are described, the converted types too (for options without them).
+    /// </summary>
+    [TestMethod]
+    public void Converters_OfTheOptions_TheSurrogatesAreDescribed()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(@"
+using System.Collections.Generic;
+using LsMsgPack;
+using LsMsgPack.Converters;
+
+namespace Conv
+{
+  public class Money { public decimal Amount { get; set; } }
+  public class MoneyDto { public string Text { get; set; } }
+  public sealed class MoneyConverter : MsgPackConverter<Money, MoneyDto>
+  {
+    public override MoneyDto ToSurrogate(Money value) { return new MoneyDto(); }
+    public override Money FromSurrogate(MoneyDto surrogate) { return new Money(); }
+  }
+
+  public class Tag { public string Value { get; set; } }
+  public class NameDto { public string Name { get; set; } }
+  public sealed class ByName<T> : MsgPackConverter<T, NameDto> where T : class, new()
+  {
+    public override NameDto ToSurrogate(T value) { return new NameDto(); }
+    public override T FromSurrogate(NameDto surrogate) { return new T(); }
+  }
+
+  public class Secret { public int Code { get; set; } }
+  public class SecretDto { public string Text { get; set; } }
+  public sealed class SecretConverter : MsgPackConverter<Secret, SecretDto>
+  {
+    public override SecretDto ToSurrogate(Secret value) { return new SecretDto(); }
+    public override Secret FromSurrogate(SecretDto surrogate) { return new Secret(); }
+  }
+  public class Elsewhere { [MsgPackConverter(typeof(SecretConverter))] public Secret Hidden { get; set; } }
+
+  public static class Setup
+  {
+    public static MsgPackConverter[] Converters() { return new MsgPackConverter[] { new ByName<Tag>() }; }
+  }
+
+  public class Order
+  {
+    public Money Total { get; set; }
+    public List<Tag> Tags { get; set; }
+    public Secret Plain { get; set; }
+  }
+
+  [LsMsgPackSerializable(typeof(Order))]
+  public partial class ConvMsgPackContext : LsMsgPackContext { }
+}");
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.Contains("global::Conv.MoneyDto", code, "a declared converter: the surrogate is described");
+      Assert.Contains("global::Conv.NameDto", code, "a created generic converter: the surrogate is described");
+      Assert.Contains("Property<global::Conv.Money, decimal>", code, "the converted type is described as usual");
+      Assert.DoesNotContain("global::Conv.SecretDto", code, "a converter an attribute names is that attribute's");
+    }
+
+    /// <summary>
+    /// The converters are found per file (only type names bound): an edit without converters leaves the output cached, a converter created in another file changes it.
+    /// </summary>
+    [TestMethod]
+    public void Converters_OfTheOptions_Incremental()
+    {
+      const string models = @"
+using LsMsgPack;
+using LsMsgPack.Converters;
+namespace Conv
+{
+  public class Money { public decimal Amount { get; set; } }
+  public class MoneyDto { public string Text { get; set; } }
+  [MsgPackConverter(typeof(MoneyConverter))]
+  public class Elsewhere { }
+  public sealed class MoneyConverter : MsgPackConverter<Money, MoneyDto>
+  {
+    public override MoneyDto ToSurrogate(Money value) { return new MoneyDto(); }
+    public override Money FromSurrogate(MoneyDto surrogate) { return new Money(); }
+  }
+  public class Order { public Money Total { get; set; } }
+  [LsMsgPackSerializable(typeof(Order))]
+  public partial class ConvMsgPackContext : LsMsgPackContext { }
+}";
+      CSharpParseOptions parse = new CSharpParseOptions(LanguageVersion.Latest);
+      SyntaxTree setup = CSharpSyntaxTree.ParseText("namespace Conv { public static class Setup { public static object Make() { return new object(); } } }", parse, "Setup.cs");
+      CSharpCompilation compilation = CSharpCompilation.Create("TestModels", new[] { CSharpSyntaxTree.ParseText(models, parse, "Model.cs"), setup },
+        GeneratorHarness.Net8References(), new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+      GeneratorDriver driver = CSharpGeneratorDriver.Create(new[] { new LsMsgPackGenerator().AsSourceGenerator() }, parseOptions: parse,
+        driverOptions: new GeneratorDriverOptions(IncrementalGeneratorOutputKind.None, trackIncrementalGeneratorSteps: true));
+      driver = driver.RunGenerators(compilation);
+      string before = string.Concat(driver.GetRunResult().Results[0].GeneratedSources.Select(g => g.SourceText.ToString()));
+      Assert.DoesNotContain("global::Conv.MoneyDto", before, "named by an attribute only: not the options'");
+
+      CSharpCompilation edited = compilation.ReplaceSyntaxTree(setup, CSharpSyntaxTree.ParseText(
+        "namespace Conv { public static class Setup { public static object Make() { return new System.Text.StringBuilder(); } } }", parse, "Setup.cs"));
+      driver = driver.RunGenerators(edited);
+      IncrementalStepRunReason[] reasons = driver.GetRunResult().Results[0].TrackedOutputSteps.SelectMany(step => step.Value).SelectMany(run => run.Outputs).Select(o => o.Reason).ToArray();
+      Assert.IsNotEmpty(reasons);
+      Assert.IsTrue(reasons.All(r => r == IncrementalStepRunReason.Cached || r == IncrementalStepRunReason.Unchanged), string.Join(", ", reasons));
+
+      CSharpCompilation created = edited.ReplaceSyntaxTree(edited.SyntaxTrees.Last(), CSharpSyntaxTree.ParseText(
+        "namespace Conv { public static class Setup { public static object Make() { return new MoneyConverter(); } } }", parse, "Setup.cs"));
+      driver = driver.RunGenerators(created);
+      string after = string.Concat(driver.GetRunResult().Results[0].GeneratedSources.Select(g => g.SourceText.ToString()));
+      Assert.Contains("global::Conv.MoneyDto", after, "created with new: the options'");
+    }
+
     [TestMethod]
     public void Converters_OnAMember_TheRuntimeWritesIt()
     {

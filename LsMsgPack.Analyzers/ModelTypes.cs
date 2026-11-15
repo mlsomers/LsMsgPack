@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using LsMsgPack.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -23,10 +24,24 @@ namespace LsMsgPack.Analyzers
     private readonly List<INamedTypeSymbol> _sourceTypes = new List<INamedTypeSymbol>();
     private readonly Queue<ITypeSymbol> _pending = new Queue<ITypeSymbol>();
     private readonly int _fields;
+    private Compilation _compilation;
+
+    /// <summary>
+    /// The surrogates of the types the options' converters convert, as far as the code shows them (<see cref="OptionsConverters"/>): such a type is written as its surrogate, like one with [MsgPackConverter].
+    /// </summary>
+    private Dictionary<ITypeSymbol, List<ITypeSymbol>> _optionsConverters = new Dictionary<ITypeSymbol, List<ITypeSymbol>>(SymbolEqualityComparer.Default);
 
     private ModelTypes(int fields)
     {
       _fields = fields;
+    }
+
+    /// <summary>
+    /// The type as it is written: the parts the options' converters convert (also elements and type arguments) replaced by their surrogates. For the type rules.
+    /// </summary>
+    public ITypeSymbol AsWritten(ITypeSymbol type)
+    {
+      return OptionsConverters.AsWritten(type, _optionsConverters, _compilation);
     }
 
     /// <summary>
@@ -41,7 +56,9 @@ namespace LsMsgPack.Analyzers
     public static ModelTypes Find(Compilation compilation, KnownSymbols known, AnalyzerOptions options, int fields, CancellationToken cancellation)
     {
       ModelTypes types = new ModelTypes(fields);
+      types._compilation = compilation;
       types.CollectSourceTypes(compilation.Assembly.GlobalNamespace, cancellation);
+      types.CollectOptionsConverters(compilation, cancellation);
 
       if (AllTypes(options))
         for (int t = 0; t < types._sourceTypes.Count; t++)
@@ -97,6 +114,22 @@ namespace LsMsgPack.Analyzers
             wrappers.FromOperation(operation, uses);
         }, cancellation);
       return uses;
+    }
+
+    /// <summary>
+    /// The converters the code declares or creates (<see cref="OptionsConverters"/>).
+    /// </summary>
+    private void CollectOptionsConverters(Compilation compilation, CancellationToken cancellation)
+    {
+      List<KeyValuePair<INamedTypeSymbol, int>> found = new List<KeyValuePair<INamedTypeSymbol, int>>();
+      Scan(compilation, OptionsConverters.IsCandidate, (node, model) =>
+      {
+        INamedTypeSymbol converter = OptionsConverters.Find(node, model, cancellation, out int kind);
+        if (converter != null)
+          found.Add(new KeyValuePair<INamedTypeSymbol, int>(converter, kind));
+      }, cancellation);
+      if (found.Count != 0)
+        _optionsConverters = OptionsConverters.Map(OptionsConverters.Registered(found, SymbolEqualityComparer.Default));
     }
 
     /// <summary>
@@ -205,6 +238,17 @@ namespace LsMsgPack.Analyzers
       {
         cancellation.ThrowIfCancellationRequested();
         ITypeSymbol type = _pending.Dequeue();
+        if (_optionsConverters.Count != 0 && _optionsConverters.TryGetValue(type.WithNullableAnnotation(NullableAnnotation.None), out List<ITypeSymbol> surrogates))
+        {
+          // A converter of the options: written as its surrogate, as with [MsgPackConverter] below
+          for (int s = 0; s < surrogates.Count; s++)
+            Add(surrogates[s]);
+          if (type is INamedTypeSymbol convertedClass)
+            for (int t = 0; t < _sourceTypes.Count; t++)
+              if (Derives(_sourceTypes[t], convertedClass.OriginalDefinition))
+                Add(_sourceTypes[t]);
+          continue;
+        }
         if (type is IArrayTypeSymbol array)
         {
           Add(array.ElementType);
@@ -246,7 +290,7 @@ namespace LsMsgPack.Analyzers
 
     /// <summary>
     /// The type's [MsgPackConverter]: true when it has one, with the surrogate type of a MsgPackConverter&lt;T, TSurrogate&gt; (null for a MsgPackBinaryConverter&lt;T&gt;: binary data, nothing to follow).
-    /// Converters of the options are not seen here.
+    /// The options' converters are in <see cref="_optionsConverters"/>.
     /// </summary>
     internal static bool HasTypeConverter(INamedTypeSymbol type, out ITypeSymbol surrogate)
     {
