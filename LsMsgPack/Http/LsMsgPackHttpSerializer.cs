@@ -44,11 +44,14 @@ namespace LsMsgPack.Http
     private readonly SchemaStore _store;
     private readonly bool _negotiate;
     private readonly int _maxAdvertised;
+    private readonly bool _byRoute;
     private readonly bool _writeStreams;
     private readonly bool _reportDifferences;
     private readonly bool _logDifferencesAsWarning;
     private readonly ConcurrentDictionary<SchemaId, string> _hexIds = new ConcurrentDictionary<SchemaId, string>();
-    private readonly ConcurrentDictionary<string, LinkedList<SchemaId>> _received = new ConcurrentDictionary<string, LinkedList<SchemaId>>(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<SchemaId, Written> _written = new ConcurrentDictionary<SchemaId, Written>(); // server side: per schema the header value and the inline schema
+    private readonly ConcurrentDictionary<string, Advertised> _received = new ConcurrentDictionary<string, Advertised>(StringComparer.OrdinalIgnoreCase); // client side, per origin
+    private volatile Server _lastServer; // client side: the origin of the last request and its entry of _received
 
     [RequiresUnreferencedCode(LsMsgPackSerializer.RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(LsMsgPackSerializer.RequiresDynamicCodeMessage)]
@@ -106,6 +109,7 @@ namespace LsMsgPack.Http
         _described = new LsMsgPackSerializer(described, context);
       }
       _maxAdvertised = Math.Max(0, options.MaxAdvertisedSchemas);
+      _byRoute = options.AdvertiseByRoute;
       _writeStreams = options.WriteStreams;
       _reportDifferences = options.ReportDifferences;
       _logDifferencesAsWarning = options.ReportDifferences && options.LogDifferencesAsWarning;
@@ -220,13 +224,11 @@ namespace LsMsgPack.Http
       if (!_negotiate || data.Length < SchemaStore.ReferenceLength || data[0] != (byte)MsgPackTypeId.MpFExt16 || data[1] != unchecked((byte)SchemaStore.ReferenceExtensionType))
         return Whole(data); // null (nil, no schema)
 
-      SchemaId id = new SchemaId(data, 2);
-      string hex = Hex(id);
-      byte[] schema = _store.GetInlineSchema(id, _lsOptions); // the store has every schema it wrote
-      if (schema.Length > SchemaStore.ReferenceLength && Holds(clientSchemas, hex)) // a small schema is sent anyway: it is shorter than the reference
-        return new MsgPackPayload(new ArraySegment<byte>(data, 0, SchemaStore.ReferenceLength), new ArraySegment<byte>(data, SchemaStore.ReferenceLength, data.Length - SchemaStore.ReferenceLength), hex, true);
+      Written written = WrittenSchema(new SchemaId(data, 2));
+      if (written.Schema.Length > SchemaStore.ReferenceLength && Holds(clientSchemas, written.Hex)) // a small schema is sent anyway: it is shorter than the reference
+        return new MsgPackPayload(new ArraySegment<byte>(data, 0, SchemaStore.ReferenceLength), new ArraySegment<byte>(data, SchemaStore.ReferenceLength, data.Length - SchemaStore.ReferenceLength), written.Hex, true);
 
-      return new MsgPackPayload(new ArraySegment<byte>(schema), new ArraySegment<byte>(data, SchemaStore.ReferenceLength, data.Length - SchemaStore.ReferenceLength), hex, false);
+      return new MsgPackPayload(new ArraySegment<byte>(written.Schema), new ArraySegment<byte>(data, SchemaStore.ReferenceLength, data.Length - SchemaStore.ReferenceLength), written.Hex, false);
     }
 
     /// <summary>
@@ -262,9 +264,9 @@ namespace LsMsgPack.Http
       if (!_negotiate)
         return new MsgPackStreamHead(serializer, rootType, head, MsgPackStreamSchemas.PerObject, null, false);
 
-      string hex = Hex(head.Id);
-      bool reference = _store.GetInlineSchema(head.Id, _lsOptions).Length > SchemaStore.ReferenceLength && Holds(clientSchemas, hex);
-      return new MsgPackStreamHead(serializer, rootType, head, reference ? MsgPackStreamSchemas.External : MsgPackStreamSchemas.PerObject, hex, reference);
+      Written written = WrittenSchema(head.Id);
+      bool reference = written.Schema.Length > SchemaStore.ReferenceLength && Holds(clientSchemas, written.Hex);
+      return new MsgPackStreamHead(serializer, rootType, head, reference ? MsgPackStreamSchemas.External : MsgPackStreamSchemas.PerObject, written.Hex, reference);
     }
 
     /// <summary>
@@ -320,12 +322,10 @@ namespace LsMsgPack.Http
       if (!reference || !lsMsgPack || !_negotiate)
         return new MsgPackPayload(written, rest, null, false);
 
-      SchemaId id = new SchemaId(head, 2);
-      string hex = Hex(id);
-      byte[] schema = _store.GetInlineSchema(id, _lsOptions);
-      if (schema.Length > SchemaStore.ReferenceLength && Holds(clientSchemas, hex))
-        return new MsgPackPayload(written, rest, hex, true);
-      return new MsgPackPayload(new ArraySegment<byte>(schema), rest, hex, false);
+      Written schema = WrittenSchema(new SchemaId(head, 2));
+      if (schema.Schema.Length > SchemaStore.ReferenceLength && Holds(clientSchemas, schema.Hex))
+        return new MsgPackPayload(written, rest, schema.Hex, true);
+      return new MsgPackPayload(new ArraySegment<byte>(schema.Schema), rest, schema.Hex, false);
     }
 
     /// <summary>
@@ -384,9 +384,39 @@ namespace LsMsgPack.Http
       return _hexIds.GetOrAdd(id, i => i.ToString());
     }
 
+    /// <summary>
+    /// What a response needs of a schema the server wrote, looked up once per response: the store has every schema it wrote, and keeps them.
+    /// </summary>
+    private sealed class Written
+    {
+      internal readonly string Hex;
+      internal readonly byte[] Schema; // inline, in the byte order of the options
+
+      internal Written(string hex, byte[] schema)
+      {
+        Hex = hex;
+        Schema = schema;
+      }
+    }
+
+    private Written WrittenSchema(SchemaId id)
+    {
+      if (_written.TryGetValue(id, out Written written))
+        return written;
+      return _written.GetOrAdd(id, new Written(Hex(id), _store.GetInlineSchema(id, _lsOptions)));
+    }
+
     private static bool Holds(string clientSchemas, string hex)
     {
-      return !(clientSchemas is null) && clientSchemas.Length <= MaxSchemasHeaderLength && clientSchemas.IndexOf(hex, StringComparison.OrdinalIgnoreCase) >= 0;
+      if (clientSchemas is null || clientSchemas.Length > MaxSchemasHeaderLength)
+        return false;
+#if NET8_0_OR_GREATER
+      // the ids are written in lower case (SchemaId.ToString) and clients send them back as they are: an ordinal search, unless the header has upper case letters
+      // (OrdinalIgnoreCase is a scalar loop with InvariantGlobalization, 6% of a request with 32 ids)
+      if (clientSchemas.AsSpan().IndexOfAnyInRange('A', 'Z') < 0)
+        return clientSchemas.IndexOf(hex, StringComparison.Ordinal) >= 0;
+#endif
+      return clientSchemas.IndexOf(hex, StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     #endregion
@@ -453,39 +483,52 @@ namespace LsMsgPack.Http
     #region Client
 
     /// <summary>
-    /// The value of the request header <see cref="SchemasHeader"/> for a request to the server: the schemas received from it that the store still holds (most recent first), null when there are none.
+    /// The value of the request header <see cref="SchemasHeader"/> for a request to the server, null when there are none: the schemas received for the route of the uri
+    /// (<see cref="LsMsgPackHttpOptions.AdvertiseByRoute"/>, most recent first), for a route not called yet (or without AdvertiseByRoute) the ones received from the server most recently.
     /// </summary>
-    /// <param name="requestUri">An absolute uri, its scheme, host and port identify the server</param>
+    /// <param name="requestUri">An absolute uri, its scheme, host and port identify the server, its path the route</param>
     public string GetSchemasHeader(Uri requestUri)
     {
       if (!_negotiate || _maxAdvertised == 0 || requestUri is null || !requestUri.IsAbsoluteUri)
         return null;
-      if (!_received.TryGetValue(Origin(requestUri), out LinkedList<SchemaId> ids))
+      Advertised advertised = AdvertisedFor(requestUri, false);
+      if (advertised is null)
         return null;
 
-      StringBuilder header = null;
-      lock (ids)
+      if (_byRoute && advertised.Routes.TryGetValue(RouteKey(requestUri, advertised), out Route route))
+        return route.GetHeader(this);
+
+      string value = advertised.Header; // the same until the list changes (the store never drops a schema)
+      if (value is null)
       {
-        foreach (SchemaId id in ids)
+        LinkedList<SchemaId> ids = advertised.Ids;
+        lock (ids)
         {
-          if (!_store.Contains(id))
-            continue;
-          if (header is null)
-            header = new StringBuilder(33 * ids.Count);
-          else
-            header.Append(',');
-          header.Append(Hex(id));
+          StringBuilder header = null;
+          foreach (SchemaId id in ids)
+          {
+            if (!_store.Contains(id))
+              continue;
+            if (header is null)
+              header = new StringBuilder(33 * ids.Count);
+            else
+              header.Append(',');
+            header.Append(Hex(id));
+          }
+          value = header is null ? string.Empty : header.ToString();
+          advertised.Header = value;
         }
       }
-      return header?.ToString();
+      return value.Length == 0 ? null : value;
     }
 
     /// <summary>
-    /// Learns the schema of a response (client side): registers it when it came inline and remembers that the server uses it, so the next requests advertise it.
+    /// Learns the schema of a response (client side): registers it when it came inline and remembers that the server (and the route of the uri) uses it, so the next requests advertise it.
     /// </summary>
     /// <param name="requestUri">The uri of the request</param>
     /// <param name="schemaHeader">The response header <see cref="SchemaHeader"/></param>
     /// <param name="mediaType">The Content-Type of the response</param>
+    /// <param name="data">The body; null when the client may hold the schema already (the result is then false when it does not, call again with the body)</param>
     /// <returns>true when the client holds the schema (it may be referred to from now on)</returns>
     public bool LearnSchema(Uri requestUri, string schemaHeader, byte[] data, int offset, int count, string mediaType)
     {
@@ -517,7 +560,24 @@ namespace LsMsgPack.Http
         }
       }
 
-      LinkedList<SchemaId> ids = _received.GetOrAdd(Origin(requestUri), o => new LinkedList<SchemaId>());
+      Advertised advertised = AdvertisedFor(requestUri, true);
+      if (_byRoute)
+      {
+        ConcurrentDictionary<ulong, Route> routes = advertised.Routes;
+        ulong key = RouteKey(requestUri, advertised);
+        if (!routes.TryGetValue(key, out Route route))
+        {
+          if (routes.Count >= MaxRoutes)
+            routes.Clear(); // e.g. paths with names in them: start again
+          route = routes.GetOrAdd(key, k => new Route());
+        }
+        if (!route.Learn(id))
+          return true; // known to the route: the list of recent ids is for routes without ids, it changes only for new ones
+      }
+      object first = advertised.First;
+      if (!(first is null) && (SchemaId)first == id) // the most recent one already (one endpoint called again and again): no lock
+        return true;
+      LinkedList<SchemaId> ids = advertised.Ids;
       lock (ids)
       {
         if (ids.First != null && ids.First.Value == id)
@@ -526,6 +586,8 @@ namespace LsMsgPack.Http
         ids.AddFirst(id);
         while (ids.Count > _maxAdvertised)
           ids.RemoveLast();
+        advertised.First = id;
+        advertised.Header = null;
       }
       return true;
     }
@@ -548,9 +610,149 @@ namespace LsMsgPack.Http
       return reader;
     }
 
-    private static string Origin(Uri uri)
+    /// <summary>
+    /// The schemas received from one server (an origin), most recent first.
+    /// </summary>
+    private sealed class Advertised
     {
-      return uri.GetLeftPart(UriPartial.Authority);
+      internal readonly LinkedList<SchemaId> Ids = new LinkedList<SchemaId>(); // changed under its lock
+      internal volatile string Header; // the value of SchemasHeader, "" for none, null: build it again (set under the lock of Ids)
+      internal volatile object First; // the boxed first id, read without the lock
+      internal readonly ConcurrentDictionary<ulong, Route> Routes = new ConcurrentDictionary<ulong, Route>();
+      internal volatile string Origin; // of the entry, set with _lastServer
+    }
+
+    private const int MaxRoutes = 1024; // per origin, then they start again (e.g. paths with names in them)
+    private const int MaxPerRoute = 4;
+
+    /// <summary>
+    /// The schemas received for one route (a path, see <see cref="RouteKey"/>), most recent first: what a request to it advertises.
+    /// </summary>
+    private sealed class Route
+    {
+      private readonly SchemaId[] _ids = new SchemaId[MaxPerRoute]; // changed under its lock
+      private int _count;
+      private volatile string _header; // null: build it again
+
+      /// <returns>whether the id is new for the route</returns>
+      internal bool Learn(SchemaId id)
+      {
+        lock (_ids)
+        {
+          if (_count > 0 && _ids[0] == id)
+            return false;
+          int at = Array.IndexOf(_ids, id, 0, _count);
+          bool added = at < 0;
+          if (added)
+            at = Math.Min(_count++, MaxPerRoute - 1);
+          if (_count > MaxPerRoute)
+            _count = MaxPerRoute;
+          Array.Copy(_ids, 0, _ids, 1, at);
+          _ids[0] = id;
+          _header = null;
+          return added;
+        }
+      }
+
+      internal string GetHeader(LsMsgPackHttpSerializer owner)
+      {
+        string header = _header;
+        if (!(header is null))
+          return header;
+        lock (_ids)
+        {
+          int count = Math.Min(_count, owner._maxAdvertised);
+          StringBuilder built = new StringBuilder(33 * count);
+          for (int t = 0; t < count; t++)
+          {
+            if (t > 0)
+              built.Append(',');
+            built.Append(owner.Hex(_ids[t]));
+          }
+          return _header = built.ToString();
+        }
+      }
+    }
+
+    /// <summary>
+    /// A hash of the path of the uri, in which every segment that looks like an id counts as the same segment: all digits, or 16 or more hexadecimal digits and dashes (Guids, hashes),
+    /// so /orders/17 and /orders/18 are one route, /v2/orders another one than /v1/orders.
+    /// Two routes with the same key only share their ids: a client advertises only schemas it holds.
+    /// </summary>
+    private static ulong RouteKey(Uri uri, Advertised advertised)
+    {
+      string text = uri.OriginalString;
+      string origin = advertised.Origin;
+      int start;
+      if (!(origin is null) && SameOrigin(text, origin))
+        start = origin.Length;
+      else
+      {
+        text = uri.AbsolutePath;
+        start = 0;
+      }
+      ulong hash = 14695981039346656037UL, segment = 14695981039346656037UL;
+      bool digits = true, hex = true; // the segment so far
+      int length = 0;
+      for (int t = start; t <= text.Length; t++)
+      {
+        char c = t < text.Length ? text[t] : '/';
+        if (c == '?' || c == '#')
+          c = '/';
+        if (c == '/')
+        {
+          bool id = length > 0 && (digits || (hex && length >= 16));
+          hash = (hash ^ (id ? 0x23UL : segment)) * 1099511628211UL;
+          segment = 14695981039346656037UL;
+          digits = hex = true;
+          length = 0;
+          if (t < text.Length && (text[t] == '?' || text[t] == '#'))
+            break;
+          continue;
+        }
+        bool digit = c >= '0' && c <= '9';
+        digits &= digit;
+        hex &= digit || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') || c == '-';
+        length++;
+        segment = (segment ^ c) * 1099511628211UL;
+      }
+      return hash;
+    }
+
+    private sealed class Server
+    {
+      internal readonly string Origin;
+      internal readonly Advertised Advertised;
+
+      internal Server(string origin, Advertised advertised)
+      {
+        Origin = origin;
+        Advertised = advertised;
+      }
+    }
+
+    /// <param name="create">Create the entry of the origin when there is none, otherwise return null then</param>
+    private Advertised AdvertisedFor(Uri uri, bool create)
+    {
+      // GetLeftPart allocates the origin on every call: a uri that starts with the last origin is that server (anything else, e.g. an explicit default port, gets its origin)
+      Server last = _lastServer;
+      if (!(last is null) && SameOrigin(uri.OriginalString, last.Origin))
+        return last.Advertised;
+
+      string origin = uri.GetLeftPart(UriPartial.Authority);
+      Advertised advertised;
+      if (create)
+        advertised = _received.GetOrAdd(origin, o => new Advertised());
+      else if (!_received.TryGetValue(origin, out advertised))
+        return null;
+      advertised.Origin = origin;
+      _lastServer = new Server(origin, advertised);
+      return advertised;
+    }
+
+    private static bool SameOrigin(string uri, string origin)
+    {
+      return uri.Length > origin.Length && uri.StartsWith(origin, StringComparison.OrdinalIgnoreCase) && uri[origin.Length] == '/';
     }
 
     #endregion

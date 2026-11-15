@@ -53,7 +53,7 @@ await api.post('api/orders', order);
 - A body that is already text or bytes (`string`, `Uint8Array`, `Blob`, `FormData`...) is sent as it is, anything else is encoded as MsgPack with `Content-Type: application/msgpack`.
 - The property names are camelCase, as the JSON of ASP.NET Core has them (`invoiceDate` for `InvoiceDate`), or the names of the .NET properties with `propertyNames: 'dotnet'` (below).
 - Responses that are not MsgPack (JSON, text) are decoded as such, an empty body (`204 No Content`, a `null` result) is `undefined`.
-- Already have a `Response` (your own `fetch`, an interceptor)? `api.read(response)` decodes it and learns its schema. Your own fetch needs the headers below: `Accept` and `MsgPack-Schemas` (`api.store.advertise(origin)`).
+- Already have a `Response` (your own `fetch`, an interceptor)? `api.read(response)` decodes it and learns its schema. Your own fetch needs the headers below: `Accept` and `MsgPack-Schemas` (`api.store.advertise(origin, path)`), and `api.read(response, origin, path)` with the path of the request when `response.url` is not its url.
 - `Decoder` and `encode` work without HTTP (e.g. for MsgPack from a WebSocket): `new Decoder({ models }).decode(bytes)`, `encode(value, { models })`.
 
 ### Options
@@ -122,11 +122,11 @@ The store lives in memory. To keep it (e.g. in `localStorage` or IndexedDB):
 localStorage.setItem('schemas', JSON.stringify(api.store.export()));
 // next time
 const store = new SchemaStore();
-store.import(JSON.parse(localStorage.getItem('schemas') ?? '{"schemas":[],"origins":{}}'));
+store.import(JSON.parse(localStorage.getItem('schemas') ?? '{"schemas":[],"origins":{}}')); // the schemas, and the ids per server and route
 const api = new LsMsgPackClient({ baseUrl, store });
 ```
 
-`import` computes the ids from the bytes again (they are hashes of the content), so a stored schema cannot pass for another one. A server that no longer has a schema (restarted, another instance) sends it inline, nothing breaks. The generated schema set needs no storage: it is in the code.
+A request lists the schemas its route received (`new SchemaStore({ advertiseByRoute: false })` for the most recent ones of the server, as for a route not called yet), see [WebFormatters.md](WebFormatters.md#schema-references-applicationx-lsmsgpack): the route is the path, with segments of digits and Guids as one. `import` computes the ids from the bytes again (they are hashes of the content), so a stored schema cannot pass for another one. A server that no longer has a schema (restarted, another instance) sends it inline, nothing breaks. The generated schema set needs no storage: it is in the code.
 
 ## Streams
 

@@ -113,12 +113,12 @@ export class LsMsgPackClient {
     const { target, request, advertised } = this.prepare(url, init, this.described ? DescribedAccept : MediaTypes.XLsMsgPack);
     let result: MsgPackResponse<T>;
     try {
-      result = await this.read<T>(await this.fetchFn(target, request), target.origin);
+      result = await this.read<T>(await this.fetchFn(target, request), target.origin, target.pathname);
     } catch (e) {
       const method = (init.method ?? 'GET').toUpperCase();
       if (!(e instanceof MissingSchemaError) || advertised === undefined || (method !== 'GET' && method !== 'HEAD')) throw e;
       (request.headers as Headers).delete(SchemasHeader); // repeating a GET is safe: the server sends the schema inline
-      result = await this.read<T>(await this.fetchFn(target, request), target.origin);
+      result = await this.read<T>(await this.fetchFn(target, request), target.origin, target.pathname);
     }
     if (!result.response.ok) throw new HttpError(result.response.status, result.response.statusText, result.value, result.response);
     return result;
@@ -135,7 +135,7 @@ export class LsMsgPackClient {
     const { target, request } = this.prepare(url, init, accept, false);
     const response = await this.fetchFn(target, request);
     if (!response.ok) {
-      const failed = await this.read(response, target.origin);
+      const failed = await this.read(response, target.origin, target.pathname);
       throw new HttpError(response.status, response.statusText, failed.value, response);
     }
     return new MsgPackStreamReader(response, { decoder: this.decoder, store: this.store });
@@ -156,7 +156,7 @@ export class LsMsgPackClient {
     const headers = new Headers(this.headers);
     new Headers(init.headers).forEach((value, name) => headers.set(name, value));
     if (!headers.has('Accept')) headers.set('Accept', accept);
-    const advertised = negotiate && !headers.has(SchemasHeader) ? this.store.advertise(target.origin) : undefined;
+    const advertised = negotiate && !headers.has(SchemasHeader) ? this.store.advertise(target.origin, target.pathname) : undefined;
     if (advertised !== undefined) headers.set(SchemasHeader, advertised);
 
     let body: BodyInit | null | undefined;
@@ -168,12 +168,17 @@ export class LsMsgPackClient {
     return { target, request: { ...init, headers, body }, advertised };
   }
 
-  /** Decodes a response (e.g. of your own fetch): MsgPack by its Content-Type, JSON, otherwise text. Learns the schema of an application/x-lsmsgpack body. */
-  async read<T = unknown>(response: Response, origin?: string): Promise<MsgPackResponse<T>> {
+  /**
+   * Decodes a response (e.g. of your own fetch): MsgPack by its Content-Type, JSON, otherwise text. Learns the schema of an application/x-lsmsgpack body.
+   * @param origin the server (scheme://host:port), default: from response.url
+   * @param path the path of the request (its route), default: from response.url when the origin is too
+   */
+  async read<T = unknown>(response: Response, origin?: string, path?: string): Promise<MsgPackResponse<T>> {
     const mediaType = (response.headers.get('Content-Type') ?? '').split(';')[0].trim().toLowerCase();
     if (mediaType === MediaTypes.XLsMsgPack) {
       const bytes = new Uint8Array(await response.arrayBuffer());
-      const decoded = this.decode(bytes, origin ?? originOf(response.url), response.headers.get(SchemaHeader));
+      const url = origin === undefined ? urlOf(response.url) : undefined;
+      const decoded = this.decode(bytes, origin ?? url?.origin, response.headers.get(SchemaHeader), path ?? url?.pathname);
       return { value: decoded.value as T, response, schema: decoded.schema, reference: decoded.reference };
     }
     if (mediaType === MediaTypes.MsgPack || mediaType === MediaTypes.XMsgPack) {
@@ -197,16 +202,17 @@ export class LsMsgPackClient {
    * Decodes an application/x-lsmsgpack body.
    * @param origin the server (scheme://host:port), to learn its schema
    * @param schemaHeader the response header MsgPack-Schema: an inline schema is kept only when its hash is this id
+   * @param path the path of the request (its route), so the next requests to that route list the schema (SchemaStore.advertiseByRoute)
    */
-  decode(bytes: Uint8Array, origin?: string, schemaHeader?: string | null): Decoded {
+  decode(bytes: Uint8Array, origin?: string, schemaHeader?: string | null, path?: string): Decoded {
     const id = schemaHeader?.trim().toLowerCase();
     const decoded = this.decoder.decode(bytes, (ref) => this.store.get(ref), (schemaBytes) => {
       const known = id ? this.store.get(id) : undefined;
       return known !== undefined && sameBytes(known.bytes, schemaBytes) ? known : new Schema(schemaBytes); // parsed once per schema while it is sent inline
     });
     if (this.negotiate && origin && decoded.schema !== undefined) {
-      if (decoded.reference) this.store.touch(origin, decoded.schema.id);
-      else this.store.learn(origin, id, decoded.schema);
+      if (decoded.reference) this.store.touch(origin, decoded.schema.id, path);
+      else this.store.learn(origin, id, decoded.schema, path);
     }
     return decoded;
   }
@@ -217,9 +223,9 @@ export class LsMsgPackClient {
   }
 }
 
-function originOf(url: string): string | undefined {
+function urlOf(url: string): URL | undefined {
   try {
-    return url ? new URL(url).origin : undefined;
+    return url ? new URL(url) : undefined;
   } catch {
     return undefined;
   }

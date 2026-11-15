@@ -86,5 +86,14 @@ namespace LsMsgPack.Http
     /// Client side: the most schema ids sent per server (the most recently received ones), 32 by default.
     /// </summary>
     public int MaxAdvertisedSchemas { get; set; } = 32;
+
+    /// <summary>
+    /// Client side: a request lists the schemas received for its route (its path, in which segments that look like ids count as one: all digits, or 16 or more hexadecimal digits and dashes),
+    /// at most 4 and <see cref="MaxAdvertisedSchemas"/>, and the most recently received ones only for a route it has not called yet. Default true.
+    /// <para>So a server with more response types than <see cref="MaxAdvertisedSchemas"/> still refers to the schemas (200 endpoints called in turn: 100% instead of 16% of the responses),
+    /// with a header of one id instead of 32. A route the rule does not see (a path with a name in it, /products/red-shoes) only costs an inline schema at its first call:
+    /// a client lists only schemas it holds. False: always the most recently received ones.</para>
+    /// </summary>
+    public bool AdvertiseByRoute { get; set; } = true;
   }
 }

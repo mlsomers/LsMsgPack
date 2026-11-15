@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # A/B harnesses for LsMsgPack (and the ASP.NET Core formatters): the working tree ("new") against a git ref ("base", default origin/master).
 # Usage: fast/setup.sh <work dir outside the repo> [base ref]
+#   ONLY="webmany equiv" fast/setup.sh ...   builds only those harnesses (names without -new/-base)
+# Run it through ../limit.sh: the builds run one after another, but the build servers stay in memory between them.
 set -euo pipefail
 WORK=$(realpath -m "${1:?Usage: fast/setup.sh <work dir> [base ref]}")
 BASE_REF=${2:-origin/master}
@@ -9,12 +11,14 @@ REPO=$(git -C "$SRC" rev-parse --show-toplevel)
 mkdir -p "$WORK"
 rm -rf "$WORK/baseline" "$WORK/base.txt" && mkdir -p "$WORK/baseline"
 GENERATOR=""; git -C "$REPO" cat-file -e "$BASE_REF:LsMsgPack.Generator" 2>/dev/null && GENERATOR=LsMsgPack.Generator # the gen-* candidates in the base too
-git -C "$REPO" archive "$BASE_REF" LsMsgPackDebug LsMsgPackCore LsMsgPack LsMsgPackFormatters $GENERATOR CommonAssemblyInfo.cs Packaging.props | tar -x -C "$WORK/baseline"
+git -C "$REPO" archive "$BASE_REF" LsMsgPackDebug LsMsgPackCore LsMsgPack LsMsgPackFormatters LsMsgPackWebApiFormatters $GENERATOR CommonAssemblyInfo.cs Packaging.props | tar -x -C "$WORK/baseline"
 echo "$BASE_REF ($(git -C "$REPO" rev-parse --short "$BASE_REF"))" > "$WORK/baseline/REF"
 sed 's/CreateInvoices(5)/CreateInvoices(100)/' "$SRC/EquivModel.cs" > "$WORK/WebModel.cs"
 "$SRC/many-types.sh" > "$WORK/LsManyTypes.cs" # the 200 root types of LsMany.cs
+"$SRC/webmany-types.py" > "$WORK/WebManyTypes.cs" # the 200 vertical slices of WebMany.cs
 
 make_project() { # name, files, repo root, extra project content, extra properties
+  if [ -n "${ONLY:-}" ] && [[ " $ONLY " != *" ${1%-*} "* ]]; then return; fi
   rm -rf "$WORK/$1" && mkdir -p "$WORK/$1"
   for f in $2; do cp "$f" "$WORK/$1/"; done
   cat > "$WORK/$1/$1.csproj" <<PROJ
@@ -31,7 +35,7 @@ $4
   </ItemGroup>
 </Project>
 PROJ
-  dotnet build "$WORK/$1" -c Release 2>&1 | grep -E " error |rror\(s\)" | sort -u
+  dotnet build "$WORK/$1" -c Release -nr:false 2>&1 | grep -E " error |rror\(s\)" | sort -u
 }
 for v in new base; do
   ROOT=$REPO; [ $v = base ] && ROOT=$WORK/baseline
@@ -57,5 +61,9 @@ $GEN_ITEMS" "$GAME_PROPS"
   make_project web-$v "$SRC/WebBench.cs $WORK/WebModel.cs" "$ROOT" "    <FrameworkReference Include=\"Microsoft.AspNetCore.App\" />
     <PackageReference Include=\"Microsoft.AspNetCore.TestHost\" Version=\"8.0.20\" />
     <ProjectReference Include=\"$ROOT/LsMsgPackFormatters/LsMsgPackFormatters.csproj\" />"
+  make_project webmany-$v "$SRC/WebMany.cs $WORK/WebManyTypes.cs" "$ROOT" "    <FrameworkReference Include=\"Microsoft.AspNetCore.App\" />
+    <PackageReference Include=\"Microsoft.AspNetCore.TestHost\" Version=\"8.0.20\" />
+    <ProjectReference Include=\"$ROOT/LsMsgPackFormatters/LsMsgPackFormatters.csproj\" />
+    <ProjectReference Include=\"$ROOT/LsMsgPackWebApiFormatters/LsMsgPackWebApiFormatters.csproj\" />" "    <ServerGarbageCollection>true</ServerGarbageCollection>"
 done
 echo "Harnesses in $WORK, base: $(cat "$WORK/baseline/REF")"
