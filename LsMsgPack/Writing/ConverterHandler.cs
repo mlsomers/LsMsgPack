@@ -26,11 +26,17 @@ namespace LsMsgPack.Writing
     private ValueHandler<TSurrogate> _surrogate;
     private RecentTypes _recent;
 
+    /// <summary>
+    /// <c>AddTypeIdOption.Always</c>: the handler of a member's own converter wraps the surrogate with the type id as the boxed values are (the type's converters are written boxed then).
+    /// </summary>
+    private readonly bool _always;
+
     internal ConverterHandler(Serializer serializer, MsgPackConverter<T, TSurrogate> converter)
     {
       _serializer = serializer;
       _converter = converter;
       _surrogateInfo = converter.SurrogateInfo;
+      _always = serializer.AlwaysTypeId;
     }
 
     internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
@@ -38,6 +44,11 @@ namespace LsMsgPack.Writing
       if (!typeof(T).IsValueType && value.GetType() != typeof(T)) // the JIT drops the test for structs
       {
         WriteDerived(c, value, assignedTo);
+        return;
+      }
+      if (_always)
+      {
+        _serializer.WriteConverted(c, value, typeof(T), this, assignedTo);
         return;
       }
       WriteSurrogate(c, value);

@@ -89,6 +89,9 @@ namespace LsMsgPackTypeScriptTests
       StringAssert.Contains(models, "['Balance', 'string']");
       StringAssert.Contains(models, "['History', ['list', 'string']]");
       Assert.DoesNotContain("class TsMoney", models, "a converted class has no model");
+      StringAssert.Contains(wallet, "  Opened: number = 1767225600;", "a member's own converter: the surrogate's type and value");
+      StringAssert.Contains(models, "['Opened', 'long']");
+      StringAssert.Contains(models, "['Closed', ['?', 'long']]");
     }
 
     [TestMethod]

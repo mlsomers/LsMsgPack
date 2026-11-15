@@ -851,7 +851,7 @@ namespace LsMsgPack.Generator
             kept |= Kept.NonPublicFields;
           if (IsObsoleteError(field) || !IsAccessible(field.Type))
             continue;
-          Enqueue(field.Type);
+          Enqueue(MemberSurrogate(field, field.Type) ?? field.Type); // a member's own converter: its value is written as the surrogate
           RecordPolymorphic(type, field, field.Type);
           bool canGetField = CanGet(type, field, out bool unsafeField);
           bool canSetField = CanSet(type, field);
@@ -868,7 +868,7 @@ namespace LsMsgPack.Generator
 
         if (property.DeclaredAccessibility != Accessibility.Public)
           kept |= Kept.NonPublicProperties;
-        Enqueue(property.Type);
+        Enqueue(MemberSurrogate(property, property.Type) ?? property.Type);
         RecordPolymorphic(type, property, property.Type);
 
         bool canGet = CanGet(type, property, out bool unsafeGet);
@@ -1160,7 +1160,8 @@ namespace LsMsgPack.Generator
         valueType = named.TypeArguments[0];
         nullable = true;
       }
-      string kind = KindOf(valueType, out string underlying);
+      string underlying = null;
+      string kind = MemberSurrogate(member, type) != null ? "None" : KindOf(valueType, out underlying); // a member's own converter: the runtime's handler writes and reads it
       if (kind == "None")
         nullable = false;
       return new MemberModel(t.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), member.Name, Escape(member.Name),
@@ -1288,7 +1289,23 @@ namespace LsMsgPack.Generator
     /// </summary>
     private static ITypeSymbol ConverterSurrogate(INamedTypeSymbol type)
     {
-      foreach (AttributeData attribute in type.GetAttributes())
+      return SurrogateOf(type, type, null);
+    }
+
+    /// <summary>
+    /// The surrogate type of the converter in a property's or field's own [MsgPackConverter] (its T is the member's type, or the underlying type of a nullable member), null without one.
+    /// </summary>
+    private static ITypeSymbol MemberSurrogate(ISymbol member, ITypeSymbol type)
+    {
+      ITypeSymbol underlying = type is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T ? named.TypeArguments[0] : null;
+      return SurrogateOf(member, type, underlying);
+    }
+
+    /// <param name="converted">The type the converter must convert</param>
+    /// <param name="orConverted">Another type it may convert (the underlying type of a nullable member), null for none</param>
+    private static ITypeSymbol SurrogateOf(ISymbol symbol, ITypeSymbol converted, ITypeSymbol orConverted)
+    {
+      foreach (AttributeData attribute in symbol.GetAttributes())
       {
         if (attribute.AttributeClass?.ToDisplayString() != "LsMsgPack.Converters.MsgPackConverterAttribute" || attribute.ConstructorArguments.Length != 1
           || !(attribute.ConstructorArguments[0].Value is INamedTypeSymbol converter))
@@ -1296,7 +1313,7 @@ namespace LsMsgPack.Generator
         for (INamedTypeSymbol t = converter; t != null; t = t.BaseType)
         {
           if (t.Name == "MsgPackConverter" && t.TypeArguments.Length == 2 && t.ContainingNamespace?.ToDisplayString() == "LsMsgPack.Converters"
-            && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], type))
+            && (SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], converted) || (orConverted != null && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], orConverted))))
             return t.TypeArguments[1];
         }
       }

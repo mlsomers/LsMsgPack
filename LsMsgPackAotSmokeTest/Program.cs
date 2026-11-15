@@ -239,8 +239,21 @@ namespace LsMsgPackAotSmokeTest
     public override Postmark FromSurrogate(PostmarkDto surrogate) { return new Postmark(surrogate.Office, surrogate.Day); }
   }
 
+  /// <summary>
+  /// A member's own converter (on Invoice.Due): created from the member's attribute.
+  /// </summary>
+  public sealed class UnixSecondsConverter : LsMsgPack.Converters.MsgPackConverter<DateTime, long>
+  {
+    public override long ToSurrogate(DateTime value) { return new DateTimeOffset(value.ToUniversalTime()).ToUnixTimeSeconds(); }
+    public override DateTime FromSurrogate(long surrogate) { return DateTimeOffset.FromUnixTimeSeconds(surrogate).UtcDateTime; }
+  }
+
   public class Invoice
   {
+    [LsMsgPack.Converters.MsgPackConverter(typeof(UnixSecondsConverter))]
+    public DateTime Due { get; set; }
+    [LsMsgPack.Converters.MsgPackConverter(typeof(UnixSecondsConverter))]
+    public DateTime? Reminded { get; set; }
     public Discount Discount { get; set; }
     public List<Postmark> Postmarks { get; set; }
     public Guid Id { get; set; }
@@ -440,6 +453,8 @@ namespace LsMsgPackAotSmokeTest
         Shapes = new List<Shape>() { new Square() { Label = "s", Side = 2 }, new Circle() { Radius = 0.25 } },
         Total = 252.47m,
         Discount = new Discount { Percent = 12.5m, Code = "AUTUMN" },
+        Due = new DateTime(2026, 11, 30, 12, 0, 0, DateTimeKind.Utc),
+        Reminded = new DateTime(2026, 12, 7, 9, 0, 0, DateTimeKind.Utc),
         Postmarks = new List<Postmark> { new Postmark("Utrecht", 12), null },
         Urgent = true,
         Payment = new Payment(100.5m) { Note = "first" },
@@ -596,6 +611,7 @@ namespace LsMsgPackAotSmokeTest
         .Append(o.Payment is null ? "null" : $"[{o.Payment.Amount.ToString(CultureInfo.InvariantCulture)} {o.Payment.Note ?? "null"} {o.Payment.Logged}]").Append(';')
         .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]").Append(';').Append(Dump(o.Route)).Append(';')
         .Append(o.Discount is null ? "null" : o.Discount.Percent.ToString(CultureInfo.InvariantCulture) + "/" + o.Discount.Code).Append(';')
+        .Append(Time(o.Due)).Append(';').Append(o.Reminded.HasValue ? Time(o.Reminded.Value) : "null").Append(';')
         .Append(o.Postmarks is null ? "null" : string.Join(",", o.Postmarks.Select(p => p is null ? "null" : p.Office + "/" + p.Day)));
       return text.ToString();
     }

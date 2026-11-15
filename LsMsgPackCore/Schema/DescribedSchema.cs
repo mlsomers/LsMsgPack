@@ -214,6 +214,14 @@ namespace LsMsgPack
       Type valueType = Nullable.GetUnderlyingType(type) ?? type;
       if (value.GetType() != valueType)
         return null;
+      MsgPackConverter converter = _settings.ConverterFor(valueType, prop);
+      if (converter != null) // the default as the body writes it: its surrogate
+      {
+        value = converter.ToSurrogateBoxed(value);
+        if (value is null)
+          return new byte[] { (byte)MsgPackTypeId.MpNull };
+        type = converter.SurrogateType;
+      }
       return _settings.SerializePlainValue(value, type, _byteOrder._endianAction);
     }
 
@@ -246,11 +254,11 @@ namespace LsMsgPack
       {
         _bytes.WriteArrayHeader(2, _byteOrder);
         _bytes.WriteString("?", _byteOrder);
-        WriteType(nullable);
+        WriteType(nullable, assignedTo); // a member's converter of the underlying type
         return;
       }
 
-      MsgPackConverter converter = _settings.ConverterFor(type);
+      MsgPackConverter converter = _settings.ConverterFor(type, assignedTo);
       if (converter != null) // written as its surrogate, a value declared as the surrogate type
       {
         WriteType(converter.SurrogateType, null, elements);

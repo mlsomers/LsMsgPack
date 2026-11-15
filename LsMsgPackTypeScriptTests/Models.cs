@@ -41,6 +41,16 @@ namespace LsMsgPackTypeScriptTests
   {
     public TsMoney Balance { get; set; } = new TsMoney { Amount = 5, Currency = "EUR" };
     public List<TsMoney> History { get; set; }
+    [LsMsgPack.Converters.MsgPackConverter(typeof(TsUnixSeconds))]
+    public DateTime Opened { get; set; } = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    [LsMsgPack.Converters.MsgPackConverter(typeof(TsUnixSeconds))]
+    public DateTime? Closed { get; set; }
+  }
+
+  public sealed class TsUnixSeconds : LsMsgPack.Converters.MsgPackConverter<DateTime, long>
+  {
+    public override long ToSurrogate(DateTime value) { return new DateTimeOffset(value).ToUnixTimeSeconds(); }
+    public override DateTime FromSurrogate(long surrogate) { return DateTimeOffset.FromUnixTimeSeconds(surrogate).UtcDateTime; }
   }
 
   public class TsAddress

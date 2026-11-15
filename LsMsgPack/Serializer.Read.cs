@@ -20,6 +20,11 @@ namespace LsMsgPack
   internal sealed partial class Serializer
   {
     private readonly ConcurrentDictionary<Type, ValueReader> _readers = new ConcurrentDictionary<Type, ValueReader>();
+
+    /// <summary>
+    /// The readers of the members' own converters ([MsgPackConverter] on a property or field), by converter.
+    /// </summary>
+    private readonly ConcurrentDictionary<MsgPackConverter, ValueReader> _memberReaders = new ConcurrentDictionary<MsgPackConverter, ValueReader>();
     private readonly ConcurrentDictionary<Type, ReadPlan> _readPlans = new ConcurrentDictionary<Type, ReadPlan>();
     private readonly ConditionalWeakTable<SchemaSession, SessionShared> _sessions = new ConditionalWeakTable<SchemaSession, SessionShared>();
 
@@ -279,6 +284,25 @@ namespace LsMsgPack
     internal ValueReader<T> Reader<T>()
     {
       return (ValueReader<T>)Reader(typeof(T));
+    }
+
+    /// <summary>
+    /// The reader of a property's or field's value: of its own converter when it has one ([MsgPackConverter] on the member), otherwise of its type.
+    /// </summary>
+    internal ValueReader<T> ReaderFor<T>(FullPropertyInfo declared)
+    {
+      return (ValueReader<T>)ReaderFor(typeof(T), declared);
+    }
+
+    internal ValueReader ReaderFor(Type type, FullPropertyInfo declared)
+    {
+      MsgPackConverter member = declared?.MemberConverter;
+      if (member is null)
+        return Reader(type);
+      ValueReader exact = _memberReaders.TryGetValue(member, out ValueReader found) ? found : _memberReaders.GetOrAdd(member, m => (ValueReader)m.Accept(new ConverterReaders(this)));
+      if (type == member.ConvertedType)
+        return exact;
+      return (ValueReader)Instantiate(type, typeof(NullableReader<>), member.ConvertedType, exact);
     }
 
     internal ValueReader Reader(Type type)

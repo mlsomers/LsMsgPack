@@ -157,6 +157,14 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal readonly PropertyAttributeSet Attributes;
 
+    /// <summary>
+    /// The converter of the member's own [MsgPackConverter] (for its value, which it converts before the type's and the options' converters), null when it has none or there is no member.
+    /// </summary>
+    internal Converters.MsgPackConverter MemberConverter
+    {
+      get { return Attributes?.Converter; }
+    }
+
     public FullPropertyInfo(Type assignToType)
     {
       AssignedToType = assignToType;

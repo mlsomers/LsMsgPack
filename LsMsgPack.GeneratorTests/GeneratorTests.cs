@@ -854,6 +854,44 @@ namespace Conv
     }
 
     [TestMethod]
+    public void Converters_OnAMember_TheRuntimeWritesIt()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(@"
+using System;
+using LsMsgPack;
+using LsMsgPack.Converters;
+
+namespace ConvMember
+{
+  public class StampDto { public long Ticks { get; set; } }
+
+  public sealed class StampConverter : MsgPackConverter<DateTime, StampDto>
+  {
+    public override StampDto ToSurrogate(DateTime value) { return new StampDto { Ticks = value.Ticks }; }
+    public override DateTime FromSurrogate(StampDto surrogate) { return new DateTime(surrogate.Ticks, DateTimeKind.Utc); }
+  }
+
+  public class Order
+  {
+    [MsgPackConverter(typeof(StampConverter))]
+    public DateTime Stamped { get; set; }
+    [MsgPackConverter(typeof(StampConverter))]
+    public DateTime? Maybe { get; set; }
+    public DateTime Plain { get; set; }
+  }
+
+  [LsMsgPackSerializable(typeof(Order))]
+  public partial class ConvMemberMsgPackContext : LsMsgPackContext { }
+}");
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.Contains("\"Stamped\", typeof(global::System.DateTime), global::LsMsgPack.Generated.GeneratedKind.None", code, "the runtime's handler (the converter) writes and reads it");
+      Assert.Contains("\"Maybe\", typeof(global::System.DateTime?), global::LsMsgPack.Generated.GeneratedKind.None", code);
+      Assert.Contains("\"Plain\", typeof(global::System.DateTime), global::LsMsgPack.Generated.GeneratedKind.DateTime", code);
+      Assert.Contains("global::ConvMember.StampDto", code, "the surrogate is described");
+    }
+
+    [TestMethod]
     public void ShouldSerializeMethods_Kept()
     {
       GeneratorHarness.Result result = GeneratorHarness.Run(@"

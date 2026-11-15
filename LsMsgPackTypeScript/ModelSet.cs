@@ -160,7 +160,7 @@ namespace LsMsgPackTypeScript
             model.OwnProps.Add(property);
         }
         foreach (FullPropertyInfo prop in props)
-          Visit(prop.DeclaredType, depth + 1);
+          Visit(prop.MemberConverter?.SurrogateType ?? prop.DeclaredType, depth + 1); // a member's own converter: its value is written as the surrogate
       }
 
       if (!type.IsSealed && !type.IsValueType)
@@ -204,6 +204,17 @@ namespace LsMsgPackTypeScript
     /// <summary>
     /// The declared type of a value as the described schema has it (DescribedSchema.WriteType, in its order), with the models for its classes.
     /// </summary>
+    /// <summary>
+    /// The declared type of a property or field as the described schema has it: of its own converter's surrogate when it has one.
+    /// </summary>
+    internal Spec SpecOf(ModelProperty prop)
+    {
+      if (prop.Converter is null)
+        return SpecOf(prop.Type);
+      Spec surrogate = SpecOf(prop.Converter.SurrogateType);
+      return Nullable.GetUnderlyingType(prop.Type) != null ? Spec.Of("?", prop.Type, surrogate) : surrogate;
+    }
+
     internal Spec SpecOf(Type type)
     {
       Type nullable = Nullable.GetUnderlyingType(type);
@@ -354,6 +365,11 @@ namespace LsMsgPackTypeScript
     /// </summary>
     internal readonly NullabilityInfo Nullability;
 
+    /// <summary>
+    /// The member's own [MsgPackConverter] (its value is written as the surrogate), null without one.
+    /// </summary>
+    internal readonly MsgPackConverter Converter;
+
     /// <param name="member">A property or a field</param>
     internal ModelProperty(MemberInfo member)
     {
@@ -361,6 +377,7 @@ namespace LsMsgPackTypeScript
       Member = member;
       FieldInfo field = member as FieldInfo;
       Type = field?.FieldType ?? ((PropertyInfo)member).PropertyType;
+      Converter = FullPropertyInfo.AttributesOf(member).Converter;
       try
       {
         lock (NullabilityContext) // not thread-safe

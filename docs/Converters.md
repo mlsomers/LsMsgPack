@@ -30,7 +30,7 @@ public sealed class MoneyConverter : MsgPackConverter<Money, string>
 }
 ```
 
-Then register it in one of two ways:
+Then register it in one of three ways:
 
 - **On your own type**, with an attribute. The converter is created once, by its public parameterless constructor:
 
@@ -45,6 +45,22 @@ Then register it in one of two ways:
   LsMsgPackOptions options = new LsMsgPackOptions();
   options.Converters = new MsgPackConverter[] { new MoneyConverter(), new UnixMillisecondsConverter() };
   ```
+
+- **On one property or field**, for that member's value only. Its `T` is the member's type, or the underlying type of a nullable member. It wins over the type's attribute and the options for that member:
+
+  ```csharp
+  public class Order
+  {
+    [MsgPackConverter(typeof(UnixMillisecondsConverter))]
+    public DateTime Created { get; set; }      // a long
+    public DateTime Shipped { get; set; }      // a timestamp, as usual
+
+    [MsgPackConverter(typeof(UnixMillisecondsConverter))]
+    public DateTime? Cancelled { get; set; }   // a long, or nil
+  }
+  ```
+
+  A member's converter converts the member's own value, not the elements of a collection: a converter on a `List<DateTime>` property must convert `List<DateTime>`. It isn't inherited by the same property of a derived class (`override`), and a value of a class deriving from the member's type is written as an object of its own class. A converter of another type than the member's throws when the member is first written or read.
 
 The writer and the reader need the same converters.
 
@@ -66,7 +82,7 @@ A converter for a built-in type replaces the built-in format everywhere, also in
 
 ## The schema
 
-With the indexed schema, the surrogates' classes have entries and the converted types don't have entries of their own. A converted type is only named in the schema where a type id needs it, without properties. In the described schema (`SchemaVersion.Described`), a converted property has the surrogate's type: `["Price", "string"]`, and the entry of a converted type that a type id names is `["@", "string"]`. Complete schemas (`CompleteSchemas`) follow the surrogate types, and the classes deriving from a converted class.
+With the indexed schema, the surrogates' classes have entries and the converted types don't have entries of their own. A converted type is only named in the schema where a type id needs it, without properties. In the described schema (`SchemaVersion.Described`), a converted property (by its type or its own converter) has the surrogate's type: `["Price", "string"]`, and the entry of a converted type that a type id names is `["@", "string"]`. Complete schemas (`CompleteSchemas`) follow the surrogate types, and the classes deriving from a converted class.
 
 ## Converters or custom extensions?
 
@@ -74,6 +90,6 @@ A custom extension (`LsExtension<T>`, or `ICustomExt` in LsMsgPackDebug) writes 
 
 ## Source generator, analyzers and TypeScript models
 
-- **The source generator** sees `[MsgPackConverter]`: it describes the surrogate type instead of the converted type. It can't see the converters of the options. For NativeAOT, add their surrogate types to your context: `[LsMsgPackSerializable(typeof(MoneyDto))]`.
-- **The analyzers** don't check the members of a type with `[MsgPackConverter]` (they aren't written), but they do check its surrogate.
-- **lsmsgpack-ts** writes the surrogate's TypeScript type for a type with `[MsgPackConverter]` (a `Money` property is a `string`). Converters of the options aren't known to it.
+- **The source generator** sees `[MsgPackConverter]` on types and members: it describes the surrogate type instead of the converted type, and leaves a member with its own converter to the converter. It can't see the converters of the options. For NativeAOT, add their surrogate types to your context: `[LsMsgPackSerializable(typeof(MoneyDto))]`.
+- **The analyzers** don't check the members of a type with `[MsgPackConverter]` (they aren't written), but they do check its surrogate. For a member with its own converter, the rules about types (LSMP004, LSMP008, LSMP009) are about the surrogate: a `JsonElement` property with a converter to `string` is fine.
+- **lsmsgpack-ts** writes the surrogate's TypeScript type for a type or member with `[MsgPackConverter]` (a `Money` property is a `string`, a `DateTime` with a converter to `long` a `number`). Converters of the options aren't known to it.

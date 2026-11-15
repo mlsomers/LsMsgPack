@@ -399,7 +399,7 @@ namespace LsMsgPack.Reading
         MemberInfo member = info.Member;
         Type memberType = info.DeclaredType;
         GeneratedKind kind = GeneratedKind.None;
-        if (!info.IsComputed && CanSet(member) && member.DeclaringType.IsAssignableFrom(type))
+        if (!info.IsComputed && CanSet(member) && member.DeclaringType.IsAssignableFrom(type) && info.MemberConverter is null) // a member's own converter: its PropReader
           kind = serializer.ReadKind(memberType);
         any |= kind != GeneratedKind.None;
         members[t] = new Member(member, memberType, kind, info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)));

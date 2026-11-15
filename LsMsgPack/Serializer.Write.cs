@@ -56,6 +56,16 @@ namespace LsMsgPack
     /// </summary>
     internal readonly int CompileWritersAfter;
     private readonly bool _alwaysTypeId;
+
+    /// <summary>
+    /// <c>AddTypeIdOption.Always</c>: every value decides about its type id (the handlers are boxed; a member's converter wraps its surrogate itself, see ConverterHandler).
+    /// </summary>
+    internal bool AlwaysTypeId { get { return _alwaysTypeId; } }
+
+    /// <summary>
+    /// The handlers of the members' own converters ([MsgPackConverter] on a property or field), by converter (one per member).
+    /// </summary>
+    private readonly ConcurrentDictionary<MsgPackConverter, object> _memberHandlers = new ConcurrentDictionary<MsgPackConverter, object>();
     private readonly bool _customTypeResolvers;
     internal readonly bool CustomPropertyIds;
 
@@ -181,12 +191,48 @@ namespace LsMsgPack
     /// <param name="declared">The property the values are assigned to (its [SerializeEnumerable] changes how collections are written), null for elements</param>
     internal ValueHandler<T> Handler<T>(FullPropertyInfo declared)
     {
-      if (declared != null && declared.CustomAttributes.ContainsKey(nameof(SerializeEnumerableAttribute)))
-        return new BoxedHandler<T>(this);
+      if (declared != null)
+      {
+        MsgPackConverter member = declared.MemberConverter;
+        if (member != null)
+          return MemberHandler<T>(member);
+        if (declared.CustomAttributes.ContainsKey(nameof(SerializeEnumerableAttribute)))
+          return new BoxedHandler<T>(this);
+      }
 
       if (_handlers.TryGetValue(typeof(T), out object handler))
         return (ValueHandler<T>)handler;
       return (ValueHandler<T>)_handlers.GetOrAdd(typeof(T), t => CreateHandler(t));
+    }
+
+    /// <summary>
+    /// The handler of a member's own converter, of its type or of the nullable of its type (the member's declared type).
+    /// </summary>
+    private ValueHandler<T> MemberHandler<T>(MsgPackConverter member)
+    {
+      object exact = MemberHandlerOf(member);
+      if (typeof(T) == member.ConvertedType)
+        return (ValueHandler<T>)exact;
+      return (ValueHandler<T>)Instantiate(typeof(T), typeof(NullableHandler<>), member.ConvertedType, exact);
+    }
+
+    private object MemberHandlerOf(MsgPackConverter member)
+    {
+      if (_memberHandlers.TryGetValue(member, out object found))
+        return found;
+      return _memberHandlers.GetOrAdd(member, m => m.Accept(new ConverterHandlers(this)));
+    }
+
+    /// <summary>
+    /// A member's value written boxed (BoxedPropWriter): through the member's converter when it is of the converter's type, otherwise as any boxed value.
+    /// </summary>
+    internal void WriteMemberValue(WriteContext c, object value, FullPropertyInfo info)
+    {
+      MsgPackConverter member = info.MemberConverter;
+      if (member != null && value != null && value.GetType() == member.ConvertedType)
+        WriteConverted(c, value, member.ConvertedType, (IConvertedWriter)MemberHandlerOf(member), info);
+      else
+        WriteBoxed(c, value, info);
     }
 
     private object CreateHandler(Type type)
@@ -732,7 +778,13 @@ namespace LsMsgPack
     /// </summary>
     private void WriteConverted(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
     {
-      IConvertedWriter writer = info.ConvertedWriter ?? (info.ConvertedWriter = (IConvertedWriter)info.Converter.Accept(new ConverterHandlers(this)));
+      WriteConverted(c, value, type, info.ConvertedWriter ?? (info.ConvertedWriter = (IConvertedWriter)info.Converter.Accept(new ConverterHandlers(this))), assignedTo);
+    }
+
+    /// <param name="writer">The handler of the type's converter, or of the member's own one</param>
+    internal void WriteConverted(WriteContext c, object value, Type type, IConvertedWriter writer, FullPropertyInfo assignedTo)
+    {
+      WriteTypeInfo info = GetTypeInfo(type);
       if (assignedTo is null || info.NeverWrapped || !SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId))
       {
         writer.WriteBoxed(c, value);

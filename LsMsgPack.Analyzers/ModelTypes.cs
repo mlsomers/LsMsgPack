@@ -233,9 +233,9 @@ namespace LsMsgPack.Analyzers
         foreach (ISymbol member in named.GetMembers())
         {
           if (member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer && property.DeclaredAccessibility == Accessibility.Public && property.GetMethod != null)
-            Add(property.Type);
+            Add(MemberSurrogate(property, property.Type) ?? property.Type); // a member's own converter: its value is written as the surrogate
           else if (member is IFieldSymbol field && Fields.IsSerialized(field, _fields))
-            Add(field.Type);
+            Add(MemberSurrogate(field, field.Type) ?? field.Type);
         }
 
         // A value of a derived class has a type id where the base class (or interface) is declared
@@ -251,7 +251,21 @@ namespace LsMsgPack.Analyzers
     /// </summary>
     internal static ITypeSymbol ConverterSurrogate(INamedTypeSymbol type)
     {
-      foreach (AttributeData attribute in type.GetAttributes())
+      return SurrogateOf(type, type, null);
+    }
+
+    /// <summary>
+    /// The surrogate type of the converter in a property's or field's own [MsgPackConverter] (its T is the member's type, or the underlying type of a nullable member), null without one.
+    /// </summary>
+    internal static ITypeSymbol MemberSurrogate(ISymbol member, ITypeSymbol type)
+    {
+      ITypeSymbol underlying = type is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T ? named.TypeArguments[0] : null;
+      return SurrogateOf(member, type, underlying);
+    }
+
+    private static ITypeSymbol SurrogateOf(ISymbol symbol, ITypeSymbol converted, ITypeSymbol orConverted)
+    {
+      foreach (AttributeData attribute in symbol.GetAttributes())
       {
         if (attribute.AttributeClass?.ToDisplayString() != "LsMsgPack.Converters.MsgPackConverterAttribute" || attribute.ConstructorArguments.Length != 1
           || !(attribute.ConstructorArguments[0].Value is INamedTypeSymbol converter))
@@ -259,7 +273,7 @@ namespace LsMsgPack.Analyzers
         for (INamedTypeSymbol t = converter; t != null; t = t.BaseType)
         {
           if (t.Name == "MsgPackConverter" && t.TypeArguments.Length == 2 && t.ContainingNamespace?.ToDisplayString() == "LsMsgPack.Converters"
-            && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], type))
+            && (SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], converted) || (orConverted != null && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], orConverted))))
             return t.TypeArguments[1];
         }
       }

@@ -28,7 +28,7 @@ namespace LsMsgPack.Meta
       if (val is null)
         return null;
 
-      MsgPackConverter converter = settings.ConverterFor(assignType);
+      MsgPackConverter converter = settings.ConverterFor(assignType, prop);
       if (converter != null && !(val is KeyValuePair<object, object>[] wrapped && HasTypeId(wrapped))) // a map with a type id: ConvertMap decides whose type it names
         return ConvertSurrogate(val, converter, settings);
 
@@ -250,7 +250,7 @@ namespace LsMsgPack.Meta
       bool hasTypeId = propVals.TryGetValue(MsgPackOptions.TypeIdKey, out object typeId);
       if (hasTypeId)
       {
-        MsgPackConverter converter = settings.ConverterFor(assignType);
+        MsgPackConverter converter = settings.ConverterFor(assignType, prop);
         if (converter != null && TypeResolver.NamesSurrogate(typeId, converter, prop, settings, propVals)) // a surrogate of a class deriving from the surrogate type
           return ConvertSurrogate(map, converter, settings);
       }

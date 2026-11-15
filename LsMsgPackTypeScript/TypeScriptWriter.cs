@@ -107,7 +107,7 @@ namespace LsMsgPackTypeScript
       _sb.Append("export interface ").Append(model.TsName).Append(" {\n");
       _sb.Append("  readonly $type: string;\n");
       foreach (ModelProperty prop in model.Props)
-        _sb.Append("  readonly ").Append(PropertyKey(_options.Field(prop.Name))).Append("?: ").Append(TsType(_models.SpecOf(prop.Type), prop.Nullability, true)).Append(";\n");
+        _sb.Append("  readonly ").Append(PropertyKey(_options.Field(prop.Name))).Append("?: ").Append(TsType(_models.SpecOf(prop), prop.Nullability, true)).Append(";\n");
       _sb.Append("}\n");
     }
 
@@ -134,7 +134,7 @@ namespace LsMsgPackTypeScript
         if (field == "constructor")
           continue; // not a field name a class can have
         string value = values[prop.Name];
-        string type = TsType(_models.SpecOf(prop.Type), prop.Nullability, true);
+        string type = TsType(_models.SpecOf(prop), prop.Nullability, true);
         if (value == "null" && !type.EndsWith(" | null", StringComparison.Ordinal) && type != "unknown")
           type += " | null"; // declared not nullable, but nothing sets it
         _sb.Append("  ").Append(own ? string.Empty : "override ").Append(PropertyKey(field)).Append(": ").Append(type).Append(" = ").Append(value).Append(";\n");
@@ -174,7 +174,7 @@ namespace LsMsgPackTypeScript
       foreach (ModelClass model in classes.Where(c => !c.IsAbstract))
       {
         _sb.Append("    [").Append(model.TsName).Append(", ").Append(Defaults.Quote(model.TypeName)).Append(", [");
-        _sb.Append(string.Join(", ", model.AllProps.Select(p => string.Concat("[", Defaults.Quote(p.Name), ", ", SpecText(_models.SpecOf(p.Type)), "]"))));
+        _sb.Append(string.Join(", ", model.AllProps.Select(p => string.Concat("[", Defaults.Quote(p.Name), ", ", SpecText(_models.SpecOf(p)), "]"))));
         _sb.Append("]],\n");
       }
       _sb.Append("  ],\n");

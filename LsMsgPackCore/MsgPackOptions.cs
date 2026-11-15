@@ -389,6 +389,19 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// The converter of a value of this type assigned to the member: the member's own [MsgPackConverter] when the value is of its type (not an element, not a derived class), otherwise <see cref="ConverterFor(Type)"/>.
+    /// </summary>
+    /// <param name="type">The runtime type of the value (writing) or the type it is read into</param>
+    /// <param name="assignedTo">The property, field, element or root the value is assigned to (null for none)</param>
+    internal MsgPackConverter ConverterFor(Type type, Meta.FullPropertyInfo assignedTo)
+    {
+      MsgPackConverter member = assignedTo?.MemberConverter;
+      if (member != null && (type == member.ConvertedType || type == assignedTo.DeclaredType))
+        return member;
+      return ConverterLookup.Find(_converters, type);
+    }
+
+    /// <summary>
     /// The dynamic filters leave out default values (<see cref="FilterDefaultValues"/>): a nil in the array layout is then the value of [DefaultValue] where a property has one (see FullPropertyInfo.NilValue).
     /// </summary>
     internal bool LeavesOutDefaultValues

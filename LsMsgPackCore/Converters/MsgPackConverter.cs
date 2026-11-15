@@ -106,10 +106,12 @@ namespace LsMsgPack.Converters
   }
 
   /// <summary>
-  /// The converter of a class, struct or enum of your own (see <see cref="MsgPackConverter{T, TSurrogate}"/>): created once by its public parameterless constructor.
-  /// A converter in <see cref="MsgPackOptions.Converters"/> for the same type is used instead. Not inherited: classes deriving from the type are written as objects.
+  /// The converter of a class, struct or enum of your own, or of one property or field (see <see cref="MsgPackConverter{T, TSurrogate}"/>): created once by its public parameterless constructor.
+  /// <para>On a type: a converter in <see cref="MsgPackOptions.Converters"/> for the same type is used instead. Not inherited: classes deriving from the type are written as objects.</para>
+  /// <para>On a property or field: converts the member's own value (its T is the member's type, or the underlying type of a nullable member), before the type's and the options' converters.
+  /// Not the elements of a collection, not a value of a derived class, not the same property of an overriding class (not inherited).</para>
   /// </summary>
-  [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Enum, Inherited = false, AllowMultiple = false)]
+  [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct | AttributeTargets.Enum | AttributeTargets.Property | AttributeTargets.Field, Inherited = false, AllowMultiple = false)]
   public sealed class MsgPackConverterAttribute : Attribute
   {
     /// <param name="converterType">A class deriving from <see cref="MsgPackConverter{T, TSurrogate}"/> whose T is the type the attribute is on</param>
@@ -257,6 +259,36 @@ namespace LsMsgPack.Converters
       }
       if (converter.ConvertedType != type)
         throw new MsgPackException($"The [MsgPackConverter] of {type.FullName} names {converterType.FullName}, which converts {converter.ConvertedType.FullName}.");
+      ThrowIfInvalid(converter, None);
+      return converter;
+    }
+
+    /// <summary>
+    /// The converter of a member's [MsgPackConverter] (<see cref="Meta.PropertyAttributeSet.Converter"/>), null without one.
+    /// </summary>
+    /// <param name="type">The member's type</param>
+    /// <param name="attributes">The member's attributes by class name</param>
+    [UnconditionalSuppressMessage("Trimming", "IL2072", Justification = "The converter type of the attribute keeps its public parameterless constructor (DynamicallyAccessedMembers).")]
+    internal static MsgPackConverter OfMember(MemberInfo member, Type type, System.Collections.Generic.Dictionary<string, object> attributes)
+    {
+      if (!attributes.TryGetValue(nameof(MsgPackConverterAttribute), out object found) || !(found is MsgPackConverterAttribute attribute))
+        return null;
+      string name = member.DeclaringType?.Name + "." + member.Name;
+      Type converterType = attribute.ConverterType;
+      if (converterType is null || !typeof(MsgPackConverter).IsAssignableFrom(converterType) || converterType.IsAbstract)
+        throw new MsgPackException($"The [MsgPackConverter] of {name} names {converterType?.FullName ?? "null"}, which is not a class deriving from MsgPackConverter<{type.Name}, TSurrogate>.");
+      MsgPackConverter converter;
+      try
+      {
+        converter = (MsgPackConverter)Activator.CreateInstance(converterType);
+      }
+      catch (TargetInvocationException ex) when (ex.InnerException != null)
+      {
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+        throw;
+      }
+      if (converter.ConvertedType != type && converter.ConvertedType != Nullable.GetUnderlyingType(type))
+        throw new MsgPackException($"The [MsgPackConverter] of {name} names {converterType.FullName}, which converts {converter.ConvertedType.FullName}, not {type.FullName} (a member's converter is for its own value, not its elements).");
       ThrowIfInvalid(converter, None);
       return converter;
     }

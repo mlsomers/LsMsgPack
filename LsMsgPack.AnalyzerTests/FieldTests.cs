@@ -92,6 +92,35 @@ public class Model { public Money Total { get; set; } }
 " + Write), "LSMP010 Text", "LSMP004 Open");
     }
 
+    /// <summary>
+    /// A member's own [MsgPackConverter]: the type rules are about the surrogate it writes (a JSON document written as text is fine, an object surrogate is open).
+    /// </summary>
+    [TestMethod]
+    public void Converters_OnAMember_TheSurrogateIsChecked()
+    {
+      AssertDiagnostics(Analyze(Usings + @"
+public class Box { public int Size { get; set; } }
+public sealed class JsonAsText : LsMsgPack.Converters.MsgPackConverter<System.Text.Json.JsonElement, string>
+{
+  public override string ToSurrogate(System.Text.Json.JsonElement value) => value.GetRawText();
+  public override System.Text.Json.JsonElement FromSurrogate(string surrogate) => System.Text.Json.JsonDocument.Parse(surrogate).RootElement;
+}
+public sealed class AnyBox : LsMsgPack.Converters.MsgPackConverter<Box, object>
+{
+  public override object ToSurrogate(Box value) => value.Size;
+  public override Box FromSurrogate(object surrogate) => new Box();
+}
+public class Model
+{
+  [LsMsgPack.Converters.MsgPackConverter(typeof(JsonAsText))]
+  public System.Text.Json.JsonElement Payload { get; set; }
+  [LsMsgPack.Converters.MsgPackConverter(typeof(AnyBox))]
+  public Box Thing { get; set; }
+  public System.Text.Json.JsonElement Raw { get; set; }
+}
+" + Write), "LSMP004 Thing", "LSMP009 Raw");
+    }
+
     [TestMethod]
     public void LeftOut_PublicFieldsThatWouldRoundTrip()
     {

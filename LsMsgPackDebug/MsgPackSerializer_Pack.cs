@@ -96,7 +96,7 @@ namespace LsMsgPackDebug
       if (!(nullableType is null))
         tType = nullableType;
 
-      MsgPackConverter converter = settings.ConverterFor(tType);
+      MsgPackConverter converter = settings.ConverterFor(tType, assignedTo); // the member's own converter first
       if (converter != null)
         return SerializeConverted(item, tType, converter, settings, assignedTo, depth, byNames);
 

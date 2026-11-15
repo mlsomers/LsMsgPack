@@ -158,6 +158,23 @@ namespace LsMsgPack.Meta
       }
     }
 
+    private volatile object _converter; // null: not looked up yet, NoMethod: none
+
+    /// <summary>
+    /// The converter of the member's <see cref="Converters.MsgPackConverterAttribute"/> (its own value, not the elements of a collection), null when it has none. Created when first asked.
+    /// </summary>
+    /// <exception cref="MsgPackException">The attribute names a converter of another type than the member's (or its nullable's underlying type)</exception>
+    internal Converters.MsgPackConverter Converter
+    {
+      get
+      {
+        object found = _converter;
+        if (found is null)
+          _converter = found = (object)Converters.ConverterLookup.OfMember(_member, _type, ByName) ?? NoMethod; // an equal converter by any thread that creates it
+        return found as Converters.MsgPackConverter;
+      }
+    }
+
     private volatile NilValues _nil;
 
     /// <summary>

@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.Serialization;
 
 namespace LsMsgPackUnitTests
 {
@@ -201,7 +202,149 @@ namespace LsMsgPackUnitTests
       yield return new List<CvMoney> { new CvMoney(5m, "NOK") };
       yield return new object[] { new CvMoney(6m, "PLN"), new CvTemperature(6), CvThirdParty.Create(6, 6), new CvLabel { Text = "six" } };
       yield return new Dictionary<string, object> { { "money", new CvMoney(7m, "CZK") } };
+      yield return MemberFull();
+      yield return new CvMembers();
+      yield return new CvMemberStruct { At = When, N = 3 };
+      yield return new List<CvMemberStruct> { new CvMemberStruct { At = When }, default(CvMemberStruct) };
+      yield return new CvMemberImmutable(When, "x");
     }
+
+    #region Converters on members
+
+    private static readonly DateTime When = new DateTime(2026, 11, 15, 10, 20, 30, 456, DateTimeKind.Utc);
+
+    /// <summary>The members' own converters: on properties, a nullable, a field, and over a type's converter.</summary>
+    public class CvMembers
+    {
+      [MsgPackConverter(typeof(CvUnixMilliseconds))]
+      public DateTime At { get; set; }
+      [MsgPackConverter(typeof(CvUnixMilliseconds))]
+      public DateTime? MaybeAt { get; set; }
+      [MsgPackConverter(typeof(CvUnixMilliseconds))]
+      public DateTime? NoAt { get; set; }
+      public DateTime Plain { get; set; }
+      public List<DateTime> Dates { get; set; }
+      [MsgPackConverter(typeof(CvMoneyAsCents))]
+      public CvMoney Cents { get; set; }
+      public CvMoney Text { get; set; }
+      [MsgPackConverter(typeof(CvTemperatureAsText))]
+      public CvTemperature Temperature { get; set; }
+      [MsgPackConverter(typeof(CvThirdPartyConverter))]
+      public CvThirdParty Point { get; set; }
+      [DataMember]
+      [MsgPackConverter(typeof(CvIntAsText))]
+      public int Count;
+    }
+
+    /// <summary>The same members as <see cref="CvMembers"/>, declared as the surrogates (the bytes must be the same).</summary>
+    public class CvMembersDto
+    {
+      public long At { get; set; }
+      public long? MaybeAt { get; set; }
+      public long? NoAt { get; set; }
+      public DateTime Plain { get; set; }
+      public List<DateTime> Dates { get; set; }
+      public long Cents { get; set; }
+      public string Text { get; set; }
+      public string Temperature { get; set; }
+      public CvThirdPartyDto Point { get; set; }
+      [DataMember]
+      public string Count;
+    }
+
+    public struct CvMemberStruct
+    {
+      [MsgPackConverter(typeof(CvUnixMilliseconds))]
+      public DateTime At { get; set; }
+      public int N { get; set; }
+    }
+
+    /// <summary>Created by the constructor that takes the values (the converted value is a constructor argument).</summary>
+    public class CvMemberImmutable
+    {
+      public CvMemberImmutable(DateTime at, string name) { At = at; Name = name; }
+      [MsgPackConverter(typeof(CvUnixMilliseconds))]
+      public DateTime At { get; }
+      public string Name { get; }
+    }
+
+    public class CvBadMember
+    {
+      [MsgPackConverter(typeof(CvIntAsText))]
+      public long Wrong { get; set; }
+    }
+
+    public sealed class CvMoneyAsCents : MsgPackConverter<CvMoney, long>
+    {
+      public override long ToSurrogate(CvMoney value) { return (long)(value.Amount * 100); }
+      public override CvMoney FromSurrogate(long surrogate) { return new CvMoney(surrogate / 100m, "EUR"); }
+    }
+
+    public sealed class CvTemperatureAsText : MsgPackConverter<CvTemperature, string>
+    {
+      public override string ToSurrogate(CvTemperature value) { return value.Celsius.ToString(CultureInfo.InvariantCulture) + "C"; }
+      public override CvTemperature FromSurrogate(string surrogate) { return new CvTemperature(double.Parse(surrogate.TrimEnd('C'), CultureInfo.InvariantCulture)); }
+    }
+
+    internal static CvMembers MemberFull()
+    {
+      return new CvMembers
+      {
+        At = When, MaybeAt = When.AddDays(1), Plain = When, Dates = new List<DateTime> { When }, Cents = new CvMoney(12.34m, "EUR"), Text = new CvMoney(5m, "USD"),
+        Temperature = new CvTemperature(-3.5), Point = CvThirdParty.Create(7, 8), Count = 42
+      };
+    }
+
+    private static CvMembersDto MemberFullAsDto()
+    {
+      CvMembers m = MemberFull();
+      return new CvMembersDto
+      {
+        At = new DateTimeOffset(m.At).ToUnixTimeMilliseconds(), MaybeAt = new DateTimeOffset(m.MaybeAt.Value).ToUnixTimeMilliseconds(), Plain = m.Plain, Dates = m.Dates, Cents = 1234, Text = "5 USD",
+        Temperature = "-3.5C", Point = new CvThirdPartyDto { X = 7, Y = 8 }, Count = "#42"
+      };
+    }
+
+    [TestMethod]
+    [DataRow(false, ObjectLayout.Map)]
+    [DataRow(false, ObjectLayout.Array)]
+    public void Members_WrittenAsTheSurrogates(bool schema, ObjectLayout layout)
+    {
+      // Without the schema the class names are not written, so the bytes equal those of a class declaring the surrogates
+      MsgPackSettings debug = DebugSettings(schema, layout);
+      LsMsgPackSerializer ls = Ls(schema, layout);
+      byte[] expected = MsgPackSerializer.Serialize(MemberFullAsDto(), typeof(CvMembersDto), debug);
+      CollectionAssert.AreEqual(expected, MsgPackSerializer.Serialize(MemberFull(), typeof(CvMembers), debug), "Debug");
+      CollectionAssert.AreEqual(expected, ls.Serialize(MemberFull()), "Ls");
+      Assert.AreEqual(CrossLibraryTests.Dump(MemberFull()), CrossLibraryTests.Dump(ls.Deserialize<CvMembers>(expected)));
+      Assert.AreEqual(CrossLibraryTests.Dump(MemberFull()), CrossLibraryTests.Dump(MsgPackSerializer.Deserialize<CvMembers>(expected, debug)));
+    }
+
+    [TestMethod]
+    public void Members_TheConverterMustBeOfTheMembersType()
+    {
+      Assert.Throws<MsgPackException>(() => Ls().Serialize(new CvBadMember { Wrong = 1 }));
+      Assert.Throws<MsgPackException>(() => MsgPackSerializer.Serialize(new CvBadMember { Wrong = 1 }, typeof(CvBadMember), DebugSettings()));
+    }
+
+    [TestMethod]
+    [DataRow(SchemaVersion.Described, false)]
+    [DataRow(SchemaVersion.Described, true)]
+    public void Members_SchemaHasTheSurrogates(SchemaVersion version, bool complete)
+    {
+      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = OptionConverters(), SchemaVersion = version, CompleteSchemas = complete });
+      byte[] data = ls.Serialize(MemberFull());
+      MsgPackSettings debug = DebugSettings();
+      debug.SchemaVersion = version;
+      debug.CompleteSchemas = complete;
+      CollectionAssert.AreEqual(MsgPackSerializer.Serialize(MemberFull(), typeof(CvMembers), debug), data);
+      string text = System.Text.Encoding.UTF8.GetString(data);
+      foreach (string member in new[] { "CvThirdPartyDto", "Amount", "Celsius" })
+        Assert.AreEqual(member == "CvThirdPartyDto", text.Contains(member, StringComparison.Ordinal), member);
+      Assert.AreEqual(CrossLibraryTests.Dump(MemberFull()), CrossLibraryTests.Dump(ls.Deserialize<CvMembers>(data)));
+    }
+
+    #endregion
 
     /// <summary>
     /// A surrogate that is null (nil, read as null) and a struct that FilterDefaultValues leaves out (-0.0 is a default, read as 0).
