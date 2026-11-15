@@ -79,6 +79,10 @@ The kept values are written after the class's own properties:
 - Without the schema, a map gets the values kept by name, an array the values kept by position. Values that have no place in the layout (names in an array without the schema, positions in a map or with the schema) are not written.
 - The keys `""` and `"@"` (type ids, wrapped content) are never written from a dictionary.
 
+## The TypeScript client
+
+The [TypeScript client](TypeScriptClient.md#the-models) does the same for the generated models without a member for it: a property the models don't have is an own property of the instance, and it is written back with its .NET name and the type the described schema gave it. Objects of classes the models don't have are written with their .NET names and kinds, values with a type id keep it. With the plain schema the names are known but not the types: the values are written as they were read.
+
 ## Reporting
 
 Kept members are differences, not errors: `ReadDifferences` reports them as `DifferenceKind.KeptProperty` ("not a property of the class, kept as extension data") instead of `UnknownProperty`, with the same hints for misspelled names. See [ReadDifferences.md](ReadDifferences.md).

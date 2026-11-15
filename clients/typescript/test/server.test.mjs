@@ -2,7 +2,7 @@
 // (dotnet build clients/typescript/test-server).
 import assert from 'node:assert';
 import { after, before, test } from 'node:test';
-import { HttpError, LsMsgPackClient, MissingSchemaError, Schema, SchemaHeader, SchemaStore } from '../dist/index.js';
+import { defineModels, HttpError, LsMsgPackClient, MissingSchemaError, Schema, SchemaHeader, SchemaStore } from '../dist/index.js';
 import { assertLikeJson, serverAssembly, startServer } from './helpers.mjs';
 
 if (!serverAssembly && process.env.LSMSGPACK_TS_REQUIRE_SERVER) throw new Error('The test server is not built (dotnet build clients/typescript/test-server).');
@@ -167,4 +167,37 @@ test('polymorphic request bodies: $type is the class the server creates', { skip
 
   await assert.rejects(client.post('/echo/zoo', { Animals: [{ $type: 'Address', City: 'Rome' }] }), (e) => e instanceof HttpError && e.status === 400, 'a class that is not an Animal is refused');
   await assert.rejects(client.post('/echo/zoo', { Animals: [{ Name: 'Rex' }] }), (e) => e instanceof HttpError && e.status === 400, 'without $type the server cannot create an Animal');
+});
+
+test('models older than the server: the properties and classes they do not have are sent back as the server wrote them', { skip }, async () => {
+  // Models generated before the server got most of its properties (camelCase fields, as lsmsgpack-ts names them by default)
+  class Kinds {
+    flag = false;
+  }
+  class Zoo {
+    title = null;
+  }
+  const models = defineModels({ int64: 'number', dates: 'date', decimal: 'number', propertyNames: 'camelCase', classes: [[Kinds, 'Kinds', [['Flag', 'bool']]], [Zoo, 'Zoo', [['Title', 'string']]]] });
+  const client = new LsMsgPackClient({ baseUrl: server.url, models });
+
+  const kinds = await client.get('/kinds/values');
+  assert.ok(kinds instanceof Kinds);
+  assert.strictEqual(kinds.timeSpan, '1.02:03:04.5000000', 'read as the described schema says');
+  assertLikeJson(await client.post('/echo/kinds', kinds), await expected('values'), 'every kind (char, Guid, TimeSpan, DateOnly, TimeOnly, a struct, classes, dictionaries) as the server wrote it');
+
+  const zoo = await client.get('/zoo');
+  assert.ok(zoo instanceof Zoo);
+  assert.strictEqual(zoo.animals[0].$type, 'Dog', 'a class the models do not have: a plain object');
+  zoo.title = 'Renamed';
+  assert.deepStrictEqual(await client.post('/echo/zoo', zoo), {
+    Title: 'Renamed',
+    Animals: [
+      { Type: 'Dog', Value: { Barks: 3, Name: 'Rex' } },
+      { Type: 'Cat', Value: { Indoor: true, Name: 'Tom' } },
+      { Type: 'Dog', Value: { Barks: 0, Name: 'Quiet' } },
+    ],
+    Favorite: { Type: 'Cat', Value: { Indoor: false, Name: 'Felix' } },
+    Anything: { Type: 'Dog', Value: { Barks: 1, Name: 'Boxed' } },
+    Addresses: [{ Street: null, HouseNumber: null, PostalCode: null, City: 'Rome', Region: null, CountryCode: null }],
+  });
 });

@@ -3,7 +3,7 @@
 
 import { TypeProperty } from './decoder.js';
 import { MsgPackError } from './errors.js';
-import type { ModelClass, ModelSet } from './models.js';
+import type { KeptProperty, LearnedClass, ModelClass, ModelSet } from './models.js';
 import { MsgPackExtension } from './reader.js';
 import type { Kind, TypeExpr } from './schema.js';
 import { dateOnlyDayNumber, encodeDecimal, guidBytes, parseOffsetText, timeOnlyTicks, timeSpanTicks } from './values.js';
@@ -235,8 +235,17 @@ export class Writer {
    * @param declared the type name the place declares (a class of the models), AnyDeclared (object, an interface), undefined when not known (the root, untyped places)
    */
   object(o: Record<string, unknown>, depth: number, declared: string | undefined): void {
-    const model = this.models?.of(o);
-    if (model !== undefined) return this.model(o, model, depth, declared);
+    const models = this.models;
+    if (models !== undefined) {
+      const model = models.of(o);
+      if (model !== undefined) // the type id where the declared type is not its class (where it is not known: when the class extends another one, e.g. the elements of an array of animals)
+        return this.described(o, model, model.kept, (declared === undefined ? model.derived : declared !== model.typeName) ? model.typeName : undefined, depth);
+      if (models.hasLearned) { // a plain object of a class the models do not have, learned from a schema the decoder read (a newer server): the type id when it has $type
+        const typeName = o[TypeProperty];
+        const learned = typeName === undefined ? (declared === undefined ? undefined : models.learned(declared)) : typeof typeName === 'string' ? models.learned(typeName) : undefined;
+        if (learned !== undefined) return this.described(o, learned, undefined, typeof typeName === 'string' && hasOwn.call(o, TypeProperty) ? typeName : undefined, depth);
+      }
+    }
     let n = 0;
     for (const k in o) if (hasOwn.call(o, k)) n++;
     const start = this.pos;
@@ -309,21 +318,21 @@ export class Writer {
   }
 
   /**
-   * An instance of a model class: its properties as declared, then other own properties as they are. The type id where the declared type is not its class
-   * (where it is not known: when the class extends another one, e.g. the elements of an array of animals).
+   * An instance of a model class, or a plain object of a learned class: its properties as declared (the generated code of the plan), then other own properties: the ones the
+   * server has and the model does not (kept: their .NET names and declared types, as they came: Guids as bytes, TimeSpan as ticks...), the others as they are.
+   * @param typeName the type id to write first, undefined for none
    */
-  private model(o: Record<string, unknown>, model: ModelClass, depth: number, declared: string | undefined): void {
+  private described(o: Record<string, unknown>, cls: ModelClass | LearnedClass, kept: ReadonlyMap<string, KeptProperty> | undefined, typeName: string | undefined, depth: number): void {
     if (depth >= this.maxDepth) throw new MsgPackError(`The value is nested deeper than ${this.maxDepth} levels.`);
-    const typeId = declared === undefined ? model.derived : declared !== model.typeName;
-    const plan = planOf(model);
+    const plan = planOf(cls);
     const keys = Object.keys(o);
-    const extra = sameKeys(keys, plan.shape) ? undefined : this.extraKeys(o, keys, model, plan);
-    const max = (typeId ? 1 : 0) + plan.names.length + (extra?.length ?? 0), start = this.pos;
+    const extra = sameKeys(keys, plan.shape) ? undefined : this.extraKeys(o, keys, cls.fields, plan);
+    const max = (typeName !== undefined ? 1 : 0) + plan.names.length + (extra?.length ?? 0), start = this.pos;
     this.mapHeader(max); // one pass: the header for every property, made smaller for the undefined ones
     let count = 0;
-    if (typeId) {
+    if (typeName !== undefined) {
       this.u8(0xa0);
-      this.string(model.typeName);
+      this.string(typeName);
       count++;
     }
     if (this.generateCode && plan.generated === undefined) plan.generated = generateModelWriter(plan);
@@ -340,19 +349,26 @@ export class Writer {
     }
     if (extra !== undefined)
       for (let t = 0; t < extra.length; t++) {
-        this.string(extra[t]);
-        this.write(o[extra[t]], depth + 1);
+        const k = extra[t], property = kept?.get(k);
+        if (property === undefined) {
+          this.string(k);
+          this.write(o[k], depth + 1);
+        } else {
+          this.key(property.name);
+          if (property.type === undefined) this.write(o[k], depth + 1);
+          else writerOf(property.type)(this, o[k], depth + 1);
+        }
         count++;
       }
     if (count !== max) this.patchMapHeader(start, max, count);
   }
 
   /** The own properties the model does not have (e.g. one the server has and the models not yet). Keys without any are remembered: the next instance with them is not checked. */
-  private extraKeys(o: Record<string, unknown>, keys: string[], model: ModelClass, plan: ModelPlan): string[] | undefined {
+  private extraKeys(o: Record<string, unknown>, keys: string[], fields: ReadonlySet<string>, plan: ModelPlan): string[] | undefined {
     let extra: string[] | undefined, other = false;
     for (let t = 0; t < keys.length; t++) {
       const k = keys[t], v = o[k];
-      if (model.fields.has(k) || k === TypeProperty) continue;
+      if (fields.has(k) || k === TypeProperty) continue;
       if (v !== undefined && typeof v !== 'function') (extra ??= []).push(k);
       else other = true; // left out now, but such a key may have a value in the next instance: not a shape to remember
     }
@@ -671,12 +687,13 @@ function generateModelWriter(plan: ModelPlan): WriteProperties | null {
   }
 }
 
-const plans = new WeakMap<ModelClass, ModelPlan>();
+const plans = new WeakMap<ModelClass | LearnedClass, ModelPlan>();
 
-function planOf(model: ModelClass): ModelPlan {
+function planOf(model: ModelClass | LearnedClass): ModelPlan {
   let plan = plans.get(model);
   if (plan === undefined) {
-    plan = { names: model.properties.map((p) => p.field), writers: model.properties.map((p) => writerOf(p.type)), encoded: model.properties.map((p) => encode(p.name)) };
+    const properties: readonly { name: string; field: string; type?: TypeExpr }[] = model.properties;
+    plan = { names: properties.map((p) => p.field), writers: properties.map((p) => (p.type === undefined ? writeAsIs : writerOf(p.type))), encoded: properties.map((p) => encode(p.name)) };
     plans.set(model, plan);
   }
   return plan;
