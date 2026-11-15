@@ -8,6 +8,7 @@ The `LsMsgPack.Core` package includes analyzers, so every project that reference
 - **Classes of other projects** that no analyzer checked (LSMP008).
 - **JSON document types** (`JsonElement`, `JsonNode`, Json.NET's `JObject`...), which the serializers don't write or read (LSMP009).
 - **Public fields that aren't serialized** (LSMP010): by default the serializers only write fields that opt in with an attribute.
+- **Extension data members the serializers refuse** (LSMP011): two in one class, or `[JsonExtensionData]` on a type they can't fill.
 
 The warnings show while you type in Visual Studio, VS Code (C# Dev Kit) and Rider, and in the build output.
 
@@ -208,3 +209,25 @@ The serializers write properties, and fields only when they opt in (the default 
 - writing it changes nothing or fails: a readonly field that neither a reader fills (a collection) nor the constructor a reader calls takes, a field of a type that is never written (`Type`, `MemberInfo`, delegates) or of a JSON document type.
 
 The code fixes add `[DataMember]` (from `System.Runtime.Serialization`; outside a `[DataContract]` class it only opts the field in), or make the field an auto-property: `{ get; set; }`, `{ get; }` for a readonly field, with its initializer and attributes (an attribute that can't be on a property gets the `field:` target). A property breaks code that passes the field by `ref` or changes a struct it holds in place (`model.Position.X = 1`), so check the uses first.
+
+## Extension data
+
+### LSMP011: Invalid extension data member
+
+```csharp
+public class Order
+{
+  public int Id { get; set; }
+  [JsonExtensionData]
+  public Dictionary<string, JsonElement> Extra { get; set; }   // LSMP011: the serializers can't fill a dictionary of JsonElement
+}
+
+public class Invoice : Document                                 // Document has a MsgPackExtensionData too
+{
+  public MsgPackExtensionData Kept { get; set; }                // LSMP011: a class has one such member
+}
+```
+
+A class keeps the members of the data it doesn't have in one member (see [ExtensionData.md](ExtensionData.md)): a `MsgPackExtensionData`, or a dictionary of string to object marked with `[MsgPackExtensionData]` or `[JsonExtensionData]` (`IDictionary<string, object>`, `Dictionary<string, object>`, or a class implementing it with a public parameterless constructor). The serializers throw a `MsgPackException` for a class with two such members (also when one is in a base class) and for a marked member of another type, such as System.Text.Json's `Dictionary<string, JsonElement>` or `JsonObject`. A class shared with System.Text.Json can use `Dictionary<string, object>`: both serializers fill it.
+
+It is reported on the members the class declares itself, for the serialized classes. A class that only inherits such members is not reported again.

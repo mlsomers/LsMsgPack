@@ -5,6 +5,7 @@ using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.IO;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
@@ -454,6 +455,159 @@ namespace LsMsgPack.Writing
       }
       w.Pos = end;
       w.PatchArrayHeader(at, props.Length, count);
+    }
+
+    /// <summary>
+    /// <see cref="Write"/> of a class with an extension data member (<see cref="TypeKind.Extended"/>: ExtendedHandler, Serializer.WriteBoxed; <see cref="Write"/> stays as it is):
+    /// its properties by the generated or compiled code where the plan has it (counted and compiled as for <see cref="Write"/>), otherwise by the runtime's writers, then the values it keeps
+    /// (LsMsgPackDebug: SerializeComplex, SerializeAsArray). The kept names get their ids before the values (the order of the names in the schema: they all go to this type's entry).
+    /// </summary>
+    internal void WriteExtended(WriteContext c, object value, bool typeId, FullPropertyInfo assignedTo, ExtensionDataMember extension)
+    {
+      byte[][] keys = c.BeginObject(this, out FullPropertyInfo[] infos);
+      GeneratedWritePlan generated = GeneratedPlan;
+      if (generated is null)
+        CountWrite(c.Serializer);
+      MsgPackWriter w = c.W;
+      PropWriter[] props = Props;
+      if (_array)
+      {
+        if (typeId)
+        {
+          w.MapHeader(2);
+          w.String(string.Empty);
+          c.WriteTypeId(this, assignedTo);
+          w.String(MsgPackOptions.ContentKey);
+        }
+        else
+          SerializationRules.ThrowIfUnresolvableAsArray(Type, assignedTo);
+        List<KeptEntry> kept = Kept(c, value, infos, extension, true);
+        byte[][] byPosition = null; // the kept values at their positions after the properties
+        if (kept != null)
+        {
+          int length = props.Length;
+          for (int t = 0; t < kept.Count; t++)
+            length = Math.Max(length, kept[t].Position + 1);
+          byPosition = new byte[length - props.Length][];
+          for (int t = 0; t < kept.Count; t++)
+            byPosition[kept[t].Position - props.Length] = kept[t].Bytes;
+        }
+        int total = props.Length + (byPosition is null ? 0 : byPosition.Length);
+
+        c.EnterContainer();
+        if (_trim)
+        {
+          int at = w.ReserveArrayHeader(total);
+          int count = 0;
+          int end;
+          if (generated != null)
+            count = generated.Code.WriteBoxed(c, value, null, infos, generated, out end); // the number of values up to the last that is not nil, and the position after it
+          else
+          {
+            end = w.Pos;
+            for (int t = 0; t < props.Length; t++)
+            {
+              int start = w.Pos;
+              if (!props[t].Write(c, value, null, infos[t]))
+                w.Nil();
+              if (w.Pos != start + 1 || w.Buf[start] != 0xC0) // nil is the only value of one byte 0xC0
+              {
+                count = t + 1;
+                end = w.Pos;
+              }
+            }
+          }
+          if (byPosition != null)
+          {
+            w.Pos = end;
+            for (int t = count; t < props.Length; t++) // the nils taken back, before a kept value
+              w.Nil();
+            for (int t = props.Length; t < total; t++)
+            {
+              byte[] bytes = byPosition[t - props.Length];
+              if (bytes is null)
+                w.Nil();
+              else
+              {
+                w.Raw(bytes); // never nil (ExtensionDataMember.ToWrite leaves it out)
+                count = t + 1;
+                end = w.Pos;
+              }
+            }
+          }
+          w.Pos = end;
+          w.PatchArrayHeader(at, total, count);
+        }
+        else
+        {
+          w.ArrayHeader(total);
+          if (generated != null)
+          {
+            if (generated.Unrolled)
+              generated.Code.WriteUnrolledBoxed(c, value, infos, generated);
+            else
+              generated.Code.WriteBoxed(c, value, null, infos, generated, out int end);
+          }
+          else
+          {
+            for (int t = 0; t < props.Length; t++)
+              if (!props[t].Write(c, value, null, infos[t]))
+                w.Nil();
+          }
+          for (int t = props.Length; t < total; t++)
+          {
+            byte[] bytes = byPosition[t - props.Length];
+            if (bytes is null)
+              w.Nil();
+            else
+              w.Raw(bytes);
+          }
+        }
+        c.LeaveContainer();
+        return;
+      }
+
+      List<KeptEntry> entries = Kept(c, value, infos, extension, false); // before the type id: the names go to this type's entry either way, so the schema is the same as LsMsgPackDebug's
+      int max = props.Length + 1 + (entries is null ? 0 : entries.Count);
+      int mapAt = w.ReserveMapHeader(max);
+      int written = 0;
+      if (typeId)
+      {
+        w.String(string.Empty);
+        c.WriteTypeId(this, assignedTo);
+        written++;
+      }
+      else
+        SerializationRules.ThrowIfUnresolvableWithSchema(Type, assignedTo, c.UsesSchema);
+      c.EnterContainer();
+      if (generated != null)
+        written += generated.Code.WriteBoxed(c, value, keys, infos, generated, out int end); // WriteUnrolledMap or Write: decided there
+      else
+      {
+        for (int t = 0; t < props.Length; t++)
+          if (props[t].Write(c, value, keys[t], infos[t]))
+            written++;
+      }
+      if (entries != null)
+      {
+        for (int t = 0; t < entries.Count; t++)
+        {
+          c.Serializer.WriteId(c, entries[t].Key);
+          w.Raw(entries[t].Bytes);
+          written++;
+        }
+      }
+      c.LeaveContainer();
+      w.PatchMapHeader(mapAt, max, written);
+    }
+
+    /// <summary>
+    /// The values the object keeps (see ExtensionDataMember.ToWrite), with the indexed schema at the positions of their names in the type's entry. Null for none.
+    /// </summary>
+    private List<KeptEntry> Kept(WriteContext c, object value, FullPropertyInfo[] infos, ExtensionDataMember extension, bool array)
+    {
+      List<KeptEntry> kept = extension.ToWrite(value, infos, array, c.UsesSchema, c.Serializer.Options);
+      return kept != null && c.UsesSchema ? c.KeptIds(this, kept) : kept;
     }
 
     /// <summary>

@@ -125,7 +125,11 @@ namespace LsMsgPack.Reading
         }
 
         if (prop is null)
+        {
+          if (plan.Extended) // a class with extension data keeps it: LsMsgPack.Core reads the object again (only an object that has such a member)
+            return Restart(c, start, depth, assignedTo);
           c.R.Skip(c.Depth); // not a property of this type (removed, or ignored here)
+        }
         else if (prop.GeneratedId < 0 || !plan.Code.ReadValueBoxed(c, result, prop.GeneratedId, plan.GeneratedRead)) // the code of an older source generator (version 1, 2): a call per value; the runtime's when it does not read the value
           prop.Read(c, result);
       }
@@ -177,7 +181,11 @@ namespace LsMsgPack.Reading
         for (int t = 0; t < items; t++)
         {
           if (t >= props.Length || props[t] is null)
+          {
+            if (plan.Extended && c.R.Peek() != 0xC0) // a class with extension data keeps it (not a nil: a value left out), see Read
+              return Restart(c, start, depth, assignedTo);
             c.R.Skip(c.Depth); // not a property of this type (added by a newer writer, or ignored here)
+          }
           else if (c.R.TryReadNil())
             props[t].ReadNil(result);
           else
@@ -315,7 +323,7 @@ namespace LsMsgPack.Reading
       if (count < 0)
       {
         int items = c.R.TryReadArrayHeader(); // ObjectLayout.Array
-        if (items < 0 || Plan is null || Plan.WithValues != null)
+        if (items < 0 || Plan is null || Plan.WithValues != null || Plan.Extended) // extension data: Core keeps and reports what the class does not have (no restart halfway, which would report the first values twice)
           return Slow(c, start, assignedTo);
         return ReadPositionalReporting(c, Plan, items, start, assignedTo);
       }
@@ -328,7 +336,7 @@ namespace LsMsgPack.Reading
         if (type is null)
           return Slow(c, start, assignedTo); // also a name that is not found: LsMsgPack.Core reports it
         plan = type == typeof(T) ? Plan : _serializer.GetReadPlan(type);
-        if (plan is null || plan.WithValues != null || !typeof(T).IsAssignableFrom(type)) // LsMsgPack's way refuses a type that is not assignable
+        if (plan is null || plan.WithValues != null || plan.Extended || !typeof(T).IsAssignableFrom(type)) // LsMsgPack's way refuses a type that is not assignable
           return Slow(c, start, assignedTo);
         if (type != typeof(T) && _serializer.Options._typeGuard != null) // the type guard, before the instance is created (see docs/security.md)
           TypeResolver.ThrowIfNotAllowed(type, typeof(T), assignedTo, _serializer.Options, type);
@@ -346,7 +354,7 @@ namespace LsMsgPack.Reading
       else
       {
         plan = Plan;
-        if (plan is null || plan.WithValues != null) // abstract or not an object with properties
+        if (plan is null || plan.WithValues != null || plan.Extended) // abstract or not an object with properties; extension data: Core keeps and reports it
           return Slow(c, start, assignedTo);
       }
 
@@ -584,6 +592,12 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal readonly bool ByRef;
 
+    /// <summary>
+    /// The class keeps the members of the data it does not have (an extension data member, Core's ExtensionDataMember): the loops read it until such a member, then restart the object
+    /// in LsMsgPack.Core (<see cref="ObjectReader{T}"/>'s Restart), which keeps them; the reporting paths leave it to Core at once. No generated or compiled code, no struct by reference.
+    /// </summary>
+    internal readonly bool Extended;
+
     private readonly bool _caseInsensitive;
 
     internal bool CaseInsensitive { get { return _caseInsensitive; } }
@@ -605,6 +619,7 @@ namespace LsMsgPack.Reading
       _infos = infos;
       _caseInsensitive = serializer.Options._propertyNameCaseInsensitive;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
+      Extended = ExtensionDataMember.Of(type) != null;
       Props = new PropReader[infos.Length];
       ObjectConstructor constructor = ObjectConstructor.Of(type);
       if (constructor.CreatesWith(serializer.Options._objectCreation))
@@ -634,7 +649,7 @@ namespace LsMsgPack.Reading
       }
       _create = Creator(type, serializer.Options._objectCreation, generated);
 
-      GeneratedObjectCode code = serializer.GeneratedCode(type);
+      GeneratedObjectCode code = Extended ? null : serializer.GeneratedCode(type); // its loops restart at an unknown member, the generated ones skip it
       if (code != null && (code.Capabilities & (GeneratedCapabilities.ReadValue | GeneratedCapabilities.ReadMap)) != 0)
       {
         Code = code;
@@ -648,7 +663,7 @@ namespace LsMsgPack.Reading
         if (Map && !_caseInsensitive && serializer.InUnrolledOrder(code, infos)) // keys ignoring case stay with the loop (FindOrMatchIgnoringCase), as for the compiled readers
           NamesInOrder = Props;
       }
-      if (type.IsValueType && _create.Target is ICreator creator && creator.GetType().IsGenericType && creator.GetType().GetGenericTypeDefinition() == typeof(StructCreator<>))
+      if (type.IsValueType && !Extended && _create.Target is ICreator creator && creator.GetType().IsGenericType && creator.GetType().GetGenericTypeDefinition() == typeof(StructCreator<>))
       {
         bool byRef = true;
         for (int t = Props.Length - 1; t >= 0; t--)
@@ -658,7 +673,7 @@ namespace LsMsgPack.Reading
 
       for (int t = Props.Length - 1; t >= 0; t--)
         Props[t].CompiledId = t;
-      if (Code is null && serializer.CompileReadersAfter >= 0) // not with generated code: it is used
+      if (Code is null && !Extended && serializer.CompileReadersAfter >= 0) // not with generated code: it is used
       {
         if (serializer.CompileReadersAfter == 0)
           Compile();

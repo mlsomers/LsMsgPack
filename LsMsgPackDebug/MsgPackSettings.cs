@@ -145,13 +145,10 @@ namespace LsMsgPackDebug
       return false;
     }
 
-    internal override byte[] SerializePlainValue(object value, Type type, EndianAction endianAction)
+    internal override byte[] SerializePlainValue(object value, Type type, EndianAction endianAction, bool byNames)
     {
       MsgPackSettings plain = Clone();
-      plain._useInexedSchema = false;
-      plain._writeSchemaReference = false;
-      plain._endianAction = endianAction;
-      plain._differences = null;
+      plain.WithoutSchema(endianAction, byNames);
       return MsgPackSerializer.Serialize(value, type, plain);
     }
 

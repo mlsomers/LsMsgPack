@@ -152,6 +152,76 @@ public class Model
 " + Write), "LSMP004 Thing", "LSMP004 Extra");
     }
 
+    /// <summary>
+    /// The extension data member (docs/ExtensionData.md) is never a property in the data: a dictionary of object (LSMP004 otherwise), an initialized container (LSMP001 otherwise),
+    /// and the types of its values are not models; the other members are checked.
+    /// </summary>
+    [TestMethod]
+    public void ExtensionData_TheMemberIsNotChecked()
+    {
+      AssertDiagnostics(Analyze(Usings + @"
+public class Holder
+{
+  public int Id { get; set; }
+  public LsMsgPack.MsgPackExtensionData Kept { get; set; } = new LsMsgPack.MsgPackExtensionData();
+}
+public class Model
+{
+  [System.Text.Json.Serialization.JsonExtensionData]
+  public IDictionary<string, object> Extra { get; set; } = new Dictionary<string, object>();
+  public Holder Holder { get; set; }
+  public object Thing { get; set; }
+}
+" + Write), "LSMP004 Thing");
+    }
+
+    /// <summary>
+    /// LSMP011: what Core's ExtensionDataMember refuses: a second member (also next to one of a base class: reported on the class's own), a marked member of a type it can't fill.
+    /// Not: one member, a non-public MsgPackExtensionData without the attribute (not one), a class of its own implementing the dictionary, a class that only inherits a valid one.
+    /// </summary>
+    [TestMethod]
+    public void ExtensionData_InvalidMembers()
+    {
+      AssertDiagnostics(Analyze(Usings + @"
+public class Document
+{
+  public int Id { get; set; }
+  public LsMsgPack.MsgPackExtensionData Kept { get; set; }
+}
+public class Invoice : Document
+{
+  public LsMsgPack.MsgPackExtensionData More { get; set; }
+}
+public class Receipt : Document { public string Number { get; set; } }
+public class Order
+{
+  [System.Text.Json.Serialization.JsonExtensionData]
+  public Dictionary<string, System.Text.Json.JsonElement> Extra { get; set; }
+}
+public class Two
+{
+  public LsMsgPack.MsgPackExtensionData A { get; set; }
+  [LsMsgPack.MsgPackExtensionData]
+  public Dictionary<string, object> B;
+}
+public class Bag : Dictionary<string, object> { }
+public class Custom
+{
+  [LsMsgPack.MsgPackExtensionData]
+  public Bag Extra { get; set; }
+  private LsMsgPack.MsgPackExtensionData Hidden { get; set; }
+}
+public class Model
+{
+  public Invoice Invoice { get; set; }
+  public Receipt Receipt { get; set; }
+  public Order Order { get; set; }
+  public Two Two { get; set; }
+  public Custom Custom { get; set; }
+}
+" + Write), "LSMP011 More", "LSMP011 Extra", "LSMP011 A", "LSMP011 B");
+    }
+
     [TestMethod]
     public void LeftOut_PublicFieldsThatWouldRoundTrip()
     {

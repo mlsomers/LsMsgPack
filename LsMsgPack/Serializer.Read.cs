@@ -390,6 +390,7 @@ namespace LsMsgPack
             return entries;
           break;
         case TypeKind.Complex:
+        case TypeKind.Extended: // its plan reads it until a member the class does not have (ReadPlan.Extended), Core keeps those
           if (type == typeof(object)) // an object with a type id is read by the plan of its type (ObjectReader.Derived), anything else as LsMsgPack does (Slow)
             return new ObjectReader<object>(this);
           if (type.IsValueType ? StructPlans(type) : !type.ContainsGenericParameters)
@@ -495,7 +496,8 @@ namespace LsMsgPack
       if (_readPlans.TryGetValue(type, out ReadPlan plan))
         return plan;
 
-      if (type.IsAbstract || type.IsInterface || type.ContainsGenericParameters || GetTypeInfo(type).Kind != TypeKind.Complex || (type.IsValueType && !StructPlans(type)))
+      TypeKind kind = GetTypeInfo(type).Kind;
+      if (type.IsAbstract || type.IsInterface || type.ContainsGenericParameters || (kind != TypeKind.Complex && kind != TypeKind.Extended) || (type.IsValueType && !StructPlans(type)))
         return null;
 
       // The properties LsMsgPack sets: names mode FullPropertyInfo.GetSerializedProps (their ids are the names without custom resolvers), the schema binds the same ones by name

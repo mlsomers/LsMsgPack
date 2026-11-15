@@ -719,6 +719,42 @@ namespace LsMsgPackUnitTests
       Assert.IsEmpty(differences, string.Join("\n", differences.Take(40)));
     }
 
+    private static IEnumerable<object[]> ExtensionDataSettings()
+    {
+      foreach (object[] settings in Settings())
+        yield return new object[] { settings[0], settings[1], settings[2], settings[3], SchemaVersion.Names, false };
+      foreach (object[] settings in DescribedSettings())
+        yield return new object[] { settings[0], settings[1], settings[2], settings[3], SchemaVersion.Described, false };
+      foreach (SchemaMode mode in Enum.GetValues(typeof(SchemaMode)))
+        yield return new object[] { EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, ObjectLayout.Array, SchemaVersion.Described, true };
+    }
+
+    /// <summary>
+    /// Extension data (ExtensionDataTests): the kept values written after the properties, their names in the schema, by position without it; read back (kept again) the same.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(ExtensionDataSettings))]
+    public void SameBytesAndValuesExtensionData(EndianAction endian, bool compact, SchemaMode mode, ObjectLayout layout, SchemaVersion version, bool trim)
+    {
+      MsgPackSettings ls = new MsgPackSettings() { SchemaVersion = version, TrimTrailingNulls = trim, ReadErrors = ReadErrorHandling.ReportAndContinue };
+      Configure(ls, endian, compact, mode, layout);
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions() { SchemaVersion = version, TrimTrailingNulls = trim, ReadErrors = ReadErrorHandling.ReportAndContinue };
+      Configure(ltOptions, endian, compact, mode, layout);
+
+      List<string> differences = new List<string>();
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
+      {
+        int n = 0;
+        foreach (object value in ExtensionDataTests.Corpus())
+        {
+          n++;
+          foreach (Type declared in new[] { value.GetType(), typeof(object) })
+            Compare($"{which} #{n} {value.GetType().Name} as {declared.Name}", value, declared, ls, lt, differences);
+        }
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences.Take(40)));
+    }
+
     /// <summary>
     /// Converters (MsgPackOptions.Converters and [MsgPackConverter]): the surrogates, type ids of converted values declared as object, classes deriving from a converted class, polymorphic surrogates.
     /// </summary>
@@ -1001,6 +1037,7 @@ namespace LsMsgPackUnitTests
       if (t.FullName.StartsWith("System.DateOnly", StringComparison.Ordinal) || t.FullName.StartsWith("System.TimeOnly", StringComparison.Ordinal)) return t.Name + ":" + o;
       if (o is MpExt ext) return "ext(" + ext.TypeSpecifier + ":" + BitConverter.ToString((byte[])ext.Value) + ")";
       if (o is LsMsgPack.Extensions.MsgPackExtension lext) return "ext(" + lext.TypeCode + ":" + BitConverter.ToString(lext.Data) + ")";
+      if (o is MsgPackExtensionData kept) return "kept{" + string.Join(",", kept.Names.Select(k => kept.TryGetRaw(k, out byte[] raw) ? k + "=" + BitConverter.ToString(raw) : k)) + "|" + string.Join(",", kept.Positions.Select(k => kept.TryGetRaw(k, out byte[] raw) ? k + "=" + BitConverter.ToString(raw) : k.ToString(CultureInfo.InvariantCulture))) + "}";
       if (o is IEnumerable en)
       {
         List<string> parts = new List<string>();

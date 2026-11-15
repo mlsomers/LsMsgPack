@@ -152,6 +152,25 @@ namespace LsMsgPack
       Add(ClassOf(parent), DifferenceKind.ExtraValue, null, position, parent);
     }
 
+    /// <summary>
+    /// A property of the data the class does not have, kept by its extension data member (by name, or by <paramref name="position"/> when <paramref name="name"/> is null).
+    /// </summary>
+    internal void KeptProperty(object parent, string name, int position)
+    {
+      Add(ClassOf(parent), DifferenceKind.KeptProperty, name is null ? null : Cut(name), name is null ? position : -1, parent);
+    }
+
+    /// <summary>
+    /// <see cref="SkipInvalidValue(object, FullPropertyInfo, Exception)"/> of a value that could not be kept as extension data (an array or map with version 1 of the schema), by the name in the data.
+    /// </summary>
+    internal bool SkipInvalidValue(object parent, string name, Exception ex)
+    {
+      if (ReferenceEquals(ex, _thrown) || !IsNotConverted(ex))
+        return false;
+      Difference difference = Add(ClassOf(parent), DifferenceKind.InvalidValue, Cut(name), -1, parent);
+      return Continue(difference, ex);
+    }
+
     /// <param name="type">The class without a schema entry</param>
     /// <param name="assignedTo">The property the object is assigned to, null for the root and the elements of collections</param>
     /// <param name="writerClasses">The writer's classes the class was paired with (more than one, so none was used), null when it was not paired</param>
@@ -419,7 +438,7 @@ namespace LsMsgPack
         List<object> samples = InGraphOrder(difference, found);
         report.Append("\r\n- ").Append(difference);
         AppendPaths(report, difference, samples, found);
-        if (difference.Kind == DifferenceKind.UnknownProperty)
+        if (difference.Kind == DifferenceKind.UnknownProperty || (difference.Kind == DifferenceKind.KeptProperty && difference.Name != null))
           AppendHints(report, difference, samples.Count > 0 ? samples[0] : null, walker, defaultsListed.Add(difference.Class));
         else if (difference.Kind == DifferenceKind.UnresolvedType)
           report.Append("\r\n    if the class exists here, register its assembly: MsgPackTypes.CacheAssemblyTypes(typeof(").Append(ShortName(difference.Name)).Append("))");

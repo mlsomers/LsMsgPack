@@ -38,7 +38,14 @@ namespace LsMsgPack
     /// A value that was read but could not be converted into its property (a string where an int is declared, a number too large for it, a name that is not a value of the enum...).
     /// The property keeps what the constructor gave it (<see cref="Difference.Error"/> is the first exception). Values of collections fail the property that holds the collection.
     /// </summary>
-    InvalidValue
+    InvalidValue,
+
+    /// <summary>
+    /// A property in the data that the class does not have, kept by its extension data member (a <see cref="MsgPackExtensionData"/> or a <see cref="MsgPackExtensionDataAttribute"/> dictionary,
+    /// docs/ExtensionData.md) and written again when the object is written. Not an error: nothing was lost. <see cref="Difference.Position"/> is the position in the array for a value kept by position
+    /// (after the last property of an object written as an array without the indexed schema; <see cref="Difference.Name"/> is null then).
+    /// </summary>
+    KeptProperty
   }
 
   /// <summary>
@@ -70,7 +77,7 @@ namespace LsMsgPack
     public string Name { get; }
 
     /// <summary>
-    /// The position of the value in the array (<see cref="DifferenceKind.ExtraValue"/>), -1 otherwise.
+    /// The position of the value in the array (<see cref="DifferenceKind.ExtraValue"/>, a <see cref="DifferenceKind.KeptProperty"/> kept by position), -1 otherwise.
     /// </summary>
     public int Position { get; }
 
@@ -124,6 +131,8 @@ namespace LsMsgPack
             return Name is null ? type : string.Concat(type, " (", Name, ")");
           case DifferenceKind.UnresolvedType:
             return string.Concat(type, " (\"", Name, "\")");
+          case DifferenceKind.KeptProperty when Name is null:
+            return string.Concat(type, "[", Position.ToString(CultureInfo.InvariantCulture), "]");
           default:
             return string.Concat(type, ".", Name);
         }
@@ -149,6 +158,8 @@ namespace LsMsgPack
           return _skipped ? "type not found, the object was skipped" : string.Concat("type not found, read as ", Class is null ? "?" : Class.Name);
         case DifferenceKind.InvalidValue:
           return string.Concat("could not be read (", Error is null ? "?" : Error.Message, "), skipped");
+        case DifferenceKind.KeptProperty:
+          return Name is null ? "value after the last property, kept as extension data" : "not a property of the class, kept as extension data";
         default:
           return "not a property of the class, skipped";
       }

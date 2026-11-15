@@ -589,6 +589,20 @@ namespace LsMsgPack.TypeResolving.Types
       return IdIn(def, name);
     }
 
+    /// <summary>
+    /// Writing: the id of a name an object of the type keeps as extension data (see ExtensionDataMember): its position in the type's entry, added after the names the entry has
+    /// (as the names of a collection's properties are, see <see cref="IdIn"/>).
+    /// </summary>
+    internal object IdOfKeptName(Type type, string name, MsgPackOptions settings)
+    {
+      ComplexTypeDef def = GetComplex(type, settings);
+      if (def.IdByName.TryGetValue(name, out int id))
+        return BoxedId(id);
+      if (IsFrozen)
+        throw SchemaGrowthException.Instance;
+      return BoxedId(def.AddProp(name));
+    }
+
     private object IdIn(ComplexTypeDef def, string name)
     {
       if (def.IdByName.TryGetValue(name, out int id))
@@ -755,7 +769,7 @@ namespace LsMsgPack.TypeResolving.Types
       for (int t = 0; t < ByTypeId.Count; t++)
       {
         ComplexTypeDef def = ByTypeId[t];
-        ComplexTypeDef defCopy = new ComplexTypeDef() { Type = def.Type, TypeName = def.TypeName, TypeId = def.TypeId, Props = new List<string>(def.Props), ResolveError = def.ResolveError, ValueEntries = def.ValueEntries, ContentEntry = def.ContentEntry };
+        ComplexTypeDef defCopy = new ComplexTypeDef() { Type = def.Type, TypeName = def.TypeName, TypeId = def.TypeId, Props = new List<string>(def.Props), ResolveError = def.ResolveError, ValueEntries = def.ValueEntries, ContentEntry = def.ContentEntry, TypeOffsets = def.TypeOffsets, ContentTypeOffset = def.ContentTypeOffset, SchemaRaw = def.SchemaRaw, SchemaSettings = def.SchemaSettings };
         copy.ByTypeId.Add(defCopy);
         copies.Add(def, defCopy);
       }
@@ -836,6 +850,41 @@ namespace LsMsgPack.TypeResolving.Types
     /// A schema of version 2 read from the data: the entry of the objects the content of this entry holds (<c>["@", type]</c>: the elements of a collection), -1 for none.
     /// </summary>
     internal int ContentEntry = -1;
+
+    /// <summary>
+    /// A schema of version 2 read from the data: per property (the positions of <see cref="Props"/>) where its type starts in <see cref="SchemaRaw"/> (-1 when not described),
+    /// null for version 1 or an entry made here. For the values a reader keeps as extension data (KeptValues.WithoutSchema: the objects in them by names), parsed when needed (<see cref="PropType"/>).
+    /// </summary>
+    internal int[] TypeOffsets;
+
+    /// <summary>
+    /// A schema of version 2 read from the data: where the type of the content starts (<c>["@", type]</c>), -1 for none.
+    /// </summary>
+    internal int ContentTypeOffset = -1;
+
+    /// <summary>
+    /// A schema of version 2 read from the data: its bytes and the settings of their byte order (null for the specification's).
+    /// </summary>
+    internal byte[] SchemaRaw;
+    internal MsgPackOptions SchemaSettings;
+
+    /// <summary>
+    /// A schema of version 2: the types are described (<see cref="PropType"/>).
+    /// </summary>
+    internal bool IsDescribed { get { return TypeOffsets != null; } }
+
+    /// <summary>
+    /// The type of the property at the position (an entry index, a kind or <c>[kind, ...]</c>, see SchemaBytes.TypeAt), null when not described.
+    /// </summary>
+    internal object PropType(int position)
+    {
+      return TypeOffsets is null || position < 0 || position >= TypeOffsets.Length ? null : SchemaBytes.TypeAt(SchemaRaw, TypeOffsets[position], SchemaSettings);
+    }
+
+    /// <summary>
+    /// The type of the content (<c>["@", type]</c>), null for none.
+    /// </summary>
+    internal object ContentType { get { return SchemaBytes.TypeAt(SchemaRaw, ContentTypeOffset, SchemaSettings); } }
 
     /// <summary>
     /// The properties (of the session) <see cref="Props"/> was made of, null for an entry read from the data or copied: see <see cref="IndexedSchemaTypeResolver.TryAssignIds"/>.

@@ -453,7 +453,7 @@ namespace LsMsgPack.Writing
   /// <summary>
   /// A class, or a struct (by reference when the plan allows it, see ObjectPlan.WriteStruct, otherwise boxed once: the plans read the properties of the box, see StructPropWriter).
   /// </summary>
-  internal sealed class ObjectHandler<T> : ValueHandler<T>, ICycleTracking
+  internal sealed class ObjectHandler<T> : ValueHandler<T>, ICycleTracking, IExtensionDataWriting
   {
     private readonly Serializer _serializer;
     private ObjectPlan _names;
@@ -497,6 +497,14 @@ namespace LsMsgPack.Writing
       return new CycleHandler<T>(this, _serializer);
     }
 
+    /// <summary>
+    /// Created here, so NativeAOT has the instantiation wherever it has this one.
+    /// </summary>
+    public object Extended(ExtensionDataMember extension)
+    {
+      return new ExtendedHandler<T>(this, _serializer, extension);
+    }
+
     [MethodImpl(MethodImplOptions.NoInlining)] // keeps Write small
     private void WriteDerived(WriteContext c, object value, FullPropertyInfo assignedTo)
     {
@@ -530,6 +538,63 @@ namespace LsMsgPack.Writing
   /// <see cref="MsgPackOptions.IgnoreCycles"/>: the handler of a class, an object that is already being written is nil (LsMsgPack: SerializeTracked).
   /// A handler of its own around <see cref="ObjectHandler{T}"/>, so the one without the option keeps its size (whether it is inlined into the loops of collections decides their speed).
   /// </summary>
+  /// <summary>
+  /// An object handler for a class with an extension data member (<see cref="ExtendedHandler{T}"/>).
+  /// </summary>
+  internal interface IExtensionDataWriting
+  {
+    /// <returns>An <see cref="ExtendedHandler{T}"/> around this handler</returns>
+    object Extended(ExtensionDataMember extension);
+  }
+
+  /// <summary>
+  /// A class (or struct, boxed once) with an extension data member (<see cref="TypeKind.Extended"/>): its plan's <see cref="ObjectPlan.WriteExtended"/> writes the properties
+  /// (by its compiled or generated code, like <see cref="ObjectPlan.Write"/>) and then the values the object keeps. Tracks the objects itself with <see cref="Serializer.IgnoreCycles"/>
+  /// (no <see cref="CycleHandler{T}"/> around it). A derived type goes through Serializer.WriteBoxed, as with <see cref="ObjectHandler{T}"/>.
+  /// </summary>
+  internal sealed class ExtendedHandler<T> : ValueHandler<T>
+  {
+    private readonly ObjectHandler<T> _inner;
+    private readonly Serializer _serializer;
+    private readonly ExtensionDataMember _extension;
+    private ObjectPlan _names;
+    private ObjectPlan _schema;
+
+    internal ExtendedHandler(ObjectHandler<T> inner, Serializer serializer, ExtensionDataMember extension)
+    {
+      _inner = inner;
+      _serializer = serializer;
+      _extension = extension;
+    }
+
+    internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
+    {
+      object item = value; // a struct is boxed once: WriteExtended reads the properties of the box (StructPropWriter)
+      if (!typeof(T).IsValueType && item.GetType() != typeof(T))
+      {
+        _inner.Write(c, value, assignedTo); // a derived type: its own plan, through WriteBoxed
+        return;
+      }
+      bool tracked = !typeof(T).IsValueType && _serializer.IgnoreCycles;
+      if (tracked && !c.EnterObject(item))
+      {
+        c.W.Nil();
+        return;
+      }
+      ObjectPlan plan = c.Mode == IdMode.Names
+        ? _names ?? (_names = _serializer.Plan(typeof(T), true))
+        : _schema ?? (_schema = _serializer.Plan(typeof(T), false));
+      plan.WriteExtended(c, item, false, assignedTo, _extension);
+      if (tracked)
+        c.LeaveObject();
+    }
+
+    internal override bool IncludeByDefault(T value, FullPropertyInfo info)
+    {
+      return _inner.IncludeByDefault(value, info);
+    }
+  }
+
   internal sealed class CycleHandler<T> : ValueHandler<T>
   {
     private readonly ObjectHandler<T> _inner;

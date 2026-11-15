@@ -1,5 +1,6 @@
 ﻿using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
+using LsMsgPack.TypeResolving.Types;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -781,9 +782,31 @@ namespace LsMsgPack
     /// </summary>
     /// <param name="type">The declared type of the value</param>
     /// <param name="endianAction">The byte order of the schema</param>
-    internal virtual byte[] SerializePlainValue(object value, Type type, EndianAction endianAction)
+    internal byte[] SerializePlainValue(object value, Type type, EndianAction endianAction)
+    {
+      return SerializePlainValue(value, type, endianAction, false);
+    }
+
+    /// <param name="byNames">Objects as maps keyed by their names (<see cref="ObjectLayout.Map"/>), whatever the layout of these settings (a value kept as extension data, see KeptValues)</param>
+    internal virtual byte[] SerializePlainValue(object value, Type type, EndianAction endianAction, bool byNames)
     {
       return null;
+    }
+
+    /// <summary>
+    /// For <see cref="SerializePlainValue(object, Type, EndianAction, bool)"/> on a copy: without the indexed schema, also when these are the settings of a schema session
+    /// (whose resolvers include the session's <see cref="IndexedSchemaTypeResolver"/>), without the differences of a read.
+    /// </summary>
+    internal void WithoutSchema(EndianAction endianAction, bool byNames)
+    {
+      _useInexedSchema = false;
+      _writeSchemaReference = false;
+      _endianAction = endianAction;
+      _differences = null;
+      if (byNames)
+        _objectLayout = ObjectLayout.Map;
+      _typeResolvers = Array.FindAll(_typeResolvers, r => !(r is IndexedSchemaTypeResolver));
+      _propertyNameResolvers = Array.FindAll(_propertyNameResolvers, r => !(r is IndexedSchemaTypeResolver));
     }
 
     /// <summary>

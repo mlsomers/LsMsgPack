@@ -1001,6 +1001,48 @@ namespace ConvMember
       Assert.Contains("global::ConvMember.StampDto", code, "the surrogate is described");
     }
 
+    /// <summary>
+    /// A class with an extension data member (docs/ExtensionData.md) is written and read by the runtime: no members for the generated code, the accessors stay (NativeAOT),
+    /// MsgPackExtensionData is not described, the types its other properties reach are.
+    /// </summary>
+    [TestMethod]
+    public void ExtensionData_TheRuntimeWritesTheClass()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(@"
+using System.Collections.Generic;
+using LsMsgPack;
+
+namespace Kept
+{
+  public class Address { public string Street { get; set; } }
+
+  public class Order
+  {
+    public string Customer { get; set; }
+    public Address ShipTo { get; set; }
+    public MsgPackExtensionData Extra { get; set; }
+  }
+
+  public class Invoice
+  {
+    public string Number { get; set; }
+    [MsgPackExtensionData]
+    public Dictionary<string, object> Extra { get; set; }
+  }
+
+  [LsMsgPackSerializable(typeof(Order))]
+  [LsMsgPackSerializable(typeof(Invoice))]
+  public partial class KeptMsgPackContext : LsMsgPackContext { }
+}");
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.Contains("\"Street\", typeof(", code, "a class without extension data gets its members");
+      Assert.DoesNotContain("\"Customer\", typeof(", code, "the runtime writes the class with extension data");
+      Assert.DoesNotContain("\"Number\", typeof(", code);
+      Assert.Contains("\"Extra\"", code, "the accessors of the extension data member are generated");
+      Assert.DoesNotContain("typeof(global::LsMsgPack.MsgPackExtensionData)", code, "the container is not a model");
+    }
+
     [TestMethod]
     public void Converters_Binary_NothingToDescribe()
     {
