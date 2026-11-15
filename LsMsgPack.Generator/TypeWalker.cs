@@ -346,7 +346,7 @@ namespace LsMsgPack.Generator
       {
         List<PropertyModel> accessors = GetProperties(named, fieldStruct, out Kept kept);
         string isDefault = DefaultCheck(named, out List<PropertyModel> defaultAccessors);
-        Add(TypeModelKind.Struct, name, null, HasCreator(named), true, accessors, GetMembers(named, fieldStruct), kept: kept, isDefault: isDefault, defaultAccessors: defaultAccessors,
+        Add(TypeModelKind.Struct, name, null, HasCreator(named), true, accessors, !fieldStruct && ExtensionDataMembers.HasExtensionData(named) ? null : GetMembers(named, fieldStruct), kept: kept, isDefault: isDefault, defaultAccessors: defaultAccessors,
           keptMethods: fieldStruct ? null : ShouldSerializeMethods(named));
         return;
       }
@@ -365,7 +365,7 @@ namespace LsMsgPack.Generator
 
       bool creator = HasCreator(named);
       List<PropertyModel> properties = GetProperties(named, false, out Kept found);
-      Add(TypeModelKind.Object, name, null, creator, true, properties, named.IsAbstract ? null : GetMembers(named, false), kept: found, keptMethods: ShouldSerializeMethods(named));
+      Add(TypeModelKind.Object, name, null, creator, true, properties, named.IsAbstract || ExtensionDataMembers.HasExtensionData(named) ? null : GetMembers(named, false), kept: found, keptMethods: ShouldSerializeMethods(named)); // extension data: the runtime writes and reads the class itself (the accessors stay)
     }
 
     /// <summary>
@@ -867,7 +867,8 @@ namespace LsMsgPack.Generator
             kept |= Kept.NonPublicFields;
           if (IsObsoleteError(field) || !IsAccessible(field.Type))
             continue;
-          Enqueue(HasMemberConverter(field, field.Type, out ITypeSymbol fieldSurrogate) ? fieldSurrogate : field.Type); // a member's own converter: its value is written as the surrogate
+          if (!ExtensionDataMembers.IsExtensionDataType(field.Type)) // the container of kept values is not a model
+            Enqueue(HasMemberConverter(field, field.Type, out ITypeSymbol fieldSurrogate) ? fieldSurrogate : field.Type); // a member's own converter: its value is written as the surrogate
           RecordPolymorphic(type, field, field.Type);
           bool canGetField = CanGet(type, field, out bool unsafeField);
           bool canSetField = CanSet(type, field);
@@ -884,8 +885,10 @@ namespace LsMsgPack.Generator
 
         if (property.DeclaredAccessibility != Accessibility.Public)
           kept |= Kept.NonPublicProperties;
-        Enqueue(HasMemberConverter(property, property.Type, out ITypeSymbol propertySurrogate) ? propertySurrogate : property.Type);
-        RecordPolymorphic(type, property, property.Type);
+        if (!ExtensionDataMembers.IsExtensionDataType(property.Type)) // the container of kept values is not a model
+          Enqueue(HasMemberConverter(property, property.Type, out ITypeSymbol propertySurrogate) ? propertySurrogate : property.Type);
+        if (!ExtensionDataMembers.IsExtensionMember(property))
+          RecordPolymorphic(type, property, property.Type);
 
         bool canGet = CanGet(type, property, out bool unsafeGet);
         bool canSet = CanSet(type, property, out bool unsafeSet);
@@ -1118,7 +1121,7 @@ namespace LsMsgPack.Generator
             else
               candidate = member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer
                 && (publicPass ? property.DeclaredAccessibility == Accessibility.Public : IsNonPublicCandidate(property, _nonPublic));
-            if (candidate)
+            if (candidate && !ExtensionDataMembers.IsExtensionMember(member)) // keeps the members of the data the class does not have, never one itself (FullPropertyInfo.FindMembers)
               candidates.Add((member, t, depth, publicPass));
           }
         }

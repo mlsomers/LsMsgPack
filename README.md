@@ -105,11 +105,11 @@ See [docs/schema.md](docs/schema.md) for examples of each wire format, their pro
 
 Reading data you don't trust (request bodies, messages from clients)? Type ids let the data pick the classes that are created: see [docs/security.md](docs/security.md) for what the serializers check and how to limit the allowed types with a type guard.
 
-The packages include analyzers that check the classes you serialize while you type: initialized properties whose left-out default would be read back as another value (with code fixes that add the `[DefaultValue]`), properties declared as `object` where the data picks the type, and public fields that are not serialized. See [docs/Analyzers.md](docs/Analyzers.md).
+The packages include analyzers that check the classes you serialize while you type: initialized properties whose left-out default would be read back as another value (with code fixes that add the `[DefaultValue]`), properties declared as `object` where the data picks the type, public fields that are not serialized, and extension data members the serializers refuse. See [docs/Analyzers.md](docs/Analyzers.md).
 
 Types that shouldn't be written as their own properties (value objects, types of another library, a `DateTime` a peer expects as Unix time) can be written as another type with a converter: see [docs/Converters.md](docs/Converters.md).
 
-Data that doesn't match your classes exactly (older or newer versions, a misspelled name) is read anyway, like the JSON serializers do. Pass an `out ReadDifferences` to `Deserialize` to find out what was skipped, counted per class and property, with the paths of the objects: see [docs/ReadDifferences.md](docs/ReadDifferences.md).
+Data that doesn't match your classes exactly (older or newer versions, a misspelled name) is read anyway, like the JSON serializers do. Pass an `out ReadDifferences` to `Deserialize` to find out what was skipped, counted per class and property, with the paths of the objects: see [docs/ReadDifferences.md](docs/ReadDifferences.md). An older version of a service that reads, changes and writes back an object keeps the members it doesn't have in a `MsgPackExtensionData` (or a `[JsonExtensionData]` dictionary) and writes them again: see [docs/ExtensionData.md](docs/ExtensionData.md).
 
 Standalone Debugger (for Windows)
 ---------------------------------

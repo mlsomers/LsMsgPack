@@ -152,7 +152,7 @@ test("models generated with propertyNames: 'camelCase': read into their fields, 
 
     order.retries = 5;
     const written = entries(encode(order, { models: camelModels, generateCode }));
-    assert.deepStrictEqual(written.map(([k]) => k), ['Id', 'Retries', 'Home', 'Entry', 'priority'], 'the .NET names; a property the models do not have as it is (the server reads names ignoring case)');
+    assert.deepStrictEqual(written.map(([k]) => k), ['Id', 'Retries', 'Home', 'Entry', 'Priority'], 'the .NET names, also of a property the models do not have (the schema had it)');
     assert.deepStrictEqual(written[2][1], { Street: null, City: 'Rome' });
     assert.deepStrictEqual(written[3][1], ['k', 2], 'the pair as [key, value]');
   }
@@ -160,6 +160,63 @@ test("models generated with propertyNames: 'camelCase': read into their fields, 
   assert.throws(() => new Decoder({ models, propertyNames: 'camelCase' }), /propertyNames/, 'models with the .NET names');
   assert.strictEqual(new LsMsgPackClient({ models: camelModels }).decoder.decode(orderPayload(body, items)).value.retries, 0, 'taken from the models when not given');
 });
+
+test('a newer server: the properties and classes the models do not have are written back as the server wrote them', () => {
+  class Shipment {
+    id = 0;
+    note = null;
+  }
+  const older = defineModels({ int64: 'number', dates: 'date', decimal: 'number', propertyNames: 'camelCase', classes: [[Shipment, 'Shipment', [['Id', 'int'], ['Note', 'string']]]] });
+  // The server's Shipment has a Guid, a TimeSpan, a char, a class Location (a Guid and a DateOnly), a list of them and an object property with a Location (type id)
+  const schema = schemaBytes([
+    ['Shipment', [['Id', 'int'], ['Note', 'string'], ['Key', 'guid'], ['Wait', 'timespan'], ['Grade', 'char'], ['From', 1], ['Stops', ['list', 1]], ['Extra', 'any']]],
+    ['Location', [['Code', 'guid'], ['Opened', 'dateonly']]],
+    ['', [['@', 0]]],
+  ]);
+  const location = [0x92, ...guidBin, 0xcd, 0x01, 0x00]; // [Code, Opened: day 256]
+  const body = [0x98, 7, 0xa1, 0x41, ...guidBin, 0xce, 0x11, 0xe1, 0xa3, 0x00, 0x41, ...location, 0x91, ...location, 0x82, 0xa0, 1, 0xa1, 0x40, ...location];
+  const payload = Uint8Array.from([...schema, ...body]);
+  const expectedLocation = [['Code', Uint8Array.from(guidBin.slice(2))], ['Opened', 256]];
+  for (const generateCode of [true, false]) {
+    const shipment = new Decoder({ models: older, generateCode }).decode(payload).value;
+    assert.ok(shipment instanceof Shipment);
+    assert.strictEqual(shipment.wait, '00:00:30', 'read as the schema describes it');
+    assert.deepStrictEqual(shipment.from, { code: '0f8fad5b-d9cb-469f-a165-70867728950e', opened: '0001-09-14' }, 'a class the models do not have: a plain object');
+    assert.strictEqual(shipment.extra.$type, 'Location');
+
+    shipment.note = 'B';
+    const written = entries(encode(shipment, { models: older, generateCode }));
+    assert.deepStrictEqual(written.map(([k]) => k), ['Id', 'Note', 'Key', 'Wait', 'Grade', 'From', 'Stops', 'Extra'], 'the .NET names');
+    assert.strictEqual(written[1][1], 'B');
+    assert.deepStrictEqual(written[2][1], Uint8Array.from(guidBin.slice(2)), 'a Guid as its 16 bytes');
+    assert.strictEqual(written[3][1], 300000000, 'a TimeSpan as its ticks');
+    assert.strictEqual(written[4][1], 0x41, 'a char as its number');
+    assert.deepStrictEqual(mapEntries(written[5][1]), expectedLocation, 'the properties of a class the models do not have: .NET names and declared kinds');
+    assert.deepStrictEqual(written[6][1].map(mapEntries), [expectedLocation]);
+    assert.deepStrictEqual(mapEntries(written[7][1]), [['', 'Location'], ...expectedLocation], 'with the type id it came with');
+
+    const made = Object.assign(new Shipment(), { wait: '1.00:00:00', from: { opened: '0001-01-02', other: 'x' } });
+    const mine = entries(encode(made, { models: older, generateCode }));
+    assert.deepStrictEqual(mine.map(([k]) => k), ['Id', 'Note', 'Wait', 'From'], 'also on objects made in JavaScript, once the decoder saw the class');
+    assert.strictEqual(mine[2][1], 864000000000);
+    assert.deepStrictEqual(mapEntries(mine[3][1]), [['Opened', 1], ['other', 'x']], 'the class\'s properties, then others as they are');
+  }
+
+  // A schema with names only: the .NET names, the values as they are (the kinds are unknown)
+  const plain = schemaBytes([['Shipment', ['Id', 'Note', 'Key', 'Wait', 'Stops']]]);
+  const shipment = new Decoder({ models: older }).decode(Uint8Array.from([...plain, 0x82, 0xa0, 0, 0xa1, 0x40, 0x95, 7, 0xc0, ...guidBin, 0xce, 0x11, 0xe1, 0xa3, 0x00, 0x91, 0x92, 1, 2])).value;
+  assert.ok(shipment instanceof Shipment);
+  const written = entries(encode(shipment, { models: older }));
+  assert.deepStrictEqual(written.map(([k]) => k), ['Id', 'Note', 'Key', 'Wait', 'Stops']);
+  assert.deepStrictEqual(written[2][1], Uint8Array.from(guidBin.slice(2)), 'bytes as bytes');
+  assert.strictEqual(written[3][1], 300000000);
+  assert.deepStrictEqual(written[4][1], [[1, 2]], 'an object without its names (array layout): as it came, by position');
+});
+
+/** The entries of a decoded map (an object of the reader) as [key, value] pairs. */
+function mapEntries(o) {
+  return Object.entries(o);
+}
 
 /** The map of an encoded object as [key, value] pairs (in order). */
 function entries(bytes) {

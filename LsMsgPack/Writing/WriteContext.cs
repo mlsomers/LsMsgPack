@@ -234,6 +234,21 @@ namespace LsMsgPack.Writing
     }
 
     /// <summary>
+    /// The names an object keeps as extension data (ObjectPlan.WriteExtended) as their positions in its type's entry: of the inline schema, or of the session (LsMsgPackDebug's order: after the type id, before the values).
+    /// </summary>
+    internal List<KeptEntry> KeptIds(ObjectPlan plan, List<KeptEntry> kept)
+    {
+      if (Mode != IdMode.Inline)
+        return ExtensionDataMember.WithSchemaIds(kept, plan.Type, IdSettings);
+      for (int t = 0; t < kept.Count; t++)
+      {
+        int position = Inline.KeptName(plan.Schema, (string)kept[t].Key);
+        kept[t] = new KeptEntry(position, position, kept[t].Bytes);
+      }
+      return kept;
+    }
+
+    /// <summary>
     /// <see cref="WriteTypeId(Type, FullPropertyInfo)"/> of the type of a plan (which has its schema entry: no lookup).
     /// </summary>
     internal void WriteTypeId(ObjectPlan plan, FullPropertyInfo assignedTo)
@@ -282,6 +297,33 @@ namespace LsMsgPack.Writing
     /// Not for collections: the entry of the type in the schema (its name and the array of its property names), encoded when it is first written. The settings of the serializer do not change.
     /// </summary>
     internal byte[] Entry;
+
+    /// <summary>
+    /// The entry with the names its objects kept as extension data last (InlineSchema.KeptName), encoded once for those names: replaced as a whole (several threads write with the serializer).
+    /// </summary>
+    internal volatile KeptEntryBytes WithKept;
+
+    internal sealed class KeptEntryBytes
+    {
+      internal readonly string[] Names;
+      internal readonly byte[] Entry;
+
+      internal KeptEntryBytes(string[] names, byte[] entry)
+      {
+        Names = names;
+        Entry = entry;
+      }
+
+      internal bool Has(List<string> names)
+      {
+        if (names.Count != Names.Length)
+          return false;
+        for (int t = 0; t < Names.Length; t++)
+          if (!string.Equals(Names[t], names[t], StringComparison.Ordinal))
+            return false;
+        return true;
+      }
+    }
   }
 
   /// <summary>
@@ -291,7 +333,7 @@ namespace LsMsgPack.Writing
   {
     // Arrays with a count rather than lists: Clear runs once per call, List.Clear calls Array.Clear
     private SchemaTypeInfo[] _types = new SchemaTypeInfo[8];
-    private List<string>[] _collectionProps = new List<string>[8]; // collections get their properties when they are resolved (ComplexTypeDef.AddProp)
+    private List<string>[] _collectionProps = new List<string>[8]; // collections get their properties when they are resolved (ComplexTypeDef.AddProp), objects the names they keep as extension data (null for none)
     private int _count;
 
     internal void Clear()
@@ -342,6 +384,26 @@ namespace LsMsgPack.Writing
     }
 
     /// <summary>
+    /// The position of a name an object of the type keeps as extension data: after the type's own names, added when it is new (as IndexedSchemaTypeResolver.IdOfKeptName adds it).
+    /// </summary>
+    internal int KeptName(SchemaTypeInfo info, string name)
+    {
+      int id = Register(info);
+      string[] names = info.PropertyNames;
+      for (int t = 0; t < names.Length; t++)
+        if (string.Equals(names[t], name, StringComparison.Ordinal))
+          return t;
+      List<string> kept = _collectionProps[id] ?? (_collectionProps[id] = new List<string>());
+      int at = kept.IndexOf(name);
+      if (at < 0)
+      {
+        at = kept.Count;
+        kept.Add(name);
+      }
+      return names.Length + at;
+    }
+
+    /// <summary>
     /// The schema as IndexedSchemaTypeResolver.Pack writes it: a map of type names with an array of property names.
     /// </summary>
     internal void WriteTo(MsgPackWriter writer)
@@ -352,7 +414,16 @@ namespace LsMsgPack.Writing
         SchemaTypeInfo info = _types[t];
         if (!info.IsCollection)
         {
-          writer.Raw(info.Entry ?? (info.Entry = EncodeEntry(writer, info)));
+          List<string> kept = _collectionProps[t];
+          if (kept is null)
+          {
+            writer.Raw(info.Entry ?? (info.Entry = EncodeEntry(writer, info, null)));
+            continue;
+          }
+          SchemaTypeInfo.KeptEntryBytes withKept = info.WithKept; // with the names kept as extension data after its own ones
+          if (withKept is null || !withKept.Has(kept))
+            info.WithKept = withKept = new SchemaTypeInfo.KeptEntryBytes(kept.ToArray(), EncodeEntry(writer, info, kept));
+          writer.Raw(withKept.Entry);
           continue;
         }
 
@@ -374,6 +445,8 @@ namespace LsMsgPack.Writing
       {
         SchemaTypeInfo info = _types[t];
         List<string> props = info.IsCollection ? _collectionProps[t] : new List<string>(info.PropertyNames);
+        if (!info.IsCollection && _collectionProps[t] != null)
+          props.AddRange(_collectionProps[t]); // the names kept as extension data
         defs.Add(new ComplexTypeDef() { Type = info.Type, TypeName = info.Name, TypeId = t, Props = props });
       }
       return defs;
@@ -391,9 +464,13 @@ namespace LsMsgPack.Writing
         if (!ReferenceEquals(types[t], _types[t]))
           return false;
         List<string> props = _collectionProps[t];
-        if (props is null)
-          continue;
         string[] other = collectionProps[t];
+        if (props is null || other is null)
+        {
+          if (props is null && other is null)
+            continue;
+          return false;
+        }
         if (other.Length != props.Count)
           return false;
         for (int p = 0; p < other.Length; p++)
@@ -429,13 +506,17 @@ namespace LsMsgPack.Writing
       }
     }
 
-    private static byte[] EncodeEntry(MsgPackWriter like, SchemaTypeInfo info)
+    /// <param name="kept">The names objects of the type kept as extension data (after its own ones), null for none</param>
+    private static byte[] EncodeEntry(MsgPackWriter like, SchemaTypeInfo info, List<string> kept)
     {
       MsgPackWriter writer = like.Like(64);
       WriteName(writer, info.Name);
-      writer.ArrayHeader(info.PropertyNames.Length);
+      writer.ArrayHeader(info.PropertyNames.Length + (kept is null ? 0 : kept.Count));
       for (int p = 0; p < info.PropertyNames.Length; p++)
         WriteName(writer, info.PropertyNames[p]);
+      if (kept != null)
+        for (int p = 0; p < kept.Count; p++)
+          WriteName(writer, kept[p]);
       return writer.ToArray();
     }
 

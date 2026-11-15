@@ -30,6 +30,14 @@ namespace LsMsgPackUnitTests
     {
       public string Name { get; set; }
     }
+
+    /// <summary>
+    /// A class with the short name of a concrete public framework class (System.Random).
+    /// </summary>
+    public class Random
+    {
+      public int Seed { get; set; }
+    }
   }
 
   /// <summary>
@@ -206,6 +214,22 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(1, ((TwinsA.ResolutionTwin)read.First).A);
       Assert.AreEqual(2, ((TwinsB.ResolutionTwin)read.Second).B);
       Assert.AreEqual("mine", ((Shadowing.Attribute)read.Anything).Name);
+    }
+
+    /// <summary>
+    /// Your own class before the framework's: a short name that one class outside the framework has is that class, also where the framework's class of the name fits too
+    /// (System.Random in an object property: "Type assignment dilamma" when both counted).
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ShortNameOfOwnAndFrameworkClass(bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
+      TwinHolder value = new TwinHolder() { Anything = new Shadowing.Random() { Seed = 7 } };
+
+      TwinHolder read = Serializer.Deserialize<TwinHolder>(Serializer.Serialize(value, settings), settings);
+      Assert.AreEqual(7, ((Shadowing.Random)read.Anything).Seed);
     }
 
     /// <summary>

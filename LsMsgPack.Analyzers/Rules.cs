@@ -90,5 +90,13 @@ namespace LsMsgPack.Analyzers
       "The serializers write properties, and fields only when they opt in (SerializedFields.Attributed, the default of FilterNonSettable, as System.Text.Json without IncludeFields): a public field without such an attribute "
       + "is lost without a warning, both ways. The MSBuild property LsMsgPackFields (None, Attributed, Public, All) tells the analyzers and the source generator which fields the serializers' static filters select.",
       DocsUrl + "lsmp010-public-field-is-not-serialized");
+
+    public static readonly DiagnosticDescriptor InvalidExtensionData = new DiagnosticDescriptor("LSMP011", "Invalid extension data member",
+      "'{0}' {1}: the serializers throw when they write or read {2}",
+      SupportCategory, DiagnosticSeverity.Warning, true,
+      "A class keeps the members of the data it does not have in one member: a MsgPackExtensionData, or a dictionary of string to object marked with [MsgPackExtensionData] or [JsonExtensionData] "
+      + "(IDictionary<string, object>, Dictionary<string, object>, or a class implementing it with a public parameterless constructor). The serializers refuse a class with two such members "
+      + "(also one in a base class) and a marked member of another type, such as System.Text.Json's Dictionary<string, JsonElement> or JsonObject.",
+      DocsUrl + "lsmp011-invalid-extension-data-member");
   }
 }

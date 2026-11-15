@@ -289,7 +289,7 @@ namespace LsMsgPack.Meta
 
         int reservedKeys = hasTypeId ? 2 : 1;
         if (propVals.Count > reservedKeys && !(result is null) && SetsContentProperties(result.GetType(), settings, prop)) // properties serialized along with the content (see SerializeEnumerableAttribute.SerializeProperties)
-          SetProperties(result, result.GetType(), propVals, settings);
+          SetProperties(result, result.GetType(), FullPropertyInfo.GetSerializedProps(result.GetType(), settings), propVals, settings, false, out ExtensionDataMember _); // collections keep no extension data
 
         return result;
       }
@@ -312,8 +312,11 @@ namespace LsMsgPack.Meta
       if (props.Length == 0) // a refused type has no settable properties, before it is created
         SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
       result = Instances.CreateObjectOrArguments(tType, settings);
-      SetProperties(result, tType, props, propVals, settings);
-      return Created(result, props, settings);
+      List<KeptValue> kept = SetProperties(result, tType, props, propVals, settings, true, out ExtensionDataMember extension);
+      result = Created(result, props, settings);
+      if (kept != null)
+        extension.Keep(result, kept, settings);
+      return result;
     }
 
     /// <summary>
@@ -365,19 +368,20 @@ namespace LsMsgPack.Meta
       return att != null && !att.SerializeElements;
     }
 
-    private static void SetProperties(object instance, Type tType, Dictionary<object, object> propVals, MsgPackOptions settings)
-    {
-      SetProperties(instance, tType, FullPropertyInfo.GetSerializedProps(tType, settings), propVals, settings);
-    }
-
-    private static void SetProperties(object instance, Type tType, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings)
+    /// <param name="keeps">An object (not the properties of a collection): its extension data member keeps the keys that are not properties</param>
+    /// <param name="extension">The extension data member of the class, null for none (looked up only when there are keys that are not properties: not per object)</param>
+    /// <returns>The values kept for <paramref name="extension"/>, null for none</returns>
+    private static List<KeptValue> SetProperties(object instance, Type tType, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings, bool keeps, out ExtensionDataMember extension)
     {
       ReadDifferences differences = settings._differences;
+      List<KeptValue> kept = null;
+      extension = null;
       if (differences != null)
       {
-        ReportUnknownKeys(instance, tType, props, propVals, settings); // before the values (the objects in them), as LsMsgPack finds them
-        differences.Push(instance);
+        extension = keeps ? ExtensionDataMember.Of(tType) : null;
+        kept = UnknownKeys(instance, tType, props, propVals, settings, extension); // before the values (the objects in them), as LsMsgPack finds them
       }
+      differences?.Push(instance);
       int set = 0;
       for (int t = props.Length - 1; t >= 0; t--)
       {
@@ -396,6 +400,13 @@ namespace LsMsgPack.Meta
       if (settings._propertyNameCaseInsensitive && set < propVals.Count) // keys that are not property ids (or the reserved ones)
         SetIgnoringCase(instance, props, propVals, settings, differences);
       differences?.Pop();
+      if (differences is null && keeps && set < propVals.Count) // keys that are not properties (or the type id): kept by an extension data member
+      {
+        extension = ExtensionDataMember.Of(tType);
+        if (extension != null)
+          kept = UnknownKeys(instance, tType, props, propVals, settings, extension);
+      }
+      return kept;
     }
 
     /// <summary>
@@ -433,9 +444,11 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// The keys of the map that are not properties of the class (only when the differences are collected).
+    /// The keys of the map that are not properties of the class: kept for the extension data member (names only: with the indexed schema the name of the index in the writer's entry),
+    /// reported when the differences are collected.
     /// </summary>
-    private static void ReportUnknownKeys(object instance, Type tType, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings)
+    /// <returns>The values kept, null for none</returns>
+    private static List<KeptValue> UnknownKeys(object instance, Type tType, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings, ExtensionDataMember extension)
     {
       HashSet<object> known = new HashSet<object>(MapConversionEqualityComparer.Instance);
       for (int t = 0; t < props.Length; t++)
@@ -450,12 +463,55 @@ namespace LsMsgPack.Meta
         (unknown ?? (unknown = new List<object>())).Add(key);
       }
       if (unknown is null)
-        return;
+        return null;
 
       ComplexTypeDef def = null;
-      SerializationRules.GetIndexedSchema(settings)?.ByType.TryGetValue(tType, out def); // the keys are indexes into the writer's names
+      IndexedSchemaTypeResolver schema = SerializationRules.GetIndexedSchema(settings);
+      schema?.ByType.TryGetValue(tType, out def); // the keys are indexes into the writer's names
+      ReadDifferences differences = settings._differences;
+      List<KeptValue> kept = null;
       for (int t = unknown.Count - 1; t >= 0; t--) // propVals was filled from the last entry of the map to the first
-        settings._differences.UnknownProperty(instance, NameOf(unknown[t], def));
+      {
+        object key = unknown[t];
+        object name = NameOf(key, def);
+        if (extension != null && name is string text && text.Length > 0 && text != MsgPackOptions.ContentKey)
+        {
+          if (TryKeep(instance, text, key is string ? -1 : Convert.ToInt32(key, CultureInfo.InvariantCulture), def, propVals[key], schema, settings, ref kept))
+            differences?.KeptProperty(instance, text, -1);
+          continue;
+        }
+        differences?.UnknownProperty(instance, name);
+      }
+      return kept;
+    }
+
+    /// <summary>
+    /// A value of a name the class does not have, in the form without the schema (see <see cref="KeptValues.WithoutSchema"/>), added to <paramref name="kept"/>.
+    /// While collecting the differences a value that cannot be kept (an array or a map with version 1 of the schema) is reported and skipped (as <see cref="MsgPackOptions.ReadErrors"/> says).
+    /// </summary>
+    /// <param name="position">The position of the name in <paramref name="def"/> (-1 for none)</param>
+    /// <returns>False when it was skipped</returns>
+    private static bool TryKeep(object instance, string name, int position, ComplexTypeDef def, object value, IndexedSchemaTypeResolver schema, MsgPackOptions settings, ref List<KeptValue> kept)
+    {
+      object plain;
+      ReadDifferences differences = settings._differences;
+      if (differences is null)
+        plain = KeptValues.WithoutSchema(value, name, def, position, schema, settings);
+      else
+      {
+        int depth = differences.Depth;
+        try
+        {
+          plain = KeptValues.WithoutSchema(value, name, def, position, schema, settings);
+        }
+        catch (Exception ex) when (differences.SkipInvalidValue(instance, name, ex))
+        {
+          differences.RestoreDepth(depth);
+          return false;
+        }
+      }
+      (kept ?? (kept = new List<KeptValue>())).Add(new KeptValue(name, -1, plain));
+      return true;
     }
 
     /// <returns>The name of the property with this index in the schema entry, otherwise the key</returns>
@@ -588,6 +644,9 @@ namespace LsMsgPack.Meta
       FullPropertyInfo[] byPosition = PropertiesByPosition(type, props, settings, out ComplexTypeDef def);
       object result = Instances.CreateObjectOrArguments(type, settings);
       ReadDifferences differences = settings._differences;
+      ExtensionDataMember extension = null; // looked up at the first value that is not a property (not per object)
+      bool looked = false;
+      List<KeptValue> kept = null;
       differences?.Push(result);
       int count = Math.Min(items.Length, byPosition.Length);
       for (int t = 0; t < count; t++)
@@ -595,8 +654,21 @@ namespace LsMsgPack.Meta
         FullPropertyInfo prop = byPosition[t];
         if (prop is null)
         {
-          if (differences != null && items[t] != null) // a nil is a value left out (as a key that is not in a map)
-            differences.UnknownProperty(result, NameOf(t, def));
+          if (items[t] is null) // a nil is a value left out (as a key that is not in a map)
+            continue;
+          object name = NameOf(t, def);
+          if (!looked)
+          {
+            extension = ExtensionDataMember.Of(type);
+            looked = true;
+          }
+          if (extension != null && name is string text) // with the schema: the name of the position in the writer's entry
+          {
+            if (TryKeep(result, text, t, def, items[t], SerializationRules.GetIndexedSchema(settings), settings, ref kept))
+              differences?.KeptProperty(result, text, -1);
+          }
+          else
+            differences?.UnknownProperty(result, name);
           continue;
         }
         if (prop.IsComputed) // written only
@@ -608,14 +680,29 @@ namespace LsMsgPack.Meta
         else
           ReadProperty(prop, result, items[t], settings, differences);
       }
-      if (differences != null)
+      differences?.Pop();
+      for (int t = count; t < items.Length; t++)
       {
-        differences.Pop();
-        for (int t = count; t < items.Length; t++)
-          if (items[t] != null)
-            differences.ExtraValue(result, t);
+        if (items[t] is null)
+          continue;
+        if (!looked)
+        {
+          extension = ExtensionDataMember.Of(type);
+          looked = true;
+        }
+        bool keepsPositions = extension != null && !extension.IsDictionary && def is null; // without the schema the values after the last property have no names
+        if (keepsPositions)
+        {
+          (kept ?? (kept = new List<KeptValue>())).Add(new KeptValue(null, t, items[t]));
+          differences?.KeptProperty(result, null, t);
+        }
+        else
+          differences?.ExtraValue(result, t);
       }
-      return Created(result, props, settings);
+      result = Created(result, props, settings);
+      if (kept != null)
+        extension.Keep(result, kept, settings);
+      return result;
     }
 
     /// <summary>

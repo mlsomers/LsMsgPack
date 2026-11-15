@@ -37,4 +37,5 @@ MsgPackItem item = MsgPackItem.Unpack(data);
 - [Security](https://github.com/mlsomers/LsMsgPack/blob/master/docs/security.md): reading data you don't trust
 - [Converters](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Converters.md): write a type as another type (value objects, types of other libraries, other formats for built-in types)
 - [Reporting differences](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ReadDifferences.md): what didn't match between the data and your classes (`Deserialize(data, settings, out ReadDifferences differences)`)
+- [Extension data](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ExtensionData.md): keep the members of the data a class doesn't have and write them again (`MsgPackExtensionData`, `[JsonExtensionData]`)
 - Source, issues and MsgPack Explorer (a tool built on this package to look inside MsgPack data): [github.com/mlsomers/LsMsgPack](https://github.com/mlsomers/LsMsgPack)

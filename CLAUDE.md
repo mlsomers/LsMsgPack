@@ -14,7 +14,7 @@ Project-specific notes live in a `CLAUDE.md` next to each project (loaded when y
 | `LsMsgPack.Data/` | `LsMsgPack.Data`: add-on for ADO.NET data readers (result sets and table dumps as streams, `MsgPackDataReader`, the row mapper); tests in `LsMsgPack.DataTests` |
 | `LsMsgPackFormatters/`, `LsMsgPackWebApiFormatters/`, `LsMsgPackMvc/` | ASP.NET Core, Web API 2 + HttpClient, MVC 5 formatters (on LsMsgPack) |
 | `LsMsgPack.Generator/` | source generator (contexts, generated readers/writers); its diagnostics are LSMP101-111 |
-| `LsMsgPack.Analyzers/` (+ `.CodeFixes`) | analyzers LSMP001-010, packed into LsMsgPack.Core |
+| `LsMsgPack.Analyzers/` (+ `.CodeFixes`) | analyzers LSMP001-011, packed into LsMsgPack.Core |
 | `ObjectDebugger/` | rebuilds object trees from payloads without the types; validation; search |
 | `MsgPackExplorer/`, `LsMsgPackFiddlerInspector/`, `LsMsgPackVisualStudioPlugin/` | Windows-only tools (old-style .NET Framework projects) |
 | `LsMsgPackVsCode/` | VS Code extension "MsgPack Explorer" + `Server/` (LsMsgPackInspector) |

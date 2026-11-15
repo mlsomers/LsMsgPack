@@ -146,15 +146,12 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// Only called when a described schema (<see cref="SchemaVersion.Described"/>) is made, for the values of [DefaultValue].
+    /// Called when a described schema (<see cref="SchemaVersion.Described"/>) is made, for the values of [DefaultValue], and for values kept as extension data that are not plain values (KeptValues.Encode: decimals, custom extensions).
     /// </summary>
-    internal override byte[] SerializePlainValue(object value, Type type, EndianAction endianAction)
+    internal override byte[] SerializePlainValue(object value, Type type, EndianAction endianAction, bool byNames)
     {
       LsMsgPackOptions plain = Clone();
-      plain._useInexedSchema = false;
-      plain._writeSchemaReference = false;
-      plain._endianAction = endianAction;
-      plain._differences = null;
+      plain.WithoutSchema(endianAction, byNames);
       return new LsMsgPackSerializer(plain, null).Serialize(value, type); // the contexts of these options are copied (the one of the serializer too)
     }
 

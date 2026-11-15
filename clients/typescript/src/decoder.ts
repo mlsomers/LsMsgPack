@@ -5,7 +5,7 @@
 
 import { EndOfDataError, MissingSchemaError, MsgPackError } from './errors.js';
 import { MsgPackExtension, MsgPackReader, ReaderOptions } from './reader.js';
-import type { ModelSet } from './models.js';
+import type { KeptProperty, ModelSet } from './models.js';
 import { nameFunction, PropertyNames } from './names.js';
 import { AnyType, Kind, Schema, SchemaEntry, TypeExpr } from './schema.js';
 import { toHex } from './sha256.js';
@@ -347,7 +347,55 @@ class Plans {
     });
     if (entry.content !== undefined) plan.content = this.compile(entry.content);
     plan.prepare(this.options.generateCode);
+    const models = this.options.models;
+    if (models !== undefined && entry.name !== null && index >= 0) {
+      if (model === undefined) this.learn(index);
+      else
+        for (let t = 0; t < entry.properties.length; t++) {
+          const p = entry.properties[t];
+          if (!model.byName.has(p.name)) models.keep(model, { name: p.name, field: plan.names[t], type: this.writerType(p.type) });
+        }
+    }
     return plan;
+  }
+
+  /** The entries given to ModelSet.learn (once per schema). */
+  private learned?: Set<number>;
+
+  /**
+   * Tells the models about an entry of a class they do not have (by its type name): its objects are plain objects, the encoder writes them back with the .NET names and the
+   * declared types (instead of the field names and the values as they are). Docs: TypeScriptClient.md, "The server changed".
+   */
+  private learn(index: number): void {
+    const learned = this.learned ??= new Set();
+    if (learned.has(index)) return;
+    learned.add(index); // before the properties: they may refer to this entry
+    const entry = this.schema.entries[index];
+    const properties: KeptProperty[] = entry.properties.map((p) => ({ name: p.name, field: this.field(p.name), type: this.writerType(p.type) }));
+    this.options.models!.learn({ typeName: entry.name!, properties, fields: new Set(properties.map((p) => p.field)) });
+  }
+
+  /**
+   * A declared type of the schema as the encoder takes it (models.ts KeptProperty): without the entry indexes of this schema (an object is the class of its entry's type name,
+   * learned when the models do not have it). Undefined for a plain schema.
+   */
+  private writerType(type: TypeExpr | undefined): TypeExpr | undefined {
+    if (type === undefined) return undefined;
+    switch (type.k) {
+      case 'kind':
+      case 'model': return type;
+      case 'object': {
+        const entry = typeof type.entry === 'number' ? this.schema.entries[type.entry] : undefined;
+        if (entry === undefined || entry.name === null) return AnyType; // a struct described inline: written as it is
+        if (this.options.models!.byName(entry.name) === undefined) this.learn(type.entry as number);
+        return { k: 'model', name: entry.name, struct: type.struct };
+      }
+      case 'nullable': return { k: 'nullable', of: this.writerType(type.of)! };
+      case 'list': return { k: 'list', of: this.writerType(type.of)! };
+      case 'dict': return { k: 'dict', key: this.writerType(type.key)!, value: this.writerType(type.value)! };
+      case 'pair': return { k: 'pair', key: this.writerType(type.key)!, value: this.writerType(type.value)! };
+      case 'tuple': return { k: 'tuple', items: type.items.map((t) => this.writerType(t)!) };
+    }
   }
 
   private readonly compiled = new WeakMap<TypeExpr, Read>();

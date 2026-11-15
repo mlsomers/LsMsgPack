@@ -15,3 +15,4 @@ LSMP007 | LsMsgPack.Reading | Warning | Objects are read without their property 
 LSMP008 | LsMsgPack.Coverage | Warning | Serialized class of another project is not checked
 LSMP009 | LsMsgPack.Support | Warning | JSON document type is not serialized
 LSMP010 | LsMsgPack.Fields | Warning | Public field is not serialized
+LSMP011 | LsMsgPack.Support | Warning | Invalid extension data member

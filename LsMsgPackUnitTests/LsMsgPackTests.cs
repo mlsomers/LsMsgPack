@@ -298,6 +298,107 @@ namespace LsMsgPackUnitTests
       }
       Assert.AreEqual(ids[2] + "," + ids[1], client.GetSchemasHeader(uri));
     }
+
+    [TestMethod]
+    public void HttpNegotiationHeaderFollowsTheSchemasPerServer()
+    {
+      LsMsgPackHttpSerializer server = new LsMsgPackHttpSerializer();
+      LsMsgPackHttpSerializer client = new LsMsgPackHttpSerializer();
+      Uri first = new Uri("https://example.org/api/orders/1"), second = new Uri("http://example.net:8080/nodes");
+      object[] values = { new LsOrder { Number = 1, Customer = "a", Remarks = "b" }, new LsNode { Name = "node", Next = new LsNode() }, new LsWithPoint { Anything = "x" } };
+      string[] ids = new string[values.Length];
+      Func<Uri, int, bool> learn = (uri, t) =>
+      {
+        MsgPackPayload payload = server.Serialize(values[t], values[t].GetType(), MsgPackMediaTypes.XLsMsgPack, null);
+        byte[] bytes = payload.ToArray();
+        ids[t] = payload.SchemaId;
+        return client.LearnSchema(uri, payload.SchemaId, bytes, 0, bytes.Length, MsgPackMediaTypes.XLsMsgPack);
+      };
+
+      // the servers in turn: each keeps its own list (the client remembers the last server it saw)
+      Assert.IsTrue(learn(first, 0));
+      Assert.IsTrue(learn(second, 1));
+      Assert.AreEqual(ids[0], client.GetSchemasHeader(first));
+      Assert.AreEqual(ids[1], client.GetSchemasHeader(second));
+      Assert.IsTrue(learn(first, 2));
+      Assert.AreEqual(ids[2] + "," + ids[0], client.GetSchemasHeader(first));
+      Assert.AreEqual(ids[1], client.GetSchemasHeader(second));
+      Assert.AreEqual(ids[2] + "," + ids[0], client.GetSchemasHeader(new Uri("HTTPS://EXAMPLE.ORG:443/other?x=1")), "the same origin written otherwise");
+      Assert.IsNull(client.GetSchemasHeader(new Uri("https://example.org.evil.com/")));
+      Assert.IsNull(client.GetSchemasHeader(new Uri("https://example.org:8443/")));
+
+      // the header is built again when the list changes, not before
+      string header = client.GetSchemasHeader(first);
+      Assert.AreSame(header, client.GetSchemasHeader(first));
+      Assert.IsTrue(learn(first, 2)); // the most recent one already
+      Assert.AreSame(header, client.GetSchemasHeader(first));
+      Assert.IsTrue(learn(first, 0));
+      Assert.AreEqual(ids[0] + "," + ids[2], client.GetSchemasHeader(first));
+
+      // a schema id written in upper case is learned and held as well
+      Assert.IsTrue(client.LearnSchema(second, ids[0].ToUpperInvariant(), null, 0, 0, MsgPackMediaTypes.XLsMsgPack), "held: no body needed");
+      Assert.AreEqual(ids[0] + "," + ids[1], client.GetSchemasHeader(second));
+      Assert.IsTrue(server.Serialize(values[0], values[0].GetType(), MsgPackMediaTypes.XLsMsgPack, client.GetSchemasHeader(second).ToUpperInvariant()).IsReference, "a header in upper case");
+      Assert.IsFalse(server.Serialize(values[2], values[2].GetType(), MsgPackMediaTypes.XLsMsgPack, client.GetSchemasHeader(second).ToUpperInvariant()).IsReference);
+      Assert.IsFalse(new LsMsgPackHttpSerializer().LearnSchema(first, ids[0], null, 0, 0, MsgPackMediaTypes.XLsMsgPack), "not held: needs the body");
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void HttpNegotiationAdvertisesPerRoute(bool byRoute)
+    {
+      LsMsgPackHttpSerializer server = new LsMsgPackHttpSerializer();
+      LsMsgPackHttpSerializer client = new LsMsgPackHttpSerializer(new LsMsgPackHttpOptions { AdvertiseByRoute = byRoute });
+      object order = new LsOrder { Number = 1, Customer = "a", Remarks = "b" }, node = new LsNode { Name = "node", Next = new LsNode() }, point = new LsWithPoint { Anything = "x" };
+      Func<string, object, string> learn = (url, value) =>
+      {
+        MsgPackPayload payload = server.Serialize(value, value.GetType(), MsgPackMediaTypes.XLsMsgPack, client.GetSchemasHeader(new Uri(url)));
+        byte[] bytes = payload.ToArray();
+        Assert.IsTrue(client.LearnSchema(new Uri(url), payload.SchemaId, bytes, 0, bytes.Length, MsgPackMediaTypes.XLsMsgPack));
+        return payload.SchemaId;
+      };
+      string orderId = learn("https://example.org/api/orders/17", order);
+      string nodeId = learn("https://example.org/api/nodes", node);
+      string pointId = learn("https://example.org/api/points/3f2504e0-4f89-11d3-9a0c-0305e82c3301", point);
+      string recent = pointId + "," + nodeId + "," + orderId;
+
+      Assert.AreEqual(byRoute ? orderId : recent, client.GetSchemasHeader(new Uri("https://example.org/api/orders/18")), "a segment of digits is an id");
+      Assert.AreEqual(byRoute ? orderId : recent, client.GetSchemasHeader(new Uri("https://example.org/api/orders/18?expand=lines#top")));
+      Assert.AreEqual(byRoute ? nodeId : recent, client.GetSchemasHeader(new Uri("https://example.org/api/nodes")));
+      Assert.AreEqual(byRoute ? pointId : recent, client.GetSchemasHeader(new Uri("https://example.org/api/points/00000000-0000-0000-0000-00000000000A")), "a Guid is an id");
+      Assert.AreEqual(recent, client.GetSchemasHeader(new Uri("https://example.org/api/orders/18/lines")), "a route not called yet: the most recent ones");
+      Assert.AreEqual(recent, client.GetSchemasHeader(new Uri("https://example.org/api/nodes/next")));
+      Assert.AreEqual(recent, client.GetSchemasHeader(new Uri("https://example.org/v2/api/nodes")));
+      Assert.IsNull(client.GetSchemasHeader(new Uri("https://example.com/api/nodes")), "per server");
+
+      // a route that returns several types lists them all, most recent first; the list of recent ones changes only for schemas new to a route
+      Assert.AreEqual(orderId, learn("https://example.org/api/nodes", order));
+      Assert.AreEqual(byRoute ? orderId + "," + nodeId : orderId + "," + pointId + "," + nodeId, client.GetSchemasHeader(new Uri("https://example.org/api/nodes")));
+      Assert.AreEqual(orderId + "," + pointId + "," + nodeId, client.GetSchemasHeader(new Uri("https://example.org/unknown")));
+      learn("https://example.org/api/points/17", point);
+      Assert.AreEqual(byRoute ? orderId + "," + pointId + "," + nodeId : pointId + "," + orderId + "," + nodeId, client.GetSchemasHeader(new Uri("https://example.org/unknown")));
+
+      // the server refers to the schema of the route
+      Assert.IsTrue(server.Serialize(node, typeof(LsNode), MsgPackMediaTypes.XLsMsgPack, client.GetSchemasHeader(new Uri("https://example.org/api/nodes"))).IsReference);
+      Assert.IsTrue(server.Serialize(order, typeof(LsOrder), MsgPackMediaTypes.XLsMsgPack, client.GetSchemasHeader(new Uri("https://example.org/api/orders/1"))).IsReference);
+    }
+
+    [TestMethod]
+    public void SchemaIdParse()
+    {
+      byte[] bytes = { 0x0a, 0xbc, 0xde, 0xf0, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x01, 0x23, 0x45, 0xff };
+      SchemaId id = new SchemaId(bytes);
+      string hex = id.ToString();
+      Assert.AreEqual("0abcdef0123456789abcdef0012345ff", hex);
+      Assert.AreEqual(id, SchemaId.Parse(hex));
+      Assert.AreEqual(id, SchemaId.Parse(hex.ToUpperInvariant()));
+      CollectionAssert.AreEqual(bytes, SchemaId.Parse(hex).ToByteArray());
+      Assert.AreEqual(id, SchemaId.Parse(" a" + hex.Substring(2)), "byte.Parse takes white space around a pair");
+      Assert.ThrowsExactly<FormatException>(() => SchemaId.Parse(hex.Substring(1)));
+      Assert.ThrowsExactly<FormatException>(() => SchemaId.Parse("g" + hex.Substring(1)));
+      Assert.ThrowsExactly<FormatException>(() => SchemaId.Parse(hex.Substring(0, 31) + "-"));
+    }
     [TestMethod]
     public void CacheAssemblyTypes()
     {

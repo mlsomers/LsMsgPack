@@ -59,10 +59,11 @@ namespace LsMsgPackWebApiFormatters
       { // a stream is read as it arrives, the schema of its head is learned by its reader (LsMsgPackHttpSerializer.CreateStreamReader)
         await content.LoadIntoBufferAsync().ConfigureAwait(false); // also runs a formatter that sets the header while writing (Web API in memory)
         string schemaId = HeaderValue(response, LsMsgPackHttpSerializer.SchemaHeader);
-        if (!(schemaId is null))
+        string mediaType = content.Headers.ContentType.MediaType;
+        if (!(schemaId is null) && !_serializer.LearnSchema(request.RequestUri, schemaId, null, 0, 0, mediaType)) // the body (a copy) only for a schema the client does not hold yet
         {
           byte[] body = await content.ReadAsByteArrayAsync().ConfigureAwait(false);
-          _serializer.LearnSchema(request.RequestUri, schemaId, body, 0, body.Length, content.Headers.ContentType.MediaType);
+          _serializer.LearnSchema(request.RequestUri, schemaId, body, 0, body.Length, mediaType);
         }
       }
       return response;

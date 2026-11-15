@@ -133,6 +133,14 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
+    /// The info of a member that is not a property in the data (its accessors only, no id): the extension data member (see <see cref="ExtensionDataMember"/>).
+    /// </summary>
+    internal static FullPropertyInfo ForMember(MemberInfo member)
+    {
+      return new FullPropertyInfo(member);
+    }
+
+    /// <summary>
     /// A new instance for a session (see <see cref="GetStaticallyIncludedProps"/>), with the name as its id: the session sets its own ids on it.
     /// </summary>
     private FullPropertyInfo(FullPropertyInfo kept)
@@ -361,6 +369,8 @@ namespace LsMsgPack.Meta
       {
         MemberInfo member = all[i];
         if (member is PropertyInfo property && property.GetIndexParameters().Length > 0)
+          continue;
+        if (ExtensionDataMember.IsExtensionMember(member)) // keeps the members of the data the class does not have, never one itself
           continue;
 
         bool hidden = false;

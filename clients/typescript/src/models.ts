@@ -46,6 +46,34 @@ export interface ModelClass {
   readonly fields: ReadonlySet<string>;
   /** Extends another class (its .NET base class): where the declared type is unknown (the root of a request body), the encoder writes its type id. */
   readonly derived: boolean;
+  /**
+   * The properties of the server's class the model does not have (a newer server), by field name, as the decoder found them in the schemas it read: an instance keeps their
+   * values as own properties and the encoder writes them back with their .NET names and declared types. Filled by the decoder.
+   * @internal
+   */
+  readonly kept: Map<string, KeptProperty>;
+}
+
+/**
+ * A property of the server the models do not have: its .NET name, its field name, and the declared type the writer uses (schema-independent: classes by type name), undefined from
+ * a schema with names only (the value is written as it is).
+ * @internal
+ */
+export interface KeptProperty {
+  readonly name: string;
+  readonly field: string;
+  readonly type?: TypeExpr;
+}
+
+/**
+ * A class of the server the models do not have (a newer server), as the decoder found it in a schema: its objects are plain objects, written back with the .NET names and the
+ * declared types of its properties.
+ * @internal
+ */
+export interface LearnedClass {
+  readonly typeName: string;
+  readonly properties: readonly KeptProperty[];
+  readonly fields: ReadonlySet<string>;
 }
 
 /** The models of one generated file (defineModels), for LsMsgPackClient({ models }) or the decoder and encoder. */
@@ -70,7 +98,7 @@ export class ModelSet {
       if (typeof ctor !== 'function' || typeof typeName !== 'string') throw new Error('defineModels: a class is [constructor, type name, properties].');
       const properties = (props ?? []).map(([name, type]) => ({ name, field: field(name), type: parseModelType(type) }));
       const derived = Object.getPrototypeOf(ctor) !== Function.prototype; // generated classes only extend their .NET base class (abstract ones are not in the list)
-      const model: ModelClass = { ctor, typeName, properties, byName: new Map(properties.map((p) => [p.name, p.type])), fields: new Set(properties.map((p) => p.field)), derived };
+      const model: ModelClass = { ctor, typeName, properties, byName: new Map(properties.map((p) => [p.name, p.type])), fields: new Set(properties.map((p) => p.field)), derived, kept: new Map() };
       this.names.set(typeName, model);
       this.ctors.set(ctor, model);
       // The type name on the prototype: every instance has it, none pays for it (and JSON.stringify leaves it out). Writable: assigning it on an instance shadows it.
@@ -95,6 +123,28 @@ export class ModelSet {
 
   get size(): number {
     return this.names.size;
+  }
+
+  private readonly learnedClasses = new Map<string, LearnedClass>();
+
+  /** A property of the server the model does not have (the decoder, from a schema it read: the latest one wins). @internal */
+  keep(model: ModelClass, property: KeptProperty): void {
+    model.kept.set(property.field, property);
+  }
+
+  /** A class of the server the models do not have (the decoder, from a schema it read: the latest one wins). @internal */
+  learn(cls: LearnedClass): void {
+    if (!this.names.has(cls.typeName)) this.learnedClasses.set(cls.typeName, cls);
+  }
+
+  /** The learned class of a type name (see learn), for writing a plain object. @internal */
+  learned(typeName: string): LearnedClass | undefined {
+    return this.learnedClasses.get(typeName);
+  }
+
+  /** Classes were learned: plain objects are looked up (internal: the writer). @internal */
+  get hasLearned(): boolean {
+    return this.learnedClasses.size !== 0;
   }
 }
 

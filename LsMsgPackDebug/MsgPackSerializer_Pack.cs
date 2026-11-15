@@ -171,15 +171,24 @@ namespace LsMsgPackDebug
       if (settings._objectLayout == ObjectLayout.Array)
         return SerializeAsArray(item, tType, props, settings, assignedTo, depth, byNames);
 
-      KeyValuePair<object, object>[] propVals = new KeyValuePair<object, object>[props.Length + 1];
-      int count = 0;
-
+      object typeId = null;
       if (SerializationRules.NeedsTypeId(tType, assignedTo, settings))
-        propVals[count++] = new KeyValuePair<object, object>(TypeIdKey, SerializationRules.GetTypeIdentifier(tType, settings, assignedTo));
+        typeId = SerializationRules.GetTypeIdentifier(tType, settings, assignedTo);
       else
         SerializationRules.ThrowIfUnresolvableWithSchema(tType, assignedTo, settings);
+      List<KeptEntry> kept = KeptToWrite(item, tType, props, false, settings); // after the type id, before the values (the order of the names in the schema)
+
+      KeyValuePair<object, object>[] propVals = new KeyValuePair<object, object>[props.Length + 1 + (kept is null ? 0 : kept.Count)];
+      int count = 0;
+      if (typeId != null)
+        propVals[count++] = new KeyValuePair<object, object>(TypeIdKey, typeId);
 
       count = AddProperties(item, props, propVals, count, settings, depth, byNames);
+      if (kept != null)
+      {
+        for (int t = 0; t < kept.Count; t++)
+          propVals[count++] = new KeyValuePair<object, object>(kept[t].Key, new MpRawValue(kept[t].Bytes, settings));
+      }
 
       return ToMap(propVals, count, settings);
     }
@@ -287,8 +296,15 @@ namespace LsMsgPackDebug
         typeId = SerializationRules.GetTypeIdentifier(tType, settings, assignedTo);
       else
         SerializationRules.ThrowIfUnresolvableAsArray(tType, assignedTo);
+      List<KeptEntry> kept = KeptToWrite(item, tType, props, true, settings); // after the type id, before the values (the order of the names in the schema)
+      int length = props.Length;
+      if (kept != null)
+      {
+        for (int t = 0; t < kept.Count; t++)
+          length = Math.Max(length, kept[t].Position + 1);
+      }
 
-      MsgPackItem[] values = new MsgPackItem[props.Length];
+      MsgPackItem[] values = new MsgPackItem[length];
       int count = 0; // after the last value that is not nil
       for (int t = 0; t < props.Length; t++)
       {
@@ -304,6 +320,17 @@ namespace LsMsgPackDebug
         }
       }
 
+      if (kept != null) // after the properties, at the positions of their names in the schema's entry (or their own without the schema), nil in between
+      {
+        for (int t = props.Length; t < values.Length; t++)
+          values[t] = new MpNull(settings);
+        for (int t = 0; t < kept.Count; t++)
+        {
+          values[kept[t].Position] = new MpRawValue(kept[t].Bytes, settings);
+          count = Math.Max(count, kept[t].Position + 1);
+        }
+      }
+
       if (settings._trimTrailingNulls && count != values.Length)
         Array.Resize(ref values, count);
 
@@ -316,6 +343,19 @@ namespace LsMsgPackDebug
         new KeyValuePair<object, object>(TypeIdKey, typeId),
         new KeyValuePair<object, object>(ContentKey, array)
       }, settings);
+    }
+
+    /// <summary>
+    /// The values the object keeps as extension data (see ExtensionDataMember.ToWrite), with the indexed schema at the positions of their names in the type's entry. Null for none.
+    /// </summary>
+    private static List<KeptEntry> KeptToWrite(object item, Type tType, FullPropertyInfo[] props, bool array, MsgPackSettings settings)
+    {
+      ExtensionDataMember extension = ExtensionDataMember.Of(tType);
+      if (extension is null)
+        return null;
+      bool schema = SerializationRules.GetIndexedSchema(settings) != null;
+      List<KeptEntry> kept = extension.ToWrite(item, props, array, schema, settings);
+      return kept != null && schema ? ExtensionDataMember.WithSchemaIds(kept, tType, settings) : kept;
     }
 
     /// <summary>

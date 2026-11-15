@@ -81,6 +81,7 @@ namespace LsMsgPack
 
     internal Serializer(LsMsgPackOptions options)
     {
+      TypeResolver.LoadNativeTypesInBackground(); // for the first type name or schema read (once per process, see there)
       Options = options;
       IMsgPackPropertyIncludeDynamicallyArray(options, out Filters);
       _shouldSerialize = options.CallsShouldSerialize;
@@ -305,6 +306,10 @@ namespace LsMsgPack
           return Boxed(type);
         case TypeKind.Converted:
           return info.Converter.Accept(new ConverterHandlers(this));
+        case TypeKind.Extended: // the properties and then the kept values (ObjectPlan.WriteExtended); ObjectHandler stays as it is for the other classes
+          if (type.IsValueType ? StructPlans(type) : !type.IsAbstract && !type.ContainsGenericParameters)
+            return ((IExtensionDataWriting)Instantiate(type, typeof(ObjectHandler<>), type, this)).Extended(info.ExtensionData);
+          return Boxed(type);
         case TypeKind.Complex:
           if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
           {
@@ -666,7 +671,7 @@ namespace LsMsgPack
     private void WriteWithAnonymousType(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
     {
       bool byNames = c.ByNames;
-      bool isObject = info.Kind == TypeKind.Complex;
+      bool isObject = info.Kind == TypeKind.Complex || info.Kind == TypeKind.Extended;
       if (isObject && SerializationRules.WritesByNames(type, assignedTo, byNames))
       {
         if (IgnoreCycles)
@@ -741,6 +746,17 @@ namespace LsMsgPack
             return;
           }
           PlanOf(info, c.Mode == IdMode.Names).Write(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId), assignedTo);
+          return;
+
+        case TypeKind.Extended:
+          if (IgnoreCycles && !type.IsValueType && !c.EnterObject(value))
+          {
+            c.W.Nil();
+            return;
+          }
+          PlanOf(info, c.Mode == IdMode.Names).WriteExtended(c, value, SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId), assignedTo, info.ExtensionData);
+          if (IgnoreCycles && !type.IsValueType)
+            c.LeaveObject();
           return;
 
         case TypeKind.Pair:
@@ -1208,6 +1224,11 @@ namespace LsMsgPack
     internal readonly MsgPackConverter Converter;
 
     /// <summary>
+    /// The extension data member of <see cref="TypeKind.Extended"/>.
+    /// </summary>
+    internal readonly ExtensionDataMember ExtensionData;
+
+    /// <summary>
     /// The converter's handler as <see cref="WriteBoxed"/> calls it (also when the handlers are boxed, <c>AddTypeIdOption.Always</c>), set when first used.
     /// </summary>
     internal IConvertedWriter ConvertedWriter;
@@ -1249,6 +1270,12 @@ namespace LsMsgPack
       Type = type;
       Converter = options.ConverterFor(type);
       Kind = Converter != null ? TypeKind.Converted : TypeKinds.Classify(type, options._extensions, out Extension);
+      if (Kind == TypeKind.Complex)
+      {
+        ExtensionData = ExtensionDataMember.Of(type);
+        if (ExtensionData != null)
+          Kind = TypeKind.Extended;
+      }
       HasAnonymousType = SerializationRules.HasAnonymousType(type);
       NeverHasTypeId = SerializationRules.NeverHasTypeId(type);
       if (Kind == TypeKind.Plain)

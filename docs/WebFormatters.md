@@ -498,7 +498,11 @@ The indexed schema makes a payload smaller, but it is sent with every body. Betw
 
 1. The client lists the schemas it holds in the request header `MsgPack-Schemas` (ids of 32 hexadecimal digits, comma separated).
 2. The server writes the body with a reference to its schema (18 bytes) when the client holds it, and with the schema inline otherwise. A schema of at most 18 bytes is always sent inline. The response names its schema in `MsgPack-Schema` and has `Vary: MsgPack-Schemas`.
-3. The client registers the schemas it receives inline and lists them in its next requests to that server (at most `MaxAdvertisedSchemas`, 32 by default, the most recent ones).
+3. The client registers the schemas it receives inline and lists them in its next requests to that server: a request lists the schemas received for its route, a route the client has not called yet the most recent ones (at most `MaxAdvertisedSchemas`, 32 by default).
+
+The route is the path of the request, in which segments that look like ids count as one: all digits, or 16 or more hexadecimal digits and dashes (Guids, hashes). So `GET /api/orders/18` lists the schema `GET /api/orders/17` received, and a server with more response types than `MaxAdvertisedSchemas` still refers to every schema, with a header of one id (`AdvertiseByRoute`, on by default; up to 4 ids per route, for routes that return several types). A path with a name in it (`/products/red-shoes`) is a route of its own: its first call gets the schema inline. The client only lists schemas it holds, so a route it gets wrong costs an inline schema, never a failed read. `AdvertiseByRoute = false` lists the most recent ones for every request (fine for a server with fewer response types than `MaxAdvertisedSchemas`).
+
+Measured with 200 endpoints called in turn by 8 clients (ASP.NET Core TestServer, minimal APIs, .NET 8, `lsmsgpack-perf` `WebMany.cs`): per route 100% of the responses refer to their schema, against 16% with the 32 most recent ones; 441 against 537 bytes per response, and 162-168k against 134-145k requests per second.
 
 On the client (HttpClient, the Web API package), this takes one line:
 

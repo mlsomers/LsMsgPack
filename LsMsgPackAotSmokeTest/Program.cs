@@ -279,8 +279,18 @@ namespace LsMsgPackAotSmokeTest
     public int B;
   }
 
+  /// <summary>
+  /// Keeps the members of the data it doesn't have (extension data): written by the runtime (ObjectPlan.WriteExtended), read through Core, its accessors generated.
+  /// </summary>
+  public class Remark
+  {
+    public string Text { get; set; }
+    public MsgPackExtensionData Extra { get; set; }
+  }
+
   public class Invoice
   {
+    public Remark Remark { get; set; }
     [LsMsgPack.Converters.MsgPackConverter(typeof(LsMsgPack.Converters.BlitArrayConverter<Sample>))]
     public Sample[] Samples { get; set; }
     [LsMsgPack.Converters.MsgPackConverter(typeof(UnixSecondsConverter))]
@@ -501,6 +511,7 @@ namespace LsMsgPackAotSmokeTest
         Reminded = new DateTime(2026, 12, 7, 9, 0, 0, DateTimeKind.Utc),
         Postmarks = new List<Postmark> { new Postmark("Utrecht", 12), null },
         Parcel = new Parcel("PX-7", 2.25),
+        Remark = SampleRemark(),
         Urgent = true,
         Payment = new Payment(100.5m) { Note = "first" },
         Signed = new Signature("Clerk", new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc)),
@@ -642,6 +653,25 @@ namespace LsMsgPackAotSmokeTest
       return $"({o.X.ToString("R", CultureInfo.InvariantCulture)} {o.Y.ToString("R", CultureInfo.InvariantCulture)} {o.Z.ToString("R", CultureInfo.InvariantCulture)} {o.Tag?.ToString(CultureInfo.InvariantCulture) ?? "null"} {o.Unit})";
     }
 
+    private static Remark SampleRemark()
+    {
+      Remark remark = new Remark() { Text = "kept", Extra = new MsgPackExtensionData() };
+      remark.Extra.SetRaw("Note", new byte[] { 0xA2, (byte)'h', (byte)'i' }); // leaves: the default options' schema (version 1) refuses arrays and maps as kept values
+      remark.Extra.SetRaw("Count", new byte[] { 0xCD, 0x01, 0x2C });
+      return remark;
+    }
+
+    private static string Dump(Remark o)
+    {
+      if (o is null)
+        return "null";
+      StringBuilder text = new StringBuilder(o.Text ?? "null");
+      if (o.Extra != null)
+        foreach (string name in o.Extra.Names)
+          text.Append(' ').Append(name).Append('=').Append(o.Extra.TryGetRaw(name, out byte[] raw) ? Convert.ToHexString(raw) : "?");
+      return text.ToString();
+    }
+
     private static string Dump(Invoice o)
     {
       if (o is null)
@@ -658,7 +688,8 @@ namespace LsMsgPackAotSmokeTest
         .Append(o.Discount is null ? "null" : o.Discount.Percent.ToString(CultureInfo.InvariantCulture) + "/" + o.Discount.Code).Append(';')
         .Append(Time(o.Due)).Append(';').Append(o.Samples is null ? "null" : string.Join(",", o.Samples.Select(x => x.A.ToString("R", CultureInfo.InvariantCulture) + "/" + x.B))).Append(';').Append(o.Reminded.HasValue ? Time(o.Reminded.Value) : "null").Append(';')
         .Append(o.Postmarks is null ? "null" : string.Join(",", o.Postmarks.Select(p => p is null ? "null" : p.Office + "/" + p.Day))).Append(';')
-        .Append(o.Parcel is null ? "null" : o.Parcel.Code + "/" + o.Parcel.Weight.ToString("R", CultureInfo.InvariantCulture));
+        .Append(o.Parcel is null ? "null" : o.Parcel.Code + "/" + o.Parcel.Weight.ToString("R", CultureInfo.InvariantCulture)).Append(';')
+        .Append(Dump(o.Remark));
       return text.ToString();
     }
 

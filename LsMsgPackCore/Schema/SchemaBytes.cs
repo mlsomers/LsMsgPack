@@ -95,7 +95,7 @@ namespace LsMsgPack
         long props = ReadArrayLength(stream, ReadByte(stream, null), null, settings);
         if (typeName.Length == 0) // the root of version 2: [["@", type]], the last entry
         {
-          if (t != types - 1 || props != 1 || ReadItem(stream, settings, out bool content, out rootEntry) != DescribedSchema.ContentName || !content)
+          if (t != types - 1 || props != 1 || ReadItem(stream, settings, out bool content, out rootEntry, out int _) != DescribedSchema.ContentName || !content)
             throw InvalidSchema();
           version = SchemaVersion.Described;
           break;
@@ -103,33 +103,59 @@ namespace LsMsgPack
 
         ComplexTypeDef def = new ComplexTypeDef() { TypeId = t, TypeName = typeName, Props = new List<string>((int)Math.Min(props, 1024)) };
         List<int> valueEntries = null;
+        List<int> typeOffsets = null;
         for (long p = 0; p < props; p++)
         {
-          string name = ReadItem(stream, settings, out bool isDescribed, out int valueEntry);
+          string name = ReadItem(stream, settings, out bool isDescribed, out int valueEntry, out int typeOffset);
           described |= isDescribed;
           if (isDescribed && name == DescribedSchema.ContentName)
           {
             if (p != 0) // first, so the positions of the properties do not depend on it
               throw InvalidSchema();
             def.ContentEntry = valueEntry;
+            def.ContentTypeOffset = typeOffset;
             continue;
           }
           if (isDescribed && valueEntries is null)
+          {
             valueEntries = new List<int>(def.Props.Count + 1);
+            typeOffsets = new List<int>(def.Props.Count + 1);
+          }
           if (valueEntries != null)
           {
             while (valueEntries.Count < def.Props.Count)
+            {
               valueEntries.Add(-1);
+              typeOffsets.Add(-1);
+            }
             valueEntries.Add(valueEntry);
+            typeOffsets.Add(typeOffset);
           }
           def.Props.Add(name);
         }
         def.ValueEntries = valueEntries?.ToArray();
+        def.TypeOffsets = typeOffsets?.ToArray();
         defs.Add(def);
       }
 
       if (stream.Position != raw.Length || (described && version != SchemaVersion.Described))
         throw InvalidSchema();
+      if (version == SchemaVersion.Described)
+      {
+        for (int t = 0; t < defs.Count; t++) // where the types are, parsed only for the values kept as extension data (KeptValues.WithoutSchema): an entry of names only (a collection's properties not found) has none
+        {
+          ComplexTypeDef def = defs[t];
+          def.SchemaRaw = raw;
+          def.SchemaSettings = settings;
+          if (def.TypeOffsets is null || def.TypeOffsets.Length < def.Props.Count)
+          {
+            int[] offsets = new int[def.Props.Count];
+            for (int o = 0; o < offsets.Length; o++)
+              offsets[o] = def.TypeOffsets != null && o < def.TypeOffsets.Length ? def.TypeOffsets[o] : -1;
+            def.TypeOffsets = offsets;
+          }
+        }
+      }
       return defs;
     }
 
@@ -138,10 +164,12 @@ namespace LsMsgPack
     /// </summary>
     /// <param name="described">An item of version 2</param>
     /// <param name="valueEntry">The entry of the objects its type holds (see <see cref="ReadValueEntry"/>), -1 for none</param>
+    /// <param name="typeOffset">Version 2: where its type starts in the schema (see <see cref="TypeAt"/>), otherwise -1</param>
     /// <returns>The name</returns>
-    private static string ReadItem(Stream stream, MsgPackOptions settings, out bool described, out int valueEntry)
+    private static string ReadItem(Stream stream, MsgPackOptions settings, out bool described, out int valueEntry, out int typeOffset)
     {
       valueEntry = -1;
+      typeOffset = -1;
       int first = ReadByte(stream, null);
       described = IsArray(first);
       if (!described)
@@ -153,6 +181,7 @@ namespace LsMsgPack
       string name = ReadName(stream, ReadByte(stream, null), settings);
       if (count == 3 && name == DescribedSchema.ContentName)
         throw InvalidSchema();
+      typeOffset = (int)stream.Position;
       valueEntry = ReadValueEntry(stream, settings, 1);
       if (count == 3) // the default: any value, for other readers
         CopyValue(stream, null, settings, settings, 1);
@@ -205,6 +234,68 @@ namespace LsMsgPack
           CopyValue(stream, null, settings, settings, depth + 1);
       }
       return entry;
+    }
+
+    /// <summary>
+    /// A type of version 2 (see <see cref="DescribedSchema"/>) as a tree: an entry index (long), a kind (string), <c>[kind, ...]</c> (object[]), null for anything else (other readers' additions).
+    /// Parsed when it is needed (a value kept as extension data, KeptValues.WithoutSchema), from where <see cref="Parse(byte[], MsgPackOptions, out SchemaVersion, out int)"/> found it.
+    /// </summary>
+    /// <param name="offset">Where the type starts, -1 for none (null)</param>
+    /// <param name="settings">The byte order of the schema's lengths and numbers, null for <see cref="Canonical"/></param>
+    internal static object TypeAt(byte[] raw, int offset, MsgPackOptions settings)
+    {
+      if (raw is null || offset < 0)
+        return null;
+      MemoryStream stream = new MemoryStream(raw, false) { Position = offset };
+      return ReadTypeTree(stream, settings ?? Canonical, 1);
+    }
+
+    private static object ReadTypeTree(Stream stream, MsgPackOptions settings, int depth)
+    {
+      if (depth > MaxValueDepth)
+        throw InvalidSchema();
+      int first = ReadByte(stream, null);
+      if (first <= 0x7F)
+        return (long)first;
+      if (first == (int)MsgPackTypeId.MpUByte)
+        return (long)ReadNumber(stream, 1, settings);
+      if (first == (int)MsgPackTypeId.MpUShort)
+        return (long)ReadNumber(stream, 2, settings);
+      if (first == (int)MsgPackTypeId.MpUInt)
+        return (long)ReadNumber(stream, 4, settings);
+      if ((first & 0xE0) == 0xA0 || first == (int)MsgPackTypeId.MpStr8)
+        return ReadName(stream, first, settings);
+      if (!IsArray(first))
+      {
+        CopyRest(stream, first, null, settings, settings, depth);
+        return null;
+      }
+
+      long count = ReadArrayLength(stream, first, null, settings);
+      List<object> items = new List<object>((int)Math.Min(count, 4)); // each item has at least one byte: a count the data does not have ends early
+      for (long t = 0; t < count; t++)
+        items.Add(ReadTypeTree(stream, settings, depth + 1));
+      return items.ToArray();
+    }
+
+    /// <summary>
+    /// One MsgPack value in another byte order (a value kept as extension data, see KeptValues.InByteOrder).
+    /// </summary>
+    internal static byte[] CopyValue(byte[] value, MsgPackOptions from, MsgPackOptions to)
+    {
+      MemoryStream stream = new MemoryStream(value, false);
+      ByteWriter bytes = new ByteWriter(value.Length);
+      CopyValue(stream, bytes, from, to, 0);
+      return bytes.ToArray();
+    }
+
+    /// <returns>The length of the first MsgPack value of the bytes</returns>
+    /// <exception cref="MsgPackException">Not a value (or nested deeper than 64)</exception>
+    internal static long SkipValue(byte[] value)
+    {
+      MemoryStream stream = new MemoryStream(value, false);
+      CopyValue(stream, null, Canonical, Canonical, 0);
+      return stream.Position;
     }
 
     /// <summary>

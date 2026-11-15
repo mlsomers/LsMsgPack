@@ -275,6 +275,8 @@ namespace LsMsgPack.Analyzers
         Add(named.BaseType);
         foreach (ISymbol member in named.GetMembers())
         {
+          if (ExtensionDataMembers.IsExtensionMember(member)) // keeps the members of the data the class does not have: never a property itself, its values are not models
+            continue;
           if (member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer && property.DeclaredAccessibility == Accessibility.Public && property.GetMethod != null)
             Add(HasMemberConverter(property, property.Type, out ITypeSymbol propertySurrogate) ? propertySurrogate : property.Type); // a member's own converter: its value is written as the surrogate
           else if (member is IFieldSymbol field && Fields.IsSerialized(field, _fields))

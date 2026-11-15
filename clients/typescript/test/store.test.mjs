@@ -52,3 +52,35 @@ test('export and import (JSON), the ids are computed again', () => {
   assert.strictEqual(store.size, 0);
   assert.strictEqual(store.advertise('o'), undefined);
 });
+
+test('per route: a request lists the schemas of its route, a route not called yet the most recent ones', () => {
+  for (const advertiseByRoute of [true, false]) {
+    const store = new SchemaStore({ advertiseByRoute });
+    const [order, node, point] = ['Order', 'Node', 'Point'].map(schemaOf);
+    store.learn('o', order.id, order, '/api/orders/17');
+    store.learn('o', node.id, node, '/api/nodes');
+    store.learn('o', point.id, point, '/api/points/3f2504e0-4f89-11d3-9a0c-0305e82c3301');
+    const recent = `${point.id},${node.id},${order.id}`;
+    const routed = (id) => (advertiseByRoute ? id : recent);
+    assert.strictEqual(store.advertise('o', '/api/orders/18'), routed(order.id), 'a segment of digits is an id');
+    assert.strictEqual(store.advertise('o', '/api/nodes'), routed(node.id));
+    assert.strictEqual(store.advertise('o', '/api/points/00000000-0000-0000-0000-00000000000A'), routed(point.id), 'a Guid is an id');
+    assert.strictEqual(store.advertise('o', '/api/orders/18/lines'), recent, 'a route not called yet');
+    assert.strictEqual(store.advertise('o', '/v2/api/nodes'), recent);
+    assert.strictEqual(store.advertise('o'), recent, 'without a path');
+    assert.strictEqual(store.advertise('other', '/api/nodes'), undefined, 'per origin');
+
+    // a route with several types lists them all; the recent ones change only for ids new to a route
+    store.touch('o', order.id, '/api/nodes');
+    assert.strictEqual(store.advertise('o', '/api/nodes'), advertiseByRoute ? `${order.id},${node.id}` : `${order.id},${point.id},${node.id}`);
+    store.touch('o', point.id, '/api/points/17');
+    assert.strictEqual(store.advertise('o', '/unknown'), advertiseByRoute ? `${order.id},${point.id},${node.id}` : `${point.id},${order.id},${node.id}`);
+
+    // export and import keep the routes
+    const copy = new SchemaStore({ advertiseByRoute });
+    copy.import(JSON.parse(JSON.stringify(store.export())));
+    for (const path of ['/api/orders/1', '/api/nodes', '/api/points/2', '/unknown']) assert.strictEqual(copy.advertise('o', path), store.advertise('o', path), path);
+    store.clear();
+    assert.strictEqual(store.advertise('o', '/api/nodes'), undefined);
+  }
+});

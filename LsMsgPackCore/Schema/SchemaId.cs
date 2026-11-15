@@ -85,11 +85,34 @@ namespace LsMsgPack
     {
       if (hex is null || hex.Length != Length * 2)
         throw new FormatException($"A schema id is written as {Length * 2} hexadecimal digits.");
+      if (TryParseDigits(hex, 0, out ulong high) && TryParseDigits(hex, 16, out ulong low)) // every response header of a negotiating client: no array and substrings
+        return new SchemaId(high, low);
 
       byte[] bytes = new byte[Length];
       for (int t = 0; t < Length; t++)
         bytes[t] = byte.Parse(hex.Substring(t * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
       return new SchemaId(bytes);
+    }
+
+    private SchemaId(ulong high, ulong low)
+    {
+      _high = high;
+      _low = low;
+    }
+
+    /// <returns>false when a char is not a hexadecimal digit (the caller then parses as byte.Parse does, which also takes white space around a pair)</returns>
+    private static bool TryParseDigits(string hex, int start, out ulong value)
+    {
+      value = 0;
+      for (int t = start; t < start + 16; t++)
+      {
+        char c = hex[t];
+        int digit = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+        if (digit < 0)
+          return false;
+        value = (value << 4) | (uint)digit;
+      }
+      return true;
     }
 
     /// <summary>

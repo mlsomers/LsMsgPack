@@ -1,4 +1,5 @@
-﻿using Microsoft.CodeAnalysis;
+﻿using LsMsgPack.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -14,7 +15,7 @@ namespace LsMsgPack.Analyzers
   /// <summary>
   /// The properties and fields of the serialized types (<see cref="ModelTypes"/>): default values that are lost (LSMP001-003, LSMP006) and places where the data picks the type (LSMP004),
   /// the calls and actions that read into such a place (LSMP005) or into a place without property names (LSMP007), classes of other projects that are not checked (LSMP008),
-  /// JSON document types (LSMP009) and public fields the serializers leave out (LSMP010). See docs/Analyzers.md.
+  /// JSON document types (LSMP009), public fields the serializers leave out (LSMP010) and extension data members the serializers refuse (LSMP011). See docs/Analyzers.md.
   /// <para>Reported from symbol and operation actions (not at the end of the compilation), so the IDE shows them while typing and offers the code fixes.</para>
   /// </summary>
   [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -22,7 +23,7 @@ namespace LsMsgPack.Analyzers
   {
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
       ImmutableArray.Create(Rules.MissingDefaultValue, Rules.DefaultValueDiffers, Rules.DefaultValueType, Rules.OpenProperty, Rules.OpenRead,
-        Rules.NullReadAsInitial, Rules.UntypedRead, Rules.UncheckedModel, Rules.JsonDocument, Rules.FieldLeftOut);
+        Rules.NullReadAsInitial, Rules.UntypedRead, Rules.UncheckedModel, Rules.JsonDocument, Rules.FieldLeftOut, Rules.InvalidExtensionData);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -39,6 +40,7 @@ namespace LsMsgPack.Analyzers
         start.RegisterSymbolAction(c => AnalyzeProperty(c, known, models, others), SymbolKind.Property);
         start.RegisterSymbolAction(c => AnalyzeField(c, known, models, others, fields), SymbolKind.Field);
         start.RegisterSymbolAction(c => AnalyzeBaseType(c, models, others), SymbolKind.NamedType);
+        start.RegisterSymbolAction(c => AnalyzeExtensionData(c, models), SymbolKind.NamedType);
         start.RegisterSymbolAction(c => AnalyzeAction(c, known, others), SymbolKind.Method);
         start.RegisterOperationAction(c => AnalyzeCall(c, known, others), OperationKind.Invocation, OperationKind.ObjectCreation);
         if (known.MinimalApiBody != null)
@@ -82,6 +84,42 @@ namespace LsMsgPack.Analyzers
 
     #region Properties and fields
 
+    /// <summary>
+    /// LSMP011: the extension data members of a serialized class (ExtensionDataMembers.Candidates, as Core's ExtensionDataMember finds them): reported where the class declares one,
+    /// when it is marked but of a type the runtime can't fill, or when the class (with its base classes) has more than one. A class that only inherits them is not reported again.
+    /// </summary>
+    private static void AnalyzeExtensionData(SymbolAnalysisContext context, Models models)
+    {
+      INamedTypeSymbol type = (INamedTypeSymbol)context.Symbol;
+      if (type.TypeKind != TypeKind.Class && type.TypeKind != TypeKind.Struct)
+        return;
+      List<ISymbol> candidates = ExtensionDataMembers.Candidates(type);
+      if (candidates.Count == 0)
+        return;
+      bool declaresOne = false;
+      for (int t = 0; t < candidates.Count; t++)
+        declaresOne |= SymbolEqualityComparer.Default.Equals(candidates[t].ContainingType, type);
+      if (!declaresOne || !models.Get(context.CancellationToken).Contains(type))
+        return;
+
+      for (int t = 0; t < candidates.Count; t++)
+      {
+        ISymbol member = candidates[t];
+        if (!SymbolEqualityComparer.Default.Equals(member.ContainingType, type) || member.Locations.Length == 0)
+          continue;
+        ITypeSymbol memberType = ExtensionDataMembers.TypeOf(member);
+        if (!ExtensionDataMembers.IsValidType(memberType, context.Compilation))
+          context.ReportDiagnostic(Diagnostic.Create(Rules.InvalidExtensionData, member.Locations[0], string.Concat(type.Name, ".", member.Name),
+            string.Concat("is marked as extension data but is a ", memberType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat), ", which the serializers can't fill (a MsgPackExtensionData, or a dictionary of string to object)"), type.Name));
+        else if (t > 0) // the first one found is the one the runtime would take, the others are too many
+          context.ReportDiagnostic(Diagnostic.Create(Rules.InvalidExtensionData, member.Locations[0], string.Concat(type.Name, ".", member.Name),
+            string.Concat("keeps extension data, and so does '", candidates[0].ContainingType.Name, ".", candidates[0].Name, "': a class has one such member"), type.Name));
+        else if (candidates.Count > 1)
+          context.ReportDiagnostic(Diagnostic.Create(Rules.InvalidExtensionData, member.Locations[0], string.Concat(type.Name, ".", member.Name),
+            string.Concat("keeps extension data, and so does '", candidates[1].ContainingType.Name, ".", candidates[1].Name, "': a class has one such member"), type.Name));
+      }
+    }
+
     private static void AnalyzeProperty(SymbolAnalysisContext context, KnownSymbols known, Models models, OtherAssemblies others)
     {
       IPropertySymbol property = (IPropertySymbol)context.Symbol;
@@ -89,7 +127,7 @@ namespace LsMsgPack.Analyzers
         || (property.SetMethod != null && property.SetMethod.DeclaredAccessibility != Accessibility.Public))
         return; // what FilterNonSettable and FilterStatic leave out
       ModelTypes types = models.Get(context.CancellationToken);
-      if (!types.Contains(property.ContainingType) || IsIgnored(property))
+      if (!types.Contains(property.ContainingType) || IsIgnored(property) || ExtensionDataMembers.IsExtensionMember(property))
         return;
       AnalyzeMember(context, property, property.Type, property.SetMethod != null, known, others, types);
     }
@@ -102,7 +140,7 @@ namespace LsMsgPack.Analyzers
     {
       IFieldSymbol field = (IFieldSymbol)context.Symbol;
       ModelTypes types = models.Get(context.CancellationToken);
-      if (!Fields.IsOfState(field) || !types.Contains(field.ContainingType) || IsIgnored(field))
+      if (!Fields.IsOfState(field) || !types.Contains(field.ContainingType) || IsIgnored(field) || ExtensionDataMembers.IsExtensionMember(field))
         return;
       if (Fields.IsSerialized(field, mode))
       {
