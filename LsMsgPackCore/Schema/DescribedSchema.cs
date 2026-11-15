@@ -261,7 +261,10 @@ namespace LsMsgPack
       MsgPackConverter converter = _settings.ConverterFor(type, assignedTo);
       if (converter != null) // written as its surrogate, a value declared as the surrogate type
       {
-        WriteType(converter.SurrogateType, null, elements);
+        if (converter is MsgPackBinaryConverter binary && binary.ExtensionTypeCode != null)
+          Kind("any"); // an extension, as the custom extensions
+        else
+          WriteType(converter.SurrogateType, null, elements);
         return;
       }
 

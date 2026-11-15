@@ -813,6 +813,11 @@ namespace LsMsgPack
       {
         return new ConverterHandler<T, TSurrogate>(_serializer, converter);
       }
+
+      public object Binary<T>(MsgPackBinaryConverter<T> converter)
+      {
+        return new BinaryConverterHandler<T>(_serializer, converter);
+      }
     }
 
     private void WriteLeaf(WriteContext c, object value, WriteTypeInfo info)

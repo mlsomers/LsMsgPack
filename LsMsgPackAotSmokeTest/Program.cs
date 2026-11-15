@@ -248,8 +248,19 @@ namespace LsMsgPackAotSmokeTest
     public override DateTime FromSurrogate(long surrogate) { return DateTimeOffset.FromUnixTimeSeconds(surrogate).UtcDateTime; }
   }
 
+  /// <summary>
+  /// Written by the blit converter on Invoice.Samples: the memory of the array.
+  /// </summary>
+  public struct Sample
+  {
+    public float A;
+    public int B;
+  }
+
   public class Invoice
   {
+    [LsMsgPack.Converters.MsgPackConverter(typeof(LsMsgPack.Converters.BlitArrayConverter<Sample>))]
+    public Sample[] Samples { get; set; }
     [LsMsgPack.Converters.MsgPackConverter(typeof(UnixSecondsConverter))]
     public DateTime Due { get; set; }
     [LsMsgPack.Converters.MsgPackConverter(typeof(UnixSecondsConverter))]
@@ -454,6 +465,7 @@ namespace LsMsgPackAotSmokeTest
         Total = 252.47m,
         Discount = new Discount { Percent = 12.5m, Code = "AUTUMN" },
         Due = new DateTime(2026, 11, 30, 12, 0, 0, DateTimeKind.Utc),
+        Samples = new[] { new Sample { A = 1.5f, B = -2 }, new Sample { A = float.NaN, B = int.MaxValue } },
         Reminded = new DateTime(2026, 12, 7, 9, 0, 0, DateTimeKind.Utc),
         Postmarks = new List<Postmark> { new Postmark("Utrecht", 12), null },
         Urgent = true,
@@ -611,7 +623,7 @@ namespace LsMsgPackAotSmokeTest
         .Append(o.Payment is null ? "null" : $"[{o.Payment.Amount.ToString(CultureInfo.InvariantCulture)} {o.Payment.Note ?? "null"} {o.Payment.Logged}]").Append(';')
         .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]").Append(';').Append(Dump(o.Route)).Append(';')
         .Append(o.Discount is null ? "null" : o.Discount.Percent.ToString(CultureInfo.InvariantCulture) + "/" + o.Discount.Code).Append(';')
-        .Append(Time(o.Due)).Append(';').Append(o.Reminded.HasValue ? Time(o.Reminded.Value) : "null").Append(';')
+        .Append(Time(o.Due)).Append(';').Append(o.Samples is null ? "null" : string.Join(",", o.Samples.Select(x => x.A.ToString("R", CultureInfo.InvariantCulture) + "/" + x.B))).Append(';').Append(o.Reminded.HasValue ? Time(o.Reminded.Value) : "null").Append(';')
         .Append(o.Postmarks is null ? "null" : string.Join(",", o.Postmarks.Select(p => p is null ? "null" : p.Office + "/" + p.Day)));
       return text.ToString();
     }

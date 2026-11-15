@@ -58,4 +58,37 @@ namespace LsMsgPack.Reading
       return key < r.End && b[key] == 0xA0;
     }
   }
+
+  /// <summary>
+  /// The values of a type with a binary converter: the bytes of bin (or of an extension of the converter's type code) handed to the converter in place; nil is the default.
+  /// Anything else goes to LsMsgPack.Core (<see cref="ValueReader{T}.Slow"/>: a type id, or the error).
+  /// </summary>
+  internal sealed class BinaryConverterReader<T> : ValueReader<T>
+  {
+    private readonly MsgPackBinaryConverter<T> _converter;
+    private readonly int _extension; // the extension type code, -1 for none
+
+    internal BinaryConverterReader(Serializer serializer, MsgPackBinaryConverter<T> converter)
+    {
+      _converter = converter;
+      _extension = converter.ExtensionTypeCode ?? -1;
+    }
+
+    internal override T Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      MsgPackReader r = c.R;
+      int start = r.Pos;
+      if (r.TryReadNil())
+        return default(T);
+      int length = r.TryReadBinHeader();
+      if (length < 0)
+      {
+        if (_extension < 0 || !r.TryReadExtHeader(out sbyte typeCode, out length, out LsMsgPack.MsgPackTypeId format) || typeCode != _extension)
+          return Slow(c, start, assignedTo); // the position is rewound there
+      }
+      T value = _converter.Read(new System.ReadOnlySpan<byte>(r.Buf, r.Pos, length)); // the lengths are checked against the data
+      r.Pos += length;
+      return value;
+    }
+  }
 }

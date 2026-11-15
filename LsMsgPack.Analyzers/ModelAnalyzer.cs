@@ -133,16 +133,16 @@ namespace LsMsgPack.Analyzers
     {
       string name = string.Concat(member.ContainingType.Name, ".", member.Name);
       Location location = member.Locations[0];
-      ITypeSymbol written = ModelTypes.MemberSurrogate(member, type) ?? type; // a member's own converter writes the surrogate: the type rules are about it
-      ITypeSymbol json = JsonPart(written);
+      ITypeSymbol written = ModelTypes.HasMemberConverter(member, type, out ITypeSymbol surrogate) ? surrogate : type; // a member's own converter writes the surrogate: the type rules are about it (none for binary data)
+      ITypeSymbol json = written is null ? null : JsonPart(written);
       if (json != null)
         context.ReportDiagnostic(Diagnostic.Create(Rules.JsonDocument, location, string.Concat("'", name, "' is declared as ", Display(type)), Display(json)));
       if (!settable)
         return; // without a setter (GetOnlyProperties) or readonly: written, but never set from the data
-      ITypeSymbol open = OpenPart(written);
+      ITypeSymbol open = written is null ? null : OpenPart(written);
       if (open != null)
         context.ReportDiagnostic(Diagnostic.Create(Rules.OpenProperty, location, name, Display(type), Display(open)));
-      INamedTypeSymbol other = others.FindUnchecked(written);
+      INamedTypeSymbol other = written is null ? null : others.FindUnchecked(written);
       if (other != null)
         context.ReportDiagnostic(Diagnostic.Create(Rules.UncheckedModel, location, Display(other), other.ContainingAssembly.Name));
 

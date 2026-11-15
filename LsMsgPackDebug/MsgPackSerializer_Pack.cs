@@ -147,7 +147,9 @@ namespace LsMsgPackDebug
     {
       bool wrap = !(assignedTo?.AssignedToType is null || tType.IsPrimitive || tType == typeof(string) || !SerializationRules.NeedsTypeId(tType, assignedTo, settings));
       object typeId = wrap ? SerializationRules.GetTypeIdentifier(tType, settings, assignedTo) : null;
-      MsgPackItem content = SerializeObject(converter.ToSurrogateBoxed(item), settings, converter.SurrogateInfo, depth, byNames);
+      MsgPackItem content = converter is MsgPackBinaryConverter binary && binary.ExtensionTypeCode != null
+        ? new MpExt(settings) { TypeSpecifier = binary.ExtensionTypeCode.Value, Value = binary.ToBytes(item) } // the bytes of a binary converter as its extension (otherwise bin, as any byte[])
+        : SerializeObject(converter.ToSurrogateBoxed(item), settings, converter.SurrogateInfo, depth, byNames);
       if (!wrap)
         return content;
       return new MpMap(new KeyValuePair<object, object>[]

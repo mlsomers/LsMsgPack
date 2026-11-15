@@ -409,6 +409,139 @@ namespace LsMsgPackUnitTests
       yield return 1.25m;
     }
 
+    #region Blit converters
+
+    public struct CvVec
+    {
+      public float X;
+      public float Y;
+      public float Z;
+      public override string ToString() { return X.ToString("R", CultureInfo.InvariantCulture) + "," + Y.ToString("R", CultureInfo.InvariantCulture) + "," + Z.ToString("R", CultureInfo.InvariantCulture); }
+    }
+
+    /// <summary>Fields of several sizes (padding between them).</summary>
+    public struct CvSample
+    {
+      public long At;
+      public short Level;
+      public byte Flags;
+      public double Value;
+      public override string ToString() { return At + "/" + Level + "/" + Flags + "/" + Value.ToString("R", CultureInfo.InvariantCulture); }
+    }
+
+    /// <summary>A binary converter of its own: the samples as an extension of type 42 (the blit converter's bytes).</summary>
+    public sealed class CvSamplesAsExtension : MsgPackBinaryConverter<CvSample[]>
+    {
+      private static readonly BlitArrayConverter<CvSample> Inner = new BlitArrayConverter<CvSample>();
+      public CvSamplesAsExtension() : base(42) { }
+      public override int GetLength(CvSample[] value) { return Inner.GetLength(value); }
+      public override void Write(CvSample[] value, Span<byte> destination) { Inner.Write(value, destination); }
+      public override CvSample[] Read(ReadOnlySpan<byte> data) { return Inner.Read(data); }
+    }
+
+    public class CvBlits
+    {
+      public CvVec[] Points { get; set; }
+      public List<CvVec> Path { get; set; }
+      public Memory<CvVec> Memory { get; set; }
+      public ReadOnlyMemory<CvVec> ReadOnly { get; set; }
+      [MsgPackConverter(typeof(BlitConverter<CvVec>))]
+      public CvVec Single { get; set; }
+      [MsgPackConverter(typeof(BlitConverter<CvVec>))]
+      public CvVec? MaybeSingle { get; set; }
+      [MsgPackConverter(typeof(CvSamplesAsExtension))]
+      public CvSample[] Samples { get; set; }
+      public object Boxed { get; set; }
+      public int After { get; set; }
+    }
+
+    internal static MsgPackConverter[] BlitConverters()
+    {
+      return new MsgPackConverter[] { new BlitArrayConverter<CvVec>(), new BlitListConverter<CvVec>(), new BlitMemoryConverter<CvVec>(), new BlitReadOnlyMemoryConverter<CvVec>() };
+    }
+
+    private static CvVec[] Vectors(int count)
+    {
+      CvVec[] vectors = new CvVec[count];
+      for (int t = 0; t < count; t++)
+        vectors[t] = new CvVec { X = t, Y = -t * 0.5f, Z = t == 1 ? float.NaN : t * 1e30f };
+      return vectors;
+    }
+
+    internal static CvBlits BlitFull()
+    {
+      return new CvBlits
+      {
+        Points = Vectors(3), Path = new List<CvVec>(Vectors(70)), Memory = Vectors(2), ReadOnly = Vectors(1), Single = new CvVec { X = 1, Y = 2, Z = 3 }, MaybeSingle = new CvVec { Z = -0f },
+        Samples = new[] { new CvSample { At = long.MinValue, Level = -1, Flags = 255, Value = 0.1 }, new CvSample() }, Boxed = Vectors(1), After = 9
+      };
+    }
+
+    internal static IEnumerable<object> BlitCorpus()
+    {
+      yield return BlitFull();
+      yield return new CvBlits();
+      yield return new CvBlits { Points = new CvVec[0], Path = new List<CvVec>(), Samples = new CvSample[0] };
+      yield return Vectors(5);
+      yield return new List<CvVec>(Vectors(1000));
+      yield return new object[] { Vectors(2), new List<CvVec>(Vectors(1)) };
+    }
+
+    /// <summary>The values a test can compare: the memories as arrays.</summary>
+    private static string DumpBlits(object value)
+    {
+      if (value is CvBlits b)
+        return CrossLibraryTests.Dump(new object[] { b.Points, b.Path, b.Memory.ToArray(), b.ReadOnly.ToArray(), b.Single, b.MaybeSingle, b.Samples, b.Boxed, b.After });
+      return CrossLibraryTests.Dump(value);
+    }
+
+    [TestMethod]
+    [DataRow(true, ObjectLayout.Array)]
+    [DataRow(true, ObjectLayout.Map)]
+    [DataRow(false, ObjectLayout.Array)]
+    [DataRow(false, ObjectLayout.Map)]
+    public void Blit_RoundTrip(bool schema, ObjectLayout layout)
+    {
+      MsgPackSettings debug = new MsgPackSettings { Converters = BlitConverters(), UseInexedSchema = schema, ObjectLayout = layout };
+      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BlitConverters(), UseInexedSchema = schema, ObjectLayout = layout });
+      foreach (object value in BlitCorpus())
+      {
+        Type type = value.GetType();
+        string expected = DumpBlits(value);
+        if (type == typeof(object[])) // declared as object: the type ids name the arrays
+          continue;
+        Assert.AreEqual(expected, DumpBlits(MsgPackSerializer.Deserialize(type, MsgPackSerializer.Serialize(value, type, debug), debug)), "Debug " + type.Name);
+        Assert.AreEqual(expected, DumpBlits(ls.Deserialize(type, ls.Serialize(value, type))), "Ls " + type.Name);
+      }
+    }
+
+    [TestMethod]
+    public void Blit_TheBytesOfTheMemory()
+    {
+      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BlitConverters(), UseInexedSchema = false });
+      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      CvVec[] vectors = Vectors(3);
+      byte[] memory = System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<CvVec>(vectors)).ToArray();
+      CollectionAssert.AreEqual(plain.Serialize(memory), ls.Serialize(vectors), "bin of the array's memory");
+      CollectionAssert.AreEqual(plain.Serialize(memory), ls.Serialize(new List<CvVec>(vectors)));
+
+      byte[] samples = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array }).Serialize(new CvBlits { Samples = new[] { new CvSample { At = 1 } } });
+      int size = System.Runtime.CompilerServices.Unsafe.SizeOf<CvSample>();
+      Assert.AreEqual(1, Enumerable.Range(0, samples.Length - 2).Count(i => samples[i] == 0xC7 && samples[i + 1] == size && samples[i + 2] == 42), "ext 8 of type 42 with the sample's bytes");
+    }
+
+    [TestMethod]
+    public void Blit_ALengthOfAnotherLayoutThrows()
+    {
+      byte[] data = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false }).Serialize(new byte[13]);
+      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BlitConverters(), UseInexedSchema = false });
+      Assert.Throws<MsgPackException>(() => ls.Deserialize<CvVec[]>(data));
+      Assert.Throws<MsgPackException>(() => MsgPackSerializer.Deserialize<CvVec[]>(data, new MsgPackSettings { Converters = BlitConverters(), UseInexedSchema = false }));
+      Assert.Throws<ArgumentOutOfRangeException>(() => new BlitArrayConverter<CvVec>(-1));
+    }
+
+    #endregion
+
     #endregion
 
     private static MsgPackSettings DebugSettings(bool schema = true, ObjectLayout layout = ObjectLayout.Array)

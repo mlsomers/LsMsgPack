@@ -216,8 +216,7 @@ namespace LsMsgPack.Analyzers
         for (int t = 0; t < named.TypeArguments.Length; t++)
           Add(named.TypeArguments[t]);
 
-        ITypeSymbol surrogate = ConverterSurrogate(named);
-        if (surrogate != null) // [MsgPackConverter]: written as its surrogate, its own members are not serialized; classes deriving from it are objects with a type id
+        if (HasTypeConverter(named, out ITypeSymbol surrogate)) // [MsgPackConverter]: written as its surrogate, its own members are not serialized; classes deriving from it are objects with a type id
         {
           Add(surrogate);
           for (int t = 0; t < _sourceTypes.Count; t++)
@@ -233,9 +232,9 @@ namespace LsMsgPack.Analyzers
         foreach (ISymbol member in named.GetMembers())
         {
           if (member is IPropertySymbol property && !property.IsStatic && !property.IsIndexer && property.DeclaredAccessibility == Accessibility.Public && property.GetMethod != null)
-            Add(MemberSurrogate(property, property.Type) ?? property.Type); // a member's own converter: its value is written as the surrogate
+            Add(HasMemberConverter(property, property.Type, out ITypeSymbol propertySurrogate) ? propertySurrogate : property.Type); // a member's own converter: its value is written as the surrogate
           else if (member is IFieldSymbol field && Fields.IsSerialized(field, _fields))
-            Add(MemberSurrogate(field, field.Type) ?? field.Type);
+            Add(HasMemberConverter(field, field.Type, out ITypeSymbol fieldSurrogate) ? fieldSurrogate : field.Type);
         }
 
         // A value of a derived class has a type id where the base class (or interface) is declared
@@ -246,25 +245,28 @@ namespace LsMsgPack.Analyzers
     }
 
     /// <summary>
-    /// The surrogate type of the converter in the type's [MsgPackConverter] (the TSurrogate of its MsgPackConverter&lt;T, TSurrogate&gt;), null without one (as the generator's TypeWalker.ConverterSurrogate).
+    /// The type's [MsgPackConverter]: true when it has one, with the surrogate type of a MsgPackConverter&lt;T, TSurrogate&gt; (null for a MsgPackBinaryConverter&lt;T&gt;: binary data, nothing to follow).
     /// Converters of the options are not seen here.
     /// </summary>
-    internal static ITypeSymbol ConverterSurrogate(INamedTypeSymbol type)
+    internal static bool HasTypeConverter(INamedTypeSymbol type, out ITypeSymbol surrogate)
     {
-      return SurrogateOf(type, type, null);
+      return HasConverter(type, type, null, out surrogate);
     }
 
     /// <summary>
-    /// The surrogate type of the converter in a property's or field's own [MsgPackConverter] (its T is the member's type, or the underlying type of a nullable member), null without one.
+    /// A property's or field's own [MsgPackConverter] (its T is the member's type, or the underlying type of a nullable member): true when it has one, with the surrogate type as <see cref="HasTypeConverter"/>.
     /// </summary>
-    internal static ITypeSymbol MemberSurrogate(ISymbol member, ITypeSymbol type)
+    internal static bool HasMemberConverter(ISymbol member, ITypeSymbol type, out ITypeSymbol surrogate)
     {
       ITypeSymbol underlying = type is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T ? named.TypeArguments[0] : null;
-      return SurrogateOf(member, type, underlying);
+      return HasConverter(member, type, underlying, out surrogate);
     }
 
-    private static ITypeSymbol SurrogateOf(ISymbol symbol, ITypeSymbol converted, ITypeSymbol orConverted)
+    /// <param name="converted">The type the converter must convert</param>
+    /// <param name="orConverted">Another type it may convert (the underlying type of a nullable member), null for none</param>
+    private static bool HasConverter(ISymbol symbol, ITypeSymbol converted, ITypeSymbol orConverted, out ITypeSymbol surrogate)
     {
+      surrogate = null;
       foreach (AttributeData attribute in symbol.GetAttributes())
       {
         if (attribute.AttributeClass?.ToDisplayString() != "LsMsgPack.Converters.MsgPackConverterAttribute" || attribute.ConstructorArguments.Length != 1
@@ -272,12 +274,19 @@ namespace LsMsgPack.Analyzers
           continue;
         for (INamedTypeSymbol t = converter; t != null; t = t.BaseType)
         {
-          if (t.Name == "MsgPackConverter" && t.TypeArguments.Length == 2 && t.ContainingNamespace?.ToDisplayString() == "LsMsgPack.Converters"
+          if (t.ContainingNamespace?.ToDisplayString() != "LsMsgPack.Converters")
+            continue;
+          bool surrogateKind = t.Name == "MsgPackConverter" && t.TypeArguments.Length == 2;
+          bool binaryKind = t.Name == "MsgPackBinaryConverter" && t.TypeArguments.Length == 1;
+          if ((surrogateKind || binaryKind)
             && (SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], converted) || (orConverted != null && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], orConverted))))
-            return t.TypeArguments[1];
+          {
+            surrogate = surrogateKind ? t.TypeArguments[1] : null;
+            return true;
+          }
         }
       }
-      return null;
+      return false;
     }
 
     private static bool Derives(INamedTypeSymbol type, INamedTypeSymbol baseType)

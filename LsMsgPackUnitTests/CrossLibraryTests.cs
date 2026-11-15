@@ -771,6 +771,32 @@ namespace LsMsgPackUnitTests
       Assert.IsEmpty(differences, string.Join("\n", differences.Take(40)));
     }
 
+    /// <summary>
+    /// The blit converters (options and members, bin and an extension): the same bytes in every setting.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(Settings))]
+    public void SameBytesAndValuesBlit(EndianAction endian, bool compact, SchemaMode mode, ObjectLayout layout)
+    {
+      MsgPackSettings ls = new MsgPackSettings { Converters = ConverterTests.BlitConverters() };
+      Configure(ls, endian, compact, mode, layout);
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions { Converters = ConverterTests.BlitConverters() };
+      Configure(ltOptions, endian, compact, mode, layout);
+
+      List<string> differences = new List<string>();
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
+      {
+        int n = 0;
+        foreach (object value in ConverterTests.BlitCorpus())
+        {
+          n++;
+          foreach (Type declared in new[] { value.GetType(), typeof(object) })
+            Compare($"{which} #{n} {value.GetType().Name} as {declared.Name}", value, declared, ls, lt, differences);
+        }
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences.Take(40)));
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]

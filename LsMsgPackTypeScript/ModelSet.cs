@@ -211,8 +211,18 @@ namespace LsMsgPackTypeScript
     {
       if (prop.Converter is null)
         return SpecOf(prop.Type);
-      Spec surrogate = SpecOf(prop.Converter.SurrogateType);
+      Spec surrogate = SurrogateSpec(prop.Converter);
       return Nullable.GetUnderlyingType(prop.Type) != null ? Spec.Of("?", prop.Type, surrogate) : surrogate;
+    }
+
+    /// <summary>
+    /// The surrogate's spec: <c>bin</c> for a binary converter, <c>any</c> when it writes an extension (as DescribedSchema).
+    /// </summary>
+    private Spec SurrogateSpec(MsgPackConverter converter)
+    {
+      if (converter is MsgPackBinaryConverter binary && binary.ExtensionTypeCode != null)
+        return Spec.Kind("any", converter.ConvertedType);
+      return SpecOf(converter.SurrogateType);
     }
 
     internal Spec SpecOf(Type type)
@@ -222,7 +232,7 @@ namespace LsMsgPackTypeScript
         return Spec.Of("?", type, SpecOf(nullable));
       MsgPackConverter converter = _settings.ConverterFor(type);
       if (converter != null) // written as its surrogate
-        return SpecOf(converter.SurrogateType);
+        return SurrogateSpec(converter);
       if (type == typeof(decimal))
         return Spec.Kind("decimal", type);
       if (type.IsArray && type.GetArrayRank() > 1)

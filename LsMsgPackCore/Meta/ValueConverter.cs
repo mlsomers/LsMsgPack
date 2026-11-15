@@ -52,12 +52,27 @@ namespace LsMsgPack.Meta
     /// </summary>
     private static object ConvertSurrogate(object val, MsgPackConverter converter, MsgPackOptions settings)
     {
+      if (converter is MsgPackBinaryConverter binary)
+        return ConvertBinary(val, binary, settings);
       object surrogate = ConvertDeserializeValue(val, converter.SurrogateType, settings, converter.SurrogateInfo);
       if (surrogate is null)
         return null;
       if (!(Nullable.GetUnderlyingType(converter.SurrogateType) ?? converter.SurrogateType).IsInstanceOfType(surrogate)) // e.g. a map kept as it is where the surrogate is object
         throw ReadDifferences.NotConverted(settings, new InvalidCastException($"Object of type '{surrogate.GetType()}' cannot be converted to type '{converter.SurrogateType}' (the surrogate of {converter.ConvertedType.Name})."));
       return converter.FromSurrogateBoxed(surrogate); // the converter's exceptions are passed on as they are (as a setter's)
+    }
+
+    /// <summary>
+    /// A value of a type with a binary converter: binary data, or an extension of the converter's type code.
+    /// </summary>
+    private static object ConvertBinary(object val, MsgPackBinaryConverter binary, MsgPackOptions settings)
+    {
+      if (val is byte[] bytes)
+        return binary.FromBytes(bytes);
+      if (val is IMsgPackExtension extension && binary.ExtensionTypeCode == extension.TypeSpecifier)
+        return binary.FromBytes(extension.Data);
+      string expected = binary.ExtensionTypeCode is null ? "binary data" : $"binary data or an extension of type {binary.ExtensionTypeCode}";
+      throw ReadDifferences.NotConverted(settings, new InvalidCastException($"A value of {binary.ConvertedType.Name} is {expected} (its {binary.GetType().Name}), not {(val is IMsgPackExtension other ? "an extension of type " + other.TypeSpecifier : val.GetType().Name)}."));
     }
 
     private static bool HasTypeId(KeyValuePair<object, object>[] map)

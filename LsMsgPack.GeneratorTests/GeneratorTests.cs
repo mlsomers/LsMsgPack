@@ -892,6 +892,40 @@ namespace ConvMember
     }
 
     [TestMethod]
+    public void Converters_Binary_NothingToDescribe()
+    {
+      GeneratorHarness.Result result = GeneratorHarness.Run(@"
+using LsMsgPack;
+using LsMsgPack.Converters;
+
+namespace Blits
+{
+  [MsgPackConverter(typeof(BlitConverter<Pixel>))]
+  public struct Pixel { public byte R; public byte G; public byte B; public Secret Hidden { get { return null; } } }
+
+  public class Secret { public int Code { get; set; } }
+
+  public struct Sample { public float A; public int B; }
+
+  public class Image
+  {
+    public Pixel Corner { get; set; }
+    [MsgPackConverter(typeof(BlitArrayConverter<Sample>))]
+    public Sample[] Samples { get; set; }
+  }
+
+  [LsMsgPackSerializable(typeof(Image))]
+  public partial class BlitsMsgPackContext : LsMsgPackContext { }
+}");
+      result.AssertCompiles();
+      string code = result.AllGenerated;
+      Assert.Contains("Boxed<global::Blits.Pixel>()", code, "the converted struct is only listed");
+      Assert.DoesNotContain("global::Blits.Secret", code, "its members are not walked");
+      Assert.Contains("\"Samples\", typeof(global::Blits.Sample[]), global::LsMsgPack.Generated.GeneratedKind.None", code, "the member's converter writes it");
+      Assert.DoesNotContain("BulkArray<global::Blits.Sample>", code);
+    }
+
+    [TestMethod]
     public void ShouldSerializeMethods_Kept()
     {
       GeneratorHarness.Result result = GeneratorHarness.Run(@"

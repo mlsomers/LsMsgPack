@@ -103,6 +103,8 @@ namespace LsMsgPack.Converters
   internal interface IMsgPackConverterVisitor<TResult>
   {
     TResult Surrogate<T, TSurrogate>(MsgPackConverter<T, TSurrogate> converter);
+
+    TResult Binary<T>(MsgPackBinaryConverter<T> converter);
   }
 
   /// <summary>

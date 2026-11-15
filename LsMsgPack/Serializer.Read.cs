@@ -480,6 +480,11 @@ namespace LsMsgPack
       {
         return new ConverterReader<T, TSurrogate>(_serializer, converter);
       }
+
+      public object Binary<T>(MsgPackBinaryConverter<T> converter)
+      {
+        return new BinaryConverterReader<T>(_serializer, converter);
+      }
     }
 
     /// <returns>null when the type is not an object with properties that can be created</returns>

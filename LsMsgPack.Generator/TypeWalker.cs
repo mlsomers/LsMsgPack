@@ -270,8 +270,7 @@ namespace LsMsgPack.Generator
         return;
       }
 
-      ITypeSymbol surrogate = ConverterSurrogate(named);
-      if (surrogate != null) // written as its surrogate by its converter (the runtime creates it from the attribute): no members of its own, listed so a type id can name it
+      if (HasTypeConverter(named, out ITypeSymbol surrogate)) // written as its surrogate by its converter (the runtime creates it from the attribute): no members of its own, listed so a type id can name it
       {
         Enqueue(surrogate);
         Add(TypeModelKind.Boxed, name);
@@ -851,7 +850,7 @@ namespace LsMsgPack.Generator
             kept |= Kept.NonPublicFields;
           if (IsObsoleteError(field) || !IsAccessible(field.Type))
             continue;
-          Enqueue(MemberSurrogate(field, field.Type) ?? field.Type); // a member's own converter: its value is written as the surrogate
+          Enqueue(HasMemberConverter(field, field.Type, out ITypeSymbol fieldSurrogate) ? fieldSurrogate : field.Type); // a member's own converter: its value is written as the surrogate
           RecordPolymorphic(type, field, field.Type);
           bool canGetField = CanGet(type, field, out bool unsafeField);
           bool canSetField = CanSet(type, field);
@@ -868,7 +867,7 @@ namespace LsMsgPack.Generator
 
         if (property.DeclaredAccessibility != Accessibility.Public)
           kept |= Kept.NonPublicProperties;
-        Enqueue(MemberSurrogate(property, property.Type) ?? property.Type);
+        Enqueue(HasMemberConverter(property, property.Type, out ITypeSymbol propertySurrogate) ? propertySurrogate : property.Type);
         RecordPolymorphic(type, property, property.Type);
 
         bool canGet = CanGet(type, property, out bool unsafeGet);
@@ -1161,7 +1160,7 @@ namespace LsMsgPack.Generator
         nullable = true;
       }
       string underlying = null;
-      string kind = MemberSurrogate(member, type) != null ? "None" : KindOf(valueType, out underlying); // a member's own converter: the runtime's handler writes and reads it
+      string kind = HasMemberConverter(member, type, out ITypeSymbol unused) ? "None" : KindOf(valueType, out underlying); // a member's own converter: the runtime's handler writes and reads it
       if (kind == "None")
         nullable = false;
       return new MemberModel(t.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format), member.Name, Escape(member.Name),
@@ -1284,27 +1283,28 @@ namespace LsMsgPack.Generator
     }
 
     /// <summary>
-    /// The surrogate type of the converter in the type's [MsgPackConverter] (the TSurrogate of its MsgPackConverter&lt;T, TSurrogate&gt;), null without one.
-    /// Converters of the options are not seen here: their surrogate types need a context of their own (docs/Converters.md).
+    /// The type's [MsgPackConverter]: true when it has one, with the surrogate type of a MsgPackConverter&lt;T, TSurrogate&gt; (null for a MsgPackBinaryConverter&lt;T&gt;: binary data, nothing to follow).
+    /// Converters of the options are not seen here.
     /// </summary>
-    private static ITypeSymbol ConverterSurrogate(INamedTypeSymbol type)
+    private static bool HasTypeConverter(INamedTypeSymbol type, out ITypeSymbol surrogate)
     {
-      return SurrogateOf(type, type, null);
+      return HasConverter(type, type, null, out surrogate);
     }
 
     /// <summary>
-    /// The surrogate type of the converter in a property's or field's own [MsgPackConverter] (its T is the member's type, or the underlying type of a nullable member), null without one.
+    /// A property's or field's own [MsgPackConverter] (its T is the member's type, or the underlying type of a nullable member): true when it has one, with the surrogate type as <see cref="HasTypeConverter"/>.
     /// </summary>
-    private static ITypeSymbol MemberSurrogate(ISymbol member, ITypeSymbol type)
+    private static bool HasMemberConverter(ISymbol member, ITypeSymbol type, out ITypeSymbol surrogate)
     {
       ITypeSymbol underlying = type is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T ? named.TypeArguments[0] : null;
-      return SurrogateOf(member, type, underlying);
+      return HasConverter(member, type, underlying, out surrogate);
     }
 
     /// <param name="converted">The type the converter must convert</param>
     /// <param name="orConverted">Another type it may convert (the underlying type of a nullable member), null for none</param>
-    private static ITypeSymbol SurrogateOf(ISymbol symbol, ITypeSymbol converted, ITypeSymbol orConverted)
+    private static bool HasConverter(ISymbol symbol, ITypeSymbol converted, ITypeSymbol orConverted, out ITypeSymbol surrogate)
     {
+      surrogate = null;
       foreach (AttributeData attribute in symbol.GetAttributes())
       {
         if (attribute.AttributeClass?.ToDisplayString() != "LsMsgPack.Converters.MsgPackConverterAttribute" || attribute.ConstructorArguments.Length != 1
@@ -1312,12 +1312,19 @@ namespace LsMsgPack.Generator
           continue;
         for (INamedTypeSymbol t = converter; t != null; t = t.BaseType)
         {
-          if (t.Name == "MsgPackConverter" && t.TypeArguments.Length == 2 && t.ContainingNamespace?.ToDisplayString() == "LsMsgPack.Converters"
+          if (t.ContainingNamespace?.ToDisplayString() != "LsMsgPack.Converters")
+            continue;
+          bool surrogateKind = t.Name == "MsgPackConverter" && t.TypeArguments.Length == 2;
+          bool binaryKind = t.Name == "MsgPackBinaryConverter" && t.TypeArguments.Length == 1;
+          if ((surrogateKind || binaryKind)
             && (SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], converted) || (orConverted != null && SymbolEqualityComparer.Default.Equals(t.TypeArguments[0], orConverted))))
-            return t.TypeArguments[1];
+          {
+            surrogate = surrogateKind ? t.TypeArguments[1] : null;
+            return true;
+          }
         }
       }
-      return null;
+      return false;
     }
 
     private static bool HasAttribute(ISymbol symbol, string name)

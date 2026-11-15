@@ -84,9 +84,62 @@ A converter for a built-in type replaces the built-in format everywhere, also in
 
 With the indexed schema, the surrogates' classes have entries and the converted types don't have entries of their own. A converted type is only named in the schema where a type id needs it, without properties. In the described schema (`SchemaVersion.Described`), a converted property (by its type or its own converter) has the surrogate's type: `["Price", "string"]`, and the entry of a converted type that a type id names is `["@", "string"]`. Complete schemas (`CompleteSchemas`) follow the surrogate types, and the classes deriving from a converted class.
 
+## Binary converters and blit converters
+
+A binary converter writes a value as bytes it makes itself: binary data (bin), or an extension when you give it an extension type code (0 to 127). Readers take both: bin, or an extension of that code. Derive from `MsgPackBinaryConverter<T>`:
+
+```csharp
+public sealed class RgbConverter : MsgPackBinaryConverter<Rgb>
+{
+  public override int GetLength(Rgb value) => 3;
+  public override void Write(Rgb value, Span<byte> destination) { destination[0] = value.R; destination[1] = value.G; destination[2] = value.B; }
+  public override Rgb Read(ReadOnlySpan<byte> data) => new Rgb(data[0], data[1], data[2]);
+}
+```
+
+`Write` writes exactly `GetLength` bytes. LsMsgPack lets it write straight into its buffer and reads the bytes in place, without an array in between; LsMsgPackDebug writes the same bytes.
+
+The **blit converters** are binary converters that copy the memory of structs without references (`unmanaged`) as it is:
+
+| Converter | Converts |
+|---|---|
+| `BlitConverter<T>` | one `T` |
+| `BlitArrayConverter<T>` | `T[]` |
+| `BlitListConverter<T>` | `List<T>` |
+| `BlitMemoryConverter<T>` | `Memory<T>` (read into a new array) |
+| `BlitReadOnlyMemoryConverter<T>` | `ReadOnlyMemory<T>` (read into a new array) |
+
+```csharp
+options.Converters = new MsgPackConverter[] { new BlitArrayConverter<Vector3>() };   // Vector3[] as bin
+
+public class Scan
+{
+  [MsgPackConverter(typeof(BlitArrayConverter<Sample>))]
+  public Sample[] Samples { get; set; }
+}
+```
+
+An array of 1000 `Vector3`s is then one copy of 12,000 bytes instead of 3,000 encoded floats. Floats and doubles get smaller (4 and 8 bytes instead of 5 and 9), but small integers don't: a `long` of 0 takes 8 bytes instead of 1, and padding between fields is written too.
+
+Measured with LsMsgPack (1000 values per call, .NET 8, one machine):
+
+| 1000 values | Per field | Blit |
+|---|---|---|
+| struct of 3 floats: write / read | 17.3 / 27.6 µs | 0.78 / 0.77 µs |
+| struct of 3 floats: size | 16.0 KB | 12.0 KB |
+| struct of a long, an int and a double: write / read | 20.2 / 31.9 µs | 1.7 / 1.6 µs |
+| struct of a long, an int and a double: size | 20.0 KB | 24.0 KB |
+
+What you give up:
+
+- **No compatibility across versions of the struct.** Reading only checks that the length is a whole number of values. A field added or removed changes the size and throws, but a change that keeps the size (another field type, another order) reads other values.
+- **Byte order.** The memory is written as it is, little-endian on every current .NET platform. On a big-endian machine the blit converters throw.
+- **Field values aren't checked.** A `bool` or an enum gets whatever the bytes say. Padding bytes between fields are written as they are in memory (zero for a new array or struct).
+- **Other languages and the tools** see binary data (the described schema says `bin`, or `any` for an extension), not the fields.
+
 ## Converters or custom extensions?
 
-A custom extension (`LsExtension<T>`, or `ICustomExt` in LsMsgPackDebug) writes a value as raw bytes in a MsgPack extension type. That's compact, but other languages and the debugging tools only see bytes. A converter writes ordinary MsgPack values, so anything that reads MsgPack can read them.
+A custom extension (`LsExtension<T>`, or `ICustomExt` in LsMsgPackDebug) writes a value as raw bytes in a MsgPack extension type, and only in its own serializer. A binary converter does the same in both serializers, with or without an extension type. Both are compact, but other languages and the debugging tools only see bytes. A surrogate converter writes ordinary MsgPack values, so anything that reads MsgPack can read them.
 
 ## Source generator, analyzers and TypeScript models
 
