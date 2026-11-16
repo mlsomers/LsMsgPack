@@ -134,8 +134,8 @@ namespace LsMsgPack.Reading
           prop.Read(c, result);
       }
       c.Depth = depth;
-      if (plan.WithValues != null) // the values were collected for the constructor
-        result = plan.WithValues.Create(result);
+      if (plan.Finishes) // the values were collected for the constructor, or callbacks
+        result = plan.Finish(result);
       return Typed(result);
     }
 
@@ -151,6 +151,8 @@ namespace LsMsgPack.Reading
       if (!plan.Code.ReadMapBoxed(c, result, plan, bound, count, plan.GeneratedRead))
         return Restart(c, start, depth, assignedTo);
       c.Depth = depth;
+      if (plan.Finishes) // callbacks
+        result = plan.Finish(result);
       return Typed(result);
     }
 
@@ -193,8 +195,8 @@ namespace LsMsgPack.Reading
         }
       }
       c.Depth = depth;
-      if (plan.WithValues != null) // the values were collected for the constructor
-        result = plan.WithValues.Create(result);
+      if (plan.Finishes) // the values were collected for the constructor, or callbacks
+        result = plan.Finish(result);
       return Typed(result);
     }
 
@@ -420,6 +422,8 @@ namespace LsMsgPack.Reading
       }
       c.Differences.Pop();
       c.Depth = depth;
+      if (plan.Finishes) // callbacks (no constructor with values: Core reads those)
+        result = plan.Finish(result);
       return (T)result;
     }
 
@@ -480,6 +484,8 @@ namespace LsMsgPack.Reading
       }
       c.Differences.Pop();
       c.Depth = depth;
+      if (plan.Finishes) // callbacks (no constructor with values: Core reads those)
+        result = plan.Finish(result);
       return (T)result;
     }
 
@@ -598,6 +604,18 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal readonly bool Extended;
 
+    /// <summary>
+    /// The deserialization callbacks of the type (IMsgPackOnDeserializing, IMsgPackOnDeserialized, System.Text.Json's; docs/Callbacks.md), null when it has none:
+    /// OnDeserializing is called by <see cref="Create"/> (by <see cref="ConstructorPlan.Construct"/> after a constructor with values), OnDeserialized by <see cref="Finish"/>. No struct by reference
+    /// (the callbacks are called on the box that is read).
+    /// </summary>
+    internal readonly SerializationCallbacks Callbacks;
+
+    /// <summary>
+    /// The object read is finished by <see cref="Finish"/>: created by the constructor with values (<see cref="WithValues"/>), or with callbacks. One test per object for both.
+    /// </summary>
+    internal readonly bool Finishes;
+
     private readonly bool _caseInsensitive;
 
     internal bool CaseInsensitive { get { return _caseInsensitive; } }
@@ -622,6 +640,8 @@ namespace LsMsgPack.Reading
       Extended = ExtensionDataMember.Of(type) != null;
       Props = new PropReader[infos.Length];
       ObjectConstructor constructor = ObjectConstructor.Of(type);
+      if (constructor.Callbacks != null && constructor.Callbacks.Deserializes)
+        Callbacks = constructor.Callbacks;
       if (constructor.CreatesWith(serializer.Options._objectCreation))
         WithValues = new ConstructorPlan(serializer, constructor, infos, Props);
       else
@@ -629,6 +649,7 @@ namespace LsMsgPack.Reading
         for (int t = 0; t < infos.Length; t++)
           Props[t] = PropReader.Create(serializer, infos[t]);
       }
+      Finishes = WithValues != null || Callbacks != null;
       if (_caseInsensitive)
       {
         _ambiguous = new bool[Props.Length];
@@ -663,13 +684,15 @@ namespace LsMsgPack.Reading
         if (Map && !_caseInsensitive && serializer.InUnrolledOrder(code, infos)) // keys ignoring case stay with the loop (FindOrMatchIgnoringCase), as for the compiled readers
           NamesInOrder = Props;
       }
-      if (type.IsValueType && !Extended && _create.Target is ICreator creator && creator.GetType().IsGenericType && creator.GetType().GetGenericTypeDefinition() == typeof(StructCreator<>))
+      if (type.IsValueType && !Extended && Callbacks is null && _create.Target is ICreator creator && creator.GetType().IsGenericType && creator.GetType().GetGenericTypeDefinition() == typeof(StructCreator<>))
       {
         bool byRef = true;
         for (int t = Props.Length - 1; t >= 0; t--)
           byRef &= Props[t].ByRef; // a struct declares all its properties: each is a RefPropReader of this type
         ByRef = byRef;
       }
+      if (Callbacks != null && (Callbacks.Has & SerializationCallbacks.Kinds.Deserializing) != 0)
+        _create = WithDeserializing(_create, Callbacks);
 
       for (int t = Props.Length - 1; t >= 0; t--)
         Props[t].CompiledId = t;
@@ -687,6 +710,29 @@ namespace LsMsgPack.Reading
       if (_untilCompiled > 0)
         CountRead();
       return _create();
+    }
+
+    private static Func<object> WithDeserializing(Func<object> create, SerializationCallbacks callbacks)
+    {
+      return () =>
+      {
+        object result = create();
+        callbacks.OnDeserializing(result); // a struct: its box, which is read
+        return result;
+      };
+    }
+
+    /// <summary>
+    /// <see cref="Finishes"/>: the object created by the constructor with values (<see cref="ConstructorPlan.Create"/>), then OnDeserialized.
+    /// </summary>
+    /// <param name="result">What <see cref="Create"/> returned, with the values read</param>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal object Finish(object result)
+    {
+      if (WithValues != null)
+        result = WithValues.Create(result);
+      Callbacks?.OnDeserialized(result);
+      return result;
     }
 
     /// <summary>
@@ -1489,6 +1535,7 @@ namespace LsMsgPack.Reading
     {
       object[] values = collected.Values;
       object result = _constructor.Invoke(values);
+      _constructor.Callbacks?.OnDeserializing(result); // after the constructor, before the other properties (as Core's ObjectConstructor.Arguments)
       int parameters = values.Length - _setters.Length;
       for (int t = parameters; t < values.Length; t++)
         if (!ReferenceEquals(values[t], NotRead))

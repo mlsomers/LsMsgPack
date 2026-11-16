@@ -308,12 +308,19 @@ namespace LsMsgPack
           return info.Converter.Accept(new ConverterHandlers(this));
         case TypeKind.Extended: // the properties and then the kept values (ObjectPlan.WriteExtended); ObjectHandler stays as it is for the other classes
           if (type.IsValueType ? StructPlans(type) : !type.IsAbstract && !type.ContainsGenericParameters)
-            return ((IExtensionDataWriting)Instantiate(type, typeof(ObjectHandler<>), type, this)).Extended(info.ExtensionData);
+          {
+            object handler = Instantiate(type, typeof(ObjectHandler<>), type, this);
+            if (info.Callbacks != null)
+              return ((ICallbackWriting)handler).WithCallbacks(info.Callbacks, info.ExtensionData);
+            return ((IExtensionDataWriting)handler).Extended(info.ExtensionData);
+          }
           return Boxed(type);
         case TypeKind.Complex:
           if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
           {
             object handler = Instantiate(type, typeof(ObjectHandler<>), type, this);
+            if (info.Callbacks != null) // apart, so the handler without callbacks stays as it is
+              return ((ICallbackWriting)handler).WithCallbacks(info.Callbacks, null);
             return IgnoreCycles && !type.IsValueType && CanContainObjects(type) ? ((ICycleTracking)handler).Tracked() : handler; // apart, so the handler without the option stays as it is
           }
           return Boxed(type);
@@ -681,16 +688,53 @@ namespace LsMsgPack
             c.W.Nil();
             return;
           }
-          ByNamesPlan(type).Write(c, value);
+          WriteByNames(c, value, type, info);
           c.LeaveObject();
           return;
         }
-        ByNamesPlan(type).Write(c, value);
+        WriteByNames(c, value, type, info);
         return;
       }
       c.ByNames = SerializationRules.EntersByNames(type, assignedTo, byNames, isObject);
       WriteBoxed(c, value, type, info, assignedTo);
       c.ByNames = byNames;
+    }
+
+    private void WriteByNames(WriteContext c, object value, Type type, WriteTypeInfo info)
+    {
+      SerializationCallbacks callbacks = info.Callbacks;
+      if (callbacks is null)
+      {
+        ByNamesPlan(type).Write(c, value);
+        return;
+      }
+      c.Replay.OnSerializing(callbacks, value);
+      ByNamesPlan(type).Write(c, value);
+      c.Replay.OnSerialized(callbacks, value);
+    }
+
+    /// <summary>
+    /// An object of a type with callbacks (<see cref="WriteTypeInfo.Callbacks"/>, LsMsgPackDebug: SerializeComplex) that goes through <see cref="WriteBoxed"/>: as the cases of
+    /// <see cref="TypeKind.Complex"/> and <see cref="TypeKind.Extended"/> there, between the callbacks (after the cycle check: an object written as nil gets none, as LsMsgPackDebug's SerializeTracked).
+    /// </summary>
+    private void WriteCalled(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
+    {
+      bool tracked = IgnoreCycles && !type.IsValueType;
+      if (tracked && !c.EnterObject(value))
+      {
+        c.W.Nil();
+        return;
+      }
+      c.Replay.OnSerializing(info.Callbacks, value); // a struct: its box, which is written
+      ObjectPlan plan = PlanOf(info, c.Mode == IdMode.Names);
+      bool typeId = SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId);
+      if (info.Kind == TypeKind.Extended)
+        plan.WriteExtended(c, value, typeId, assignedTo, info.ExtensionData);
+      else
+        plan.Write(c, value, typeId, assignedTo);
+      c.Replay.OnSerialized(info.Callbacks, value);
+      if (tracked)
+        c.LeaveObject();
     }
 
     /// <summary>
@@ -740,6 +784,11 @@ namespace LsMsgPack
           return;
 
         case TypeKind.Complex:
+          if (info.Callbacks != null)
+          {
+            WriteCalled(c, value, type, info, assignedTo);
+            return;
+          }
           if (IgnoreCycles && !type.IsValueType)
           {
             WriteTracked(c, value, type, info, assignedTo);
@@ -749,6 +798,11 @@ namespace LsMsgPack
           return;
 
         case TypeKind.Extended:
+          if (info.Callbacks != null)
+          {
+            WriteCalled(c, value, type, info, assignedTo);
+            return;
+          }
           if (IgnoreCycles && !type.IsValueType && !c.EnterObject(value))
           {
             c.W.Nil();
@@ -1229,6 +1283,11 @@ namespace LsMsgPack
     internal readonly ExtensionDataMember ExtensionData;
 
     /// <summary>
+    /// The callbacks of an object (<see cref="TypeKind.Complex"/>, <see cref="TypeKind.Extended"/>) called when it is written (IMsgPackOnSerializing, IMsgPackOnSerialized, System.Text.Json's), null when it has none.
+    /// </summary>
+    internal readonly SerializationCallbacks Callbacks;
+
+    /// <summary>
     /// The converter's handler as <see cref="WriteBoxed"/> calls it (also when the handlers are boxed, <c>AddTypeIdOption.Always</c>), set when first used.
     /// </summary>
     internal IConvertedWriter ConvertedWriter;
@@ -1275,6 +1334,9 @@ namespace LsMsgPack
         ExtensionData = ExtensionDataMember.Of(type);
         if (ExtensionData != null)
           Kind = TypeKind.Extended;
+        SerializationCallbacks callbacks = SerializationCallbacks.Of(type);
+        if (callbacks != null && callbacks.Serializes)
+          Callbacks = callbacks;
       }
       HasAnonymousType = SerializationRules.HasAnonymousType(type);
       NeverHasTypeId = SerializationRules.NeverHasTypeId(type);

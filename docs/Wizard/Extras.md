@@ -88,7 +88,7 @@ builder.Services.AddControllers().AddLsMsgPackSerializerFormatters(o =>
 });
 ```
 
-3. **Validate** what your setters accept, or the object after reading it, as you would for JSON.
+3. **Validate** what your setters accept, or the object after reading it, as you would for JSON: implement `IMsgPackOnDeserialized` and check it there, for example with the DataAnnotations attributes (`Validator.ValidateObject`). More: [Callbacks.md](../Callbacks.md).
 
 Data that only your own code writes and reads (your files, your cache, your internal queue) doesn't need a guard. The whole story: [security.md](../security.md).
 

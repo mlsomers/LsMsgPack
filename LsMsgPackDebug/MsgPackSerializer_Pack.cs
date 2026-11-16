@@ -15,6 +15,28 @@ namespace LsMsgPackDebug
 
     public static MsgPackItem SerializeObject(object item, MsgPackSettings settings, FullPropertyInfo assignedTo = null)
     {
+      CallbackReplay outer = _replay;
+      if (outer is null)
+        return SerializeRoot(item, settings, assignedTo);
+      _replay = null; // a call of its own (e.g. from a callback): not a part of the caller's write that may be repeated
+      try
+      {
+        return SerializeRoot(item, settings, assignedTo);
+      }
+      finally
+      {
+        _replay = outer;
+      }
+    }
+
+    /// <summary>
+    /// The serialization callbacks of the write with a cached schema on this thread (see SerializeWithSchemaReference), which may be repeated: called once per object. Null otherwise.
+    /// </summary>
+    [ThreadStatic]
+    private static CallbackReplay _replay;
+
+    private static MsgPackItem SerializeRoot(object item, MsgPackSettings settings, FullPropertyInfo assignedTo)
+    {
       if (!settings._ignoreCycles)
         return SerializeObject(item, settings, assignedTo, 0, false);
 
@@ -160,6 +182,24 @@ namespace LsMsgPackDebug
     }
 
     private static MsgPackItem SerializeComplex(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
+    {
+      SerializationCallbacks callbacks = SerializationCallbacks.Of(tType); // IMsgPackOnSerializing... (docs/Callbacks.md), objects only
+      if (callbacks is null || !callbacks.Serializes)
+        return SerializeProperties(item, tType, settings, assignedTo, depth, byNames);
+      CallbackReplay replay = _replay;
+      if (replay is null)
+        callbacks.OnSerializing(item); // a struct: its box, which is written
+      else
+        replay.OnSerializing(callbacks, item);
+      MsgPackItem packed = SerializeProperties(item, tType, settings, assignedTo, depth, byNames);
+      if (replay is null)
+        callbacks.OnSerialized(item);
+      else
+        replay.OnSerialized(callbacks, item);
+      return packed;
+    }
+
+    private static MsgPackItem SerializeProperties(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
     {
       ThrowIfTooDeep(depth, settings);
       if (SerializationRules.WritesByNames(tType, assignedTo, byNames))

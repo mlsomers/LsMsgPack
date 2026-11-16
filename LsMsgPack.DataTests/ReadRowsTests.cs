@@ -4,6 +4,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Data;
 using System.Linq;
 
@@ -78,6 +79,64 @@ namespace LsMsgPack.DataTests
       Assert.AreEqual(8, read[1].Id);
       Assert.IsNull(read[1].Name);
       Assert.IsNull(read[1].Score);
+    }
+
+    /// <summary>
+    /// Serialization callbacks (docs/Callbacks.md): OnDeserializing when the object is created (after a constructor that takes values), OnDeserialized when its columns are set.
+    /// </summary>
+    [TestMethod]
+    public void Callbacks_CalledPerRow()
+    {
+      string[] names = { "Id", "Name" };
+      ColumnarReader.Column[] columns =
+      {
+        new ColumnarReader.Column<int>(new[] { 7, 8 }),
+        new ColumnarReader.Column<string>(new[] { "Ann", "Bob" }),
+      };
+      List<CallbackRow> read = new LsMsgPackSerializer().ReadRows<CallbackRow>(new ColumnarReader(names, columns, 2));
+      Assert.AreEqual("deserializing 0/null; deserialized 7/Ann", read[0].Calls);
+      Assert.AreEqual("deserializing 0/null; deserialized 8/Bob", read[1].Calls);
+
+      List<CallbackImmutableRow> immutable = new LsMsgPackSerializer().ReadRows<CallbackImmutableRow>(new ColumnarReader(names, columns, 2));
+      Assert.AreEqual("deserializing 7/null; deserialized 7/Ann", immutable[0].Calls);
+
+      columns[0] = new ColumnarReader.Column<int>(new[] { 7, -1 });
+      Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => new LsMsgPackSerializer().EnumerateRows<CallbackRow>(new ColumnarReader(names, columns, 2)).ToList(), "OnDeserialized validates each row");
+    }
+
+    public class CallbackRow : IMsgPackOnDeserializing, IMsgPackOnDeserialized
+    {
+      public int Id { get; set; }
+      public string Name { get; set; }
+
+      [NotMapped]
+      public string Calls { get; set; }
+
+      public void OnDeserializing() { Calls = "deserializing " + Id + "/" + (Name ?? "null"); }
+
+      public void OnDeserialized()
+      {
+        if (Id < 0)
+          throw new ArgumentOutOfRangeException(nameof(Id));
+        Calls += "; deserialized " + Id + "/" + Name;
+      }
+    }
+
+    public class CallbackImmutableRow : IMsgPackOnDeserializing, IMsgPackOnDeserialized
+    {
+      public CallbackImmutableRow(int id)
+      {
+        Id = id;
+      }
+
+      public int Id { get; }
+      public string Name { get; set; }
+
+      [NotMapped]
+      public string Calls { get; set; }
+
+      public void OnDeserializing() { Calls = "deserializing " + Id + "/" + (Name ?? "null"); }
+      public void OnDeserialized() { Calls += "; deserialized " + Id + "/" + Name; }
     }
 
     /// <summary>

@@ -288,8 +288,35 @@ namespace LsMsgPackAotSmokeTest
     public MsgPackExtensionData Extra { get; set; }
   }
 
+  /// <summary>
+  /// Serialization callbacks (docs/Callbacks.md): the own interfaces as plain interface calls.
+  /// </summary>
+  public class Audit : IMsgPackOnSerializing, IMsgPackOnDeserializing, IMsgPackOnDeserialized
+  {
+    public string Written { get; set; }
+    public string Read { get; set; }
+
+    public void OnSerializing() { Written = "stamped"; }
+    public void OnDeserializing() { Read = "created"; }
+    public void OnDeserialized() { Read += "+filled " + Written; }
+  }
+
+  /// <summary>
+  /// System.Text.Json's callback interfaces, found by name and called through a typed cast.
+  /// </summary>
+  public class JsonAudit : System.Text.Json.Serialization.IJsonOnSerializing, System.Text.Json.Serialization.IJsonOnDeserialized
+  {
+    public string Note { get; set; }
+    public string Written { get; set; }
+
+    void System.Text.Json.Serialization.IJsonOnSerializing.OnSerializing() { Written = "json-written"; } // the sample is written several times: the same value each time
+    void System.Text.Json.Serialization.IJsonOnDeserialized.OnDeserialized() { Note += "+json-read"; }
+  }
+
   public class Invoice
   {
+    public Audit Audit { get; set; }
+    public JsonAudit JsonAudit { get; set; }
     public Remark Remark { get; set; }
     [LsMsgPack.Converters.MsgPackConverter(typeof(LsMsgPack.Converters.BlitArrayConverter<Sample>))]
     public Sample[] Samples { get; set; }
@@ -512,6 +539,8 @@ namespace LsMsgPackAotSmokeTest
         Postmarks = new List<Postmark> { new Postmark("Utrecht", 12), null },
         Parcel = new Parcel("PX-7", 2.25),
         Remark = SampleRemark(),
+        Audit = new Audit(),
+        JsonAudit = new JsonAudit { Note = "j" },
         Urgent = true,
         Payment = new Payment(100.5m) { Note = "first" },
         Signed = new Signature("Clerk", new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc)),
@@ -689,7 +718,8 @@ namespace LsMsgPackAotSmokeTest
         .Append(Time(o.Due)).Append(';').Append(o.Samples is null ? "null" : string.Join(",", o.Samples.Select(x => x.A.ToString("R", CultureInfo.InvariantCulture) + "/" + x.B))).Append(';').Append(o.Reminded.HasValue ? Time(o.Reminded.Value) : "null").Append(';')
         .Append(o.Postmarks is null ? "null" : string.Join(",", o.Postmarks.Select(p => p is null ? "null" : p.Office + "/" + p.Day))).Append(';')
         .Append(o.Parcel is null ? "null" : o.Parcel.Code + "/" + o.Parcel.Weight.ToString("R", CultureInfo.InvariantCulture)).Append(';')
-        .Append(Dump(o.Remark));
+        .Append(Dump(o.Remark)).Append(';')
+        .Append(o.Audit is null ? "null" : o.Audit.Written + "/" + o.Audit.Read).Append(';').Append(o.JsonAudit is null ? "null" : o.JsonAudit.Note + "/" + o.JsonAudit.Written);
       return text.ToString();
     }
 

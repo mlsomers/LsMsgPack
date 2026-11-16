@@ -127,7 +127,22 @@ namespace LsMsgPackDebug
 
       FullPropertyInfo root = new FullPropertyInfo(assignedTo);
       SchemaSession session;
-      MsgPackItem packed = store.RunWriter(assignedTo, settings, (s, schemaSettings) => SerializeObject(item, schemaSettings, root), out session);
+      MsgPackItem packed;
+      CallbackReplay outer = _replay;
+      CallbackReplay replay = new CallbackReplay(); // a repeated attempt calls the callbacks once per object
+      _replay = replay;
+      try
+      {
+        packed = store.RunWriter(assignedTo, settings, (s, schemaSettings) =>
+        {
+          replay.Repeat();
+          return SerializeRoot(item, schemaSettings, root);
+        }, out session);
+      }
+      finally
+      {
+        _replay = outer;
+      }
 
       ByteWriter buffer = new ByteWriter();
       buffer.Write(session.Reference);

@@ -46,7 +46,7 @@ public static class DocumentFiles
 }
 ```
 
-On .NET Framework use `File.WriteAllBytes` / `File.ReadAllBytes` (or a `FileStream`), and `File.Delete` + `File.Move`. There are also overloads that write to and read from a `Stream` (`Serializer.Serialize(drawing, stream)`); they're synchronous, so in a UI app run them in `Task.Run` for large files.
+On .NET Framework use `File.WriteAllBytes` / `File.ReadAllBytes` (or a `FileStream`), and `File.Delete` + `File.Move`. There are also overloads that write to and read from a `Stream` (`Serializer.Serialize(drawing, stream)`, and `await Serializer.SerializeAsync(drawing, stream)` / `DeserializeAsync<Drawing>(stream)` for a `FileStream` opened with `useAsync: true`); only their I/O is asynchronous, so in a UI app run large files in `Task.Run`.
 
 Your classes need nothing special: public properties with a getter and a setter (or a constructor that takes them) are saved. Public fields are not saved unless they have `[DataMember]` or `[JsonInclude]` (or you set `SerializedFields.Public`, see [schema.md](../schema.md#fields)).
 

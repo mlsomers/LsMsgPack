@@ -311,11 +311,16 @@ namespace LsMsgPack.Meta
       FullPropertyInfo[] props = byNames ? FullPropertyInfo.GetNamedProps(tType, settings) : FullPropertyInfo.GetSerializedProps(tType, settings);
       if (props.Length == 0) // a refused type has no settable properties, before it is created
         SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
-      result = Instances.CreateObjectOrArguments(tType, settings);
+      ObjectConstructor constructor = ObjectConstructor.Of(tType);
+      result = Instances.CreateObjectOrArguments(tType, constructor, settings);
+      SerializationCallbacks callbacks = constructor.Callbacks;
+      if (callbacks != null && !(result is ObjectConstructor.Arguments)) // those call it after the constructor
+        callbacks.OnDeserializing(result);
       List<KeptValue> kept = SetProperties(result, tType, props, propVals, settings, true, out ExtensionDataMember extension);
       result = Created(result, props, settings);
       if (kept != null)
         extension.Keep(result, kept, settings);
+      callbacks?.OnDeserialized(result);
       return result;
     }
 
@@ -642,7 +647,11 @@ namespace LsMsgPack.Meta
     private static object ConvertPositional(object[] items, Type type, FullPropertyInfo[] props, MsgPackOptions settings)
     {
       FullPropertyInfo[] byPosition = PropertiesByPosition(type, props, settings, out ComplexTypeDef def);
-      object result = Instances.CreateObjectOrArguments(type, settings);
+      ObjectConstructor constructor = ObjectConstructor.Of(type);
+      object result = Instances.CreateObjectOrArguments(type, constructor, settings);
+      SerializationCallbacks callbacks = constructor.Callbacks;
+      if (callbacks != null && !(result is ObjectConstructor.Arguments)) // those call it after the constructor
+        callbacks.OnDeserializing(result);
       ReadDifferences differences = settings._differences;
       ExtensionDataMember extension = null; // looked up at the first value that is not a property (not per object)
       bool looked = false;
@@ -702,6 +711,7 @@ namespace LsMsgPack.Meta
       result = Created(result, props, settings);
       if (kept != null)
         extension.Keep(result, kept, settings);
+      callbacks?.OnDeserialized(result);
       return result;
     }
 

@@ -24,10 +24,10 @@ namespace LsMsgPack.Meta
     /// ValueConverter sets the properties on them, then creates the object (<see cref="ObjectConstructor.Arguments.Create"/>). A constructor that sets properties without a public setter
     /// is called also with <see cref="ObjectCreation.Uninitialized"/>: their values could not be set otherwise.
     /// </summary>
-    internal static object CreateObjectOrArguments(Type type, MsgPackOptions settings)
+    /// <param name="constructor">The type's (<see cref="ObjectConstructor.Of"/>, which the caller asks for its callbacks too)</param>
+    internal static object CreateObjectOrArguments(Type type, ObjectConstructor constructor, MsgPackOptions settings)
     {
       ObjectCreation creation = settings?._objectCreation ?? ObjectCreation.ConstructorOrUninitialized;
-      ObjectConstructor constructor = ObjectConstructor.Of(type);
       if (constructor.CreatesWith(creation))
         return constructor.Collect();
       if (creation == ObjectCreation.Uninitialized)
