@@ -109,7 +109,7 @@ The packages include analyzers that check the classes you serialize while you ty
 
 Types that shouldn't be written as their own properties (value objects, types of another library, a `DateTime` a peer expects as Unix time) can be written as another type with a converter: see [docs/Converters.md](docs/Converters.md).
 
-Data that doesn't match your classes exactly (older or newer versions, a misspelled name) is read anyway, like the JSON serializers do. Pass an `out ReadDifferences` to `Deserialize` to find out what was skipped, counted per class and property, with the paths of the objects: see [docs/ReadDifferences.md](docs/ReadDifferences.md). An older version of a service that reads, changes and writes back an object keeps the members it doesn't have in a `MsgPackExtensionData` (or a `[JsonExtensionData]` dictionary) and writes them again: see [docs/ExtensionData.md](docs/ExtensionData.md).
+Data that doesn't match your classes exactly (older or newer versions, a misspelled name) is read anyway, like the JSON serializers do. Pass an `out ReadDifferences` to `Deserialize` to find out what was skipped, counted per class and property, with the paths of the objects: see [docs/ReadDifferences.md](docs/ReadDifferences.md). An older version of a service that reads, changes and writes back an object keeps the members it doesn't have in a `MsgPackExtensionData` (or a `[JsonExtensionData]` dictionary) and writes them again: see [docs/ExtensionData.md](docs/ExtensionData.md). A class can run code before and after it's written or read, for example to validate what it read (`IMsgPackOnDeserialized`, or System.Text.Json's `IJsonOnDeserialized`): see [docs/Callbacks.md](docs/Callbacks.md).
 
 Standalone Debugger (for Windows)
 ---------------------------------

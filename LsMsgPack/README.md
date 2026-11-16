@@ -81,5 +81,6 @@ options.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(IShape));
 - [Converters](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Converters.md): write a type as another type (value objects, types of other libraries, other formats for built-in types)
 - [Reporting differences](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ReadDifferences.md): what didn't match between the data and your classes (`serializer.Deserialize<T>(data, out ReadDifferences differences)`)
 - [Extension data](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ExtensionData.md): keep the members of the data a class doesn't have and write them again (`MsgPackExtensionData`, `[JsonExtensionData]`)
+- [Serialization callbacks](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Callbacks.md): run code before and after an object is written or read, e.g. to validate it (`IMsgPackOnDeserialized`..., System.Text.Json's `IJsonOnDeserialized`...)
 - ASP.NET formatters built on LsMsgPack: [LsMsgPack.AspNetCore](https://www.nuget.org/packages/LsMsgPack.AspNetCore), [LsMsgPack.AspNet.WebApi](https://www.nuget.org/packages/LsMsgPack.AspNet.WebApi), [LsMsgPack.AspNet.Mvc](https://www.nuget.org/packages/LsMsgPack.AspNet.Mvc)
 - Source, issues and MsgPack Explorer (a tool to look inside MsgPack data): [github.com/mlsomers/LsMsgPack](https://github.com/mlsomers/LsMsgPack)

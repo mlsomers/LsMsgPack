@@ -47,6 +47,11 @@ namespace LsMsgPack.Meta
     private readonly Type _type;
 
     /// <summary>
+    /// The callbacks of the type (<see cref="SerializationCallbacks.Of"/>, null when it has none), kept here since Core's conversions look this up per object anyway.
+    /// </summary>
+    internal readonly SerializationCallbacks Callbacks;
+
+    /// <summary>
     /// The parameter of each property (or field) name.
     /// </summary>
     private readonly Dictionary<string, int> _parameterOf;
@@ -79,6 +84,7 @@ namespace LsMsgPack.Meta
     private ObjectConstructor(Type type)
     {
       _type = type;
+      Callbacks = SerializationCallbacks.Of(type);
       Parameterless = type.IsValueType || type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null;
       if (!TakesValues(type))
         return;
@@ -315,6 +321,7 @@ namespace LsMsgPack.Meta
             values[index] = props[t].NilValue(settings);
 
         object result = _constructor.Invoke(values);
+        _constructor.Callbacks?.OnDeserializing(result); // after the constructor, before the other properties (as System.Text.Json)
 
         if (_properties != null)
           for (int t = 0; t < _properties.Count; t++)

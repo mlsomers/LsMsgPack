@@ -65,6 +65,11 @@ namespace LsMsgPack.Writing
     internal int Depth;
 
     /// <summary>
+    /// The serialization callbacks of a write that may be repeated (a cached schema that grows): called once per object (Core's CallbackReplay, started by the entry code of those writes).
+    /// </summary>
+    internal readonly CallbackReplay Replay = new CallbackReplay();
+
+    /// <summary>
     /// <see cref="MsgPackOptions.IgnoreCycles"/>: the objects with properties being written, the root first (LsMsgPack: CyclePath). Null until the first.
     /// </summary>
     private PathEntry[] _path;

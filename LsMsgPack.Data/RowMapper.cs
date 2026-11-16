@@ -98,10 +98,11 @@ namespace LsMsgPack.Data
     {
       if (_constructor != null)
         return WithValues(record);
-      T target = (T)_plan.Create();
+      T target = (T)_plan.Create(); // OnDeserializing (IMsgPackOnDeserializing...) when the class has it
       ColumnSetter<T>[] setters = _setters;
       for (int t = 0; t < setters.Length; t++)
         setters[t].Set(record, target, check);
+      _plan.Callbacks?.OnDeserialized(target);
       return target;
     }
 
@@ -115,7 +116,9 @@ namespace LsMsgPack.Data
       for (int t = 0; t < setters.Length; t++)
         if (setters[t].TryRead(record, out object value))
           arguments.Set(setters[t].Info, value);
-      return (T)arguments.Create(_infos, _options);
+      object result = arguments.Create(_infos, _options); // OnDeserializing after the constructor
+      _plan.Callbacks?.OnDeserialized(result);
+      return (T)result;
     }
 
     /// <returns>The index of the property the column sets, -1 for none (none, or several match equally)</returns>

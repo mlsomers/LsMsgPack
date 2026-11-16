@@ -218,6 +218,7 @@ namespace LsMsgPack
           if (hit is null || !ReferenceEquals(hit.Store, store))
             entry.Writer = hit = new WriterHit(store, store.GetWriter(assignedTo, Options)); // once per root type
           SchemaSession current = hit.State.Current;
+          c.Replay.Start(); // the work may be repeated (WriteGrowing): the callbacks are called once per object
           if (current != null)
           {
             try
@@ -283,6 +284,7 @@ namespace LsMsgPack
       SchemaSession session;
       store.RunWriter(assignedTo, Options, (s, sessionSettings) =>
       {
+        c.Replay.Repeat(); // the callbacks of an earlier attempt are not called again (the first attempt when there was no session yet: nothing reached)
         c.Depth = 0;
         if (c.PathCount != 0)
           c.ClearPath();
@@ -395,11 +397,13 @@ namespace LsMsgPack
         FullPropertyInfo root = entry.Info;
         try
         {
+          c.Replay.Start();
           WriteBody(c, state, depth, WriterShared(head.Session).Settings(Options), write, root);
         }
         catch (SchemaGrowthException) // the frozen session needs more: cache entries (the first value of a class), or classes the head does not have
         {
           SchemaSession grown = head.Session.Thaw(head.Settings);
+          c.Replay.Repeat();
           WriteBody(c, state, depth, grown.Apply(head.Settings), write, root);
           byte[] schema = grown.Resolver.Pack(SchemaBytes.Canonical, head.Root, head.Settings); // as SchemaStore.PublishWriter
           if (SchemaId.Compute(schema, head.Settings._schemaVersion) != head.Id)

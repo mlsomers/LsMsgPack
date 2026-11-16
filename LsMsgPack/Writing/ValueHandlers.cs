@@ -453,7 +453,7 @@ namespace LsMsgPack.Writing
   /// <summary>
   /// A class, or a struct (by reference when the plan allows it, see ObjectPlan.WriteStruct, otherwise boxed once: the plans read the properties of the box, see StructPropWriter).
   /// </summary>
-  internal sealed class ObjectHandler<T> : ValueHandler<T>, ICycleTracking, IExtensionDataWriting
+  internal sealed class ObjectHandler<T> : ValueHandler<T>, ICycleTracking, IExtensionDataWriting, ICallbackWriting
   {
     private readonly Serializer _serializer;
     private ObjectPlan _names;
@@ -503,6 +503,14 @@ namespace LsMsgPack.Writing
     public object Extended(ExtensionDataMember extension)
     {
       return new ExtendedHandler<T>(this, _serializer, extension);
+    }
+
+    /// <summary>
+    /// Created here, so NativeAOT has the instantiation wherever it has this one.
+    /// </summary>
+    public object WithCallbacks(SerializationCallbacks callbacks, ExtensionDataMember extension)
+    {
+      return new CallbackHandler<T>(this, _serializer, callbacks, extension);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)] // keeps Write small
@@ -585,6 +593,72 @@ namespace LsMsgPack.Writing
         ? _names ?? (_names = _serializer.Plan(typeof(T), true))
         : _schema ?? (_schema = _serializer.Plan(typeof(T), false));
       plan.WriteExtended(c, item, false, assignedTo, _extension);
+      if (tracked)
+        c.LeaveObject();
+    }
+
+    internal override bool IncludeByDefault(T value, FullPropertyInfo info)
+    {
+      return _inner.IncludeByDefault(value, info);
+    }
+  }
+
+  /// <summary>
+  /// An object handler for a class with callbacks (<see cref="CallbackHandler{T}"/>).
+  /// </summary>
+  internal interface ICallbackWriting
+  {
+    /// <param name="extension">The class's extension data member (<see cref="TypeKind.Extended"/>), null when it has none</param>
+    /// <returns>A <see cref="CallbackHandler{T}"/> around this handler</returns>
+    object WithCallbacks(SerializationCallbacks callbacks, ExtensionDataMember extension);
+  }
+
+  /// <summary>
+  /// A class (or struct, boxed once) with callbacks (IMsgPackOnSerializing, IMsgPackOnSerialized, System.Text.Json's; docs/Callbacks.md): called before and after its plan writes it
+  /// (<see cref="ObjectPlan.Write"/>, or <see cref="ObjectPlan.WriteExtended"/> with an extension data member), so the generated and compiled code of the plan stays in use.
+  /// Tracks the objects itself with <see cref="Serializer.IgnoreCycles"/>, after which the callbacks are called (an object written as nil gets none, as LsMsgPackDebug's SerializeTracked).
+  /// A struct is boxed once: the callbacks change the box, which is written (as System.Text.Json). A derived type goes through Serializer.WriteBoxed, which calls its own callbacks.
+  /// </summary>
+  internal sealed class CallbackHandler<T> : ValueHandler<T>
+  {
+    private readonly ObjectHandler<T> _inner;
+    private readonly Serializer _serializer;
+    private readonly SerializationCallbacks _callbacks;
+    private readonly ExtensionDataMember _extension;
+    private ObjectPlan _names;
+    private ObjectPlan _schema;
+
+    internal CallbackHandler(ObjectHandler<T> inner, Serializer serializer, SerializationCallbacks callbacks, ExtensionDataMember extension)
+    {
+      _inner = inner;
+      _serializer = serializer;
+      _callbacks = callbacks;
+      _extension = extension;
+    }
+
+    internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
+    {
+      object item = value; // a class: no box
+      if (!typeof(T).IsValueType && item.GetType() != typeof(T))
+      {
+        _inner.Write(c, value, assignedTo); // a derived type: its own plan and callbacks, through WriteBoxed
+        return;
+      }
+      bool tracked = !typeof(T).IsValueType && _serializer.IgnoreCycles;
+      if (tracked && !c.EnterObject(item))
+      {
+        c.W.Nil();
+        return;
+      }
+      c.Replay.OnSerializing(_callbacks, item);
+      ObjectPlan plan = c.Mode == IdMode.Names
+        ? _names ?? (_names = _serializer.Plan(typeof(T), true))
+        : _schema ?? (_schema = _serializer.Plan(typeof(T), false));
+      if (_extension != null)
+        plan.WriteExtended(c, item, false, assignedTo, _extension);
+      else
+        plan.Write(c, item, false, assignedTo);
+      c.Replay.OnSerialized(_callbacks, item);
       if (tracked)
         c.LeaveObject();
     }
