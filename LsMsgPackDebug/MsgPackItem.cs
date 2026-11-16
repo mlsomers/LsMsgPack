@@ -119,7 +119,15 @@ namespace LsMsgPackDebug
     /// </summary>
     internal object UnpackedValue
     {
-      get { return GetType() == typeof(MpExt) ? this : Value; }
+      get
+      {
+        System.Type type = GetType();
+        if (type == typeof(MpExt))
+          return this;
+        if (type == typeof(MpReference))
+          return ((MpReference)this).Plain;
+        return Value;
+      }
     }
 
     /// <summary>

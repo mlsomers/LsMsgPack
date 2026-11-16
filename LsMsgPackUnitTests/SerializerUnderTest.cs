@@ -149,7 +149,7 @@ namespace LsMsgPackUnitTests
       LsExtension[] extensions = Extensions(settings.CustomExtentionTypes);
       object key = (settings.UseInexedSchema, settings.DynamicallyCompact, settings.EndianAction, settings.AddTypeIdOptions,
         settings.TypeResolvers, settings.StaticFilters, settings.DynamicFilters, settings.PropertyNameResolvers,
-        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.IgnoreCycles));
+        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.ReferenceHandling));
       return _serializers.GetOrAdd(key, k => new LsMsgPackSerializer(new LsMsgPackOptions()
       {
         UseInexedSchema = settings.UseInexedSchema,
@@ -174,7 +174,7 @@ namespace LsMsgPackUnitTests
         SchemaVersion = settings.SchemaVersion,
         CompleteSchemas = settings.CompleteSchemas,
         PropertyNameCaseInsensitive = settings.PropertyNameCaseInsensitive,
-        IgnoreCycles = settings.IgnoreCycles,
+        ReferenceHandling = settings.ReferenceHandling,
         ReadErrors = settings.ReadErrors,
         Extensions = extensions,
         Contexts = _contexts,

@@ -104,7 +104,7 @@ namespace LsMsgPack.Reading
 
       int depth = c.Depth;
       c.Enter();
-      object result = plan.Create();
+      object result = plan.Create(c, start);
       int next = 0; // names are usually written in the order of the properties
       for (int t = 0; t < count; t++)
       {
@@ -147,7 +147,7 @@ namespace LsMsgPack.Reading
     {
       int depth = c.Depth;
       c.Enter();
-      object result = plan.Create();
+      object result = plan.Create(c, start);
       if (!plan.Code.ReadMapBoxed(c, result, plan, bound, count, plan.GeneratedRead))
         return Restart(c, start, depth, assignedTo);
       c.Depth = depth;
@@ -175,7 +175,7 @@ namespace LsMsgPack.Reading
 
       int depth = c.Depth;
       c.Enter();
-      object result = plan.Create();
+      object result = plan.Create(c, start);
       if (plan.Positional) // the reader of the source generator: the same loop
         plan.Code.ReadPositionalBoxed(c, result, props, items, plan.GeneratedRead);
       else
@@ -234,6 +234,7 @@ namespace LsMsgPack.Reading
     private T Restart(ReadContext c, int start, int depth, FullPropertyInfo assignedTo)
     {
       c.Depth = depth;
+      c.References?.Unregister(start); // ReferenceHandling.Preserve: the object read so far is dropped (the values in it were read whole: they stay)
       return Slow(c, start, assignedTo);
     }
 
@@ -371,7 +372,7 @@ namespace LsMsgPack.Reading
       int depth = c.Depth;
       c.Enter();
       int inner = c.Depth;
-      object result = plan.Create();
+      object result = plan.Create(c, start);
       c.Differences.Push(result);
       int parents = c.Differences.Depth;
       int next = 0; // names are usually written in the order of the properties
@@ -443,7 +444,7 @@ namespace LsMsgPack.Reading
       int depth = c.Depth;
       c.Enter();
       int inner = c.Depth;
-      object result = plan.Create();
+      object result = plan.Create(c, start);
       c.Differences.Push(result);
       int parents = c.Differences.Depth;
       int t = 0;
@@ -506,6 +507,7 @@ namespace LsMsgPack.Reading
     {
       c.Depth = depth;
       c.Differences.Pop(); // the object is read again
+      c.References?.Unregister(start);
       return Slow(c, start, assignedTo);
     }
 
@@ -703,14 +705,49 @@ namespace LsMsgPack.Reading
         else
           _untilCompiled = serializer.CompileReadersAfter;
       }
+      if (serializer.PreserveReferences)
+      {
+        _preserves = true;
+        _untilCompiled = 1;
+      }
     }
 
+    /// <param name="start">Where the object's value starts (<see cref="ReferenceHandling.Preserve"/> registers it there before its values: a cycle back to it resolves)</param>
+    internal object Create(ReadContext c, int start)
+    {
+      if (_untilCompiled > 0) // also with ReferenceHandling.Preserve, which compiles nothing: no test of its own here
+        return CreateCounting(c, start);
+      return _create();
+    }
+
+    /// <summary>
+    /// An object not read from a payload (LsMsgPack.Data's row mapper: never a reference, nothing registered).
+    /// </summary>
     internal object Create()
     {
-      if (_untilCompiled > 0)
+      if (_untilCompiled > 0 && !_preserves)
         CountRead();
       return _create();
     }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private object CreateCounting(ReadContext c, int start)
+    {
+      if (_preserves)
+      {
+        object created = _create();
+        if (WithValues is null) // the values are collected first: registered when it is made (PreservingReader)
+          c.References?.Register(start, created);
+        return created;
+      }
+      CountRead();
+      return _create();
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/> (<see cref="_untilCompiled"/> stays 1: nothing is compiled then).
+    /// </summary>
+    private readonly bool _preserves;
 
     private static Func<object> WithDeserializing(Func<object> create, SerializationCallbacks callbacks)
     {

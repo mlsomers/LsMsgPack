@@ -202,7 +202,7 @@ namespace LsMsgPack
           c.Mode = IdMode.Names;
           if (!ReferenceEquals(c.IdSettings, Options))
             c.IdSettings = Options;
-          write(c, root);
+          RunWrite(c, root, write);
           Output(null, 0, false, c.W, target, sink, out result);
           return;
         }
@@ -228,7 +228,7 @@ namespace LsMsgPack
                 entry.Shared = shared = WriterShared(current);
               c.Mode = IdMode.Session;
               c.IdSettings = shared.Settings(Options);
-              write(c, root);
+              RunWrite(c, root, write);
               Output(current.Reference, current.Reference.Length, true, c.W, target, sink, out result);
               return;
             }
@@ -251,7 +251,7 @@ namespace LsMsgPack
           c.Inline.Clear();
           if (!ReferenceEquals(c.IdSettings, Options))
             c.IdSettings = Options;
-          write(c, root);
+          RunWrite(c, root, write);
           if (Options._schemaVersion == SchemaVersion.Described)
             schema.Raw(_described.Get(c.Inline, assignedTo, Options));
           else
@@ -264,7 +264,7 @@ namespace LsMsgPack
           SchemaSession session = new SchemaSession(resolver, Options);
           c.Mode = IdMode.Session;
           c.IdSettings = session.Apply(Options);
-          write(c, root);
+          RunWrite(c, root, write);
           schema.Raw(resolver.Pack(Options, assignedTo, Options));
         }
         Output(schema.Buf, schema.Pos, false, c.W, target, sink, out result);
@@ -273,6 +273,37 @@ namespace LsMsgPack
       {
         state.Context.Root = null;
         ReturnState(state);
+      }
+    }
+
+    /// <summary>
+    /// Writes the value (one attempt): with <see cref="ReferenceHandling.Preserve"/> the references of the value are completed when it is (<see cref="ReferenceWriting.Finish"/>).
+    /// </summary>
+    private void RunWrite(WriteContext c, FullPropertyInfo root, Action<WriteContext, FullPropertyInfo> write)
+    {
+      if (!PreserveReferences)
+      {
+        write(c, root);
+        return;
+      }
+      WritePreserving(c, root, write);
+    }
+
+    private void WritePreserving(WriteContext c, FullPropertyInfo root, Action<WriteContext, FullPropertyInfo> write)
+    {
+      ReferenceWriting references = c.References ?? (c.References = new ReferenceWriting());
+      references.Start();
+      MsgPackWriter body = c.W;
+      int start = body.Pos;
+      body.Moves = references;
+      try
+      {
+        write(c, root);
+        references.Finish(body, start, Options);
+      }
+      finally
+      {
+        body.Moves = null;
       }
     }
 
@@ -292,7 +323,7 @@ namespace LsMsgPack
         c.W.Reset(Options);
         c.Mode = IdMode.Session;
         c.IdSettings = sessionSettings;
-        write(c, root);
+        RunWrite(c, root, write);
         return true;
       }, out session);
       return session;
@@ -431,7 +462,7 @@ namespace LsMsgPack
       c.W.Reset(c.Serializer.Options);
       c.Mode = IdMode.Session;
       c.IdSettings = sessionSettings;
-      write(c, root);
+      c.Serializer.RunWrite(c, root, write);
     }
 
     #endregion

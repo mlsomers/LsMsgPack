@@ -14,7 +14,7 @@ namespace LsMsgPack.Writing
   /// <summary>
   /// Writes values of a declared type without boxing them. Values of another runtime type (polymorphism) go through <see cref="Serializer.WriteBoxed"/>, which adds the type id.
   /// </summary>
-  internal abstract class ValueHandler<T>
+  internal abstract class ValueHandler<T> : IPreservable
   {
     /// <param name="value">Not null</param>
     /// <param name="assignedTo">The property or element the value is assigned to</param>
@@ -24,6 +24,60 @@ namespace LsMsgPack.Writing
     /// FilterDefaultValues for a property of this type (without [DefaultValue], that one is asked boxed): false for the default value of the type.
     /// </summary>
     internal abstract bool IncludeByDefault(T value, FullPropertyInfo info);
+
+    /// <summary>
+    /// Created here, so NativeAOT has the instantiation wherever it has this one.
+    /// </summary>
+    object IPreservable.Preserving(Serializer serializer, bool converted)
+    {
+      return new PreservingHandler<T>(this, serializer, converted);
+    }
+  }
+
+  /// <summary>
+  /// <see cref="ReferenceHandling.Preserve"/>: a handler of a tracked class wrapped in a <see cref="PreservingHandler{T}"/>.
+  /// </summary>
+  internal interface IPreservable
+  {
+    object Preserving(Serializer serializer, bool converted);
+  }
+
+  internal interface IPreservingHandler
+  {
+    object Inner { get; }
+  }
+
+  /// <summary>
+  /// <see cref="ReferenceHandling.Preserve"/>: the handler of exactly a tracked class (an object, a collection, a converted class): a value met again is a reference (Serializer.WroteReference,
+  /// LsMsgPackDebug: SerializeReferenced). A value of a derived type goes through the inner handler to Serializer.WriteBoxed, which tracks it. A handler of its own, so the others keep their size.
+  /// </summary>
+  internal sealed class PreservingHandler<T> : ValueHandler<T>, IPreservingHandler
+  {
+    private readonly ValueHandler<T> _inner;
+    private readonly Serializer _serializer;
+    private readonly bool _converted;
+
+    internal PreservingHandler(ValueHandler<T> inner, Serializer serializer, bool converted)
+    {
+      _inner = inner;
+      _serializer = serializer;
+      _converted = converted;
+    }
+
+    public object Inner { get { return _inner; } }
+
+    internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)
+    {
+      object item = value; // a class: no box
+      if (item.GetType() == typeof(T) && _serializer.WroteReference(c, item, typeof(T), _converted, assignedTo))
+        return;
+      _inner.Write(c, value, assignedTo);
+    }
+
+    internal override bool IncludeByDefault(T value, FullPropertyInfo info)
+    {
+      return _inner.IncludeByDefault(value, info);
+    }
   }
 
   /// <summary>
@@ -543,7 +597,7 @@ namespace LsMsgPack.Writing
   }
 
   /// <summary>
-  /// <see cref="MsgPackOptions.IgnoreCycles"/>: the handler of a class, an object that is already being written is nil (LsMsgPack: SerializeTracked).
+  /// <see cref="ReferenceHandling.IgnoreCycles"/>: the handler of a class, an object that is already being written is nil (LsMsgPack: SerializeTracked).
   /// A handler of its own around <see cref="ObjectHandler{T}"/>, so the one without the option keeps its size (whether it is inlined into the loops of collections decides their speed).
   /// </summary>
   /// <summary>
@@ -1055,9 +1109,40 @@ namespace LsMsgPack.Writing
       ValueHandler<TValue> values = _value ?? (_value = _serializer.Handler<TValue>(null));
       c.EnterContainer();
       c.W.MapHeader(value.Count);
+      if (c.References != null && _serializer.PreserveReferences)
+      {
+        WritePreserving(c, value, keys, values);
+        return;
+      }
       foreach (KeyValuePair<TKey, TValue> entry in value)
       {
         keys.Write(c, entry.Key, _keyInfo); // never null
+        TValue item = entry.Value;
+        if (item == null)
+          c.W.Nil();
+        else
+          values.Write(c, item, _valueInfo);
+      }
+      c.LeaveContainer();
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: the keys are never references (a path step stands for an entry's value). A loop of its own, so the usual one has no test per entry.
+    /// </summary>
+    private void WritePreserving(WriteContext c, Dictionary<TKey, TValue> value, ValueHandler<TKey> keys, ValueHandler<TValue> values)
+    {
+      ReferenceWriting references = c.References;
+      foreach (KeyValuePair<TKey, TValue> entry in value)
+      {
+        references.InKeys++;
+        try
+        {
+          keys.Write(c, entry.Key, _keyInfo);
+        }
+        finally
+        {
+          references.InKeys--;
+        }
         TValue item = entry.Value;
         if (item == null)
           c.W.Nil();

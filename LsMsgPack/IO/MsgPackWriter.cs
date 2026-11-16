@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Writing;
 using System;
 using System.Buffers.Binary;
 using System.ComponentModel;
@@ -1132,9 +1133,27 @@ namespace LsMsgPack.IO
       return ReserveMapHeader(maxCount);
     }
 
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: told when written bytes move (the tracked values written there move with them), null otherwise.
+    /// </summary>
+    internal ReferenceWriting Moves;
+
     internal void PatchArrayHeader(int at, int maxCount, int count)
     {
       PatchHeader(at, maxCount, count, false);
+    }
+
+    /// <summary>
+    /// Apart, so <see cref="PatchHeader"/> stays small enough to be inlined (with ReferenceHandling.Preserve's call in it, maps written 2-3% slower).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void MoveEntries(int at, int reserved, int needed)
+    {
+      Moves?.Moved(this, at + reserved, needed - reserved);
+      int entries = Pos - at - reserved;
+      Ensure(needed - reserved);
+      Buffer.BlockCopy(Buf, at + reserved, Buf, at + needed, entries);
+      Pos += needed - reserved;
     }
 
     private void PatchHeader(int at, int maxCount, int count, bool map)
@@ -1142,12 +1161,7 @@ namespace LsMsgPack.IO
       int reserved = MapHeaderSize(maxCount);
       int needed = MapHeaderSize(count);
       if (needed != reserved) // move the entries (fewer were written than the maximum)
-      {
-        int entries = Pos - at - reserved;
-        Ensure(needed - reserved);
-        Buffer.BlockCopy(Buf, at + reserved, Buf, at + needed, entries);
-        Pos += needed - reserved;
-      }
+        MoveEntries(at, reserved, needed);
 
       int end = Pos;
       Pos = at;

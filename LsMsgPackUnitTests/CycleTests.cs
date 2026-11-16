@@ -9,7 +9,7 @@ using System.Collections.Generic;
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// MsgPackOptions.IgnoreCycles: a reference to an object that is being written is nil (as System.Text.Json's ReferenceHandler.IgnoreCycles), the same bytes in both serializers.
+  /// ReferenceHandling.IgnoreCycles: a reference to an object that is being written is nil (as System.Text.Json's ReferenceHandler.IgnoreCycles), the same bytes in both serializers.
   /// </summary>
   public abstract class CycleTests
   {
@@ -92,7 +92,7 @@ namespace LsMsgPackUnitTests
 
     protected static MsgPackSettings Settings(ObjectLayout layout, bool useSchema, bool ignoreCycles = true)
     {
-      return new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema, IgnoreCycles = ignoreCycles };
+      return new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema, ReferenceHandling = ignoreCycles ? ReferenceHandling.IgnoreCycles : ReferenceHandling.None };
     }
 
     private static IEnumerable<MsgPackSettings> AllSettings()
@@ -100,8 +100,8 @@ namespace LsMsgPackUnitTests
       foreach (ObjectLayout layout in new[] { ObjectLayout.Map, ObjectLayout.Array })
         foreach (bool useSchema in new[] { false, true })
           yield return Settings(layout, useSchema);
-      yield return new MsgPackSettings() { IgnoreCycles = true, ObjectLayout = ObjectLayout.Array, TrimTrailingNulls = true };
-      yield return new MsgPackSettings() { IgnoreCycles = true, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
+      yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.IgnoreCycles, ObjectLayout = ObjectLayout.Array, TrimTrailingNulls = true };
+      yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.IgnoreCycles, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
     }
 
     protected static CyGroup Group()
@@ -324,9 +324,9 @@ namespace LsMsgPackUnitTests
     [DataRow(ObjectLayout.Array)]
     public void CompiledWriters(ObjectLayout layout)
     {
-      LsMsgPackSerializer compiled = new LsMsgPackSerializer(new LsMsgPackOptions() { ObjectLayout = layout, IgnoreCycles = true, CompileWritersAfter = 0, UseRegisteredContexts = false });
+      LsMsgPackSerializer compiled = new LsMsgPackSerializer(new LsMsgPackOptions() { ObjectLayout = layout, ReferenceHandling = ReferenceHandling.IgnoreCycles, CompileWritersAfter = 0, UseRegisteredContexts = false });
       for (int t = 0; t < 3; t++)
-        CollectionAssert.AreEqual(Serializers.Debug.Serialize(Tree(), new MsgPackSettings() { ObjectLayout = layout, IgnoreCycles = true }), compiled.Serialize(Tree()));
+        CollectionAssert.AreEqual(Serializers.Debug.Serialize(Tree(), new MsgPackSettings() { ObjectLayout = layout, ReferenceHandling = ReferenceHandling.IgnoreCycles }), compiled.Serialize(Tree()));
     }
   }
 

@@ -1,6 +1,7 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Converters;
 using LsMsgPack.Meta;
+using LsMsgPack.References;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Filters;
 using LsMsgPack.TypeResolving.Interfaces;
@@ -45,9 +46,15 @@ namespace LsMsgPack
     internal readonly bool OwnerFilters;
 
     /// <summary>
-    /// <see cref="MsgPackOptions.IgnoreCycles"/>: the object handlers of classes are <see cref="CycleHandler{T}"/>s, <see cref="WriteBoxed"/> tracks the objects too.
+    /// <see cref="ReferenceHandling.IgnoreCycles"/>: the object handlers of classes are <see cref="CycleHandler{T}"/>s, <see cref="WriteBoxed"/> tracks the objects too.
     /// </summary>
     internal readonly bool IgnoreCycles;
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: the handlers of exactly a tracked class are <see cref="PreservingHandler{T}"/>s, <see cref="WriteBoxed"/> and <see cref="WriteConverted"/> track the others;
+    /// no generated or compiled writers (they write nested values themselves).
+    /// </summary>
+    internal readonly bool PreserveReferences;
     internal readonly bool CanBindDelegates;
 
     /// <summary>
@@ -87,13 +94,21 @@ namespace LsMsgPack
       _shouldSerialize = options.CallsShouldSerialize;
       _typedShouldSerialize = _shouldSerialize ? TypedShouldSerialize(options._dynamicFilters) : null;
       OwnerFilters = HasOwnerFilters(options._dynamicFilters);
-      IgnoreCycles = options._ignoreCycles;
+      IgnoreCycles = options.IgnoresCycles;
+      PreserveReferences = options.PreservesReferences;
+      if (PreserveReferences)
+      {
+        ReferenceCode.ThrowIfUsed(options);
+        for (int t = 0; t < options._extensions.Length; t++)
+          if (options._extensions[t] != null && options._extensions[t].TypeCode == MsgPackOptions.ReferenceExtensionType)
+            throw ReferenceCode.Used(options._extensions[t].GetType().Name);
+      }
       CanBindDelegates = PropertyAccessor.CanCompile;
       _alwaysTypeId = (options._addTypeIdOptions & AddTypeIdOption.Always) != 0;
       _customTypeResolvers = options._typeResolvers.Length > 0;
       CustomPropertyIds = options._propertyNameResolvers.Length > 0;
       _keyWriter = new MsgPackWriter(16);
-      CompileWritersAfter = options._compileWritersAfter >= 0 && CompiledWriter.Supported && Filters != FilterMode.Custom && !_alwaysTypeId ? options._compileWritersAfter : -1;
+      CompileWritersAfter = options._compileWritersAfter >= 0 && CompiledWriter.Supported && Filters != FilterMode.Custom && !_alwaysTypeId && !PreserveReferences ? options._compileWritersAfter : -1;
       InitGenerated();
       InitReading();
     }
@@ -221,7 +236,7 @@ namespace LsMsgPack
     {
       if (_memberHandlers.TryGetValue(member, out object found))
         return found;
-      return _memberHandlers.GetOrAdd(member, m => m.Accept(new ConverterHandlers(this)));
+      return _memberHandlers.GetOrAdd(member, m => Preserving(m.ConvertedType, m.Accept(new ConverterHandlers(this)), true));
     }
 
     /// <summary>
@@ -237,6 +252,71 @@ namespace LsMsgPack
     }
 
     private object CreateHandler(Type type)
+    {
+      object handler = HandlerOf(type);
+      return PreserveReferences && !type.IsValueType ? Preserving(type, handler, GetTypeInfo(type).Kind == TypeKind.Converted) : handler;
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: the handler of a tracked class checks its values first (a boxed handler goes to WriteBoxed, which does).
+    /// </summary>
+    private object Preserving(Type type, object handler, bool converted)
+    {
+      if (!PreserveReferences || type.IsValueType || handler.GetType().IsGenericType && handler.GetType().GetGenericTypeDefinition() == typeof(BoxedHandler<>))
+        return handler;
+      if (!converted && !GetTypeInfo(type).Tracked)
+        return handler;
+      return ((IPreservable)handler).Preserving(this, converted);
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: a value met again is written as a reference (with the type id where the value would have one: LsMsgPackDebug's ReferenceNeedsTypeId), the first time it is registered.
+    /// </summary>
+    /// <returns>true when the reference was written</returns>
+    internal bool WroteReference(WriteContext c, object value, Type type, bool converted, FullPropertyInfo assignedTo)
+    {
+      ReferenceWriting references = c.References;
+      int target = references.Find(value, c.W);
+      if (target < 0)
+        return false;
+      WriteTypeInfo info = GetTypeInfo(type);
+      bool typeId = converted
+        ? !(assignedTo is null || info.NeverWrapped || !SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId))
+        : SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId);
+      if (typeId)
+      {
+        c.W.MapHeader(2);
+        c.W.String(MsgPackOptions.TypeIdKey);
+        c.WriteTypeId(type, assignedTo);
+        c.W.String(MsgPackOptions.ContentKey);
+      }
+      references.WritePlaceholder(c.W, target);
+      return true;
+    }
+
+    /// <summary>
+    /// A key of a map, never a reference (<see cref="ReferenceHandling.Preserve"/>: a path step stands for an entry's value).
+    /// </summary>
+    private void WriteKey(WriteContext c, object key, FullPropertyInfo keyInfo)
+    {
+      ReferenceWriting references = c.References;
+      if (references is null || !PreserveReferences)
+      {
+        WriteBoxed(c, key, keyInfo);
+        return;
+      }
+      references.InKeys++;
+      try
+      {
+        WriteBoxed(c, key, keyInfo);
+      }
+      finally
+      {
+        references.InKeys--;
+      }
+    }
+
+    private object HandlerOf(Type type)
     {
       if (_alwaysTypeId) // every value decides about its type id (AddTypeIdOption.Always)
         return Boxed(type);
@@ -681,6 +761,8 @@ namespace LsMsgPack
       bool isObject = info.Kind == TypeKind.Complex || info.Kind == TypeKind.Extended;
       if (isObject && SerializationRules.WritesByNames(type, assignedTo, byNames))
       {
+        if (PreserveReferences && !type.IsValueType && WroteReference(c, value, type, false, assignedTo))
+          return;
         if (IgnoreCycles)
         {
           if (!c.EnterObject(value))
@@ -738,7 +820,7 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// <see cref="MsgPackOptions.IgnoreCycles"/>: whether an object of exactly this class can contain an object with properties (itself, in a cycle). Its handler tracks it only then:
+    /// <see cref="ReferenceHandling.IgnoreCycles"/>: whether an object of exactly this class can contain an object with properties (itself, in a cycle). Its handler tracks it only then:
     /// with properties of only numbers, strings and the like nothing below it can be it, so the check could never find it (the same bytes as tracking it, as LsMsgPack does);
     /// an object of a derived type goes through <see cref="WriteBoxed"/>, which tracks it.
     /// </summary>
@@ -761,7 +843,7 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// <see cref="MsgPackOptions.IgnoreCycles"/>: an object with properties of a type that is not declared there (LsMsgPack: SerializeTracked), nil when it is already being written.
+    /// <see cref="ReferenceHandling.IgnoreCycles"/>: an object with properties of a type that is not declared there (LsMsgPack: SerializeTracked), nil when it is already being written.
     /// </summary>
     private void WriteTracked(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
     {
@@ -776,6 +858,8 @@ namespace LsMsgPack
 
     private void WriteBoxed(WriteContext c, object value, Type type, WriteTypeInfo info, FullPropertyInfo assignedTo)
     {
+      if (PreserveReferences && info.Tracked && info.Kind != TypeKind.Converted && WroteReference(c, value, type, false, assignedTo)) // converted values: WriteConverted
+        return;
       switch (info.Kind)
       {
         case TypeKind.Map:
@@ -854,6 +938,8 @@ namespace LsMsgPack
     /// <param name="writer">The handler of the type's converter, or of the member's own one</param>
     internal void WriteConverted(WriteContext c, object value, Type type, IConvertedWriter writer, FullPropertyInfo assignedTo)
     {
+      if (PreserveReferences && !type.IsValueType && WroteReference(c, value, type, true, assignedTo))
+        return;
       WriteTypeInfo info = GetTypeInfo(type);
       if (assignedTo is null || info.NeverWrapped || !SerializationRules.NeedsTypeId(type, assignedTo, Options, info.NeverHasTypeId))
       {
@@ -1014,7 +1100,7 @@ namespace LsMsgPack
       main.String(MsgPackOptions.TypeIdKey);
       c.WriteTypeId(type, assignedTo);
       main.String(MsgPackOptions.ContentKey);
-      main.Raw(content.Buf, 0, content.Pos);
+      c.CopyRented(content, main);
       c.ReturnWriter(content);
     }
 
@@ -1047,7 +1133,7 @@ namespace LsMsgPack
       main.String(MsgPackOptions.TypeIdKey);
       c.WriteTypeId(type, assignedTo);
       main.String(MsgPackOptions.ContentKey);
-      main.Raw(content.Buf, 0, content.Pos);
+      c.CopyRented(content, main);
       c.ReturnWriter(content);
     }
 
@@ -1083,7 +1169,7 @@ namespace LsMsgPack
       main.String(MsgPackOptions.TypeIdKey);
       c.WriteTypeId(type, assignedTo);
       main.String(MsgPackOptions.ContentKey);
-      main.Raw(content.Buf, 0, content.Pos);
+      c.CopyRented(content, main);
       c.ReturnWriter(content);
     }
 
@@ -1143,7 +1229,7 @@ namespace LsMsgPack
       if (elements != null)
       {
         c.W.String(MsgPackOptions.ContentKey);
-        c.W.Raw(elements.Buf, 0, elements.Pos);
+        c.CopyRented(elements, c.W);
         c.ReturnWriter(elements);
         count++;
       }
@@ -1180,7 +1266,7 @@ namespace LsMsgPack
           IDictionaryEnumerator entries = dictionary.GetEnumerator();
           while (entries.MoveNext())
           {
-            WriteBoxed(c, entries.Key, keyInfo);
+            WriteKey(c, entries.Key, keyInfo);
             WriteBoxed(c, entries.Value, valueInfo);
           }
         }
@@ -1190,7 +1276,7 @@ namespace LsMsgPack
           c.W.MapHeader(pairs.Length);
           for (int t = 0; t < pairs.Length; t++)
           {
-            WriteBoxed(c, pairs[t].Key, keyInfo);
+            WriteKey(c, pairs[t].Key, keyInfo);
             WriteBoxed(c, pairs[t].Value, valueInfo);
           }
         }
@@ -1201,7 +1287,7 @@ namespace LsMsgPack
           for (int t = 0; t < pairs.Length; t++)
           {
             object pair = pairs.GetValue(t);
-            WriteBoxed(c, info.PairKey.GetValue(pair), keyInfo);
+            WriteKey(c, info.PairKey.GetValue(pair), keyInfo);
             WriteBoxed(c, info.PairValue.GetValue(pair), valueInfo);
           }
         }
@@ -1254,6 +1340,8 @@ namespace LsMsgPack
         && (IsVector(type) || definition == typeof(List<>) || definition == typeof(HashSet<>) || definition == typeof(Dictionary<,>)))
       {
         object handler = _handlers.TryGetValue(type, out object found) ? found : _handlers.GetOrAdd(type, t => CreateHandler(t));
+        if (handler is IPreservingHandler preserving) // the collection itself was tracked by the caller (WriteBoxed)
+          handler = preserving.Inner;
         info.Elements = handler as ITypedElements;
       }
       info.ElementsKnown = true; // another thread that still sees false looks it up again
@@ -1292,6 +1380,11 @@ namespace LsMsgPack
     /// </summary>
     internal IConvertedWriter ConvertedWriter;
     internal readonly bool NeverWrapped;
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: a value of this type keeps its identity (an object or collection of a class, or a converted class: SerializationRules.TracksReferences).
+    /// </summary>
+    internal readonly bool Tracked;
     internal readonly FullPropertyInfo ElementInfo;
     internal readonly CollectionInfo Collection;
     internal readonly FullPropertyInfo KeyInfo;
@@ -1353,6 +1446,7 @@ namespace LsMsgPack
       else if (type == typeof(decimal) && options._decimalFormat == DecimalFormat.String)
         Kind = TypeKind.DecimalString; // the extension (if any) still reads
       NeverWrapped = TypeKinds.NeverWrapped(type);
+      Tracked = !type.IsValueType && (Kind == TypeKind.Converted || (Kind == TypeKind.Complex || Kind == TypeKind.Extended || Kind == TypeKind.Map || Kind == TypeKind.Array) && SerializationRules.TracksReferences(type, options));
       if (Kind == TypeKind.MultiArray)
         ElementInfo = new FullPropertyInfo(type.GetElementType());
       if (Kind == TypeKind.Map || Kind == TypeKind.Array)

@@ -275,7 +275,7 @@ namespace LsMsgPack
     private void InitReading()
     {
       SlowObjects = CustomPropertyIds || _customTypeResolvers;
-      CompileReadersAfter = Options._compileReadersAfter >= 0 && CompiledWriter.Supported && !SlowObjects ? Options._compileReadersAfter : -1;
+      CompileReadersAfter = Options._compileReadersAfter >= 0 && CompiledWriter.Supported && !SlowObjects && !PreserveReferences ? Options._compileReadersAfter : -1;
       _inlineStore = new SchemaStore();
     }
 
@@ -299,7 +299,7 @@ namespace LsMsgPack
       MsgPackConverter member = declared?.MemberConverter;
       if (member is null)
         return Reader(type);
-      ValueReader exact = _memberReaders.TryGetValue(member, out ValueReader found) ? found : _memberReaders.GetOrAdd(member, m => (ValueReader)m.Accept(new ConverterReaders(this)));
+      ValueReader exact = _memberReaders.TryGetValue(member, out ValueReader found) ? found : _memberReaders.GetOrAdd(member, m => Preserving(m.ConvertedType, (ValueReader)m.Accept(new ConverterReaders(this))));
       if (type == member.ConvertedType)
         return exact;
       return (ValueReader)Instantiate(type, typeof(NullableReader<>), member.ConvertedType, exact);
@@ -313,6 +313,21 @@ namespace LsMsgPack
     }
 
     private ValueReader CreateReader(Type type)
+    {
+      return Preserving(type, ReaderOf(type));
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: the reader of a class resolves references and registers what it read (<see cref="PreservingReader{T}"/>; objects also when they are created, ReadPlan.Create).
+    /// </summary>
+    private ValueReader Preserving(Type type, ValueReader reader)
+    {
+      if (!PreserveReferences || type.IsValueType || type == typeof(string) || type == typeof(byte[]))
+        return reader;
+      return ((IPreservableReader)reader).Preserving();
+    }
+
+    private ValueReader ReaderOf(Type type)
     {
       Type underlying = Nullable.GetUnderlyingType(type);
       if (underlying != null)
@@ -685,7 +700,11 @@ namespace LsMsgPack
     {
       ReadContext c = _threadContext;
       if (c is null || !ReferenceEquals(c.Serializer, this))
-        return new ReadContext(this) { R = new MsgPackReader(buffer, offset, end, Options) };
+      {
+        c = new ReadContext(this) { R = new MsgPackReader(buffer, offset, end, Options) };
+        c.R.Context = c;
+        return c;
+      }
       _threadContext = null;
       c.R.Reset(buffer, offset, end);
       c.Depth = 0;
@@ -696,6 +715,8 @@ namespace LsMsgPack
     private static void ReturnContext(ReadContext c)
     {
       c.R.Reset(null, 0, 0); // the data is not kept alive
+      if (c.References != null)
+        c.References = null;
       if (c.Differences != null)
         c.EndDifferences();
       _threadContext = c; // Bound and SlowSettings are kept: usually the next call has the same
@@ -970,6 +991,9 @@ namespace LsMsgPack
 
     private object ReadRoot(ReadContext c, Type type)
     {
+      c.BodyStart = c.R.Pos;
+      if (PreserveReferences)
+        c.References = new ByteReferences(c, c.R.Pos, true);
       try
       {
         if (c.RootType != type) // calls on a thread usually read the same root type: no lookup (the hash of a Type is a call into the runtime)

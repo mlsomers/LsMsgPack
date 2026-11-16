@@ -461,7 +461,7 @@ namespace LsMsgPackUnitTests
     public void IgnoreCycles_AnObjectWrittenAsNilGetsNoCallbacks(string mode, ObjectLayout layout)
     {
       MsgPackSettings settings = Settings(mode, layout);
-      settings.IgnoreCycles = true;
+      settings.ReferenceHandling = ReferenceHandling.IgnoreCycles;
       CbNode a = new CbNode { Name = "a" };
       CbNode b = new CbNode { Name = "b", Next = a };
       a.Next = b;

@@ -49,6 +49,11 @@ namespace LsMsgPack.IO
 
     internal int MaxDepth { get { return _maxDepth; } }
 
+    /// <summary>
+    /// The context of the call this reader reads for (LsMsgPack's calls; null for other readers): a reference read by <see cref="ReadPlain"/> is resolved by its call.
+    /// </summary>
+    internal LsMsgPack.Reading.ReadContext Context;
+
     #region Bytes
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -922,12 +927,13 @@ namespace LsMsgPack.IO
     /// </summary>
     internal object ReadPlain(int depth)
     {
+      int start = Pos;
       byte c = ReadByte();
       if (c <= 0x7F) return c;
       if (c >= 0xE0) return (sbyte)c;
       if ((c & 0xE0) == 0xA0) return ReadStringBody(c & 0x1F);
-      if ((c & 0xF0) == 0x90) return ReadArrayBody(Count(c & 0x0F, 1), depth);
-      if ((c & 0xF0) == 0x80) return ReadMapBody(Count(c & 0x0F, 2), depth);
+      if ((c & 0xF0) == 0x90) return Noted(ReadArrayBody(Count(c & 0x0F, 1), depth), start);
+      if ((c & 0xF0) == 0x80) return Noted(ReadMapBody(Count(c & 0x0F, 2), depth), start);
 
       switch (c)
       {
@@ -950,16 +956,27 @@ namespace LsMsgPack.IO
         case 0xC4: return Bytes(ReadByte());
         case 0xC5: return Bytes(U16());
         case 0xC6: return Bytes(U32());
-        case 0xDC: return ReadArrayBody(Count(U16(), 1), depth);
-        case 0xDD: return ReadArrayBody(Count(U32(), 1), depth);
-        case 0xDE: return ReadMapBody(Count(U16(), 2), depth);
-        case 0xDF: return ReadMapBody(Count(U32(), 2), depth);
+        case 0xDC: return Noted(ReadArrayBody(Count(U16(), 1), depth), start);
+        case 0xDD: return Noted(ReadArrayBody(Count(U32(), 1), depth), start);
+        case 0xDE: return Noted(ReadMapBody(Count(U16(), 2), depth), start);
+        case 0xDF: return Noted(ReadMapBody(Count(U32(), 2), depth), start);
         case 0xD4: case 0xD5: case 0xD6: case 0xD7: case 0xD8: case 0xC7: case 0xC8: case 0xC9:
           Pos--;
           return ReadPlainExtension();
       }
 
       throw LsMsgPack.Streaming.Escape.NotSupported(Pos - 1);
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: where a plain array or map starts, for what LsMsgPack.Core makes of it (see ByteReferences.Note).
+    /// </summary>
+    private object Noted(object plain, int start)
+    {
+      LsMsgPack.Reading.ByteReferences references = Context?.References;
+      if (references != null && references.Preserves)
+        references.Note(plain, start);
+      return plain;
     }
 
     private string ReadStringBody(long length)
@@ -1001,6 +1018,7 @@ namespace LsMsgPack.IO
 
     private object ReadPlainExtension()
     {
+      int start = Pos;
       TryReadExtHeader(out sbyte typeCode, out int length, out MsgPackTypeId format);
       if (typeCode == -1) // timestamps first, as MpExt.Read does
         return MsgPackOptions.FromTimestamp(ReadTimestamp(format, length), _dateTimeKind);
@@ -1016,6 +1034,9 @@ namespace LsMsgPack.IO
           return value;
         }
       }
+
+      if (typeCode == MsgPackOptions.ReferenceExtensionType) // after the custom extensions: a registered one wins (allowed without ReferenceHandling.Preserve)
+        return new LsMsgPack.References.MsgPackReference(Bytes(length), Context?.ReferencesOfCall()) { Offset = start };
 
       return new MsgPackExtension(typeCode, Bytes(length), format);
     }

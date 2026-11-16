@@ -155,10 +155,10 @@ namespace LsMsgPack
     public static int Default_MaxDepth { get; set; } = 256;
 
     /// <summary>
-    /// The <see cref="IgnoreCycles"/> of new settings (false by default).
+    /// The <see cref="ReferenceHandling"/> of new settings (<see cref="LsMsgPack.ReferenceHandling.None"/> by default).
     /// </summary>
     [IgnoreDataMember]
-    public static bool Default_IgnoreCycles { get; set; } = false;
+    public static ReferenceHandling Default_ReferenceHandling { get; set; } = ReferenceHandling.None;
 
     /// <summary>
     /// The <see cref="ObjectCreation"/> of new settings (<see cref="LsMsgPack.ObjectCreation.ConstructorOrUninitialized"/> by default).
@@ -220,7 +220,7 @@ namespace LsMsgPack
     internal bool _propertyNameCaseInsensitive = Default_PropertyNameCaseInsensitive;
     internal SchemaVersion _schemaVersion = Default_SchemaVersion;
     internal int _maxDepth = Default_MaxDepth;
-    internal bool _ignoreCycles = Default_IgnoreCycles;
+    internal ReferenceHandling _referenceHandling = Default_ReferenceHandling;
     internal ObjectCreation _objectCreation = Default_ObjectCreation;
     internal ReadErrorHandling _readErrors = Default_ReadErrors;
     internal bool _unspecifiedIsUtc = Default_UnspecifiedDateTimeKind == DateTimeKind.Utc;
@@ -605,21 +605,30 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// Writing: a reference to an object that is being written (the object itself or one that contains it, a cycle) is written as nil, as System.Text.Json's <c>ReferenceHandler.IgnoreCycles</c> does.
-    /// Off by default: a cycle then ends at <see cref="MaxDepth"/> with a <see cref="MsgPackException"/>.
-    /// <para>Objects with properties are tracked (not structs, collections, pairs and tuples): every object being written is compared with the ones containing it. That costs LsMsgPack
-    /// a part of writing per object (a tree of small nodes: 11-16% more time in the map layout, 15-21% in the array layout); it does not track a class whose properties are all numbers, strings, enums, dates, Guids or byte[]. Only the current path counts:
-    /// an object referenced twice side by side is written twice. Read back, the reference is null.</para>
+    /// What happens to an object or collection that is met again while writing (<see cref="LsMsgPack.ReferenceHandling.None"/> by default: it is written again, a cycle ends at
+    /// <see cref="MaxDepth"/> with a <see cref="MsgPackException"/>). See docs/References.md.
+    /// <para><see cref="LsMsgPack.ReferenceHandling.IgnoreCycles"/>: a reference to an object that is being written is nil, as System.Text.Json's <c>ReferenceHandler.IgnoreCycles</c>.
+    /// <see cref="LsMsgPack.ReferenceHandling.Preserve"/>: the second time an object or collection appears it is written as a reference to the first (an extension of type
+    /// <see cref="ReferenceExtensionType"/> holding the path to it), and readers with this setting give the same instance there.</para>
     /// </summary>
     [Category("Control")]
-    [DisplayName("Ignore Cycles")]
-    [Description("Writes a reference to an object that is being written (a cycle) as nil, as System.Text.Json's IgnoreCycles does, instead of failing at Max Depth.")]
-    [DefaultValue(false)]
-    public bool IgnoreCycles
+    [DisplayName("Reference Handling")]
+    [Description("What happens to an object or collection met again while writing: written again (None), nil in a cycle (IgnoreCycles), or a reference to the first one (Preserve).")]
+    [DefaultValue(ReferenceHandling.None)]
+    public ReferenceHandling ReferenceHandling
     {
-      get { return _ignoreCycles; }
-      set { _ignoreCycles = value; }
+      get { return _referenceHandling; }
+      set { _referenceHandling = value; }
     }
+
+    /// <summary>
+    /// The extension type of a reference to an earlier value (<see cref="LsMsgPack.ReferenceHandling.Preserve"/>): its content is the path to that value, a run of positive integers.
+    /// </summary>
+    public const sbyte ReferenceExtensionType = 5;
+
+    internal bool IgnoresCycles { get { return _referenceHandling == ReferenceHandling.IgnoreCycles; } }
+
+    internal bool PreservesReferences { get { return _referenceHandling == ReferenceHandling.Preserve; } }
 
     /// <summary>
     /// How the objects with properties are created when reading, <see cref="LsMsgPack.ObjectCreation.ConstructorOrUninitialized"/> by default (see docs/security.md).
@@ -942,6 +951,35 @@ namespace LsMsgPack
     /// </summary>
     [Description("An array of the clock time (as a timestamp, as if it were UTC) and the offset in minutes, as MessagePack-CSharp writes it.")]
     ClockTimeAndOffset = 2
+  }
+
+  /// <summary>
+  /// What happens to an object or collection that is met again while writing (see <see cref="MsgPackOptions.ReferenceHandling"/>).
+  /// </summary>
+  public enum ReferenceHandling
+  {
+    /// <summary>
+    /// Written again each time (the default): an object referenced twice is read back as two copies, and a cycle fails at <see cref="MsgPackOptions.MaxDepth"/>.
+    /// </summary>
+    [Description("Written again each time: read back as copies; a cycle fails at Max Depth.")]
+    None = 0,
+
+    /// <summary>
+    /// A reference to an object that is being written (the object itself or one that contains it, a cycle) is written as nil, as System.Text.Json's <c>ReferenceHandler.IgnoreCycles</c>.
+    /// <para>Objects with properties are tracked (not structs, collections, pairs and tuples): every object being written is compared with the ones containing it. That costs LsMsgPack
+    /// a part of writing per object (11-16% more time in the map layout, 15-21% in the array layout); it does not track a class whose properties are all numbers, strings, enums, dates, Guids or byte[].
+    /// Only the current path counts: an object referenced twice side by side is written twice. Read back, the reference is null.</para>
+    /// </summary>
+    [Description("A reference to an object being written (a cycle) is nil, as System.Text.Json's IgnoreCycles.")]
+    IgnoreCycles = 1,
+
+    /// <summary>
+    /// The second time an object or collection appears it is written as a reference to the first (extension type <see cref="MsgPackOptions.ReferenceExtensionType"/>, the path to it),
+    /// so shared objects and cycles keep their identity. Readers with this setting give the same instance there; other readers (and other libraries) see an extension they read as a copy, or not at all.
+    /// <para>Objects with properties and collections are tracked, not strings, byte[], structs and framework types written as one value. Off by default for that reason.</para>
+    /// </summary>
+    [Description("The second time an object or collection appears it is a reference to the first: shared objects and cycles keep their identity.")]
+    Preserve = 2
   }
 
   /// <summary>

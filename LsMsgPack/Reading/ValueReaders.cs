@@ -1,5 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Meta;
+using LsMsgPack.References;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.Extensions;
 using LsMsgPack.IO;
@@ -93,6 +94,21 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal RootSlot Slot;
 
+    /// <summary>
+    /// Where the root value of the call starts (the paths of references start there).
+    /// </summary>
+    internal int BodyStart;
+
+    /// <summary>
+    /// The references of the call: made where the root starts with <see cref="ReferenceHandling.Preserve"/>, otherwise at the first reference (read again, as copies). Null otherwise.
+    /// </summary>
+    internal ByteReferences References;
+
+    internal ByteReferences ReferencesOfCall()
+    {
+      return References ?? (References = new ByteReferences(this, BodyStart, false));
+    }
+
     internal ReadContext(Serializer serializer)
     {
       Serializer = serializer;
@@ -119,9 +135,17 @@ namespace LsMsgPack.Reading
   /// <summary>
   /// Reads values of a type from the formats it expects. Any other format is read as a plain value and converted by LsMsgPack.Core's ValueConverter, as LsMsgPack does with every value.
   /// </summary>
-  internal abstract class ValueReader<T> : ValueReader
+  internal abstract class ValueReader<T> : ValueReader, IPreservableReader
   {
     internal abstract T Read(ReadContext c, FullPropertyInfo assignedTo);
+
+    /// <summary>
+    /// Created here, so NativeAOT has the instantiation wherever it has this one.
+    /// </summary>
+    ValueReader IPreservableReader.Preserving()
+    {
+      return new PreservingReader<T>(this);
+    }
 
     internal override object ReadBoxed(ReadContext c, FullPropertyInfo assignedTo)
     {
@@ -136,13 +160,33 @@ namespace LsMsgPack.Reading
     }
 
     /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: Core registers what it makes by the plain values (their offsets noted by ReadPlain) and finds what a reference read first.
+    /// </summary>
+    private static object ConvertPreserving(object plain, Type type, ReadContext c, FullPropertyInfo assignedTo, ByteReferences references)
+    {
+      ReferenceResolver outer = ReferenceResolver.Current;
+      ReferenceResolver.Current = references;
+      try
+      {
+        return ValueConverter.ConvertDeserializeValue(plain, type, c.ConversionSettings(), assignedTo);
+      }
+      finally
+      {
+        ReferenceResolver.Current = outer;
+      }
+    }
+
+    /// <summary>
     /// Reads the value at <paramref name="start"/> as LsMsgPack does: unpacked, then converted.
     /// </summary>
     protected static T Slow(ReadContext c, int start, FullPropertyInfo assignedTo)
     {
       c.R.Pos = start;
       object plain = c.R.ReadPlain(c.Depth);
-      object value = ValueConverter.ConvertDeserializeValue(plain, typeof(T), c.ConversionSettings(), assignedTo);
+      ByteReferences references = c.References;
+      object value = references != null && references.Preserves
+        ? ConvertPreserving(plain, typeof(T), c, assignedTo, references)
+        : ValueConverter.ConvertDeserializeValue(plain, typeof(T), c.ConversionSettings(), assignedTo);
       if (value is null)
         return default(T);
       if (value is T typed)
@@ -151,6 +195,40 @@ namespace LsMsgPack.Reading
         throw new RootValue(value);
       throw ReadDifferences.NotConverted(c.ConversionSettings(), new ArgumentException($"Object of type '{value.GetType()}' cannot be converted to type '{typeof(T)}'.")); // as reflection reports it when LsMsgPack sets the property
     }
+  }
+
+  /// <summary>
+  /// <see cref="ReferenceHandling.Preserve"/>: a reader of a class whose values are references or may be referred to (LsMsgPackDebug: PlainReferences): a reference is resolved,
+  /// what was read is registered where it starts (an object also when it is created, before its values: ReadPlan.Create). A reader of its own, so the others keep their size.
+  /// </summary>
+  internal sealed class PreservingReader<T> : ValueReader<T>
+  {
+    private readonly ValueReader<T> _inner;
+
+    internal PreservingReader(ValueReader<T> inner)
+    {
+      _inner = inner;
+    }
+
+    internal override T Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (ByteReferences.IsReference(c.R))
+      {
+        object resolved = c.ReferencesOfCall().ReadReference(typeof(T), assignedTo);
+        if (resolved is null || resolved is T)
+          return (T)resolved;
+        throw ReadDifferences.NotConverted(c.ConversionSettings(), new ArgumentException($"Object of type '{resolved.GetType()}' cannot be converted to type '{typeof(T)}'."));
+      }
+      T value = _inner.Read(c, assignedTo);
+      c.References?.Register(start, value); // a collection, a converted value, an object made by its constructor with values (others: also at their creation)
+      return value;
+    }
+  }
+
+  internal interface IPreservableReader
+  {
+    ValueReader Preserving();
   }
 
   /// <summary>
