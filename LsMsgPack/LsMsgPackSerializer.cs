@@ -8,6 +8,8 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace LsMsgPack
 {
@@ -168,6 +170,76 @@ namespace LsMsgPack
       if (target is null)
         throw new ArgumentNullException(nameof(target));
       _serializer.Serialize(assignedTo ?? value?.GetType() ?? typeof(object), value, BoxedWriter, target, out byte[] result);
+    }
+
+    /// <summary>
+    /// Writes the payload to the stream asynchronously: <see cref="Serialize{T}(T, Stream)"/> for a stream that must not be written synchronously
+    /// (an ASP.NET Core response body, a network stream, a file opened for asynchronous I/O).
+    /// <para>The value is serialized into an array of the shared pool first, then written with one <c>WriteAsync</c>, so nothing is written when serializing fails.
+    /// The stream is not flushed. A <see cref="MemoryStream"/> is written directly, without awaiting.</para>
+    /// </summary>
+    public Task SerializeAsync<T>(T value, Stream target, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      if (target is null)
+        throw new ArgumentNullException(nameof(target));
+      if (cancellationToken.IsCancellationRequested)
+        return Task.FromCanceled(cancellationToken);
+      try
+      {
+        if (target.GetType() == typeof(MemoryStream)) // no I/O to wait for (not a derived class, which may refuse synchronous writes)
+        {
+          Serialize(value, target);
+          return Task.CompletedTask;
+        }
+        PooledPayload payload = new PooledPayload();
+        try
+        {
+          Serialize(value, payload);
+        }
+        catch
+        {
+          payload.Release();
+          throw;
+        }
+        return payload.WriteToAsync(target, cancellationToken);
+      }
+      catch (Exception ex) // as an async method
+      {
+        return Task.FromException(ex);
+      }
+    }
+
+    /// <inheritdoc cref="SerializeAsync{T}(T, Stream, CancellationToken)"/>
+    /// <param name="assignedTo">The declared type the value is assigned to (see <see cref="Serialize(object, Type)"/>). Null: the type of the value.</param>
+    public Task SerializeAsync(object value, Type assignedTo, Stream target, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      if (target is null)
+        throw new ArgumentNullException(nameof(target));
+      if (cancellationToken.IsCancellationRequested)
+        return Task.FromCanceled(cancellationToken);
+      try
+      {
+        if (target.GetType() == typeof(MemoryStream))
+        {
+          Serialize(value, assignedTo, target);
+          return Task.CompletedTask;
+        }
+        PooledPayload payload = new PooledPayload();
+        try
+        {
+          Serialize(value, assignedTo, payload);
+        }
+        catch
+        {
+          payload.Release();
+          throw;
+        }
+        return payload.WriteToAsync(target, cancellationToken);
+      }
+      catch (Exception ex)
+      {
+        return Task.FromException(ex);
+      }
     }
 
     /// <summary>
@@ -341,6 +413,52 @@ namespace LsMsgPack
     public object Deserialize(Type type, Stream source)
     {
       return Deserialize(type, source, null);
+    }
+
+    /// <summary>
+    /// Reads one value (with its schema) from the stream asynchronously: <see cref="Deserialize{T}(Stream)"/> for a stream that must not be read synchronously
+    /// (an ASP.NET Core request body, a network stream, a file opened for asynchronous I/O).
+    /// <para>It reads no further than the value, so the stream is left after it: the values that follow one another on a connection are read one call at a time.
+    /// The bytes are read with <c>ReadAsync</c> into an array of the shared pool, then the value is read from memory. A <see cref="MemoryStream"/> is read in place, without awaiting.</para>
+    /// <para>The stream must hold one payload as <see cref="Serialize{T}(T)"/> writes it. Values of unknown length (the escapes of a stream) are read by <see cref="Streaming.MsgPackStreamReader"/>.</para>
+    /// </summary>
+    public Task<T> DeserializeAsync<T>(Stream source, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      if (source is null)
+        throw new ArgumentNullException(nameof(source));
+      if (cancellationToken.IsCancellationRequested)
+        return Task.FromCanceled<T>(cancellationToken);
+      if (source.GetType() != typeof(MemoryStream)) // a MemoryStream has no I/O to wait for (not a derived class, which may refuse synchronous reads)
+        return DeserializeSlowAsync<T>(source, cancellationToken);
+      try
+      {
+        return Task.FromResult(Deserialize<T>(source));
+      }
+      catch (Exception ex) // as an async method
+      {
+        return Task.FromException<T>(ex);
+      }
+    }
+
+    /// <summary>
+    /// <see cref="DeserializeAsync{T}(Stream, CancellationToken)"/> for a type known at runtime.
+    /// </summary>
+    public Task<object> DeserializeAsync(Type type, Stream source, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      if (source is null)
+        throw new ArgumentNullException(nameof(source));
+      if (cancellationToken.IsCancellationRequested)
+        return Task.FromCanceled<object>(cancellationToken);
+      if (source.GetType() != typeof(MemoryStream))
+        return DeserializeSlowAsync(type, source, cancellationToken);
+      try
+      {
+        return Task.FromResult(Deserialize(type, source, null));
+      }
+      catch (Exception ex)
+      {
+        return Task.FromException<object>(ex);
+      }
     }
 
     /// <summary>
@@ -560,8 +678,52 @@ namespace LsMsgPack
         return result;
       }
 
-      byte[] payload = StreamPayload.Read(source, _serializer.Options);
-      return _serializer.Deserialize(type, payload, 0, payload.Length, out int end, differences, intoSlot);
+      StreamPayload payload = new StreamPayload(_serializer.Options);
+      try
+      {
+        payload.ReadFrom(source);
+        return _serializer.Deserialize(type, payload.Buffer, 0, payload.Length, out int end, differences, intoSlot);
+      }
+      finally
+      {
+        payload.Release();
+      }
+    }
+
+    /// <summary>
+    /// The value read once its payload has arrived: the bytes are read asynchronously, the value from memory (as <see cref="Streaming.MsgPackStreamReader.ReadObjectAsync{T}"/>).
+    /// A struct's slot is taken in the same step as the read (the slot is the thread's).
+    /// </summary>
+    private async Task<T> DeserializeSlowAsync<T>(Stream source, CancellationToken cancellationToken)
+    {
+      StreamPayload payload = new StreamPayload(_serializer.Options);
+      try
+      {
+        await payload.ReadFromAsync(source, cancellationToken).ConfigureAwait(false);
+        if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct)
+          return RootSlot<T>.Take(_serializer.Deserialize(typeof(T), payload.Buffer, 0, payload.Length, out int read, null, true));
+        object result = _serializer.Deserialize(typeof(T), payload.Buffer, 0, payload.Length, out int end, null, false);
+        return result is null ? default(T) : (T)result;
+      }
+      finally
+      {
+        payload.Release();
+      }
+    }
+
+    /// <inheritdoc cref="DeserializeSlowAsync{T}(Stream, CancellationToken)"/>
+    private async Task<object> DeserializeSlowAsync(Type type, Stream source, CancellationToken cancellationToken)
+    {
+      StreamPayload payload = new StreamPayload(_serializer.Options);
+      try
+      {
+        await payload.ReadFromAsync(source, cancellationToken).ConfigureAwait(false);
+        return _serializer.Deserialize(type, payload.Buffer, 0, payload.Length, out int end, null, false);
+      }
+      finally
+      {
+        payload.Release();
+      }
     }
 
     #endregion

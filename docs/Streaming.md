@@ -8,6 +8,8 @@
 - **Positions**: the writer reports the position after each value.
 - **An index** (optional): the writer lists the root values with their positions, hashes and points into large arrays, and writes the list at the end of the stream. A reader of a file goes to any table or row directly (see [the index](#the-index)).
 
+For a single value on a stream (one message on a connection, one file), `LsMsgPackSerializer`'s `Serialize`/`Deserialize` overloads for a `Stream` and their `SerializeAsync`/`DeserializeAsync` are enough: they write and read the payload of `Serialize` (what `WriteObject` writes in the `PerObject` mode), and reading takes no byte past the value.
+
 Neither is thread-safe. Both work synchronously or asynchronously, for streams that must not be read or written synchronously (an HTTP response or request, see [streaming responses](WebFormatters.md#streaming-responses)): the reader has [async methods](#asynchronous-reading), the writer is synchronous by default or [asynchronous](#asynchronous-writing).
 
 ## Writing

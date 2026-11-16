@@ -71,7 +71,7 @@ byte[] data = await File.ReadAllBytesAsync(path);
 MyDocument document = serializer.Deserialize<MyDocument>(data);
 ```
 
-There are also overloads that write to and read from a `Stream` (`serializer.Serialize(document, stream)`, `serializer.Deserialize<MyDocument>(stream)`). They work synchronously, so in a UI app read the file into memory asynchronously first (as above), or run the whole thing in `Task.Run` for large files.
+There are also overloads that write to and read from a `Stream` (`serializer.Serialize(document, stream)`, `serializer.Deserialize<MyDocument>(stream)`), and asynchronous ones (`await serializer.SerializeAsync(document, stream)`, `await serializer.DeserializeAsync<MyDocument>(stream)`) for a `FileStream` opened with `useAsync: true`. Only the I/O is asynchronous: the value is serialized into memory before it's written, and read from memory once its bytes have arrived. For a large file, run the work itself in `Task.Run` too.
 
 Things to keep in mind for files:
 - **Versions of your app**: with the indexed schema (the default) every file starts with the names of its properties, and the reader looks properties up by name. Files written by an older or newer version of your classes still load: added properties keep the value the constructor gave them, removed ones are skipped. Without the schema (`UseInexedSchema = false`) set `ObjectLayout = ObjectLayout.Map`, or the reader's property order must match the writer's.
