@@ -190,6 +190,12 @@ namespace LsMsgPack
     [IgnoreDataMember]
     public static DateTimeOffsetFormat Default_DateTimeOffsetFormat { get; set; } = DateTimeOffsetFormat.TimestampAndOffset;
 
+    /// <summary>
+    /// The <see cref="DateTimeFormat"/> of new settings (<see cref="LsMsgPack.DateTimeFormat.Native"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static DateTimeFormat Default_DateTimeFormat { get; set; } = DateTimeFormat.Native;
+
     #endregion
 
     /// <summary>
@@ -226,6 +232,7 @@ namespace LsMsgPack
     internal bool _unspecifiedIsUtc = Default_UnspecifiedDateTimeKind == DateTimeKind.Utc;
     internal DateTimeKind _readDateTimeKind = Default_ReadDateTimeKind;
     internal DateTimeOffsetFormat _dateTimeOffsetFormat = Default_DateTimeOffsetFormat;
+    internal bool _nativeDateTime = Default_DateTimeFormat == DateTimeFormat.Native;
 
     /// <summary>
     /// The cache of the serialized properties for <see cref="_staticFilters"/> (see FullPropertyInfo.GetSerializedProps without a session), looked up again when the filters are replaced.
@@ -663,7 +670,58 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// What a DateTime of <see cref="System.DateTimeKind.Unspecified"/> is taken to be when it is written as a timestamp (a moment in UTC): <see cref="System.DateTimeKind.Utc"/> (the default,
+    /// How DateTime values are written: <see cref="LsMsgPack.DateTimeFormat.Native"/> (the default: extension type <see cref="DateTimeExtensionType"/> holding <see cref="DateTime.ToBinary"/>,
+    /// the ticks and the Kind, so a value reads back as it was written, a Local one as the same moment in the reader's time zone, as Json.NET reads it)
+    /// or <see cref="LsMsgPack.DateTimeFormat.Timestamp"/> (the timestamp of the MsgPack specification, which other libraries read: a moment in UTC without the Kind,
+    /// see <see cref="UnspecifiedDateTimeKind"/> and <see cref="ReadDateTimeKind"/>). Readers take both, whatever this option says.
+    /// </summary>
+    [Category("Dates")]
+    [DisplayName("DateTime Format")]
+    [Description("How DateTime values are written: Native (default, extension type 6 with the ticks and the Kind: read back as written, a Local value in the reader's time zone) or Timestamp (the MsgPack timestamp other libraries read: a moment in UTC, the Kind is lost).")]
+    [DefaultValue(DateTimeFormat.Native)]
+    public DateTimeFormat DateTimeFormat
+    {
+      get { return _nativeDateTime ? DateTimeFormat.Native : DateTimeFormat.Timestamp; }
+      set { _nativeDateTime = value == DateTimeFormat.Native; }
+    }
+
+    /// <summary>
+    /// The extension type of a DateTime in <see cref="LsMsgPack.DateTimeFormat.Native"/>: fixext 8 holding <see cref="DateTime.ToBinary"/> (62 bits of ticks and the Kind in the top 2 bits;
+    /// a Local value holds the ticks in UTC) as an integer in the byte order of the settings.
+    /// </summary>
+    public const sbyte DateTimeExtensionType = 6;
+
+    /// <summary>
+    /// The DateTime of the 64 bits of <see cref="DateTimeExtensionType"/> (<see cref="DateTime.FromBinary"/>), checked: data that is no DateTime throws a <see cref="MsgPackException"/>.
+    /// </summary>
+    internal static DateTime FromNative(long bits)
+    {
+      long ticks = bits & 0x3FFFFFFFFFFFFFFF;
+      if (bits >= 0 && ticks <= MaxTicks) // Unspecified (0) or Utc (1): the ticks as they are, without the call
+        return new DateTime(ticks, (DateTimeKind)(bits >> 62));
+      return FromNativeLocal(bits);
+    }
+
+    private const long MaxTicks = 3155378975999999999; // DateTime.MaxValue.Ticks
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static DateTime FromNativeLocal(long bits)
+    {
+      if (bits < 0) // Local: the ticks in UTC, converted to the reader's time zone (clamped at the ends of the range, as DateTime.FromBinary does)
+      {
+        try
+        {
+          return DateTime.FromBinary(bits);
+        }
+        catch (ArgumentException)
+        {
+        }
+      }
+      throw new MsgPackException($"The extension type {DateTimeExtensionType} holds no DateTime: 0x{bits:X16} has ticks beyond DateTime.MaxValue.");
+    }
+
+    /// <summary>
+    /// What a DateTime of <see cref="System.DateTimeKind.Unspecified"/> is taken to be when it is written as a timestamp (a moment in UTC, <see cref="LsMsgPack.DateTimeFormat.Timestamp"/>): <see cref="System.DateTimeKind.Utc"/> (the default,
     /// the clock time is written as it is, as JSON writes it without an offset and MessagePack-CSharp takes it; it reads back as the same clock time in any time zone)
     /// or <see cref="System.DateTimeKind.Local"/> (like <see cref="DateTime.ToUniversalTime"/>: the clock time then depends on the time zones of the writer and the reader).
     /// </summary>
@@ -678,7 +736,7 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// The Kind of the DateTime values read from timestamps (which hold a moment in UTC, not the Kind): <see cref="System.DateTimeKind.Utc"/> (the default: UTC and Unspecified values
+    /// The Kind of the DateTime values read from timestamps (which hold a moment in UTC, not the Kind; <see cref="LsMsgPack.DateTimeFormat.Native"/> values keep their own): <see cref="System.DateTimeKind.Utc"/> (the default: UTC and Unspecified values
     /// keep their clock time, as JSON reads them, Local values come back as the same moment in UTC), <see cref="System.DateTimeKind.Local"/> (converted to local time),
     /// or <see cref="System.DateTimeKind.Unspecified"/> (the UTC clock time, for values written as Unspecified with <see cref="UnspecifiedDateTimeKind"/> = Utc).
     /// <para>A DateTimeOffset read from a timestamp has the local offset with Local, offset zero otherwise (the same moment).</para>
@@ -782,6 +840,14 @@ namespace LsMsgPack
     /// Whether a custom extension of these settings writes values of the type (asked by <see cref="DescribedSchema"/>, the serializers keep their own extensions).
     /// </summary>
     internal virtual bool HasCustomExtension(Type type)
+    {
+      return false;
+    }
+
+    /// <summary>
+    /// Whether a custom extension of these settings has the extension type code (it then reads that code, not the built-in meaning: <see cref="DateTimeExtensionType"/>, <see cref="ReferenceExtensionType"/>).
+    /// </summary>
+    internal virtual bool HasCustomExtensionCode(sbyte code)
     {
       return false;
     }
@@ -926,6 +992,27 @@ namespace LsMsgPack
     /// </summary>
     [Description("Grouped by the type of the property (by its name, without the assembly), then in declaration order.")]
     TypeThenDeclaration = 4
+  }
+
+  /// <summary>
+  /// How <see cref="System.DateTime"/> values are written (see <see cref="MsgPackOptions.DateTimeFormat"/>).
+  /// </summary>
+  public enum DateTimeFormat
+  {
+    /// <summary>
+    /// Extension type 6 (<see cref="MsgPackOptions.DateTimeExtensionType"/>, fixext 8) holding <see cref="System.DateTime.ToBinary"/>: the ticks and the Kind (default).
+    /// Utc and Unspecified values read back exactly as written, a Local value as the same moment in the reader's time zone (as Json.NET and System.Text.Json read a time with an offset).
+    /// Other MsgPack libraries read it as an unknown extension.
+    /// </summary>
+    [Description("Extension type 6 with the ticks and the Kind (default): read back as written, a Local value as the same moment in the reader's time zone. Other libraries see an unknown extension.")]
+    Native = 0,
+
+    /// <summary>
+    /// The timestamp of the MsgPack specification (extension type -1): a moment in UTC, which every MsgPack library reads as a date. The Kind is lost
+    /// (see <see cref="MsgPackOptions.UnspecifiedDateTimeKind"/> and <see cref="MsgPackOptions.ReadDateTimeKind"/>).
+    /// </summary>
+    [Description("The MsgPack timestamp (extension type -1) that every library reads: a moment in UTC, the Kind is lost.")]
+    Timestamp = 1
   }
 
   /// <summary>

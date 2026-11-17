@@ -145,6 +145,15 @@ namespace LsMsgPackDebug
       return false;
     }
 
+    internal override bool HasCustomExtensionCode(sbyte code)
+    {
+      ICustomExt[] extensions = _customExtentionTypes;
+      for (int t = 0; extensions != null && t < extensions.Length; t++)
+        if (extensions[t] != null && extensions[t].TypeSpecifier == code)
+          return true;
+      return false;
+    }
+
     internal override byte[] SerializePlainValue(object value, Type type, EndianAction endianAction, bool byNames)
     {
       MsgPackSettings plain = Clone();

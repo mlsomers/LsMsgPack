@@ -188,6 +188,9 @@ namespace LsMsgPackDebug {
       if (typeSpecifier == MsgPackOptions.ReferenceExtensionType) // after the custom extensions: a registered one wins (allowed without ReferenceHandling.Preserve)
         return new MpReference(this);
 
+      if (typeSpecifier == MsgPackOptions.DateTimeExtensionType && value.Length == 8) // DateTimeFormat.Native, after the custom extensions as well (allowed with DateTimeFormat.Timestamp)
+        return new MpDateTime(this);
+
       // The types a stream reserves for root values (after the custom extensions: a registered one wins)
       if (_settings._readStreams && _depth == 0) {
         if (typeSpecifier == MsgPackStreamIndex.IndexExtensionType)

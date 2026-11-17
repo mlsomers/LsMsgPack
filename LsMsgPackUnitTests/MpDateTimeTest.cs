@@ -90,8 +90,33 @@ namespace LsMsgPackUnitTests
       DateTime local = new DateTime(dt.Ticks, DateTimeKind.Local);
       DateTime utc = new DateTime(dt.Ticks, DateTimeKind.Utc);
 
-      MsgPackTests.RoundTripTest<MpDateTime, DateTime>(utc, expectedSize, expectedType);
-      MsgPackTests.RoundTripTest<MpDateTime, DateTime>(local, expectedSize, expectedType);
+      MsgPackTests.RoundTripTest<MpDateTime, DateTime>(utc, expectedSize, expectedType, dateTimeFormat: DateTimeFormat.Timestamp);
+      MsgPackTests.RoundTripTest<MpDateTime, DateTime>(local, expectedSize, expectedType, dateTimeFormat: DateTimeFormat.Timestamp);
+      MsgPackTests.RoundTripTest<MpDateTime, DateTime>(utc, 10, MsgPackTypeId.MpFExt8); // the native extension (the default): always 10 bytes
+    }
+
+    /// <summary>
+    /// The native extension (type 6, the default) keeps the ticks and the Kind; a Local value comes back as the same moment in local time.
+    /// </summary>
+    [TestMethod]
+    [DataRow(DateTimeKind.Utc)]
+    [DataRow(DateTimeKind.Local)]
+    [DataRow(DateTimeKind.Unspecified)]
+    public void NativeKeepsTheKind(DateTimeKind kind)
+    {
+      foreach (DateTime value in new[] { new DateTime(2026, 11, 17, 10, 0, 0, kind).AddTicks(3), new DateTime(1601, 1, 1, 0, 0, 0, kind), DateTime.SpecifyKind(DateTime.MaxValue.AddDays(-1), kind) })
+      {
+        MsgPackItem item = MsgPackItem.Pack(value, new MsgPackSettings());
+        Assert.IsInstanceOfType<MpDateTime>(item);
+        Assert.IsTrue(((MpDateTime)item).IsNative);
+        byte[] bytes = item.ToBytes();
+        Assert.HasCount(10, bytes);
+        Assert.AreEqual((byte)MsgPackTypeId.MpFExt8, bytes[0]);
+        Assert.AreEqual((byte)6, bytes[1]);
+        DateTime back = (DateTime)MsgPackItem.Unpack(bytes).Value;
+        Assert.AreEqual(value, back);
+        Assert.AreEqual(kind, back.Kind);
+      }
     }
 
     [TestMethod]
@@ -101,7 +126,7 @@ namespace LsMsgPackUnitTests
       // Timestamp 64 from the spec: 30 bits nanoseconds (500000000) and 34 bits seconds (1609459200) in one big-endian 64 bit value
       byte[] expected = new byte[] { (byte)MsgPackTypeId.MpFExt8, 0xFF, 0x77, 0x35, 0x94, 0x00, 0x5F, 0xEE, 0x66, 0x00 };
 
-      CollectionAssert.AreEqual(expected, MsgPackItem.Pack(dt).ToBytes());
+      CollectionAssert.AreEqual(expected, MsgPackItem.Pack(dt, new MsgPackSettings() { DateTimeFormat = DateTimeFormat.Timestamp }).ToBytes());
       Assert.AreEqual(dt, ((DateTime)MsgPackItem.Unpack(expected).Value).ToUniversalTime());
     }
 
@@ -114,7 +139,7 @@ namespace LsMsgPackUnitTests
       DateTime dt = new DateTime(1969, 12, 31, 23, 59, 58, 500, DateTimeKind.Utc);
       byte[] expected = new byte[] { (byte)MsgPackTypeId.MpExt8, 12, 0xFF, 0x1D, 0xCD, 0x65, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE };
 
-      CollectionAssert.AreEqual(expected, MsgPackItem.Pack(dt).ToBytes());
+      CollectionAssert.AreEqual(expected, MsgPackItem.Pack(dt, new MsgPackSettings() { DateTimeFormat = DateTimeFormat.Timestamp }).ToBytes());
       Assert.AreEqual(dt, ((DateTime)MsgPackItem.Unpack(expected).Value).ToUniversalTime());
       Assert.AreEqual(-2, MpDateTime.DateTimeToEpoch(dt));
     }

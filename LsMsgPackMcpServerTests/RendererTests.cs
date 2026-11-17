@@ -231,6 +231,23 @@ namespace LsMsgPackMcpServerTests
       Assert.IsFalse(text.Contains("were read on at the next byte", StringComparison.Ordinal), text);
     }
 
+    /// <summary>
+    /// LsMsgPack's DateTime (extension type 6, the default DateTimeFormat.Native) keeps its Kind: shown in UTC with Z, Local with the offset, Unspecified without a zone.
+    /// </summary>
+    [TestMethod]
+    public void NativeDateTime_WithItsKind()
+    {
+      McpInvoice invoice = Payloads.Invoice();
+      invoice.Date = new DateTime(2026, 10, 5, 12, 30, 0, DateTimeKind.Unspecified);
+      byte[] bytes = MsgPackSerializer.Serialize(invoice, new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseInexedSchema = false });
+      AssertContains(Render(bytes), "\"Date\": \"2026-10-05T12:30:00\", // DateTime of Kind Unspecified (ext type 6)");
+      AssertContains(Render(bytes, new RenderOptions() { View = DecodeView.Items }), "fixext 8, type 6 (DateTime, Kind Unspecified): 2026-10-05T12:30:00 // Date");
+
+      invoice.Date = Payloads.InvoiceDate;
+      bytes = MsgPackSerializer.Serialize(invoice, new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseInexedSchema = false });
+      AssertContains(Render(bytes, new RenderOptions() { View = DecodeView.Items }), "fixext 8, type 6 (DateTime, Kind Utc): 2026-10-05T12:30:00Z // Date");
+    }
+
     [TestMethod]
     public void ItemsView_OffsetsEncodingsAndPaths()
     {

@@ -123,11 +123,20 @@ namespace LsMsgPack.References
   }
 
   /// <summary>
-  /// <see cref="ReferenceHandling.Preserve"/> refuses extension type code 5 for converters and custom extensions (maintainer's decision 2026-11-16: without the option it stays usable,
-  /// where such a converter reads, ext 5 is its value).
+  /// The extension type codes the options give a meaning, refused for converters and custom extensions while they do: 5 with <see cref="ReferenceHandling.Preserve"/> (maintainer's decision
+  /// 2026-11-16: without the option it stays usable, where such a converter reads, ext 5 is its value), 6 with <see cref="DateTimeFormat.Native"/> (the default; with
+  /// <see cref="DateTimeFormat.Timestamp"/> it stays usable, e.g. for other libraries' extensions of that code).
   /// </summary>
-  internal static class ReferenceCode
+  internal static class ReservedCodes
   {
+    /// <summary>
+    /// Whether the settings give a code a meaning (then <see cref="ThrowIfUsed(MsgPackOptions)"/> is needed).
+    /// </summary>
+    internal static bool Any(MsgPackOptions settings)
+    {
+      return settings.PreservesReferences || settings._nativeDateTime;
+    }
+
     internal static void ThrowIfUsed(MsgPackOptions settings)
     {
       MsgPackConverter[] converters = settings._converters;
@@ -137,13 +146,17 @@ namespace LsMsgPack.References
 
     internal static void ThrowIfUsed(MsgPackBinaryConverter converter, MsgPackOptions settings)
     {
-      if (converter != null && converter.ExtensionTypeCode == MsgPackOptions.ReferenceExtensionType && settings.PreservesReferences)
-        throw Used(converter.GetType().Name + " (of " + converter.ConvertedType.Name + ")");
+      if (converter != null && converter.ExtensionTypeCode.HasValue)
+        ThrowIfUsed(converter.ExtensionTypeCode.Value, converter.GetType().Name + " (of " + converter.ConvertedType.Name + ")", settings);
     }
 
-    internal static InvalidOperationException Used(string what)
+    /// <param name="what">The converter or custom extension, for the message</param>
+    internal static void ThrowIfUsed(sbyte code, string what, MsgPackOptions settings)
     {
-      return new InvalidOperationException($"{what} uses extension type code {MsgPackOptions.ReferenceExtensionType}, which ReferenceHandling.Preserve uses for references. Give it another code, or leave ReferenceHandling off.");
+      if (code == MsgPackOptions.ReferenceExtensionType && settings.PreservesReferences)
+        throw new InvalidOperationException($"{what} uses extension type code {MsgPackOptions.ReferenceExtensionType}, which ReferenceHandling.Preserve uses for references. Give it another code, or leave ReferenceHandling off.");
+      if (code == MsgPackOptions.DateTimeExtensionType && settings._nativeDateTime)
+        throw new InvalidOperationException($"{what} uses extension type code {MsgPackOptions.DateTimeExtensionType}, which DateTimeFormat.Native uses for DateTime values. Give it another code, or set DateTimeFormat to Timestamp.");
     }
   }
 

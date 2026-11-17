@@ -27,9 +27,9 @@ namespace Shop
     public static ShopMsgPackContext Default { get; } = new ShopMsgPackContext();
 
     /// <summary>
-    /// Written by the generator (version 5 of the generated code).
+    /// Written by the generator (version 6 of the generated code).
     /// </summary>
-    public ShopMsgPackContext() : base(5)
+    public ShopMsgPackContext() : base(6)
     {
     }
 
@@ -175,7 +175,7 @@ namespace Shop
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Customer", typeof(global::Shop.Customer), global::LsMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Lines", typeof(global::System.Collections.Generic.List<global::Shop.InvoiceLine>), global::LsMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Invoice), "Total", typeof(decimal), global::LsMsgPack.Generated.GeneratedKind.Decimal, false, true, true)
-      }, new int[] { 0, 1, 2, 3, 4, 5, 6 }, global::LsMsgPack.Generated.GeneratedCapabilities.Write | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LsMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LsMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LsMsgPack.Generated.GeneratedCapabilities.ReadFormats)
+      }, new int[] { 0, 1, 2, 3, 4, 5, 6 }, global::LsMsgPack.Generated.GeneratedCapabilities.Write | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LsMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LsMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LsMsgPack.Generated.GeneratedCapabilities.ReadFormats | global::LsMsgPack.Generated.GeneratedCapabilities.DateTimeFormats)
       {
       }
 
@@ -194,6 +194,7 @@ namespace Shop
         decimal v4;
         bool guidString = p.GuidString;
         bool decimalString = p.DecimalString;
+        bool dateTimestamp = p.DateTimestamp;
         end = w.Pos;
         for (int t = 0; t < ids.Length; t++)
         {
@@ -229,7 +230,10 @@ namespace Shop
               }
               if (key != null)
                 w.Raw(key);
-              w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+              if (dateTimestamp) // the plan's format (GeneratedCapabilities.DateTimeFormats, FormatLocals)
+                w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+              else
+                w.NativeDateTime(v1);
               written = true;
               break;
             }
@@ -246,7 +250,10 @@ namespace Shop
               if (v2.HasValue)
               {
                 v1 = v2.GetValueOrDefault();
-                w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+                if (dateTimestamp) // the plan's format (GeneratedCapabilities.DateTimeFormats, FormatLocals)
+                  w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+                else
+                  w.NativeDateTime(v1);
               }
               else
                 w.Nil();
@@ -309,7 +316,7 @@ namespace Shop
 
       public override void WriteUnrolled(global::LsMsgPack.Writing.WriteContext c, global::Shop.Invoice o, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LsMsgPack.Generated.GeneratedWritePlan p)
       {
-        if (p.GuidString || p.DecimalString)
+        if (p.GuidString || p.DecimalString || p.DateTimestamp)
         { WriteUnrolledFormats(c, o, infos, p); return; }
         global::LsMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
@@ -330,7 +337,7 @@ namespace Shop
           w.Nil();
         else
         {
-          w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          w.NativeDateTime(v1);
         }
         v2 = o.PaidDate;
         if (filter && !v2.HasValue)
@@ -340,7 +347,7 @@ namespace Shop
           if (v2.HasValue)
           {
             v1 = v2.GetValueOrDefault();
-            w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+            w.NativeDateTime(v1);
           }
           else
             w.Nil();
@@ -376,6 +383,7 @@ namespace Shop
         decimal v4;
         bool guidString = p.GuidString;
         bool decimalString = p.DecimalString;
+        bool dateTimestamp = p.DateTimestamp;
         v0 = o.Id;
         if (filter && v0 == global::System.Guid.Empty)
           w.Nil();
@@ -391,7 +399,10 @@ namespace Shop
           w.Nil();
         else
         {
-          w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          if (dateTimestamp) // the plan's format (GeneratedCapabilities.DateTimeFormats, FormatLocals)
+            w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          else
+            w.NativeDateTime(v1);
         }
         v2 = o.PaidDate;
         if (filter && !v2.HasValue)
@@ -401,7 +412,10 @@ namespace Shop
           if (v2.HasValue)
           {
             v1 = v2.GetValueOrDefault();
-            w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+            if (dateTimestamp) // the plan's format (GeneratedCapabilities.DateTimeFormats, FormatLocals)
+              w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+            else
+              w.NativeDateTime(v1);
           }
           else
             w.Nil();
@@ -431,7 +445,7 @@ namespace Shop
 
       public override int WriteUnrolledMap(global::LsMsgPack.Writing.WriteContext c, global::Shop.Invoice o, byte[][] keys, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LsMsgPack.Generated.GeneratedWritePlan p)
       {
-        if (p.GuidString || p.DecimalString)
+        if (p.GuidString || p.DecimalString || p.DateTimestamp)
           return WriteUnrolledMapFormats(c, o, keys, infos, p);
         global::LsMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
@@ -452,7 +466,7 @@ namespace Shop
         if (!filter || !(v1.Ticks == 0))
         {
           w.Raw(keys[1]);
-          w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          w.NativeDateTime(v1);
           count++;
         }
         v2 = o.PaidDate;
@@ -462,7 +476,7 @@ namespace Shop
           if (v2.HasValue)
           {
             v1 = v2.GetValueOrDefault();
-            w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+            w.NativeDateTime(v1);
           }
           else
             w.Nil();
@@ -501,6 +515,7 @@ namespace Shop
         decimal v4;
         bool guidString = p.GuidString;
         bool decimalString = p.DecimalString;
+        bool dateTimestamp = p.DateTimestamp;
         v0 = o.Id;
         if (!filter || !(v0 == global::System.Guid.Empty))
         {
@@ -515,7 +530,10 @@ namespace Shop
         if (!filter || !(v1.Ticks == 0))
         {
           w.Raw(keys[1]);
-          w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          if (dateTimestamp) // the plan's format (GeneratedCapabilities.DateTimeFormats, FormatLocals)
+            w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          else
+            w.NativeDateTime(v1);
           count++;
         }
         v2 = o.PaidDate;
@@ -525,7 +543,10 @@ namespace Shop
           if (v2.HasValue)
           {
             v1 = v2.GetValueOrDefault();
-            w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+            if (dateTimestamp) // the plan's format (GeneratedCapabilities.DateTimeFormats, FormatLocals)
+              w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+            else
+              w.NativeDateTime(v1);
           }
           else
             w.Nil();
@@ -557,7 +578,7 @@ namespace Shop
 
       public override int WriteUnrolledTrimmed(global::LsMsgPack.Writing.WriteContext c, global::Shop.Invoice o, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LsMsgPack.Generated.GeneratedWritePlan p, out int end)
       {
-        if (p.GuidString || p.DecimalString)
+        if (p.GuidString || p.DecimalString || p.DateTimestamp)
           return WriteUnrolledTrimmedFormats(c, o, infos, p, out end);
         int last = 0;
         global::LsMsgPack.IO.MsgPackWriter w = c.W;
@@ -582,7 +603,7 @@ namespace Shop
           w.Nil();
         else
         {
-          w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          w.NativeDateTime(v1);
           last = 2; end = w.Pos;
         }
         v2 = o.PaidDate;
@@ -593,7 +614,7 @@ namespace Shop
           if (v2.HasValue)
           {
             v1 = v2.GetValueOrDefault();
-            w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+            w.NativeDateTime(v1);
             last = 3; end = w.Pos;
           }
           else
@@ -642,6 +663,7 @@ namespace Shop
         decimal v4;
         bool guidString = p.GuidString;
         bool decimalString = p.DecimalString;
+        bool dateTimestamp = p.DateTimestamp;
         v0 = o.Id;
         if (filter && v0 == global::System.Guid.Empty)
           w.Nil();
@@ -658,7 +680,10 @@ namespace Shop
           w.Nil();
         else
         {
-          w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          if (dateTimestamp) // the plan's format (GeneratedCapabilities.DateTimeFormats, FormatLocals)
+            w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+          else
+            w.NativeDateTime(v1);
           last = 2; end = w.Pos;
         }
         v2 = o.PaidDate;
@@ -669,7 +694,10 @@ namespace Shop
           if (v2.HasValue)
           {
             v1 = v2.GetValueOrDefault();
-            w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+            if (dateTimestamp) // the plan's format (GeneratedCapabilities.DateTimeFormats, FormatLocals)
+              w.DateTime(global::LsMsgPack.Generated.GeneratedIO.Utc(v1, p));
+            else
+              w.NativeDateTime(v1);
             last = 3; end = w.Pos;
           }
           else
@@ -1047,7 +1075,7 @@ namespace Shop
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "CustomerId", typeof(int), global::LsMsgPack.Generated.GeneratedKind.Int32, false, true, true),
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "CompanyName", typeof(string), global::LsMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Customer), "BillingAddress", typeof(global::Shop.Address), global::LsMsgPack.Generated.GeneratedKind.None, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LsMsgPack.Generated.GeneratedCapabilities.Write | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LsMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LsMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LsMsgPack.Generated.GeneratedCapabilities.ReadFormats)
+      }, new int[] { 0, 1, 2 }, global::LsMsgPack.Generated.GeneratedCapabilities.Write | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LsMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LsMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LsMsgPack.Generated.GeneratedCapabilities.ReadFormats | global::LsMsgPack.Generated.GeneratedCapabilities.DateTimeFormats)
       {
       }
 
@@ -1406,7 +1434,7 @@ namespace Shop
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "Street", typeof(string), global::LsMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "City", typeof(string), global::LsMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Address), "PostalCode", typeof(string), global::LsMsgPack.Generated.GeneratedKind.String, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LsMsgPack.Generated.GeneratedCapabilities.Write | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LsMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LsMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LsMsgPack.Generated.GeneratedCapabilities.ReadFormats)
+      }, new int[] { 0, 1, 2 }, global::LsMsgPack.Generated.GeneratedCapabilities.Write | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LsMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LsMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LsMsgPack.Generated.GeneratedCapabilities.ReadFormats | global::LsMsgPack.Generated.GeneratedCapabilities.DateTimeFormats)
       {
       }
 
@@ -1833,7 +1861,7 @@ namespace Shop
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "Unit", typeof(global::Shop.UnitOfMeasure), global::LsMsgPack.Generated.GeneratedKind.Enum, false, true, true),
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "UnitPrice", typeof(global::Shop.Money), global::LsMsgPack.Generated.GeneratedKind.None, false, true, true),
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.InvoiceLine), "_discountPercent", typeof(int), global::LsMsgPack.Generated.GeneratedKind.Int32, false, true, true)
-      }, new int[] { 0, 1, 2, 3, 4 }, global::LsMsgPack.Generated.GeneratedCapabilities.Write | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LsMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LsMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LsMsgPack.Generated.GeneratedCapabilities.ReadFormats)
+      }, new int[] { 0, 1, 2, 3, 4 }, global::LsMsgPack.Generated.GeneratedCapabilities.Write | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LsMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LsMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LsMsgPack.Generated.GeneratedCapabilities.ReadFormats | global::LsMsgPack.Generated.GeneratedCapabilities.DateTimeFormats)
       {
       }
 
@@ -1938,7 +1966,7 @@ namespace Shop
 
       public override void WriteUnrolled(global::LsMsgPack.Writing.WriteContext c, global::Shop.InvoiceLine o, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LsMsgPack.Generated.GeneratedWritePlan p)
       {
-        if (p.GuidString || p.DecimalString)
+        if (p.GuidString || p.DecimalString || p.DateTimestamp)
         { WriteUnrolledFormats(c, o, infos, p); return; }
         global::LsMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
@@ -2022,7 +2050,7 @@ namespace Shop
 
       public override int WriteUnrolledMap(global::LsMsgPack.Writing.WriteContext c, global::Shop.InvoiceLine o, byte[][] keys, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LsMsgPack.Generated.GeneratedWritePlan p)
       {
-        if (p.GuidString || p.DecimalString)
+        if (p.GuidString || p.DecimalString || p.DateTimestamp)
           return WriteUnrolledMapFormats(c, o, keys, infos, p);
         global::LsMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
@@ -2110,7 +2138,7 @@ namespace Shop
 
       public override int WriteUnrolledTrimmed(global::LsMsgPack.Writing.WriteContext c, global::Shop.InvoiceLine o, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LsMsgPack.Generated.GeneratedWritePlan p, out int end)
       {
-        if (p.GuidString || p.DecimalString)
+        if (p.GuidString || p.DecimalString || p.DateTimestamp)
           return WriteUnrolledTrimmedFormats(c, o, infos, p, out end);
         int last = 0;
         global::LsMsgPack.IO.MsgPackWriter w = c.W;
@@ -2524,7 +2552,7 @@ namespace Shop
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Amount", typeof(decimal), global::LsMsgPack.Generated.GeneratedKind.Decimal, false, true, true),
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Currency", typeof(string), global::LsMsgPack.Generated.GeneratedKind.String, false, true, true),
         new global::LsMsgPack.Generated.GeneratedMember(typeof(global::Shop.Money), "Precision", typeof(byte), global::LsMsgPack.Generated.GeneratedKind.Byte, false, true, true)
-      }, new int[] { 0, 1, 2 }, global::LsMsgPack.Generated.GeneratedCapabilities.Write | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LsMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LsMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LsMsgPack.Generated.GeneratedCapabilities.ReadFormats | global::LsMsgPack.Generated.GeneratedCapabilities.IsDefault)
+      }, new int[] { 0, 1, 2 }, global::LsMsgPack.Generated.GeneratedCapabilities.Write | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolled | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledMap | global::LsMsgPack.Generated.GeneratedCapabilities.WriteUnrolledTrimmed | global::LsMsgPack.Generated.GeneratedCapabilities.WriteFormats | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositional | global::LsMsgPack.Generated.GeneratedCapabilities.ReadPositionalNil | global::LsMsgPack.Generated.GeneratedCapabilities.ReadMap | global::LsMsgPack.Generated.GeneratedCapabilities.ReadFormats | global::LsMsgPack.Generated.GeneratedCapabilities.DateTimeFormats | global::LsMsgPack.Generated.GeneratedCapabilities.IsDefault)
       {
       }
 
@@ -2620,7 +2648,7 @@ namespace Shop
 
       public override void WriteUnrolled(global::LsMsgPack.Writing.WriteContext c, ref global::Shop.Money o, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LsMsgPack.Generated.GeneratedWritePlan p)
       {
-        if (p.GuidString || p.DecimalString)
+        if (p.GuidString || p.DecimalString || p.DateTimestamp)
         { WriteUnrolledFormats(c, ref o, infos, p); return; }
         global::LsMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
@@ -2692,7 +2720,7 @@ namespace Shop
 
       public override int WriteUnrolledMap(global::LsMsgPack.Writing.WriteContext c, ref global::Shop.Money o, byte[][] keys, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LsMsgPack.Generated.GeneratedWritePlan p)
       {
-        if (p.GuidString || p.DecimalString)
+        if (p.GuidString || p.DecimalString || p.DateTimestamp)
           return WriteUnrolledMapFormats(c, ref o, keys, infos, p);
         global::LsMsgPack.IO.MsgPackWriter w = c.W;
         bool filter = p.FilterDefaults;
@@ -2768,7 +2796,7 @@ namespace Shop
 
       public override int WriteUnrolledTrimmed(global::LsMsgPack.Writing.WriteContext c, ref global::Shop.Money o, global::LsMsgPack.Meta.FullPropertyInfo[] infos, global::LsMsgPack.Generated.GeneratedWritePlan p, out int end)
       {
-        if (p.GuidString || p.DecimalString)
+        if (p.GuidString || p.DecimalString || p.DateTimestamp)
           return WriteUnrolledTrimmedFormats(c, ref o, infos, p, out end);
         int last = 0;
         global::LsMsgPack.IO.MsgPackWriter w = c.W;

@@ -52,7 +52,7 @@ namespace LsMsgPackInteropTests
       LibraryExtensionTypeCodes = NB.LibraryReservedMessagePackExtensionTypeCode.Default with { Decimal = 1, ObjectReference = 10 }
     };
 
-    private static readonly MsgPackSettings Named = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }; // Nerdbank reads maps keyed by names
+    private static readonly MsgPackSettings Named = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map }; // Nerdbank reads maps keyed by names
 
     /// <summary>
     /// Also reads Nerdbank's Guid (extension type 2) and decimal (extension type 4), decimals are still written as extension type 1
@@ -60,6 +60,7 @@ namespace LsMsgPackInteropTests
     private static readonly MsgPackSettings NamedNerdbankExtensions = new MsgPackSettings()
     {
       UseInexedSchema = false,
+      DateTimeFormat = DateTimeFormat.Timestamp, // other libraries read timestamps
       ObjectLayout = ObjectLayout.Map,
       CustomExtentionTypes = new ICustomExt[] { new MpDecimal((MsgPackSettings)null), new MpDecimal((MsgPackSettings)null) { TypeSpecifier = 4 }, new NerdbankGuidExtension() }
     };

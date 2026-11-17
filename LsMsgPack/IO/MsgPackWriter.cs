@@ -734,6 +734,27 @@ namespace LsMsgPack.IO
     private static readonly DateTime MaxFExt8 = new DateTime(2514, 5, 30, 1, 53, 03, DateTimeKind.Utc).Add(TimeSpan.FromTicks(9999999));
 
     /// <summary>
+    /// A DateTime as <see cref="DateTimeFormat.Native"/> writes it (as MpDateTime): fixext 8 of extension type 6 (<see cref="MsgPackOptions.DateTimeExtensionType"/>) holding
+    /// <see cref="System.DateTime.ToBinary"/>, the ticks and the Kind, in the byte order of the options (a Local value holds the ticks in UTC).
+    /// </summary>
+    public void NativeDateTime(DateTime value)
+    {
+      ulong bits = (ulong)value.ToBinary(); // the ticks and the Kind as they are for Utc and Unspecified, a call into the time zone only for Local
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (buffer.Length - pos < 10)
+      {
+        Grow(10);
+        buffer = Buf;
+      }
+      ref byte to = ref buffer[pos];
+      to = 0xD7;
+      Unsafe.Add(ref to, 1) = (byte)MsgPackOptions.DateTimeExtensionType;
+      Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, 2), _littleEndian != BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(bits) : bits);
+      Pos = pos + 10;
+    }
+
+    /// <summary>
     /// A timestamp (extension type -1) in UTC, the smallest of the three formats (as MpDateTime): 32 bit seconds, 64 bit with nanoseconds, 96 bit before 1970 or after 2514.
     /// </summary>
     public void DateTime(DateTime value)

@@ -239,7 +239,7 @@ The `Accept` header needs no CORS setting.
 | enums | `number` (the underlying value; the models have a const object with the names) | `0` |
 | `char` | `string` (one character) | `'\0'` |
 | `Guid` | `string` (`"0f8fad5b-d9cb-469f-a165-70867728950e"`) | `"00000000-0000-0000-0000-000000000000"` |
-| `DateTime` | `Date` (`dates: 'iso'`: UTC text) | `0001-01-01T00:00:00Z` (`DateTime.MinValue`) |
+| `DateTime` | `Date` (`dates: 'iso'`: UTC text), from LsMsgPack's extension type 6 (the server's default) or a timestamp: a `Utc` or `Local` value is its moment, an `Unspecified` one its clock time as UTC | `0001-01-01T00:00:00Z` (`DateTime.MinValue`) |
 | `DateTimeOffset` | `Date` (`dates: 'iso'`: text with the offset) | `0001-01-01T00:00:00+00:00` |
 | `TimeSpan` | `string`, `"1.02:03:04.5000000"` (as System.Text.Json) | `"00:00:00"` |
 | `DateOnly`, `TimeOnly` | `string`, `"2026-10-13"`, `"12:34:56.2500000"` | `"0001-01-01"`, `"00:00:00"` |
@@ -255,7 +255,7 @@ The `Accept` header needs no CORS setting.
 
 The rule: what System.Text.Json writes, except dates (`Date`) and bytes (`Uint8Array`). `[DefaultValue(x)]` makes `x` the default. With models the default is what the class sets (the .NET constructor's value).
 
-Untyped values (`object` properties, the elements of `List<object>`) are read as they are: numbers, strings, `Date` for timestamps, `Uint8Array` for bytes, objects (with `$type`) for values with a type id. The `dates: 'iso'` option does not apply to them.
+Untyped values (`object` properties, the elements of `List<object>`) are read as they are: numbers, strings, `Date` for timestamps and LsMsgPack's DateTime (extension type 6), `Uint8Array` for bytes, objects (with `$type`) for values with a type id. The `dates: 'iso'` option does not apply to them.
 
 ## The described schema
 

@@ -45,7 +45,7 @@ What the writer offers:
   - `Write(...)` for `bool`, all integer types, `float`, `double`, `string`, `DateTime`, `Guid` and `decimal`.
   - `WriteNil()`, `WriteBinary(...)`, `WriteExtension(typeCode, data)`.
   - `WriteRaw(bytes)` for one value that's already encoded (the bytes are not checked).
-- **Formats**: values are written as the serializer writes them: compact integers (`DynamicallyCompact`), the byte order (`EndianAction`), `GuidFormat`, `DecimalFormat` and `UnspecifiedDateTimeKind` of its options.
+- **Formats**: values are written as the serializer writes them: compact integers (`DynamicallyCompact`), the byte order (`EndianAction`), `GuidFormat`, `DecimalFormat`, `DateTimeFormat` and `UnspecifiedDateTimeKind` of its options.
 - **Known length**: `WriteArrayHeader(count)` and `WriteMapHeader(count)` are followed by their elements (keys and values for a map). They end by themselves after the last one.
 - **Unknown length**:
   - `WriteArrayStart()` and `WriteMapStart()` are followed by any number of values, then `WriteEnd()`.
@@ -113,7 +113,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 
 **Getting values.**
 - `GetBoolean()`, `GetInt64()`, `GetUInt64()` (`OverflowException` when the value doesn't fit), `GetDouble()`.
-- `GetString()`, `GetBytes()`, `GetDateTime()` (timestamps, as the serializer reads them), `GetExtension(out typeCode)`.
+- `GetString()`, `GetBytes()`, `GetDateTime()` (LsMsgPack's DateTime, extension type 6, and timestamps, as the serializer reads them), `GetExtension(out typeCode)`.
 - `GetValue()` returns the value as the serializer reads it into `object`: `object[]` for arrays, `KeyValuePair<object, object>[]` for maps.
 - At a `StringStart`, `BinaryStart`, `ArrayStart` or `MapStart`, `GetString()`, `GetBytes()` and `GetValue()` read the whole value. The reader is then at its end.
 - `Skip()` passes the current array, map, str or bin without buffering it.
@@ -241,7 +241,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 
 The same with asynchronous reads: `await reader.ReadIndexesAsync()`, `reader.Seek(orders)` (it reads nothing), `await reader.ReadHeadAsync<List<Row>>()`, `await reader.ReadAsync()`, `await reader.SeekElementAsync(orders, 123456)`, `await reader.ReadObjectAsync<Row>()`.
 
-**Entries** (`MsgPackStreamEntry`): the writer fills in `Offset` and `Length` (the bytes of the root value, its schema or head included), `ElementCount` for an array, `Points`, `Hash`. `BeginEntry(identifier, contentType)` names the next root value and returns its entry, to which `Modified` and `Metadata` can be added. The identifier is a string or an integer and doesn't have to be unique (when several entries have the same one, the last one is the current one). Metadata holds plain values: null, bool, integers, floats, strings, `byte[]`, `DateTime`, and lists and dictionaries of them. Stream-wide metadata goes in `MsgPackStreamIndexOptions.Metadata`.
+**Entries** (`MsgPackStreamEntry`): the writer fills in `Offset` and `Length` (the bytes of the root value, its schema or head included), `ElementCount` for an array, `Points`, `Hash`. `BeginEntry(identifier, contentType)` names the next root value and returns its entry, to which `Modified` and `Metadata` can be added. The identifier is a string or an integer and doesn't have to be unique (when several entries have the same one, the last one is the current one). Metadata holds plain values: null, bool, integers, floats, strings, `byte[]`, `DateTime` (written as a timestamp, as `Modified`), and lists and dictionaries of them. Stream-wide metadata goes in `MsgPackStreamIndexOptions.Metadata`.
 
 **Points** (the sparse index of a large array): `PointInterval` adds one every so many elements of an entry that is an array (also the body of a head), and `AddPoint(key)` adds one before the next element, e.g. where the timestamp the rows are ordered by changes. The reader goes there with `Seek(entry, point)`, or to any element with `SeekElement(entry, n)`: to the point before it, then it passes the elements in between. Both work from inside the entry's array (after `Seek(entry)`, its head and its `ArrayStart`), so the reader knows the array and the schema of its objects.
 

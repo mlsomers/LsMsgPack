@@ -430,9 +430,9 @@ export class MsgPackStreamReader {
     return (await this.getValue()) as Uint8Array;
   }
 
-  /** A timestamp (extension type -1). */
+  /** A timestamp (extension type -1) or LsMsgPack's DateTime (extension type 6). */
   async getDate(): Promise<Date> {
-    if (this.token !== 'extension' || this.extensionType !== -1) throw new Error(`The current token is ${this.token}, not a timestamp.`);
+    if (this.token !== 'extension' || (this.extensionType !== -1 && this.extensionType !== 6)) throw new Error(`The current token is ${this.token}, not a timestamp.`);
     return (await this.getValue()) as Date;
   }
 

@@ -39,6 +39,8 @@ namespace LsMsgPackDebug
 
     private static MsgPackItem SerializeRoot(object item, MsgPackSettings settings, FullPropertyInfo assignedTo)
     {
+      if (ReservedCodes.Any(settings))
+        ThrowIfReservedCodesUsed(settings);
       if (settings.PreservesReferences)
         return SerializePreserving(item, settings, assignedTo);
       if (!settings.IgnoresCycles)
@@ -109,16 +111,23 @@ namespace LsMsgPackDebug
     }
 
     /// <summary>
+    /// The extension type codes the settings give a meaning (references, native DateTime values) are refused for converters and custom extensions (Core's ReservedCodes, as LsMsgPack's Serializer).
+    /// </summary>
+    private static void ThrowIfReservedCodesUsed(MsgPackSettings settings)
+    {
+      ReservedCodes.ThrowIfUsed(settings);
+      ICustomExt[] custom = settings._customExtentionTypes;
+      for (int t = 0; custom != null && t < custom.Length; t++)
+        if (custom[t] != null)
+          ReservedCodes.ThrowIfUsed(custom[t].TypeSpecifier, custom[t].GetType().Name, settings);
+    }
+
+    /// <summary>
     /// <see cref="ReferenceHandling.Preserve"/>: the value, with a reference wherever an object or collection is met again (LsMsgPack: PreservingHandler, Serializer.WriteBoxed); the paths of the references
     /// are known once the whole value is (<see cref="SetPaths"/>), the item tree has every value as it is written.
     /// </summary>
     private static MsgPackItem SerializePreserving(object item, MsgPackSettings settings, FullPropertyInfo assignedTo)
     {
-      ReferenceCode.ThrowIfUsed(settings);
-      ICustomExt[] custom = settings._customExtentionTypes;
-      for (int t = 0; custom != null && t < custom.Length; t++)
-        if (custom[t] != null && custom[t].TypeSpecifier == MsgPackOptions.ReferenceExtensionType)
-          throw ReferenceCode.Used(custom[t].GetType().Name);
       ReferenceTable outer = _references;
       ReferenceTable table = _references = new ReferenceTable();
       try
@@ -306,7 +315,7 @@ namespace LsMsgPackDebug
     {
       bool wrap = !(assignedTo?.AssignedToType is null || tType.IsPrimitive || tType == typeof(string) || !SerializationRules.NeedsTypeId(tType, assignedTo, settings));
       object typeId = wrap ? SerializationRules.GetTypeIdentifier(tType, settings, assignedTo) : null;
-      ReferenceCode.ThrowIfUsed(converter as MsgPackBinaryConverter, settings); // also one of [MsgPackConverter] on a type
+      ReservedCodes.ThrowIfUsed(converter as MsgPackBinaryConverter, settings); // also one of [MsgPackConverter] on a type
       MsgPackItem content = converter is MsgPackBinaryConverter binary && binary.ExtensionTypeCode != null
         ? new MpExt(settings) { TypeSpecifier = binary.ExtensionTypeCode.Value, Value = binary.ToBytes(item) } // the bytes of a binary converter as its extension (otherwise bin, as any byte[])
         : SerializeSurrogate(converter.ToSurrogateBoxed(item), settings, converter.SurrogateInfo, depth, byNames);

@@ -6,7 +6,7 @@ using System;
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// The encodings of integers and timestamps through the serializer (the item tests, MpIntTest and MpDateTimeTest, check the items of LsMsgPack).
+  /// The encodings of integers, DateTimes and timestamps through the serializer (the item tests, MpIntTest and MpDateTimeTest, check the items of LsMsgPack).
   /// </summary>
   public abstract class SerializingPrimitives
   {
@@ -50,7 +50,7 @@ namespace LsMsgPackUnitTests
       DateTime dt = new DateTime(2021, 1, 1, 0, 0, 0, 500, DateTimeKind.Utc);
       // Timestamp 64 from the spec: 30 bits nanoseconds (500000000) and 34 bits seconds (1609459200) in one big-endian 64 bit value
       byte[] expected = new byte[] { (byte)MsgPackTypeId.MpFExt8, 0xFF, 0x77, 0x35, 0x94, 0x00, 0x5F, 0xEE, 0x66, 0x00 };
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
 
       CollectionAssert.AreEqual(expected, Serializer.Serialize(dt, withoutSchema));
       Assert.AreEqual(dt, Serializer.Deserialize<DateTime>(expected, withoutSchema).ToUniversalTime());
@@ -64,7 +64,7 @@ namespace LsMsgPackUnitTests
     {
       DateTime dt = new DateTime(1969, 12, 31, 23, 59, 58, 500, DateTimeKind.Utc);
       byte[] expected = new byte[] { (byte)MsgPackTypeId.MpExt8, 12, 0xFF, 0x1D, 0xCD, 0x65, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE };
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
 
       CollectionAssert.AreEqual(expected, Serializer.Serialize(dt, withoutSchema));
       Assert.AreEqual(dt, Serializer.Deserialize<DateTime>(expected, withoutSchema).ToUniversalTime());
@@ -78,8 +78,10 @@ namespace LsMsgPackUnitTests
     public void FractionalSecondsBefore1970RoundTrip(int year, int month, int day, int hour, int minute, int second, int millisecond)
     {
       DateTime dt = new DateTime(year, month, day, hour, minute, second, millisecond, DateTimeKind.Utc).AddTicks(7);
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
       Assert.AreEqual(dt, Serializer.Deserialize<DateTime>(Serializer.Serialize(dt, withoutSchema), withoutSchema).ToUniversalTime());
+      withoutSchema.DateTimeFormat = DateTimeFormat.Native;
+      Assert.AreEqual(dt, Serializer.Deserialize<DateTime>(Serializer.Serialize(dt, withoutSchema), withoutSchema));
     }
 
     public class PrimitivesWithDateTimeOffset
@@ -107,14 +109,14 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
-    /// Unspecified written as UTC and read as Unspecified: the clock time comes back unchanged in any time zone (as JSON writes it, without an offset).
+    /// Timestamps: Unspecified written as UTC and read as Unspecified: the clock time comes back unchanged in any time zone (as JSON writes it, without an offset).
     /// </summary>
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public void UnspecifiedClockTimeRoundTrip(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, UnspecifiedDateTimeKind = DateTimeKind.Utc, ReadDateTimeKind = DateTimeKind.Unspecified };
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, UnspecifiedDateTimeKind = DateTimeKind.Utc, ReadDateTimeKind = DateTimeKind.Unspecified, DateTimeFormat = DateTimeFormat.Timestamp };
       DateTime noon = new DateTime(2026, 10, 7, 12, 0, 0, 250, DateTimeKind.Unspecified);
       PrimitivesWithDates back = Serializer.Deserialize<PrimitivesWithDates>(Serializer.Serialize(new PrimitivesWithDates() { When = noon, Boxed = noon }, settings), settings);
       Assert.AreEqual(noon, back.When);
@@ -122,20 +124,102 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(noon, (DateTime)back.Boxed);
       Assert.AreEqual(DateTimeKind.Unspecified, ((DateTime)back.Boxed).Kind);
 
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false, UnspecifiedDateTimeKind = DateTimeKind.Utc };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false, UnspecifiedDateTimeKind = DateTimeKind.Utc, DateTimeFormat = DateTimeFormat.Timestamp };
       CollectionAssert.AreEqual(Serializer.Serialize(DateTime.SpecifyKind(noon, DateTimeKind.Utc), withoutSchema), Serializer.Serialize(noon, withoutSchema), "written as the same clock time in UTC");
     }
 
     /// <summary>
-    /// The defaults (since October 2026) keep the clock time of Utc and Unspecified values in any time zone, as System.Text.Json does (the Kind becomes Utc: a timestamp does not keep it),
-    /// and a Local value is the same moment in UTC. Before, an Unspecified midnight written in New York was read as 06:00 in Amsterdam.
+    /// The default (<see cref="DateTimeFormat.Native"/>): every value comes back as it was written, as Json.NET reads its text: Utc and Unspecified with their ticks and Kind,
+    /// a Local value as the same moment in local time (the reader's time zone). With timestamps a Local value came back as UTC, an hour early on a clock in Amsterdam.
     /// </summary>
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
-    public void DefaultsKeepTheClockTimeAsJson(bool useSchema)
+    public void DefaultsKeepTheValueAndKind(bool useSchema)
     {
       MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      Assert.AreEqual(DateTimeFormat.Native, settings.DateTimeFormat);
+
+      DateTime midnight = new DateTime(2026, 10, 28, 0, 0, 0, DateTimeKind.Unspecified);
+      DateTime utc = new DateTime(2026, 10, 28, 12, 0, 0, DateTimeKind.Utc).AddTicks(7);
+      DateTime local = new DateTime(2026, 10, 28, 12, 0, 0, DateTimeKind.Local);
+      foreach (DateTime value in new[] { midnight, utc, local, DateTime.MinValue.AddTicks(1), DateTime.MaxValue, DateTime.SpecifyKind(DateTime.MaxValue, DateTimeKind.Utc) })
+      {
+        PrimitivesWithDates back = Serializer.Deserialize<PrimitivesWithDates>(Serializer.Serialize(new PrimitivesWithDates() { When = value, Boxed = value }, settings), settings);
+        Assert.AreEqual(value, back.When, value.Kind.ToString());
+        Assert.AreEqual(value.Kind, back.When.Kind);
+        Assert.AreEqual(value, (DateTime)back.Boxed, value.Kind.ToString());
+        Assert.AreEqual(value.Kind, ((DateTime)back.Boxed).Kind);
+      }
+    }
+
+    /// <summary>
+    /// The native extension: fixext 8 of type 6 with DateTime.ToBinary() big-endian (in the byte order of the settings); a Local value holds the ticks in UTC with the top bit set.
+    /// </summary>
+    [TestMethod]
+    public void NativeDateTimeBytes()
+    {
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      DateTime utc = new DateTime(2021, 1, 1, 0, 0, 0, 500, DateTimeKind.Utc);
+      byte[] expected = new byte[] { (byte)MsgPackTypeId.MpFExt8, 6, 0x48, 0xD8, 0xAD, 0xE8, 0x2E, 0xF8, 0xCB, 0x40 }; // 0x40... the Kind Utc, then the ticks 0x08D8ADE82EF8CB40
+      CollectionAssert.AreEqual(expected, Serializer.Serialize(utc, withoutSchema));
+      DateTime back = Serializer.Deserialize<DateTime>(expected, withoutSchema);
+      Assert.AreEqual(utc, back);
+      Assert.AreEqual(DateTimeKind.Utc, back.Kind);
+
+      DateTime local = new DateTime(2021, 7, 1, 12, 0, 0, DateTimeKind.Local);
+      byte[] bytes = Serializer.Serialize(local, withoutSchema);
+      ulong bits = 0;
+      for (int t = 2; t < 10; t++)
+        bits = (bits << 8) | bytes[t];
+      Assert.AreEqual(0x8000000000000000UL | (ulong)local.ToUniversalTime().Ticks, bits, "the ticks in UTC with the Local flag");
+
+      MsgPackSettings neverSwap = new MsgPackSettings() { UseInexedSchema = false, EndianAction = EndianAction.NeverSwap };
+      byte[] native = Serializer.Serialize(utc, neverSwap);
+      Assert.AreEqual(utc.ToBinary(), BitConverter.ToInt64(native, 2), "in the byte order of the machine");
+      Assert.AreEqual(utc, Serializer.Deserialize<DateTime>(native, neverSwap));
+    }
+
+    /// <summary>
+    /// Readers take both formats, whatever <see cref="MsgPackOptions.DateTimeFormat"/> says (data of other libraries, or of older writers, is timestamps).
+    /// </summary>
+    [TestMethod]
+    public void BothFormatsRead()
+    {
+      DateTime utc = new DateTime(2026, 10, 28, 12, 0, 0, DateTimeKind.Utc);
+      MsgPackSettings native = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings timestamps = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
+      Assert.AreEqual(utc, Serializer.Deserialize<DateTime>(Serializer.Serialize(utc, timestamps), native));
+      Assert.AreEqual(utc, Serializer.Deserialize<DateTime>(Serializer.Serialize(utc, native), timestamps));
+      Assert.AreEqual(utc, (DateTime)Serializer.Deserialize<object>(Serializer.Serialize(utc, native), timestamps));
+      Assert.AreEqual(new DateTimeOffset(utc), Serializer.Deserialize<DateTimeOffset>(Serializer.Serialize(utc, native), native));
+    }
+
+    /// <summary>
+    /// Data in the native extension that holds no DateTime (ticks beyond DateTime.MaxValue) throws a MsgPackException, not the ArgumentException of DateTime.FromBinary.
+    /// </summary>
+    [TestMethod]
+    public void NativeDateTimeBeyondTheRange()
+    {
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      byte[] tooLate = new byte[] { (byte)MsgPackTypeId.MpFExt8, 6, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+#if KEEPTRACK
+      Assert.Throws<Exception>(() => Serializer.Deserialize<DateTime>(tooLate, withoutSchema)); // LsMsgPackDebug keeps the error as an MpError item (ContinueProcessingOnBreakingError), which is no DateTime
+#else
+      Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<DateTime>(tooLate, withoutSchema));
+#endif
+    }
+
+    /// <summary>
+    /// Timestamps (<see cref="DateTimeFormat.Timestamp"/>) keep the clock time of Utc and Unspecified values in any time zone, as System.Text.Json does (the Kind becomes Utc: a timestamp
+    /// does not keep it), and a Local value is the same moment in UTC. Before October 2026 an Unspecified midnight written in New York was read as 06:00 in Amsterdam.
+    /// </summary>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void TimestampsKeepTheClockTimeAsJson(bool useSchema)
+    {
+      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, DateTimeFormat = DateTimeFormat.Timestamp };
       Assert.AreEqual(DateTimeKind.Utc, settings.UnspecifiedDateTimeKind);
       Assert.AreEqual(DateTimeKind.Utc, settings.ReadDateTimeKind);
 
@@ -159,7 +243,7 @@ namespace LsMsgPackUnitTests
     [DataRow(DateTimeKind.Unspecified)]
     public void ReadDateTimeKind(DateTimeKind kind)
     {
-      MsgPackSettings settings = new MsgPackSettings() { ReadDateTimeKind = kind, DateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp }; // the offset is not written
+      MsgPackSettings settings = new MsgPackSettings() { ReadDateTimeKind = kind, DateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp, DateTimeFormat = DateTimeFormat.Timestamp }; // the offset is not written
       DateTime utc = new DateTime(2026, 10, 7, 12, 0, 0, DateTimeKind.Utc);
       DateTimeOffset offset = new DateTimeOffset(2026, 10, 7, 14, 0, 0, TimeSpan.FromHours(2));
       PrimitivesWithDates back = Serializer.Deserialize<PrimitivesWithDates>(Serializer.Serialize(new PrimitivesWithDates() { When = utc, Boxed = utc, Offset = offset }, settings), settings);

@@ -96,12 +96,12 @@ namespace LsMsgPack
       OwnerFilters = HasOwnerFilters(options._dynamicFilters);
       IgnoreCycles = options.IgnoresCycles;
       PreserveReferences = options.PreservesReferences;
-      if (PreserveReferences)
+      if (ReservedCodes.Any(options))
       {
-        ReferenceCode.ThrowIfUsed(options);
+        ReservedCodes.ThrowIfUsed(options);
         for (int t = 0; t < options._extensions.Length; t++)
-          if (options._extensions[t] != null && options._extensions[t].TypeCode == MsgPackOptions.ReferenceExtensionType)
-            throw ReferenceCode.Used(options._extensions[t].GetType().Name);
+          if (options._extensions[t] != null)
+            ReservedCodes.ThrowIfUsed(options._extensions[t].TypeCode, options._extensions[t].GetType().Name, options);
       }
       CanBindDelegates = PropertyAccessor.CanCompile;
       _alwaysTypeId = (options._addTypeIdOptions & AddTypeIdOption.Always) != 0;
@@ -355,7 +355,8 @@ namespace LsMsgPack
         case TypeKind.Guid: return new GuidHandler();
         case TypeKind.GuidString: return new GuidStringHandler();
         case TypeKind.DecimalString: return new DecimalStringHandler();
-        case TypeKind.DateTime: return new DateTimeHandler(Options._unspecifiedIsUtc);
+        case TypeKind.DateTime: return new NativeDateTimeHandler();
+        case TypeKind.DateTimeTimestamp: return new DateTimeHandler(Options._unspecifiedIsUtc);
         case TypeKind.DateTimeOffset: return new DateTimeOffsetHandler();
         case TypeKind.DateTimeOffsetArray: return new DateTimeOffsetArrayHandler();
         case TypeKind.DateTimeOffsetMoment: return new DateTimeOffsetMomentHandler();
@@ -1013,7 +1014,8 @@ namespace LsMsgPack
         case TypeKind.Guid: w.Guid((Guid)value); return;
         case TypeKind.GuidString: w.GuidString((Guid)value); return;
         case TypeKind.DecimalString: w.DecimalString((decimal)value); return;
-        case TypeKind.DateTime: w.DateTime(DateTimeHandler.Utc((DateTime)value, Options._unspecifiedIsUtc)); return;
+        case TypeKind.DateTime: w.NativeDateTime((DateTime)value); return;
+        case TypeKind.DateTimeTimestamp: w.DateTime(DateTimeHandler.Utc((DateTime)value, Options._unspecifiedIsUtc)); return;
         case TypeKind.DateTimeOffset: w.DateTime(((DateTimeOffset)value).UtcDateTime); return;
         case TypeKind.DateTimeOffsetArray: DateTimeOffsetArrayHandler.WriteArray(w, (DateTimeOffset)value); return;
         case TypeKind.DateTimeOffsetMoment: DateTimeOffsetMomentHandler.WriteArray(w, (DateTimeOffset)value); return;
@@ -1442,6 +1444,8 @@ namespace LsMsgPack
         PlainForm = FrameworkTypeInfo.GetPlainForm(type);
       if (Kind == TypeKind.Guid && options._guidFormat == GuidFormat.String)
         Kind = TypeKind.GuidString;
+      else if (Kind == TypeKind.DateTime && !options._nativeDateTime)
+        Kind = TypeKind.DateTimeTimestamp;
       else if (Kind == TypeKind.DateTimeOffset && options._dateTimeOffsetFormat == DateTimeOffsetFormat.ClockTimeAndOffset)
         Kind = TypeKind.DateTimeOffsetArray;
       else if (Kind == TypeKind.DateTimeOffset && options._dateTimeOffsetFormat == DateTimeOffsetFormat.TimestampAndOffset)

@@ -69,7 +69,7 @@ namespace LsMsgPack
       bool unrolled = unrolledIds && (code.Capabilities & GeneratedCapabilities.WriteUnrolled) != 0 && !trim;
       bool unrolledMap = unrolledIds && (code.Capabilities & GeneratedCapabilities.WriteUnrolledMap) != 0;
       bool unrolledTrimmed = unrolledIds && (code.Capabilities & GeneratedCapabilities.WriteUnrolledTrimmed) != 0 && trim;
-      return new GeneratedWritePlan(this, code, ids, Filters == FilterMode.DefaultValues, Options._unspecifiedIsUtc, trim, DecimalCode(),
+      return new GeneratedWritePlan(this, code, ids, Filters == FilterMode.DefaultValues, Options._unspecifiedIsUtc, !Options._nativeDateTime, trim, DecimalCode(),
         GetTypeInfo(typeof(Guid)).Kind == TypeKind.GuidString, GetTypeInfo(typeof(decimal)).Kind == TypeKind.DecimalString, unrolled, unrolledMap, unrolledTrimmed, props);
     }
 
@@ -84,7 +84,8 @@ namespace LsMsgPack
       GeneratedMember member = code.Members[id];
       if (member.Kind == GeneratedKind.None || !member.CanWrite)
         return id; // the generated code leaves it to the runtime (at this position)
-      if (info.CustomAttributes.ContainsKey(nameof(System.ComponentModel.DefaultValueAttribute)) || info.MemberConverter != null || !Fits(member, false, (code.Capabilities & GeneratedCapabilities.WriteFormats) != 0))
+      if (info.CustomAttributes.ContainsKey(nameof(System.ComponentModel.DefaultValueAttribute)) || info.MemberConverter != null
+        || !Fits(member, false, (code.Capabilities & GeneratedCapabilities.WriteFormats) != 0, (code.Capabilities & GeneratedCapabilities.DateTimeFormats) != 0))
         return -1; // the generated code would write it otherwise than these options do
       return id;
     }
@@ -98,7 +99,7 @@ namespace LsMsgPack
       if (id < 0)
         return -1;
       GeneratedMember member = code.Members[id];
-      return member.Kind != GeneratedKind.None && member.CanRead && info.MemberConverter is null && Fits(member, true, (code.Capabilities & GeneratedCapabilities.ReadFormats) != 0) ? id : -1;
+      return member.Kind != GeneratedKind.None && member.CanRead && info.MemberConverter is null && Fits(member, true, (code.Capabilities & GeneratedCapabilities.ReadFormats) != 0, true) ? id : -1;
     }
 
     /// <summary>
@@ -128,7 +129,7 @@ namespace LsMsgPack
       GeneratedKind kind = CompiledWriter.KindOf(this, underlying ?? type);
       if (kind == GeneratedKind.None)
         return kind;
-      return Fits(new GeneratedMember(null, null, type, kind, underlying != null, false, true), true, true) ? kind : GeneratedKind.None;
+      return Fits(new GeneratedMember(null, null, type, kind, underlying != null, false, true), true, true, true) ? kind : GeneratedKind.None;
     }
 
     private static int FindMember(GeneratedObjectCode code, FullPropertyInfo info)
@@ -148,7 +149,8 @@ namespace LsMsgPack
     /// Whether these options write (and read) the member's type the way the generated code does (the same TypeKind, as the handlers and readers decide it).
     /// </summary>
     /// <param name="formats">The code writes (reads) Guids and decimals in the plan's format (<see cref="GeneratedCapabilities.WriteFormats"/>, <see cref="GeneratedCapabilities.ReadFormats"/>)</param>
-    private bool Fits(GeneratedMember member, bool reading, bool formats)
+    /// <param name="dateFormats">The code writes DateTimes in the plan's format (<see cref="GeneratedCapabilities.DateTimeFormats"/>; the code of older versions writes timestamps). Readers read both formats.</param>
+    private bool Fits(GeneratedMember member, bool reading, bool formats, bool dateFormats)
     {
       Type type = member.Nullable ? Nullable.GetUnderlyingType(member.PropertyType) : member.PropertyType;
       if (type is null)
@@ -170,7 +172,7 @@ namespace LsMsgPack
         case GeneratedKind.Double: return info.Kind == TypeKind.Double;
         case GeneratedKind.Char: return info.Kind == TypeKind.Char;
         case GeneratedKind.Guid: return info.Kind == TypeKind.Guid || (formats && info.Kind == TypeKind.GuidString);
-        case GeneratedKind.DateTime: return info.Kind == TypeKind.DateTime;
+        case GeneratedKind.DateTime: return info.Kind == TypeKind.DateTimeTimestamp || (info.Kind == TypeKind.DateTime && (reading || dateFormats));
         case GeneratedKind.TimeSpan: return info.Kind == TypeKind.TimeSpan;
         case GeneratedKind.Enum: return info.Kind == TypeKind.Enum;
         case GeneratedKind.Decimal: // the built-in extension (DecimalHandler's and DecimalReader's fast paths)

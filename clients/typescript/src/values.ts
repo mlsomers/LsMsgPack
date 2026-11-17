@@ -71,6 +71,21 @@ export const EmptyGuid = '00000000-0000-0000-0000-000000000000';
 /** DateTime.MinValue (0001-01-01T00:00:00Z) in milliseconds since 1970. */
 export const MinDateTimeMs = -62135596800000;
 
+/**
+ * LsMsgPack's DateTime (extension type 6, fixext 8, the default of DateTimeFormat.Native): .NET's DateTime.ToBinary(), 62 bits of ticks (100 ns since 0001-01-01) and the Kind in the
+ * top 2 bits, big-endian, as a Date (milliseconds). Utc and Local values hold the moment (Local the ticks in UTC), Unspecified the clock time, read as UTC as the timestamps of such values are.
+ * The ticks do not fit in a double: hi * 2^32 = hi * 429496 * 10000 + hi * 7296, so the division by 10000 is exact in parts.
+ */
+export function nativeDate(view: DataView, p: number): Date {
+  const hi = view.getUint32(p) & 0x3fffffff;
+  const lo = view.getUint32(p + 4);
+  if (hi >= 0x3fffff00) {
+    const wrapped = (hi - 0x40000000) * twoPow32 + lo; // ticks - 2^62: within a day below zero, exact in a double
+    if (wrapped > -864000000000) return new Date(MinDateTimeMs + Math.floor(wrapped / 10000)); // a Local value just after DateTime.MinValue east of Greenwich (as DateTime.FromBinary)
+  }
+  return new Date(MinDateTimeMs + hi * 429496 + Math.floor((hi * 7296 + lo) / 10000));
+}
+
 
 const TicksPerSecond = 10000000;
 

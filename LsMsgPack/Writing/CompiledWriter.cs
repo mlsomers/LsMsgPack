@@ -43,7 +43,7 @@ namespace LsMsgPack.Writing
     private CompiledWriteUnrolled<T> _unrolled;
 
     /// <param name="calls">null when no member calls a ShouldSerialize method</param>
-    public CompiledObjectCode(GeneratedMember[] members, MemberInfo[] properties, ShouldSerializeCalls calls) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap | GeneratedCapabilities.WriteFormats)
+    public CompiledObjectCode(GeneratedMember[] members, MemberInfo[] properties, ShouldSerializeCalls calls) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap | GeneratedCapabilities.WriteFormats | GeneratedCapabilities.DateTimeFormats)
     {
       _properties = properties;
       _calls = calls;
@@ -90,7 +90,7 @@ namespace LsMsgPack.Writing
     private CompiledRefWriteUnrolled<T> _unrolled;
 
     /// <param name="calls">Always null: a struct's ShouldSerialize method is called boxed, by the runtime's writer of the property</param>
-    public CompiledStructCode(GeneratedMember[] members, MemberInfo[] properties, ShouldSerializeCalls calls) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap | GeneratedCapabilities.WriteFormats)
+    public CompiledStructCode(GeneratedMember[] members, MemberInfo[] properties, ShouldSerializeCalls calls) : base(members, CompiledWriter.Positions(members.Length), GeneratedCapabilities.Write | GeneratedCapabilities.WriteUnrolled | GeneratedCapabilities.WriteUnrolledMap | GeneratedCapabilities.WriteFormats | GeneratedCapabilities.DateTimeFormats)
     {
       _properties = properties;
       Unboxer = new StructUnboxer<T, T>(); // what GeneratedValues.Struct gives the generated code: a struct written as an object
@@ -277,7 +277,8 @@ namespace LsMsgPack.Writing
         case TypeKind.Guid:
         case TypeKind.GuidString: return GeneratedKind.Guid; // in the plan's format (GeneratedCapabilities.WriteFormats)
         case TypeKind.DecimalString: return GeneratedKind.Decimal;
-        case TypeKind.DateTime: return GeneratedKind.DateTime;
+        case TypeKind.DateTime:
+        case TypeKind.DateTimeTimestamp: return GeneratedKind.DateTime; // in the plan's format (GeneratedCapabilities.DateTimeFormats)
         case TypeKind.TimeSpan: return GeneratedKind.TimeSpan;
         case TypeKind.Enum: return GeneratedKind.Enum;
         case TypeKind.Extension: return info.Extension != null && info.Extension.GetType() == typeof(DecimalExtension) ? GeneratedKind.Decimal : GeneratedKind.None;
@@ -388,6 +389,7 @@ namespace LsMsgPack.Writing
       private readonly bool _filter;
       private readonly bool _guidString;
       private readonly bool _decimalString;
+      private readonly bool _dateTimestamp;
 
       /// <summary>
       /// One local per value type (not per property): the method's locals are zeroed per call.
@@ -404,6 +406,7 @@ namespace LsMsgPack.Writing
         _filter = plan.FilterDefaults;
         _guidString = plan.GuidString;
         _decimalString = plan.DecimalString;
+        _dateTimestamp = plan.DateTimestamp;
         O = Expression.Parameter(byRef ? type.MakeByRefType() : type, "o");
       }
 
@@ -603,7 +606,10 @@ namespace LsMsgPack.Writing
               return Writer(nameof(MsgPackWriter.DecimalString), v);
             return Expression.Call(typeof(GeneratedIO), nameof(GeneratedIO.WriteDecimal), null, W, v, Expression.Field(P, nameof(GeneratedWritePlan.DecimalCode)));
           case GeneratedKind.Guid: return Writer(_guidString ? nameof(MsgPackWriter.GuidString) : nameof(MsgPackWriter.Guid), v);
-          case GeneratedKind.DateTime: return Writer(nameof(MsgPackWriter.DateTime), Expression.Call(typeof(GeneratedIO), nameof(GeneratedIO.Utc), null, v, P));
+          case GeneratedKind.DateTime:
+            if (_dateTimestamp)
+              return Writer(nameof(MsgPackWriter.DateTime), Expression.Call(typeof(GeneratedIO), nameof(GeneratedIO.Utc), null, v, P));
+            return Writer(nameof(MsgPackWriter.NativeDateTime), v);
           case GeneratedKind.TimeSpan: return Writer(nameof(MsgPackWriter.Int64), Expression.Property(v, "Ticks"));
           case GeneratedKind.Enum: return EnumWriter(v);
         }

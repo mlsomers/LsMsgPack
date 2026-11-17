@@ -352,7 +352,8 @@ namespace LsMsgPack
         case TypeKind.Guid: return new GuidReader();
         case TypeKind.GuidString: return new GuidStringReader();
         case TypeKind.DecimalString: return new DecimalStringReader(info.Extension);
-        case TypeKind.DateTime: return new DateTimeReader();
+        case TypeKind.DateTime:
+        case TypeKind.DateTimeTimestamp: return new DateTimeReader(); // both formats
         case TypeKind.DateTimeOffset:
         case TypeKind.DateTimeOffsetMoment: return new DateTimeOffsetReader();
         case TypeKind.DateTimeOffsetArray: return new DateTimeOffsetArrayReader();

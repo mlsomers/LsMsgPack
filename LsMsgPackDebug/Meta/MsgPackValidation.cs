@@ -31,12 +31,13 @@ namespace LsMsgPackDebug
         }
 
         /// <summary>
-        /// The extension types LsMsgPack writes: timestamps (-1), big integers (-2) and decimals (1, <see cref="MpDecimal"/>), and the types the specification reserves.
+        /// The extension types LsMsgPack writes: timestamps (-1), native DateTimes (6), big integers (-2) and decimals (1, <see cref="MpDecimal"/>), and the types the specification reserves.
         /// </summary>
         private static void ValidateExt(MpExt item, List<ValidationItem> issues)
         {
             if (item is MpStreamIndex) ValidateStreamIndex((MpStreamIndex)item, issues);
             else if (item is MpStreamSidecar) return;
+            else if (item is MpDateTime && ((MpDateTime)item).IsNative) return; // DateTime.ToBinary: data that is no DateTime was refused when it was read
             else if (item is MpDateTime) ValidateTimestamp(item, issues);
             else if (item is MpDecimal) ValidateDecimal((MpDecimal)item, issues);
             else if (item.TypeSpecifier == BigIntegerExtensionType) ValidateBigInteger(item, issues);

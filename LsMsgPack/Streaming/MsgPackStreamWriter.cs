@@ -390,7 +390,7 @@ namespace LsMsgPack.Streaming
     }
 
     /// <summary>
-    /// A timestamp, as the serializer writes a DateTime (see <see cref="LsMsgPackOptions.UnspecifiedDateTimeKind"/>).
+    /// A DateTime as the serializer writes it (see <see cref="MsgPackOptions.DateTimeFormat"/>).
     /// </summary>
     public void Write(DateTime value)
     {

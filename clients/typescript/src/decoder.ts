@@ -9,7 +9,7 @@ import type { KeptProperty, ModelSet } from './models.js';
 import { nameFunction, PropertyNames } from './names.js';
 import { AnyType, Kind, Schema, SchemaEntry, TypeExpr } from './schema.js';
 import { toHex } from './sha256.js';
-import { convertDecimal, dateOnlyText, decodeDecimal, DecimalMode, EmptyGuid, guidString, MinDateTimeMs, offsetText, timeOnlyText, timeSpanText } from './values.js';
+import { convertDecimal, dateOnlyText, decodeDecimal, DecimalMode, EmptyGuid, guidString, MinDateTimeMs, nativeDate, offsetText, timeOnlyText, timeSpanText } from './values.js';
 
 export interface DecodeOptions extends ReaderOptions {
   /** long and ulong properties: 'number' (default, as JSON.parse: precision is lost beyond 2^53) or 'bigint' (always a bigint). Untyped values are a bigint only beyond 2^53. */
@@ -961,9 +961,13 @@ export class SchemaReader extends MsgPackReader {
     return result;
   }
 
-  /** A DateTime: the timestamps of 4 and 8 bytes read in place. */
+  /** A DateTime: LsMsgPack's native extension (type 6) and the timestamps of 4 and 8 bytes read in place. */
   readDate(): unknown {
     const bytes = this.bytes, p = this.pos, b = bytes[p];
+    if (b === 0xd7 && bytes[p + 1] === 6 && p + 10 <= bytes.length) {
+      this.pos = p + 10;
+      return nativeDate(this.view, p + 2);
+    }
     if (bytes[p + 1] === 0xff && (b === 0xd6 || b === 0xd7)) {
       const length = b === 0xd6 ? 4 : 8;
       if (p + 2 + length <= bytes.length) {

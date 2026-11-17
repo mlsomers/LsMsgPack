@@ -5,57 +5,80 @@ using LsMsgPack.Meta;
 
 namespace LsMsgPackDebug
 {
+  /// <summary>
+  /// A DateTime: the native extension (type 6, <see cref="DateTimeFormat.Native"/>: <see cref="DateTime.ToBinary"/>, the ticks and the Kind) or a timestamp of the specification (type -1, a moment in UTC).
+  /// New items take the format of their settings' <see cref="MsgPackOptions.DateTimeFormat"/>.
+  /// </summary>
   public class MpDateTime : MpExt
   {
 
-    public MpDateTime() : base() { TypeSpecifier = -1; }
-    public MpDateTime(MsgPackSettings settings) : base(settings) { TypeSpecifier = -1; }
+    public MpDateTime() : base() { TypeSpecifier = CodeOf(Settings._nativeDateTime); }
+    public MpDateTime(MsgPackSettings settings) : base(settings) { TypeSpecifier = CodeOf(settings._nativeDateTime); }
+
+    /// <param name="native">The native extension (type 6), otherwise a timestamp (type -1), whatever the settings say (DateTimeOffset values are timestamps)</param>
+    internal MpDateTime(MsgPackSettings settings, bool native) : base(settings ?? new MsgPackSettings()) { TypeSpecifier = CodeOf(native); }
+
     public MpDateTime(MpExt ext) : base(ext.Settings) // not base(), that creates default settings that CopyBaseDataFrom replaces
     {
       CopyBaseDataFrom(ext);
-      value = ConvertExtUtc(Settings, ext);
+      value = IsNative ? ConvertNative(Settings, ext) : ConvertExtUtc(Settings, ext);
     }
 
-    private DateTime value; // UTC
+    private static sbyte CodeOf(bool native)
+    {
+      return native ? MsgPackOptions.DateTimeExtensionType : (sbyte)-1;
+    }
 
     /// <summary>
-    /// The DateTime with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (UTC by default). A DateTime of Kind Unspecified is set as <see cref="MsgPackOptions.UnspecifiedDateTimeKind"/> says.
+    /// The native extension (type 6: the ticks and the Kind), otherwise a timestamp (type -1).
+    /// </summary>
+    public bool IsNative
+    {
+      get { return TypeSpecifier == MsgPackOptions.DateTimeExtensionType; }
+    }
+
+    private DateTime value; // a timestamp: the moment in UTC; the native extension: the DateTime as it is (its Kind)
+
+    /// <summary>
+    /// The DateTime: the native extension as it was written (a Local value in the reader's time zone), a timestamp with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (UTC by default).
+    /// A DateTime of Kind Unspecified is set into a timestamp as <see cref="MsgPackOptions.UnspecifiedDateTimeKind"/> says.
     /// </summary>
     public override object Value
     {
       get
       {
-        return Settings.FromTimestamp(value);
+        return IsNative ? value : Settings.FromTimestamp(value);
       }
       set
       {
+        bool native = IsNative;
         if (value is DateTime)
-          this.value = Settings.ToTimestamp((DateTime)value);
+          this.value = native ? (DateTime)value : Settings.ToTimestamp((DateTime)value);
         else if (value is DateTimeOffset)
           this.value = ((DateTimeOffset)value).UtcDateTime; // not IConvertible, Convert.ToDateTime would throw an InvalidCastException
         else
-          this.value = Settings.ToTimestamp(Convert.ToDateTime(value));
+          this.value = native ? Convert.ToDateTime(value) : Settings.ToTimestamp(Convert.ToDateTime(value));
 
-        base.Value = ToBaseValue(Settings, this.value);
+        base.Value = native ? NativeBytes(Settings, this.value) : ToBaseValue(Settings, this.value);
       }
     }
 
     public override T GetTypedValue<T>()
     {
-      return (T)(object)Settings.FromTimestamp(value);
+      return (T)Value;
     }
 
     public override MsgPackItem Read(MsgPackTypeId typeId, Stream data)
     {
       base.Read(typeId, data);
-      value = ConvertExtUtc(Settings, this);
+      value = IsNative ? ConvertNative(Settings, this) : ConvertExtUtc(Settings, this);
       return this;
     }
 
     public override byte[] ToBytes()
     {
       if (base.Value is null || ((byte[])base.Value).Length <= 0)
-        return FromDateTime(Settings, value).ToBytes();
+        return IsNative ? Native(Settings, value).ToBytes() : FromDateTime(Settings, value).ToBytes();
 
       return base.ToBytes();
     }
@@ -69,15 +92,50 @@ namespace LsMsgPackDebug
       }
 
       if (base.Value is null || ((byte[])base.Value).Length <= 0)
-        FromDateTime(Settings, value).WriteTo(target);
+      {
+        if (IsNative)
+          Native(Settings, value).WriteTo(target);
+        else
+          FromDateTime(Settings, value).WriteTo(target);
+      }
       else
         WriteExt(target);
     }
 
     public override string ToString()
     {
+      if (IsNative)
+        return $"DateTime ({GetOfficialTypeName(TypeId)}) extension type {TypeSpecifier} with the value {value.ToString("o", System.Globalization.CultureInfo.InvariantCulture)} ({value.Kind})";
       return
         $"DateTime ({GetOfficialTypeName(TypeId)}) extension type {TypeSpecifier} with the value {value.ToLongDateString()}";
+    }
+
+    /// <summary>
+    /// The DateTime of the native extension (type 6): <see cref="DateTime.FromBinary"/> of its 8 bytes in the byte order of the settings (checked, see <see cref="MsgPackOptions.FromNative"/>).
+    /// </summary>
+    internal static DateTime ConvertNative(MsgPackSettings settings, MpExt ext)
+    {
+      byte[] bytes = (byte[])ext.Value;
+      if (ext.TypeSpecifier != MsgPackOptions.DateTimeExtensionType || bytes.Length != 8)
+#if KEEPTRACK
+        throw new MsgPackException(string.Concat("The extension type ", ext.TypeSpecifier, " with ", bytes.Length, " bytes is not a native DateTime, expected type 6 with 8 bytes."), ext.StoredOffset + 1, ext.TypeId);
+#else
+        throw new MsgPackException($"The extension type {ext.TypeSpecifier} with {bytes.Length} bytes is not a native DateTime, expected type 6 with 8 bytes.", -1, ext.TypeId);
+#endif
+      return MsgPackOptions.FromNative(BitConverter.ToInt64(SwapIfLittleEndian(settings, bytes), 0));
+    }
+
+    private static byte[] NativeBytes(MsgPackSettings settings, DateTime value)
+    {
+      return SwapIfLittleEndian(settings, BitConverter.GetBytes(value.ToBinary())); // a new array, swapped or not
+    }
+
+    /// <summary>
+    /// The native extension (type 6) of the DateTime as it is.
+    /// </summary>
+    public static MpDateTime Native(MsgPackSettings settings, DateTime dt)
+    {
+      return new MpDateTime(settings, true) { Value = dt };
     }
 
     /// <summary>
@@ -94,6 +152,11 @@ namespace LsMsgPackDebug
     /// </summary>
     internal static DateTime ConvertExtUtc(MsgPackSettings settings, MpExt ext)
     {
+      if (ext.TypeSpecifier == MsgPackOptions.DateTimeExtensionType)
+      {
+        DateTime native = ConvertNative(settings, ext);
+        return native.Kind == DateTimeKind.Unspecified ? DateTime.SpecifyKind(native, DateTimeKind.Utc) : native.ToUniversalTime(); // Unspecified as the UTC clock time, as a timestamp writes it
+      }
       if (ext.TypeSpecifier != -1)
 #if KEEPTRACK
         throw new MsgPackException(string.Concat("The extension type ", ext.TypeSpecifier, " is not a recognised DatTime or TimeStamp, expected type -1."), ext.StoredOffset + 1, ext.TypeId);
@@ -142,6 +205,9 @@ namespace LsMsgPackDebug
 #endif
     }
 
+    /// <summary>
+    /// A timestamp (type -1) of the DateTime, whatever the settings' <see cref="MsgPackOptions.DateTimeFormat"/> (see <see cref="Native"/> for the native extension).
+    /// </summary>
     public static MpDateTime FromDateTime(MsgPackSettings settings, DateTime dt, bool preserveFractionalSeconds = true)
     {
       dt = settings is null ? dt.ToUniversalTime() : settings.ToTimestamp(dt);
@@ -182,7 +248,7 @@ namespace LsMsgPackDebug
 
     private static MpDateTime ToFExt4(MsgPackSettings settings, DateTime dt)
     {
-      MpDateTime mpdt = new MpDateTime()
+      MpDateTime mpdt = new MpDateTime(settings, false)
       {
         BaseValue = ToFExt4Bytes(settings, dt),
         Value = dt
@@ -205,7 +271,7 @@ namespace LsMsgPackDebug
 
     private static MpDateTime ToFExt8(MsgPackSettings settings, DateTime dt)
     {
-      MpDateTime mpdt = new MpDateTime()
+      MpDateTime mpdt = new MpDateTime(settings, false)
       {
         BaseValue = ToFExt8Bytes(settings, dt),
         Value = dt
@@ -226,7 +292,7 @@ namespace LsMsgPackDebug
 
     private static MpDateTime ToExt8(MsgPackSettings settings, DateTime dt)
     {
-      MpDateTime mpdt = new MpDateTime()
+      MpDateTime mpdt = new MpDateTime(settings, false)
       {
         BaseValue = ToExt8Bytes(settings, dt),
         Value = dt

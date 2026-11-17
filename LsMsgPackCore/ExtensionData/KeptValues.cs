@@ -259,7 +259,12 @@ namespace LsMsgPack.Meta
         case byte[] bin: SchemaBytes.WriteBin(bytes, bin); return;
         case float f: bytes.Write((byte)MsgPackTypeId.MpFloat); bytes.WriteEndian((uint)BitConverter.ToInt32(BitConverter.GetBytes(f), 0), 4, order); return;
         case double d: bytes.Write((byte)MsgPackTypeId.MpDouble); bytes.WriteEndian((ulong)BitConverter.DoubleToInt64Bits(d), 8, order); return;
-        case DateTime dateTime: WriteTimestamp(bytes, compact ? settings.ToTimestamp(dateTime) : (dateTime.Kind == DateTimeKind.Local ? dateTime.ToUniversalTime() : DateTime.SpecifyKind(dateTime, DateTimeKind.Utc))); return;
+        case DateTime dateTime:
+          if (settings._nativeDateTime)
+            WriteNative(bytes, dateTime); // the value as read: a timestamp's Kind is the reader's ReadDateTimeKind
+          else
+            WriteTimestamp(bytes, compact ? settings.ToTimestamp(dateTime) : (dateTime.Kind == DateTimeKind.Local ? dateTime.ToUniversalTime() : DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)));
+          return;
         case IMsgPackExtension extension: WriteExtension(bytes, extension.TypeSpecifier, extension.Data); return;
         case object[] items:
           bytes.WriteArrayHeader(items.Length, order);
@@ -386,6 +391,16 @@ namespace LsMsgPack.Meta
         bytes.Write((byte)0xFF);
         bytes.WriteEndian((ulong)seconds, 4, order);
       }
+    }
+
+    /// <summary>
+    /// A DateTime as <see cref="DateTimeFormat.Native"/> writes it (LsMsgPack's MsgPackWriter.NativeDateTime): fixext 8, type 6, <see cref="DateTime.ToBinary"/>.
+    /// </summary>
+    private static void WriteNative(ByteWriter bytes, DateTime value)
+    {
+      bytes.Write((byte)MsgPackTypeId.MpFExt8);
+      bytes.Write(unchecked((byte)MsgPackOptions.DateTimeExtensionType));
+      bytes.WriteEndian((ulong)value.ToBinary(), 8, SchemaBytes.Canonical);
     }
 
     private static void WriteExtension(ByteWriter bytes, sbyte typeCode, byte[] data)

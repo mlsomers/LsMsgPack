@@ -112,7 +112,7 @@ namespace LsMsgPack.Writing
       _converter = converter;
       _extension = converter.ExtensionTypeCode ?? -1;
       _always = serializer.AlwaysTypeId;
-      ReferenceCode.ThrowIfUsed(converter, serializer.Options); // also one of [MsgPackConverter] on a type
+      ReservedCodes.ThrowIfUsed(converter, serializer.Options); // also one of [MsgPackConverter] on a type
     }
 
     internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)

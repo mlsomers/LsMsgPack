@@ -577,15 +577,15 @@ namespace LsMsgPack.Streaming
     }
 
     /// <summary>
-    /// A timestamp (extension type -1), as the serializer reads it (see <see cref="MsgPackOptions.ReadDateTimeKind"/>).
+    /// A DateTime (extension type 6, <see cref="DateTimeFormat.Native"/>) or a timestamp (extension type -1), as the serializer reads it (see <see cref="MsgPackOptions.ReadDateTimeKind"/>).
     /// </summary>
     public DateTime GetDateTime()
     {
       Expect(MsgPackTokenType.Extension);
       BufferPayload();
       _r.Reset(_buf, _tokenStart, _pos + (int)_length);
-      if (_extensionType != -1 || !_r.TryReadDateTime(out DateTime value))
-        throw new InvalidOperationException($"The extension of type {_extensionType} is not a timestamp.");
+      if ((_extensionType != -1 && _extensionType != MsgPackOptions.DateTimeExtensionType) || !_r.TryReadDateTime(out DateTime value))
+        throw new InvalidOperationException($"The extension of type {_extensionType} is not a timestamp or a native DateTime (type {MsgPackOptions.DateTimeExtensionType}).");
       return value;
     }
 

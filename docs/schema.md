@@ -156,7 +156,7 @@ var settings = new MsgPackSettings { SchemaVersion = SchemaVersion.Described }; 
 
 Types:
 
-- A kind: `string`, `bool`, `int` (32 bits and smaller, and `uint`), `long`, `ulong`, `float` (`float`, `double`, `Half`), `decimal`, `char`, `bigint`, `guid`, `bin`, `uri`, `datetime`, `dto` (`DateTimeOffset` as `[timestamp, offset minutes]` or a bare timestamp), `dto-clock` (`DateTimeOffsetFormat.ClockTimeAndOffset`), `timespan` (ticks), `dateonly` (day number), `timeonly` (ticks), `any` (`object`, interfaces, abstract classes, custom extensions, multidimensional arrays, a class the schema never wrote). Enums are their underlying kind. A reader should read a kind it doesn't know as `any`.
+- A kind: `string`, `bool`, `int` (32 bits and smaller, and `uint`), `long`, `ulong`, `float` (`float`, `double`, `Half`), `decimal`, `char`, `bigint`, `guid`, `bin`, `uri`, `datetime` (extension type 6, `DateTime.ToBinary()` big-endian: 62 bits of ticks and the Kind in the top 2 bits, a `Local` value's ticks in UTC; or a timestamp with `DateTimeFormat.Timestamp`), `dto` (`DateTimeOffset` as `[timestamp, offset minutes]` or a bare timestamp), `dto-clock` (`DateTimeOffsetFormat.ClockTimeAndOffset`), `timespan` (ticks), `dateonly` (day number), `timeonly` (ticks), `any` (`object`, interfaces, abstract classes, custom extensions, multidimensional arrays, a class the schema never wrote). Enums are their underlying kind. A reader should read a kind it doesn't know as `any`.
 - An integer `k`: an object of entry `k`.
 - `["?", T]`: `Nullable<T>`.
 - `["struct", k]`: a struct of entry `k` (its default is an object, not `null`). `["struct", [items]]`: a struct the schema has no entry for (only written as its default so far), with its properties as an entry has them.

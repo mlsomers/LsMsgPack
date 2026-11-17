@@ -1,8 +1,8 @@
-// A MsgPack reader for all formats of the specification, with LsMsgPack's extensions (timestamps -1, decimal 1, big integers -2).
+// A MsgPack reader for all formats of the specification, with LsMsgPack's extensions (timestamps -1, DateTime 6, decimal 1, big integers -2).
 // The schema-aware reader (decoder.ts) derives from it: array() and map() are the places it hooks into.
 
 import { EndOfDataError, EscapeError, MsgPackError } from './errors.js';
-import { DecimalMode, decodeDecimal } from './values.js';
+import { DecimalMode, decodeDecimal, nativeDate } from './values.js';
 
 /** An extension type the reader does not know (as LsMsgPack's MsgPackExtension). */
 export class MsgPackExtension {
@@ -243,6 +243,7 @@ export class MsgPackReader {
     const start = this.pos;
     if (type === -1) return this.timestamp(length);
     this.pos += length;
+    if (type === 6 && length === 8) return nativeDate(this.view, start); // LsMsgPack's DateTime (DateTimeFormat.Native)
     if (type === 1 && length === 16 && this.decimal !== 'raw') return decodeDecimal(this.bytes, start, this.decimal);
     if (type === -2) return bigIntOf(this.bytes, start, length);
     return new MsgPackExtension(type, this.bytes.slice(start, start + length));

@@ -834,9 +834,26 @@ namespace LsMsgPack.IO
     private const long ZeroTicks = 621355968000000000; // of Zero
 
     /// <summary>
-    /// A timestamp (extension type -1), returned with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (UTC by default) like MpDateTime.Value.
+    /// A DateTime: the native extension (type 6, <see cref="DateTimeFormat.Native"/>) as it was written, or a timestamp (extension type -1) with the Kind of
+    /// <see cref="MsgPackOptions.ReadDateTimeKind"/> (UTC by default) like MpDateTime.Value.
     /// </summary>
     public bool TryReadDateTime(out DateTime value)
+    {
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (End - pos >= 10 && buffer[pos] == 0xD7 && buffer[pos + 1] == (byte)MsgPackOptions.DateTimeExtensionType) // DateTimeFormat.Native (the default) first
+      {
+        value = MsgPackOptions.FromNative((long)U64(new ReadOnlySpan<byte>(buffer, pos + 2, 8)));
+        Pos = pos + 10;
+        return true;
+      }
+      return TryReadDateTimeTimestamp(out value);
+    }
+
+    /// <summary>
+    /// A timestamp as <see cref="TryReadDateTime"/> reads it (a method of its own: the native extension's path stays small where the callers inline it).
+    /// </summary>
+    private bool TryReadDateTimeTimestamp(out DateTime value)
     {
       if (!TryReadTimestamp(out DateTime utc))
       {
@@ -1037,6 +1054,9 @@ namespace LsMsgPack.IO
 
       if (typeCode == MsgPackOptions.ReferenceExtensionType) // after the custom extensions: a registered one wins (allowed without ReferenceHandling.Preserve)
         return new LsMsgPack.References.MsgPackReference(Bytes(length), Context?.ReferencesOfCall()) { Offset = start };
+
+      if (typeCode == MsgPackOptions.DateTimeExtensionType && length == 8) // DateTimeFormat.Native, after the custom extensions as well (allowed with DateTimeFormat.Timestamp)
+        return MsgPackOptions.FromNative((long)U64());
 
       return new MsgPackExtension(typeCode, Bytes(length), format);
     }

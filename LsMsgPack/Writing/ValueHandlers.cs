@@ -265,6 +265,18 @@ namespace LsMsgPack.Writing
     internal override bool IncludeByDefault(decimal value, FullPropertyInfo info) { return !DecimalHandler.IsZero(value); }
   }
 
+  /// <summary>
+  /// <see cref="DateTimeFormat.Native"/> (the default): the extension of the ticks and the Kind.
+  /// </summary>
+  internal sealed class NativeDateTimeHandler : ValueHandler<DateTime>
+  {
+    internal override void Write(WriteContext c, DateTime value, FullPropertyInfo assignedTo) { c.W.NativeDateTime(value); }
+    internal override bool IncludeByDefault(DateTime value, FullPropertyInfo info) { return value.Ticks != 0; } // DateTime.Equals ignores the Kind
+  }
+
+  /// <summary>
+  /// <see cref="DateTimeFormat.Timestamp"/>: the timestamp of the specification, a moment in UTC.
+  /// </summary>
   internal sealed class DateTimeHandler : ValueHandler<DateTime>
   {
     private readonly bool _unspecifiedIsUtc;
