@@ -185,10 +185,11 @@ namespace LsMsgPackDebug {
         }
       }
 
-      if (typeSpecifier == MsgPackOptions.ReferenceExtensionType) // after the custom extensions: a registered one wins (allowed without ReferenceHandling.Preserve)
+      // After the custom extensions: a registered one wins (allowed without ReferenceHandling.Preserve, with DateTimeFormat.Timestamp); not when the settings read plain MsgPack (the explorers' switch)
+      if (typeSpecifier == MsgPackOptions.ReferenceExtensionType && _settings._readLsMsgPackExtensions)
         return new MpReference(this);
 
-      if (typeSpecifier == MsgPackOptions.DateTimeExtensionType && value.Length == 8) // DateTimeFormat.Native, after the custom extensions as well (allowed with DateTimeFormat.Timestamp)
+      if (typeSpecifier == MsgPackOptions.DateTimeExtensionType && value.Length == 8 && _settings._readLsMsgPackExtensions) // DateTimeFormat.Native
         return new MpDateTime(this);
 
       // The types a stream reserves for root values (after the custom extensions: a registered one wins)

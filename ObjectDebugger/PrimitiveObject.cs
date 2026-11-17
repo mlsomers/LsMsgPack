@@ -135,6 +135,8 @@ namespace ObjectDebugger
           return Type;
         if (Value is MpExt ext)
           return string.Concat("ext ", ext.TypeSpecifier.ToString(CultureInfo.InvariantCulture));
+        if (ValueKind == ValueKind.Timestamp && LastItemRef is MpDateTime date && date.IsNative)
+          return "DateTime"; // LsMsgPack's extension type 6, with its Kind (a timestamp is a moment in UTC)
         return KindName(ValueKind);
       }
     }

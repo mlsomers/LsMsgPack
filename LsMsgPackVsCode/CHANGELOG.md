@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- **LsMsgPack extensions** toggle (on by default): extension type 1 as a decimal, and the streams LsMsgPack writes. Off: plain MsgPack, for data of other writers that use these extension types for something else.
+- **LsMsgPack extensions** toggle (on by default): extension type 1 as a decimal, 5 as a reference, 6 as a DateTime, and the streams LsMsgPack writes. Off: plain MsgPack, for data of other writers that use these extension types for something else.
+- LsMsgPack's DateTime (extension type 6, the default of `DateTimeFormat.Native`) is shown with its Kind; the properties show dates in ISO 8601 (`o`) instead of the machine's culture.
 
 ## 2026.11.3
 

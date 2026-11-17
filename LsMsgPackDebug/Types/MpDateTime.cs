@@ -1,5 +1,7 @@
 ﻿using LsMsgPack;
 using System;
+using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using LsMsgPack.Meta;
 
@@ -43,6 +45,9 @@ namespace LsMsgPackDebug
     /// The DateTime: the native extension as it was written (a Local value in the reader's time zone), a timestamp with the Kind of <see cref="MsgPackOptions.ReadDateTimeKind"/> (UTC by default).
     /// A DateTime of Kind Unspecified is set into a timestamp as <see cref="MsgPackOptions.UnspecifiedDateTimeKind"/> says.
     /// </summary>
+#if KEEPTRACK
+    [TypeConverter(typeof(IsoDateTimeConverter))] // the property grids of the explorers: the culture's format showed neither the fraction of a second nor the Kind
+#endif
     public override object Value
     {
       get
@@ -320,4 +325,26 @@ namespace LsMsgPackDebug
       return uni.Ticks / TimeSpan.TicksPerSecond - Zero.Ticks / TimeSpan.TicksPerSecond;
     }
   }
+
+#if KEEPTRACK
+  /// <summary>
+  /// A DateTime in the property grids as ISO 8601 with its Kind ("o": UTC with Z, Local with its offset, Unspecified without a zone), and read back with that Kind.
+  /// </summary>
+  internal sealed class IsoDateTimeConverter : DateTimeConverter
+  {
+    public override object ConvertTo(ITypeDescriptorContext context, CultureInfo culture, object value, Type destinationType)
+    {
+      if (destinationType == typeof(string) && value is DateTime time)
+        return time.ToString("o", CultureInfo.InvariantCulture);
+      return base.ConvertTo(context, culture, value, destinationType);
+    }
+
+    public override object ConvertFrom(ITypeDescriptorContext context, CultureInfo culture, object value)
+    {
+      if (value is string text && DateTime.TryParse(text.Trim(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime time))
+        return time;
+      return base.ConvertFrom(context, culture, value);
+    }
+  }
+#endif
 }

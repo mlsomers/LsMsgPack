@@ -2,6 +2,9 @@
 using LsMsgPackDebug;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
+using System.ComponentModel;
+using System.Globalization;
+using System.IO;
 
 namespace LsMsgPackUnitTests
 {
@@ -118,6 +121,49 @@ namespace LsMsgPackUnitTests
         Assert.AreEqual(kind, back.Kind);
       }
     }
+
+    /// <summary>
+    /// <see cref="MsgPackSettings.ReadLsMsgPackExtensions"/> off (the explorers' "LsMsgPack extensions" switch): extension types 5 and 6 stay plain extensions.
+    /// </summary>
+    [TestMethod]
+    public void ReadLsMsgPackExtensions_OffKeepsPlainExtensions()
+    {
+      byte[] date = MsgPackItem.Pack(new DateTime(2026, 11, 17, 10, 0, 0, DateTimeKind.Utc), new MsgPackSettings()).ToBytes();
+      byte[] reference = new byte[] { 0xD4, 5, 1 }; // fixext 1, type 5: the path [1]
+      Assert.IsInstanceOfType<MpDateTime>(MsgPackItem.Unpack(new MemoryStream(date), new MsgPackSettings()));
+      Assert.IsInstanceOfType<MpReference>(MsgPackItem.Unpack(new MemoryStream(reference), new MsgPackSettings()));
+
+      MsgPackSettings plain = new MsgPackSettings() { ReadLsMsgPackExtensions = false };
+      MsgPackItem ext = MsgPackItem.Unpack(new MemoryStream(date), plain);
+      Assert.AreEqual(typeof(MpExt), ext.GetType());
+      Assert.AreEqual((sbyte)6, ((MpExt)ext).TypeSpecifier);
+      CollectionAssert.AreEqual(date, ext.ToBytes(), "written back as it was");
+      ext = MsgPackItem.Unpack(new MemoryStream(reference), plain);
+      Assert.AreEqual(typeof(MpExt), ext.GetType());
+      Assert.AreEqual((sbyte)5, ((MpExt)ext).TypeSpecifier);
+    }
+
+#if KEEPTRACK
+    /// <summary>
+    /// The property grids of the explorers show a DateTime as ISO 8601 with its Kind, in any culture, and read it back with that Kind.
+    /// </summary>
+    [TestMethod]
+    [DataRow(DateTimeKind.Utc)]
+    [DataRow(DateTimeKind.Local)]
+    [DataRow(DateTimeKind.Unspecified)]
+    public void PropertyGrid_IsoWithTheKind(DateTimeKind kind)
+    {
+      DateTime value = new DateTime(2026, 11, 17, 10, 0, 0, kind).AddTicks(1234567);
+      MpDateTime item = MpDateTime.Native(new MsgPackSettings(), value);
+      PropertyDescriptor descriptor = TypeDescriptor.GetProperties(item)[nameof(MpDateTime.Value)];
+      CultureInfo dutch = CultureInfo.GetCultureInfo("nl-NL");
+      string text = descriptor.Converter.ConvertToString(null, dutch, descriptor.GetValue(item));
+      Assert.AreEqual(value.ToString("o", CultureInfo.InvariantCulture), text);
+      DateTime back = (DateTime)descriptor.Converter.ConvertFromString(null, dutch, text);
+      Assert.AreEqual(value, back);
+      Assert.AreEqual(kind, back.Kind);
+    }
+#endif
 
     [TestMethod]
     public void FractionalSecondsAreBigEndian()

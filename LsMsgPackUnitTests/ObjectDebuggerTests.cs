@@ -444,6 +444,18 @@ namespace LsMsgPackUnitTests
 
 #if KEEPTRACK
     /// <summary>
+    /// LsMsgPack's DateTime (extension type 6, DateTimeFormat.Native) is described as a DateTime, a timestamp as a timestamp (the items are kept with KEEPTRACK only).
+    /// </summary>
+    [TestMethod]
+    public void DateTimes_NativeAndTimestamp()
+    {
+      RootObject native = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }));
+      Assert.AreEqual("DateTime", Member(native, "Date").TypeText);
+      RootObject timestamp = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DateTimeFormat = DateTimeFormat.Timestamp }));
+      Assert.AreEqual("timestamp", Member(timestamp, "Date").TypeText);
+    }
+
+    /// <summary>
     /// ReferenceHandling.Preserve: the second occurrence of an object is a reference (extension type 5), shown as a link to the object it points to; the types are still inferred
     /// (a reference counts as the kind of its target).
     /// </summary>

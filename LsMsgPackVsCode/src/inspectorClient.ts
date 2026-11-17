@@ -18,7 +18,7 @@ export interface LoadSettings {
   showObjectsAt?: ObjectConfidence;
   /** A str, bin or ext with a longer content only keeps its ends. Default: 16 MiB */
   largeValueLimit?: number;
-  /** Read the extensions LsMsgPack writes (type 1 as a decimal, streams). False: plain MsgPack. Default true */
+  /** Read the extensions LsMsgPack writes (type 1 as a decimal, 5 as a reference, 6 as a DateTime, streams). False: plain MsgPack. Default true */
   lsMsgPackExtensions?: boolean;
 }
 

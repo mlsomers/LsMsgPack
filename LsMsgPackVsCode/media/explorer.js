@@ -555,7 +555,7 @@
     }, 'Ignore errors');
     ui.lsMsgPackExtensions = el('button', {
       className: 'toggle', 'aria-pressed': 'true',
-      title: 'Read extension type 1 as a decimal and the streams LsMsgPack writes (values of unknown length, their index). Off: plain MsgPack, for data of other writers that use these extension types for something else.',
+      title: 'Read extension type 1 as a decimal, 5 as a reference, 6 as a DateTime and the streams LsMsgPack writes (values of unknown length, their index). Off: plain MsgPack, for data of other writers that use these extension types for something else.',
       onclick: () => {
         state.settings.lsMsgPackExtensions = !state.settings.lsMsgPackExtensions;
         saveState();
