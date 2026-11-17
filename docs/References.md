@@ -73,14 +73,14 @@ The bytes are valid MsgPack: a reader that doesn't know the reference sees an ex
 
 ## Speed
 
-`Preserve` keeps a table of every object and collection written or read in a call, and LsMsgPack writes the paths in one pass over a value that has references. The source generator's code and the compiled readers and writers are not used with it: LsMsgPack writes and reads with its runtime plans. Without the option nothing changes: the same bytes and the same speed.
+`Preserve` keeps a table of every object and collection written or read in a call, and LsMsgPack writes the paths in one pass over a value that has references. The source generator's code and the compiled readers and writers are used with it as without: they write and read the values that can't be shared themselves (strings, numbers, dates...) and leave the objects and collections to the plans that keep the table. Without the option nothing changes: the same bytes and the same speed.
 
 100 invoices (with shared objects), LsMsgPack on .NET 8, i7-7700K:
 
 | | Write | Read |
 |---|---|---|
 | Default options | 2.95 ms | 4.5-4.8 ms |
-| `Preserve` | 6.4 ms | 8.3-8.5 ms |
+| `Preserve` | 4.9-5.1 ms | 6.9-7.1 ms |
 | Map layout with property names | 3.9 ms | 4.8 ms |
-| The same with `Preserve` | 7.7 ms | 9.7-10.0 ms |
+| The same with `Preserve` | 6.3-6.4 ms | 7.3-7.5 ms |
 | System.Text.Json (without its `Preserve`) | 19.3 ms | 34.1 ms |

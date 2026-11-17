@@ -47,8 +47,6 @@ namespace LsMsgPack
     /// <returns>The generated writer and reader of the type, null when there is none</returns>
     internal GeneratedObjectCode GeneratedCode(Type type)
     {
-      if (PreserveReferences) // the generated code writes and reads nested values itself (the accessors are still used)
-        return null;
       return (Generated(type) as IGeneratedObject)?.Code;
     }
 

@@ -52,7 +52,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// <see cref="ReferenceHandling.Preserve"/>: the handlers of exactly a tracked class are <see cref="PreservingHandler{T}"/>s, <see cref="WriteBoxed"/> and <see cref="WriteConverted"/> track the others;
-    /// no generated or compiled writers (they write nested values themselves).
+    /// the generated and compiled writers write the leaf values and leave the nested ones to those handlers (GeneratedWritePlan.Value, Runtime).
     /// </summary>
     internal readonly bool PreserveReferences;
     internal readonly bool CanBindDelegates;
@@ -108,7 +108,7 @@ namespace LsMsgPack
       _customTypeResolvers = options._typeResolvers.Length > 0;
       CustomPropertyIds = options._propertyNameResolvers.Length > 0;
       _keyWriter = new MsgPackWriter(16);
-      CompileWritersAfter = options._compileWritersAfter >= 0 && CompiledWriter.Supported && Filters != FilterMode.Custom && !_alwaysTypeId && !PreserveReferences ? options._compileWritersAfter : -1;
+      CompileWritersAfter = options._compileWritersAfter >= 0 && CompiledWriter.Supported && Filters != FilterMode.Custom && !_alwaysTypeId ? options._compileWritersAfter : -1;
       InitGenerated();
       InitReading();
     }

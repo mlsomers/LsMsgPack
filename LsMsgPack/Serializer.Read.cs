@@ -275,7 +275,7 @@ namespace LsMsgPack
     private void InitReading()
     {
       SlowObjects = CustomPropertyIds || _customTypeResolvers;
-      CompileReadersAfter = Options._compileReadersAfter >= 0 && CompiledWriter.Supported && !SlowObjects && !PreserveReferences ? Options._compileReadersAfter : -1;
+      CompileReadersAfter = Options._compileReadersAfter >= 0 && CompiledWriter.Supported && !SlowObjects ? Options._compileReadersAfter : -1;
       _inlineStore = new SchemaStore();
     }
 

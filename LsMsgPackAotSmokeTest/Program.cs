@@ -387,7 +387,7 @@ namespace LsMsgPackAotSmokeTest
       yield return ("reference", () => Converted(new LsMsgPackOptions() { SchemaStore = Store, WriteSchemaReference = true }));
       yield return ("trimmed", () => Converted(new LsMsgPackOptions() { TrimTrailingNulls = true, DynamicallyCompact = false }));
       yield return ("public-fields", () => Converted(new LsMsgPackOptions() { StaticFilters = PublicFields }));
-      yield return ("preserve", () => Converted(new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve })); // the runtime plans with PreservingHandler/PreservingReader (generated code steps aside)
+      yield return ("preserve", () => Converted(new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve })); // the generated code, the nested values through PreservingHandler/PreservingReader
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Deliberately without generated code: the JIT run writes the expected data with it, the NativeAOT run only reports how it does.")]

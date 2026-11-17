@@ -694,10 +694,58 @@ namespace LsMsgPackUnitTests
       }
       Assert.AreEqual(0, different.Count, string.Join("\n", different));
     }
+
+    /// <summary>
+    /// The compiled writers and readers (from the first object, and after a count: the plan keeps registering its objects once the compiled reader reads their values) and the generated code
+    /// are used with ReferenceHandling.Preserve: they write and read the leaf values, the runtime's handlers and readers the nested ones, which keep the references.
+    /// </summary>
+    [TestMethod]
+    public void CompiledAndGeneratedCode_Used()
+    {
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+        foreach (bool useSchema in new[] { false, true })
+          foreach (string which in new[] { "compiled", "counted", "generated" })
+          {
+            string message = which + " " + layout + " schema=" + useSchema;
+            LsMsgPackOptions options = new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = layout, UseInexedSchema = useSchema, UseRegisteredContexts = false };
+            if (which == "generated")
+              options.Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default };
+            else
+              options.CompileWritersAfter = options.CompileReadersAfter = which == "compiled" ? 0 : 2;
+            LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
+
+            for (int round = 0; round < 3; round++)
+            {
+              if (round == 2 && which == "counted") // compiled on the thread pool after 2 objects of each plan
+              {
+                System.Diagnostics.Stopwatch waited = System.Diagnostics.Stopwatch.StartNew();
+                while ((CompiledWriterTests.WriterOf(serializer, typeof(RfOrder), !useSchema) is null || CompiledReaderTests.ReaderOf(serializer, typeof(RfOrder)) is null
+                  || CompiledReaderTests.ReaderOf(serializer, typeof(RfNode)) is null) && waited.ElapsedMilliseconds < 10000)
+                  System.Threading.Thread.Sleep(10);
+              }
+              List<RfOrder> orders = serializer.Deserialize<List<RfOrder>>(serializer.Serialize(Orders()));
+              Assert.AreSame(orders[0].Customer, orders[3].Customer, message + " round " + round);
+              Assert.AreNotSame(orders[1].Customer, orders[2].Customer, message + " round " + round);
+              Assert.AreSame(orders[0].Customer.Tags, orders[3].Extra, message + " round " + round);
+
+              RfNode root = new RfNode() { Name = "root", Children = new List<RfNode>() };
+              root.Self = root;
+              root.Children.Add(new RfNode() { Name = "child", Parent = root, Tag = root.Children });
+              RfNode node = serializer.Deserialize<RfNode>(serializer.Serialize(root));
+              Assert.AreSame(node, node.Self, message + " round " + round);
+              Assert.AreSame(node, node.Children[0].Parent, message + " round " + round);
+              Assert.AreSame(node.Children, node.Children[0].Tag, message + " round " + round);
+            }
+            Assert.IsNotNull(CompiledWriterTests.WriterOf(serializer, typeof(RfOrder), !useSchema), message + ": the writer of RfOrder");
+            Assert.IsNotNull(CompiledWriterTests.WriterOf(serializer, typeof(RfNode), !useSchema), message + ": the writer of RfNode");
+            Assert.IsNotNull(CompiledReaderTests.ReaderOf(serializer, typeof(RfOrder)), message + ": the reader of RfOrder");
+            Assert.IsNotNull(CompiledReaderTests.ReaderOf(serializer, typeof(RfNode)), message + ": the reader of RfNode");
+          }
+    }
   }
 
   /// <summary>
-  /// With the code of the source generator: it steps aside (it writes and reads nested values itself), the runtime's plans keep the references.
+  /// With the code of the source generator: it writes and reads the leaf values, the runtime's handlers and readers of the nested values keep the references.
   /// </summary>
   [TestClass]
   public class GenReferenceTests : ReferenceTests
