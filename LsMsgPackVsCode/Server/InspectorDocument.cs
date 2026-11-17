@@ -683,7 +683,7 @@ namespace LsMsgPackInspector
     /// <summary>
     /// The primitive members of an object (the objects and collections are in the tree), as the property grid of the explorer's objects pane shows them.
     /// </summary>
-    private static List<PropModel> GetObjectProperties(ComplexObject obj)
+    private List<PropModel> GetObjectProperties(ComplexObject obj)
     {
       List<PropModel> props = new List<PropModel>();
 
@@ -706,7 +706,10 @@ namespace LsMsgPackInspector
       {
         if (member is ComplexObject)
           continue;
-        props.Add(new PropModel(GetCategory(obj, member), member.Name, Describe(member), member.DefaultText != null ? string.Concat(member.ValueText, " (left out: ", member.DefaultText, ")") : member.ValueText));
+        PropModel prop = new PropModel(GetCategory(obj, member), member.Name, Describe(member), member.DefaultText != null ? string.Concat(member.ValueText, " (left out: ", member.DefaultText, ")") : member.ValueText);
+        if (member.ReferenceTarget != null)
+          prop.Link = GetDisplayedId(member.ReferenceTarget.LastItemRef) ?? GetDisplayedId(member.ReferenceTarget.FirstItemRef);
+        props.Add(prop);
       }
       return props;
     }

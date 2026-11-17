@@ -608,14 +608,22 @@ namespace LsMsgPack.Meta
       CollectionInfo info = CollectionInfo.Get(assignType);
       Array elements = Array.CreateInstance(info.ElementType, items.Length);
       bool isArray = info.ConcreteType.IsArray; // the elements are the result: registered before them, so a cycle back to it resolves
+      object created = null;
       if (isArray)
         ReferenceResolver.Registered(settings, items, elements);
+      else if (settings.PreservesReferences && (created = info.CreateBeforeElements(settings)) != null) // the same: created empty, filled after its elements
+        ReferenceResolver.Registered(settings, items, created);
       for (int t = items.Length - 1; t >= 0; t--)
         SetElement(elements, ConvertDeserializeValue(items[t], info.ElementType, settings, null), t, settings);
 
+      if (created != null)
+      {
+        info.FillCreated(created, elements);
+        return created;
+      }
       object collection = info.Create(elements, settings);
       if (!isArray)
-        ReferenceResolver.Registered(settings, items, collection); // made of its elements
+        ReferenceResolver.Registered(settings, items, collection); // made of its elements (a cycle back to it is an error)
       return collection;
     }
 

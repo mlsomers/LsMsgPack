@@ -646,10 +646,11 @@ namespace LsMsgPack
     /// <param name="consumed">The position after the payload</param>
     /// <param name="differences">Collects the differences between the data and the classes, null when not asked for</param>
     /// <param name="intoSlot">A struct root value of <paramref name="type"/> is read into the context's slot, which is returned instead of a box (<see cref="ReadContext.IntoSlot"/>, read it with <see cref="RootSlot{T}.Take"/>: the paths that collect the differences or errors return the boxed value)</param>
-    internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false)
+    /// <param name="referencePrefix">A value of a head's body without the indexed schema (the stream reader): see <see cref="ReadContext.ReferencePrefix"/></param>
+    internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false, Func<int[]> referencePrefix = null)
     {
       if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
-        return DeserializeCollecting(type, buffer, offset, end, out consumed);
+        return DeserializeCollecting(type, buffer, offset, end, out consumed, intoSlot, referencePrefix);
 
       if (type != _cachedRoot)
         CacheRoot(type);
@@ -661,6 +662,8 @@ namespace LsMsgPack
           c.Differences = differences;
         c.IntoSlot = intoSlot;
         c.Unusual = SlowObjects || differences != null;
+        if (referencePrefix != null)
+          c.ReferencePrefix = referencePrefix;
         object result;
         if (!Options._useInexedSchema)
         {
@@ -681,11 +684,11 @@ namespace LsMsgPack
     }
 
     // The lambdas are in methods of their own: a lambda that captures parameters allocates its closure where the method starts, on every call
-    private object DeserializeCollecting(Type type, byte[] buffer, int offset, int end, out int consumed)
+    private object DeserializeCollecting(Type type, byte[] buffer, int offset, int end, out int consumed, bool intoSlot = false, Func<int[]> referencePrefix = null)
     {
       ReadDifferences found = new ReadDifferences(Options);
       int used = 0;
-      object read = ReadDifferences.Collect(found, () => Deserialize(type, buffer, offset, end, out used, found));
+      object read = ReadDifferences.Collect(found, () => Deserialize(type, buffer, offset, end, out used, found, intoSlot, referencePrefix));
       consumed = used;
       return read;
     }
@@ -717,6 +720,8 @@ namespace LsMsgPack
       c.R.Reset(null, 0, 0); // the data is not kept alive
       if (c.References != null)
         c.References = null;
+      if (c.ReferencePrefix != null)
+        c.ReferencePrefix = null;
       if (c.Differences != null)
         c.EndDifferences();
       _threadContext = c; // Bound and SlowSettings are kept: usually the next call has the same
@@ -946,10 +951,11 @@ namespace LsMsgPack
     /// <param name="root">The root type of the head</param>
     /// <param name="type">The declared type of the value</param>
     /// <param name="intoSlot">As in <see cref="Deserialize"/></param>
-    internal object DeserializeBody(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false)
+    /// <param name="referencePrefix">Where the value is in the root value of the body (the start of its reference paths, <see cref="ReadContext.ReferencePrefix"/>), null at the root</param>
+    internal object DeserializeBody(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false, Func<int[]> referencePrefix = null)
     {
       if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
-        return DeserializeBodyCollecting(head, root, type, buffer, offset, end, out consumed);
+        return DeserializeBodyCollecting(head, root, type, buffer, offset, end, out consumed, referencePrefix);
 
       if (root != _cachedRoot)
         CacheRoot(root);
@@ -966,6 +972,7 @@ namespace LsMsgPack
           c.Differences = differences;
         c.IntoSlot = intoSlot;
         c.Unusual = SlowObjects || differences != null;
+        c.ReferencePrefix = referencePrefix;
         object result = ReadWithSchema(c, root, type, offset, head.Schema, head.LengthSettings, head.State, head.Raw, null);
         consumed = c.R.Pos;
         return result;
@@ -976,11 +983,11 @@ namespace LsMsgPack
       }
     }
 
-    private object DeserializeBodyCollecting(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed)
+    private object DeserializeBodyCollecting(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, Func<int[]> referencePrefix)
     {
       ReadDifferences found = new ReadDifferences(Options);
       int used = 0;
-      object read = ReadDifferences.Collect(found, () => DeserializeBody(head, root, type, buffer, offset, end, out used, found));
+      object read = ReadDifferences.Collect(found, () => DeserializeBody(head, root, type, buffer, offset, end, out used, found, false, referencePrefix));
       consumed = used;
       return read;
     }

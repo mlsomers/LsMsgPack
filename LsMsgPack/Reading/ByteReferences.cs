@@ -21,6 +21,7 @@ namespace LsMsgPack.Reading
     private readonly Dictionary<int, Container> _containers = new Dictionary<int, Container>();
     private Dictionary<object, int> _plainOffsets;
     private HashSet<int> _reading;
+    private readonly int[] _prefix;
 
     internal ByteReferences(ReadContext c, int bodyStart, bool preserves)
     {
@@ -28,6 +29,7 @@ namespace LsMsgPack.Reading
       _bodyStart = bodyStart;
       _preserves = preserves;
       _walker = new MsgPackReader(c.R.Buf, bodyStart, c.R.End, c.Serializer.Options);
+      _prefix = c.ReferencePrefix?.Invoke();
     }
 
     /// <summary>
@@ -48,7 +50,7 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal void Register(int start, object made)
     {
-      if (made != null)
+      if (made != null && _preserves) // a reader without the option reads every reference again (copies): the collection readers register whenever there is a table
         _made[start] = made;
     }
 
@@ -72,7 +74,11 @@ namespace LsMsgPack.Reading
       return _plainOffsets != null && _plainOffsets.TryGetValue(plain, out int start) && TryGetMade(start, type, out made);
     }
 
-    private bool TryGetMade(int start, Type type, out object made)
+    /// <summary>
+    /// Whether the value at <paramref name="start"/> was made already: a reference was resolved before it (LsMsgPack.Core converts values last to first) and read it from its bytes.
+    /// Reading it again would make a second instance, which replaces the first one here.
+    /// </summary>
+    internal bool TryGetMade(int start, Type type, out object made)
     {
       return _made.TryGetValue(start, out made) && (Nullable.GetUnderlyingType(type) ?? type).IsInstanceOfType(made);
     }
@@ -144,7 +150,17 @@ namespace LsMsgPack.Reading
     private int Follow(int[] path)
     {
       int at = _bodyStart;
-      for (int t = 0; t < path.Length; t++)
+      int first = 0;
+      if (_prefix != null) // a value of a head's body read on its own: the paths start at the body's root, through this value (references never point into another value)
+      {
+        if (path.Length < _prefix.Length)
+          return -1;
+        for (int t = 0; t < _prefix.Length; t++)
+          if (path[t] != _prefix[t])
+            return -1;
+        first = _prefix.Length;
+      }
+      for (int t = first; t < path.Length; t++)
       {
         Container container = ContainerAt(at);
         if (container is null)

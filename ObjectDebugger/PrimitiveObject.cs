@@ -76,6 +76,11 @@ namespace ObjectDebugger
     public string Error { get; set; }
 
     /// <summary>
+    /// A <see cref="ValueKind.Reference"/> (ReferenceHandling.Preserve): the object or value it points to (the explorers link to it), null when the path leads to no value before it.
+    /// </summary>
+    public PrimitiveObject ReferenceTarget { get; set; }
+
+    /// <summary>
     /// A place for the user interface to refer to its own element (e.g. the tree node).
     /// </summary>
     public object Tag { get; set; }
@@ -113,6 +118,8 @@ namespace ObjectDebugger
         if (LastItemRef is MsgPackVarLen varLen && varLen.IsTruncated && !(LastItemRef is MpString))
           return LastItemRef.ToString();
 #endif
+        if (ValueKind == ValueKind.Reference && ReferenceTarget != null)
+          return string.Concat("reference to ", ReferenceTarget.Parent is null ? "the root" : ReferenceTarget.Path);
         return FormatValue(Value);
       }
     }
@@ -153,6 +160,7 @@ namespace ObjectDebugger
         case ValueKind.Array: return "array";
         case ValueKind.Map: return "map";
         case ValueKind.Error: return "error";
+        case ValueKind.Reference: return "reference";
         default: return "custom extension";
       }
     }
@@ -165,6 +173,8 @@ namespace ObjectDebugger
         return text;
       if (value is byte[] bytes)
         return FormatBytes(bytes);
+      if (value is MpReference reference)
+        return reference.ToString();
       if (value is MpExt ext)
         return string.Concat("ext ", ext.TypeSpecifier.ToString(CultureInfo.InvariantCulture), ": ", FormatBytes((byte[])ext.Value));
       if (value is DateTime time)

@@ -104,6 +104,11 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal ByteReferences References;
 
+    /// <summary>
+    /// A value of the body of a stream head read on its own: where it is in the body's root value (its reference paths start there; null inside a key), asked when the references are made. Null otherwise.
+    /// </summary>
+    internal Func<int[]> ReferencePrefix;
+
     internal ByteReferences ReferencesOfCall()
     {
       return References ?? (References = new ByteReferences(this, BodyStart, false));
@@ -144,7 +149,7 @@ namespace LsMsgPack.Reading
     /// </summary>
     ValueReader IPreservableReader.Preserving()
     {
-      return new PreservingReader<T>(this);
+      return this is ICollectionContent ? new PreservingCollectionReader<T>(this) : new PreservingReader<T>(this);
     }
 
     internal override object ReadBoxed(ReadContext c, FullPropertyInfo assignedTo)
@@ -201,9 +206,9 @@ namespace LsMsgPack.Reading
   /// <see cref="ReferenceHandling.Preserve"/>: a reader of a class whose values are references or may be referred to (LsMsgPackDebug: PlainReferences): a reference is resolved,
   /// what was read is registered where it starts (an object also when it is created, before its values: ReadPlan.Create). A reader of its own, so the others keep their size.
   /// </summary>
-  internal sealed class PreservingReader<T> : ValueReader<T>
+  internal class PreservingReader<T> : ValueReader<T>
   {
-    private readonly ValueReader<T> _inner;
+    protected readonly ValueReader<T> _inner;
 
     internal PreservingReader(ValueReader<T> inner)
     {
@@ -220,9 +225,40 @@ namespace LsMsgPack.Reading
           return (T)resolved;
         throw ReadDifferences.NotConverted(c.ConversionSettings(), new ArgumentException($"Object of type '{resolved.GetType()}' cannot be converted to type '{typeof(T)}'."));
       }
+      ByteReferences references = c.References;
+      if (references != null && references.TryGetMade(start, typeof(T), out object made))
+      {
+        c.R.Skip(c.Depth);
+        return (T)made;
+      }
       T value = _inner.Read(c, assignedTo);
-      c.References?.Register(start, value); // a collection, a converted value, an object made by its constructor with values (others: also at their creation)
+      references?.Register(start, value); // a collection, a converted value, an object made by its constructor with values (others: also at their creation)
       return value;
+    }
+  }
+
+  /// <summary>
+  /// <see cref="PreservingReader{T}"/> of a collection reader that also reads the content of a wrapped value or one declared as an interface (<see cref="ICollectionContent"/>): registered where the content starts.
+  /// </summary>
+  internal sealed class PreservingCollectionReader<T> : PreservingReader<T>, ICollectionContent
+  {
+    internal PreservingCollectionReader(ValueReader<T> inner) : base(inner)
+    {
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      int start = c.R.Pos;
+      ByteReferences references = c.References;
+      if (references != null && references.TryGetMade(start, typeof(T), out value))
+      {
+        c.R.Skip(c.Depth);
+        return true;
+      }
+      if (!((ICollectionContent)_inner).TryReadContent(c, out value))
+        return false;
+      references?.Register(start, value);
+      return true;
     }
   }
 
@@ -653,6 +689,7 @@ namespace LsMsgPack.Reading
       ValueReader<TItem> item = _item ?? (_item = _serializer.Reader<TItem>());
       c.Enter();
       List<TItem> list = new List<TItem>(count);
+      c.References?.Register(start, list); // ReferenceHandling.Preserve: before its elements, so a cycle back to it resolves
       for (int t = 0; t < count; t++)
         list.Add(item.Read(c, null));
       c.Depth--;
@@ -689,6 +726,7 @@ namespace LsMsgPack.Reading
       ValueReader<TItem> item = _item ?? (_item = _serializer.Reader<TItem>());
       c.Enter();
       TItem[] array = new TItem[count];
+      c.References?.Register(start, array); // ReferenceHandling.Preserve: before its elements, so a cycle back to it resolves
       for (int t = 0; t < count; t++)
         array[t] = item.Read(c, null);
       c.Depth--;
@@ -823,17 +861,18 @@ namespace LsMsgPack.Reading
       int count = c.Unusual || CollectionRules.HasEnumerableAttribute(assignedTo) ? -1 : c.R.TryReadArrayHeader();
       if (count < 0)
         return Slow(c, start, assignedTo);
-      return ReadItems(c, count);
+      return ReadItems(c, start, count);
     }
 
     bool ICollectionContent.TryReadContent(ReadContext c, out object value)
     {
+      int start = c.R.Pos;
       int count = c.R.TryReadArrayHeader();
-      value = count < 0 ? null : ReadItems(c, count);
+      value = count < 0 ? null : ReadItems(c, start, count);
       return count >= 0;
     }
 
-    private HashSet<TItem> ReadItems(ReadContext c, int count)
+    private HashSet<TItem> ReadItems(ReadContext c, int start, int count)
     {
       ValueReader<TItem> item = _item ?? (_item = _serializer.Reader<TItem>());
       c.Enter();
@@ -842,6 +881,7 @@ namespace LsMsgPack.Reading
 #else
       HashSet<TItem> set = new HashSet<TItem>();
 #endif
+      c.References?.Register(start, set); // ReferenceHandling.Preserve: before its elements, so a cycle back to it resolves
       for (int t = 0; t < count; t++)
         set.Add(item.Read(c, null));
       c.Depth--;
@@ -951,6 +991,7 @@ namespace LsMsgPack.Reading
     {
       result = null;
       MsgPackReader r = c.R;
+      int start = r.Pos;
       int count = r.TryReadMapHeader();
       if (count < 0)
         return false;
@@ -960,17 +1001,20 @@ namespace LsMsgPack.Reading
       int depth = c.Depth;
       c.Enter();
       Dictionary<TKey, TValue> dictionary = new Dictionary<TKey, TValue>(count); // the header's count is checked against the data (MsgPackReader.Count)
+      c.References?.Register(start, dictionary); // ReferenceHandling.Preserve: before its entries, so a cycle back to it resolves
       for (int t = 0; t < count; t++)
       {
         if (!CollectionRules.IsEntryKey(r, _stringKeys))
         {
           c.Depth = depth;
+          c.References?.Unregister(start); // read again from its start by Core (Slow)
           return false;
         }
         TKey key = keys.Read(c, null);
         if (_valueTakesNoNil && r.Peek() == 0xC0)
         {
           c.Depth = depth;
+          c.References?.Unregister(start);
           return false;
         }
         dictionary.Add(key, values.Read(c, null)); // a key twice throws, as there

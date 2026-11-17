@@ -444,6 +444,34 @@ namespace LsMsgPackUnitTests
 
 #if KEEPTRACK
     /// <summary>
+    /// ReferenceHandling.Preserve: the second occurrence of an object is a reference (extension type 5), shown as a link to the object it points to; the types are still inferred
+    /// (a reference counts as the kind of its target).
+    /// </summary>
+    [TestMethod]
+    [DataRow(ObjectLayout.Map, true)]
+    [DataRow(ObjectLayout.Array, true)]
+    [DataRow(ObjectLayout.Map, false)]
+    public void References_LinkedToTheirTargets(ObjectLayout layout, bool schema)
+    {
+      OdInvoice invoice = CreateInvoice();
+      invoice.Shipping = invoice.Billing;
+      MsgPackSettings settings = Settings(layout, schema);
+      settings.ReferenceHandling = ReferenceHandling.Preserve;
+      RootObject root = Reconstruct(MsgPackSerializer.Serialize(invoice, settings));
+
+      AssertNoIssues(root);
+      ComplexObject billing = Complex(root, "Billing");
+      PrimitiveObject shipping = Member(root, "Shipping");
+      Assert.AreEqual(ValueKind.Reference, shipping.ValueKind);
+      Assert.AreSame(billing, shipping.ReferenceTarget);
+      Assert.AreEqual("reference to Billing", shipping.ValueText);
+      if (schema)
+        Assert.AreEqual(nameof(OdAddress), billing.Type);
+      List<MsgPackValidation.ValidationItem> issues = PayloadValidation.Validate(root);
+      Assert.AreEqual(0, issues.Count(i => i.Severity != MsgPackValidation.ValidationSeverity.Comment), string.Join(Environment.NewLine, issues.Select(i => i.Message)));
+    }
+
+    /// <summary>
     /// A map cut off by the end of the data keeps slots for the entries it claims: they were taken for keys that are not property indexes,
     /// the root became a dictionary and every inferred type moved one entry of the schema up (Billing an OdInvoice, the lines OdAddresses).
     /// </summary>

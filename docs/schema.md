@@ -324,13 +324,13 @@ The methods are looked up once per property, and only the properties that have o
 
 ### Cycles
 
-An object that refers back to an object containing it (a parent, the object itself) is a cycle: by default writing it throws a `MsgPackException` at `MaxDepth` (256 levels). Break it where it starts with `[JsonIgnore]` or a [ShouldSerialize method](#shouldserialize-methods), or set `IgnoreCycles`: a reference to an object that is being written is then written as nil, as System.Text.Json's `ReferenceHandler.IgnoreCycles` does (also in maps: the key stays, with nil). Read back, that reference is null.
+An object that refers back to an object containing it (a parent, the object itself) is a cycle: by default writing it throws a `MsgPackException` at `MaxDepth` (256 levels). Break it where it starts with `[JsonIgnore]` or a [ShouldSerialize method](#shouldserialize-methods), keep it with `ReferenceHandling.Preserve` (the second occurrence is a reference to the first, read back as the same instance: see [References.md](References.md)), or set `ReferenceHandling.IgnoreCycles`: a reference to an object that is being written is then written as nil, as System.Text.Json's `ReferenceHandler.IgnoreCycles` does (also in maps: the key stays, with nil). Read back, that reference is null.
 
 ```csharp
-MsgPackSettings settings = new MsgPackSettings() { IgnoreCycles = true }; // LsMsgPackOptions too
+MsgPackSettings settings = new MsgPackSettings() { ReferenceHandling = ReferenceHandling.IgnoreCycles }; // LsMsgPackOptions too
 ```
 
-Only the objects on the current path count: an object referenced from two places side by side (not containing each other) is written twice, there are no references in the data. Objects with properties are tracked (not structs and collections); LsMsgPack does not track a class whose properties are all numbers, strings, enums, dates, Guids or `byte[]` (nothing below it can be it). The option costs time per tracked object (LsMsgPack, a tree of small nodes: about 7 ns per node, 11-16% more in the map layout, 15-21% in the array layout), so it is off by default.
+Only the objects on the current path count: an object referenced from two places side by side (not containing each other) is written twice, there are no references in the data (that's what `Preserve` does). Objects with properties are tracked (not structs and collections); LsMsgPack does not track a class whose properties are all numbers, strings, enums, dates, Guids or `byte[]` (nothing below it can be it). The option costs time per tracked object (LsMsgPack, a tree of small nodes: about 7 ns per node, 11-16% more in the map layout, 15-21% in the array layout), so it is off by default.
 
 ### Ignoring the same properties as another serializer
 

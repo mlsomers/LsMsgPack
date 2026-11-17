@@ -157,6 +157,12 @@ namespace LsMsgPack.Writing
     internal ReferenceWriting References;
 
     /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/> in the body of a stream head: where the value is in the body's root value, the start of its paths (<see cref="ReferenceWriting.InKey"/>
+    /// inside a key), so the body stays the payload of Serialize of the root. Null for a root value.
+    /// </summary>
+    internal int[] ReferencePrefix;
+
+    /// <summary>
     /// Copies the content of a rented writer (the tracked values written there move with it).
     /// </summary>
     internal void CopyRented(MsgPackWriter from, MsgPackWriter to)

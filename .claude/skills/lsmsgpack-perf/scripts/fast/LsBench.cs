@@ -385,9 +385,19 @@ public static class Bench
       typeof(LsMsgPack.LsMsgPackOptions).GetField("Default_CompileReadersAfter")?.SetValue(null, int.Parse(after)); // the compiled readers too
     }
   }
+  /// <summary>LT_REFERENCES=None|IgnoreCycles|Preserve sets MsgPackOptions.Default_ReferenceHandling (every candidate's options); ignored by a base without the option.</summary>
+  private static void ReferencesFromEnvironment()
+  {
+    string handling = System.Environment.GetEnvironmentVariable("LT_REFERENCES");
+    System.Reflection.PropertyInfo property = typeof(LsMsgPack.MsgPackOptions).GetProperty("Default_ReferenceHandling");
+    if (handling != null && property != null)
+      property.SetValue(null, Enum.Parse(property.PropertyType, handling));
+  }
+
   public static void Main(string[] args)
   {
     CompileAfterFromEnvironment();
+    ReferencesFromEnvironment();
     string mode = args.Length > 0 ? args[0] : "table";
     long exceptions = 0;
     AppDomain.CurrentDomain.FirstChanceException += (s, e) => Interlocked.Increment(ref exceptions);

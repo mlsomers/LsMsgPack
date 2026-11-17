@@ -439,6 +439,12 @@ button:focus-visible,
   user-select: text;
 }
 
+.props td.value.link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .props tr.category td {
   font-weight: bold;
   background: var(--vscode-sideBarSectionHeader-background, rgba(128, 128, 128, 0.15));

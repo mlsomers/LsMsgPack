@@ -510,9 +510,15 @@
       for (const category of Array.from(categories.keys()).sort()) {
         tbody.append(el('tr', { className: 'category' }, el('td', { colspan: '2', text: category })));
         for (const prop of categories.get(category)) {
+          const value = el('td', { className: prop.link != null ? 'value link' : 'value', text: prop.value });
+          if (prop.link != null) {
+            // A reference (ReferenceHandling.Preserve): its target in the MsgPack tree
+            value.title = 'Go to the value it refers to';
+            value.addEventListener('click', () => ui.tree.select(prop.link, true));
+          }
           const row = el('tr', { className: 'prop', title: prop.value },
             el('td', { className: 'name', text: prop.name }),
-            el('td', { className: 'value', text: prop.value }));
+            value);
           row.addEventListener('click', () => {
             for (const selected of tbody.querySelectorAll('tr.selected')) {
               selected.classList.remove('selected');

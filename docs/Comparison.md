@@ -27,7 +27,7 @@ All three serialize .NET classes to MsgPack. This page compares their features, 
 
 - **NativeAOT and trimming as the main target**, with PolyType's shape model. It added the least to a NativeAOT app here, without trim or AOT warnings.
 - **Async serialization** straight to and from pipes and streams.
-- **Preserved object references, structural equality, or JSON schemas** for your types.
+- **Structural equality or JSON schemas** for your types.
 
 **Not LsMsgPack (yet) when:**
 

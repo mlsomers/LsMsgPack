@@ -16,6 +16,11 @@ namespace LsMsgPackUnitTests
   {
     protected abstract ISerializerUnderTest Serializer { get; }
 
+    protected ReferenceTests()
+    {
+      MsgPackSerializer.CacheAssemblyTypes(typeof(RfOrder)); // type ids by short names
+    }
+
     public class RfCustomer
     {
       public string Name { get; set; }
@@ -141,6 +146,37 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
+    /// Values with shared objects and collections, cycles, converted values and map keys (also the corpus of CrossLibraryTests with Preserve).
+    /// </summary>
+    internal static IEnumerable<object[]> SharedValues()
+    {
+      yield return new object[] { Orders(), typeof(List<RfOrder>) };
+      yield return new object[] { Tree(), typeof(RfNode) };
+      List<int> list = new List<int>() { 1, 2, 3 };
+      int[] numbers = new[] { 4, 5 };
+      yield return new object[] { new RfTwoLists() { First = list, Second = list, Numbers = numbers, SameNumbers = numbers }, typeof(RfTwoLists) };
+      RfKey key = new RfKey() { Code = "k" };
+      yield return new object[] { new RfKeyed() { Owner = key, ByKey = new Dictionary<RfKey, int>() { { key, 1 } } }, typeof(RfKeyed) };
+      RfMoney money = new RfMoney() { Amount = 12.5m, Currency = "EUR" };
+      yield return new object[] { new RfPrices() { Price = money, Same = money, Name = "p" }, typeof(RfPrices) };
+      RfImmutable shared = new RfImmutable("s", null);
+      yield return new object[] { new RfImmutableHolder() { A = shared, B = shared }, typeof(RfImmutableHolder) };
+      yield return new object[] { new List<object>() { Tree(), Orders() }, typeof(List<object>) };
+      Dictionary<string, object> map = new Dictionary<string, object>() { { "a", list } };
+      map["b"] = list;
+      map["self"] = map;
+      yield return new object[] { map, typeof(object) };
+      RfCustomer customer = new RfCustomer() { Name = "c", Tags = new List<string>() { "t" } };
+      yield return new object[] { new List<RfOrder>() { new RfOrder() { Id = 1, Customer = customer }, new RfOrder() { Id = 2, Extra = customer } }, typeof(List<RfOrder>) }; // a repeat declared as object: the type id wrapper
+      Dictionary<string, RfNode> nodes = new Dictionary<string, RfNode>() { { "root", Tree() } };
+      nodes["first child"] = nodes["root"].Children[0];
+      yield return new object[] { nodes, typeof(Dictionary<string, RfNode>) };
+      RfTag tag = new RfTag() { Name = "t" };
+      RfSample[] samples = new[] { new RfSample() { A = 1.5f, B = 2 } };
+      yield return new object[] { new RfMemberConverted() { First = tag, Second = tag, Samples = samples, SameSamples = samples }, typeof(RfMemberConverted) };
+    }
+
+    /// <summary>
     /// The array layout without the schema, Order = [Id, Customer, Extra], Customer = [Name, Tags]: the fourth order's customer is the first one's, the path [0, 1]: d5 05 00 01.
     /// </summary>
     [TestMethod]
@@ -167,6 +203,22 @@ namespace LsMsgPackUnitTests
       }
     }
 
+    /// <summary>
+    /// Declared as object, the root (a list with a type id) is converted by LsMsgPack.Core, last value first: the references of the fourth order are resolved before the first order
+    /// is read, so its customer and that customer's tags are read from their bytes then, once (a second read of the tags for the customer made a second list).
+    /// </summary>
+    [TestMethod]
+    public void ReferencesBeforeTheirTargets_OneInstance()
+    {
+      foreach (MsgPackSettings settings in AllSettings())
+      {
+        List<RfOrder> read = (List<RfOrder>)Serializer.Deserialize(typeof(object), Serializer.Serialize(Orders(), typeof(object), settings), settings);
+        string message = settings.ObjectLayout + " schema=" + settings.UseInexedSchema;
+        Assert.AreSame(read[0].Customer, read[3].Customer, message);
+        Assert.AreSame(read[0].Customer.Tags, read[3].Extra, message);
+      }
+    }
+
     [TestMethod]
     public void Cycles_ReadBack()
     {
@@ -185,6 +237,71 @@ namespace LsMsgPackUnitTests
           Assert.AreEqual("leaf" + t, child.Children[0].Name);
         }
       }
+    }
+
+    public class RfSelfContaining
+    {
+      public object[] Array { get; set; }
+      public List<object> List { get; set; }
+      public HashSet<object> Set { get; set; }
+      public Dictionary<string, object> Map { get; set; }
+      public RfNode Node { get; set; }
+    }
+
+    /// <summary>
+    /// Collections are registered before their elements (maintainer's decision 2026-11-17), so a cycle back through an array, a list, a set or a dictionary resolves; also a list
+    /// whose element refers back to it (declared as object, so wrapped with its type id).
+    /// </summary>
+    [TestMethod]
+    public void Cycles_ThroughCollections()
+    {
+      foreach (MsgPackSettings settings in AllSettings())
+      {
+        string message = settings.ObjectLayout + " schema=" + settings.UseInexedSchema;
+        object[] array = new object[2];
+        array[0] = "a";
+        array[1] = array;
+        List<object> list = new List<object>() { 1 };
+        list.Add(list);
+        HashSet<object> set = new HashSet<object>() { "s" };
+        set.Add(set);
+        Dictionary<string, object> map = new Dictionary<string, object>() { { "n", 1 } };
+        map["self"] = map;
+        RfNode node = new RfNode() { Name = "n", Children = new List<RfNode>() };
+        node.Children.Add(new RfNode() { Name = "child", Tag = node.Children });
+        RfSelfContaining value = new RfSelfContaining() { Array = array, List = list, Set = set, Map = map, Node = node };
+
+        RfSelfContaining read = Serializer.Deserialize<RfSelfContaining>(Serializer.Serialize(value, settings), settings);
+        Assert.AreSame(read.Array, read.Array[1], message);
+        Assert.AreEqual("a", read.Array[0], message);
+        Assert.AreSame(read.List, read.List[1], message);
+        Assert.AreEqual(2, read.Set.Count, message);
+        Assert.IsTrue(read.Set.Contains(read.Set), message);
+        Assert.AreSame(read.Map, read.Map["self"], message);
+        Assert.AreSame(read.Node.Children, read.Node.Children[0].Tag, message);
+
+        List<object> root = Serializer.Deserialize<List<object>>(Serializer.Serialize(list, settings), settings);
+        Assert.AreSame(root, root[1], message + " (the root)");
+      }
+    }
+
+    /// <summary>
+    /// A collection made of its elements (here by the constructor taking them, a stack) does not exist before them: a cycle back to it is an error, as for an object made by its constructor with values.
+    /// </summary>
+    [TestMethod]
+    public void CollectionMadeOfItsElements_CycleFails()
+    {
+      Stack<object> stack = new Stack<object>();
+      stack.Push(stack);
+      MsgPackSettings settings = Settings(ObjectLayout.Map, false);
+      byte[] bytes = Serializer.Serialize(new RfStackHolder() { Extra = stack }, settings);
+      MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<RfStackHolder>(bytes, settings));
+      StringAssert.Contains(ex.Message, "cycle");
+    }
+
+    public class RfStackHolder
+    {
+      public Stack<object> Extra { get; set; }
     }
 
     [TestMethod]
@@ -220,6 +337,20 @@ namespace LsMsgPackUnitTests
       Assert.AreNotSame(read[0].Customer, read[3].Customer, "read again: a copy");
       Assert.AreEqual("shared", read[3].Customer.Name);
       CollectionAssert.AreEqual(new List<string>() { "a" }, (System.Collections.ICollection)read[3].Extra);
+
+      // A collection read after the first reference (which made the table of the call) is not registered either: the second reference to it is a copy too
+      RfCustomer first = new RfCustomer() { Name = "a" };
+      List<string> tags = new List<string>() { "t" };
+      List<RfOrder> orders = new List<RfOrder>()
+      {
+        new RfOrder() { Id = 1, Customer = first },
+        new RfOrder() { Id = 2, Customer = first }, // the first reference
+        new RfOrder() { Id = 3, Customer = new RfCustomer() { Name = "c", Tags = tags } },
+        new RfOrder() { Id = 4, Customer = new RfCustomer() { Name = "d", Tags = tags } }
+      };
+      List<RfOrder> again = Serializer.Deserialize<List<RfOrder>>(Serializer.Serialize(orders, Settings(ObjectLayout.Map, true)), Settings(ObjectLayout.Map, true, ReferenceHandling.None));
+      Assert.AreNotSame(again[2].Customer.Tags, again[3].Customer.Tags, "after the first reference: still a copy");
+      CollectionAssert.AreEqual(tags, again[3].Customer.Tags);
     }
 
     [TestMethod]
@@ -275,6 +406,55 @@ namespace LsMsgPackUnitTests
         RfPrices read = Serializer.Deserialize<RfPrices>(bytes, settings);
         Assert.AreEqual(12.5m, read.Price.Amount);
         Assert.AreSame(read.Price, read.Same, settings.ObjectLayout + " " + settings.UseInexedSchema);
+      }
+    }
+
+    public struct RfSample
+    {
+      public float A;
+      public int B;
+    }
+
+    public class RfTag
+    {
+      public string Name { get; set; }
+    }
+
+    public sealed class RfTagConverter : MsgPackConverter<RfTag, string>
+    {
+      public override string ToSurrogate(RfTag value) { return value.Name; }
+      public override RfTag FromSurrogate(string surrogate) { return new RfTag() { Name = surrogate }; }
+    }
+
+    public class RfMemberConverted
+    {
+      [MsgPackConverter(typeof(RfTagConverter))]
+      public RfTag First { get; set; }
+      [MsgPackConverter(typeof(RfTagConverter))]
+      public RfTag Second { get; set; }
+      [MsgPackConverter(typeof(BlitArrayConverter<RfSample>))]
+      public RfSample[] Samples { get; set; }
+      [MsgPackConverter(typeof(BlitArrayConverter<RfSample>))]
+      public RfSample[] SameSamples { get; set; }
+    }
+
+    /// <summary>
+    /// A converter on a member (also a binary one, as the NativeAOT smoke test's blit array): identity follows the original value there too.
+    /// </summary>
+    [TestMethod]
+    public void MemberConverters_IdentityFollowsTheValue()
+    {
+      RfTag tag = new RfTag() { Name = "t" };
+      RfSample[] samples = new[] { new RfSample() { A = 1.5f, B = 2 } };
+      RfMemberConverted value = new RfMemberConverted() { First = tag, Second = tag, Samples = samples, SameSamples = samples };
+      foreach (MsgPackSettings settings in AllSettings())
+      {
+        string message = settings.ObjectLayout + " schema=" + settings.UseInexedSchema;
+        RfMemberConverted read = Serializer.Deserialize<RfMemberConverted>(Serializer.Serialize(value, settings), settings);
+        Assert.AreEqual("t", read.First.Name, message);
+        Assert.AreSame(read.First, read.Second, message);
+        Assert.AreEqual(2, read.Samples[0].B, message);
+        Assert.AreSame(read.Samples, read.SameSamples, message);
       }
     }
 
@@ -418,24 +598,84 @@ namespace LsMsgPackUnitTests
   {
     protected override ISerializerUnderTest Serializer { get { return Serializers.Ls; } }
 
-    private static IEnumerable<object[]> Values()
+    /// <summary>
+    /// The stream writer: each WriteObject is a root of its own (the maintainer's decision), its references point into it and never into another value; read whole or element by element,
+    /// the values are the same. In the body of a head the elements are parts of one root value (the payload of Serialize of the list), so a path starts at that root.
+    /// </summary>
+    [TestMethod]
+    public void Streams_EachValueItsOwnRoot()
     {
-      yield return new object[] { Orders(), typeof(List<RfOrder>) };
-      yield return new object[] { Tree(), typeof(RfNode) };
-      List<int> list = new List<int>() { 1, 2, 3 };
-      int[] numbers = new[] { 4, 5 };
-      yield return new object[] { new RfTwoLists() { First = list, Second = list, Numbers = numbers, SameNumbers = numbers }, typeof(RfTwoLists) };
-      RfKey key = new RfKey() { Code = "k" };
-      yield return new object[] { new RfKeyed() { Owner = key, ByKey = new Dictionary<RfKey, int>() { { key, 1 } } }, typeof(RfKeyed) };
-      RfMoney money = new RfMoney() { Amount = 12.5m, Currency = "EUR" };
-      yield return new object[] { new RfPrices() { Price = money, Same = money, Name = "p" }, typeof(RfPrices) };
-      RfImmutable shared = new RfImmutable("s", null);
-      yield return new object[] { new RfImmutableHolder() { A = shared, B = shared }, typeof(RfImmutableHolder) };
-      yield return new object[] { new List<object>() { Tree(), Orders() }, typeof(List<object>) };
-      Dictionary<string, object> map = new Dictionary<string, object>() { { "a", list } };
-      map["b"] = list;
-      map["self"] = map;
-      yield return new object[] { map, typeof(object) };
+      foreach (MsgPackSettings settings in AllSettings())
+      {
+        string message = settings.ObjectLayout + " schema=" + settings.UseInexedSchema + " trim=" + settings.TrimTrailingNulls;
+        LsMsgPackSerializer serializer = ((LsSerializer)Serializers.Ls).For(settings);
+        RfCustomer shared = new RfCustomer() { Name = "s" };
+        RfOrder first = new RfOrder() { Id = 1, Customer = shared, Extra = shared };
+        RfOrder second = new RfOrder() { Id = 2, Customer = shared };
+
+        System.IO.MemoryStream ms = new System.IO.MemoryStream();
+        using (LsMsgPack.Streaming.MsgPackStreamWriter writer = new LsMsgPack.Streaming.MsgPackStreamWriter(ms, serializer, LsMsgPack.Streaming.MsgPackStreamSchemas.PerObject, true))
+        {
+          writer.WriteObject(first);
+          writer.WriteObject(second);
+        }
+        ms.Position = 0;
+        using (LsMsgPack.Streaming.MsgPackStreamReader reader = new LsMsgPack.Streaming.MsgPackStreamReader(ms, serializer))
+        {
+          RfOrder a = reader.ReadObject<RfOrder>();
+          RfOrder b = reader.ReadObject<RfOrder>();
+          Assert.AreSame(a.Customer, a.Extra, message);
+          Assert.AreNotSame(a.Customer, b.Customer, message + ": references don't cross values");
+          Assert.AreEqual("s", b.Customer.Name, message);
+        }
+
+        ms = new System.IO.MemoryStream();
+        using (LsMsgPack.Streaming.MsgPackStreamWriter writer = new LsMsgPack.Streaming.MsgPackStreamWriter(ms, serializer, LsMsgPack.Streaming.MsgPackStreamSchemas.PerObject, true))
+        {
+          writer.WriteHead<List<RfOrder>>();
+          writer.WriteArrayHeader(2);
+          writer.WriteObject(first);
+          writer.WriteObject(second);
+        }
+        List<RfOrder> whole = serializer.Deserialize<List<RfOrder>>(ms.ToArray());
+        Assert.AreSame(whole[0].Customer, whole[0].Extra, message + " (a head's body read whole)");
+        Assert.AreEqual("s", whole[1].Customer.Name, message);
+        ms.Position = 0;
+        using (LsMsgPack.Streaming.MsgPackStreamReader reader = new LsMsgPack.Streaming.MsgPackStreamReader(ms, serializer))
+        {
+          reader.ReadHead<List<RfOrder>>();
+          reader.Read(); // the array header
+          RfOrder a = reader.ReadObject<RfOrder>();
+          RfOrder b = reader.ReadObject<RfOrder>();
+          Assert.AreSame(a.Customer, a.Extra, message + " (a head's body element by element)");
+          Assert.AreEqual("s", b.Customer.Name, message);
+        }
+
+        // In a map: a step is the entry's number (the second entry: 1)
+        ms = new System.IO.MemoryStream();
+        using (LsMsgPack.Streaming.MsgPackStreamWriter writer = new LsMsgPack.Streaming.MsgPackStreamWriter(ms, serializer, LsMsgPack.Streaming.MsgPackStreamSchemas.PerObject, true))
+        {
+          writer.WriteHead<Dictionary<string, RfOrder>>();
+          writer.WriteMapHeader(2);
+          writer.Write("second");
+          writer.WriteObject(second);
+          writer.Write("first");
+          writer.WriteObject(first);
+        }
+        Dictionary<string, RfOrder> byKey = serializer.Deserialize<Dictionary<string, RfOrder>>(ms.ToArray());
+        Assert.AreSame(byKey["first"].Customer, byKey["first"].Extra, message + " (a map body read whole)");
+        ms.Position = 0;
+        using (LsMsgPack.Streaming.MsgPackStreamReader reader = new LsMsgPack.Streaming.MsgPackStreamReader(ms, serializer))
+        {
+          reader.ReadHead<Dictionary<string, RfOrder>>();
+          reader.Read(); // the map header
+          reader.Read(); // "second"
+          reader.ReadObject<RfOrder>();
+          reader.Read(); // "first"
+          RfOrder a = reader.ReadObject<RfOrder>();
+          Assert.AreSame(a.Customer, a.Extra, message + " (a map body entry by entry)");
+        }
+      }
     }
 
     [TestMethod]
@@ -444,7 +684,7 @@ namespace LsMsgPackUnitTests
       List<string> different = new List<string>();
       foreach (MsgPackSettings settings in AllSettings())
       {
-        foreach (object[] value in Values())
+        foreach (object[] value in SharedValues())
         {
           byte[] debug = Serializers.Debug.Serialize(value[0], (Type)value[1], settings);
           byte[] ls = Serializers.Ls.Serialize(value[0], (Type)value[1], settings);

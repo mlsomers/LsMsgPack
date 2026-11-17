@@ -21,11 +21,17 @@ namespace LsMsgPack.Writing
     private bool[] _referenced = new bool[16];
     private int _count;
     private bool _anyReference;
+    private int _placeholderCount; // written in this attempt: the walk stops after the last one
 
     /// <summary>
     /// Above 0 while writing the keys of a map: a key is always written in full (a path step stands for an entry's value).
     /// </summary>
     internal int InKeys;
+
+    /// <summary>
+    /// <see cref="WriteContext.ReferencePrefix"/> of a value inside a key of the body of a stream head: written in full, nothing tracked (as a key of a whole root value).
+    /// </summary>
+    internal static readonly int[] InKey = new int[0];
 
     /// <summary>
     /// The surrogate about to be written for a converted value: the converted value keeps the identity, its surrogate is not tracked (as LsMsgPackDebug's SerializeSurrogate).
@@ -45,6 +51,7 @@ namespace LsMsgPack.Writing
         _count = 0;
       }
       _anyReference = false;
+      _placeholderCount = 0;
       InKeys = 0;
       Surrogate = null;
     }
@@ -86,6 +93,7 @@ namespace LsMsgPack.Writing
     {
       _referenced[target] = true;
       _anyReference = true;
+      _placeholderCount++;
       w.Ensure(PlaceholderLength);
       byte[] buf = w.Buf;
       int at = w.Pos;
@@ -122,7 +130,8 @@ namespace LsMsgPack.Writing
     /// <summary>
     /// The value is complete in <paramref name="body"/> from <paramref name="start"/>: the paths of the objects referred to, and the references in place of the placeholders.
     /// </summary>
-    internal void Finish(MsgPackWriter body, int start, LsMsgPackOptions options)
+    /// <param name="prefix">The value's place in a larger root value (the body of a stream head: its position there), the start of every path; null at the root</param>
+    internal void Finish(MsgPackWriter body, int start, LsMsgPackOptions options, int[] prefix)
     {
       if (!_anyReference)
         return;
@@ -135,6 +144,8 @@ namespace LsMsgPack.Writing
       byte[] bytes = new byte[body.Pos - start];
       Buffer.BlockCopy(body.Buf, start, bytes, 0, bytes.Length);
       Walker walker = new Walker(this, bytes, start, options);
+      if (prefix != null)
+        walker.Prefix(prefix);
       walker.Walk(0);
       body.Pos = start;
       walker.WriteTo(body);
@@ -163,6 +174,19 @@ namespace LsMsgPack.Writing
         _paths = new int[table._count][];
       }
 
+      internal void Prefix(int[] prefix)
+      {
+        _path.AddRange(prefix);
+      }
+
+      /// <summary>
+      /// Every placeholder was found: what comes after the last one is copied as it is (<see cref="WriteTo"/>), the walk stops.
+      /// </summary>
+      private bool Done
+      {
+        get { return _placeholders.Count == _table._placeholderCount; }
+      }
+
       internal void Walk(int depth)
       {
         int at = _r.Pos;
@@ -173,10 +197,11 @@ namespace LsMsgPack.Writing
           _next++;
         }
 
-        int count = _r.TryReadArrayHeader();
-        if (count >= 0)
+        byte b = _bytes[at];
+        if ((b & 0xF0) == 0x90 || b == 0xDC || b == 0xDD)
         {
-          for (int t = 0; t < count; t++)
+          int count = _r.TryReadArrayHeader();
+          for (int t = 0; t < count && !Done; t++)
           {
             _path.Add(t);
             Walk(depth + 1);
@@ -184,10 +209,10 @@ namespace LsMsgPack.Writing
           }
           return;
         }
-        count = _r.TryReadMapHeader();
-        if (count >= 0)
+        if ((b & 0xF0) == 0x80 || b == 0xDE || b == 0xDF)
         {
-          for (int t = 0; t < count; t++)
+          int count = _r.TryReadMapHeader();
+          for (int t = 0; t < count && !Done; t++)
           {
             _r.Skip(depth + 1); // a key is never tracked
             _path.Add(t);
@@ -196,13 +221,12 @@ namespace LsMsgPack.Writing
           }
           return;
         }
-        if (_r.TryReadExtHeader(out sbyte type, out int length, out _) && type == MsgPackOptions.ReferenceExtensionType)
+        if (b == 0xD6 && _bytes[at + 1] == (byte)MsgPackOptions.ReferenceExtensionType) // a placeholder (an extension of type 5 is nothing else: refused with the option)
         {
           _placeholders.Add(at);
-          _r.Pos += length;
+          _r.Pos = at + PlaceholderLength;
           return;
         }
-        _r.Pos = at;
         _r.Skip(depth);
       }
 

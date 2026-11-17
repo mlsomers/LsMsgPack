@@ -488,6 +488,33 @@ namespace LsMsgPackUnitTests
       CompareCorpus(ls, ltOptions);
     }
 
+    /// <summary>
+    /// ReferenceHandling.Preserve: the corpus and the values of ReferenceTests (shared objects and collections, cycles, converted values, map keys) in all settings, read back with the same sharing.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(Settings))]
+    public void SameBytesAndValuesPreserved(EndianAction endian, bool compact, SchemaMode mode, ObjectLayout layout)
+    {
+      MsgPackSettings ls = new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve };
+      Configure(ls, endian, compact, mode, layout);
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve };
+      Configure(ltOptions, endian, compact, mode, layout);
+      CompareCorpus(ls, ltOptions);
+    }
+
+    [TestMethod]
+    [DataRow(SchemaMode.Names)]
+    [DataRow(SchemaMode.Inline)]
+    [DataRow(SchemaMode.Reference)]
+    public void SameBytesAndValuesPreservedTrimmed(SchemaMode mode)
+    {
+      MsgPackSettings ls = new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve, TrimTrailingNulls = true, SchemaVersion = SchemaVersion.Described };
+      Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, ObjectLayout.Array);
+      LsMsgPackOptions ltOptions = new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve, TrimTrailingNulls = true, SchemaVersion = SchemaVersion.Described };
+      Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, ObjectLayout.Array);
+      CompareCorpus(ls, ltOptions);
+    }
+
     [TestMethod]
     [DataRow(DateTimeOffsetFormat.Timestamp)]
     [DataRow(DateTimeOffsetFormat.ClockTimeAndOffset)]
@@ -705,6 +732,7 @@ namespace LsMsgPackUnitTests
     private void CompareCorpus(MsgPackSettings ls, LsMsgPackOptions ltOptions)
     {
       List<string> differences = new List<string>();
+      bool preserving = ls.ReferenceHandling == ReferenceHandling.Preserve;
       foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
       {
         int n = 0;
@@ -712,7 +740,16 @@ namespace LsMsgPackUnitTests
         {
           n++;
           foreach (Type declared in new[] { value?.GetType() ?? typeof(object), typeof(object) })
-            Compare($"{which} #{n} {value?.GetType().Name ?? "null"} as {declared.Name}", value, declared, ls, lt, differences);
+            Compare($"{which} #{n} {value?.GetType().Name ?? "null"} as {declared.Name}", value, declared, ls, lt, differences, preserving);
+        }
+        if (!preserving)
+          continue;
+        n = 0;
+        foreach (object[] shared in ReferenceTests.SharedValues())
+        {
+          n++;
+          foreach (Type declared in new[] { (Type)shared[1], typeof(object) })
+            Compare($"{which} shared #{n} {shared[0].GetType().Name} as {declared.Name}", shared[0], declared, ls, lt, differences, true);
         }
       }
 
@@ -973,7 +1010,7 @@ namespace LsMsgPackUnitTests
       }
     }
 
-    private static void Compare(string name, object value, Type declared, MsgPackSettings ls, LsMsgPackSerializer lt, List<string> differences)
+    private static void Compare(string name, object value, Type declared, MsgPackSettings ls, LsMsgPackSerializer lt, List<string> differences, bool identity = false)
     {
       string lsBytes = Try(() => MsgPackSerializer.Serialize(value, declared, ls), out byte[] lsData);
       string ltBytes = Try(() => lt.Serialize(value, declared), out byte[] ltData);
@@ -985,8 +1022,8 @@ namespace LsMsgPackUnitTests
       if (lsData is null)
         return;
 
-      string lsRead = TryRead(() => MsgPackSerializer.Deserialize(declared, lsData, ls));
-      string ltRead = TryRead(() => lt.Deserialize(declared, lsData));
+      string lsRead = TryRead(() => MsgPackSerializer.Deserialize(declared, lsData, ls), identity);
+      string ltRead = TryRead(() => lt.Deserialize(declared, lsData), identity);
       if (lsRead.StartsWith("EX ", StringComparison.Ordinal) && ltRead.StartsWith("EX ", StringComparison.Ordinal))
         return; // both refuse the data (they may stop at another property: LsMsgPack sets the properties from last to first)
       if (lsRead != ltRead)
@@ -1012,11 +1049,11 @@ namespace LsMsgPackUnitTests
       }
     }
 
-    private static string TryRead(Func<object> read)
+    private static string TryRead(Func<object> read, bool identity = false)
     {
       try
       {
-        return Dump(read());
+        return identity ? Dump(read(), 0, new Dictionary<object, int>(ReferenceEqualityComparer.Instance)) : Dump(read());
       }
       catch (Exception ex)
       {
@@ -1024,7 +1061,8 @@ namespace LsMsgPackUnitTests
       }
     }
 
-    internal static string Dump(object o, int depth = 0)
+    /// <param name="seen">Set: an object or collection met again is written as @ and the number of its first occurrence (references read back as one instance).</param>
+    internal static string Dump(object o, int depth = 0, Dictionary<object, int> seen = null)
     {
       if (depth > 8) return "...";
       if (o is null) return "null";
@@ -1038,6 +1076,15 @@ namespace LsMsgPackUnitTests
       if (o is MpExt ext) return "ext(" + ext.TypeSpecifier + ":" + BitConverter.ToString((byte[])ext.Value) + ")";
       if (o is LsMsgPack.Extensions.MsgPackExtension lext) return "ext(" + lext.TypeCode + ":" + BitConverter.ToString(lext.Data) + ")";
       if (o is MsgPackExtensionData kept) return "kept{" + string.Join(",", kept.Names.Select(k => kept.TryGetRaw(k, out byte[] raw) ? k + "=" + BitConverter.ToString(raw) : k)) + "|" + string.Join(",", kept.Positions.Select(k => kept.TryGetRaw(k, out byte[] raw) ? k + "=" + BitConverter.ToString(raw) : k.ToString(CultureInfo.InvariantCulture))) + "}";
+      int mark = -1;
+      if (seen != null && !t.IsValueType && (o is IEnumerable || t.Namespace?.StartsWith("System", StringComparison.Ordinal) != true))
+      {
+        if (seen.TryGetValue(o, out int first))
+          return "@" + first;
+        mark = seen.Count;
+        seen.Add(o, mark);
+      }
+      string number = mark < 0 ? "" : "#" + mark;
       if (o is IEnumerable en)
       {
         List<string> parts = new List<string>();
@@ -1045,26 +1092,26 @@ namespace LsMsgPackUnitTests
         foreach (object x in en)
         {
           if (c++ > 30) { parts.Add("..."); break; }
-          parts.Add(Dump(x, depth + 1));
+          parts.Add(Dump(x, depth + 1, seen));
         }
         string extra = "";
         if (!(o is Array) && !t.Namespace.StartsWith("System", StringComparison.Ordinal))
-          extra = "+" + DumpProps(o, t, depth);
-        return t.Name + "[" + string.Join(",", parts) + "]" + extra;
+          extra = "+" + DumpProps(o, t, depth, seen);
+        return number + t.Name + "[" + string.Join(",", parts) + "]" + extra;
       }
-      if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(KeyValuePair<,>)) return "(" + Dump(t.GetProperty("Key").GetValue(o), depth + 1) + "=" + Dump(t.GetProperty("Value").GetValue(o), depth + 1) + ")";
+      if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(KeyValuePair<,>)) return "(" + Dump(t.GetProperty("Key").GetValue(o), depth + 1, seen) + "=" + Dump(t.GetProperty("Value").GetValue(o), depth + 1, seen) + ")";
       if (o is Memory<byte> memory) return "Memory:" + Dump(memory.ToArray());
       if (o is ReadOnlyMemory<byte> readOnly) return "ReadOnlyMemory:" + Dump(readOnly.ToArray());
       if (t.Namespace?.StartsWith("System", StringComparison.Ordinal) == true) return t.Name + ":" + Convert.ToString(o, CultureInfo.InvariantCulture); // Half, Version, tuples...
-      return t.Name + DumpProps(o, t, depth);
+      return number + t.Name + DumpProps(o, t, depth, seen);
     }
 
-    private static string DumpProps(object o, Type t, int depth)
+    private static string DumpProps(object o, Type t, int depth, Dictionary<object, int> seen = null)
     {
       List<string> props = new List<string>();
       foreach (PropertyInfo pi in t.GetProperties(BindingFlags.Instance | BindingFlags.Public).OrderBy(p => p.Name, StringComparer.Ordinal))
         if (pi.GetIndexParameters().Length == 0 && pi.DeclaringType.Namespace?.StartsWith("System", StringComparison.Ordinal) != true)
-          props.Add(pi.Name + "=" + Dump(pi.GetValue(o), depth + 1));
+          props.Add(pi.Name + "=" + Dump(pi.GetValue(o), depth + 1, seen));
       return "{" + string.Join(",", props) + "}";
     }
 

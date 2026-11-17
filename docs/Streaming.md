@@ -201,6 +201,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 - **The same bytes as `Serialize`**: with arrays and maps of known length the head and body are what `Serialize<TRoot>` writes for the whole value with `CompleteSchemas`. `Deserialize<TRoot>` reads them, and so does `ReadObject<TRoot>()` with lengths unknown too. The other way around, `ReadHead<TRoot>()` reads any payload of `Serialize<TRoot>` in parts.
 - **Objects written by hand**: when the root type is a class (not a collection), its values are written as the layout says. With `ObjectLayout.Array` (the default) that's an array of the values in `PropertyOrder`. With `ObjectLayout.Map` the keys are indexes into the schema, which the writer has no help for. Prefer collections as root types, and `WriteObject` for the objects.
 - **Without the indexed schema** the head writes and reads nothing, and the body is written and read as without it.
+- **Shared objects** ([`ReferenceHandling.Preserve`](References.md)): each `WriteObject` is a root of its own, its references never point into another value. In a body the paths start at the body's root value (the element's position first, also without the indexed schema), so the body is still `Serialize<TRoot>`'s payload, and `ReadObject` of an element finds them too.
 
 ## The index
 

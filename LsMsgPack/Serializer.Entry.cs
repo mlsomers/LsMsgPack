@@ -293,13 +293,16 @@ namespace LsMsgPack
     {
       ReferenceWriting references = c.References ?? (c.References = new ReferenceWriting());
       references.Start();
+      int[] prefix = c.ReferencePrefix;
+      if (ReferenceEquals(prefix, ReferenceWriting.InKey))
+        references.InKeys = 1;
       MsgPackWriter body = c.W;
       int start = body.Pos;
       body.Moves = references;
       try
       {
         write(c, root);
-        references.Finish(body, start, Options);
+        references.Finish(body, start, Options, prefix);
       }
       finally
       {
@@ -409,19 +412,21 @@ namespace LsMsgPack
     /// <param name="depth">The nesting of the value in the stream (for <see cref="MsgPackOptions.MaxDepth"/>)</param>
     /// <exception cref="InvalidOperationException">The value needs a class or property the schema of the head does not have, nothing was written</exception>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal void SerializeBody(WriterHead head, Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, int depth, IPayloadSink sink)
+    /// <param name="referencePrefix">See <see cref="WriteContext.ReferencePrefix"/></param>
+    internal void SerializeBody(WriterHead head, Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, int depth, IPayloadSink sink, int[] referencePrefix)
     {
-      SerializeBody(RentState(), head, assignedTo, value, write, depth, sink);
+      SerializeBody(RentState(), head, assignedTo, value, write, depth, sink, referencePrefix);
     }
 
-    /// <inheritdoc cref="SerializeBody(WriterHead, Type, object, Action{WriteContext, FullPropertyInfo}, int, IPayloadSink)"/>
+    /// <inheritdoc cref="SerializeBody(WriterHead, Type, object, Action{WriteContext, FullPropertyInfo}, int, IPayloadSink, int[])"/>
     /// <param name="state">From <see cref="RentState"/>, returned at the end</param>
-    internal void SerializeBody(WriteState state, WriterHead head, Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, int depth, IPayloadSink sink)
+    internal void SerializeBody(WriteState state, WriterHead head, Type assignedTo, object value, Action<WriteContext, FullPropertyInfo> write, int depth, IPayloadSink sink, int[] referencePrefix)
     {
       try
       {
         WriteContext c = state.Context;
         c.Root = value;
+        c.ReferencePrefix = referencePrefix;
         WriteRootEntry entry = c.Entry;
         if (entry is null || entry.AssignedTo != assignedTo)
           entry = EntryOf(c, assignedTo);
@@ -447,6 +452,7 @@ namespace LsMsgPack
       finally
       {
         state.Context.Root = null;
+        state.Context.ReferencePrefix = null;
         ReturnState(state);
       }
     }

@@ -454,6 +454,12 @@ namespace LsMsgPackMcp
         text = "null"; // what the item holds is not what the data holds (e.g. "" for a string cut off)
         error = UnreadError(budget.Doc, obj.LastItemRef);
       }
+      else if (obj.ValueKind == ValueKind.Reference)
+      {
+        text = Reference(obj, notes);
+        if (obj.Type != null)
+          notes.Insert(0, obj.Type);
+      }
       else
       {
         text = Primitive(obj.ValueKind, obj.Value, options, notes);
@@ -643,6 +649,24 @@ namespace LsMsgPackMcp
       return Quote(name);
     }
 
+    /// <summary>
+    /// ReferenceHandling.Preserve: the value is the one at the path (written before), shown as { "$ref": its path in this view }.
+    /// </summary>
+    private static string Reference(PrimitiveObject obj, List<string> notes)
+    {
+      MpReference reference = obj.Value as MpReference;
+      string path = reference?.PathText ?? "?";
+      PrimitiveObject target = obj.ReferenceTarget;
+      if (target is null)
+      {
+        notes.Add(string.Concat("reference (ext type 5) to ", path, ": no value there before it, not valid"));
+        return "null";
+      }
+      notes.Add(string.Concat("reference (ext type 5, path ", path, "): the same object as the value there"));
+      string where = target.Parent is null ? string.Empty : target.Path;
+      return string.Concat("{ \"$ref\": ", Quote(where.Length == 0 || where[0] == '[' ? "$" + where : "$." + where), " }");
+    }
+
     private static string Primitive(ValueKind kind, object value, RenderOptions options, List<string> notes)
     {
       switch (kind)
@@ -791,6 +815,8 @@ namespace LsMsgPackMcp
       if (item is MpExt ext)
       {
         string head = string.Concat(type, ", type ", ext.TypeSpecifier.ToString(CultureInfo.InvariantCulture));
+        if (item is MpReference reference)
+          return string.Concat(head, " (reference): the value at path ", reference.PathText ?? "? (not a valid path)");
         if (item is MpStreamIndex index)
         {
           if (index.Index is null)

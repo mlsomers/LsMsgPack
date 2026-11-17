@@ -162,6 +162,7 @@ namespace ObjectDebugger
       {
         List<SchemaType> types = Schema != null && Schema.IsAvailable ? Schema.Types : null;
         Node body = Node.FromItem(payload.Body);
+        Node.LinkReferences(body);
         ObjectReconstructor reconstructor = new ObjectReconstructor(types);
         reconstructor.FillRoot(this, body, Schema != null && Schema.IsAvailable ? Schema.RootType : null);
         if (reconstructor.Suspects.Count > 0 && reconstructor.Unexplained > 0)

@@ -246,7 +246,12 @@ namespace LsMsgPack
     {
       MsgPackConverter member = info.MemberConverter;
       if (member != null && value != null && value.GetType() == member.ConvertedType)
-        WriteConverted(c, value, member.ConvertedType, (IConvertedWriter)MemberHandlerOf(member), info);
+      {
+        object handler = MemberHandlerOf(member);
+        if (handler is IPreservingHandler preserving) // ReferenceHandling.Preserve: WriteConverted tracks the value itself
+          handler = preserving.Inner;
+        WriteConverted(c, value, member.ConvertedType, (IConvertedWriter)handler, info);
+      }
       else
         WriteBoxed(c, value, info);
     }

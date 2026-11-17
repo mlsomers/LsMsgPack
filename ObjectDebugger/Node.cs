@@ -24,7 +24,9 @@ namespace ObjectDebugger
     Array,
     Map,
     /// <summary>The data could not be read here (KEEPTRACK with ContinueProcessingOnBreakingError)</summary>
-    Error
+    Error,
+    /// <summary>A reference to an earlier value (ReferenceHandling.Preserve, extension type 5: an <see cref="MpReference"/>, the path to that value)</summary>
+    Reference
   }
 
   /// <summary>
@@ -52,6 +54,11 @@ namespace ObjectDebugger
     public Node[] Elements;
 
     public KeyValuePair<Node, Node>[] Entries;
+
+    /// <summary>
+    /// A <see cref="ValueKind.Reference"/>: the value it points to (<see cref="LinkReferences"/>), null when the path leads to no value before it.
+    /// </summary>
+    public Node Target { get; set; }
 
     /// <summary>
     /// Why the data could not be read here (only KEEPTRACK reads on after an error).
@@ -171,6 +178,9 @@ namespace ObjectDebugger
         return node;
       }
 
+      if (item is MpReference)
+        return new Node() { Kind = ValueKind.Reference, Value = item, Item = item };
+
       // The same as MsgPackItem.UnpackedValue: an extension without a registered type keeps its type specifier
       object value = item.GetType() == typeof(MpExt) ? item : item.Value;
       return new Node() { Kind = KindOf(value), Value = value, Item = item };
@@ -222,6 +232,52 @@ namespace ObjectDebugger
       if (IsInteger(value))
         return ValueKind.Int;
       return ValueKind.Other;
+    }
+
+    /// <summary>
+    /// Sets the <see cref="Target"/> of every reference below <paramref name="body"/>, the root value of the payload (the paths start there).
+    /// </summary>
+    public static void LinkReferences(Node body)
+    {
+#if KEEPTRACK // the items of arrays and maps are kept (otherwise a reference stays unlinked)
+      if (body?.Item is null)
+        return;
+      Dictionary<MsgPackItem, Node> byItem = null;
+      List<Node> references = null;
+      Collect(body, ref byItem, ref references);
+      if (references is null)
+        return;
+      for (int t = 0; t < references.Count; t++)
+      {
+        MsgPackItem target = ((MpReference)references[t].Item).FindTarget(body.Item);
+        if (target != null && byItem.TryGetValue(target, out Node node))
+          references[t].Target = node;
+      }
+#endif
+    }
+
+    private static void Collect(Node node, ref Dictionary<MsgPackItem, Node> byItem, ref List<Node> references)
+    {
+      if (node.Kind == ValueKind.Reference)
+      {
+        (references ?? (references = new List<Node>())).Add(node);
+        return;
+      }
+      if (!node.IsContainer || node.Item is null)
+        return;
+      if (byItem is null)
+        byItem = new Dictionary<MsgPackItem, Node>();
+      byItem[node.Item] = node;
+      if (node.Kind == ValueKind.Array)
+      {
+        for (int t = 0; t < node.Elements.Length; t++)
+          Collect(node.Elements[t], ref byItem, ref references);
+      }
+      else
+      {
+        for (int t = 0; t < node.Entries.Length; t++)
+          Collect(node.Entries[t].Value, ref byItem, ref references);
+      }
     }
 
     public static bool IsInteger(object value)
