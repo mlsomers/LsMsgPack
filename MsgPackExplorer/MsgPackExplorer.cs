@@ -606,6 +606,12 @@ namespace MsgPackExplorer
             if (pos > 0) text = text.Substring(0, pos - 1);
             TreeNode node = new TreeNode(text, imgIdx, imgIdx);
             if (ReferenceEquals(item, null) || item.IsBestGuess) node.ForeColor = Color.DarkGray;
+            MpReference reference = item as MpReference;
+            if (reference != null)
+            {
+                node.ForeColor = Color.RoyalBlue; // a link: double-click or Enter selects the value it points to
+                node.ToolTipText = string.Concat("A reference to the value at ", reference.PathText ?? "(not a path)", ". Double-click or Enter: go to that value.");
+            }
             node.Tag = item;
             return node;
         }

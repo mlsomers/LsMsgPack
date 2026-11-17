@@ -1,7 +1,7 @@
 // Plain MsgPack for request bodies (application/msgpack): objects as maps keyed by their property names, as the formatters read them with their Plain options.
 // The property $type is written as the type id (the key "", first): the class of an object where the declared type is a base class, interface or object.
 
-import { TypeProperty } from './decoder.js';
+import { ReferenceHandling, TypeProperty } from './decoder.js';
 import { MsgPackError } from './errors.js';
 import type { KeptProperty, LearnedClass, ModelClass, ModelSet } from './models.js';
 import { MsgPackExtension } from './reader.js';
@@ -20,6 +20,12 @@ export interface EncodeOptions {
   models?: ModelSet;
   /** Generate the code that writes the properties of each model class (new Function, the property names as string literals), default true. Without it (or when a Content-Security-Policy does not allow it) a generic loop does the same. */
   generateCode?: boolean;
+  /**
+   * 'preserve': an object, array or Map met again is written as a reference to its first occurrence (an extension of type 5 with the path to it, as the server's ReferenceHandling.Preserve
+   * writes and reads: the same instance there, a cycle included). Default 'copies': every value is written where it appears, a cycle fails at maxDepth ('none' is the same).
+   * Strings, Dates, bytes and the keys of a Map are never references.
+   */
+  references?: ReferenceHandling;
 }
 
 /**
@@ -28,7 +34,7 @@ export interface EncodeOptions {
  * The property $type of an object (a string: the .NET type name, as the decoder sets it) is written as the type id, the key "" (a Map is written as it is).
  */
 export function encode(value: unknown, options: EncodeOptions = {}): Uint8Array {
-  const writer = new Writer(options.maxDepth ?? 256, options.models, options.generateCode ?? true);
+  const writer = new Writer(options.maxDepth ?? 256, options.models, options.generateCode ?? true, options.references === 'preserve');
   writer.write(value, 0);
   return writer.result();
 }
@@ -38,8 +44,62 @@ export class Writer {
   private buf = new Uint8Array(256);
   private view = new DataView(this.buf.buffer);
   private pos = 0;
+  /** The paths of the objects, arrays and Maps written in the current root value (EncodeOptions.references 'preserve'), undefined without the option. */
+  private refs?: Map<object, number[]>;
+  /** The step into the container open at each depth: the index of the element or the number of the entry being written (kept also without references: a store costs nothing measurable). */
+  readonly steps: Int32Array;
+  /** The depth of the current root value: its paths start there (the stream writer: each value is a root of its own). */
+  private base = 0;
 
-  constructor(private readonly maxDepth: number, private readonly models: ModelSet | undefined, private readonly generateCode: boolean) {}
+  constructor(private readonly maxDepth: number, private readonly models: ModelSet | undefined, private readonly generateCode: boolean, references = false) {
+    this.steps = new Int32Array(maxDepth + 1);
+    if (references) this.refs = new Map();
+  }
+
+  /** Starts a root value at the depth: the references written are per root value (internal: the stream writer). */
+  root(depth: number): void {
+    this.base = depth;
+    this.refs?.clear();
+  }
+
+  /** The path of the value when it was written before in this root value (then it is written as a reference), otherwise undefined and the value is now remembered at its path. */
+  private pathOf(value: object, depth: number): number[] | undefined {
+    const refs = this.refs!;
+    const path = refs.get(value);
+    if (path !== undefined) return path;
+    const steps = this.steps, base = this.base, made = new Array<number>(depth - base);
+    for (let t = base; t < depth; t++) made[t - base] = steps[t];
+    refs.set(value, made);
+    return undefined;
+  }
+
+  /** A reference (an extension of type 5) to the value at the path: its steps as MsgPack positive integers, with the type id of the value where it would have had one. */
+  private reference(path: number[], typeName: string | undefined): void {
+    if (typeName !== undefined) { // { "": typeId, "@": <reference> }, as the server writes a reference where the declared type is not the type of the value
+      this.mapHeader(2);
+      this.u8(0xa0);
+      this.string(typeName);
+      this.u8(0xa1);
+      this.u8(0x40);
+    }
+    let n = 0;
+    for (let t = 0; t < path.length; t++) n += path[t] <= 0x7f ? 1 : path[t] <= 0xff ? 2 : path[t] <= 0xffff ? 3 : 5;
+    const fixed = n === 1 ? 0xd4 : n === 2 ? 0xd5 : n === 4 ? 0xd6 : n === 8 ? 0xd7 : n === 16 ? 0xd8 : 0;
+    if (fixed !== 0) this.u8(fixed);
+    else if (n <= 0xff) this.header(0xc7, n, 1);
+    else if (n <= 0xffff) this.header(0xc8, n, 2);
+    else this.header(0xc9, n, 4);
+    this.u8(5);
+    for (let t = 0; t < path.length; t++) this.number(path[t]); // the smallest form, big-endian
+  }
+
+  /** The type id an object gets where it is written: see object (a model where the declared type is not its class, $type of a plain object). */
+  private typeIdOf(o: Record<string, unknown>, declared: string | undefined): string | undefined {
+    const model = this.models?.of(o);
+    if (model !== undefined) return (declared === undefined ? model.derived : declared !== model.typeName) ? model.typeName : undefined;
+    const typeName = o[TypeProperty];
+    return typeof typeName === 'string' && hasOwn.call(o, TypeProperty) ? typeName : undefined;
+  }
 
   isModel(value: object): boolean {
     return this.models?.of(value) !== undefined;
@@ -117,14 +177,29 @@ export class Writer {
     if (value instanceof ArrayBuffer) return this.bin(new Uint8Array(value));
     if (value instanceof MsgPackExtension) return this.ext(value.type, value.data);
     if (Array.isArray(value)) {
+      if (this.refs !== undefined) {
+        const path = this.pathOf(value, depth);
+        if (path !== undefined) return this.reference(path, undefined);
+      }
       this.arrayHeader(value.length);
-      for (let t = 0; t < value.length; t++) this.write(value[t], depth + 1);
+      const steps = this.steps;
+      for (let t = 0; t < value.length; t++) {
+        steps[depth] = t;
+        this.write(value[t], depth + 1);
+      }
       return;
     }
     if (value instanceof Map) {
+      if (this.refs !== undefined) {
+        const path = this.pathOf(value, depth);
+        if (path !== undefined) return this.reference(path, undefined);
+      }
       this.mapHeader(value.size);
+      const steps = this.steps;
+      let t = 0;
       for (const [k, v] of value) {
-        this.write(k, depth + 1);
+        steps[depth] = t++;
+        this.key(k, depth + 1);
         this.write(v, depth + 1);
       }
       return;
@@ -136,25 +211,55 @@ export class Writer {
   /** An array of values of one declared type (the models). */
   list(value: unknown[], element: ValueWriter, depth: number): void {
     if (depth >= this.maxDepth) throw new MsgPackError(`The value is nested deeper than ${this.maxDepth} levels.`);
+    if (this.refs !== undefined) {
+      const path = this.pathOf(value, depth);
+      if (path !== undefined) return this.reference(path, undefined);
+    }
     this.arrayHeader(value.length);
-    for (let t = 0; t < value.length; t++) element(this, value[t], depth + 1);
+    const steps = this.steps;
+    for (let t = 0; t < value.length; t++) {
+      steps[depth] = t;
+      element(this, value[t], depth + 1);
+    }
   }
 
-  /** An array of values of the declared types (a tuple; KeyValuePair as [key, value]). */
+  /** An array of values of the declared types (a tuple; KeyValuePair as [key, value]): not a reference itself (the server does not track tuples and pairs), its values may be. */
   items(value: unknown[], items: ValueWriter[], depth: number): void {
     if (depth >= this.maxDepth) throw new MsgPackError(`The value is nested deeper than ${this.maxDepth} levels.`);
     this.arrayHeader(value.length);
-    for (let t = 0; t < value.length; t++) (t < items.length ? items[t] : writeAsIs)(this, value[t], depth + 1);
+    const steps = this.steps;
+    for (let t = 0; t < value.length; t++) {
+      steps[depth] = t;
+      (t < items.length ? items[t] : writeAsIs)(this, value[t], depth + 1);
+    }
   }
 
   /** A dictionary (a plain object): the keys as the declared key type (text in JavaScript: an int key is written as a number). */
   dictionary(o: Record<string, unknown>, key: ValueWriter, value: ValueWriter, depth: number): void {
     if (depth >= this.maxDepth) throw new MsgPackError(`The value is nested deeper than ${this.maxDepth} levels.`);
+    if (this.refs !== undefined) {
+      const path = this.pathOf(o, depth);
+      if (path !== undefined) return this.reference(path, undefined);
+    }
     const keys = Object.keys(o).filter((k) => o[k] !== undefined && typeof o[k] !== 'function');
     this.mapHeader(keys.length);
+    const steps = this.steps;
     for (let t = 0; t < keys.length; t++) {
+      steps[depth] = t;
       key(this, keys[t], depth + 1);
       value(this, o[keys[t]], depth + 1);
+    }
+  }
+
+  /** A key of a Map: written in full, never a reference or the target of one (the server does not track keys). */
+  private key(k: unknown, depth: number): void {
+    const refs = this.refs;
+    if (refs === undefined || typeof k !== 'object' || k === null) return this.write(k, depth);
+    this.refs = undefined; // nothing in the key is remembered or looked up
+    try {
+      this.write(k, depth);
+    } finally {
+      this.refs = refs;
     }
   }
 
@@ -235,6 +340,10 @@ export class Writer {
    * @param declared the type name the place declares (a class of the models), AnyDeclared (object, an interface), undefined when not known (the root, untyped places)
    */
   object(o: Record<string, unknown>, depth: number, declared: string | undefined): void {
+    if (this.refs !== undefined) {
+      const path = this.pathOf(o, depth);
+      if (path !== undefined) return this.reference(path, this.typeIdOf(o, declared));
+    }
     const models = this.models;
     if (models !== undefined) {
       const model = models.of(o);
@@ -251,6 +360,7 @@ export class Writer {
     const start = this.pos;
     this.mapHeader(n); // one pass: the header for every key, made smaller when some are left out
     let count = 0;
+    const steps = this.refs === undefined ? undefined : this.steps; // the path of each value only while references are tracked (the store cost ~2.5% writing invoices)
     for (const k in o) {
       if (!hasOwn.call(o, k)) continue;
       const v = o[k];
@@ -264,7 +374,8 @@ export class Writer {
         this.u8(0xa0); // the key "": the type id, first (LsMsgPack's fast path, System.Text.Json also wants it first)
         this.string(v);
       } else {
-        this.key(k);
+        this.name(k);
+        if (steps !== undefined) steps[depth] = count;
         this.write(v, depth + 1);
       }
       count++;
@@ -287,10 +398,13 @@ export class Writer {
     this.mapHeader(count);
     this.u8(0xa0);
     this.string(typeName!);
+    const steps = this.steps;
+    let entry = 1;
     for (let t = 0; t < keys.length; t++) {
       const k = keys[t], v = o[k];
       if (v === undefined || typeof v === 'function' || k === TypeProperty) continue;
-      this.key(k);
+      this.name(k);
+      steps[depth] = entry++;
       this.write(v, depth + 1);
     }
   }
@@ -307,7 +421,7 @@ export class Writer {
   }
 
   /** A property name: the encoded names are kept (they repeat in every object of a type). */
-  private key(k: string): void {
+  private name(k: string): void {
     let bytes = encodedKeys.get(k);
     if (bytes === undefined) {
       if (k.length > 32 || encodedKeys.size >= MaxEncodedKeys) return this.string(k);
@@ -336,13 +450,14 @@ export class Writer {
       count++;
     }
     if (this.generateCode && plan.generated === undefined) plan.generated = generateModelWriter(plan);
-    if (this.generateCode && plan.generated !== null) count += plan.generated!(this, o, depth + 1);
+    if (this.generateCode && plan.generated !== null) count = plan.generated!(this, o, depth + 1, count);
     else {
-      const names = plan.names, writers = plan.writers, encoded = plan.encoded;
+      const names = plan.names, writers = plan.writers, encoded = plan.encoded, steps = this.steps;
       for (let t = 0; t < names.length; t++) {
         const v = o[names[t]];
         if (v === undefined) continue;
         this.small(encoded[t]);
+        steps[depth] = count;
         writers[t](this, v, depth + 1);
         count++;
       }
@@ -350,11 +465,12 @@ export class Writer {
     if (extra !== undefined)
       for (let t = 0; t < extra.length; t++) {
         const k = extra[t], property = kept?.get(k);
+        this.steps[depth] = count;
         if (property === undefined) {
           this.string(k);
           this.write(o[k], depth + 1);
         } else {
-          this.key(property.name);
+          this.name(property.name);
           if (property.type === undefined) this.write(o[k], depth + 1);
           else writerOf(property.type)(this, o[k], depth + 1);
         }
@@ -662,8 +778,8 @@ interface ModelPlan {
   generated?: WriteProperties | null;
 }
 
-/** Writes the properties of a model instance that are not undefined (their names and values), returns how many. */
-type WriteProperties = (w: Writer, o: Record<string, unknown>, depth: number) => number;
+/** Writes the properties of a model instance that are not undefined (their names and values) as the entries from `entry` on, returns the number of the next entry. */
+type WriteProperties = (w: Writer, o: Record<string, unknown>, depth: number, entry: number) => number;
 
 let codeAllowed = true; // false once new Function failed (Content-Security-Policy without 'unsafe-eval')
 
@@ -674,9 +790,9 @@ let codeAllowed = true; // false once new Function failed (Content-Security-Poli
 function generateModelWriter(plan: ModelPlan): WriteProperties | null {
   const names = plan.names;
   if (!codeAllowed || names.length === 0 || names.length > 512) return null;
-  let code = `const ${names.map((_, t) => `e${t} = encoded[${t}], w${t} = writers[${t}]`).join(', ')};\nreturn function writeProperties(w, o, d) {\nlet c = 0, v;\n`;
+  let code = `const ${names.map((_, t) => `e${t} = encoded[${t}], w${t} = writers[${t}]`).join(', ')};\nreturn function writeProperties(w, o, d, c) {\nconst steps = w.steps;\nlet v;\n`;
   names.forEach((n, t) => {
-    code += `v = o[${JSON.stringify(n)}];\nif (v !== undefined) { w.small(e${t}); w${t}(w, v, d); c++; }\n`;
+    code += `v = o[${JSON.stringify(n)}];\nif (v !== undefined) { w.small(e${t}); steps[d - 1] = c; w${t}(w, v, d); c++; }\n`;
   });
   code += 'return c;\n};';
   try {

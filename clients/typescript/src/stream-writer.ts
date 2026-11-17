@@ -133,7 +133,7 @@ export class MsgPackStreamWriter {
 
   constructor(sink: StreamSink, options: StreamWriterOptions = {}) {
     this.maxDepth = options.maxDepth ?? 256;
-    this.w = new Writer(this.maxDepth, options.models, options.generateCode ?? true);
+    this.w = new Writer(this.maxDepth, options.models, options.generateCode ?? true, options.references === 'preserve');
     this.flushThreshold = options.flushThreshold ?? 64 * 1024;
     this.leaveOpen = options.leaveOpen ?? false;
     if (options.index !== undefined) this.ix = new IndexState(options.index);
@@ -190,6 +190,7 @@ export class MsgPackStreamWriter {
     this.value();
     const start = this.w.length;
     try {
+      this.w.root(this.frames.length); // each value is a root of its own: references never point into another value of the stream
       this.w.write(value, this.frames.length);
     } catch (e) {
       this.w.truncate(start); // nothing of a value that cannot be written

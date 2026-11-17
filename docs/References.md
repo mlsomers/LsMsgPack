@@ -60,6 +60,7 @@ With `Preserve`, a reader registers each object and collection by its path when 
 The bytes are valid MsgPack: a reader that doesn't know the reference sees an extension of type 5.
 
 - **LsMsgPack without `Preserve`** (an older client, another setting): every reference is read from the bytes at its path, so shared objects are read as copies, today's behavior. A cycle can't be read that way and fails with a `MsgPackException`.
+- **The TypeScript client** (`@lsmsgpack/client`) reads copies by default and the same instances with `references: 'preserve'`, which also makes it write references in request bodies (see [TypeScriptClient.md](TypeScriptClient.md#shared-objects-and-cycles)).
 - **Other libraries** see an unknown extension where the second occurrence was. Leave `Preserve` off for data that other libraries read, or for a public API.
 
 ## Extension data

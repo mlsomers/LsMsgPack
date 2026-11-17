@@ -265,11 +265,44 @@ export class MsgPackReader {
     throw new MsgPackError(`A timestamp of ${length} bytes is not valid.`, p);
   }
 
-  /** Skips a value. */
+  /** Skips a value (its arrays and maps by their counts, nothing is made). */
   skip(): void {
-    this.value();
+    const bytes = this.bytes, view = this.view, end = bytes.length;
+    let pos = this.pos, pending = 1;
+    while (pending > 0) {
+      if (pos >= end) throw new EndOfDataError(pos);
+      const b = bytes[pos];
+      pending--;
+      if (b <= 0x7f || b >= 0xe0 || b === 0xc0 || b === 0xc2 || b === 0xc3) pos++;
+      else if (b >= 0xa0 && b <= 0xbf) pos += 1 + (b & 0x1f);
+      else if (b >= 0x90 && b <= 0x9f) { pos++; pending += b & 0x0f; }
+      else if (b >= 0x80 && b <= 0x8f) { pos++; pending += 2 * (b & 0x0f); }
+      else {
+        const header = skipHeader[b];
+        if (header === 0) {
+          if (b === 0xc1) throw new EscapeError(pos);
+          throw new MsgPackError(`0x${b.toString(16)} is not a MsgPack type.`, pos);
+        }
+        if (pos + header > end) throw new EndOfDataError(end);
+        const n = header === 2 ? bytes[pos + 1] : header === 3 ? view.getUint16(pos + 1) : header === 5 ? view.getUint32(pos + 1) : 0;
+        switch (b) {
+          case 0xc4: case 0xc5: case 0xc6: case 0xd9: case 0xda: case 0xdb: pos += header + n; break; // bin, str
+          case 0xc7: case 0xc8: case 0xc9: pos += header + 1 + n; break; // ext: the type byte after the length
+          case 0xdc: case 0xdd: pos += header; pending += n; break;
+          case 0xde: case 0xdf: pos += header; pending += 2 * n; break;
+          default: pos += header; // numbers, fixext
+        }
+      }
+    }
+    if (pos > end) throw new EndOfDataError(end);
+    this.pos = pos;
   }
 }
+
+/** The bytes of the header of each format that is not a fix type (0: not a MsgPack type); for bin, str and ext the payload follows. */
+const skipHeader = new Uint8Array(256);
+for (const [b, n] of [[0xc4, 2], [0xc5, 3], [0xc6, 5], [0xc7, 2], [0xc8, 3], [0xc9, 5], [0xca, 5], [0xcb, 9], [0xcc, 2], [0xcd, 3], [0xce, 5], [0xcf, 9], [0xd0, 2], [0xd1, 3], [0xd2, 5], [0xd3, 9],
+  [0xd4, 3], [0xd5, 4], [0xd6, 6], [0xd7, 10], [0xd8, 18], [0xd9, 2], [0xda, 3], [0xdb, 5], [0xdc, 3], [0xdd, 5], [0xde, 3], [0xdf, 5]]) skipHeader[b] = n;
 
 // The keys of maps read by name repeat (the property names of every object): the same bytes give the same string instance, which V8 has hashed and internalized
 // when it was first used as a property name, so setting the property does not hash new text again (decodePlain of 100 invoices with names: 3.4 -> 1.6 ms).

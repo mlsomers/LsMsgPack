@@ -74,6 +74,7 @@ new LsMsgPackClient({
   describedSchema: true,  // ask for the described schema (below)
   negotiateSchemas: true, // advertise the schemas the client holds
   generateCode: true,     // see "Security"
+  references: 'copies',   // a server with ReferenceHandling.Preserve: 'copies' (default), 'preserve' (the same instance, cycles too) or 'none', see below
   maxDepth: 256,          // arrays and maps nested deeper are refused
 });
 ```
@@ -113,6 +114,18 @@ await api.post('api/zoo', zoo); // the server creates a Cat
 - The server refuses a class that is not assignable to the declared type, and asks its `TypeGuard` (see [security.md](security.md)): `$type` cannot make it create anything else. A request with an abstract class and no `$type` is refused too (400).
 - `$type` must be a string. Collections don't get one (a JavaScript array has no place for it): a `List<Dog>` in a property declared as `object` comes back as an array.
 - A dictionary with a key `"$type"` (read as an object) would be sent with a type id: send such a dictionary as a `Map`, which is written as it is.
+
+### Shared objects and cycles
+
+A server with [`ReferenceHandling.Preserve`](References.md) writes an object or collection that appears twice once, and the second time a reference to it: an extension of type 5 with the path to its first occurrence. The client reads it as the `references` option says:
+
+- `'copies'` (default): the value at the path is read again, so a shared object becomes copies, as without the option on the server. A cycle can't be copied and throws a `MsgPackError`.
+- `'preserve'`: the same instance, cycles included (`order.customer === invoice.customer`, `node.parent.children[0] === node`). Objects and arrays are kept by their place while a response is read, and the objects of the array layout are made before their values are read, not by the generated constructor function after them: reading costs a part of the speed, only with the option.
+- `'none'`: the extension as a `MsgPackExtension` (for a server that uses type 5 for an extension of its own).
+
+With `'preserve'` the client also writes request bodies with references: an object, array or `Map` met again is a reference to its first occurrence, which the server reads as one instance (when its plain reader has `Preserve`). Strings, `Date`s, bytes and the keys of a `Map` are always written in full. A reference where the server's declared type differs from the class gets the object's type id, as the value would: an instance of a model, or a plain object with `$type`. A plain object read without `$type` (in a `List<Dog>`) and sent again where an `Animal` is declared has none, there or at its first place; the server then reads the reference as the object of its first place.
+
+In a stream each value (`MsgPackStreamWriter.write`, each `readObject`) has its own references: they never point into another value. In the body of a stream head of the server the paths start at the body's root value (the element's position first); the reader takes that into account.
 
 ### Keeping the schemas between page loads
 

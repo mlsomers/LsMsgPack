@@ -526,7 +526,7 @@ export class MsgPackStreamReader {
     const start = this.pos;
     let result: { value: unknown; end: number };
     try {
-      result = this.decodeObject(this.buf, start, this.end, body ? this.headSchema : undefined, type);
+      result = this.decodeObject(this.buf, start, this.end, body ? this.headSchema : undefined, type, body ? this.bodyPath() : undefined);
     } catch (e) {
       if ((e instanceof EndOfDataError && !this.eof) || e instanceof EscapeError) return NeedMore;
       throw moved(e, this.base);
@@ -548,6 +548,7 @@ export class MsgPackStreamReader {
   private async readWholeSlowly(body: boolean, type: TypeExpr | undefined): Promise<unknown> {
     const depth = this.frames.length;
     const headSchema = body ? this.headSchema : undefined; // reading the last token of a head's body ends the head
+    const prefix = body ? this.bodyPath() : undefined; // before the value is passed: its tokens count
     this.mark = this.pos;
     this.escaped = false;
     this.counts = [];
@@ -563,7 +564,7 @@ export class MsgPackStreamReader {
       this.token = 'none';
       this.tokenLength = 0;
       return this.decode(() => {
-        const result = this.decodeObject(data, 0, data.length, headSchema, type);
+        const result = this.decodeObject(data, 0, data.length, headSchema, type, prefix);
         if (result.end !== data.length) throw new MsgPackError('Data after the value.', result.end);
         return result.value;
       }, start);
@@ -573,10 +574,31 @@ export class MsgPackStreamReader {
   }
 
   /** @param headSchema in the body of a head: its schema (null without the indexed schema), otherwise undefined */
-  private decodeObject(bytes: Uint8Array, start: number, end: number, headSchema: Schema | null | undefined, type: TypeExpr | undefined): { value: unknown; end: number } {
-    if (headSchema !== undefined) return this.decoder.readValue(bytes, start, end, headSchema, type);
+  private decodeObject(bytes: Uint8Array, start: number, end: number, headSchema: Schema | null | undefined, type: TypeExpr | undefined, prefix: number[] | undefined): { value: unknown; end: number } {
+    if (headSchema !== undefined) return this.decoder.readValue(bytes, start, end, headSchema, type, prefix);
     if (!this.decoder.usesIndexedSchema) return this.decoder.readValue(bytes, start, end, null);
     return this.decoder.decodeAt(bytes, start, end, (id) => this.store.get(id), (schemaBytes) => this.inlineSchema(schemaBytes), type);
+  }
+
+  /**
+   * ReferenceHandling.Preserve: the path of the value about to be read in the root value of the head's body, where the paths of its references start (the .NET stream writer writes them
+   * from the body's root, so the body is the payload of Serialize of the root). Undefined at depth 0, and inside a key (nothing is tracked there).
+   */
+  private bodyPath(): number[] | undefined {
+    const frames = this.frames, n = frames.length;
+    if (n === 0) return undefined;
+    const path = new Array<number>(n);
+    for (let t = 0; t < n; t++) {
+      const frame = frames[t];
+      let index = frame.unknown ? frame.count : frame.size - frame.count; // the values read at that level
+      if (t < n - 1) index--; // the array or map around the value was counted when it started
+      if (frame.kind === Kind.Map) {
+        if ((index & 1) === 0) return undefined;
+        index >>= 1; // the entry: a step stands for its value
+      }
+      path[t] = index;
+    }
+    return path;
   }
 
   /** Passes the next value (resumable: its data stays in the buffer from the mark). */
