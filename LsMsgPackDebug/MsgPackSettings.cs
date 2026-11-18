@@ -65,6 +65,26 @@ namespace LsMsgPackDebug
       set { _readStreams = value; }
     }
 
+    internal bool _readLsMsgPackExtensions = true;
+
+    /// <summary>
+    /// Read the extension types LsMsgPack gives a meaning as such: 5 as a reference (<see cref="MpReference"/>, <see cref="LsMsgPack.ReferenceHandling.Preserve"/>) and 6 as a DateTime
+    /// (<see cref="MpDateTime"/>, <see cref="LsMsgPack.DateTimeFormat.Native"/>). On by default; a custom extension of the code wins either way.
+    /// <para>Off they stay an <see cref="MpExt"/>, for data of other writers that use these codes for something else (Nerdbank.MessagePack's big integers are type 6), and are not read into
+    /// references or DateTimes. The explorers' "LsMsgPack extensions" switch sets it, with the decimal extension and <see cref="ReadStreams"/>.</para>
+    /// </summary>
+#if KEEPTRACK
+    [Category("Control")]
+    [DisplayName("Read LsMsgPack Extensions")]
+    [Description("Read extension type 5 as a reference and type 6 as a DateTime, as LsMsgPack writes them. Off: they stay plain extensions, for data of other writers that use these types for something else.")]
+    [DefaultValue(true)]
+#endif
+    public bool ReadLsMsgPackExtensions
+    {
+      get { return _readLsMsgPackExtensions; }
+      set { _readLsMsgPackExtensions = value; }
+    }
+
 #if KEEPTRACK
 
     /// <summary>
@@ -141,6 +161,15 @@ namespace LsMsgPackDebug
       ICustomExt[] extensions = _customExtentionTypes;
       for (int t = 0; t < extensions.Length; t++)
         if (extensions[t] != null && extensions[t].SupportsType(type))
+          return true;
+      return false;
+    }
+
+    internal override bool HasCustomExtensionCode(sbyte code)
+    {
+      ICustomExt[] extensions = _customExtentionTypes;
+      for (int t = 0; extensions != null && t < extensions.Length; t++)
+        if (extensions[t] != null && extensions[t].TypeSpecifier == code)
           return true;
       return false;
     }

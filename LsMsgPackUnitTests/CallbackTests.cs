@@ -461,7 +461,7 @@ namespace LsMsgPackUnitTests
     public void IgnoreCycles_AnObjectWrittenAsNilGetsNoCallbacks(string mode, ObjectLayout layout)
     {
       MsgPackSettings settings = Settings(mode, layout);
-      settings.IgnoreCycles = true;
+      settings.ReferenceHandling = ReferenceHandling.IgnoreCycles;
       CbNode a = new CbNode { Name = "a" };
       CbNode b = new CbNode { Name = "b", Next = a };
       a.Next = b;
@@ -472,6 +472,34 @@ namespace LsMsgPackUnitTests
       Assert.IsNull(read.Next.Next);
       Assert.AreEqual("0,0,1,1", read.Counts());
       Assert.AreEqual("0,0,1,1", read.Next.Counts());
+    }
+
+    /// <summary>
+    /// ReferenceHandling.Preserve: an object written again as a reference gets no callbacks there, so each object is called once (a cycle, and an address shared by two members);
+    /// read back, a reference gives the object already made, which is not called again.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(Modes))]
+    public void Preserve_EachObjectCalledOnce(string mode, ObjectLayout layout)
+    {
+      MsgPackSettings settings = Settings(mode, layout);
+      settings.ReferenceHandling = ReferenceHandling.Preserve;
+      CbNode a = new CbNode { Name = "a" };
+      CbNode b = new CbNode { Name = "b", Next = a };
+      a.Next = b;
+      CbNode read = Serializer.Deserialize<CbNode>(Serializer.Serialize(a, settings), settings);
+      Assert.AreEqual("1,1,0,0", a.Counts());
+      Assert.AreEqual("1,1,0,0", b.Counts());
+      Assert.AreSame(read, read.Next.Next);
+      Assert.AreEqual("0,0,1,1", read.Counts());
+      Assert.AreEqual("0,0,1,1", read.Next.Counts());
+
+      CbOrder order = NewOrder();
+      order.Stops[1] = order.ShipTo;
+      CbOrder readOrder = Serializer.Deserialize<CbOrder>(Serializer.Serialize(order, settings), settings);
+      Assert.AreEqual("1,1,0,0", order.ShipTo.Counts());
+      Assert.AreSame(readOrder.ShipTo, readOrder.Stops[1]);
+      Assert.AreEqual("0,0,1,1", readOrder.ShipTo.Counts());
     }
 
     [TestMethod]

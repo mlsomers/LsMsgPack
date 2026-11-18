@@ -1,5 +1,5 @@
 // Other shapes of data than the invoices: dictionaries, interface typed collections, polymorphic lists, object properties, primitive collections, large values, struct roots.
-// Usage: dotnet shapes-new.dll [seconds per pass=0.5] [name filter] [passes=5]
+// Usage: dotnet shapes-new.dll [seconds per pass=0.5] [name filter] [passes=5]   (LT_COMPILE_AFTER, LT_REFERENCES as in LsBench.cs)
 // Prints write and read in ns per call (fastest pass), allocated bytes per call and the payload size, System.Text.Json next to it where it can do the same.
 using LsMsgPack;
 using System;
@@ -219,9 +219,19 @@ public static class LsShapes
       typeof(LsMsgPack.LsMsgPackOptions).GetField("Default_CompileReadersAfter")?.SetValue(null, int.Parse(after)); // the compiled readers too
     }
   }
+  /// <summary>LT_REFERENCES=None|IgnoreCycles|Preserve sets MsgPackOptions.Default_ReferenceHandling (as in LsBench.cs); ignored by a base without the option.</summary>
+  private static void ReferencesFromEnvironment()
+  {
+    string handling = System.Environment.GetEnvironmentVariable("LT_REFERENCES");
+    System.Reflection.PropertyInfo property = typeof(LsMsgPack.MsgPackOptions).GetProperty("Default_ReferenceHandling");
+    if (handling != null && property != null)
+      property.SetValue(null, Enum.Parse(property.PropertyType, handling));
+  }
+
   public static void Main(string[] args)
   {
     CompileAfterFromEnvironment();
+    ReferencesFromEnvironment();
     double seconds = args.Length > 0 ? double.Parse(args[0], CultureInfo.InvariantCulture) : 0.5;
     string filter = args.Length > 1 ? args[1] : "";
     int passes = args.Length > 2 ? int.Parse(args[2], CultureInfo.InvariantCulture) : 5;

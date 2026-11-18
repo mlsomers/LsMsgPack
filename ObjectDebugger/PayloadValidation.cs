@@ -428,6 +428,9 @@ namespace ObjectDebugger
 
       private void Visit(PrimitiveObject obj)
       {
+        if (obj.ValueKind == ValueKind.Reference && obj.ReferenceTarget is null)
+          _issues.Add(new ValidationItem(obj.LastItemRef ?? obj.FirstItemRef, ValidationSeverity.Error, 0, Capitalized(Where(obj)), " is a reference (extension type ",
+            LsMsgPack.MsgPackOptions.ReferenceExtensionType, ") whose path does not lead to a value before it: readers with ReferenceHandling.Preserve refuse it."));
         if (obj.TypeIdItemRef != null)
           CheckTypeId(obj);
         else if (!(obj is RootObject))
@@ -478,9 +481,11 @@ namespace ObjectDebugger
 
         if (string.IsNullOrEmpty(name))
           return;
-        CheckShape(obj, name);
+        bool reference = obj.ValueKind == ValueKind.Reference; // a reference with the type id of what it points to: judged as that value (its shape is checked there)
+        if (!reference)
+          CheckShape(obj, name);
 
-        if (!(obj is ComplexObject))
+        if (!(obj is ComplexObject) && !(reference && obj.ReferenceTarget is ComplexObject))
         {
           AddEvidence(obj, typeId, string.Concat(Capitalized(Where(obj)), " holds ", WithArticle(PrimitiveObject.KindName(obj.ValueKind)), " with the type id \"", name,
             "\". A value that is not an object or a collection only gets a type id where its type differs from the declared type, and such types have no derived types: this place is declared as object (or as an interface, e.g. IComparable), unless the data was written with AddTypeIdOption.Always."));
@@ -511,6 +516,8 @@ namespace ObjectDebugger
           return;
 
         ValueKind kind = obj is ComplexObject ? ValueKind.Map : obj.ValueKind; // objects and collections count as one kind: a property declared as a base class holds both
+        if (kind == ValueKind.Reference) // the kind of the value it points to
+          kind = obj.ReferenceTarget is ComplexObject ? ValueKind.Map : obj.ReferenceTarget?.ValueKind ?? ValueKind.Nil;
         if (kind == ValueKind.Nil || kind == ValueKind.Error)
           return;
 

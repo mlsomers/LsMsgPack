@@ -69,6 +69,29 @@ namespace ObjectDebugger
     /// <param name="declared">The declared type of the root (version 2 of the schema), null when unknown</param>
     public void FillRoot(RootObject root, Node body, DeclaredType declared = null)
     {
+      _built.Clear();
+      _references.Clear();
+      _built[body] = root;
+      try
+      {
+        FillRootValue(root, body, declared);
+      }
+      finally
+      {
+        for (int t = 0; t < _references.Count; t++) // what was reconstructed: also after an error
+          if (_references[t].Value.Target != null && _built.TryGetValue(_references[t].Value.Target, out PrimitiveObject target))
+            _references[t].Key.ReferenceTarget = target;
+      }
+    }
+
+    /// <summary>
+    /// The object made of each node (the targets of references), and the members that are references.
+    /// </summary>
+    private readonly Dictionary<Node, PrimitiveObject> _built = new Dictionary<Node, PrimitiveObject>();
+    private readonly List<KeyValuePair<PrimitiveObject, Node>> _references = new List<KeyValuePair<PrimitiveObject, Node>>();
+
+    private void FillRootValue(RootObject root, Node body, DeclaredType declared)
+    {
       root.Slot = string.Empty;
       SetDeclared(root, declared);
       if (body.Kind == ValueKind.Map && IsWrappedValue(body))
@@ -118,6 +141,10 @@ namespace ObjectDebugger
       if (declared != null && node.Kind == ValueKind.Nil)
         member.DefaultText = declared.DefaultText(_types);
       parent.Members.Add(member);
+      _built[node] = member;
+      Node referenced = node.Kind == ValueKind.Map && IsWrappedValue(node) ? node.Entries[1].Value : node;
+      if (referenced.Kind == ValueKind.Reference)
+        _references.Add(new KeyValuePair<PrimitiveObject, Node>(member, referenced));
 
       try
       {
@@ -826,6 +853,8 @@ namespace ObjectDebugger
     {
       if (node.Kind == ValueKind.Error)
         return ValueKind.Nil;
+      if (node.Kind == ValueKind.Reference) // the kind of the value it points to (unknown when the path leads nowhere)
+        return node.Target is null ? ValueKind.Nil : ComparableKind(node.Target);
       if (node.Kind != ValueKind.Map || node.Entries.Length == 0 || !node.Entries[0].Key.IsString(TypeIdKey))
         return node.Kind;
       for (int t = 0; t < node.Entries.Length; t++)

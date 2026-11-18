@@ -29,6 +29,7 @@ namespace LsMsgPackTsTestServer
       options.SchemaVersion = plain ? SchemaVersion.Names : SchemaVersion.Described;
       options.SchemaStore = new SchemaStore();
       options.WriteSchemaReference = true;
+      options.ReferenceHandling = ReferenceHandling.Preserve; // "shared": references inside each order
       LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
       Invoice[] invoices = Data.Invoices(count);
       MsgPackStreamIndexOptions index = new MsgPackStreamIndexOptions { PointInterval = 25, CheckpointInterval = checkpoints ? 1 : 0 };
@@ -53,6 +54,17 @@ namespace LsMsgPackTsTestServer
                 writer.BeginEntry(t);
               writer.WriteObject(invoices[t]);
             }
+            break;
+          case "shared": // a head and orders that each share a customer between two members: paths start at the body's root (the element's position first)
+            writer.WriteHead<List<Order>>();
+            writer.WriteArrayStart();
+            Shared shared = Data.Shared(false);
+            for (int t = 0; t < shared.Orders.Count; t++)
+            {
+              shared.Orders[t].ShipTo = shared.Orders[t].Customer;
+              writer.WriteObject(shared.Orders[t]);
+            }
+            writer.WriteEnd();
             break;
           case "escaped":
             writer.WriteArrayStart();
@@ -104,13 +116,35 @@ namespace LsMsgPackTsTestServer
     /// Reads a stream of the TypeScript writer with MsgPackStreamReader (plain MsgPack: no indexed schema, names ignoring case): an array of invoices, then a str,
     /// and answers what it read, with the entries of its index.
     /// </summary>
+    /// <summary>Reads orders the TypeScript stream writer wrote with references: each value its own root. Answers per order whether its two customers are one instance.</summary>
+    [HttpPost("echo/shared")]
+    public async Task<IActionResult> EchoShared()
+    {
+      MemoryStream stream = new MemoryStream();
+      await Request.Body.CopyToAsync(stream);
+      stream.Position = 0;
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, PropertyNameCaseInsensitive = true, ReferenceHandling = ReferenceHandling.Preserve });
+      using (MsgPackStreamReader reader = new MsgPackStreamReader(stream, serializer))
+      {
+        List<bool> same = new List<bool>();
+        reader.Read(); // ArrayStart
+        while (!reader.AtEnd)
+        {
+          Order order = reader.ReadObject<Order>();
+          same.Add(ReferenceEquals(order.Customer, order.ShipTo));
+        }
+        reader.Read(); // ArrayEnd
+        return new JsonResult(same);
+      }
+    }
+
     [HttpPost("echo")]
     public async Task<IActionResult> Echo()
     {
       MemoryStream stream = new MemoryStream();
       await Request.Body.CopyToAsync(stream);
       stream.Position = 0;
-      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, PropertyNameCaseInsensitive = true });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, PropertyNameCaseInsensitive = true, ReferenceHandling = ReferenceHandling.Preserve });
       using (MsgPackStreamReader reader = new MsgPackStreamReader(stream, serializer))
       {
         IReadOnlyList<MsgPackStreamIndex> indexes = reader.ReadIndexes();

@@ -153,6 +153,7 @@ public void OpensDrawingsOfVersion1()
 
 - **Don't turn on `WriteSchemaReference` for files.** It replaces the schema in the file with an 18-byte reference to a schema kept in memory (meant for network traffic). The file can then only be opened with that memory.
 - **Files from other people are untrusted data.** If users email documents to each other, a file can be crafted by someone else. Type ids let the file choose which classes are created, within the declared types: avoid properties declared as `object` (`List<object>`, `Dictionary<string, object>`) and read [Add-ons: untrusted data](Extras.md#reading-data-you-dont-trust).
+- **Objects referenced from two places are saved twice**, and an object that refers back to its parent can't be saved (a cycle). If your model has those (a shape in two groups, `Parent` properties), set `ReferenceHandling = ReferenceHandling.Preserve` in the `LsMsgPackOptions`: the second time an object appears the file refers to the first, and opening it gives one object again. See [References.md](../References.md).
 - **Dates are stored as a moment in UTC.** A `DateTime` comes back with `Kind = Utc`. Call `ToLocalTime()` to show it.
 - A property with an initial value (`public int Retries { get; set; } = 3;`) that is saved as `0` opens as `0`, as JSON does. The [analyzers](../Analyzers.md) that come with the package point out the cases where a value could change.
 

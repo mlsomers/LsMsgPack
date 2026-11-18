@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Writing;
 using System;
 using System.Buffers.Binary;
 using System.ComponentModel;
@@ -733,6 +734,27 @@ namespace LsMsgPack.IO
     private static readonly DateTime MaxFExt8 = new DateTime(2514, 5, 30, 1, 53, 03, DateTimeKind.Utc).Add(TimeSpan.FromTicks(9999999));
 
     /// <summary>
+    /// A DateTime as <see cref="DateTimeFormat.Native"/> writes it (as MpDateTime): fixext 8 of extension type 6 (<see cref="MsgPackOptions.DateTimeExtensionType"/>) holding
+    /// <see cref="System.DateTime.ToBinary"/>, the ticks and the Kind, in the byte order of the options (a Local value holds the ticks in UTC).
+    /// </summary>
+    public void NativeDateTime(DateTime value)
+    {
+      ulong bits = (ulong)value.ToBinary(); // the ticks and the Kind as they are for Utc and Unspecified, a call into the time zone only for Local
+      int pos = Pos;
+      byte[] buffer = Buf;
+      if (buffer.Length - pos < 10)
+      {
+        Grow(10);
+        buffer = Buf;
+      }
+      ref byte to = ref buffer[pos];
+      to = 0xD7;
+      Unsafe.Add(ref to, 1) = (byte)MsgPackOptions.DateTimeExtensionType;
+      Unsafe.WriteUnaligned(ref Unsafe.Add(ref to, 2), _littleEndian != BitConverter.IsLittleEndian ? BinaryPrimitives.ReverseEndianness(bits) : bits);
+      Pos = pos + 10;
+    }
+
+    /// <summary>
     /// A timestamp (extension type -1) in UTC, the smallest of the three formats (as MpDateTime): 32 bit seconds, 64 bit with nanoseconds, 96 bit before 1970 or after 2514.
     /// </summary>
     public void DateTime(DateTime value)
@@ -1132,9 +1154,27 @@ namespace LsMsgPack.IO
       return ReserveMapHeader(maxCount);
     }
 
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: told when written bytes move (the tracked values written there move with them), null otherwise.
+    /// </summary>
+    internal ReferenceWriting Moves;
+
     internal void PatchArrayHeader(int at, int maxCount, int count)
     {
       PatchHeader(at, maxCount, count, false);
+    }
+
+    /// <summary>
+    /// Apart, so <see cref="PatchHeader"/> stays small enough to be inlined (with ReferenceHandling.Preserve's call in it, maps written 2-3% slower).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void MoveEntries(int at, int reserved, int needed)
+    {
+      Moves?.Moved(this, at + reserved, needed - reserved);
+      int entries = Pos - at - reserved;
+      Ensure(needed - reserved);
+      Buffer.BlockCopy(Buf, at + reserved, Buf, at + needed, entries);
+      Pos += needed - reserved;
     }
 
     private void PatchHeader(int at, int maxCount, int count, bool map)
@@ -1142,12 +1182,7 @@ namespace LsMsgPack.IO
       int reserved = MapHeaderSize(maxCount);
       int needed = MapHeaderSize(count);
       if (needed != reserved) // move the entries (fewer were written than the maximum)
-      {
-        int entries = Pos - at - reserved;
-        Ensure(needed - reserved);
-        Buffer.BlockCopy(Buf, at + reserved, Buf, at + needed, entries);
-        Pos += needed - reserved;
-      }
+        MoveEntries(at, reserved, needed);
 
       int end = Pos;
       Pos = at;

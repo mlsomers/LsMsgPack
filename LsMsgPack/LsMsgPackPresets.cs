@@ -25,7 +25,8 @@ namespace LsMsgPack
     };
 
     /// <summary>
-    /// The same data as LsMsgPack with its default settings: the indexed schema, objects as arrays, type ids where the type differs, default values as nil, Guids as bin 16, decimals as extension type 1.
+    /// The same data as LsMsgPack with its default settings: the indexed schema, objects as arrays, type ids where the type differs, default values as nil, Guids as bin 16, decimals as extension type 1,
+    /// DateTimes as extension type 6 (<see cref="DateTimeFormat.Native"/>).
     /// </summary>
     public static LsMsgPackOptions LsMsgPack()
     {
@@ -33,7 +34,7 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// MessagePack-CSharp with its default formatters: Guids and decimals as strings, DateTimeOffset as [clock time, offset in minutes], DateTimeKind.Unspecified taken as UTC,
+    /// MessagePack-CSharp with its default formatters: Guids and decimals as strings, DateTime as a timestamp (DateTimeKind.Unspecified taken as UTC), DateTimeOffset as [clock time, offset in minutes],
     /// BigInteger, Int128 and UInt128 as bin (little-endian), every value written, no type ids, public fields too (<see cref="SerializedFields.Public"/>, as its contractless resolver).
     /// </summary>
     public static LsMsgPackOptions MessagePackCSharp()
@@ -50,7 +51,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// Nerdbank.MessagePack with its default settings: decimals as its extension type 4, its Guids (extension type 2) are read (Guids are written as bin 16, which it reads), every value written, no type ids.
-    /// DateTimeOffset is [the moment, offset in minutes] as LsMsgPack's default. Big integers beyond 64 bits differ (Nerdbank: extension types 3, 5 and 6). Public fields too (<see cref="SerializedFields.Public"/>).
+    /// DateTime as a timestamp, DateTimeOffset is [the moment, offset in minutes] as LsMsgPack's default. Big integers beyond 64 bits differ (Nerdbank: extension types 3, 5 and 6). Public fields too (<see cref="SerializedFields.Public"/>).
     /// </summary>
     public static LsMsgPackOptions Nerdbank()
     {
@@ -75,12 +76,13 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// Objects as maps keyed by their property names, every value (also defaults) and no type ids: what other libraries read and write.
+    /// Objects as maps keyed by their property names, every value (also defaults), no type ids and DateTimes as timestamps: what other libraries read and write.
     /// </summary>
     private static LsMsgPackOptions Maps()
     {
       return new LsMsgPackOptions()
       {
+        DateTimeFormat = DateTimeFormat.Timestamp,
         UseInexedSchema = false,
         AddTypeIdOptions = AddTypeIdOption.Never,
         ObjectLayout = ObjectLayout.Map,

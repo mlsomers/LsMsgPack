@@ -14,7 +14,7 @@ namespace LsMsgPack.Generator
     /// <summary>
     /// The version of the generated code (LsMsgPack.Generated.GeneratedContract.Current of the runtime this generator is released with, checked by a test).
     /// </summary>
-    internal const int ContractVersion = 5;
+    internal const int ContractVersion = 6;
 
     private const string Values = "global::LsMsgPack.Generated.GeneratedValues";
 
@@ -308,7 +308,8 @@ namespace LsMsgPack.Generator
       bool isDefault = byRef && type.IsDefault != null;
       w.Line("}, new int[] { " + string.Join(", ", unrolled) + " }, " + Generated + "GeneratedCapabilities.Write | " + Generated + "GeneratedCapabilities.WriteUnrolled | " + Generated + "GeneratedCapabilities.WriteUnrolledMap | "
         + Generated + "GeneratedCapabilities.WriteUnrolledTrimmed | " + Generated + "GeneratedCapabilities.WriteFormats | "
-        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadMap | " + Generated + "GeneratedCapabilities.ReadFormats"
+        + Generated + "GeneratedCapabilities.ReadPositional | " + Generated + "GeneratedCapabilities.ReadPositionalNil | " + Generated + "GeneratedCapabilities.ReadMap | " + Generated + "GeneratedCapabilities.ReadFormats | "
+        + Generated + "GeneratedCapabilities.DateTimeFormats"
         + (isDefault ? " | " + Generated + "GeneratedCapabilities.IsDefault" : "") + ")");
       w.Open();
       w.Close();
@@ -761,8 +762,8 @@ namespace LsMsgPack.Generator
 
     /// <summary>
     /// WriteUnrolled, WriteUnrolledMap or WriteUnrolledTrimmed: the unrolled members in sequence, by parts for a wide class.
-    /// A type with Guids or decimals gets a second copy for the plans that write them as strings (<c>...Formats</c>, chosen once per object): a test of the format per value
-    /// made the invoices (Guids and decimals in the default binary formats) 2% slower.
+    /// A type with Guids, decimals or DateTimes gets a second copy for the plans that write them as strings or timestamps (<c>...Formats</c>, chosen once per object): a test of the format
+    /// per value made the invoices (Guids and decimals in the default binary formats) 2% slower.
     /// </summary>
     /// <param name="t">The type of the object parameter (<c>ref T</c> for a struct)</param>
     /// <param name="o">The object argument (<c>ref o</c> for a struct)</param>
@@ -772,7 +773,7 @@ namespace LsMsgPack.Generator
       for (int i = 0; i < unrolled.Count; i++)
       {
         MemberModel member = type.Members[unrolled[i]];
-        formats |= member.CanGet && (member.Kind == "Guid" || member.Kind == "Decimal");
+        formats |= member.CanGet && (member.Kind == "Guid" || member.Kind == "Decimal" || member.Kind == "DateTime");
       }
       string name = layout == UnrolledLayout.Map ? "WriteUnrolledMap" : layout == UnrolledLayout.Trimmed ? "WriteUnrolledTrimmed" : "WriteUnrolled";
       UnrolledMethod(w, type, unrolled, accessors, t, o, layout, name, false, formats ? name + "Formats" : null);
@@ -780,7 +781,7 @@ namespace LsMsgPack.Generator
         UnrolledMethod(w, type, unrolled, accessors, t, o, layout, name + "Formats", true, null);
     }
 
-    /// <param name="formats">The private copy for Guids and decimals in the plan's formats, otherwise the override (binary formats)</param>
+    /// <param name="formats">The private copy for Guids, decimals and DateTimes in the plan's formats, otherwise the override (binary formats, native DateTimes)</param>
     /// <param name="formatsMethod">The name of the copy the override calls when the plan has other formats, null when there is none</param>
     private static void UnrolledMethod(CodeWriter w, TypeModel type, List<int> unrolled, Accessors accessors, string t, string o, UnrolledLayout layout, string name, bool formats, string formatsMethod)
     {
@@ -794,7 +795,7 @@ namespace LsMsgPack.Generator
       if (formatsMethod != null)
       {
         string call = formatsMethod + "(c, " + o + (map ? ", keys" : "") + ", infos, p" + (trimmed ? ", out end)" : ")");
-        w.Line("if (p.GuidString || p.DecimalString)");
+        w.Line("if (p.GuidString || p.DecimalString || p.DateTimestamp)");
         w.Line(returns == "void " ? "{ " + call + "; return; }" : "  return " + call + ";");
       }
       if (unrolled.Count <= UnrolledPart)
@@ -930,12 +931,12 @@ namespace LsMsgPack.Generator
     }
 
     /// <summary>
-    /// The formats of the plan in locals (<c>guidString</c>, <c>decimalString</c>) where the writer writes such members: read once per call, as <c>filter</c>
+    /// The formats of the plan in locals (<c>guidString</c>, <c>decimalString</c>, <c>dateTimestamp</c>) where the writer writes such members: read once per call, as <c>filter</c>
     /// (a field of the plan is read again after every store into the buffer).
     /// </summary>
     private static void FormatLocals(CodeWriter w, TypeModel type, List<int> ids)
     {
-      bool guid = false, money = false;
+      bool guid = false, money = false, date = false;
       for (int i = 0; i < ids.Count; i++)
       {
         MemberModel member = type.Members[ids[i]];
@@ -943,11 +944,14 @@ namespace LsMsgPack.Generator
           continue;
         guid |= member.Kind == "Guid";
         money |= member.Kind == "Decimal";
+        date |= member.Kind == "DateTime";
       }
       if (guid)
         w.Line("bool guidString = p.GuidString;");
       if (money)
         w.Line("bool decimalString = p.DecimalString;");
+      if (date)
+        w.Line("bool dateTimestamp = p.DateTimestamp;");
     }
 
     private static void AddLocal(CodeWriter w, Dictionary<string, string> locals, string typeName)
@@ -963,7 +967,7 @@ namespace LsMsgPack.Generator
     /// The value as the runtime's handler of its type writes it.
     /// </summary>
     /// <param name="written">A statement after a value that is not nil (WriteUnrolledTrimmed), null for none</param>
-    /// <param name="formats">Guids and decimals in the plan's formats (the locals of <see cref="FormatLocals"/>), otherwise binary</param>
+    /// <param name="formats">Guids, decimals and DateTimes in the plan's formats (the locals of <see cref="FormatLocals"/>), otherwise binary and native</param>
     private static void WriteValue(CodeWriter w, MemberModel member, string v, Dictionary<string, string> locals, string written, bool formats)
     {
       if (member.Nullable)
@@ -1036,7 +1040,17 @@ namespace LsMsgPack.Generator
           w.Line("else");
           w.Line("  w.Guid(" + v + ");");
           return;
-        case "DateTime": w.Line("w.DateTime(" + Generated + "GeneratedIO.Utc(" + v + ", p));"); return;
+        case "DateTime":
+          if (!formats)
+          {
+            w.Line("w.NativeDateTime(" + v + ");");
+            return;
+          }
+          w.Line("if (dateTimestamp) // the plan's format (GeneratedCapabilities.DateTimeFormats, FormatLocals)");
+          w.Line("  w.DateTime(" + Generated + "GeneratedIO.Utc(" + v + ", p));");
+          w.Line("else");
+          w.Line("  w.NativeDateTime(" + v + ");");
+          return;
         case "TimeSpan": w.Line("w.Int64(" + v + ".Ticks);"); return;
         case "Enum": w.Line("w." + EnumWriter(member.EnumUnderlying) + "((" + member.EnumUnderlying + ")" + v + ");"); return;
       }

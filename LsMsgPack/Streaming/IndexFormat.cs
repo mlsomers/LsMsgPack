@@ -24,6 +24,7 @@ namespace LsMsgPack.Streaming
       EndianAction = EndianAction.SwapIfCurrentSystemIsLittleEndian,
       DynamicallyCompact = true,
       ReadDateTimeKind = DateTimeKind.Utc,
+      DateTimeFormat = DateTimeFormat.Timestamp, // the index's dates are timestamps (docs/Streaming.md), any reader takes them
       MaxDepth = 64
     };
 

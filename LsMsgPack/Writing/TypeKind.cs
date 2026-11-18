@@ -24,6 +24,7 @@ namespace LsMsgPack.Writing
     RawExtension, // a MsgPackExtension that was read (LsMsgPack writes the MpExt it read as itself)
     DateTimeOffsetMoment, // [the moment as a timestamp, the offset in minutes] (DateTimeOffsetFormat.TimestampAndOffset, the default; DateTimeOffset is a timestamp)
     GuidString, DecimalString, DateTimeOffsetArray, BigIntegerBinary, // the formats of other libraries (LsMsgPackOptions.GuidFormat, DecimalFormat, MsgPackOptions.DateTimeOffsetFormat, BigIntegerFormat)
+    DateTimeTimestamp, // a DateTime as the timestamp of the specification (MsgPackOptions.DateTimeFormat.Timestamp; DateTime is the native extension, the default)
     Complex, // an object with properties
     Converted, // a type with a converter (MsgPackOptions.Converters, [MsgPackConverter]): written as its surrogate, decided before everything else
     Extended // an object with properties that keeps the members of the data it does not have (an extension data member, Core's ExtensionDataMember): written boxed (ObjectPlan.WriteExtended), read by Core

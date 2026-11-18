@@ -136,6 +136,25 @@ namespace LsMsgPackTsTestServer
     public IEnumerable<Address> Addresses { get; set; } // a List: the collection gets a type id
   }
 
+  // References (ReferenceHandling.Preserve, the formatters of Program.cs): objects and collections that appear twice, and cycles
+
+  public class Order
+  {
+    public int Id { get; set; }
+    public Customer Customer { get; set; }
+    public Customer ShipTo { get; set; } // the same customer: a reference inside one order (in a stream each root value has its own references)
+  }
+
+  public class Shared
+  {
+    public List<Order> Orders { get; set; } // every order has the same customer
+    public Customer Customer { get; set; } // Orders[0].Customer
+    public List<Order> Same { get; set; } // the list Orders itself
+    public Shared Self { get; set; } // a cycle (with ?cycle=true), null otherwise: System.Text.Json cannot write it
+    public List<Dog> Pets { get; set; }
+    public Animal Animal { get; set; } // Pets[0]: the reference gets a type id, as the value would (the declared type is not its class)
+  }
+
   // Fields: the System.Numerics structs are written by their public fields ([x, y, z] in the array layout, {X, Y, Z} in maps), the model's own fields when they opt in ([DataMember])
 
   public class Motion

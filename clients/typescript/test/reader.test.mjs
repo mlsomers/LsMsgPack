@@ -47,6 +47,31 @@ test('extensions: timestamps, big integers, unknown types', () => {
   assert.deepStrictEqual(unknown.data, new Uint8Array([1, 2, 3]));
 });
 
+/** LsMsgPack's DateTime (extension type 6): .NET's DateTime.ToBinary(), the Kind in the top 2 bits and the ticks (100 ns since 0001-01-01), big-endian. */
+function nativeDate(kind, ticks) {
+  const bits = (BigInt(kind) << 62n) | BigInt(ticks);
+  const bytes = new Uint8Array(10);
+  bytes[0] = 0xd7;
+  bytes[1] = 6;
+  new DataView(bytes.buffer).setBigUint64(2, bits);
+  return bytes;
+}
+
+const ticksOf = (ms) => (BigInt(ms) + 62135596800000n) * 10000n;
+
+test('extension type 6: LsMsgPack\'s DateTime (DateTimeFormat.Native)', () => {
+  const moment = Date.UTC(2026, 10, 17, 10, 0, 0, 123);
+  assert.deepStrictEqual(read(nativeDate(1, ticksOf(moment) + 4567n)), new Date(moment), 'Utc: the moment, the ticks below a millisecond dropped');
+  assert.deepStrictEqual(read(nativeDate(0, ticksOf(moment))), new Date(moment), 'Unspecified: the clock time as UTC');
+  assert.deepStrictEqual(read(nativeDate(2, ticksOf(moment))), new Date(moment), 'Local: the ticks in UTC');
+  assert.deepStrictEqual(read(nativeDate(3, ticksOf(moment))), new Date(moment), 'Local in the ambiguous hour of a DST change');
+  assert.deepStrictEqual(read(nativeDate(0, 0n)), new Date(-62135596800000), 'DateTime.MinValue');
+  assert.deepStrictEqual(read(nativeDate(1, 3155378975999999999n)), new Date(253402300799999), 'DateTime.MaxValue');
+  assert.deepStrictEqual(read(nativeDate(2, (1n << 62n) - 36000000000n)), new Date(-62135596800000 - 3600000), 'Local just after MinValue east of Greenwich: the UTC ticks wrapped');
+  for (let ms = -62135596800000; ms < 253402300799999; ms += 7919000000001) // exact to the millisecond over the range (the ticks do not fit in a double)
+    assert.deepStrictEqual(read(nativeDate(1, ticksOf(ms) + 9999n)), new Date(ms));
+});
+
 test('data that ends early throws a MsgPackError (every prefix)', () => {
   const bytes = reference({ name: 'x'.repeat(40), list: [1, 300, 70000, 5000000000, -5, 1.5], bin: new Uint8Array(20), when: new Date(1000), nested: { a: [null, true] } });
   for (let length = 0; length < bytes.length; length++)

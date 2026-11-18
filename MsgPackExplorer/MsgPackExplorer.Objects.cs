@@ -206,6 +206,58 @@ namespace MsgPackExplorer {
       }
     }
 
+    /// <summary>
+    /// A reference (<see cref="MpReference"/>, extension type 5 of <see cref="ReferenceHandling.Preserve"/>) selected in the MsgPack tree: selects the value it points to
+    /// (double-click or Enter), as the reconstructed objects link it (<see cref="PrimitiveObject.ReferenceTarget"/>). False when the node is no reference or its target is not shown.
+    /// </summary>
+    private bool GoToReferenceTarget(TreeNode itemNode) {
+      MpReference reference = itemNode?.Tag as MpReference;
+      if (reference is null || _objects is null)
+        return false;
+      PrimitiveObject member = FindReference(_objects, reference);
+      PrimitiveObject target = member?.ReferenceTarget;
+      if (target is null) {
+        statusOffset.Text = string.Concat("The reference to ", reference.PathText ?? "?", " leads to no value before it.");
+        return false;
+      }
+      TreeNode targetNode = GetItemNode(target.LastItemRef) ?? GetItemNode(target.FirstItemRef); // the value, not the key of its entry
+      if (targetNode is null)
+        return false; // beyond the display limit
+      treeView1.SelectedNode = targetNode;
+      targetNode.EnsureVisible();
+      return true;
+    }
+
+    /// <summary>The reconstructed member read from the reference item (its value item, or the key of its entry), depth first.</summary>
+    private static PrimitiveObject FindReference(ComplexObject obj, MpReference reference) {
+      foreach (PrimitiveObject member in obj.Members) {
+        ComplexObject complex = member as ComplexObject;
+        if (complex != null) {
+          PrimitiveObject found = FindReference(complex, reference);
+          if (found != null)
+            return found;
+        } else if (member.ValueKind == ValueKind.Reference && (ReferenceEquals(member.LastItemRef, reference) || ReferenceEquals(member.FirstItemRef, reference)))
+          return member;
+      }
+      foreach (ComplexObject child in obj.Children) { // the payloads of a stream, and children that are not members
+        if (obj.Members.Contains(child))
+          continue;
+        PrimitiveObject found = FindReference(child, reference);
+        if (found != null)
+          return found;
+      }
+      return null;
+    }
+
+    private void treeView1_NodeMouseDoubleClick(object sender, TreeNodeMouseClickEventArgs e) {
+      GoToReferenceTarget(e.Node);
+    }
+
+    private void treeView1_KeyDown(object sender, KeyEventArgs e) {
+      if (e.KeyCode == Keys.Enter && GoToReferenceTarget(treeView1.SelectedNode))
+        e.Handled = true;
+    }
+
     private static TreeNode GetItemNode(MsgPackItem item) {
       if (ReferenceEquals(item, null))
         return null;

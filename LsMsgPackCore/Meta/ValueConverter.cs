@@ -1,4 +1,5 @@
 ﻿using LsMsgPack.Converters;
+using LsMsgPack.References;
 using LsMsgPack.TypeResolving.Attributes;
 using LsMsgPack.TypeResolving.Types;
 using System;
@@ -29,6 +30,12 @@ namespace LsMsgPack.Meta
         return null;
 
       MsgPackConverter converter = settings.ConverterFor(assignType, prop);
+      if (settings.PreservesReferences && (converter != null || ReferenceResolver.IsContainer(val)) && TryGetMade(val, assignType, out object made)) // a reference read it first (values are converted last to first)
+        return made;
+
+      if (val is MsgPackReference reference && !ReadsReferenceItself(converter))
+        return ReferenceResolver.ResolveValue(reference, assignType, prop, settings);
+
       if (converter != null && !(val is KeyValuePair<object, object>[] wrapped && HasTypeId(wrapped))) // a map with a type id: ConvertMap decides whose type it names
         return ConvertSurrogate(val, converter, settings);
 
@@ -47,19 +54,42 @@ namespace LsMsgPack.Meta
       return ConvertScalar(val, assignType);
     }
 
+    private static bool TryGetMade(object val, Type assignType, out object made)
+    {
+      ReferenceResolver resolver = ReferenceResolver.Current;
+      if (resolver != null)
+        return resolver.TryGetMade(val, assignType, out made);
+      made = null;
+      return false;
+    }
+
+    /// <summary>
+    /// A binary converter of type code 5 reads an extension of that type as its own (allowed without <see cref="ReferenceHandling.Preserve"/>, which refuses it): not a reference there.
+    /// </summary>
+    private static bool ReadsReferenceItself(MsgPackConverter converter)
+    {
+      return converter is MsgPackBinaryConverter binary && binary.ExtensionTypeCode == MsgPackOptions.ReferenceExtensionType;
+    }
+
     /// <summary>
     /// A value of a type with a converter: read as its surrogate, then converted back (neither for nil).
     /// </summary>
     private static object ConvertSurrogate(object val, MsgPackConverter converter, MsgPackOptions settings)
     {
+      object result;
       if (converter is MsgPackBinaryConverter binary)
-        return ConvertBinary(val, binary, settings);
-      object surrogate = ConvertDeserializeValue(val, converter.SurrogateType, settings, converter.SurrogateInfo);
-      if (surrogate is null)
-        return null;
-      if (!(Nullable.GetUnderlyingType(converter.SurrogateType) ?? converter.SurrogateType).IsInstanceOfType(surrogate)) // e.g. a map kept as it is where the surrogate is object
-        throw ReadDifferences.NotConverted(settings, new InvalidCastException($"Object of type '{surrogate.GetType()}' cannot be converted to type '{converter.SurrogateType}' (the surrogate of {converter.ConvertedType.Name})."));
-      return converter.FromSurrogateBoxed(surrogate); // the converter's exceptions are passed on as they are (as a setter's)
+        result = ConvertBinary(val, binary, settings);
+      else
+      {
+        object surrogate = ConvertDeserializeValue(val, converter.SurrogateType, settings, converter.SurrogateInfo);
+        if (surrogate is null)
+          return null;
+        if (!(Nullable.GetUnderlyingType(converter.SurrogateType) ?? converter.SurrogateType).IsInstanceOfType(surrogate)) // e.g. a map kept as it is where the surrogate is object
+          throw ReadDifferences.NotConverted(settings, new InvalidCastException($"Object of type '{surrogate.GetType()}' cannot be converted to type '{converter.SurrogateType}' (the surrogate of {converter.ConvertedType.Name})."));
+        result = converter.FromSurrogateBoxed(surrogate); // the converter's exceptions are passed on as they are (as a setter's)
+      }
+      ReferenceResolver.Registered(settings, val, result, true); // identity follows the converted value (its surrogate was registered first)
+      return result;
     }
 
     /// <summary>
@@ -313,11 +343,16 @@ namespace LsMsgPack.Meta
         SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
       ObjectConstructor constructor = ObjectConstructor.Of(tType);
       result = Instances.CreateObjectOrArguments(tType, constructor, settings);
+      bool collected = result is ObjectConstructor.Arguments;
+      if (!collected)
+        ReferenceResolver.Registered(settings, map, result); // before its values: a cycle back to it resolves
       SerializationCallbacks callbacks = constructor.Callbacks;
-      if (callbacks != null && !(result is ObjectConstructor.Arguments)) // those call it after the constructor
+      if (callbacks != null && !collected) // those call it after the constructor
         callbacks.OnDeserializing(result);
       List<KeptValue> kept = SetProperties(result, tType, props, propVals, settings, true, out ExtensionDataMember extension);
       result = Created(result, props, settings);
+      if (collected)
+        ReferenceResolver.Registered(settings, map, result);
       if (kept != null)
         extension.Keep(result, kept, settings);
       callbacks?.OnDeserialized(result);
@@ -501,13 +536,13 @@ namespace LsMsgPack.Meta
       object plain;
       ReadDifferences differences = settings._differences;
       if (differences is null)
-        plain = KeptValues.WithoutSchema(value, name, def, position, schema, settings);
+        plain = KeptValues.WithoutSchema(ReferenceResolver.Expand(value, settings), name, def, position, schema, settings);
       else
       {
         int depth = differences.Depth;
         try
         {
-          plain = KeptValues.WithoutSchema(value, name, def, position, schema, settings);
+          plain = KeptValues.WithoutSchema(ReferenceResolver.Expand(value, settings), name, def, position, schema, settings);
         }
         catch (Exception ex) when (differences.SkipInvalidValue(instance, name, ex))
         {
@@ -572,10 +607,24 @@ namespace LsMsgPack.Meta
 
       CollectionInfo info = CollectionInfo.Get(assignType);
       Array elements = Array.CreateInstance(info.ElementType, items.Length);
+      bool isArray = info.ConcreteType.IsArray; // the elements are the result: registered before them, so a cycle back to it resolves
+      object created = null;
+      if (isArray)
+        ReferenceResolver.Registered(settings, items, elements);
+      else if (settings.PreservesReferences && (created = info.CreateBeforeElements(settings)) != null) // the same: created empty, filled after its elements
+        ReferenceResolver.Registered(settings, items, created);
       for (int t = items.Length - 1; t >= 0; t--)
         SetElement(elements, ConvertDeserializeValue(items[t], info.ElementType, settings, null), t, settings);
 
-      return info.Create(elements, settings);
+      if (created != null)
+      {
+        info.FillCreated(created, elements);
+        return created;
+      }
+      object collection = info.Create(elements, settings);
+      if (!isArray)
+        ReferenceResolver.Registered(settings, items, collection); // made of its elements (a cycle back to it is an error)
+      return collection;
     }
 
     /// <summary>
@@ -649,8 +698,11 @@ namespace LsMsgPack.Meta
       FullPropertyInfo[] byPosition = PropertiesByPosition(type, props, settings, out ComplexTypeDef def);
       ObjectConstructor constructor = ObjectConstructor.Of(type);
       object result = Instances.CreateObjectOrArguments(type, constructor, settings);
+      bool collected = result is ObjectConstructor.Arguments;
+      if (!collected)
+        ReferenceResolver.Registered(settings, items, result); // before its values: a cycle back to it resolves
       SerializationCallbacks callbacks = constructor.Callbacks;
-      if (callbacks != null && !(result is ObjectConstructor.Arguments)) // those call it after the constructor
+      if (callbacks != null && !collected) // those call it after the constructor
         callbacks.OnDeserializing(result);
       ReadDifferences differences = settings._differences;
       ExtensionDataMember extension = null; // looked up at the first value that is not a property (not per object)
@@ -702,13 +754,15 @@ namespace LsMsgPack.Meta
         bool keepsPositions = extension != null && !extension.IsDictionary && def is null; // without the schema the values after the last property have no names
         if (keepsPositions)
         {
-          (kept ?? (kept = new List<KeptValue>())).Add(new KeptValue(null, t, items[t]));
+          (kept ?? (kept = new List<KeptValue>())).Add(new KeptValue(null, t, ReferenceResolver.Expand(items[t], settings)));
           differences?.KeptProperty(result, null, t);
         }
         else
           differences?.ExtraValue(result, t);
       }
       result = Created(result, props, settings);
+      if (collected)
+        ReferenceResolver.Registered(settings, items, result);
       if (kept != null)
         extension.Keep(result, kept, settings);
       callbacks?.OnDeserialized(result);
@@ -824,6 +878,7 @@ namespace LsMsgPack.Meta
       }
 
       object result = Instances.CreateCollection(info.ConcreteType, settings);
+      ReferenceResolver.Registered(settings, pairs, result); // before its entries: a cycle back to it resolves
       IDictionary dictionary = result as IDictionary;
       object[] args = dictionary is null ? new object[2] : null;
       for (int t = 0; t < pairs.Length; t++) // keep the original order

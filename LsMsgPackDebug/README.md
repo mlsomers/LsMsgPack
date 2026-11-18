@@ -39,4 +39,5 @@ MsgPackItem item = MsgPackItem.Unpack(data);
 - [Reporting differences](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ReadDifferences.md): what didn't match between the data and your classes (`Deserialize(data, settings, out ReadDifferences differences)`)
 - [Extension data](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ExtensionData.md): keep the members of the data a class doesn't have and write them again (`MsgPackExtensionData`, `[JsonExtensionData]`)
 - [Serialization callbacks](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Callbacks.md): run code before and after an object is written or read, e.g. to validate it (`IMsgPackOnDeserialized`..., System.Text.Json's `IJsonOnDeserialized`...)
+- [Shared objects and cycles](https://github.com/mlsomers/LsMsgPack/blob/master/docs/References.md): an object referenced twice or a cycle is written once and read back as the same instance (`ReferenceHandling.Preserve`)
 - Source, issues and MsgPack Explorer (a tool built on this package to look inside MsgPack data): [github.com/mlsomers/LsMsgPack](https://github.com/mlsomers/LsMsgPack)

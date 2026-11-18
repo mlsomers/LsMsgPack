@@ -9,7 +9,7 @@ import type { KeptProperty, ModelSet } from './models.js';
 import { nameFunction, PropertyNames } from './names.js';
 import { AnyType, Kind, Schema, SchemaEntry, TypeExpr } from './schema.js';
 import { toHex } from './sha256.js';
-import { convertDecimal, dateOnlyText, decodeDecimal, DecimalMode, EmptyGuid, guidString, MinDateTimeMs, offsetText, timeOnlyText, timeSpanText } from './values.js';
+import { convertDecimal, dateOnlyText, decodeDecimal, DecimalMode, EmptyGuid, guidString, MinDateTimeMs, nativeDate, offsetText, timeOnlyText, timeSpanText } from './values.js';
 
 export interface DecodeOptions extends ReaderOptions {
   /** long and ulong properties: 'number' (default, as JSON.parse: precision is lost beyond 2^53) or 'bigint' (always a bigint). Untyped values are a bigint only beyond 2^53. */
@@ -36,7 +36,18 @@ export interface DecodeOptions extends ReaderOptions {
    * V8 then sees one object shape per place in the code. Without it (or when a Content-Security-Policy does not allow it) a generic loop does the same.
    */
   generateCode?: boolean;
+  /**
+   * References (ReferenceHandling.Preserve of the server: an object or collection written twice is the second time an extension of type 5 with the path to its first occurrence):
+   * 'copies' (default) reads the value at the path again, so a shared object is read as copies and a cycle fails; 'preserve' gives the same instance, a cycle included
+   * (every object and array read is kept by its place while a payload is read, and objects are made before their properties are read, which costs a part of the speed);
+   * 'none' leaves an extension of type 5 as a MsgPackExtension (a server without the option that writes its own extension 5).
+   * The client writes request bodies with the same setting: with 'preserve' an object met again is a reference (EncodeOptions.references).
+   */
+  references?: ReferenceHandling;
 }
+
+/** How the decoder reads a reference (extension type 5) and the encoder writes an object met again, see DecodeOptions.references and EncodeOptions.references. */
+export type ReferenceHandling = 'preserve' | 'copies' | 'none';
 
 type Fill = (r: SchemaReader, o: Record<string, unknown>, n: number) => void;
 
@@ -175,8 +186,11 @@ class Plan {
   /** An object with the defaults, copied by create without generated code (a spread copies an object of the same shape faster than setting each property). */
   private template?: Record<string, unknown>;
 
-  /** Makes what create and fill use, once the properties are known: the template, and with generateCode their code. */
-  prepare(generateCode: boolean): void {
+  /**
+   * Makes what create and fill use, once the properties are known: the template, and with generateCode their code.
+   * @param preserve references are preserved: an object is made before its values are read (so a cycle back to it resolves), not by readArrayFn after them
+   */
+  prepare(generateCode: boolean, preserve: boolean): void {
     if (this.cls === undefined) {
       const o: Record<string, unknown> = {};
       for (let t = 0; t < this.names.length; t++) setOwn(o, this.names[t], this.values[t]);
@@ -187,7 +201,7 @@ class Plan {
     this.createFn = code?.create;
     this.createTypedFn = code?.createTyped;
     this.fillFn = code?.fill;
-    this.readArrayFn = this.generateReadArray();
+    if (!preserve) this.readArrayFn = this.generateReadArray();
   }
 
   /** readArrayFn for plain objects and the models (not for DecodeOptions.classes: their constructors may do more than set fields). */
@@ -346,7 +360,7 @@ class Plans {
       if (d.make !== undefined && (plan.cls === undefined || plan.missing.includes(t))) (plan.made ??= []).push(t);
     });
     if (entry.content !== undefined) plan.content = this.compile(entry.content);
-    plan.prepare(this.options.generateCode);
+    plan.prepare(this.options.generateCode, this.options.references === 'preserve');
     const models = this.options.models;
     if (models !== undefined && entry.name !== null && index >= 0) {
       if (model === undefined) this.learn(index);
@@ -600,12 +614,167 @@ interface ResolvedOptions {
   classes?: Record<string, new () => object>;
   propertyNames: PropertyNames;
   generateCode: boolean;
+  references: ReferenceHandling;
 }
 
-/** The reader of a body: values wrapped with a type id ({ "": index, "@": content }, or { "": index, 0: value, ... }) become what their schema entry describes. */
+/**
+ * The reader of a body: values wrapped with a type id ({ "": index, "@": content }, or { "": index, 0: value, ... }) become what their schema entry describes.
+ * References (extension type 5, docs/References.md): the content is the path from the root value to the first occurrence (the index in an array, the number of the entry in a map,
+ * as positive integers). With 'preserve' every object and array is kept by the offset of its first byte when it is made, before its values, and the reference is that value;
+ * otherwise the bytes at the path are read again (a copy).
+ */
 export class SchemaReader extends MsgPackReader {
-  constructor(bytes: Uint8Array, options: ReaderOptions, private readonly plans: Plans | null, pos: number) {
+  /** 'preserve': the objects and arrays made, by the offset of their first byte. */
+  private readonly made: Map<number, unknown> | null;
+  private readonly references: ReferenceHandling;
+  /** The element offsets of the arrays and maps a path went through, by the offset of the container: the items found so far, and where the next one starts. */
+  private walked?: Map<number, { items: number[]; next: number }>;
+  /** The offsets of the targets being read again (a path back into one of them is a cycle, which only 'preserve' resolves). */
+  private rereading?: Set<number>;
+
+  /**
+   * @param root the offset of the root value: where the paths of references start
+   * @param prefix in a value of the body of a stream head: the path of this value in the body's root (the paths start with it; the stream writer's paths start at the body's root value)
+   */
+  constructor(bytes: Uint8Array, options: ReaderOptions, private readonly plans: Plans | null, pos: number, references: ReferenceHandling = 'copies', private readonly root = pos,
+    private readonly prefix?: number[]) {
     super(bytes, options, pos);
+    this.references = references;
+    this.made = references === 'preserve' ? new Map() : null;
+  }
+
+  /** The next value is a reference (an extension of type 5). Reads nothing. */
+  private isReference(): boolean {
+    const bytes = this.bytes, p = this.pos, b = bytes[p];
+    if (this.references === 'none') return false;
+    if (b >= 0xd4 && b <= 0xd8) return bytes[p + 1] === 5;
+    if (b === 0xc7) return bytes[p + 2] === 5;
+    if (b === 0xc8) return bytes[p + 3] === 5;
+    if (b === 0xc9) return bytes[p + 5] === 5;
+    return false;
+  }
+
+  /** The value the reference at the current position points to (its extension is read); `read` reads the target again when it was not made (a copy). */
+  private reference(read: Read): unknown {
+    const bytes = this.bytes, b = bytes[this.pos], at = this.pos;
+    let length: number;
+    switch (b) {
+      case 0xd4: length = 1; this.pos += 2; break;
+      case 0xd5: length = 2; this.pos += 2; break;
+      case 0xd6: length = 4; this.pos += 2; break;
+      case 0xd7: length = 8; this.pos += 2; break;
+      case 0xd8: length = 16; this.pos += 2; break;
+      case 0xc7: length = bytes[at + 1]; this.pos += 3; break;
+      case 0xc8: this.need(3); length = this.view.getUint16(at + 1); this.pos += 4; break;
+      default: this.need(5); length = this.view.getUint32(at + 1); this.pos += 6; break;
+    }
+    this.need(length);
+    const start = this.pos;
+    this.pos += length;
+    return this.resolve(start, length, at, read);
+  }
+
+  protected override ext(type: number, length: number): unknown {
+    if (type === 5 && this.references !== 'none') {
+      this.need(length);
+      const start = this.pos;
+      this.pos += length;
+      return this.resolve(start, length, start - (length === 1 || length === 2 || length === 4 || length === 8 || length === 16 ? 2 : length <= 0xff ? 3 : length <= 0xffff ? 4 : 6), readDynamic);
+    }
+    return super.ext(type, length);
+  }
+
+  /** The value at the path in bytes[start, start + length), the reference's extension at `at`: the instance made there, or the bytes read again with `read`. */
+  private resolve(start: number, length: number, at: number, read: Read): unknown {
+    const target = this.offsetOf(this.path(start, length, at), at);
+    if (target >= at) throw new MsgPackError('A reference points to a value that does not come before it.', at);
+    const made = this.made;
+    if (made !== null) {
+      const value = made.get(target);
+      if (value !== undefined) return value;
+    }
+    const rereading = this.rereading ??= new Set();
+    if (rereading.has(target)) throw new MsgPackError(`A reference points into a value that is being read (a cycle): read with references: 'preserve'.`, at);
+    rereading.add(target);
+    const end = this.pos;
+    this.pos = target;
+    try {
+      const value = read(this);
+      if (made !== null && typeof value === 'object' && value !== null) made.set(target, value); // later references to the same place get this one
+      return value;
+    } finally {
+      this.pos = end;
+      rereading.delete(target);
+    }
+  }
+
+  /** The steps of a path (MsgPack positive integers without an array header), without the prefix of this value. */
+  private path(start: number, length: number, at: number): number[] {
+    const bytes = this.bytes, view = this.view, end = start + length, steps: number[] = [];
+    for (let p = start; p < end;) {
+      const b = bytes[p];
+      if (b <= 0x7f) { steps.push(b); p++; }
+      else if (b === 0xcc && p + 2 <= end) { steps.push(bytes[p + 1]); p += 2; }
+      else if (b === 0xcd && p + 3 <= end) { steps.push(view.getUint16(p + 1)); p += 3; }
+      else if (b === 0xce && p + 5 <= end) { steps.push(view.getUint32(p + 1)); p += 5; }
+      else throw new MsgPackError('A reference path is not a run of positive integers.', p);
+    }
+    const prefix = this.prefix;
+    if (prefix === undefined) return steps;
+    for (let t = 0; t < prefix.length; t++)
+      if (steps[t] !== prefix[t]) throw new MsgPackError('A reference points into another value of the stream.', at);
+    return steps.slice(prefix.length);
+  }
+
+  /** The offset of the value at the path from the root value. */
+  private offsetOf(steps: number[], at: number): number {
+    let offset = this.root;
+    for (let t = 0; t < steps.length; t++) offset = this.itemAt(offset, steps[t], at);
+    return offset;
+  }
+
+  /** The offset of the value of step `step` in the array or map at `offset`: an element, or the value of an entry. */
+  private itemAt(offset: number, step: number, at: number): number {
+    const bytes = this.bytes, b = bytes[offset];
+    let count: number, item: number, header: number;
+    if (b >= 0x90 && b <= 0x9f) { count = b & 0x0f; header = 1; item = step; }
+    else if (b >= 0x80 && b <= 0x8f) { count = 2 * (b & 0x0f); header = 1; item = 2 * step + 1; }
+    else if (b === 0xdc || b === 0xde) { count = this.view.getUint16(offset + 1); header = 3; item = step; }
+    else if (b === 0xdd || b === 0xdf) { count = this.view.getUint32(offset + 1); header = 5; item = step; }
+    else throw new MsgPackError('A reference path steps into a value that is not an array or a map.', at);
+    if (b === 0xde || b === 0xdf) { count *= 2; item = 2 * step + 1; }
+    if (item >= count) throw new MsgPackError('A reference path steps beyond the end of an array or map.', at);
+    const walked = this.walked ??= new Map();
+    let items = walked.get(offset);
+    if (items === undefined) walked.set(offset, (items = { items: [], next: offset + header }));
+    if (item < items.items.length) return items.items[item];
+    const skip = new MsgPackReader(bytes, { decimal: 'raw' }, items.next);
+    while (items.items.length <= item) {
+      items.items.push(skip.pos);
+      skip.skip();
+    }
+    items.next = skip.pos;
+    return items.items[item];
+  }
+
+  /** The offset of the header of the array or map whose header of n items was just read (the smallest header that holds n, the only one the writers use). */
+  private headerStart(n: number, fix: number, f16: number): number {
+    const bytes = this.bytes, p = this.pos;
+    if (n < 16 && bytes[p - 1] === (fix | n)) return p - 1;
+    return n <= 0xffff && bytes[p - 3] === f16 ? p - 3 : p - 5; // array 16 or map 16, else the 32 bit one
+  }
+
+  protected override array(n: number): unknown[] {
+    const made = this.made;
+    if (made === null) return super.array(n);
+    this.count(n);
+    const start = this.headerStart(n, 0x90, 0xdc);
+    this.enter();
+    const result = new Array(n);
+    made.set(start, result);
+    for (let t = 0; t < n; t++) result[t] = this.value();
+    this.depth--;
+    return result;
   }
 
   /** The first key of the map whose header was just read is "" (a type id). */
@@ -615,12 +784,27 @@ export class SchemaReader extends MsgPackReader {
   }
 
   protected override map(n: number): unknown {
-    if (this.plans !== null && n > 0 && this.firstKeyIsTypeId()) return this.wrapped(n);
-    return super.map(n);
+    const made = this.made;
+    if (this.plans !== null && n > 0 && this.firstKeyIsTypeId()) return this.wrapped(n, made === null ? -1 : this.headerStart(n, 0x80, 0xde));
+    if (made === null) return super.map(n);
+    this.count(n);
+    const start = this.headerStart(n, 0x80, 0xde);
+    this.enter();
+    const result: Record<string, unknown> = {};
+    made.set(start, result);
+    for (let t = 0; t < n; t++) {
+      const key = this.key();
+      setOwn(result, typeof key === 'string' ? key : String(key), this.value());
+    }
+    this.depth--;
+    return result;
   }
 
-  /** A value wrapped with a type id, the header (n entries) is read. */
-  private wrapped(n: number): unknown {
+  /**
+   * A value wrapped with a type id, the header (n entries) is read.
+   * @param start the offset of the map ('preserve': a reference to the value points to it), -1 otherwise
+   */
+  private wrapped(n: number, start: number): unknown {
     this.pos += this.bytes[this.pos] === 0xa0 ? 1 : 2; // the key ""
     const index = this.value();
     if (typeof index !== 'number') throw new MsgPackError('A type id is not a schema index.', this.pos);
@@ -629,12 +813,22 @@ export class SchemaReader extends MsgPackReader {
     let result: unknown = null;
     if (plan.isObject) {
       const o = plan.createTyped();
+      if (start >= 0) this.made!.set(start, o);
       for (let t = 1; t < n; t++) {
         const key = this.value();
         if (key === '@') { // the array layout: { "": index, "@": [values] }
           const count = this.arrayLength();
           if (count >= 0) this.fill(plan, o, count);
-          else this.value();
+          else if (this.isReference()) { // { "": index, "@": <reference> }: a reference to an object of another type than the place declares
+            result = this.reference((r) => { // read again (a copy): with its type name, as the value would have (the instance made at the target is returned as it is)
+              const copy = r.readObject(plan);
+              if (!plan.model && typeof copy === 'object' && copy !== null && !Array.isArray(copy) && plan.entry.name !== null && !(TypeProperty in copy)) (copy as Record<string, unknown>)[TypeProperty] = plan.entry.name;
+              return copy;
+            });
+            if (start >= 0) this.made!.set(start, result); // not the object made above
+            this.depth--;
+            return result;
+          } else this.value();
         } else
           this.setByKey(plan, o, key);
       }
@@ -642,8 +836,10 @@ export class SchemaReader extends MsgPackReader {
     } else {
       for (let t = 1; t < n; t++) {
         const key = this.value();
-        if (key === '@') result = plan.content!(this);
-        else this.value(); // a property of a collection ([SerializeEnumerable(SerializeProperties)]): not kept, a JS array has no place for it
+        if (key === '@') {
+          result = plan.content!(this);
+          if (start >= 0 && typeof result === 'object' && result !== null) this.made!.set(start, result);
+        } else this.value(); // a property of a collection ([SerializeEnumerable(SerializeProperties)]): not kept, a JS array has no place for it
       }
     }
     this.depth--;
@@ -652,7 +848,7 @@ export class SchemaReader extends MsgPackReader {
 
   /** An object of the plan: an array of its values (the array layout), a map from property index to value, or a value with a type id. */
   readObject(plan: Plan): unknown {
-    const b = this.peek();
+    const b = this.peek(), start = this.pos;
     if (b === 0xc0) {
       this.pos++;
       return null;
@@ -667,18 +863,25 @@ export class SchemaReader extends MsgPackReader {
         return o;
       }
       const o = plan.create();
+      if (this.made !== null) this.made.set(start, o);
       this.fill(plan, o, n);
       this.depth--;
       return plan.complete(o);
     }
     n = this.mapLength();
-    if (n < 0) return this.value(); // not an object: as it is
-    if (n > 0 && this.firstKeyIsTypeId()) return this.wrapped(n);
+    if (n < 0) return this.notAnObject(plan); // not an object: as it is (or a reference)
+    if (n > 0 && this.firstKeyIsTypeId()) return this.wrapped(n, this.made === null ? -1 : start);
     this.enter();
     const o = plan.create();
+    if (this.made !== null) this.made.set(start, o);
     for (let t = 0; t < n; t++) this.setByKey(plan, o, this.value());
     this.depth--;
     return plan.complete(o);
+  }
+
+  /** A value where an object of the plan is declared that is neither an array nor a map: a reference to one, or any other value as it is. Out of readObject, which stays small. */
+  private notAnObject(plan: Plan): unknown {
+    return this.isReference() ? this.reference((r) => r.readObject(plan)) : this.value();
   }
 
   /**
@@ -707,31 +910,33 @@ export class SchemaReader extends MsgPackReader {
   }
 
   readList(element: Read): unknown {
-    const b = this.peek();
+    const b = this.peek(), start = this.pos;
     if (b === 0xc0) {
       this.pos++;
       return null;
     }
     const n = this.arrayLength();
-    if (n < 0) return this.value(); // wrapped with a type id, or not a list
+    if (n < 0) return this.isReference() ? this.reference((r) => r.readList(element)) : this.value(); // wrapped with a type id, or not a list
     this.enter();
     const result = new Array(n);
+    if (this.made !== null) this.made.set(start, result);
     for (let t = 0; t < n; t++) result[t] = element(this);
     this.depth--;
     return result;
   }
 
   readDictionary(key: Read, value: Read): unknown {
-    const b = this.peek();
+    const b = this.peek(), start = this.pos;
     if (b === 0xc0) {
       this.pos++;
       return null;
     }
     if (this.startsWithTypeId()) return this.value();
     const n = this.mapLength();
-    if (n < 0) return this.value();
+    if (n < 0) return this.isReference() ? this.reference((r) => r.readDictionary(key, value)) : this.value();
     this.enter();
     const result: Record<string, unknown> = {};
+    if (this.made !== null) this.made.set(start, result);
     for (let t = 0; t < n; t++) {
       const k = key(this);
       setOwn(result, typeof k === 'string' ? k : String(k), value(this));
@@ -756,9 +961,13 @@ export class SchemaReader extends MsgPackReader {
     return result;
   }
 
-  /** A DateTime: the timestamps of 4 and 8 bytes read in place. */
+  /** A DateTime: LsMsgPack's native extension (type 6) and the timestamps of 4 and 8 bytes read in place. */
   readDate(): unknown {
     const bytes = this.bytes, p = this.pos, b = bytes[p];
+    if (b === 0xd7 && bytes[p + 1] === 6 && p + 10 <= bytes.length) {
+      this.pos = p + 10;
+      return nativeDate(this.view, p + 2);
+    }
     if (bytes[p + 1] === 0xff && (b === 0xd6 || b === 0xd7)) {
       const length = b === 0xd6 ? 4 : 8;
       if (p + 2 + length <= bytes.length) {
@@ -812,6 +1021,7 @@ export class Decoder {
       classes: options.classes,
       propertyNames: options.propertyNames ?? models?.propertyNames ?? 'camelCase',
       generateCode: options.generateCode ?? true,
+      references: options.references ?? 'copies',
     };
     if (models !== undefined) checkModelOptions(models, this.options);
     this.readerOptions = { decimal: this.options.decimal, maxDepth: options.maxDepth };
@@ -871,7 +1081,7 @@ export class Decoder {
   }
 
   private read(bytes: Uint8Array, schema: Schema | null, pos: number): unknown {
-    const reader = new SchemaReader(bytes, this.readerOptions, schema === null ? null : this.plansOf(schema), pos);
+    const reader = new SchemaReader(bytes, this.readerOptions, schema === null ? null : this.plansOf(schema), pos, this.options.references);
     const value = reader.readRoot();
     if (reader.pos !== bytes.length) throw new MsgPackError('Data after the value.', reader.pos);
     return value;
@@ -880,12 +1090,13 @@ export class Decoder {
   /**
    * One value at `start` in bytes[0, end) (internal: the stream reader): with the plans of the schema as the declared type says (undefined: the root of the schema,
    * dynamic without one; values with a type id become their entry's objects), or plain (schema null). Returns where it ends.
+   * @param prefix the path of the value in the root value of a stream head's body (the paths of its references start with it)
    * @internal
    */
-  readValue(bytes: Uint8Array, start: number, end: number, schema: Schema | null, type?: TypeExpr): { value: unknown; end: number } {
+  readValue(bytes: Uint8Array, start: number, end: number, schema: Schema | null, type?: TypeExpr, prefix?: number[]): { value: unknown; end: number } {
     const data = end >= bytes.length ? bytes : bytes.subarray(0, end);
     const plans = schema === null ? null : this.plansOf(schema);
-    const reader = new SchemaReader(data, this.readerOptions, plans, start);
+    const reader = new SchemaReader(data, this.readerOptions, plans, start, this.options.references, start, prefix);
     const value = plans === null ? reader.value() : type === undefined ? reader.readRoot() : plans.readOf(type)(reader);
     return { value, end: reader.pos };
   }

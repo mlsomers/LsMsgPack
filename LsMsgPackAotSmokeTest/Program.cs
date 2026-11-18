@@ -387,6 +387,7 @@ namespace LsMsgPackAotSmokeTest
       yield return ("reference", () => Converted(new LsMsgPackOptions() { SchemaStore = Store, WriteSchemaReference = true }));
       yield return ("trimmed", () => Converted(new LsMsgPackOptions() { TrimTrailingNulls = true, DynamicallyCompact = false }));
       yield return ("public-fields", () => Converted(new LsMsgPackOptions() { StaticFilters = PublicFields }));
+      yield return ("preserve", () => Converted(new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve })); // the generated code, the nested values through PreservingHandler/PreservingReader
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Deliberately without generated code: the JIT run writes the expected data with it, the NativeAOT run only reports how it does.")]
@@ -469,7 +470,9 @@ namespace LsMsgPackAotSmokeTest
         foreach ((string which, Func<LsMsgPackOptions, LsMsgPackSerializer> create) in new (string, Func<LsMsgPackOptions, LsMsgPackSerializer>)[] { ("explicit", Explicit), ("registered", Registered) })
         {
           // "public-fields": Route.Stops is not described (the generator's fields mode is Attributed), the runtime reads it by reflection (its metadata is kept): one boxed int per write
-          string problem = Problem(create(options()), sample, expected, values) ?? (name == "public-fields" ? null : AllocationProblem(create(options()))) ?? ReadAllocationProblem(create(options())) ?? CollectionAllocationProblem(create(options()));
+          // "preserve": a table of the objects per call (allocates), the shared address read back as one instance
+          string problem = Problem(create(options()), sample, expected, values)
+            ?? (name == "preserve" ? SharingProblem(create(options()), expected) : (name == "public-fields" ? null : AllocationProblem(create(options()))) ?? ReadAllocationProblem(create(options())) ?? CollectionAllocationProblem(create(options())));
           Console.WriteLine($"{name} {which}: {problem ?? "OK"}");
           if (problem != null)
             failures++;
@@ -480,6 +483,12 @@ namespace LsMsgPackAotSmokeTest
       }
       Console.WriteLine(failures == 0 ? "PASSED" : $"FAILED: {failures}");
       return failures == 0 ? 0 : 1;
+    }
+
+    private static string SharingProblem(LsMsgPackSerializer serializer, byte[] expected)
+    {
+      Invoice read = serializer.Deserialize<Invoice>(expected);
+      return ReferenceEquals(read.Customer.Billing, read.Customer.Shipping) ? null : "the shared address was read as two objects";
     }
 
     private static string Problem(LsMsgPackSerializer serializer, Invoice sample, byte[] expected, string values)
@@ -517,7 +526,7 @@ namespace LsMsgPackAotSmokeTest
           CustomerId = 7,
           Name = "Infotopie",
           Billing = home,
-          Shipping = new Address() { Street = "Dock 5", City = "Rotterdam" },
+          Shipping = home, // shared: a reference with ReferenceHandling.Preserve
           Scores = new Dictionary<string, int>() { { "a", 1 }, { "b", 2 } },
           Tags = new HashSet<string>() { "vip" }
         },

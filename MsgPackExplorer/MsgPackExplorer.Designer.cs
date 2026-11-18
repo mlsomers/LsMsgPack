@@ -108,6 +108,9 @@
       this.treeView1.TabIndex = 0;
       this.treeView1.DrawNode += new System.Windows.Forms.DrawTreeNodeEventHandler(this.treeView1_DrawNode);
       this.treeView1.AfterSelect += new System.Windows.Forms.TreeViewEventHandler(this.treeView1_AfterSelect);
+      this.treeView1.NodeMouseDoubleClick += new System.Windows.Forms.TreeNodeMouseClickEventHandler(this.treeView1_NodeMouseDoubleClick);
+      this.treeView1.KeyDown += new System.Windows.Forms.KeyEventHandler(this.treeView1_KeyDown);
+      this.treeView1.ShowNodeToolTips = true;
       // 
       // imageList1
       // 
@@ -511,7 +514,7 @@
       this.lsMsgPackExtensionsMenuItem.Name = "lsMsgPackExtensionsMenuItem";
       this.lsMsgPackExtensionsMenuItem.Size = new System.Drawing.Size(196, 22);
       this.lsMsgPackExtensionsMenuItem.Text = "LsMsgPack extensions";
-      this.lsMsgPackExtensionsMenuItem.ToolTipText = "Read extension type 1 as a decimal and the streams LsMsgPack writes (values of unknown length, their index)." +
+      this.lsMsgPackExtensionsMenuItem.ToolTipText = "Read extension type 1 as a decimal, 5 as a reference, 6 as a DateTime and the streams LsMsgPack writes (values of unknown length, their index)." +
     " Off: plain MsgPack, for data of other writers that use these extension types for something else";
       this.lsMsgPackExtensionsMenuItem.CheckedChanged += new System.EventHandler(this.lsMsgPackExtensionsMenuItem_CheckedChanged);
       //

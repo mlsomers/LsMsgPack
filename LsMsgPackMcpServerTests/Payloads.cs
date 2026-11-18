@@ -53,7 +53,7 @@ namespace LsMsgPackMcpServerTests
   }
 
   /// <summary>
-  /// Payloads written by LsMsgPack in its different settings.
+  /// Payloads written by LsMsgPack in its different settings, the dates as timestamps (the offsets the tests name were taken with them; the native DateTime: RendererTests.NativeDateTime_WithItsKind).
   /// </summary>
   public static class Payloads
   {
@@ -85,7 +85,7 @@ namespace LsMsgPackMcpServerTests
 
     public static byte[] Serialize<T>(T value, ObjectLayout layout, bool schema)
     {
-      return MsgPackSerializer.Serialize(value, new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = schema });
+      return MsgPackSerializer.Serialize(value, new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = schema, DateTimeFormat = DateTimeFormat.Timestamp });
     }
 
     /// <summary>
@@ -93,7 +93,7 @@ namespace LsMsgPackMcpServerTests
     /// </summary>
     public static byte[] SerializeWithReference<T>(T value, SchemaStore store)
     {
-      MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = ObjectLayout.Array, UseInexedSchema = true, SchemaStore = store, WriteSchemaReference = true };
+      MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = ObjectLayout.Array, UseInexedSchema = true, SchemaStore = store, WriteSchemaReference = true, DateTimeFormat = DateTimeFormat.Timestamp };
       return MsgPackSerializer.Serialize(value, settings);
     }
 
@@ -102,7 +102,7 @@ namespace LsMsgPackMcpServerTests
     /// </summary>
     public static byte[] Stream()
     {
-      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = new SchemaStore() });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { WriteSchemaReference = true, SchemaStore = new SchemaStore(), DateTimeFormat = DateTimeFormat.Timestamp });
       MemoryStream ms = new MemoryStream();
       using (MsgPackStreamWriter writer = new MsgPackStreamWriter(ms, serializer, MsgPackStreamSchemas.PerStream, true, new MsgPackStreamIndexOptions { PointInterval = 2 }))
       {

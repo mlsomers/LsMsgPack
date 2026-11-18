@@ -334,14 +334,14 @@ namespace LsMsgPack
       /// <summary>
       /// <see cref="Serializer.SerializeBody"/> of a struct value, as <see cref="SerializeInSlot(Serializer, in T, Stream, out byte[], IPayloadSink)"/>.
       /// </summary>
-      internal static void SerializeBodyInSlot(Serializer serializer, Serializer.WriterHead head, in T value, int depth, IPayloadSink sink)
+      internal static void SerializeBodyInSlot(Serializer serializer, Serializer.WriterHead head, in T value, int depth, IPayloadSink sink, int[] referencePrefix)
       {
         Serializer.WriteState state = serializer.RentState();
         RootSlot<T> slot = RootSlot<T>.Of(ref state.Slot);
         slot.Value = value;
         try
         {
-          serializer.SerializeBody(state, head, typeof(T), slot, Write, depth, sink);
+          serializer.SerializeBody(state, head, typeof(T), slot, Write, depth, sink, referencePrefix);
         }
         finally
         {

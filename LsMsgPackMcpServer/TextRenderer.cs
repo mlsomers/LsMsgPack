@@ -454,6 +454,12 @@ namespace LsMsgPackMcp
         text = "null"; // what the item holds is not what the data holds (e.g. "" for a string cut off)
         error = UnreadError(budget.Doc, obj.LastItemRef);
       }
+      else if (obj.ValueKind == ValueKind.Reference)
+      {
+        text = Reference(obj, notes);
+        if (obj.Type != null)
+          notes.Insert(0, obj.Type);
+      }
       else
       {
         text = Primitive(obj.ValueKind, obj.Value, options, notes);
@@ -643,6 +649,24 @@ namespace LsMsgPackMcp
       return Quote(name);
     }
 
+    /// <summary>
+    /// ReferenceHandling.Preserve: the value is the one at the path (written before), shown as { "$ref": its path in this view }.
+    /// </summary>
+    private static string Reference(PrimitiveObject obj, List<string> notes)
+    {
+      MpReference reference = obj.Value as MpReference;
+      string path = reference?.PathText ?? "?";
+      PrimitiveObject target = obj.ReferenceTarget;
+      if (target is null)
+      {
+        notes.Add(string.Concat("reference (ext type 5) to ", path, ": no value there before it, not valid"));
+        return "null";
+      }
+      notes.Add(string.Concat("reference (ext type 5, path ", path, "): the same object as the value there"));
+      string where = target.Parent is null ? string.Empty : target.Path;
+      return string.Concat("{ \"$ref\": ", Quote(where.Length == 0 || where[0] == '[' ? "$" + where : "$." + where), " }");
+    }
+
     private static string Primitive(ValueKind kind, object value, RenderOptions options, List<string> notes)
     {
       switch (kind)
@@ -660,8 +684,13 @@ namespace LsMsgPackMcp
         case ValueKind.String:
           return QuoteLimited((string)value, options.MaxString, notes);
         case ValueKind.Timestamp:
-          notes.Add("timestamp");
-          return value is DateTime time ? Quote(time.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture)) : Quote(PrimitiveObject.FormatValue(value));
+          if (!(value is DateTime time))
+          {
+            notes.Add("timestamp");
+            return Quote(PrimitiveObject.FormatValue(value));
+          }
+          notes.Add(time.Kind == DateTimeKind.Utc ? "timestamp" : string.Concat("DateTime of Kind ", time.Kind.ToString(), " (ext type 6)")); // a timestamp reads as UTC here, the native extension keeps its Kind
+          return Quote(DateText(time));
         case ValueKind.Bin:
           {
             byte[] bytes = (byte[])value;
@@ -791,6 +820,8 @@ namespace LsMsgPackMcp
       if (item is MpExt ext)
       {
         string head = string.Concat(type, ", type ", ext.TypeSpecifier.ToString(CultureInfo.InvariantCulture));
+        if (item is MpReference reference)
+          return string.Concat(head, " (reference): the value at path ", reference.PathText ?? "? (not a valid path)");
         if (item is MpStreamIndex index)
         {
           if (index.Index is null)
@@ -811,6 +842,8 @@ namespace LsMsgPackMcp
           return string.Concat(head, ", ", Count(bytes.Length, "byte", "bytes"), ": ", HexString(bytes, options.MaxBytes, " "));
         }
         object value = item.Value;
+        if (value is DateTime native && item is MpDateTime date && date.IsNative)
+          return string.Concat(head, " (DateTime, Kind ", native.Kind.ToString(), "): ", DateText(native));
         if (value is DateTime time)
           return string.Concat(head, " (timestamp): ", time.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture));
         if (value is decimal)
@@ -836,6 +869,19 @@ namespace LsMsgPackMcp
         if (item is MpBin) return string.Concat("bin of unknown length in ", Count(((MpBin)item).Chunks.Length, "chunk", "chunks"), " (C1 C4 ... C1 C0)");
       }
       return MsgPackItem.GetOfficialTypeName(doc.Encoding(item));
+    }
+
+    /// <summary>
+    /// A DateTime in ISO 8601 as its Kind says: UTC with Z, Local with the offset of this machine's time zone, Unspecified without a zone (the clock time of the native extension).
+    /// </summary>
+    private static string DateText(DateTime time)
+    {
+      switch (time.Kind)
+      {
+        case DateTimeKind.Utc: return time.ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture);
+        case DateTimeKind.Local: return time.ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz", CultureInfo.InvariantCulture);
+        default: return time.ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture);
+      }
     }
 
     /// <summary>
@@ -1095,7 +1141,7 @@ namespace LsMsgPackMcp
         case 0xd4: return "fixext 1 (extension type follows)";
         case 0xd5: return "fixext 2 (extension type follows)";
         case 0xd6: return "fixext 4 (extension type follows, -1: timestamp 32)";
-        case 0xd7: return "fixext 8 (extension type follows, -1: timestamp 64)";
+        case 0xd7: return "fixext 8 (extension type follows, -1: timestamp 64, 6: LsMsgPack's DateTime)";
         case 0xd8: return "fixext 16 (extension type follows, 2: LsMsgPack schema reference)";
         case 0xd9: return "str 8 (1 byte length follows)";
         case 0xda: return "str 16 (2 byte length follows)";

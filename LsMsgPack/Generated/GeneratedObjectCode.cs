@@ -110,7 +110,13 @@ namespace LsMsgPack.Generated
     /// <see cref="GeneratedIO.TryReadGuid(MsgPackReader, GeneratedReadPlan, out Guid)"/>, <see cref="GeneratedIO.TryReadDecimal(MsgPackReader, GeneratedReadPlan, out decimal)"/>; version 4).
     /// Without it the runtime reads the members of a serializer with <c>GuidFormat.String</c> or <c>DecimalFormat.String</c>.
     /// </summary>
-    ReadFormats = 1024
+    ReadFormats = 1024,
+
+    /// <summary>
+    /// The writers write DateTimes in the format of the plan (<see cref="GeneratedWritePlan.DateTimestamp"/>: <see cref="MsgPackWriter.NativeDateTime"/> by default; version 6).
+    /// Without it (the code writes timestamps) the runtime writes the DateTime members of a serializer with <c>DateTimeFormat.Native</c>.
+    /// </summary>
+    DateTimeFormats = 2048
   }
 
   /// <summary>
@@ -412,6 +418,11 @@ namespace LsMsgPack.Generated
     public readonly bool UnspecifiedIsUtc;
 
     /// <summary>
+    /// DateTimes are written as timestamps (<see cref="DateTimeFormat.Timestamp"/>), otherwise as the native extension. Only for code with <see cref="GeneratedCapabilities.DateTimeFormats"/>.
+    /// </summary>
+    public readonly bool DateTimestamp;
+
+    /// <summary>
     /// <see cref="LsMsgPack.MsgPackOptions.TrimTrailingNulls"/> (array layout).
     /// </summary>
     public readonly bool Trim;
@@ -484,7 +495,7 @@ namespace LsMsgPack.Generated
     private const byte FilterDefault = 1; // FilterDefaultValues, typed (ValueHandler.IncludeByDefault)
     private const byte FilterBoxed = 2; // a [DefaultValue]: the properties a filter decides by their owner have no generated member (Serializer.WriteMember)
 
-    internal GeneratedWritePlan(Serializer serializer, GeneratedObjectCode code, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool trim, byte decimalCode, bool guidString, bool decimalString,
+    internal GeneratedWritePlan(Serializer serializer, GeneratedObjectCode code, int[] ids, bool filterDefaults, bool unspecifiedIsUtc, bool dateTimestamp, bool trim, byte decimalCode, bool guidString, bool decimalString,
       bool unrolled, bool unrolledMap, bool unrolledTrimmed, PropWriter[] props)
     {
       _serializer = serializer;
@@ -495,6 +506,7 @@ namespace LsMsgPack.Generated
       Ids = ids;
       FilterDefaults = filterDefaults;
       UnspecifiedIsUtc = unspecifiedIsUtc;
+      DateTimestamp = dateTimestamp;
       Trim = trim;
       DecimalCode = decimalCode;
       GuidString = guidString;

@@ -135,6 +135,11 @@ namespace LsMsgPackInspector
     public string Name { get; set; }
     public string Description { get; set; }
     public string Value { get; set; }
+
+    /// <summary>
+    /// The item a value refers to (a reference, ReferenceHandling.Preserve: the first item of its target), selected when the value is clicked. Null for none.
+    /// </summary>
+    public int? Link { get; set; }
   }
 
   public class IssueModel

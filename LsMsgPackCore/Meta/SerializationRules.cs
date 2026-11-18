@@ -198,6 +198,30 @@ namespace LsMsgPack.Meta
       return new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id as an array ({nameof(ObjectLayout)}.{nameof(ObjectLayout.Array)}): the values have no property ids, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} or {nameof(ObjectLayout)}.{nameof(ObjectLayout.Map)}.");
     }
 
+    private static readonly ConcurrentDictionary<Type, bool> TrackedKinds = new ConcurrentDictionary<Type, bool>();
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/> (maintainer's decision 2026-11-16): whether a value of this runtime type keeps its identity, i.e. is written once and then as a reference to it:
+    /// an object with properties or a collection (written as an array or map) of a reference type. Not strings, byte[], structs, Uri, values of a custom extension or written as a plain
+    /// value (Version, StringBuilder...), tuples or multidimensional arrays. A converted value is tracked by its own type (the caller asks for the converter first), not by this.
+    /// <para>LsMsgPack: the kinds Complex, Map and Array of a class (TypeKind, decided in the same order as LsMsgPackDebug's MsgPackItem.Pack).</para>
+    /// </summary>
+    internal static bool TracksReferences(Type type, MsgPackOptions settings)
+    {
+      if (type.IsValueType || type == typeof(string) || type == typeof(byte[]) || type == typeof(sbyte[]) || type == typeof(Uri))
+        return false;
+      return TrackedKinds.GetOrAdd(type, IsTrackedKind) && !settings.HasCustomExtension(type);
+    }
+
+    private static bool IsTrackedKind(Type type)
+    {
+      if (type.IsArray)
+        return type.GetArrayRank() == 1;
+      if (typeof(IMsgPackExtension).IsAssignableFrom(type) || FrameworkTypeInfo.IsTuple(type) || FrameworkTypeInfo.GetPlainForm(type) != PlainForm.None)
+        return false;
+      return true;
+    }
+
     private static readonly ConcurrentDictionary<Type, string> Unsupported = new ConcurrentDictionary<Type, string>();
     private static readonly ConcurrentDictionary<Type, bool> FieldStructs = new ConcurrentDictionary<Type, bool>();
 

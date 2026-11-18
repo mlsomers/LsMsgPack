@@ -70,7 +70,7 @@ namespace LsMsgPack.Writing
     internal readonly CallbackReplay Replay = new CallbackReplay();
 
     /// <summary>
-    /// <see cref="MsgPackOptions.IgnoreCycles"/>: the objects with properties being written, the root first (LsMsgPack: CyclePath). Null until the first.
+    /// <see cref="ReferenceHandling.IgnoreCycles"/>: the objects with properties being written, the root first (LsMsgPack: CyclePath). Null until the first.
     /// </summary>
     private PathEntry[] _path;
     internal int PathCount;
@@ -151,6 +151,26 @@ namespace LsMsgPack.Writing
     /// <summary>
     /// A writer for content that has to be written before its header is known (the elements of a collection that is wrapped with a type id: the id is only known after the elements, as in LsMsgPack).
     /// </summary>
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: the objects and collections of the value being written (null without the option, made at its first write).
+    /// </summary>
+    internal ReferenceWriting References;
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/> in the body of a stream head: where the value is in the body's root value, the start of its paths (<see cref="ReferenceWriting.InKey"/>
+    /// inside a key), so the body stays the payload of Serialize of the root. Null for a root value.
+    /// </summary>
+    internal int[] ReferencePrefix;
+
+    /// <summary>
+    /// Copies the content of a rented writer (the tracked values written there move with it).
+    /// </summary>
+    internal void CopyRented(MsgPackWriter from, MsgPackWriter to)
+    {
+      References?.Copied(from, to, to.Pos);
+      to.Raw(from.Buf, 0, from.Pos);
+    }
+
     internal MsgPackWriter RentWriter()
     {
       MsgPackWriter writer;
@@ -162,6 +182,7 @@ namespace LsMsgPack.Writing
       else
         writer = new MsgPackWriter(256);
       writer.Reset(Serializer.Options);
+      writer.Moves = References; // null without ReferenceHandling.Preserve
       return writer;
     }
 

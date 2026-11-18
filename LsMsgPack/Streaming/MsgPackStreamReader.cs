@@ -98,6 +98,7 @@ namespace LsMsgPack.Streaming
       _littleEndian = BitConverter.IsLittleEndian != MsgPackOptions.SwapEndianChoice(_options, 2);
       _maxDepth = _options._maxDepth;
       _r = new MsgPackReader(null, 0, 0, _options);
+      _bodyPath = BodyPath;
     }
 
     private enum FrameKind : byte
@@ -123,6 +124,11 @@ namespace LsMsgPack.Streaming
       /// Where its count goes in _counts (read whole since the mark), -1 for none.
       /// </summary>
       internal int CountIndex;
+
+      /// <summary>
+      /// Known length: the elements it holds (keys and values for a map).
+      /// </summary>
+      internal long Total;
     }
 
     private enum HeadState : byte
@@ -471,7 +477,7 @@ namespace LsMsgPack.Streaming
         countIndex = _counts.Count;
         _counts.Add(0);
       }
-      _frames[_depth++] = new Frame { Kind = kind, Unknown = unknown, Count = count, CountIndex = countIndex };
+      _frames[_depth++] = new Frame { Kind = kind, Unknown = unknown, Count = count, CountIndex = countIndex, Total = count };
     }
 
     /// <summary>
@@ -571,15 +577,15 @@ namespace LsMsgPack.Streaming
     }
 
     /// <summary>
-    /// A timestamp (extension type -1), as the serializer reads it (see <see cref="MsgPackOptions.ReadDateTimeKind"/>).
+    /// A DateTime (extension type 6, <see cref="DateTimeFormat.Native"/>) or a timestamp (extension type -1), as the serializer reads it (see <see cref="MsgPackOptions.ReadDateTimeKind"/>).
     /// </summary>
     public DateTime GetDateTime()
     {
       Expect(MsgPackTokenType.Extension);
       BufferPayload();
       _r.Reset(_buf, _tokenStart, _pos + (int)_length);
-      if (_extensionType != -1 || !_r.TryReadDateTime(out DateTime value))
-        throw new InvalidOperationException($"The extension of type {_extensionType} is not a timestamp.");
+      if ((_extensionType != -1 && _extensionType != MsgPackOptions.DateTimeExtensionType) || !_r.TryReadDateTime(out DateTime value))
+        throw new InvalidOperationException($"The extension of type {_extensionType} is not a timestamp or a native DateTime (type {MsgPackOptions.DateTimeExtensionType}).");
       return value;
     }
 
@@ -777,13 +783,40 @@ namespace LsMsgPack.Streaming
         _token = MsgPackTokenType.None;
         _length = 0;
         if (head != null)
-          return _serializer.DeserializeBody(head, root, type, data, offset, end, out int used, null, intoSlot);
-        return _serializer.Deserialize(type, data, offset, end, out int consumed, null, intoSlot);
+          return _serializer.DeserializeBody(head, root, type, data, offset, end, out int used, null, intoSlot, depth > 0 ? _bodyPath : null);
+        return _serializer.Deserialize(type, data, offset, end, out int consumed, null, intoSlot, body && depth > 0 ? _bodyPath : null); // a body without the indexed schema (the head wrote nothing)
       }
       finally
       {
         _mark = -1;
       }
+    }
+
+    /// <summary>
+    /// <see cref="BodyPath"/>, made once (asked only when a value of a head's body has a reference).
+    /// </summary>
+    private readonly Func<int[]> _bodyPath;
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: where the value just passed is in the root value of a head's body, the start of the paths of its references
+    /// (as <see cref="MsgPackStreamWriter"/> writes them, so the body is the payload of Serialize of the root). Null inside a key (nothing is tracked there).
+    /// </summary>
+    private int[] BodyPath()
+    {
+      int[] path = new int[_depth];
+      for (int t = 0; t < _depth; t++)
+      {
+        Frame frame = _frames[t];
+        long read = (frame.Unknown ? frame.Count : frame.Total - frame.Count) - 1; // the value (and each array or map around it) is counted when it starts
+        if (frame.Kind == FrameKind.Map)
+        {
+          if ((read & 1) == 0)
+            return null;
+          read >>= 1; // the entry: a step stands for its value
+        }
+        path[t] = checked((int)read);
+      }
+      return path;
     }
 
     /// <summary>

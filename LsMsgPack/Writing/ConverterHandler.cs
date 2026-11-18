@@ -1,6 +1,7 @@
 ﻿using LsMsgPack.Converters;
 using LsMsgPack.IO;
 using LsMsgPack.Meta;
+using LsMsgPack.References;
 using System;
 using System.Runtime.CompilerServices;
 
@@ -64,6 +65,8 @@ namespace LsMsgPack.Writing
         return;
       }
       ValueHandler<TSurrogate> handler = _surrogate ?? (_surrogate = _serializer.Handler<TSurrogate>(null));
+      if (!typeof(TSurrogate).IsValueType && c.References != null && _serializer.PreserveReferences) // the converted value keeps the identity, not its surrogate (LsMsgPackDebug: SerializeSurrogate)
+        c.References.Surrogate = surrogate;
       handler.Write(c, surrogate, _surrogateInfo);
     }
 
@@ -109,6 +112,7 @@ namespace LsMsgPack.Writing
       _converter = converter;
       _extension = converter.ExtensionTypeCode ?? -1;
       _always = serializer.AlwaysTypeId;
+      ReservedCodes.ThrowIfUsed(converter, serializer.Options); // also one of [MsgPackConverter] on a type
     }
 
     internal override void Write(WriteContext c, T value, FullPropertyInfo assignedTo)

@@ -145,6 +145,15 @@ namespace LsMsgPack
       return false;
     }
 
+    internal override bool HasCustomExtensionCode(sbyte code)
+    {
+      LsExtension[] extensions = _extensions;
+      for (int t = 0; t < extensions.Length; t++)
+        if (extensions[t] != null && extensions[t].TypeCode == code)
+          return true;
+      return false;
+    }
+
     /// <summary>
     /// Called when a described schema (<see cref="SchemaVersion.Described"/>) is made, for the values of [DefaultValue], and for values kept as extension data that are not plain values (KeptValues.Encode: decimals, custom extensions).
     /// </summary>

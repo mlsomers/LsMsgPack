@@ -7,6 +7,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using LsMsgPack.Converters;
+using LsMsgPack.References;
+using LsMsgPackDebug.Types.Extensions;
 
 namespace LsMsgPackDebug
 {
@@ -37,7 +39,11 @@ namespace LsMsgPackDebug
 
     private static MsgPackItem SerializeRoot(object item, MsgPackSettings settings, FullPropertyInfo assignedTo)
     {
-      if (!settings._ignoreCycles)
+      if (ReservedCodes.Any(settings))
+        ThrowIfReservedCodesUsed(settings);
+      if (settings.PreservesReferences)
+        return SerializePreserving(item, settings, assignedTo);
+      if (!settings.IgnoresCycles)
         return SerializeObject(item, settings, assignedTo, 0, false);
 
       // A call of its own (also one inside another, e.g. from a custom extension): the objects of the caller are not on its path
@@ -55,7 +61,7 @@ namespace LsMsgPackDebug
     }
 
     /// <summary>
-    /// <see cref="MsgPackOptions.IgnoreCycles"/>: the objects with properties being written on this thread, from the root of the call (<see cref="Start"/>) to the current one.
+    /// <see cref="ReferenceHandling.IgnoreCycles"/>: the objects with properties being written on this thread, from the root of the call (<see cref="Start"/>) to the current one.
     /// </summary>
     private sealed class CyclePath
     {
@@ -88,7 +94,133 @@ namespace LsMsgPackDebug
     private static CyclePath _cyclePath;
 
     /// <summary>
-    /// <see cref="MsgPackOptions.IgnoreCycles"/>: an object that contains itself is nil where it is met again (LsMsgPack: CycleHandler, Serializer.WriteBoxed).
+    /// <see cref="ReferenceHandling.Preserve"/>: the objects and collections written by the call on this thread (a call of its own, e.g. from a callback, has its own; a repeated write starts again).
+    /// </summary>
+    [ThreadStatic]
+    private static ReferenceTable _references;
+
+    private sealed class ReferenceTable
+    {
+      internal readonly Dictionary<object, ReferenceTarget> Targets = new Dictionary<object, ReferenceTarget>(IdentityComparer.Instance);
+      internal List<MpReference> References;
+
+      /// <summary>
+      /// Above 0 while writing the keys of a map: a key is always written in full (a path step stands for an entry's value, it cannot point to a key).
+      /// </summary>
+      internal int InKeys;
+    }
+
+    /// <summary>
+    /// The extension type codes the settings give a meaning (references, native DateTime values) are refused for converters and custom extensions (Core's ReservedCodes, as LsMsgPack's Serializer).
+    /// </summary>
+    private static void ThrowIfReservedCodesUsed(MsgPackSettings settings)
+    {
+      ReservedCodes.ThrowIfUsed(settings);
+      ICustomExt[] custom = settings._customExtentionTypes;
+      for (int t = 0; custom != null && t < custom.Length; t++)
+        if (custom[t] != null)
+          ReservedCodes.ThrowIfUsed(custom[t].TypeSpecifier, custom[t].GetType().Name, settings);
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: the value, with a reference wherever an object or collection is met again (LsMsgPack: PreservingHandler, Serializer.WriteBoxed); the paths of the references
+    /// are known once the whole value is (<see cref="SetPaths"/>), the item tree has every value as it is written.
+    /// </summary>
+    private static MsgPackItem SerializePreserving(object item, MsgPackSettings settings, FullPropertyInfo assignedTo)
+    {
+      ReferenceTable outer = _references;
+      ReferenceTable table = _references = new ReferenceTable();
+      try
+      {
+        MsgPackItem root = SerializeObject(item, settings, assignedTo, 0, false);
+        if (table.References != null)
+          SetPaths(root, table.References);
+        return root;
+      }
+      finally
+      {
+        _references = outer;
+      }
+    }
+
+    private static void SetPaths(MsgPackItem root, List<MpReference> references)
+    {
+      Dictionary<object, ReferenceTarget> targets = new Dictionary<object, ReferenceTarget>(IdentityComparer.Instance);
+      for (int t = 0; t < references.Count; t++)
+        targets[references[t].Target.Item] = references[t].Target;
+      FindPaths(root, targets, new List<int>());
+      for (int t = 0; t < references.Count; t++)
+      {
+        int[] path = references[t].Target.Path;
+        if (path is null)
+          throw new MsgPackException("A reference points to a value that is not in the written tree."); // a bug: every target is written before its references
+        references[t].SetPath(path);
+      }
+    }
+
+    private static void FindPaths(object value, Dictionary<object, ReferenceTarget> targets, List<int> path)
+    {
+      if (!(value is MsgPackItem item))
+        return; // a key or type id written as it is
+      if (targets.TryGetValue(item, out ReferenceTarget target) && target.Path is null)
+        target.Path = path.ToArray();
+      if (item is MpArray)
+      {
+        Array items = item.Value as Array;
+        for (int t = 0; items != null && t < items.Length; t++)
+        {
+          path.Add(t);
+          FindPaths(items.GetValue(t), targets, path);
+          path.RemoveAt(path.Count - 1);
+        }
+      }
+      else if (item is MpMap && item.Value is KeyValuePair<object, object>[] entries)
+      {
+        for (int t = 0; t < entries.Length; t++)
+        {
+          path.Add(t);
+          FindPaths(entries[t].Value, targets, path);
+          path.RemoveAt(path.Count - 1);
+        }
+      }
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: an object or collection (<see cref="SerializationRules.TracksReferences"/>, or a converted value) written in full the first time, as a reference after that:
+    /// wrapped with the type id where its declared type differs, by the rules of the value itself.
+    /// </summary>
+    private static MsgPackItem SerializeReferenced(object item, Type tType, MsgPackConverter converter, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames, ReferenceTable table)
+    {
+      if (table.Targets.TryGetValue(item, out ReferenceTarget target))
+      {
+        MpReference reference = new MpReference(settings, target);
+        (table.References ?? (table.References = new List<MpReference>())).Add(reference);
+        if (!ReferenceNeedsTypeId(tType, converter, assignedTo, settings))
+          return reference;
+        return new MpMap(new KeyValuePair<object, object>[]
+        {
+          new KeyValuePair<object, object>(TypeIdKey, SerializationRules.GetTypeIdentifier(tType, settings, assignedTo)),
+          new KeyValuePair<object, object>(ContentKey, reference)
+        }, settings);
+      }
+      target = new ReferenceTarget();
+      table.Targets.Add(item, target);
+      target.Item = SerializeValue(item, tType, converter, settings, assignedTo, depth, byNames);
+      return target.Item;
+    }
+
+    /// <summary>
+    /// The type id rule of the value the reference stands for (LsMsgPack: Serializer.ReferenceNeedsTypeId): a converted value as SerializeConverted wraps it, the others as objects and collections are.
+    /// </summary>
+    private static bool ReferenceNeedsTypeId(Type tType, MsgPackConverter converter, FullPropertyInfo assignedTo, MsgPackSettings settings)
+    {
+      if (converter != null)
+        return !(assignedTo?.AssignedToType is null || !SerializationRules.NeedsTypeId(tType, assignedTo, settings));
+      return SerializationRules.NeedsTypeId(tType, assignedTo, settings);
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.IgnoreCycles"/>: an object that contains itself is nil where it is met again (LsMsgPack: CycleHandler, Serializer.WriteBoxed).
     /// </summary>
     private static MsgPackItem SerializeTracked(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
     {
@@ -119,6 +251,20 @@ namespace LsMsgPackDebug
         tType = nullableType;
 
       MsgPackConverter converter = settings.ConverterFor(tType, assignedTo); // the member's own converter first
+      if (settings.PreservesReferences && !tType.IsValueType)
+      {
+        ReferenceTable table = _references;
+        if (table != null && table.InKeys == 0 && (converter != null || SerializationRules.TracksReferences(tType, settings)))
+          return SerializeReferenced(item, tType, converter, settings, assignedTo, depth, byNames, table);
+      }
+      return SerializeValue(item, tType, converter, settings, assignedTo, depth, byNames);
+    }
+
+    /// <summary>
+    /// <see cref="SerializeObject"/> after the reference check (<see cref="ReferenceHandling.Preserve"/>).
+    /// </summary>
+    private static MsgPackItem SerializeValue(object item, Type tType, MsgPackConverter converter, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
+    {
       if (converter != null)
         return SerializeConverted(item, tType, converter, settings, assignedTo, depth, byNames);
 
@@ -156,7 +302,7 @@ namespace LsMsgPackDebug
         return SerializeTuple(item, tType, settings, assignedTo, depth, SerializationRules.EntersByNames(tType, assignedTo, byNames, false));
 
       // Any complex object with properties
-      if (settings._ignoreCycles && !tType.IsValueType)
+      if (settings.IgnoresCycles && !tType.IsValueType)
         return SerializeTracked(item, tType, settings, assignedTo, depth, byNames);
       return SerializeComplex(item, tType, settings, assignedTo, depth, byNames);
     }
@@ -169,9 +315,10 @@ namespace LsMsgPackDebug
     {
       bool wrap = !(assignedTo?.AssignedToType is null || tType.IsPrimitive || tType == typeof(string) || !SerializationRules.NeedsTypeId(tType, assignedTo, settings));
       object typeId = wrap ? SerializationRules.GetTypeIdentifier(tType, settings, assignedTo) : null;
+      ReservedCodes.ThrowIfUsed(converter as MsgPackBinaryConverter, settings); // also one of [MsgPackConverter] on a type
       MsgPackItem content = converter is MsgPackBinaryConverter binary && binary.ExtensionTypeCode != null
         ? new MpExt(settings) { TypeSpecifier = binary.ExtensionTypeCode.Value, Value = binary.ToBytes(item) } // the bytes of a binary converter as its extension (otherwise bin, as any byte[])
-        : SerializeObject(converter.ToSurrogateBoxed(item), settings, converter.SurrogateInfo, depth, byNames);
+        : SerializeSurrogate(converter.ToSurrogateBoxed(item), settings, converter.SurrogateInfo, depth, byNames);
       if (!wrap)
         return content;
       return new MpMap(new KeyValuePair<object, object>[]
@@ -179,6 +326,18 @@ namespace LsMsgPackDebug
         new KeyValuePair<object, object>(TypeIdKey, typeId),
         new KeyValuePair<object, object>(ContentKey, content)
       }, settings);
+    }
+
+    /// <summary>
+    /// The surrogate of a converted value: the converted value keeps the identity (<see cref="ReferenceHandling.Preserve"/>), the surrogate itself is not tracked (a converter may share them), its values are.
+    /// </summary>
+    private static MsgPackItem SerializeSurrogate(object surrogate, MsgPackSettings settings, FullPropertyInfo surrogateInfo, int depth, bool byNames)
+    {
+      if (surrogate is null || !settings.PreservesReferences)
+        return SerializeObject(surrogate, settings, surrogateInfo, depth, byNames);
+      Type tType = surrogate.GetType();
+      tType = Nullable.GetUnderlyingType(tType) ?? tType;
+      return SerializeValue(surrogate, tType, settings.ConverterFor(tType, surrogateInfo), settings, surrogateInfo, depth, byNames);
     }
 
     private static MsgPackItem SerializeComplex(object item, Type tType, MsgPackSettings settings, FullPropertyInfo assignedTo, int depth, bool byNames)
@@ -454,8 +613,9 @@ namespace LsMsgPackDebug
         FullPropertyInfo valueInfo = new FullPropertyInfo(info.ValueType ?? typeof(object));
 
         KeyValuePair<object, object>[] packedPairs = new KeyValuePair<object, object>[pairs.Length];
+        ReferenceTable table = settings.PreservesReferences ? _references : null;
         for (int t = 0; t < pairs.Length; t++)
-          packedPairs[t] = new KeyValuePair<object, object>(SerializeObject(pairs[t].Key, settings, keyInfo, depth + 1, byNames), SerializeObject(pairs[t].Value, settings, valueInfo, depth + 1, byNames));
+          packedPairs[t] = new KeyValuePair<object, object>(SerializeKey(pairs[t].Key, settings, keyInfo, depth + 1, byNames, table), SerializeObject(pairs[t].Value, settings, valueInfo, depth + 1, byNames));
 
         return new MpMap(packedPairs, settings);
       }
@@ -467,6 +627,24 @@ namespace LsMsgPackDebug
         packedItems[t] = SerializeObject(items.GetValue(t), settings, elementInfo, depth + 1, byNames);
 
       return new MpArray(settings) { Value = packedItems };
+    }
+
+    /// <summary>
+    /// A key of a dictionary, written in full (<see cref="ReferenceHandling.Preserve"/>: never a reference, a path cannot point to a key).
+    /// </summary>
+    private static MsgPackItem SerializeKey(object key, MsgPackSettings settings, FullPropertyInfo keyInfo, int depth, bool byNames, ReferenceTable table)
+    {
+      if (table is null)
+        return SerializeObject(key, settings, keyInfo, depth, byNames);
+      table.InKeys++;
+      try
+      {
+        return SerializeObject(key, settings, keyInfo, depth, byNames);
+      }
+      finally
+      {
+        table.InKeys--;
+      }
     }
 
     /// <returns>The number of entries in <paramref name="propVals"/></returns>

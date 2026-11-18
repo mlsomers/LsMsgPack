@@ -36,7 +36,7 @@ namespace LsMsgPackDebug.Meta
       switch (settings._dateTimeOffsetFormat)
       {
         case DateTimeOffsetFormat.Timestamp:
-          return new MpDateTime(settings) { Value = value };
+          return new MpDateTime(settings, false) { Value = value }; // always a timestamp: DateTimeFormat is for DateTime
         case DateTimeOffsetFormat.ClockTimeAndOffset:
           return OffsetArray(new DateTime(value.Ticks, DateTimeKind.Utc), value, settings);
         default:
@@ -48,7 +48,7 @@ namespace LsMsgPackDebug.Meta
     {
       return new MpArray(settings)
       {
-        Value = new MsgPackItem[] { new MpDateTime(settings) { Value = timestamp }, new MpInt(settings) { Value = (short)value.Offset.TotalMinutes } }
+        Value = new MsgPackItem[] { new MpDateTime(settings, false) { Value = timestamp }, new MpInt(settings) { Value = (short)value.Offset.TotalMinutes } }
       };
     }
 

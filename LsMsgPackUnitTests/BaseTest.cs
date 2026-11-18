@@ -9,7 +9,8 @@ namespace LsMsgPackUnitTests
 {
   public class MsgPackTests
   {
-    public static MsgPackItem RoundTripTest<Typ, T>(T value, int expectedLength, MsgPackTypeId expectedMsgPackType, bool dynamicallyCompact = true, sbyte extensionType = 0) where Typ : MsgPackItem
+    public static MsgPackItem RoundTripTest<Typ, T>(T value, int expectedLength, MsgPackTypeId expectedMsgPackType, bool dynamicallyCompact = true, sbyte extensionType = 0,
+      DateTimeFormat dateTimeFormat = DateTimeFormat.Native) where Typ : MsgPackItem
     {
       bool preservingType = !dynamicallyCompact;
 
@@ -25,7 +26,8 @@ namespace LsMsgPackUnitTests
       else
         item = MsgPackItem.Pack(value, new MsgPackSettings()
         {
-          DynamicallyCompact = dynamicallyCompact
+          DynamicallyCompact = dynamicallyCompact,
+          DateTimeFormat = dateTimeFormat
         });
       byte[] buffer = item.ToBytes();
       Type expectedType = typeof(Typ);

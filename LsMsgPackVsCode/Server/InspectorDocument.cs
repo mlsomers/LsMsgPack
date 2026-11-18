@@ -43,7 +43,7 @@ namespace LsMsgPackInspector
     public long LargeValueLimit { get; set; } = MsgPackSettings.PracticalDebuggingLimit;
 
     /// <summary>
-    /// Read the extensions LsMsgPack writes ("LsMsgPack extensions" of the explorer): type 1 as a decimal, and streams (values of unknown length, the index and sidecar of a stream).
+    /// Read the extensions LsMsgPack writes ("LsMsgPack extensions" of the explorer): type 1 as a decimal, 5 as a reference, 6 as a DateTime, and streams (values of unknown length, the index and sidecar of a stream).
     /// Off: plain MsgPack as the specification defines it, for data of other writers that use these extension types for something else.
     /// </summary>
     public bool LsMsgPackExtensions { get; set; } = true;
@@ -116,8 +116,9 @@ namespace LsMsgPackInspector
         PreservePackages = true,
         ContinueProcessingOnBreakingError = settings.ContinueOnError,
         EndianAction = settings.Endian,
-        // The extensions of LsMsgPack: decimals (type 1), and values of unknown length and the index of a stream, as its MsgPackStreamWriter writes them
+        // The extensions of LsMsgPack: decimals (type 1), references (5), DateTimes (6), and values of unknown length and the index of a stream, as its MsgPackStreamWriter writes them
         CustomExtentionTypes = settings.LsMsgPackExtensions ? MsgPackSettings.Default_CustomExtentionTypes : new ICustomExt[0],
+        ReadLsMsgPackExtensions = settings.LsMsgPackExtensions,
         ReadStreams = settings.LsMsgPackExtensions,
         TruncateValuesLargerThan = settings.LargeValueLimit
       };
@@ -683,7 +684,7 @@ namespace LsMsgPackInspector
     /// <summary>
     /// The primitive members of an object (the objects and collections are in the tree), as the property grid of the explorer's objects pane shows them.
     /// </summary>
-    private static List<PropModel> GetObjectProperties(ComplexObject obj)
+    private List<PropModel> GetObjectProperties(ComplexObject obj)
     {
       List<PropModel> props = new List<PropModel>();
 
@@ -706,7 +707,10 @@ namespace LsMsgPackInspector
       {
         if (member is ComplexObject)
           continue;
-        props.Add(new PropModel(GetCategory(obj, member), member.Name, Describe(member), member.DefaultText != null ? string.Concat(member.ValueText, " (left out: ", member.DefaultText, ")") : member.ValueText));
+        PropModel prop = new PropModel(GetCategory(obj, member), member.Name, Describe(member), member.DefaultText != null ? string.Concat(member.ValueText, " (left out: ", member.DefaultText, ")") : member.ValueText);
+        if (member.ReferenceTarget != null)
+          prop.Link = GetDisplayedId(member.ReferenceTarget.LastItemRef) ?? GetDisplayedId(member.ReferenceTarget.FirstItemRef);
+        props.Add(prop);
       }
       return props;
     }

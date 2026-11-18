@@ -122,7 +122,7 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// Returns a copy of the settings that produces plain MsgPack (no indexed schema, no type id's, objects as maps keyed by property names), so the result is not tied to LsMsgPack.
+    /// Returns a copy of the settings that produces plain MsgPack (no indexed schema, no type id's, objects as maps keyed by property names, DateTimes as timestamps), so the result is not tied to LsMsgPack.
     /// </summary>
     /// <param name="settings">MsgPackSettings (LsMsgPack) or LsMsgPackOptions (LsMsgPack)</param>
     public static TOptions ToPlain<TOptions>(TOptions settings) where TOptions : MsgPackOptions
@@ -134,6 +134,7 @@ namespace LsMsgPack
       plain.WriteSchemaReference = false;
       plain.AddTypeIdOptions = AddTypeIdOption.Never;
       plain.ObjectLayout = ObjectLayout.Map; // without the schema an array can only be read in the writer's order
+      plain.DateTimeFormat = DateTimeFormat.Timestamp; // other libraries read timestamps as dates, the native extension as an unknown one
       return plain;
     }
 

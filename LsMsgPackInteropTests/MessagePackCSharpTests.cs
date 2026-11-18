@@ -28,7 +28,7 @@ namespace LsMsgPackInteropTests
     protected abstract LsMsgPackUnitTests.ISerializerUnderTest Serializer { get; }
 
     private static readonly MsgPackSettings Indexed = new MsgPackSettings() { UseInexedSchema = true };
-    private static readonly MsgPackSettings Named = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }; // contractless reads maps keyed by names
+    private static readonly MsgPackSettings Named = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map }; // contractless reads maps keyed by names (and timestamps as dates)
 
     private static readonly MessagePackSerializerOptions Standard = MessagePackSerializerOptions.Standard;
     private static readonly MessagePackSerializerOptions Contractless = ContractlessStandardResolver.Options;
@@ -59,6 +59,7 @@ namespace LsMsgPackInteropTests
     private static readonly MsgPackSettings Positional = new MsgPackSettings()
     {
       UseInexedSchema = false,
+      DateTimeFormat = DateTimeFormat.Timestamp, // other libraries read timestamps
       ObjectLayout = ObjectLayout.Array,
       PropertyOrder = PropertyOrder.Declaration,
       AddTypeIdOptions = AddTypeIdOption.Never,
@@ -286,7 +287,7 @@ namespace LsMsgPackInteropTests
       Assert.AreEqual(when.UtcDateTime - when.Offset, misread.UtcDateTime, "the moment read as the clock time");
       Assert.AreEqual(when.UtcDateTime + when.Offset, Serializer.Deserialize<DateTimeOffset>(MessagePackSerializer.Serialize(when, Standard), Named).UtcDateTime, "the clock time read as the moment");
 
-      MsgPackSettings clock = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DateTimeOffsetFormat = DateTimeOffsetFormat.ClockTimeAndOffset };
+      MsgPackSettings clock = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map, DateTimeOffsetFormat = DateTimeOffsetFormat.ClockTimeAndOffset };
       byte[] ls = Serializer.Serialize(when, clock);
       CollectionAssert.AreEqual(MessagePackSerializer.Serialize(when, Standard), ls);
       foreach (DateTimeOffset read in new[] { MessagePackSerializer.Deserialize<DateTimeOffset>(ls, Standard), Serializer.Deserialize<DateTimeOffset>(ls, clock) })
@@ -336,7 +337,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void DefaultValues_WrittenWithoutDynamicFilters()
     {
-      MsgPackSettings everything = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
+      MsgPackSettings everything = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
       DefaultsProbe probe = new DefaultsProbe() { Text = "", Retries = 0, Enabled = false, Items = null };
       byte[] bytes = Serializer.Serialize(probe, everything);
 
@@ -363,7 +364,7 @@ namespace LsMsgPackInteropTests
       object withTypeId = MessagePackSerializer.Deserialize<WithObjectMember>(Serializer.Serialize(item, Named), Contractless).When;
       Assert.IsInstanceOfType<IDictionary<object, object>>(withTypeId);
 
-      MsgPackSettings noTypeIds = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, AddTypeIdOptions = AddTypeIdOption.Never };
+      MsgPackSettings noTypeIds = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map, AddTypeIdOptions = AddTypeIdOption.Never };
       Assert.AreEqual(item.When, MessagePackSerializer.Deserialize<WithObjectMember>(Serializer.Serialize(item, noTypeIds), Contractless).When);
     }
   }

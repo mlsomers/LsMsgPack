@@ -256,6 +256,11 @@ namespace LsMsgPack.Streaming
       /// Unknown length: the elements written (keys and values for a map), the bytes for a str or bin.
       /// </summary>
       internal long Count;
+
+      /// <summary>
+      /// Known length: the elements it holds (keys and values for a map).
+      /// </summary>
+      internal long Total;
     }
 
     private const long MaxUnknownCount = uint.MaxValue; // the limits of the specification also apply to values of unknown length
@@ -385,7 +390,7 @@ namespace LsMsgPack.Streaming
     }
 
     /// <summary>
-    /// A timestamp, as the serializer writes a DateTime (see <see cref="LsMsgPackOptions.UnspecifiedDateTimeKind"/>).
+    /// A DateTime as the serializer writes it (see <see cref="MsgPackOptions.DateTimeFormat"/>).
     /// </summary>
     public void Write(DateTime value)
     {
@@ -627,15 +632,18 @@ namespace LsMsgPack.Streaming
       bool body = ObjectValue(out Serializer.WriterHead head);
       try
       {
-        if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct) // a struct, in a slot instead of a box
+        int[] prefix = body && head is null ? BodyPath() : null;
+        if (prefix != null) // ReferenceHandling.Preserve in the body of a head without the indexed schema (it wrote nothing)
+          SerializeInBody(typeof(T), value, prefix);
+        else if (typeof(T).IsValueType && RootSlot<T>.IsPlainStruct) // a struct, in a slot instead of a box
         {
           if (head != null)
-            LsMsgPackSerializer.TypedWriter<T>.SerializeBodyInSlot(_serializer, head, value, _depth, this);
+            LsMsgPackSerializer.TypedWriter<T>.SerializeBodyInSlot(_serializer, head, value, _depth, this, BodyPath());
           else
             LsMsgPackSerializer.TypedWriter<T>.SerializeInSlot(_serializer, value, null, out byte[] unused, this);
         }
         else if (head != null)
-          _serializer.SerializeBody(head, typeof(T), value, LsMsgPackSerializer.TypedWriter<T>.Write, _depth, this);
+          _serializer.SerializeBody(head, typeof(T), value, LsMsgPackSerializer.TypedWriter<T>.Write, _depth, this, BodyPath());
         else
           _serializer.Serialize(typeof(T), value, LsMsgPackSerializer.TypedWriter<T>.Write, null, out byte[] unused, this);
       }
@@ -658,8 +666,11 @@ namespace LsMsgPack.Streaming
       Type assignedTo = declaredType ?? value?.GetType() ?? typeof(object);
       try
       {
+        int[] prefix = body && head is null ? BodyPath() : null;
         if (head != null)
-          _serializer.SerializeBody(head, assignedTo, value, LsMsgPackSerializer.BoxedWriter, _depth, this);
+          _serializer.SerializeBody(head, assignedTo, value, LsMsgPackSerializer.BoxedWriter, _depth, this, BodyPath());
+        else if (prefix != null)
+          SerializeInBody(assignedTo, value, prefix);
         else
           _serializer.Serialize(assignedTo, value, LsMsgPackSerializer.BoxedWriter, null, out byte[] unused, this);
       }
@@ -707,6 +718,50 @@ namespace LsMsgPack.Streaming
         throw new InvalidOperationException($"With the indexed schema an object is two values (its schema or a reference to it, then the object): {nameof(WriteObject)} writes it as a root value of the stream ({nameof(Depth)} 0). To write objects in an array or map, write the schema once before it with {nameof(WriteHead)}, or use a serializer without the indexed schema.");
       Value();
       return body;
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/> in the body of a head: where the value is in the body's root value, the start of the paths of its references (so the body stays the payload of
+    /// Serialize of the root type; references never point into another value). Inside a key: <c>ReferenceWriting.InKey</c> (written in full, as a key). Null at the body's root, or without the option.
+    /// </summary>
+    /// <summary>
+    /// A value of the body of a head without the indexed schema, with <see cref="ReferenceHandling.Preserve"/>: as Serialize writes it, its paths starting at the body's root.
+    /// </summary>
+    private void SerializeInBody(Type assignedTo, object value, int[] prefix)
+    {
+      Serializer.WriteState state = _serializer.RentState();
+      WriteContext c = state.Context;
+      c.ReferencePrefix = prefix;
+      try
+      {
+        _serializer.Serialize(state, assignedTo, value, LsMsgPackSerializer.BoxedWriter, null, out byte[] unused, this);
+      }
+      finally
+      {
+        c.ReferencePrefix = null; // the state went back to the thread (its slot is this thread's): the next call starts without it
+      }
+    }
+
+    private int[] BodyPath()
+    {
+      if (_depth == 0 || !_serializer.PreserveReferences)
+        return null;
+      int[] path = new int[_depth];
+      for (int t = 0; t < _depth; t++)
+      {
+        Frame frame = _frames[t];
+        long written = frame.Unknown ? frame.Count : frame.Total - frame.Count;
+        if (t < _depth - 1)
+          written--; // the open array or map in it is counted already
+        if (frame.Kind == FrameKind.Map)
+        {
+          if ((written & 1) == 0)
+            return Writing.ReferenceWriting.InKey;
+          written >>= 1; // the entry: a step stands for its value
+        }
+        path[t] = checked((int)written);
+      }
+      return path;
     }
 
     /// <summary>
@@ -1205,7 +1260,7 @@ namespace LsMsgPack.Streaming
         _ix.RootArray = kind == FrameKind.Array;
       if (_depth == _frames.Length)
         Array.Resize(ref _frames, _frames.Length * 2);
-      _frames[_depth++] = new Frame { Kind = kind, Unknown = unknown, Count = count };
+      _frames[_depth++] = new Frame { Kind = kind, Unknown = unknown, Count = count, Total = count };
     }
 
     private static string Name(FrameKind kind)

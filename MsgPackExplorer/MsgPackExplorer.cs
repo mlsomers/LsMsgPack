@@ -172,7 +172,7 @@ namespace MsgPackExplorer
         private bool _lsMsgPackExtensions = true;
         [Category("MsgPack")]
         [DisplayName("LsMsgPack Extensions")]
-        [Description("Read the extensions LsMsgPack writes: type 1 as a decimal, and streams (values of unknown length, the index and sidecar of a stream). Off: plain MsgPack as the specification defines it, for data of other writers that use these extension types for something else.")]
+        [Description("Read the extensions LsMsgPack writes: type 1 as a decimal, 5 as a reference, 6 as a DateTime, and streams (values of unknown length, the index and sidecar of a stream). Off: plain MsgPack as the specification defines it, for data of other writers that use these extension types for something else.")]
         [DefaultValue(true)]
         public bool LsMsgPackExtensions
         {
@@ -236,8 +236,9 @@ namespace MsgPackExplorer
                 PreservePackages = true,
                 ContinueProcessingOnBreakingError = _continueOnError,
                 EndianAction = _endianHandling,
-                // The extensions of LsMsgPack: decimals (type 1), and values of unknown length and the index of a stream, as its MsgPackStreamWriter writes them
+                // The extensions of LsMsgPack: decimals (type 1), references (5), DateTimes (6), and values of unknown length and the index of a stream, as its MsgPackStreamWriter writes them
                 CustomExtentionTypes = _lsMsgPackExtensions ? MsgPackSettings.Default_CustomExtentionTypes : new ICustomExt[0],
+                ReadLsMsgPackExtensions = _lsMsgPackExtensions,
                 ReadStreams = _lsMsgPackExtensions,
                 TruncateValuesLargerThan = MsgPackSettings.PracticalDebuggingLimit
             };
@@ -606,6 +607,12 @@ namespace MsgPackExplorer
             if (pos > 0) text = text.Substring(0, pos - 1);
             TreeNode node = new TreeNode(text, imgIdx, imgIdx);
             if (ReferenceEquals(item, null) || item.IsBestGuess) node.ForeColor = Color.DarkGray;
+            MpReference reference = item as MpReference;
+            if (reference != null)
+            {
+                node.ForeColor = Color.RoyalBlue; // a link: double-click or Enter selects the value it points to
+                node.ToolTipText = string.Concat("A reference to the value at ", reference.PathText ?? "(not a path)", ". Double-click or Enter: go to that value.");
+            }
             node.Tag = item;
             return node;
         }

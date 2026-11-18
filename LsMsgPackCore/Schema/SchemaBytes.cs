@@ -552,7 +552,8 @@ namespace LsMsgPack
     }
 
     /// <summary>
-    /// The type and data of an extension. A timestamp (type -1) holds numbers in the byte order of the settings (see MpDateTime), any other extension is copied as it is.
+    /// The type and data of an extension. A timestamp (type -1) and a native DateTime (type 6, unless a custom extension has that code) hold numbers in the byte order of the settings
+    /// (see MpDateTime), any other extension is copied as it is.
     /// </summary>
     private static void CopyExtension(Stream stream, long length, ByteWriter target, MsgPackOptions from, MsgPackOptions to)
     {
@@ -565,6 +566,8 @@ namespace LsMsgPack
         CopyLength(stream, 4, target, from, to); // nanoseconds
         CopyLength(stream, 8, target, from, to); // seconds
       }
+      else if (type == MsgPackOptions.DateTimeExtensionType && length == 8 && !from.HasCustomExtensionCode(MsgPackOptions.DateTimeExtensionType))
+        CopyLength(stream, 8, target, from, to);
       else
         CopyBytes(stream, length, target);
     }

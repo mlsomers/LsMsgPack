@@ -42,6 +42,46 @@ namespace LsMsgPackTsTestServer
     [HttpPost("echo/motion")]
     public IActionResult EchoMotion(Motion motion) => new JsonResult(motion);
 
+    /// <summary>
+    /// Shared objects and collections, with <paramref name="cycle"/> a cycle (needs references: 'preserve' in the client), written with ReferenceHandling.Preserve and the described schema.
+    /// Not by the formatters: Preserve there would add references to the other payloads too (the invoices share their customers), which the benchmarks and the other tests read.
+    /// </summary>
+    [HttpGet("shared")]
+    public IActionResult GetShared([FromQuery] bool cycle = false) => File(Preserving.Serialize(Data.Shared(cycle)), "application/x-lsmsgpack");
+
+    private static readonly LsMsgPackSerializer Preserving = new LsMsgPackSerializer(PreservingOptions());
+
+    private static LsMsgPackOptions PreservingOptions()
+    {
+      LsMsgPackOptions options = LsMsgPackPresets.LsMsgPack();
+      options.SchemaVersion = SchemaVersion.Described;
+      options.ReferenceHandling = ReferenceHandling.Preserve;
+      return options;
+    }
+
+    /// <summary>A plain request body (application/msgpack) read with ReferenceHandling.Preserve, the names ignoring case, as the formatters read plain bodies.</summary>
+    private static readonly LsMsgPackSerializer PreservingPlain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, PropertyNameCaseInsensitive = true, ReferenceHandling = ReferenceHandling.Preserve });
+
+    /// <summary>Reads a Shared the client wrote (with ReferenceHandling.Preserve) and answers which values came back as one instance.</summary>
+    [HttpPost("echo/shared")]
+    public async System.Threading.Tasks.Task<IActionResult> EchoShared()
+    {
+      System.IO.MemoryStream body = new System.IO.MemoryStream();
+      await Request.Body.CopyToAsync(body);
+      Shared shared = PreservingPlain.Deserialize<Shared>(body.ToArray());
+      return Echo(shared);
+    }
+
+    private static IActionResult Echo(Shared shared) => new JsonResult(new
+    {
+      Orders = shared.Orders.Count,
+      SameCustomer = shared.Orders.TrueForAll(o => ReferenceEquals(o.Customer, shared.Customer)),
+      SameList = ReferenceEquals(shared.Same, shared.Orders),
+      Self = ReferenceEquals(shared.Self, shared),
+      AnimalIsPet = ReferenceEquals(shared.Animal, shared.Pets[0]),
+      shared.Animal?.Name,
+    });
+
     [HttpGet("nothing")]
     public Address GetNothing() => null;
 
@@ -59,6 +99,7 @@ namespace LsMsgPackTsTestServer
         "values" => Data.KindValues(),
         "addresses" => GetAddresses(),
         "motion" => Data.Motion(),
+        "shared" => Data.Shared(false),
         _ => null
       };
       if (value is null)
@@ -261,6 +302,22 @@ namespace LsMsgPackTsTestServer
       Frame = 42,
       Scale = new Vector2(2, 0.5f),
     };
+
+    internal static Shared Shared(bool cycle)
+    {
+      Customer customer = Invoices(1)[0].Customer;
+      Shared shared = new Shared
+      {
+        Orders = new List<Order> { new Order { Id = 1, Customer = customer, ShipTo = customer }, new Order { Id = 2, Customer = customer }, new Order { Id = 3, Customer = customer } },
+        Customer = customer,
+        Pets = new List<Dog> { new Dog { Name = "Rex", Barks = 3 } },
+      };
+      shared.Same = shared.Orders;
+      shared.Animal = shared.Pets[0];
+      if (cycle)
+        shared.Self = shared;
+      return shared;
+    }
 
     internal static Zoo Zoo() => new Zoo
     {

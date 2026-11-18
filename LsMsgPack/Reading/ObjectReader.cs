@@ -104,7 +104,7 @@ namespace LsMsgPack.Reading
 
       int depth = c.Depth;
       c.Enter();
-      object result = plan.Create();
+      object result = plan.Create(c, start);
       int next = 0; // names are usually written in the order of the properties
       for (int t = 0; t < count; t++)
       {
@@ -147,7 +147,7 @@ namespace LsMsgPack.Reading
     {
       int depth = c.Depth;
       c.Enter();
-      object result = plan.Create();
+      object result = plan.Create(c, start);
       if (!plan.Code.ReadMapBoxed(c, result, plan, bound, count, plan.GeneratedRead))
         return Restart(c, start, depth, assignedTo);
       c.Depth = depth;
@@ -175,7 +175,7 @@ namespace LsMsgPack.Reading
 
       int depth = c.Depth;
       c.Enter();
-      object result = plan.Create();
+      object result = plan.Create(c, start);
       if (plan.Positional) // the reader of the source generator: the same loop
         plan.Code.ReadPositionalBoxed(c, result, props, items, plan.GeneratedRead);
       else
@@ -234,6 +234,7 @@ namespace LsMsgPack.Reading
     private T Restart(ReadContext c, int start, int depth, FullPropertyInfo assignedTo)
     {
       c.Depth = depth;
+      c.References?.Unregister(start); // ReferenceHandling.Preserve: the object read so far is dropped (the values in it were read whole: they stay)
       return Slow(c, start, assignedTo);
     }
 
@@ -371,7 +372,7 @@ namespace LsMsgPack.Reading
       int depth = c.Depth;
       c.Enter();
       int inner = c.Depth;
-      object result = plan.Create();
+      object result = plan.Create(c, start);
       c.Differences.Push(result);
       int parents = c.Differences.Depth;
       int next = 0; // names are usually written in the order of the properties
@@ -443,7 +444,7 @@ namespace LsMsgPack.Reading
       int depth = c.Depth;
       c.Enter();
       int inner = c.Depth;
-      object result = plan.Create();
+      object result = plan.Create(c, start);
       c.Differences.Push(result);
       int parents = c.Differences.Depth;
       int t = 0;
@@ -506,6 +507,7 @@ namespace LsMsgPack.Reading
     {
       c.Depth = depth;
       c.Differences.Pop(); // the object is read again
+      c.References?.Unregister(start);
       return Slow(c, start, assignedTo);
     }
 
@@ -696,21 +698,54 @@ namespace LsMsgPack.Reading
 
       for (int t = Props.Length - 1; t >= 0; t--)
         Props[t].CompiledId = t;
+      if (serializer.PreserveReferences && !type.IsValueType) // structs are never referred to
+        _compiledAt = Preserving;
+      _untilCompiled = _compiledAt;
       if (Code is null && !Extended && serializer.CompileReadersAfter >= 0) // not with generated code: it is used
       {
         if (serializer.CompileReadersAfter == 0)
           Compile();
         else
-          _untilCompiled = serializer.CompileReadersAfter;
+          _untilCompiled = _compiledAt + serializer.CompileReadersAfter;
       }
     }
 
+    /// <param name="start">Where the object's value starts (<see cref="ReferenceHandling.Preserve"/> registers it there before its values: a cycle back to it resolves)</param>
+    internal object Create(ReadContext c, int start)
+    {
+      if (_untilCompiled > 0) // also with ReferenceHandling.Preserve (Preserving): no test of its own here
+        return CreateCounting(c, start);
+      return _create();
+    }
+
+    /// <summary>
+    /// An object not read from a payload (LsMsgPack.Data's row mapper: never a reference, nothing registered).
+    /// </summary>
     internal object Create()
     {
-      if (_untilCompiled > 0)
+      if (_untilCompiled > _compiledAt)
         CountRead();
       return _create();
     }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private object CreateCounting(ReadContext c, int start)
+    {
+      if (_untilCompiled > _compiledAt)
+        CountRead();
+      object created = _create();
+      if (_compiledAt != 0) // ReferenceHandling.Preserve (a plan with WithValues returned before setting it: the object is made after its values, registered then by PreservingReader)
+        c.References?.Register(start, created);
+      return created;
+    }
+
+    /// <summary>
+    /// <see cref="_untilCompiled"/> once the reader is compiled, or when it never is: 0, or <see cref="Preserving"/> with <see cref="ReferenceHandling.Preserve"/>, so <see cref="Create(ReadContext, int)"/>
+    /// keeps taking <see cref="CreateCounting"/>, which registers the object, while the compiled reader reads its values.
+    /// </summary>
+    private readonly int _compiledAt;
+
+    private const int Preserving = 1 << 30;
 
     private static Func<object> WithDeserializing(Func<object> create, SerializationCallbacks callbacks)
     {
@@ -752,7 +787,7 @@ namespace LsMsgPack.Reading
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void CountRead()
     {
-      if (--_untilCompiled == 0)
+      if (--_untilCompiled == _compiledAt)
         ThreadPool.UnsafeQueueUserWorkItem(plan => ((ReadPlan)plan).Compile(), this); // no ExecutionContext: nothing of the caller's (AsyncLocal values) is needed or kept
     }
 
@@ -762,7 +797,7 @@ namespace LsMsgPack.Reading
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void Compile()
     {
-      _untilCompiled = 0;
+      _untilCompiled = _compiledAt;
 #if NET5_0_OR_GREATER
       if (!RuntimeFeature.IsDynamicCodeSupported) // never true here (CompiledWriter.Supported), but a constant for NativeAOT: it then leaves out the expression compiler
         return;

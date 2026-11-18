@@ -6,6 +6,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Threading;
 
 namespace LsMsgPack.Meta
 {
@@ -206,6 +207,60 @@ namespace LsMsgPack.Meta
         AddMethod.Invoke(result, args);
       }
       return result;
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: the empty collection, filled by <see cref="FillCreated"/> once its elements are converted, so it is registered before them and a cycle
+    /// back to it resolves. Null when the collection is made of its elements (a factory, no parameterless constructor, no Add: a cycle back to it is an error).
+    /// </summary>
+    internal object CreateBeforeElements(MsgPackOptions settings)
+    {
+      int before = Volatile.Read(ref _beforeElements);
+      if (before == 0)
+      {
+        bool fills = FindAddBeforeElements(out MethodInfo add); // the same result on every thread
+        _addBeforeElements = add;
+        before = fills ? 1 : -1;
+        Volatile.Write(ref _beforeElements, before); // after the method it uses
+      }
+      return before > 0 ? Instances.CreateCollection(ConcreteType, settings) : null;
+    }
+
+    internal void FillCreated(object collection, Array elements)
+    {
+      if (collection is IList list)
+      {
+        for (int t = 0; t < elements.Length; t++)
+          list.Add(elements.GetValue(t));
+        return;
+      }
+      object[] args = new object[1];
+      for (int t = 0; t < elements.Length; t++)
+      {
+        args[0] = elements.GetValue(t);
+        _addBeforeElements.Invoke(collection, args);
+      }
+    }
+
+    private int _beforeElements;
+    private MethodInfo _addBeforeElements;
+
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.ModelTypes)] // as the constructor: ICollection<T>.Add of the collection types the model has
+    private bool FindAddBeforeElements(out MethodInfo add)
+    {
+      add = null;
+      if (ConcreteType.IsArray || _generatedFactory || _factory != null || _reverseItems || IsDictionary || ConcreteType.IsValueType
+        || (GeneratedTypes.Find(ConcreteType)?.Creator is null && !ObjectConstructor.Of(ConcreteType).Parameterless))
+        return false;
+      if (typeof(IList).IsAssignableFrom(ConcreteType))
+        return true;
+      add = AddMethod;
+      if (add is null)
+      {
+        Type collInterface = FindInterface(ConcreteType, typeof(ICollection<>), ElementType, null);
+        add = collInterface?.GetMethod(nameof(ICollection<object>.Add));
+      }
+      return add != null;
     }
 
     /// <summary>

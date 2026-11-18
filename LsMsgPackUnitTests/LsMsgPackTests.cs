@@ -222,9 +222,26 @@ namespace LsMsgPackUnitTests
     public void UnspecifiedAsUtc()
     {
       DateTime unspecified = new DateTime(2026, 9, 29, 12, 0, 0, DateTimeKind.Unspecified);
-      LsMsgPackSerializer local = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, UnspecifiedDateTimeKind = DateTimeKind.Local });
-      CollectionAssert.AreEqual(Names.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc)), Names.Serialize(unspecified), "the default: the clock time in UTC, as LsMsgPack");
-      CollectionAssert.AreEqual(Names.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Local)), local.Serialize(unspecified));
+      LsMsgPackSerializer timestamps = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp });
+      LsMsgPackSerializer local = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, UnspecifiedDateTimeKind = DateTimeKind.Local });
+      CollectionAssert.AreEqual(timestamps.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc)), timestamps.Serialize(unspecified), "the default: the clock time in UTC, as LsMsgPackDebug");
+      CollectionAssert.AreEqual(timestamps.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Local)), local.Serialize(unspecified));
+    }
+
+    /// <summary>
+    /// <see cref="DateTimeFormat.Native"/> (the default) uses extension type 6: a custom extension or converter of that code is refused, with timestamps it is allowed (and read first).
+    /// </summary>
+    [TestMethod]
+    public void NativeDateTime_RefusesExtensionCode6()
+    {
+      LsMsgPackOptions native = new LsMsgPackOptions { Extensions = new LsExtension[] { new DecimalExtension(6) } };
+      InvalidOperationException refused = Assert.ThrowsExactly<InvalidOperationException>(() => new LsMsgPackSerializer(native));
+      StringAssert.Contains(refused.Message, "DateTimeFormat");
+
+      LsMsgPackSerializer timestamps = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, Extensions = new LsExtension[] { new DecimalExtension(6) } });
+      byte[] bytes = timestamps.Serialize(12.5m);
+      Assert.AreEqual((byte)6, bytes[1]);
+      Assert.AreEqual(12.5m, timestamps.Deserialize<object>(bytes), "the registered extension wins");
     }
 
     [TestMethod]

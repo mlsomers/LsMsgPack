@@ -1,7 +1,7 @@
 // A fetch wrapper for the ASP.NET formatters of LsMsgPack: asks for application/x-lsmsgpack with the described schema, tells the server which schemas it holds,
 // learns the schemas of the responses and decodes the bodies into complete objects. Request bodies are sent as plain MsgPack (application/msgpack).
 
-import { Decoded, Decoder, DecodeOptions } from './decoder.js';
+import { Decoded, Decoder, DecodeOptions, ReferenceHandling } from './decoder.js';
 import { HttpError, MissingSchemaError } from './errors.js';
 import { Schema } from './schema.js';
 import { SchemaStore } from './store.js';
@@ -71,12 +71,14 @@ export class LsMsgPackClient {
   private readonly headers?: HeadersInit;
   private readonly models?: ModelSet;
   private readonly generateCode?: boolean;
+  private readonly references?: ReferenceHandling;
 
   constructor(options: ClientOptions = {}) {
     this.store = options.store ?? new SchemaStore();
     this.decoder = new Decoder(options);
     this.models = options.models;
     this.generateCode = options.generateCode;
+    this.references = options.references;
     if (options.schemas !== undefined) this.store.preload(options.schemas);
     this.fetchFn = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.baseUrl = options.baseUrl;
@@ -162,7 +164,7 @@ export class LsMsgPackClient {
     let body: BodyInit | null | undefined;
     if (init.body === undefined || init.body === null || isBodyInit(init.body)) body = init.body as BodyInit | null | undefined;
     else {
-      body = encode(init.body, { models: this.models, generateCode: this.generateCode }) as unknown as BodyInit;
+      body = encode(init.body, { models: this.models, generateCode: this.generateCode, references: this.references }) as unknown as BodyInit;
       if (!headers.has('Content-Type')) headers.set('Content-Type', MediaTypes.MsgPack);
     }
     return { target, request: { ...init, headers, body }, advertised };
