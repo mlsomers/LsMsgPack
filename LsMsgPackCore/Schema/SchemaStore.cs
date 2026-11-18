@@ -460,6 +460,7 @@ namespace LsMsgPack
       private readonly SchemaVersion _version; // writers only, 0 for readers
       private readonly bool _complete; // writers only: a complete schema has other entries (in another order) than one made by the values
       private readonly LsMsgPack.Converters.MsgPackConverter[] _converters; // which types are written as their surrogates (entries of the surrogates, none of the converted types)
+      private readonly EnumFormat _enumFormat; // version 2 describes an enum written by its name as a string
 
       internal SessionKey(Type root, MsgPackOptions settings)
       {
@@ -473,6 +474,7 @@ namespace LsMsgPack
         _version = root is null ? 0 : settings._schemaVersion;
         _complete = !(root is null) && settings._completeSchemas;
         _converters = settings._converters;
+        _enumFormat = settings._enumFormat;
       }
 
       public bool Equals(SessionKey other)
@@ -486,7 +488,8 @@ namespace LsMsgPack
           && _propertyOrder == other._propertyOrder
           && _version == other._version
           && _complete == other._complete
-          && ReferenceEquals(_converters, other._converters);
+          && ReferenceEquals(_converters, other._converters)
+          && _enumFormat == other._enumFormat;
       }
 
       public override bool Equals(object obj)
@@ -507,6 +510,7 @@ namespace LsMsgPack
           hash = hash * 31 + (int)_propertyOrder;
           hash = hash * 31 + (int)_version;
           hash = hash * 31 + RuntimeHelpers.GetHashCode(_converters);
+          hash = hash * 31 + (int)_enumFormat;
           return _complete ? ~hash : hash;
         }
       }

@@ -149,7 +149,7 @@ namespace LsMsgPackUnitTests
       LsExtension[] extensions = Extensions(settings.CustomExtentionTypes);
       object key = (settings.UseInexedSchema, settings.DynamicallyCompact, settings.EndianAction, settings.AddTypeIdOptions,
         settings.TypeResolvers, settings.StaticFilters, settings.DynamicFilters, settings.PropertyNameResolvers,
-        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.ReferenceHandling, settings.DateTimeFormat));
+        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.ReferenceHandling, settings.DateTimeFormat, settings.EnumFormat));
       return _serializers.GetOrAdd(key, k => new LsMsgPackSerializer(new LsMsgPackOptions()
       {
         UseInexedSchema = settings.UseInexedSchema,
@@ -172,6 +172,7 @@ namespace LsMsgPackUnitTests
         ReadDateTimeKind = settings.ReadDateTimeKind,
         DateTimeOffsetFormat = settings.DateTimeOffsetFormat,
         DateTimeFormat = settings.DateTimeFormat,
+        EnumFormat = settings.EnumFormat,
         SchemaVersion = settings.SchemaVersion,
         CompleteSchemas = settings.CompleteSchemas,
         PropertyNameCaseInsensitive = settings.PropertyNameCaseInsensitive,

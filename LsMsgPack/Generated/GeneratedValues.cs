@@ -287,6 +287,8 @@ namespace LsMsgPack.Generated
     {
       if (definition == typeof(EnumHandler<>))
         return new EnumHandler<T>();
+      if (definition == typeof(EnumNameHandler<>))
+        return new EnumNameHandler<T>((Serializer)argument);
       if (definition == typeof(EnumReader<>))
         return new EnumReader<T>();
       return base.Instantiate(definition, argument);

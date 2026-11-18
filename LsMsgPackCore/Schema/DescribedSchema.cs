@@ -222,6 +222,17 @@ namespace LsMsgPack
           return new byte[] { (byte)MsgPackTypeId.MpNull };
         type = converter.SurrogateType;
       }
+      else if (valueType.IsEnum && prop.Attributes?.EnumType == valueType && prop.Attributes.EnumFormat != null) // the member's own enum format (the serializers write the type's)
+      {
+        if (_settings.EnumFormatOf(valueType, prop) == EnumFormat.Name)
+        {
+          string name = EnumNames.Of(valueType).NameOf(EnumNames.ToBits(value));
+          if (name != null)
+            return _settings.SerializePlainValue(name, typeof(string), _byteOrder._endianAction);
+        }
+        Type underlying = Enum.GetUnderlyingType(valueType);
+        return _settings.SerializePlainValue(Convert.ChangeType(value, underlying, System.Globalization.CultureInfo.InvariantCulture), underlying, _byteOrder._endianAction);
+      }
       return _settings.SerializePlainValue(value, type, _byteOrder._endianAction);
     }
 
@@ -291,7 +302,14 @@ namespace LsMsgPack
       PlainForm plain = FrameworkTypeInfo.GetPlainForm(type);
       if (plain != PlainForm.None) { WritePlain(plain); return; }
 
-      if (type.IsEnum) { WriteType(Enum.GetUnderlyingType(type)); return; }
+      if (type.IsEnum) // a string when written by its name (a value without a name is still its number)
+      {
+        if (_settings.EnumFormatOf(type, assignedTo) == EnumFormat.Name)
+          Kind("string");
+        else
+          WriteType(Enum.GetUnderlyingType(type));
+        return;
+      }
       if (FrameworkTypeInfo.IsKeyValuePair(type)) { Composite("pair", type.GetGenericArguments()); return; }
       if (FrameworkTypeInfo.IsTuple(type)) { Composite("tuple", type.GetGenericArguments()); return; } // the 8th item (Rest) is a tuple: a nested array
       if (typeof(IEnumerable).IsAssignableFrom(type))

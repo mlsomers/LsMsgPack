@@ -23,6 +23,16 @@ namespace LsMsgPackInteropTests
   /// <item>Polymorphism: LsMsgPack a type id in the object's map (key ""), MessagePack-CSharp [Union]: a two element array [key, object].</item>
   /// </list>
   /// </summary>
+  public enum MpcSize { Small, [System.Runtime.Serialization.EnumMember(Value = "XL")] Large }
+
+  [MessagePackObject]
+  public class MpcEnumHolder
+  {
+    [Key(0), MessagePackFormatter(typeof(EnumAsStringFormatter<MpcSize>))] public MpcSize ByName { get; set; } // LsMsgPack recognizes the formatter
+    [Key(1)] public MpcSize ByNumber { get; set; }
+    [Key(2), MessagePackFormatter(typeof(EnumAsStringFormatter<UnitOfMeasure>))] public UnitOfMeasure Unit { get; set; }
+  }
+
   public abstract class MessagePackCSharpTests
   {
     protected abstract LsMsgPackUnitTests.ISerializerUnderTest Serializer { get; }
@@ -149,6 +159,38 @@ namespace LsMsgPackInteropTests
       AssertSameBytes(new[] { 1, 2, 3 });
       AssertSameBytes(new List<string>() { "a", "b" });
       AssertSameBytes(new Dictionary<string, int>() { { "a", 1 }, { "b", 2 } });
+    }
+
+    /// <summary>
+    /// Enums by name: MessagePack-CSharp's <c>[MessagePackFormatter(typeof(EnumAsStringFormatter&lt;T&gt;))]</c> on a member is recognized, its resolver for all enums is <see cref="EnumFormat.Name"/>.
+    /// </summary>
+    [TestMethod]
+    public void SameBytes_EnumsByName()
+    {
+      MpcEnumHolder holder = new MpcEnumHolder() { ByName = MpcSize.Large, ByNumber = MpcSize.Large, Unit = UnitOfMeasure.Liter };
+      byte[] mp = MessagePackSerializer.Serialize(holder, StandardLsMsgPack);
+      byte[] ls = Serializer.Serialize(holder, Positional);
+      CollectionAssert.AreEqual(mp, ls, $"LsMsgPack {Convert.ToHexString(ls)}, MessagePack-CSharp {Convert.ToHexString(mp)}");
+      MpcEnumHolder back = Serializer.Deserialize<MpcEnumHolder>(mp, Positional);
+      Assert.AreEqual(MpcSize.Large, back.ByName);
+      Assert.AreEqual(UnitOfMeasure.Liter, back.Unit);
+      Assert.AreEqual(MpcSize.Large, MessagePackSerializer.Deserialize<MpcEnumHolder>(ls, StandardLsMsgPack).ByName);
+
+      MessagePackSerializerOptions allByName = Standard.WithResolver(CompositeResolver.Create(DynamicEnumAsStringResolver.Instance, StandardResolver.Instance));
+      MsgPackSettings names = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name };
+      foreach (object value in new object[] { UnitOfMeasure.Box, MpcSize.Small, MpcSize.Large })
+      {
+        byte[] theirs = MessagePackSerializer.Serialize(value.GetType(), value, allByName);
+        byte[] ours = Serializer.Serialize(value, value.GetType(), names);
+        CollectionAssert.AreEqual(theirs, ours, $"{value}: LsMsgPack {Convert.ToHexString(ours)}, MessagePack-CSharp {Convert.ToHexString(theirs)}");
+        Assert.AreEqual(value, Serializer.Deserialize(value.GetType(), theirs, names));
+        Assert.AreEqual(value, MessagePackSerializer.Deserialize(value.GetType(), ours, allByName));
+      }
+
+      // A value without a name: MessagePack-CSharp writes its number as text (read by LsMsgPack), LsMsgPack the number (as System.Text.Json), which MessagePack-CSharp refuses
+      MpcSize unnamed = (MpcSize)7;
+      Assert.AreEqual(unnamed, Serializer.Deserialize<MpcSize>(MessagePackSerializer.Serialize(unnamed, allByName), names));
+      Assert.Throws<MessagePackSerializationException>(() => MessagePackSerializer.Deserialize<MpcSize>(Serializer.Serialize(unnamed, names), allByName));
     }
 
     [TestMethod]

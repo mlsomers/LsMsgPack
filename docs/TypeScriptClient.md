@@ -236,7 +236,7 @@ The `Accept` header needs no CORS setting.
 | `long`, `ulong` | `number` (`int64: 'bigint'`: `bigint`) | `0` |
 | `decimal` | `number` (`decimal` option) | `0` |
 | `BigInteger`, `Int128`, `UInt128` | `bigint` | `0n` |
-| enums | `number` (the underlying value; the models have a const object with the names) | `0` |
+| enums | `number` (the underlying value; the models have a const object with the names), `string` for an enum the server writes by name ([Enums.md](Enums.md)) | `0` |
 | `char` | `string` (one character) | `'\0'` |
 | `Guid` | `string` (`"0f8fad5b-d9cb-469f-a165-70867728950e"`) | `"00000000-0000-0000-0000-000000000000"` |
 | `DateTime` | `Date` (`dates: 'iso'`: UTC text), from LsMsgPack's extension type 6 (the server's default) or a timestamp: a `Utc` or `Local` value is its moment, an `Unspecified` one its clock time as UTC | `0001-01-01T00:00:00Z` (`DateTime.MinValue`) |

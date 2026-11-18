@@ -65,6 +65,8 @@ The web formatters do this with `o.ReportDifferences = true` and write it to the
 
 A service that reads an object, changes it and writes it back loses the members it doesn't have (newer fields during a rolling upgrade). Add a `public MsgPackExtensionData Extra { get; set; }` to the class and they're kept and written again. With the indexed schema, write the data with `SchemaVersion = SchemaVersion.Described` so values with objects and lists are kept too. More: [ExtensionData.md](../ExtensionData.md).
 
+Enums are written as their numbers, so inserting a value in the middle of an enum changes what stored data means. To write the names instead, set `EnumFormat = EnumFormat.Name` in the options, or put `[MsgPackEnumFormat(EnumFormat.Name)]` on the enum. The string enum attributes of System.Text.Json and Json.NET (`[JsonConverter(typeof(JsonStringEnumConverter))]`...) do the same. Readers take numbers and names, so data written before the switch still reads. More: [Enums.md](../Enums.md).
+
 ## Reading data you don't trust
 
 *Untrusted* is any data someone else could have written: request bodies of a web API (anyone can send a request, not only your app), files users exchange, queues others can publish to.

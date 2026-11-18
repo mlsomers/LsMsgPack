@@ -95,6 +95,33 @@ namespace LsMsgPackTypeScriptTests
     }
 
     [TestMethod]
+    public void EnumsByNameAreTheirNames()
+    {
+      string models = Run("--root", "LsMsgPackTypeScriptTests.TsShirt", "--property-names", "dotnet").Models;
+      StringAssert.Contains(models, "export const TsSize = {\n  Small: 'Small',\n  Large: 'large',\n} as const;\n", "the const object has the written names");
+      StringAssert.Contains(models, "export type TsSides = string; // [Flags]");
+      StringAssert.Contains(models, "  Open: 1,\n", "an enum by number keeps its numbers");
+      string shirt = ClassOf(models, "TsShirt");
+      StringAssert.Contains(shirt, "  Size: TsSize = TsSize.Large;");
+      StringAssert.Contains(shirt, "  MaybeSize: TsSize | null = null;");
+      StringAssert.Contains(shirt, "  Status: 'Open' | 'Closed' = 'Closed';", "a member by name of an enum by number: the union of the names");
+      StringAssert.Contains(shirt, "  SizeNumber: number = 1;", "a member by number of an enum by name");
+      StringAssert.Contains(shirt, "  Plain: TsStatus = TsStatus.Open;");
+      StringAssert.Contains(shirt, "  Sizes: TsSize[] | null = null;");
+      StringAssert.Contains(shirt, "  Sides: TsSides = 'Left, Right';");
+      StringAssert.Contains(models, "['Size', 'string']");
+      StringAssert.Contains(models, "['MaybeSize', ['?', 'string']]");
+      StringAssert.Contains(models, "['Status', 'string']");
+      StringAssert.Contains(models, "['SizeNumber', 'int']");
+      StringAssert.Contains(models, "['Plain', 'int']");
+
+      string names = Run("--root", "LsMsgPackTypeScriptTests.TsShirt", "--property-names", "dotnet", "--options", "LsMsgPackTypeScriptTests.TsSetup.WithEnumNames").Models;
+      StringAssert.Contains(names, "  Open: 'Open',\n", "the server's options write every enum by name");
+      StringAssert.Contains(ClassOf(names, "TsShirt"), "  Plain: TsStatus = TsStatus.Open;");
+      StringAssert.Contains(names, "['Plain', 'string']");
+    }
+
+    [TestMethod]
     public void ConvertersOfTheOptionsAreTheirSurrogates()
     {
       Result result = Run("--root", "LsMsgPackTypeScriptTests.TsDiscount", "--property-names", "dotnet", "--options", "LsMsgPackTypeScriptTests.TsSetup.WithConverters");

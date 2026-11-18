@@ -82,7 +82,7 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 | .NET | LsMsgPackDebug | MessagePack-CSharp (default) | Result |
 |---|---|---|---|
 | integers, `float`, `double`, `bool`, `string`, `byte[]`, null | the formats of the spec, integers in the smallest one | the same bytes | tested |
-| enums | their number | the same bytes | tested |
+| enums | their number (by name with `EnumFormat.Name` or an attribute, see [Enums.md](Enums.md)) | the same bytes (by name: `EnumAsStringFormatter<T>` or `DynamicEnumAsStringResolver`) | tested, also by name and Nerdbank's `SerializeEnumValuesByName` |
 | arrays and lists, dictionaries | array, map | the same bytes | tested |
 | a single `KeyValuePair<,>` (not in a collection) | array `[key, value]` | the same bytes | tested (LsMsgPackDebug's own bytes) |
 | other collections of `KeyValuePair<,>` (`List<KeyValuePair<,>>`...) | map, like a dictionary (duplicate keys are kept) | array of `[key, value]` arrays (Nerdbank.MessagePack: array of maps `{ Key, Value }`) | incompatible (measured, not in the interop tests) |
@@ -276,7 +276,7 @@ Tested by hand with msgpack 1.2.2 (Python) and @msgpack/msgpack 3.1.3 (JavaScrip
 - `Guid`: the 16 bytes in .NET's order: `uuid.bytes_le` in Python, `dotnetGuidBytes` below in JavaScript.
 - `decimal`: a string (`"64764.60"`), LsMsgPackDebug parses it.
 - `DateTime`: `packb(value, datetime=True)` with timezone-aware datetimes in Python, a `Date` in JavaScript.
-- Enums: their number.
+- Enums: their number, or their name (LsMsgPack reads both).
 
 ```python
 import msgpack, struct, uuid
@@ -334,7 +334,7 @@ The same rules apply: read and write objects as maps keyed by the property names
 
 - Go, [vmihailenco/msgpack](https://github.com/vmihailenco/msgpack): writes structs as maps keyed by field names (or `msgpack` tags) by default. `UseArrayEncodedStructs` and the `as_array` tag write arrays, which LsMsgPackDebug reads by position (`ObjectLayout.Array` is LsMsgPack's default for writing) when its `PropertyOrder` puts the properties in the order of the fields.
 - Rust, [rmp-serde](https://github.com/3Hren/msgpack-rust): `to_vec` writes structs as arrays, use `to_vec_named` (maps).
-- [MsgPack.Cli](https://github.com/msgpack/msgpack-cli), the older .NET library: writes arrays and enums by name by default. Use `SerializationMethod.Map` and `EnumSerializationMethod.ByUnderlyingValue`.
+- [MsgPack.Cli](https://github.com/msgpack/msgpack-cli), the older .NET library: writes arrays and enums by name by default. Use `SerializationMethod.Map`, and `EnumSerializationMethod.ByUnderlyingValue` or `EnumFormat.Name` here (LsMsgPack reads both forms, and recognizes MsgPack.Cli's `[MessagePackEnum]` and `[MessagePackEnumMember]`, see [Enums.md](Enums.md)).
 
 ## Fields
 

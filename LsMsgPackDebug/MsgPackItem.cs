@@ -312,6 +312,20 @@ namespace LsMsgPackDebug
       return list.ToArray();
     }
 
+    /// <summary>
+    /// An enum value as its number or, with <see cref="EnumFormat.Name"/>, its name (the number when it has none, see Core's EnumNames.NameOf).
+    /// </summary>
+    internal static MsgPackItem PackEnum(object value, Type enumType, EnumFormat format, MsgPackSettings settings)
+    {
+      if (format == EnumFormat.Name)
+      {
+        string name = LsMsgPack.Meta.EnumNames.Of(enumType).NameOf(LsMsgPack.Meta.EnumNames.ToBits(value));
+        if (name != null)
+          return new MpString(settings) { Value = name };
+      }
+      return new MpInt(settings).SetEnumVal(value);
+    }
+
     public static MsgPackItem Pack(object value, MsgPackSettings settings, Type valuesType = null)
     {
       if (ReferenceEquals(value, null)) return new MpNull(settings);
@@ -353,7 +367,7 @@ namespace LsMsgPackDebug
       if (plain != LsMsgPack.Meta.PlainForm.None)
         return Meta.FrameworkTypes.PackPlain(LsMsgPack.Meta.FrameworkTypeInfo.ToPlain(value, plain), settings);
 
-      if (valuesType.IsEnum) return new MpInt(settings).SetEnumVal(value);
+      if (valuesType.IsEnum) return PackEnum(value, valuesType, settings.EnumFormatOf(valuesType), settings);
       if (IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap(settings) { Value = value };
       if (value is IDictionary) return new MpMap(settings) { Value = value };
       if (value is IEnumerable enumerable && !valuesType.IsArray)

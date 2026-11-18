@@ -86,19 +86,44 @@ namespace LsMsgPackTypeScript
     {
       string name = _models.EnumName(type);
       bool int64 = Enum.GetUnderlyingType(type) == typeof(long) || Enum.GetUnderlyingType(type) == typeof(ulong);
+      bool byName = _models.ByName(type);
       string suffix = int64 && _options.Int64 == "bigint" ? "n" : string.Empty;
-      _sb.Append("\n/** .NET ").Append(type.FullName).Append(" */\n");
+      LsMsgPack.Meta.EnumNames names = byName ? LsMsgPack.Meta.EnumNames.Of(type) : null;
+      _sb.Append("\n/** .NET ").Append(type.FullName).Append(byName ? ", written by name" : string.Empty).Append(" */\n");
       _sb.Append("export const ").Append(name).Append(" = {\n");
       foreach (string member in Enum.GetNames(type))
       {
-        object underlying = Convert.ChangeType(Enum.Parse(type, member), Enum.GetUnderlyingType(type), CultureInfo.InvariantCulture);
-        _sb.Append("  ").Append(PropertyKey(member)).Append(": ").Append(Convert.ToString(underlying, CultureInfo.InvariantCulture)).Append(suffix).Append(",\n");
+        object value = Enum.Parse(type, member);
+        _sb.Append("  ").Append(PropertyKey(member)).Append(": ");
+        if (byName) // the name it is written as (a custom name, the first of aliases)
+          _sb.Append(Defaults.Quote(names.NameOf(LsMsgPack.Meta.EnumNames.ToBits(value))));
+        else
+          _sb.Append(Convert.ToString(Convert.ChangeType(value, Enum.GetUnderlyingType(type), CultureInfo.InvariantCulture), CultureInfo.InvariantCulture)).Append(suffix);
+        _sb.Append(",\n");
       }
       _sb.Append("} as const;\n");
       if (type.IsDefined(typeof(FlagsAttribute), false))
-        _sb.Append("export type ").Append(name).Append(" = ").Append(int64 && _options.Int64 == "bigint" ? "bigint" : "number").Append("; // [Flags]: combinations of the values\n");
+      {
+        if (byName)
+          _sb.Append("export type ").Append(name).Append(" = string; // [Flags]: the names of the values joined by \", \"\n");
+        else
+          _sb.Append("export type ").Append(name).Append(" = ").Append(int64 && _options.Int64 == "bigint" ? "bigint" : "number").Append("; // [Flags]: combinations of the values\n");
+      }
       else
         _sb.Append("export type ").Append(name).Append(" = (typeof ").Append(name).Append(")[keyof typeof ").Append(name).Append("];\n");
+    }
+
+    /// <summary>
+    /// The type of an enum's value written by name: the enum's type when its const object has the names, otherwise the union of the names (a member by name of an enum written by number).
+    /// </summary>
+    private string EnumNamesType(Type type)
+    {
+      if (_models.Enums.Contains(type) && _models.ByName(type))
+        return _models.EnumName(type); // [Flags]: its type is string
+      if (type.IsDefined(typeof(FlagsAttribute), false))
+        return "string";
+      LsMsgPack.Meta.EnumNames names = LsMsgPack.Meta.EnumNames.Of(type);
+      return string.Join(" | ", names.Names.Select(Defaults.Quote));
     }
 
     private void WriteInterface(ModelInterface model)
@@ -232,10 +257,10 @@ namespace LsMsgPackTypeScript
         case "bool": return "boolean";
         case "int":
         case "float":
-          return spec.Enum != null && _models.Enums.Contains(spec.Enum) ? _models.EnumName(spec.Enum) : "number";
+          return spec.Enum != null && _models.Enums.Contains(spec.Enum) && !_models.ByName(spec.Enum) ? _models.EnumName(spec.Enum) : "number"; // a member by number of an enum written by name: its numbers
         case "long":
         case "ulong":
-          return spec.Enum != null && _models.Enums.Contains(spec.Enum) ? _models.EnumName(spec.Enum) : _options.Int64 == "bigint" ? "bigint" : "number";
+          return spec.Enum != null && _models.Enums.Contains(spec.Enum) && !_models.ByName(spec.Enum) ? _models.EnumName(spec.Enum) : _options.Int64 == "bigint" ? "bigint" : "number";
         case "bigint": return "bigint";
         case "decimal": return _options.Decimal == "string" ? "string" : "number";
         case "char":
@@ -251,6 +276,10 @@ namespace LsMsgPackTypeScript
         case "pair": return string.Concat("{ ", _options.Field("Key"), ": ", TsType(spec.Items[0], Argument(nullability, 0), true), "; ", _options.Field("Value"), ": ", TsType(spec.Items[1], Argument(nullability, 1), true), " }"); // a default pair has null in both
         case "struct": return spec.Class.TsName;
         case "string":
+          if (spec.ByName) // an enum by name (a value type: never null itself)
+            return EnumNamesType(spec.Enum);
+          type = "string";
+          break;
         case "uri":
           type = "string";
           break;

@@ -196,6 +196,12 @@ namespace LsMsgPack
     [IgnoreDataMember]
     public static DateTimeFormat Default_DateTimeFormat { get; set; } = DateTimeFormat.Native;
 
+    /// <summary>
+    /// The <see cref="EnumFormat"/> of new settings (<see cref="LsMsgPack.EnumFormat.Number"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static EnumFormat Default_EnumFormat { get; set; } = EnumFormat.Number;
+
     #endregion
 
     /// <summary>
@@ -233,6 +239,7 @@ namespace LsMsgPack
     internal DateTimeKind _readDateTimeKind = Default_ReadDateTimeKind;
     internal DateTimeOffsetFormat _dateTimeOffsetFormat = Default_DateTimeOffsetFormat;
     internal bool _nativeDateTime = Default_DateTimeFormat == DateTimeFormat.Native;
+    internal EnumFormat _enumFormat = Default_EnumFormat;
 
     /// <summary>
     /// The cache of the serialized properties for <see cref="_staticFilters"/> (see FullPropertyInfo.GetSerializedProps without a session), looked up again when the filters are replaced.
@@ -686,6 +693,45 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// How enum values are written: <see cref="LsMsgPack.EnumFormat.Number"/> (the default: the underlying integer) or <see cref="LsMsgPack.EnumFormat.Name"/> (the name as a string, as the JSON serializers write it with a string enum converter).
+    /// <para>An enum type or a property or field can choose for itself with <see cref="MsgPackEnumFormatAttribute"/> (or the attributes of other serializers that mean the same, see docs/Enums.md), which wins over this option.
+    /// Readers take both forms, whatever this option says: a number, or a name (also the custom names of <c>[EnumMember]</c>, <c>[JsonStringEnumMemberName]</c>, <c>[EnumMemberShape]</c>, ignoring case as a fallback).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Enum Format")]
+    [Description("How enum values are written: Number (default, the underlying integer) or Name (the name as a string). Readers take both. [MsgPackEnumFormat] on an enum or member wins.")]
+    [DefaultValue(EnumFormat.Number)]
+    public EnumFormat EnumFormat
+    {
+      get { return _enumFormat; }
+      set { _enumFormat = value; }
+    }
+
+    /// <summary>
+    /// How a value of this enum type is written: its own attribute (<see cref="MsgPackEnumFormatAttribute"/> or another serializer's), otherwise <see cref="EnumFormat"/>.
+    /// </summary>
+    internal EnumFormat EnumFormatOf(Type enumType)
+    {
+      EnumFormat? own = Meta.EnumFormats.OfType(enumType);
+      return own ?? _enumFormat;
+    }
+
+    /// <summary>
+    /// How a value of this enum type assigned to the member is written: the member's own attribute when the value is of the member's type (or the underlying type of a nullable member: not elements), otherwise <see cref="EnumFormatOf(Type)"/>.
+    /// </summary>
+    internal EnumFormat EnumFormatOf(Type enumType, Meta.FullPropertyInfo assignedTo)
+    {
+      Meta.PropertyAttributeSet attributes = assignedTo?.Attributes;
+      if (attributes != null)
+      {
+        EnumFormat? member = attributes.EnumFormat;
+        if (member != null && attributes.EnumType == enumType)
+          return member.Value;
+      }
+      return EnumFormatOf(enumType);
+    }
+
+    /// <summary>
     /// The extension type of a DateTime in <see cref="LsMsgPack.DateTimeFormat.Native"/>: fixext 8 holding <see cref="DateTime.ToBinary"/> (62 bits of ticks and the Kind in the top 2 bits;
     /// a Local value holds the ticks in UTC) as an integer in the byte order of the settings.
     /// </summary>
@@ -992,6 +1038,26 @@ namespace LsMsgPack
     /// </summary>
     [Description("Grouped by the type of the property (by its name, without the assembly), then in declaration order.")]
     TypeThenDeclaration = 4
+  }
+
+  /// <summary>
+  /// How enum values are written (see <see cref="MsgPackOptions.EnumFormat"/> and <see cref="MsgPackEnumFormatAttribute"/>). Readers take both.
+  /// </summary>
+  public enum EnumFormat
+  {
+    /// <summary>
+    /// The underlying integer (default): compact and fast, but a reader in another language sees a number, and renumbering the enum changes the meaning of stored data.
+    /// </summary>
+    [Description("The underlying integer (default).")]
+    Number = 0,
+
+    /// <summary>
+    /// The name as a string, as System.Text.Json and Json.NET write it with their string enum converters: robust against reordering, readable for other languages.
+    /// A custom name (<c>[EnumMember(Value = ...)]</c>, <c>[JsonStringEnumMemberName]</c>, <c>[EnumMemberShape(Name = ...)]</c>) is written instead of the .NET name;
+    /// a combination of <c>[Flags]</c> values as <c>"A, B"</c>; a value that has no name (and is no combination of named flags) as its number.
+    /// </summary>
+    [Description("The name as a string (custom names of [EnumMember], [JsonStringEnumMemberName]; flags as \"A, B\"; a value without a name as its number).")]
+    Name = 1
   }
 
   /// <summary>

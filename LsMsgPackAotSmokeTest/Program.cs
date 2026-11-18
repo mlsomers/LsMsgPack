@@ -17,6 +17,12 @@ namespace LsMsgPackAotSmokeTest
   public enum InvoiceStatus { Draft, Sent, Paid }
   public enum Unit : byte { Piece, Hour, Kilogram }
 
+  /// <summary>
+  /// Written by name (its attribute; the names are read from the enum's fields by reflection), with a custom name.
+  /// </summary>
+  [MsgPackEnumFormat(EnumFormat.Name)]
+  public enum Priority { Low, [System.Runtime.Serialization.EnumMember(Value = "high")] High }
+
   public class Address
   {
     public string Street { get; set; }
@@ -343,6 +349,9 @@ namespace LsMsgPackAotSmokeTest
     public List<Shape> Shapes { get; set; }
     public decimal Total { get; set; }
     public bool Urgent { get; set; }
+    public Priority Priority { get; set; }
+    [MsgPackEnumFormat(EnumFormat.Name)]
+    public InvoiceStatus StatusName { get; set; } // the member's own format
     public Extras Extras { get; set; }
     public Payment Payment { get; set; }
     public Signature Signed { get; set; }
@@ -551,6 +560,8 @@ namespace LsMsgPackAotSmokeTest
         Audit = new Audit(),
         JsonAudit = new JsonAudit { Note = "j" },
         Urgent = true,
+        Priority = Priority.High,
+        StatusName = InvoiceStatus.Paid,
         Payment = new Payment(100.5m) { Note = "first" },
         Signed = new Signature("Clerk", new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc)),
         Route = SampleRoute(),
@@ -720,7 +731,7 @@ namespace LsMsgPackAotSmokeTest
         .Append(Dump(o.Customer)).Append(';').Append(o.Lines is null ? "null" : string.Join(",", o.Lines.Select(Dump))).Append(';')
         .Append(o.Extra is null ? "null" : string.Join(",", o.Extra.Select(Dump))).Append(';').Append(o.Reference?.ToString() ?? "null").Append(';')
         .Append(o.Numbers is null ? "null" : string.Join(",", o.Numbers)).Append(';').Append(Dump(o.Stamp)).Append(';')
-        .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent).Append(';').Append(Dump(o.Extras)).Append(';')
+        .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent).Append(';').Append(o.Priority).Append(';').Append(o.StatusName).Append(';').Append(Dump(o.Extras)).Append(';')
         .Append(o.Payment is null ? "null" : $"[{o.Payment.Amount.ToString(CultureInfo.InvariantCulture)} {o.Payment.Note ?? "null"} {o.Payment.Logged}]").Append(';')
         .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]").Append(';').Append(Dump(o.Route)).Append(';')
         .Append(o.Discount is null ? "null" : o.Discount.Percent.ToString(CultureInfo.InvariantCulture) + "/" + o.Discount.Code).Append(';')

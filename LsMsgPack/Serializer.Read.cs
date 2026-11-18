@@ -372,6 +372,7 @@ namespace LsMsgPack
         case TypeKind.Converted:
           return (ValueReader)info.Converter.Accept(new ConverterReaders(this));
         case TypeKind.Enum:
+        case TypeKind.EnumName: // numbers and names, whatever is written
           return (ValueReader)Instantiate(type, typeof(EnumReader<>), type, null);
         case TypeKind.Array:
           ValueReader numbers = NumberReader(type);

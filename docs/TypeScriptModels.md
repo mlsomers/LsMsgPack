@@ -2,7 +2,7 @@
 
 `lsmsgpack-ts` writes TypeScript for the .NET classes a server sends and receives with the [web formatters](WebFormatters.md):
 
-- **Models**: a class per .NET class and struct, an interface per .NET interface, a const object and type per enum. The fields start with the values the .NET constructors set, so an object the client reads has what a .NET client would have (also for properties the server left out).
+- **Models**: a class per .NET class and struct, an interface per .NET interface, a const object and type per enum (an enum the server writes by name, by its attribute or the `--options`, has its names as the values, see [Enums.md](Enums.md)). The fields start with the values the .NET constructors set, so an object the client reads has what a .NET client would have (also for properties the server left out).
 - **A schema set**: the schemas the server will write for its response types, so the client holds them before its first request ("hot-loaded"). The first response of each type then refers to its schema (18 bytes) instead of carrying it.
 
 The TypeScript client (`@lsmsgpack/client`, in `clients/typescript`) uses both. It also works without them: the models are an optional layer for type safety, the constructor values and speed.

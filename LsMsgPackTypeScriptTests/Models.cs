@@ -141,8 +141,39 @@ namespace LsMsgPackTypeScriptTests
     public int ID { get; set; }
   }
 
+  /// <summary>Written by name (its attribute), a custom name.</summary>
+  [MsgPackEnumFormat(EnumFormat.Name)]
+  public enum TsSize { Small, [System.Runtime.Serialization.EnumMember(Value = "large")] Large }
+
+  [Flags, MsgPackEnumFormat(EnumFormat.Name)]
+  public enum TsSides { None = 0, Left = 1, Right = 2 }
+
+  public class TsShirt
+  {
+    public TsSize Size { get; set; } = TsSize.Large;
+    public TsSize? MaybeSize { get; set; }
+    [MsgPackEnumFormat(EnumFormat.Name)] public TsStatus Status { get; set; } = TsStatus.Closed;
+    [MsgPackEnumFormat(EnumFormat.Number)] public TsSize SizeNumber { get; set; } = TsSize.Large;
+    public TsStatus Plain { get; set; } = TsStatus.Open;
+    public List<TsSize> Sizes { get; set; }
+    public TsSides Sides { get; set; } = TsSides.Left | TsSides.Right;
+  }
+
   public static class TsSetup
   {
+    /// <summary>
+    /// The server's options writing every enum by name.
+    /// </summary>
+    public static LsMsgPackOptions WithEnumNames
+    {
+      get
+      {
+        LsMsgPackOptions xls = LsMsgPackPresets.LsMsgPack();
+        xls.EnumFormat = EnumFormat.Name;
+        return xls;
+      }
+    }
+
     /// <summary>
     /// The server's options for --options.
     /// </summary>
