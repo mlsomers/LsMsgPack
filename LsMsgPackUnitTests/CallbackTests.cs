@@ -5,6 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json.Serialization;
 
@@ -129,7 +130,7 @@ namespace LsMsgPackUnitTests
       private string _seen;
       public string Seen() { return _seen; }
 
-      public void OnDeserializing() { _seen = "ctor " + Amount + " " + Currency + " note " + (Note ?? "null"); }
+      public void OnDeserializing() { _seen = "ctor " + Amount.ToString(CultureInfo.InvariantCulture) + " " + Currency + " note " + (Note ?? "null"); }
       public void OnDeserialized() { _seen += "; done note " + Note; }
     }
 
