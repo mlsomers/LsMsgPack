@@ -1,6 +1,7 @@
 using LsMsgPack.IO;
 using LsMsgPack.References;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 
 namespace LsMsgPack.Writing
@@ -15,7 +16,7 @@ namespace LsMsgPack.Writing
   {
     private const int PlaceholderLength = 6; // d6 05 + 4 bytes
 
-    private readonly Dictionary<object, int> _targets = new Dictionary<object, int>(IdentityComparer.Instance);
+    private readonly IdentityMap _targets = new IdentityMap(); // the number of each object (find-or-add in one lookup: a Dictionary with IdentityComparer was ~8% of writing)
     private MsgPackWriter[] _writers = new MsgPackWriter[16];
     private int[] _offsets = new int[16];
     private bool[] _referenced = new bool[16];
@@ -66,7 +67,7 @@ namespace LsMsgPack.Writing
         Surrogate = null;
         return -1;
       }
-      if (_targets.TryGetValue(value, out int target))
+      if (!_targets.TryAdd(value, _count, out int target))
         return target;
       if (_count == _offsets.Length)
       {
@@ -75,8 +76,7 @@ namespace LsMsgPack.Writing
         Array.Resize(ref _referenced, _count * 2);
       }
       _writers[_count] = w;
-      _offsets[_count] = w.Pos;
-      _targets.Add(value, _count++);
+      _offsets[_count++] = w.Pos;
       return -1;
     }
 
@@ -141,13 +141,10 @@ namespace LsMsgPack.Writing
           throw new InvalidOperationException("A tracked value was not copied into the body."); // a bug
       }
 
-      byte[] bytes = new byte[body.Pos - start];
-      Buffer.BlockCopy(body.Buf, start, bytes, 0, bytes.Length);
-      Walker walker = new Walker(this, bytes, start, options);
+      Walker walker = new Walker(this, body.Buf, start, body.Pos, options); // over the body itself: only the bytes from the first placeholder on are copied (WriteTo)
       if (prefix != null)
         walker.Prefix(prefix);
       walker.Walk(0);
-      body.Pos = start;
       walker.WriteTo(body);
     }
 
@@ -158,19 +155,20 @@ namespace LsMsgPack.Writing
     {
       private readonly ReferenceWriting _table;
       private readonly byte[] _bytes;
-      private readonly int _start;
+      private readonly int _end;
       private readonly MsgPackReader _r;
       private readonly List<int> _path = new List<int>();
       private readonly int[][] _paths;
       private readonly List<int> _placeholders = new List<int>();
       private int _next; // the next tracked value (they are registered in the order of the bytes)
 
-      internal Walker(ReferenceWriting table, byte[] bytes, int start, LsMsgPackOptions options)
+      /// <param name="bytes">The body: the value is from <paramref name="start"/> to <paramref name="end"/></param>
+      internal Walker(ReferenceWriting table, byte[] bytes, int start, int end, LsMsgPackOptions options)
       {
         _table = table;
         _bytes = bytes;
-        _start = start;
-        _r = new MsgPackReader(bytes, 0, bytes.Length, options);
+        _end = end;
+        _r = new MsgPackReader(bytes, start, end, options);
         _paths = new int[table._count][];
       }
 
@@ -190,9 +188,9 @@ namespace LsMsgPack.Writing
       internal void Walk(int depth)
       {
         int at = _r.Pos;
-        while (_next < _table._count && _table._offsets[_next] - _start <= at)
+        while (_next < _table._count && _table._offsets[_next] <= at)
         {
-          if (_table._offsets[_next] - _start == at && _table._referenced[_next])
+          if (_table._offsets[_next] == at && _table._referenced[_next])
             _paths[_next] = _path.ToArray();
           _next++;
         }
@@ -230,21 +228,32 @@ namespace LsMsgPack.Writing
         _r.Skip(depth);
       }
 
+      /// <summary>
+      /// The references in place of the placeholders: the bytes before the first one stay where they are, the rest is copied out first (a reference may be longer or shorter than its placeholder).
+      /// </summary>
       internal void WriteTo(MsgPackWriter w)
       {
+        if (_placeholders.Count == 0)
+          return;
+        int first = _placeholders[0];
+        int length = _end - first;
+        byte[] rest = ArrayPool<byte>.Shared.Rent(length);
+        Buffer.BlockCopy(_bytes, first, rest, 0, length);
+        w.Pos = first;
         int copied = 0;
         for (int t = 0; t < _placeholders.Count; t++)
         {
-          int at = _placeholders[t];
-          w.Raw(_bytes, copied, at - copied);
-          int target = _bytes[at + 2] << 24 | _bytes[at + 3] << 16 | _bytes[at + 4] << 8 | _bytes[at + 5];
+          int at = _placeholders[t] - first;
+          w.Raw(rest, copied, at - copied);
+          int target = rest[at + 2] << 24 | rest[at + 3] << 16 | rest[at + 4] << 8 | rest[at + 5];
           int[] path = _paths[target];
           if (path is null)
             throw new InvalidOperationException("A reference to a value that was not found in the bytes written."); // a bug
           w.Extension(MsgPackOptions.ReferenceExtensionType, ReferencePath.Encode(path));
           copied = at + PlaceholderLength;
         }
-        w.Raw(_bytes, copied, _bytes.Length - copied);
+        w.Raw(rest, copied, length - copied);
+        ArrayPool<byte>.Shared.Return(rest);
       }
     }
   }

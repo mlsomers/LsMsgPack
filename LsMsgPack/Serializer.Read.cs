@@ -720,7 +720,11 @@ namespace LsMsgPack
     {
       c.R.Reset(null, 0, 0); // the data is not kept alive
       if (c.References != null)
+      {
+        if (ReferenceEquals(c.References, c.PreservingReferences))
+          c.References.Release();
         c.References = null;
+      }
       if (c.ReferencePrefix != null)
         c.ReferencePrefix = null;
       if (c.Differences != null)
@@ -1001,7 +1005,7 @@ namespace LsMsgPack
     {
       c.BodyStart = c.R.Pos;
       if (PreserveReferences)
-        c.References = new ByteReferences(c, c.R.Pos, true);
+        c.References = c.PreservingReferences?.Restart(c.R.Pos) ?? (c.PreservingReferences = new ByteReferences(c, c.R.Pos, true));
       try
       {
         if (c.RootType != type) // calls on a thread usually read the same root type: no lookup (the hash of a Type is a call into the runtime)

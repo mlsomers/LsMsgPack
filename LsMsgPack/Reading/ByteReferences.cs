@@ -14,14 +14,20 @@ namespace LsMsgPack.Reading
   internal sealed class ByteReferences : ReferenceResolver
   {
     private readonly ReadContext _c;
-    private readonly int _bodyStart;
+    private int _bodyStart;
     private readonly bool _preserves;
     private readonly MsgPackReader _walker;
-    private readonly Dictionary<int, object> _made = new Dictionary<int, object>();
+    // What was made of the values, by where they start: the values are read in the order of the bytes and each is registered before its content (or a slot reserved for it, Reserve),
+    // so the starts come in ascending order and a value read for the first time starts after all of them (TryGetMade: one comparison). A start registered later than a greater one
+    // (LsMsgPack.Core registers what it converts last to first) goes to _others. A Dictionary<int, object> here was ~11% of reading.
+    private int[] _starts = new int[16];
+    private object[] _made = new object[16];
+    private int _madeCount;
+    private Dictionary<int, object> _others;
     private readonly Dictionary<int, Container> _containers = new Dictionary<int, Container>();
-    private Dictionary<object, int> _plainOffsets;
+    private IdentityMap _plainOffsets;
     private HashSet<int> _reading;
-    private readonly int[] _prefix;
+    private int[] _prefix;
 
     internal ByteReferences(ReadContext c, int bodyStart, bool preserves)
     {
@@ -30,6 +36,41 @@ namespace LsMsgPack.Reading
       _preserves = preserves;
       _walker = new MsgPackReader(c.R.Buf, bodyStart, c.R.End, c.Serializer.Options);
       _prefix = c.ReferencePrefix?.Invoke();
+    }
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: the table of the context's earlier call (<see cref="ReadContext.PreservingReferences"/>), for a new call whose root value starts at <paramref name="bodyStart"/>.
+    /// </summary>
+    internal ByteReferences Restart(int bodyStart)
+    {
+      Clear(); // a read repeated after a SchemaGrowthException starts again
+      _bodyStart = bodyStart;
+      _walker.Reset(_c.R.Buf, bodyStart, _c.R.End);
+      _prefix = _c.ReferencePrefix?.Invoke();
+      return this;
+    }
+
+    /// <summary>
+    /// At the end of the call: the objects are not kept alive by the table.
+    /// </summary>
+    internal void Release()
+    {
+      Clear();
+      _walker.Reset(null, 0, 0);
+    }
+
+    private void Clear()
+    {
+      if (_madeCount != 0)
+      {
+        Array.Clear(_made, 0, _madeCount);
+        _madeCount = 0;
+      }
+      _others = null; // TryGetMade's short test is for null
+      if (_containers.Count != 0)
+        _containers.Clear();
+      _plainOffsets?.Clear();
+      _reading?.Clear();
     }
 
     /// <summary>
@@ -42,7 +83,7 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal void Note(object plain, int start)
     {
-      (_plainOffsets ?? (_plainOffsets = new Dictionary<object, int>(IdentityComparer.Instance)))[plain] = start;
+      (_plainOffsets ?? (_plainOffsets = new IdentityMap())).Set(plain, start);
     }
 
     /// <summary>
@@ -51,7 +92,68 @@ namespace LsMsgPack.Reading
     internal void Register(int start, object made)
     {
       if (made != null && _preserves) // a reader without the option reads every reference again (copies): the collection readers register whenever there is a table
-        _made[start] = made;
+        Set(start, made);
+    }
+
+    /// <summary>
+    /// The place of the value at <paramref name="start"/> before it is read (<see cref="PreservingReader{T}"/>), so the values in it come after it in the table; <see cref="Fill"/> when it is read.
+    /// </summary>
+    /// <returns>The slot, -1 without the option</returns>
+    internal int Reserve(int start)
+    {
+      if (!_preserves)
+        return -1;
+      int count = _madeCount;
+      if (count != 0 && _starts[count - 1] >= start)
+      {
+        if (_starts[count - 1] == start) // a reader of the same value inside (a type id's reader of the derived class)
+          return count - 1;
+        return -1; // read again by LsMsgPack.Core (Slow): Fill registers it the usual way
+      }
+      Append(start, null);
+      return count;
+    }
+
+    /// <summary>
+    /// The value read at <paramref name="start"/>, in the slot <see cref="Reserve"/> gave (the last one wins, as <see cref="Register(int, object)"/>).
+    /// </summary>
+    internal void Fill(int slot, int start, object made)
+    {
+      if (slot >= 0 && slot < _madeCount && _starts[slot] == start)
+      {
+        if (made != null)
+          _made[slot] = made;
+      }
+      else
+        Register(start, made);
+    }
+
+    private void Append(int start, object made)
+    {
+      int count = _madeCount;
+      if (count == _starts.Length)
+      {
+        Array.Resize(ref _starts, count * 2);
+        Array.Resize(ref _made, count * 2);
+      }
+      _starts[count] = start;
+      _made[count] = made;
+      _madeCount = count + 1;
+    }
+
+    private void Set(int start, object made)
+    {
+      int count = _madeCount;
+      if (count == 0 || _starts[count - 1] < start)
+      {
+        Append(start, made);
+        return;
+      }
+      int at = _starts[count - 1] == start ? count - 1 : Array.BinarySearch(_starts, 0, count, start);
+      if (at >= 0)
+        _made[at] = made;
+      else
+        (_others ?? (_others = new Dictionary<int, object>()))[start] = made;
     }
 
     /// <summary>
@@ -59,13 +161,20 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal void Unregister(int start)
     {
-      _made.Remove(start);
+      int count = _madeCount;
+      if (count != 0 && _starts[count - 1] >= start)
+      {
+        int at = Array.BinarySearch(_starts, 0, count, start);
+        if (at >= 0)
+          _made[at] = null; // the slot stays: the starts after it are in order still
+      }
+      _others?.Remove(start);
     }
 
     internal override void Register(object plain, object created, bool replace)
     {
       if (_plainOffsets != null && _plainOffsets.TryGetValue(plain, out int start))
-        _made[start] = created;
+        Set(start, created);
     }
 
     internal override bool TryGetMade(object plain, Type type, out object made)
@@ -80,7 +189,31 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal bool TryGetMade(int start, Type type, out object made)
     {
-      return _made.TryGetValue(start, out made) && (Nullable.GetUnderlyingType(type) ?? type).IsInstanceOfType(made);
+      int count = _madeCount;
+      if ((count == 0 || _starts[count - 1] < start) && _others is null) // the usual case: a value read for the first time
+      {
+        made = null;
+        return false;
+      }
+      return TryGetRegistered(start, out made) && (Nullable.GetUnderlyingType(type) ?? type).IsInstanceOfType(made);
+    }
+
+    private bool TryGetRegistered(int start, out object made)
+    {
+      int count = _madeCount;
+      if (count != 0 && _starts[count - 1] >= start)
+      {
+        int at = Array.BinarySearch(_starts, 0, count, start);
+        if (at >= 0)
+        {
+          made = _made[at];
+          return made != null;
+        }
+      }
+      if (_others != null && _others.TryGetValue(start, out made))
+        return true;
+      made = null;
+      return false;
     }
 
     internal override object Resolve(MsgPackReference reference, Type type, FullPropertyInfo prop, MsgPackOptions settings)

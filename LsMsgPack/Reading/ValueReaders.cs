@@ -105,6 +105,11 @@ namespace LsMsgPack.Reading
     internal ByteReferences References;
 
     /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: the table of the context's calls, <see cref="References"/> while one runs (emptied at its end).
+    /// </summary>
+    internal ByteReferences PreservingReferences;
+
+    /// <summary>
     /// A value of the body of a stream head read on its own: where it is in the body's root value (its reference paths start there; null inside a key), asked when the references are made. Null otherwise.
     /// </summary>
     internal Func<int[]> ReferencePrefix;
@@ -226,13 +231,16 @@ namespace LsMsgPack.Reading
         throw ReadDifferences.NotConverted(c.ConversionSettings(), new ArgumentException($"Object of type '{resolved.GetType()}' cannot be converted to type '{typeof(T)}'."));
       }
       ByteReferences references = c.References;
-      if (references != null && references.TryGetMade(start, typeof(T), out object made))
+      if (references is null)
+        return _inner.Read(c, assignedTo);
+      if (references.TryGetMade(start, typeof(T), out object made))
       {
         c.R.Skip(c.Depth);
         return (T)made;
       }
+      int slot = references.Reserve(start);
       T value = _inner.Read(c, assignedTo);
-      references?.Register(start, value); // a collection, a converted value, an object made by its constructor with values (others: also at their creation)
+      references.Fill(slot, start, value); // a collection, a converted value, an object made by its constructor with values (others: also at their creation)
       return value;
     }
   }
@@ -250,14 +258,17 @@ namespace LsMsgPack.Reading
     {
       int start = c.R.Pos;
       ByteReferences references = c.References;
-      if (references != null && references.TryGetMade(start, typeof(T), out value))
+      if (references is null)
+        return ((ICollectionContent)_inner).TryReadContent(c, out value);
+      if (references.TryGetMade(start, typeof(T), out value))
       {
         c.R.Skip(c.Depth);
         return true;
       }
+      int slot = references.Reserve(start);
       if (!((ICollectionContent)_inner).TryReadContent(c, out value))
         return false;
-      references?.Register(start, value);
+      references.Fill(slot, start, value);
       return true;
     }
   }

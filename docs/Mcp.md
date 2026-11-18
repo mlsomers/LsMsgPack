@@ -37,7 +37,7 @@ flowchart LR
 
 ### The output
 
-- **Objects view** (default). The values as JSON. Comments carry types: a type id gives `Dog`, a type inferred from the schema gives `Invoice~`. Comments also mark collection counts, `timestamp`, LsMsgPack's DateTime (extension type 6) with its Kind, `decimal`, bin (a 16-byte bin also shown as a Guid), unknown extensions, errors, values read after the first error, and with `offsets` the offset of each value.
+- **Objects view** (default). The values as JSON. Comments carry types: a type id gives `Dog`, a type inferred from the schema gives `Invoice~`. A shared object written once ([References.md](References.md), extension type 5) is `{ "$ref": "$.Lines[0]" }` at its later places, the comment naming the path. Comments also mark collection counts, `timestamp`, LsMsgPack's DateTime (extension type 6) with its Kind, `decimal`, bin (a 16-byte bin also shown as a Guid), unknown extensions, errors, values read after the first error, and with `offsets` the offset of each value.
   - Small objects and arrays of primitives stay on one line, with the comments of their members merged (`Price: decimal`).
   - Dictionary keys that aren't strings aren't quoted.
 - **Items view**. One line per item: offset, indentation, role (`key`, `value`, `[n]`), encoding and value (`uint 16 1234`, `fixext 4, type -1 (timestamp): ...`). The object path is a comment.

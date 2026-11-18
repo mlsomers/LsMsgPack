@@ -62,6 +62,7 @@ The bytes are valid MsgPack: a reader that doesn't know the reference sees an ex
 - **LsMsgPack without `Preserve`** (an older client, another setting): every reference is read from the bytes at its path, so shared objects are read as copies, today's behavior. A cycle can't be read that way and fails with a `MsgPackException`.
 - **The TypeScript client** (`@lsmsgpack/client`) reads copies by default and the same instances with `references: 'preserve'`, which also makes it write references in request bodies (see [TypeScriptClient.md](TypeScriptClient.md#shared-objects-and-cycles)).
 - **Other libraries** see an unknown extension where the second occurrence was. Leave `Preserve` off for data that other libraries read, or for a public API.
+- **The debuggers** show a reference as a link to its target. In the objects of the VS Code extension and the MsgPack Explorer (Visual Studio, Fiddler) its value reads `reference to <path>`. In VS Code a click on it selects the target in the MsgPack tree; in the MsgPack Explorer a double-click (or Enter) on the reference in the MsgPack tree does. The [MCP server](Mcp.md) writes it as `{ "$ref": "$.path" }` with a comment naming the path, a path to nothing as `null` with a comment that it is not valid. With the **LsMsgPack extensions** switch off a reference is shown as a plain extension of type 5.
 
 ## Extension data
 
@@ -80,7 +81,7 @@ The bytes are valid MsgPack: a reader that doesn't know the reference sees an ex
 | | Write | Read |
 |---|---|---|
 | Default options | 2.95 ms | 4.5-4.8 ms |
-| `Preserve` | 4.9-5.1 ms | 6.9-7.1 ms |
+| `Preserve` | 4.3-4.4 ms | 5.9-6.0 ms |
 | Map layout with property names | 3.9 ms | 4.8 ms |
-| The same with `Preserve` | 6.3-6.4 ms | 7.3-7.5 ms |
+| The same with `Preserve` | 5.6 ms | 6.2-6.4 ms |
 | System.Text.Json (without its `Preserve`) | 19.3 ms | 34.1 ms |
