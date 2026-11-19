@@ -1,5 +1,6 @@
 // References (ReferenceHandling.Preserve of the server, docs/References.md): an object or collection met again is an extension of type 5 with the path to its first
-// occurrence. The decoder reads a copy (default), the same instance ('preserve') or the extension ('none'); the encoder writes references with 'preserve'.
+// occurrence. The decoder reads the same instance (by default the payload is read again with 'preserve' at the first reference) or the extension ('none'); the encoder writes
+// references with 'preserve'.
 // The server tests run against test-server/ (Preserve on its formatters), skipped when it is not built.
 import assert from 'node:assert';
 import { after, before, test } from 'node:test';
@@ -23,21 +24,42 @@ test('the encoder writes the second occurrence as the path to the first: the exa
   assert.strictEqual(hex(encode([{ id: 1, customer }, { id: 2, customer }])).includes('d505'), false, 'without the option: written again');
 });
 
-test('a reference is read as a copy by default, as the same instance with preserve, as the extension with none', () => {
+test('a reference is read as the same instance by default and with preserve, as the extension with none', () => {
   const body = encode([[1, ['Ann']], [2, ref(0, 1)], [3, ref(1, 1)]]); // the third points to the second: a reference to a reference is the same value
-  const copies = new Decoder(dotnet).decode(concat(orders, body)).value;
-  assert.deepStrictEqual(copies, [{ Id: 1, Customer: { Name: 'Ann' } }, { Id: 2, Customer: { Name: 'Ann' } }, { Id: 3, Customer: { Name: 'Ann' } }]);
-  assert.notStrictEqual(copies[0].Customer, copies[1].Customer);
-  const shared = new Decoder({ ...dotnet, references: 'preserve' }).decode(concat(orders, body)).value;
-  assert.deepStrictEqual(shared, copies);
-  assert.strictEqual(shared[0].Customer, shared[1].Customer);
-  assert.strictEqual(shared[0].Customer, shared[2].Customer);
+  for (const references of [undefined, 'default', 'preserve']) {
+    for (const generateCode of [true, false]) {
+      const decoder = new Decoder({ ...dotnet, references, generateCode });
+      for (let call = 0; call < 2; call++) { // the plans of both reads are kept
+        const shared = decoder.decode(concat(orders, body)).value;
+        assert.deepStrictEqual(shared, [{ Id: 1, Customer: { Name: 'Ann' } }, { Id: 2, Customer: { Name: 'Ann' } }, { Id: 3, Customer: { Name: 'Ann' } }]);
+        assert.strictEqual(shared[0].Customer, shared[1].Customer, `${references} generateCode ${generateCode}`);
+        assert.strictEqual(shared[0].Customer, shared[2].Customer, `${references} generateCode ${generateCode}`);
+      }
+      const plain = decoder.decode(concat(orders, encode([[1, ['Ann']], [2, ['Ann']]]))).value; // without references: read once
+      assert.notStrictEqual(plain[0].Customer, plain[1].Customer);
+    }
+  }
   const none = new Decoder({ ...dotnet, references: 'none' }).decode(concat(orders, body)).value;
   assert.deepStrictEqual(none[1].Customer, ref(0, 1));
-  for (const generateCode of [true, false]) {
-    const value = new Decoder({ ...dotnet, references: 'preserve', generateCode }).decode(concat(orders, body)).value;
-    assert.strictEqual(value[0].Customer, value[2].Customer, `generateCode ${generateCode}`);
+});
+
+test('references to values that hold references are read once: no exponential copies', () => {
+  // x(k) = [x(k-1), ref -> x(k-1)]: as copies the 25th level would be 2^25 arrays of 100 numbers; 25 levels of 2 references stay a few hundred bytes
+  let value = encode(Array.from({ length: 100 }, (_, t) => t));
+  for (let k = 0; k < 25; k++) value = concat([0x92], value, encode(ref(...new Array(25 - k).fill(0)))); // x(k-1) is the first element of each level above it
+  const started = performance.now();
+  for (const decoder of [new Decoder({ indexedSchema: false }), new Decoder({ indexedSchema: false, references: 'preserve' })]) {
+    let x = decoder.decode(value).value;
+    for (let k = 0; k < 25; k++) {
+      assert.strictEqual(x[0], x[1]);
+      x = x[0];
+    }
+    assert.strictEqual(x.length, 100);
+    let plain = decoder.decodePlain(value);
+    for (let k = 0; k < 25; k++) plain = plain[1];
+    assert.strictEqual(plain.length, 100);
   }
+  assert.ok(performance.now() - started < 2000, 'read in linear time');
 });
 
 test('shared collections, and references in the map layout count the entries written', () => {
@@ -56,24 +78,25 @@ test('shared collections, and references in the map layout count the entries wri
 // Node = [Name, Parent, Children], the root a Node
 const nodes = schemaBytes([['Node', [['Name', 'string'], ['Parent', 0], ['Children', ['list', 0]]]], ['', [['@', 0]]]]);
 
-test('a cycle: the empty path is the root, preserve resolves it, the default fails', () => {
+test('a cycle: the empty path is the root, resolved by default and with preserve', () => {
   const body = encode(['root', nil, [['kid', ref(), nil], ['other', ref(), [['grandkid', ref(2, 1), nil]]]]]);
-  const root = new Decoder({ ...dotnet, references: 'preserve' }).decode(concat(nodes, body)).value;
-  assert.strictEqual(root.Children[0].Parent, root);
-  assert.strictEqual(root.Children[1].Children[0].Parent, root.Children[1]);
-  assert.throws(() => new Decoder(dotnet).decode(concat(nodes, body)), (e) => e instanceof MsgPackError && /cycle/.test(e.message));
+  for (const references of ['default', 'preserve']) {
+    const root = new Decoder({ ...dotnet, references }).decode(concat(nodes, body)).value;
+    assert.strictEqual(root.Children[0].Parent, root);
+    assert.strictEqual(root.Children[1].Children[0].Parent, root.Children[1]);
+  }
 });
 
 test('a reference where the declared type is not the type of the value has the type id: { "": id, "@": <reference> }', () => {
   // Shared = [Pets: list of Dog, Animal], Dog = [Name, Barks], Animal = [Name]
   const schema = schemaBytes([['Shared', [['Pets', ['list', 1]], ['Animal', 2]]], ['Dog', [['Name', 'string'], ['Barks', 'int']]], ['Animal', [['Name', 'string']]], ['', [['@', 0]]]]);
   const body = encode([[['Rex', 3]], new Map([['', 1], ['@', ref(0, 0)]])]);
-  const shared = new Decoder({ ...dotnet, references: 'preserve' }).decode(concat(schema, body)).value;
-  assert.strictEqual(shared.Animal, shared.Pets[0]);
-  assert.strictEqual(shared.Animal.Barks, 3, 'read as a Dog');
-  const copies = new Decoder(dotnet).decode(concat(schema, body)).value;
-  assert.deepStrictEqual(copies.Animal, { $type: 'Dog', Name: 'Rex', Barks: 3 }, 'read again as the type id says');
-  assert.notStrictEqual(copies.Animal, copies.Pets[0]);
+  for (const references of ['default', 'preserve']) {
+    const shared = new Decoder({ ...dotnet, references }).decode(concat(schema, body)).value;
+    assert.strictEqual(shared.Animal, shared.Pets[0]);
+    assert.strictEqual(shared.Animal.Barks, 3, 'read as a Dog');
+    assert.strictEqual(shared.Animal.$type, 'Dog', 'the type id of the reference: written back in full, it is a Dog where an Animal is declared');
+  }
 });
 
 test('a path to a value that does not come before the reference, or to nothing, is an error', () => {
@@ -94,9 +117,10 @@ test('plain MsgPack (decodePlain): references in untyped values', () => {
   assert.strictEqual(value.first, value.second);
   assert.strictEqual(value.first.tags, value.tags);
   assert.strictEqual(value.self.k, value.first);
-  const copies = new Decoder().decodePlain(bytes);
-  assert.deepStrictEqual(copies, { first: customer, second: customer, tags: ['a'], self: { k: customer } });
-  assert.notStrictEqual(copies.first, copies.second);
+  const byDefault = new Decoder().decodePlain(bytes);
+  assert.deepStrictEqual(byDefault, { first: customer, second: customer, tags: ['a'], self: { k: customer } });
+  assert.strictEqual(byDefault.first, byDefault.second);
+  assert.strictEqual(byDefault.self.k, byDefault.first);
 });
 
 test('the encoder: cycles, the keys of a Map in full, $type on a reference, and the stream writer with each value a root of its own', async () => {
@@ -132,13 +156,18 @@ test('the encoder: cycles, the keys of a Map in full, $type on a reference, and 
 test('the stream reader: the paths of a value written in an array of the stream start at the value (read with readObject, as the .NET reader does)', async () => {
   const customer = { name: 'Ann' };
   const stream = concat([0x92], encode({ id: 1, customer, shipTo: customer }, { references: 'preserve' }), encode({ id: 2, customer, shipTo: customer }, { references: 'preserve' }));
-  const byElement = new MsgPackStreamReader([stream], { indexedSchema: false, references: 'preserve' });
-  await byElement.read();
-  const first = await byElement.readObject();
-  assert.strictEqual(first.customer, first.shipTo);
-  const second = await byElement.readObject();
-  assert.strictEqual(second.customer, second.shipTo);
-  assert.notStrictEqual(first.customer, second.customer, 'another root value');
+  for (const references of ['default', 'preserve']) {
+    const chunks = Array.from(stream, (b) => Uint8Array.of(b)); // a byte at a time: a value that needs more data while it is read again
+    for (const source of [[stream], chunks]) {
+      const byElement = new MsgPackStreamReader(source, { indexedSchema: false, references });
+      await byElement.read();
+      const first = await byElement.readObject();
+      assert.strictEqual(first.customer, first.shipTo, references);
+      const second = await byElement.readObject();
+      assert.strictEqual(second.customer, second.shipTo, references);
+      assert.notStrictEqual(first.customer, second.customer, 'another root value');
+    }
+  }
 });
 
 // ---- Against the test server (ReferenceHandling.Preserve on its formatters) ----
@@ -156,29 +185,26 @@ async function expected(name, query = '') {
   return response.json();
 }
 
-test('the server writes references: copies by default, one instance with preserve, a cycle with preserve only', { skip }, async () => {
+test('the server writes references: one instance by default and with preserve, cycles included', { skip }, async () => {
   const json = await expected('shared');
   delete json.Animal; // System.Text.Json writes the Animal as its declared type (Name only)
-  const copies = await new LsMsgPackClient({ ...dotnet, baseUrl: server.url }).get('/shared');
-  assert.deepStrictEqual(copies.Animal, { $type: 'Dog', Name: 'Rex', Barks: 3 });
-  delete copies.Animal;
-  assertLikeJson(copies, json);
-  assert.notStrictEqual(copies.Orders[0].Customer, copies.Customer);
+  for (const references of [undefined, 'preserve']) {
+    const client = new LsMsgPackClient({ ...dotnet, baseUrl: server.url, references });
+    const shared = await client.get('/shared');
+    assert.strictEqual(shared.Pets[0].$type, 'Dog', 'the type id of the reference in Animal');
+    const { Animal, ...rest } = shared;
+    delete Animal.$type; // Pets[0]
+    assertLikeJson(rest, json);
+    assert.strictEqual(shared.Orders[0].Customer, shared.Customer);
+    assert.strictEqual(shared.Orders[2].Customer, shared.Customer);
+    assert.strictEqual(shared.Orders[0].ShipTo, shared.Customer);
+    assert.strictEqual(shared.Same, shared.Orders);
+    assert.strictEqual(shared.Animal, shared.Pets[0]);
+    assert.strictEqual(shared.Self, null);
 
-  const client = new LsMsgPackClient({ ...dotnet, baseUrl: server.url, references: 'preserve' });
-  const shared = await client.get('/shared');
-  const { Animal, ...rest } = shared;
-  assertLikeJson(rest, json);
-  assert.strictEqual(shared.Orders[0].Customer, shared.Customer);
-  assert.strictEqual(shared.Orders[2].Customer, shared.Customer);
-  assert.strictEqual(shared.Orders[0].ShipTo, shared.Customer);
-  assert.strictEqual(shared.Same, shared.Orders);
-  assert.strictEqual(shared.Animal, shared.Pets[0]);
-  assert.strictEqual(shared.Self, null);
-
-  const cycle = await client.get('/shared?cycle=true');
-  assert.strictEqual(cycle.Self, cycle);
-  await assert.rejects(new LsMsgPackClient({ ...dotnet, baseUrl: server.url }).get('/shared?cycle=true'), (e) => e instanceof MsgPackError && /cycle/.test(e.message));
+    const cycle = await client.get('/shared?cycle=true');
+    assert.strictEqual(cycle.Self, cycle);
+  }
 });
 
 test('the server reads references the client writes: one instance there', { skip }, async () => {
@@ -187,7 +213,7 @@ test('the server reads references the client writes: one instance there', { skip
   const echo = await client.post('/echo/shared', shared);
   assert.deepStrictEqual(echo, { Orders: 3, SameCustomer: true, SameList: true, Self: true, AnimalIsPet: true, Name: 'Rex' });
   const plainClient = new LsMsgPackClient({ ...dotnet, baseUrl: server.url });
-  const copies = await plainClient.post('/echo/shared', await plainClient.get('/shared')); // copies: the Animal has its $type (a shared plain object read with 'preserve' has the one of its first place)
+  const copies = await plainClient.post('/echo/shared', await plainClient.get('/shared')); // read shared, written in full: copies there
   assert.deepStrictEqual(copies, { Orders: 3, SameCustomer: false, SameList: false, Self: false, AnimalIsPet: false, Name: 'Rex' });
 });
 
@@ -205,7 +231,10 @@ test('with the models: read into the classes, written by their generated writers
 });
 
 test('a stream of the server: a head and orders whose paths start at the body, read element by element and whole', { skip }, async () => {
-  const client = new LsMsgPackClient({ ...dotnet, baseUrl: server.url, references: 'preserve' });
+  for (const references of [undefined, 'preserve']) await serverStream(new LsMsgPackClient({ ...dotnet, baseUrl: server.url, references }));
+});
+
+async function serverStream(client) {
   const reader = await client.stream('/stream/shared');
   await reader.readHead();
   await reader.read(); // the arrayStart
@@ -226,7 +255,7 @@ test('a stream of the server: a head and orders whose paths start at the body, r
   await asValue.read();
   const list = await asValue.getValue();
   for (const order of list) assert.strictEqual(order.ShipTo, order.Customer);
-});
+}
 
 test('a stream of the TypeScript writer with references, read by the .NET reader', { skip }, async () => {
   const customer = { customerId: 7, companyName: 'Acme' };
