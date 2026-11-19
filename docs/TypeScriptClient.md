@@ -202,6 +202,29 @@ await writer.close();    // writes the index and closes the sink
 
 Not supported: writing heads or the indexed schema, a byte order other than the specification's (`EndianAction`), and appending to a stream.
 
+## SignalR
+
+`@lsmsgpack/client/signalr` is a hub protocol for `@microsoft/signalr` (version 8 and up), for a server with LsMsgPack.SignalR ([SignalR.md](SignalR.md)):
+
+```ts
+import { HubConnectionBuilder } from '@microsoft/signalr';
+import { LsMsgPackHubProtocol } from '@lsmsgpack/client/signalr';
+
+const connection = new HubConnectionBuilder()
+  .withUrl('/chat')
+  .withHubProtocol(new LsMsgPackHubProtocol({ decimal: 'string' }))
+  .build();
+```
+
+- `name`: `'lsmsgpack'` (default, the server's `AddLsMsgPackProtocol()`) or `'messagepack'` (`AddLsMsgPackAsMessagePackProtocol()`, or Microsoft's `AddMessagePackProtocol()`).
+- The other options are the decoder's and the encoder's: `decimal`, `int64`, `references`, `maxDepth`, `generateCode`.
+- The protocol imports nothing of `@microsoft/signalr` (it has the shape of its `IHubProtocol`), so it adds no dependency.
+- The messages have no schema (SignalR writes a message once for every connection it goes to): objects have the .NET property names (`message.User`), whatever `propertyNames` says, and only the properties in the data. LsMsgPack's server writes every value, so they are all there. A type id becomes `$type`, Guids are text, and DateTimes are `Date`s. The values follow the table in [Values](#values) for what the data holds.
+- Sent objects may use camelCase names (the server reads names ignoring case); `$type` is written as the type id, as in request bodies.
+- Each argument, stream item and result is read and written on its own: with `references: 'preserve'` a shared object within one argument is one instance.
+
+A decoder with `indexedSchema: false` (data without the schema, as the hub protocol reads it) also makes `$type` objects of type ids, and the value of a wrapped collection (`{ "": name, "@": [...] }`) its array. `decodePlain` (plain MsgPack of other writers) leaves a key `""` as it is.
+
 ## The server
 
 Nothing to change: the [ASP.NET Core, Web API and MVC 5 formatters](WebFormatters.md) support it (`LsMsgPackHttpOptions.DescribeSchemas`, `CompleteSchemas` and, for camelCase request bodies, `PropertyNameCaseInsensitive`, on by default).

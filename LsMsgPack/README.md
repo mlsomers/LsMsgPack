@@ -85,4 +85,5 @@ options.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(IShape));
 - [Serialization callbacks](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Callbacks.md): run code before and after an object is written or read, e.g. to validate it (`IMsgPackOnDeserialized`..., System.Text.Json's `IJsonOnDeserialized`...)
 - [Shared objects and cycles](https://github.com/mlsomers/LsMsgPack/blob/master/docs/References.md): an object referenced twice or a cycle is written once and read back as the same instance (`ReferenceHandling.Preserve`)
 - ASP.NET formatters built on LsMsgPack: [LsMsgPack.AspNetCore](https://www.nuget.org/packages/LsMsgPack.AspNetCore), [LsMsgPack.AspNet.WebApi](https://www.nuget.org/packages/LsMsgPack.AspNet.WebApi), [LsMsgPack.AspNet.Mvc](https://www.nuget.org/packages/LsMsgPack.AspNet.Mvc)
+- SignalR hub protocol: [LsMsgPack.SignalR](https://www.nuget.org/packages/LsMsgPack.SignalR)
 - Source, issues and MsgPack Explorer (a tool to look inside MsgPack data): [github.com/mlsomers/LsMsgPack](https://github.com/mlsomers/LsMsgPack)

@@ -120,6 +120,21 @@ options.Plain.TypeGuard = guard;
 
 Alternatively, set `MsgPackOptions.Default_TypeGuard` before the formatters are created.
 
+### SignalR
+
+The hub protocol ([SignalR.md](SignalR.md)) reads the arguments clients send. Set the guard on its options:
+
+```csharp
+builder.Services.AddSignalR().AddLsMsgPackProtocol(o =>
+{
+  LsMsgPackOptions values = LsMsgPackHubProtocolOptions.DefaultSerializerOptions(false);
+  values.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(ChatMessage));
+  o.SerializerOptions = values;
+});
+```
+
+It also limits each value as the web formatters do (`MaxObjects`, `MaxItems`).
+
 Declare the types you expect
 ----------------------------
 

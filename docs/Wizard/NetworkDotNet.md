@@ -14,6 +14,14 @@ Example: an ASP.NET Core API at `https://api.example.com` and a MAUI app calling
 
 **→ [.NET to .NET over HTTP](Setup-DotNetHttp.md)**
 
+### Real-time with SignalR
+
+The server has SignalR hubs, and the clients call hub methods and receive messages as they happen (chat, live updates, notifications). SignalR does the serializing; a package makes it use MsgPack.
+
+Example: a dashboard hub that pushes `StockTick` messages to WPF apps and browsers.
+
+**→ [SignalR](Setup-SignalR.md)**
+
 ### Something else: a queue, a socket, a stream, gRPC bytes
 
 The bytes go through a message broker (RabbitMQ, Azure Service Bus, Kafka, Redis pub/sub), a WebSocket or TCP connection, a named pipe, or a `bytes` field of another protocol. You call the serializer yourself and hand the bytes to the transport.
@@ -24,4 +32,4 @@ Example: an order service publishes `OrderPlaced` messages on RabbitMQ, and a sh
 
 ### Not sure?
 
-SignalR, gRPC and similar frameworks have their own serializers; use *something else* only when you put LsMsgPack's bytes into them yourself. If you're starting from scratch and both ends are yours, HTTP with the formatters is the least code.
+gRPC and similar frameworks have their own serializers; use *something else* only when you put LsMsgPack's bytes into them yourself. SignalR has a protocol of LsMsgPack (above). If you're starting from scratch and both ends are yours, HTTP with the formatters is the least code, and SignalR when the server sends messages on its own.

@@ -14,6 +14,7 @@ All three serialize .NET classes to MsgPack. This page compares their features, 
 - **Plain classes on a JIT:** no attributes, `partial` classes or source generator. The [generator](SourceGenerator.md) is optional there: LsMsgPack compiles the same writers and readers at runtime, so it writes and reads about as fast without it (maps keyed by property names it reads faster without it).
 - **[ReadDifferences](ReadDifferences.md)** to relieve your helpdesk: show the detailed differences, such as misspelled or missing fields, in a customer portal or in the logs.
 - **[Streaming](Streaming.md)** of large datasets (such as daily stock or turnover reports), also to a file with indexes for random access seeking.
+- **A SignalR hub protocol** ([LsMsgPack.SignalR](SignalR.md)): about twice as fast as Microsoft's MessagePack protocol, which is built on MessagePack-CSharp. Registered as "messagepack" it writes that protocol's bytes, so existing clients keep working.
 - Also: [ADO.NET data readers](DataReader.md), and [presets](Compatibility.md#lsmsgpack-presets) for exchanging data with the other two.
 
 **[MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp)** when you want:

@@ -7,6 +7,7 @@ Reads the `application/x-lsmsgpack` responses of [LsMsgPack's ASP.NET formatters
 - the schema (the property names) is sent once, then the server refers to it;
 - optional generated models ([lsmsgpack-ts](https://github.com/mlsomers/LsMsgPack/blob/master/docs/TypeScriptModels.md)): instances of TypeScript classes with the values the .NET constructors set, typed request bodies, and the server's schemas held before the first request.
 - shared objects and cycles of a server with `ReferenceHandling.Preserve`: the same instance (`references: 'preserve'` also writes references) ([docs](https://github.com/mlsomers/LsMsgPack/blob/master/docs/TypeScriptClient.md#shared-objects-and-cycles));
+- a SignalR hub protocol (`@lsmsgpack/client/signalr`): writes 2.4-2.9x and reads 1.3-1.4x as fast as Microsoft's MessagePack protocol;
 - streams ([MsgPackStreamReader and MsgPackStreamWriter](https://github.com/mlsomers/LsMsgPack/blob/master/docs/TypeScriptClient.md#streams)): large tables read row by row as they arrive, arrays of unknown length, and the index of LsMsgPack's streams to go to a row directly (a `Blob`, a file or HTTP range requests).
 
 No dependencies. Request bodies are sent as plain MsgPack (`application/msgpack`), with `$type` as the type id: polymorphic bodies work too.
@@ -34,6 +35,15 @@ Reading a table of unknown length as it arrives:
 const reader = await api.stream('exports/orders.msgpack');
 await reader.readHead();
 for await (const order of reader.elements()) show(order);
+```
+
+A SignalR hub protocol for `@microsoft/signalr` and a server with [LsMsgPack.SignalR](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SignalR.md), no dependency on it:
+
+```ts
+import { HubConnectionBuilder } from '@microsoft/signalr';
+import { LsMsgPackHubProtocol } from '@lsmsgpack/client/signalr';
+
+const connection = new HubConnectionBuilder().withUrl('/chat').withHubProtocol(new LsMsgPackHubProtocol()).build();
 ```
 
 Documentation: [docs/TypeScriptClient.md](https://github.com/mlsomers/LsMsgPack/blob/master/docs/TypeScriptClient.md) (options, the models, value conversions, polymorphic request bodies, shared objects and cycles, CORS, the described schema, streams).

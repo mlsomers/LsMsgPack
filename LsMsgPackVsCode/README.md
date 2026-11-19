@@ -48,6 +48,10 @@ The agent asks where the program is paused (`msgpack_debug_status`), which varia
 
 Streams written by LsMsgPack's `MsgPackStreamWriter` (or the TypeScript client) are shown as such: arrays, maps, strings and bin of unknown length (the escape sequences `C1 90` ... `C1 C0` in red in the hex view, the chunks of a string in the tree), the index of the stream with its entries and fields (**idx**), its tail (**tail**, the CRC-32 is checked) and sidecars. In the objects pane the payloads are named after their entries.
 
+## SignalR
+
+The bytes of a SignalR hub connection with a MessagePack protocol ("messagepack", or "lsmsgpack" of [LsMsgPack.SignalR](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SignalR.md)) are shown message by message: the handshake (**json**), each length prefix (**len**, not MsgPack) and the message (**hub**) with its fields by name, and in the objects pane each message as an object of its fields. Copy a binary WebSocket message from the browser's DevTools as base64 and use **MsgPack: Explore Bytes from Clipboard**.
+
 ## Files and text
 
 - `.msgpack`, `.MsgPack` and `.mpk` files open in the explorer (**Reopen Editor With...** switches to the text or hex editor). Other files: **MsgPack: Open File...**. The view follows changes of the file.

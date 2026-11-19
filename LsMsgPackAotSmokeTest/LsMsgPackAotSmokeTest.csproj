@@ -14,6 +14,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj" />
+    <!-- The SignalR hub protocol with the context (its values: an invoice as an argument), both names -->
+    <ProjectReference Include="..\LsMsgPack.SignalR\LsMsgPack.SignalR.csproj" />
     <ProjectReference Include="..\LsMsgPack.Generator\LsMsgPack.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
