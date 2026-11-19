@@ -172,7 +172,8 @@ export function parseOffsetText(text: string): { moment: Date; offset: number } 
 
 /** Extension type 1 (System.Decimal as in memory, see decodeDecimal) of decimal text, undefined when it does not fit (more than 96 bits or 28 decimals). */
 export function encodeDecimal(text: string): Uint8Array | undefined {
-  const m = /^\s*([+-])?(\d*)(?:\.(\d*))?\s*$/.exec(text);
+  // trim() first (it removes what \s matches): \s* at both ends of the pattern backtracked polynomially on long runs of spaces
+  const m = /^([+-])?(\d*)(?:\.(\d*))?$/.exec(text.trim());
   if (m === null || (m[2] === '' && (m[3] ?? '') === '')) return undefined;
   const fraction = m[3] ?? '';
   if (fraction.length > 28) return undefined;
