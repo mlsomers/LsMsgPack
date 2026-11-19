@@ -11,6 +11,7 @@ namespace LsMsgPackDebug
         public static ValidationItem[] ValidateItem(MsgPackItem item, long displayLimit)
         {
             List<ValidationItem> issues = new List<ValidationItem>();
+            if (item is MpHubPrefix || item is MpHubHandshake) return issues.ToArray(); // a SignalR length prefix (VarInt) and the handshake (JSON) are no MsgPack
             if (item is MpInt) ValidateInt(item, issues);
             else if (item is MpError) ValidateError((MpError)item, issues);
             else if (item is MsgPackVarLen)

@@ -122,6 +122,37 @@ test('load, search, settings and errors', { skip }, async () => {
   }
 });
 
+test('a capture of a SignalR connection: the handshake, length prefixes and messages', { skip }, async () => {
+  // {"protocol":"messagepack","version":2} 0x1E, then [1, {}, nil, "Send", ["x" * 150], []] (163 bytes: a prefix of 2 bytes) and a Ping [6]
+  const handshake = Buffer.from('{"protocol":"messagepack","version":2}\x1e', 'latin1');
+  const invocation = Buffer.concat([Buffer.from('960180c0a453656e6491d996', 'hex'), Buffer.alloc(150, 'x'), Buffer.from('90', 'hex')]);
+  assert.strictEqual(invocation.length, 163);
+  const capture = Buffer.concat([handshake, Buffer.from([0xa3, 0x01]), invocation, Buffer.from('029106', 'hex')]);
+  const client = new InspectorClient(process.env.DOTNET || 'dotnet', assembly);
+  try {
+    const model = await client.load('s', capture.toString('base64'), Object.assign({}, settings, { objects: 'show' }));
+    const kinds = model.items.filter((i) => i.parent === 0).map((i) => i.kind);
+    assert.deepStrictEqual(kinds, ['handshake', 'prefix', 'message', 'prefix', 'message']);
+    const prefix = model.items.find((i) => i.kind === 'prefix');
+    assert.strictEqual(prefix.offset, handshake.length);
+    assert.strictEqual(prefix.length, 2);
+    assert.strictEqual(prefix.typeBytes, 2, 'the whole prefix is marked');
+    const message = model.items.find((i) => i.kind === 'message');
+    assert.match(message.text, /Invocation "Send"/);
+    const fields = model.items.filter((i) => i.parent === message.id).map((i) => i.role);
+    assert.deepStrictEqual(fields, ['type', 'headers', 'invocationId', 'target', 'arguments', 'streamIds']);
+    assert.ok(!model.issues.some((issue) => issue.severity === 'Warning'), 'a prefix is no integer stored too large');
+    assert.ok(model.objects.nodes.length > 0);
+    assert.strictEqual(model.objectConfidence, 'Certain', 'the objects open by themselves');
+
+    // Plain MsgPack that only starts like a prefix stays plain: 0x02 then [1] is no message
+    const plain = await client.load('p', Buffer.from('029101', 'hex').toString('base64'), settings);
+    assert.deepStrictEqual(plain.items.filter((i) => i.parent === 0).map((i) => i.kind), ['int', 'array']);
+  } finally {
+    client.dispose();
+  }
+});
+
 test('started again after it stopped', { skip }, async () => {
   const client = new InspectorClient(process.env.DOTNET || 'dotnet', assembly);
   try {

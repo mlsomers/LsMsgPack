@@ -286,7 +286,50 @@ namespace LsMsgPackMcp
       string stream = DescribeStream(doc);
       if (stream != null)
         parts.Insert(0, stream);
+      string hub = DescribeHubCapture(doc);
+      if (hub != null)
+        parts.Insert(0, hub);
       return string.Join("; ", parts);
+    }
+
+    /// <summary>
+    /// A capture of a SignalR connection (MsgPackSettings.ReadHubMessages): the handshake, the messages per type and the targets, null when the data is none.
+    /// </summary>
+    private static string DescribeHubCapture(PayloadDocument doc)
+    {
+      if (!(doc.Root?.Item is MpRoot root))
+        return null;
+      List<string> handshakes = new List<string>();
+      SortedDictionary<int, int> types = new SortedDictionary<int, int>();
+      List<string> targets = new List<string>();
+      int messages = 0;
+      for (int t = 0; t < root.Count; t++)
+      {
+        if (root[t] is MpHubHandshake handshake)
+          handshakes.Add(handshake.Value as string);
+        else if (root[t] is MpHubMessage message)
+        {
+          messages++;
+          types.TryGetValue(message.MessageType, out int n);
+          types[message.MessageType] = n + 1;
+          if (message.Target != null && !targets.Contains(message.Target))
+            targets.Add(message.Target);
+        }
+      }
+      if (messages == 0 && handshakes.Count == 0)
+        return null;
+      List<string> parts = new List<string>();
+      foreach (string handshake in handshakes)
+        parts.Add("the handshake " + handshake);
+      List<string> counts = new List<string>();
+      foreach (KeyValuePair<int, int> type in types)
+        counts.Add(string.Concat(type.Value.ToString(CultureInfo.InvariantCulture), " ", HubCapture.MessageTypeName(type.Key)));
+      if (messages > 0)
+        parts.Add(string.Concat(Count(messages, "message", "messages"), " (", string.Join(", ", counts), ")"));
+      if (targets.Count > 0)
+        parts.Add("targets " + string.Join(", ", targets));
+      return string.Concat("a capture of a SignalR hub connection (MessagePack hub protocol: \"messagepack\" or LsMsgPack.SignalR's \"lsmsgpack\", each message a VarInt length prefix and an array): ",
+        string.Join(", ", parts), ". The values (arguments, items, results) are payloads of their own");
     }
 
     /// <summary>
@@ -786,6 +829,13 @@ namespace LsMsgPackMcp
       if (item is MpRoot root)
         return string.Concat("root, ", Count(root.Count, "item", "items"), " that follow each other");
 
+      if (item is MpHubPrefix prefix)
+        return string.Concat("SignalR length prefix (VarInt, not MsgPack, ", Count(item.StoredLength, "byte", "bytes"), "): the message after it is ", Count(prefix.MessageLength, "byte", "bytes"));
+      if (item is MpHubHandshake handshake)
+        return string.Concat("SignalR handshake (JSON text and the record separator 0x1E, not MsgPack): ", QuoteLimited(handshake.Value as string ?? string.Empty, options.MaxString, null));
+      if (item is MpHubMessage message)
+        return string.Concat("SignalR ", message.Summary, ": ", TypeName(doc, item), ", ", Count(message.PackedValues.Length, "item", "items"));
+
       if (item is MpStreamTail tail)
         return string.Concat("tail of the stream index (fixarray, 4 items): the index at ", Hex(tail.IndexOffset), " as the writer counted, ", Count(tail.IndexLength, "byte", "bytes"),
           ", CRC-32 0x", tail.Crc.ToString("X8", CultureInfo.InvariantCulture), tail.CrcMatches ? " matches" : " does NOT match");
@@ -1007,10 +1057,16 @@ namespace LsMsgPackMcp
       }
 
       byte b = doc.Data[offset];
-      sb.Append("Offset ").Append(Hex(offset)).Append(" (").Append(offset.ToString(CultureInfo.InvariantCulture)).Append(") of ").Append(Count(doc.Data.Length, "byte", "bytes"))
-        .Append(": 0x").Append(b.ToString("X2", CultureInfo.InvariantCulture)).Append(", as a type byte: ").Append(DescribeTypeByte(b, offset + 1 < doc.Data.Length ? doc.Data[offset + 1] : -1)).Append(".").Append('\n');
-
       ItemNode node = doc.FindItemAt(offset);
+      sb.Append("Offset ").Append(Hex(offset)).Append(" (").Append(offset.ToString(CultureInfo.InvariantCulture)).Append(") of ").Append(Count(doc.Data.Length, "byte", "bytes"))
+        .Append(": 0x").Append(b.ToString("X2", CultureInfo.InvariantCulture));
+      if (node?.Item is MpHubPrefix)
+        sb.Append(", a byte of a SignalR length prefix (VarInt: 7 bits of the length, the high bit set when another byte follows), not MsgPack.").Append('\n');
+      else if (node?.Item is MpHubHandshake)
+        sb.Append(", in the JSON text of the SignalR handshake, not MsgPack.").Append('\n');
+      else
+        sb.Append(", as a type byte: ").Append(DescribeTypeByte(b, offset + 1 < doc.Data.Length ? doc.Data[offset + 1] : -1)).Append(".").Append('\n');
+
       if (node is null)
       {
         sb.Append("No item holds this byte (it comes after the data that could be read, or the data could not be read).").Append('\n');
@@ -1041,7 +1097,7 @@ namespace LsMsgPackMcp
 
         if (!(node.Item is MpRoot) && node.Offset >= 0)
         {
-          int header = HeaderLength(node.Item, doc.Data, node.Offset);
+          int header = node.Item is MpHubPrefix || node.Item is MpHubHandshake ? 0 : HeaderLength(node.Item, doc.Data, node.Offset);
           long length = Math.Min(node.Length, 64);
           sb.Append("Bytes of the innermost item");
           if (header > 0)

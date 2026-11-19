@@ -355,7 +355,8 @@ namespace LsMsgPackMcp
         PreservePackages = true,
         ContinueProcessingOnBreakingError = Options.ContinueOnError,
         EndianAction = Options.Endian,
-        ReadStreams = true // values of unknown length and the index of a stream, as LsMsgPack's MsgPackStreamWriter writes them
+        ReadStreams = true, // values of unknown length and the index of a stream, as LsMsgPack's MsgPackStreamWriter writes them
+        ReadHubMessages = true // a capture of a SignalR connection (when the whole data is one): its handshake, length prefixes and messages
       };
       _settings = settings;
 
@@ -436,8 +437,9 @@ namespace LsMsgPackMcp
       else if (item is MpArray array)
       {
         MsgPackItem[] elements = array.PackedValues;
+        MpHubMessage message = item as MpHubMessage; // its fields by name
         for (int t = 0; t < elements.Length; t++)
-          Traverse(AddNode(elements[t], node, index?.NameOf(elements[t]) ?? Index(t), node.IsSchema), schemaItems, index);
+          Traverse(AddNode(elements[t], node, message?.FieldName(t) ?? index?.NameOf(elements[t]) ?? Index(t), node.IsSchema), schemaItems, index);
       }
       else if (item is MpMap map)
       {

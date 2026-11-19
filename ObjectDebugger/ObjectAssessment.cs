@@ -56,8 +56,25 @@ namespace ObjectDebugger
         return assessment;
       }
 
+      if (IsHubCapture(item))
+      {
+        assessment.Raise(ObjectConfidence.Certain, "The data is a capture of a SignalR connection: its messages have known fields.");
+        return assessment;
+      }
+
       assessment.Visit(Node.FromItem(item));
       return assessment;
+    }
+
+    private static bool IsHubCapture(MsgPackItem item)
+    {
+      if (item is MpHubMessage)
+        return true;
+      if (item is MpRoot root)
+        for (int t = 0; t < root.Count; t++)
+          if (root[t] is MpHubMessage)
+            return true;
+      return false;
     }
 
     private void Raise(ObjectConfidence confidence, string reason)

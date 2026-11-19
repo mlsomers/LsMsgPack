@@ -240,6 +240,7 @@ namespace MsgPackExplorer
                 CustomExtentionTypes = _lsMsgPackExtensions ? MsgPackSettings.Default_CustomExtentionTypes : new ICustomExt[0],
                 ReadLsMsgPackExtensions = _lsMsgPackExtensions,
                 ReadStreams = _lsMsgPackExtensions,
+                ReadHubMessages = true, // a capture of a SignalR connection (only when the whole data is one): its handshake, length prefixes and messages
                 TruncateValuesLargerThan = MsgPackSettings.PracticalDebuggingLimit
             };
         }
@@ -628,8 +629,9 @@ namespace MsgPackExplorer
             if (ReferenceEquals(item, null)) return;
             Type typ = item.GetType();
             if (typ == typeof(MpBool)) return;
-            if (typ == typeof(MpInt)) return;
+            if (typ == typeof(MpInt) || typ == typeof(MpHubPrefix)) return;
             if (typ == typeof(MpFloat)) return;
+            if (typ == typeof(MpHubHandshake)) return;
             MsgPackItem[] chunks = typ == typeof(MpBin) ? ((MpBin)item).Chunks : typ == typeof(MpString) ? ((MpString)item).Chunks : null;
             if (chunks != null)
             {
@@ -673,16 +675,17 @@ namespace MsgPackExplorer
                         return;
                 }
             }
-            if (typ == typeof(MpArray) || typ == typeof(MpStreamTail))
+            if (typ == typeof(MpArray) || typ == typeof(MpStreamTail) || typ == typeof(MpHubMessage))
             {
                 MpArray arr = (MpArray)item;
+                MpHubMessage message = item as MpHubMessage; // a SignalR message: its fields by name
                 MsgPackItem[] children = arr.PackedValues;
                 for (int t = 0; t < children.Length; t++)
                 {
                     if (ReferenceEquals(children[t], null))
                         break; // the slots after an error were not read (the header claims them): they showed as NULL items, as if the data had them
                     TreeNode child = GetTreeNodeFor(children[t]);
-                    string field = ReferenceEquals(index, null) ? null : index.NameOf(children[t]);
+                    string field = message != null ? message.FieldName(t) : ReferenceEquals(index, null) ? null : index.NameOf(children[t]);
                     if (field != null)
                         child.Text = string.Concat(field, ": ", child.Text);
                     node.Nodes.Add(child);
@@ -754,11 +757,12 @@ namespace MsgPackExplorer
             if (ReferenceEquals(item, null)) return 0;
             Type typ = item.GetType();
             if (typ == typeof(MpBool)) return 1;
-            if (typ == typeof(MpInt)) return 2;
+            if (typ == typeof(MpInt) || typ == typeof(MpHubPrefix)) return 2;
             if (typ == typeof(MpFloat) || typ == typeof(MpDecimal)) return 3;
             if (typ == typeof(MpBin)) return ((MpBin)item).IsTruncated ? _truncatedBinIcon : 4;
             if (typ == typeof(MpString)) return ((MpString)item).IsTruncated ? _truncatedStringIcon : 5;
-            if (typ == typeof(MpArray) || typ == typeof(MpStreamTail)) return 6;
+            if (typ == typeof(MpHubHandshake)) return 5;
+            if (typ == typeof(MpArray) || typ == typeof(MpStreamTail) || typ == typeof(MpHubMessage)) return 6;
             if (typ == typeof(MpMap)) return 7;
             if (typ == typeof(MpExt)) return ((MpExt)item).IsTruncated ? _truncatedExtensionIcon : 10;
             if (typ == typeof(MpStreamIndex) || typ == typeof(MpStreamSidecar)) return 10;

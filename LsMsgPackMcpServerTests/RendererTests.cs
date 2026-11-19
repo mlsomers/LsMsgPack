@@ -425,6 +425,35 @@ namespace LsMsgPackMcpServerTests
     }
 
     /// <summary>
+    /// A capture of a SignalR connection: the handshake, the length prefixes (VarInts, not MsgPack: a prefix of 128 or more read as MsgPack sent the rest astray) and the messages with their fields by name.
+    /// </summary>
+    [TestMethod]
+    public void HubCapture_MessagesWithTheirFields()
+    {
+      byte[] bytes = Payloads.HubCapture();
+      Assert.AreEqual(0x80, bytes[39] & 0x80, "the first message has a prefix of 2 bytes");
+      string text = Render(bytes, new RenderOptions() { Issues = IssueLevel.All });
+      AssertContains(text, "Structure: a capture of a SignalR hub connection (MessagePack hub protocol");
+      AssertContains(text, "the handshake {\"protocol\":\"messagepack\",\"version\":2}, 4 messages (1 Invocation, 2 Completion, 1 Ping), targets Send.");
+      AssertContains(text, "{ // SignalR Invocation\n    \"type\": 1, // Invocation\n    \"headers\": { \"trace\": \"abc\" },\n    \"invocationId\": \"1\",\n    \"target\": \"Send\",\n    \"arguments\": [");
+      AssertContains(text, "\"resultKind\": 1, // error\n    \"error\": \"it failed\"");
+      Assert.IsFalse(text.Contains("smaller container", StringComparison.Ordinal), "a prefix is no integer stored too large:\n" + text);
+
+      string items = Render(bytes, new RenderOptions() { View = DecodeView.Items });
+      AssertContains(items, "0x0027   [1] SignalR length prefix (VarInt, not MsgPack, 2 bytes): the message after it is ");
+      AssertContains(items, "[2] SignalR Invocation \"Send\" (id 1): fixarray, 6 items");
+      AssertContains(items, "     target fixstr \"Send\" // [0].target\n");
+      AssertContains(items, "     arguments fixarray, 2 items // [0].arguments\n");
+
+      PayloadDocument doc = new PayloadDocument(bytes, "test", new DecodeOptions()) { Id = "doc1" };
+      AssertContains(TextRenderer.ExplainOffset(doc, 0x28, new RenderOptions()), "a byte of a SignalR length prefix");
+
+      // The same bytes without the handshake are still a capture; plain MsgPack that only starts like one stays plain
+      AssertContains(Render(bytes.AsSpan(39).ToArray()), "Structure: a capture of a SignalR hub connection");
+      Assert.IsFalse(Render(new byte[] { 0x02, 0x91, 0x01 }).Contains("SignalR", StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// A stream of MsgPackStreamWriter: values of unknown length, the schema written once and referenced, a head with its body, the index with its entries and its tail.
     /// </summary>
     [TestMethod]
