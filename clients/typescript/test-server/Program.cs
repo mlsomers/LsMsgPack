@@ -20,9 +20,13 @@ builder.Services.AddControllers()
     o.JsonSerializerOptions.IncludeFields = true; // Motion: the fields of Vector3 and the opted in ones (no model has other public fields)
   })
   .AddLsMsgPackSerializerFormatters();
+builder.Services.AddSignalR(o => o.MaximumParallelInvocationsPerClient = 2) // 2: a hub method waits for a client result
+  .AddLsMsgPackProtocol()
+  .AddLsMsgPackAsMessagePackProtocol();
 
 WebApplication app = builder.Build();
 app.MapControllers();
+app.MapHub<LsMsgPackTsTestServer.TestHub>("/hub");
 await app.StartAsync();
 
 string address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>().Addresses.First();

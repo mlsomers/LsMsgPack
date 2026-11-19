@@ -787,9 +787,16 @@ export class SchemaReader extends MsgPackReader {
     return k === 0xa0 || (k === 0xd9 && this.bytes[this.pos + 1] === 0);
   }
 
+  /**
+   * LsMsgPack's values without the indexed schema (DecodeOptions.indexedSchema false, the hub protocol): a type id is the type's name, `{ "": name, ...properties }` an object
+   * with `$type`, `{ "": name, "@": value }` the value (a collection of a derived class). False for plain MsgPack (decodePlain), where a key "" is data. @internal
+   */
+  typeNames = false;
+
   protected override map(n: number): unknown {
     const made = this.made;
     if (this.plans !== null && n > 0 && this.firstKeyIsTypeId()) return this.wrapped(n, made === null ? -1 : this.headerStart(n, 0x80, 0xde));
+    if (this.typeNames && this.plans === null && n > 0 && this.firstKeyIsTypeId()) return this.named(n, made === null ? -1 : this.headerStart(n, 0x80, 0xde));
     if (made === null) return super.map(n);
     this.count(n);
     const start = this.headerStart(n, 0x80, 0xde);
@@ -797,6 +804,30 @@ export class SchemaReader extends MsgPackReader {
     const result: Record<string, unknown> = {};
     made.set(start, result);
     for (let t = 0; t < n; t++) {
+      const key = this.key();
+      setOwn(result, typeof key === 'string' ? key : String(key), this.value());
+    }
+    this.depth--;
+    return result;
+  }
+
+  /** A value with a type id of the names mode (see typeNames), the header (n entries) is read. @param start as wrapped */
+  private named(n: number, start: number): unknown {
+    this.pos += this.bytes[this.pos] === 0xa0 ? 1 : 2; // the key ""
+    const name = this.value();
+    this.enter();
+    const b = this.bytes;
+    if (n === 2 && b[this.pos] === 0xa1 && b[this.pos + 1] === 0x40) { // { "": name, "@": value }
+      this.pos += 2;
+      const value = this.value();
+      if (start >= 0 && typeof value === 'object' && value !== null) this.made!.set(start, value);
+      this.depth--;
+      return value;
+    }
+    const result: Record<string, unknown> = {};
+    result[TypeProperty] = name; // first, as the objects of the schema's entries
+    if (start >= 0) this.made!.set(start, result);
+    for (let t = 1; t < n; t++) {
       const key = this.key();
       setOwn(result, typeof key === 'string' ? key : String(key), this.value());
     }
@@ -1109,6 +1140,7 @@ export class Decoder {
     const data = end >= bytes.length ? bytes : bytes.subarray(0, end);
     const plans = schema === null ? null : this.plansOf(schema);
     const reader = new SchemaReader(data, this.readerOptions, plans, start, this.options.references, start, prefix);
+    reader.typeNames = !this.indexedSchema;
     try {
       const value = plans === null ? reader.value() : type === undefined ? reader.readRoot() : plans.readOf(type)(reader);
       return { value, end: reader.pos };
@@ -1118,6 +1150,7 @@ export class Decoder {
     // the value has references: read it again with 'preserve' (the objects of the first read are dropped)
     const again = schema === null ? null : this.preservingPlansOf(schema);
     const preserving = new SchemaReader(data, this.readerOptions, again, start, 'preserve', start, prefix);
+    preserving.typeNames = !this.indexedSchema;
     const value = again === null ? preserving.value() : type === undefined ? preserving.readRoot() : again.readOf(type)(preserving);
     return { value, end: preserving.pos };
   }
