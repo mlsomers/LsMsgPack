@@ -92,13 +92,16 @@ namespace LsMsgPack.References
     /// <summary>
     /// Extension data (maintainer's decision 2026-11-16, option a): a kept value is self-contained, each reference in it is replaced by a copy of the value it points to. A path is absolute,
     /// so it would point elsewhere once an older class writes the value back among its own members. A cycle inside the kept value cannot be copied: an error (follows ReadErrors).
+    /// <para>The copies of a call may add at most about the payload's own size (<see cref="Charge"/>, maintainer's decision 2026-11-19): a value holding two references to the one
+    /// before it, nested 18 times, is 1.2 KB that copied out grew to 86 MB, written back that size too.</para>
     /// </summary>
     internal static object Expand(object plain, MsgPackOptions settings)
     {
-      return Expand(plain, settings, 0);
+      return Expand(plain, settings, 0, null);
     }
 
-    private static object Expand(object plain, MsgPackOptions settings, int depth)
+    /// <param name="copying">The resolver of the reference being copied (it counts the values copied), null outside a copy</param>
+    private static object Expand(object plain, MsgPackOptions settings, int depth, ReferenceResolver copying)
     {
       if (depth > settings._maxDepth)
         throw ReadDifferences.NotConverted(settings, new MsgPackException($"A value kept as extension data refers to a value that contains it: a cycle cannot be kept (its references are replaced by copies of what they point to)."));
@@ -107,14 +110,16 @@ namespace LsMsgPack.References
         ReferenceResolver resolver = reference.Resolver ?? Current;
         if (resolver is null)
           throw ReadDifferences.NotConverted(settings, new MsgPackException($"A reference ({reference}) can only be read as a part of the payload it is in."));
-        return Expand(resolver.PlainAt(reference, settings), settings, depth + 1);
+        resolver.Charge(1, settings);
+        return Expand(resolver.PlainAt(reference, settings), settings, depth + 1, resolver);
       }
       if (plain is object[] items)
       {
+        copying?.Charge(items.Length, settings);
         object[] copy = null;
         for (int t = 0; t < items.Length; t++)
         {
-          object expanded = Expand(items[t], settings, depth + 1);
+          object expanded = Expand(items[t], settings, depth + 1, copying);
           if (!ReferenceEquals(expanded, items[t]))
             (copy ?? (copy = (object[])items.Clone()))[t] = expanded;
         }
@@ -122,22 +127,62 @@ namespace LsMsgPack.References
       }
       if (plain is KeyValuePair<object, object>[] entries)
       {
+        copying?.Charge(entries.Length, settings);
         if (ContentOf(entries) is MsgPackReference) // { "": typeId, "@": reference }: the value it points to has the type id itself when it is wrapped
         {
-          object content = Expand(ContentOf(entries), settings, depth + 1);
+          object content = Expand(ContentOf(entries), settings, depth + 1, copying);
           if (content is KeyValuePair<object, object>[] wrapped && ContentOf(wrapped) != null)
             return content;
         }
         KeyValuePair<object, object>[] copy = null;
         for (int t = 0; t < entries.Length; t++)
         {
-          object expanded = Expand(entries[t].Value, settings, depth + 1);
+          object expanded = Expand(entries[t].Value, settings, depth + 1, copying);
           if (!ReferenceEquals(expanded, entries[t].Value))
             (copy ?? (copy = (KeyValuePair<object, object>[])entries.Clone()))[t] = new KeyValuePair<object, object>(entries[t].Key, expanded);
         }
         return copy ?? entries;
       }
       return plain;
+    }
+
+    /// <summary>
+    /// What the copies of kept values may still add, in values (each takes a byte at least in the data), -1 before the first copy.
+    /// </summary>
+    private long _copyAllowance = -1;
+
+    /// <summary>
+    /// The values the copies of kept values of a call may add beyond the size of its payload (small payloads keep a few shared values).
+    /// </summary>
+    internal const int CopyAllowanceBeyondPayload = 4096;
+
+    /// <summary>
+    /// The size of the payload in bytes (LsMsgPack: its body), or in values when the length is not known.
+    /// </summary>
+    protected abstract long PayloadSize();
+
+    /// <summary>
+    /// A table reused by the next call (LsMsgPack's): its copies start again.
+    /// </summary>
+    protected void ResetCopies()
+    {
+      _copyAllowance = -1;
+    }
+
+    /// <summary>
+    /// <paramref name="values"/> more are copied into a kept value (<see cref="Expand(object, MsgPackOptions)"/>): past the allowance an error that follows ReadErrors.
+    /// </summary>
+    private void Charge(long values, MsgPackOptions settings)
+    {
+      if (_copyAllowance < 0)
+        _copyAllowance = PayloadSize() + CopyAllowanceBeyondPayload;
+      _copyAllowance -= values;
+      if (_copyAllowance < 0)
+      {
+        _copyAllowance = 0;
+        throw ReadDifferences.NotConverted(settings, new MsgPackException($"A value kept as extension data refers to values that, copied out, add more than the payload's own size ({PayloadSize()} + {CopyAllowanceBeyondPayload} values): "
+          + "references in kept values are replaced by copies of what they point to, and data whose copies grow beyond its size is refused (see docs/References.md, Extension data)."));
+      }
     }
 
     internal static object ResolveValue(MsgPackReference reference, Type type, FullPropertyInfo prop, MsgPackOptions settings)
@@ -195,6 +240,19 @@ namespace LsMsgPack.References
   }
 
   /// <summary>
+  /// Thrown by a reader without <see cref="ReferenceHandling.Preserve"/> at the first reference it resolves: the call reads the value again as with the option (maintainer's decision
+  /// 2026-11-19, gaps checklist item 9), so each value a reference points to is made once and shared. Reading each reference again as a copy grew exponentially: a value that holds two
+  /// references to the one before it, nested 18 times, is a payload of 1.2 KB that made 1.4 GB.
+  /// <para>Never marked as not converted (<see cref="ReadDifferences"/> does not skip it): it always reaches the call.</para>
+  /// </summary>
+  internal sealed class ReadAgainPreserving : Exception
+  {
+    internal ReadAgainPreserving() : base("The data has references: read again with ReferenceHandling.Preserve.")
+    {
+    }
+  }
+
+  /// <summary>
   /// The references of a payload unpacked into plain values (LsMsgPackDebug): a path is followed through the object[]s and map entries from the root, objects are registered by the plain value they are made of.
   /// </summary>
   internal sealed class PlainReferences : ReferenceResolver
@@ -204,9 +262,36 @@ namespace LsMsgPack.References
     private HashSet<object> _reading;
     private Dictionary<object, int[]> _ownPaths;
 
-    internal PlainReferences(object root)
+    private readonly long _payloadLength;
+
+    /// <param name="payloadLength">The length of the data in bytes, -1 when it is not known (then the values of <paramref name="root"/> are counted)</param>
+    internal PlainReferences(object root, long payloadLength = -1)
     {
       _root = root;
+      _payloadLength = payloadLength;
+    }
+
+    protected override long PayloadSize()
+    {
+      return _payloadLength >= 0 ? _payloadLength : CountValues(_root, 0);
+    }
+
+    private static long CountValues(object value, int depth)
+    {
+      long count = 1;
+      if (depth > 1024) // the readers refuse deeper data (MaxDepth) before this
+        return count;
+      if (value is object[] items)
+      {
+        for (int t = 0; t < items.Length; t++)
+          count += CountValues(items[t], depth + 1);
+      }
+      else if (value is KeyValuePair<object, object>[] entries)
+      {
+        for (int t = 0; t < entries.Length; t++)
+          count += 1 + CountValues(entries[t].Value, depth + 1);
+      }
+      return count;
     }
 
     internal override void Register(object plain, object created, bool replace)
@@ -246,6 +331,8 @@ namespace LsMsgPack.References
 
     internal override object Resolve(MsgPackReference reference, Type type, FullPropertyInfo prop, MsgPackOptions settings)
     {
+      if (!settings.PreservesReferences)
+        throw new ReadAgainPreserving(); // the call converts again with the option (LsMsgPackDebug's ConvertDeserializeValue)
       int[] path = reference.Path;
       bool found = false;
       object target = path is null ? null : Follow(path, out found);

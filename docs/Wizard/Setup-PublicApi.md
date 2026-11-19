@@ -79,7 +79,7 @@ Clients you don't control can't be updated with your server, so treat the proper
 ## Watch out
 
 - **Avoid `object` in request classes** (`object`, `List<object>`, `Dictionary<string, object>`): there the data picks the class. The analyzers that come with the package warn about them (LSMP004, LSMP005). More in [security.md](../security.md).
-- **Limits are built in**: nesting deeper than 256 levels is refused, and lengths are checked against the body before anything is allocated. Keep ASP.NET Core's request size limit (`MaxRequestBodySize`) at a sensible value for your API.
+- **Limits are built in**: nesting deeper than 256 levels is refused, lengths are checked against the body before anything is allocated, and a body may hold at most 1,000,000 objects and collections and 10,000,000 elements and entries (`o.MaxObjects`, `o.MaxItems`; an empty map is one byte that becomes a whole object). Keep ASP.NET Core's request size limit (`MaxRequestBodySize`) at a sensible value for your API. More in [security.md](../security.md).
 - **Class hierarchies over plain MsgPack**: a property declared as an interface or abstract class can't be read from plain MsgPack (there's no class name). Use concrete classes in public request types, or a property that says which variant it is.
 - **`DateTimeOffset`** is sent over `application/msgpack` as the moment only: the offset is lost. Add a property for it if clients need it (`application/x-lsmsgpack` keeps it).
 

@@ -153,6 +153,7 @@ namespace LsMsgPackDebug
       }
 
       long slots = SlotsFor(data, len, 1);
+      CountContainer(len);
       object[] items = new object[slots]; // typed, Array.SetValue is slow
       value = items;
 #if KEEPTRACK

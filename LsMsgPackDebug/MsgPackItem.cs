@@ -560,6 +560,7 @@ namespace LsMsgPackDebug
 
     public static MsgPackItem Unpack(Stream stream, MsgPackSettings settings)
     {
+      MsgPackVarLen.StartCounting(); // MsgPackOptions.MaxObjects and MaxItems count per value
       return Unpack(stream, settings, 0);
     }
 
@@ -611,7 +612,14 @@ namespace LsMsgPackDebug
 
     private static MsgPackException TooDeep(int maxDepth, long offset, MsgPackTypeId typeId)
     {
-      MsgPackException ex = new MsgPackException($"The data is nested deeper than {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.MaxDepth)} ({maxDepth}).", offset, typeId);
+      return PassedOn(new MsgPackException($"The data is nested deeper than {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.MaxDepth)} ({maxDepth}).", offset, typeId));
+    }
+
+    /// <summary>
+    /// The levels above pass the exception on as it is (the limits for untrusted data: MaxDepth, MaxObjects, MaxItems, MaxStringLength, MaxBinLength).
+    /// </summary>
+    internal static MsgPackException PassedOn(MsgPackException ex)
+    {
       ex.Data[TooDeepKey] = true;
       return ex;
     }

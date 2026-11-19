@@ -329,16 +329,18 @@ namespace LsMsgPackUnitTests
       CollectionAssert.AreEqual(Serializer.Serialize(order, Settings(ObjectLayout.Array, false, ReferenceHandling.None)), bytes);
     }
 
+    /// <summary>
+    /// A reader without the option reads data with references again with it (maintainer's decision 2026-11-19): each value a reference points to is one instance, as with the option.
+    /// </summary>
     [TestMethod]
-    public void WithoutTheOption_Copies()
+    public void WithoutTheOption_SharedInstances()
     {
       byte[] bytes = Serializer.Serialize(Orders(), Settings(ObjectLayout.Map, true));
       List<RfOrder> read = Serializer.Deserialize<List<RfOrder>>(bytes, Settings(ObjectLayout.Map, true, ReferenceHandling.None));
-      Assert.AreNotSame(read[0].Customer, read[3].Customer, "read again: a copy");
+      Assert.AreSame(read[0].Customer, read[3].Customer);
       Assert.AreEqual("shared", read[3].Customer.Name);
-      CollectionAssert.AreEqual(new List<string>() { "a" }, (System.Collections.ICollection)read[3].Extra);
+      Assert.AreSame(read[0].Customer.Tags, read[3].Extra);
 
-      // A collection read after the first reference (which made the table of the call) is not registered either: the second reference to it is a copy too
       RfCustomer first = new RfCustomer() { Name = "a" };
       List<string> tags = new List<string>() { "t" };
       List<RfOrder> orders = new List<RfOrder>()
@@ -348,17 +350,94 @@ namespace LsMsgPackUnitTests
         new RfOrder() { Id = 3, Customer = new RfCustomer() { Name = "c", Tags = tags } },
         new RfOrder() { Id = 4, Customer = new RfCustomer() { Name = "d", Tags = tags } }
       };
-      List<RfOrder> again = Serializer.Deserialize<List<RfOrder>>(Serializer.Serialize(orders, Settings(ObjectLayout.Map, true)), Settings(ObjectLayout.Map, true, ReferenceHandling.None));
-      Assert.AreNotSame(again[2].Customer.Tags, again[3].Customer.Tags, "after the first reference: still a copy");
-      CollectionAssert.AreEqual(tags, again[3].Customer.Tags);
+      foreach (MsgPackSettings settings in AllSettings())
+      {
+        MsgPackSettings without = settings.Clone();
+        without.ReferenceHandling = ReferenceHandling.None;
+        List<RfOrder> again = Serializer.Deserialize<List<RfOrder>>(Serializer.Serialize(orders, settings), without);
+        Assert.AreSame(again[0].Customer, again[1].Customer, settings.ObjectLayout + " " + settings.UseInexedSchema);
+        Assert.AreSame(again[2].Customer.Tags, again[3].Customer.Tags);
+        CollectionAssert.AreEqual(tags, again[3].Customer.Tags);
+      }
     }
 
+    /// <summary>
+    /// Read again with the option, a cycle resolves without it too.
+    /// </summary>
     [TestMethod]
-    public void WithoutTheOption_CycleFails()
+    public void WithoutTheOption_ReadsCycles()
     {
       byte[] bytes = Serializer.Serialize(Tree(), Settings(ObjectLayout.Map, false));
-      MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<RfNode>(bytes, Settings(ObjectLayout.Map, false, ReferenceHandling.None)));
-      StringAssert.Contains(ex.Message, "cycle");
+      RfNode root = Serializer.Deserialize<RfNode>(bytes, Settings(ObjectLayout.Map, false, ReferenceHandling.None));
+      Assert.AreSame(root, root.Self);
+      Assert.AreSame(root, root.Children[1].Parent);
+      Assert.AreSame(root.Children[2], root.Children[2].Children[0].Tag);
+    }
+
+    public class RfChained
+    {
+      public string Name { get; set; }
+      public object[] Chain { get; set; }
+    }
+
+    /// <summary>
+    /// Each level holds the one before it twice (the second time a reference): copied, the levels double (1.2 KB of data made 1.4 GB at 18 levels).
+    /// </summary>
+    internal static object[] Chain(int levels)
+    {
+      object[] chain = new object[100];
+      for (int t = 0; t < chain.Length; t++)
+        chain[t] = 1000 + t;
+      for (int t = 0; t < levels; t++)
+        chain = new object[] { chain, chain };
+      return chain;
+    }
+
+    /// <summary>
+    /// Reading copies made a value that refers twice to the one before it, nested, grow exponentially: read once, shared, it stays the size of the data.
+    /// </summary>
+    [TestMethod]
+    public void WithoutTheOption_ChainOfReferences_ReadOnce()
+    {
+      foreach (MsgPackSettings settings in AllSettings())
+      {
+        byte[] bytes = Serializer.Serialize(new RfChained() { Name = "c", Chain = Chain(40) }, settings); // 2^40 copies of 100 numbers
+        Assert.IsTrue(bytes.Length < 4000, bytes.Length.ToString()); // 2^40 copies of 100 numbers written out
+        foreach (ReferenceHandling handling in new[] { ReferenceHandling.None, ReferenceHandling.Preserve })
+        {
+          MsgPackSettings reader = settings.Clone();
+          reader.ReferenceHandling = handling;
+          RfChained read = Serializer.Deserialize<RfChained>(bytes, reader);
+          object[] level = read.Chain;
+          for (int t = 0; t < 40; t++)
+          {
+            Assert.AreSame(level[0], level[1], handling + " " + settings.ObjectLayout + " " + settings.UseInexedSchema + " level " + t);
+            level = (object[])level[0];
+          }
+          Assert.AreEqual(100, level.Length);
+          Assert.AreEqual(1099L, Convert.ToInt64(level[99]));
+        }
+      }
+    }
+
+    public class RfCustomerOld
+    {
+      public string Name { get; set; }
+    }
+
+    /// <summary>
+    /// The data with references is read again from its start: the differences are those of the second read only.
+    /// </summary>
+    [TestMethod]
+    public void WithoutTheOption_DifferencesOfOneRead()
+    {
+      RfCustomer customer = new RfCustomer() { Name = "m", Tags = new List<string>() { "t" } };
+      byte[] bytes = Serializer.Serialize(new List<RfCustomer>() { customer, new RfCustomer() { Name = "o", Tags = new List<string>() }, customer }, Settings(ObjectLayout.Map, false));
+      List<RfCustomerOld> read = Serializer.Deserialize<List<RfCustomerOld>>(bytes, Settings(ObjectLayout.Map, false, ReferenceHandling.None), out ReadDifferences differences);
+      Assert.AreSame(read[0], read[2]);
+      Assert.AreEqual(1, differences.Differences.Count, differences.GenerateReport());
+      Assert.AreEqual(DifferenceKind.UnknownProperty, differences.Differences[0].Kind);
+      Assert.AreEqual(2, differences.Differences[0].Count, differences.GenerateReport()); // Tags in the first two elements, the third is the first one (read once)
     }
 
     [TestMethod]
@@ -522,6 +601,57 @@ namespace LsMsgPackUnitTests
         RfNewerFirst back = Serializer.Deserialize<RfNewerFirst>(Serializer.Serialize(older, settings), settings);
         Assert.AreEqual("m", back.Main.Name);
         Assert.AreEqual("m", back.Backup.Name);
+      }
+    }
+
+    public class RfChainedOld
+    {
+      public string Name { get; set; }
+      public MsgPackExtensionData Extra { get; set; }
+    }
+
+    /// <summary>
+    /// The references in a kept value become copies; copies that add up to about the payload's own size are kept (maintainer's decision 2026-11-19).
+    /// </summary>
+    [TestMethod]
+    public void ExtensionData_CopiesWithinThePayloadSize_Kept()
+    {
+      foreach (MsgPackSettings settings in ByNameSettings())
+      {
+        byte[] newer = Serializer.Serialize(new RfChained() { Name = "c", Chain = Chain(3) }, settings); // 800 numbers copied out
+        RfChainedOld older = Serializer.Deserialize<RfChainedOld>(newer, settings);
+        RfChained back = Serializer.Deserialize<RfChained>(Serializer.Serialize(older, settings), settings);
+        object[] level = back.Chain;
+        for (int t = 0; t < 3; t++)
+        {
+          Assert.AreEqual(2, level.Length, settings.ObjectLayout + " " + settings.UseInexedSchema);
+          level = (object[])level[1]; // the copy
+        }
+        Assert.AreEqual(1099L, Convert.ToInt64(level[99]));
+      }
+    }
+
+    /// <summary>
+    /// Copies that grow beyond the payload's size are refused, an error that follows ReadErrors: 1.2 KB of data copied out to 86 MB (and written back that size) before.
+    /// </summary>
+    [TestMethod]
+    public void ExtensionData_CopiesBeyondThePayloadSize_FollowReadErrors()
+    {
+      foreach (MsgPackSettings settings in ByNameSettings())
+      {
+        byte[] newer = Serializer.Serialize(new RfChained() { Name = "c", Chain = Chain(12) }, settings); // 409,600 numbers copied out
+        foreach (ReferenceHandling handling in new[] { ReferenceHandling.Preserve, ReferenceHandling.None })
+        {
+          MsgPackSettings reader = settings.Clone();
+          reader.ReferenceHandling = handling;
+          MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Deserialize<RfChainedOld>(newer, reader));
+          StringAssert.Contains(ex.Message, "payload's own size");
+
+          reader.ReadErrors = ReadErrorHandling.ReportAndContinue;
+          RfChainedOld older = Serializer.Deserialize<RfChainedOld>(newer, reader);
+          Assert.AreEqual("c", older.Name);
+          Assert.IsFalse(older.Extra != null && older.Extra.TryGetRaw("Chain", out _), handling + " " + settings.ObjectLayout + " " + settings.UseInexedSchema);
+        }
       }
     }
 

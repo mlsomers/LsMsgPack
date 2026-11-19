@@ -191,6 +191,8 @@ namespace LsMsgPack.Reading
     /// </summary>
     protected static T Slow(ReadContext c, int start, FullPropertyInfo assignedTo)
     {
+      if (c.R.Pos > start) // the header was read (and counted for MsgPackOptions.MaxObjects): ReadPlain counts it again
+        c.R.Uncount(start);
       c.R.Pos = start;
       object plain = c.R.ReadPlain(c.Depth);
       ByteReferences references = c.References;

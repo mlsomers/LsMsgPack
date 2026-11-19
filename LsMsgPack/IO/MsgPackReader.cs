@@ -25,6 +25,13 @@ namespace LsMsgPack.IO
     private readonly int _maxDepth;
     private readonly LsExtension[] _extensions;
     private readonly DateTimeKind _dateTimeKind;
+    // The limits for untrusted data (MsgPackOptions.MaxObjects, MaxItems, MaxStringLength, MaxBinLength; unlimited by default) and what the call read so far (Reset)
+    private readonly int _maxObjects;
+    private readonly long _maxItems;
+    private readonly int _maxStringLength;
+    private readonly int _maxBinLength;
+    private int _objects;
+    private long _items;
 
     internal MsgPackReader(byte[] buffer, int offset, int end, LsMsgPackOptions options)
     {
@@ -35,16 +42,48 @@ namespace LsMsgPack.IO
       _maxDepth = options._maxDepth;
       _extensions = options._extensions;
       _dateTimeKind = options._readDateTimeKind;
+      _maxObjects = options._maxObjects;
+      _maxItems = options._maxItems;
+      _maxStringLength = options._maxStringLength;
+      _maxBinLength = options._maxBinLength;
     }
 
     /// <summary>
-    /// The reader reads other data (the options stay the same).
+    /// The reader reads other data (the options stay the same), the counts of the limits start again.
     /// </summary>
     internal void Reset(byte[] buffer, int offset, int end)
     {
       Buf = buffer;
       Pos = offset;
       End = end;
+      _objects = 0;
+      _items = 0;
+    }
+
+    /// <summary>
+    /// A typed reader read the header of the array or map at <paramref name="start"/> and leaves the value to ReadPlain, which reads it again: it counts once.
+    /// </summary>
+    internal void Uncount(int start)
+    {
+      if (start >= End)
+        return;
+      byte c = Buf[start];
+      long count;
+      if ((c & 0xE0) == 0x80) count = c & 0x0F; // fixmap and fixarray
+      else if ((c == 0xDC || c == 0xDE) && start + 2 < End) count = U16(new ReadOnlySpan<byte>(Buf, start + 1, 2));
+      else if ((c == 0xDD || c == 0xDF) && start + 4 < End) count = U32(new ReadOnlySpan<byte>(Buf, start + 1, 4));
+      else return;
+      _objects--;
+      _items -= count;
+    }
+
+    /// <summary>
+    /// A read repeated from the start (after a SchemaGrowthException): the counts of the limits start again.
+    /// </summary>
+    internal void ResetCounts()
+    {
+      _objects = 0;
+      _items = 0;
     }
 
     internal int MaxDepth { get { return _maxDepth; } }
@@ -110,8 +149,8 @@ namespace LsMsgPack.IO
 
     private byte[] Bytes(long count)
     {
-      if (count > End - Pos)
-        throw EndOfData();
+      if (count > End - Pos || count > _maxBinLength)
+        throw BinError(count);
       byte[] result = MsgPackWriter.NewBytes((int)count);
       new ReadOnlySpan<byte>(Buf, Pos, (int)count).CopyTo(result);
       Pos += (int)count;
@@ -125,12 +164,31 @@ namespace LsMsgPack.IO
     {
       if (count > (End - Pos) / bytesPerItem)
         throw TooMany(count);
+      if (++_objects > _maxObjects || (_items += count) > _maxItems) // the limits for untrusted data (unlimited by default): every array and map read, not the ones skipped
+        throw OverLimit();
       return (int)count;
     }
 
     private MsgPackException TooMany(long count) // apart: Count is inlined into the readers of arrays and maps
     {
       return new MsgPackException($"The data claims {count} items, more than the remaining {End - Pos} bytes can hold.");
+    }
+
+    private MsgPackException OverLimit()
+    {
+      return _objects > _maxObjects
+        ? MsgPackOptions.OverLimit("arrays and maps (objects, collections)", _maxObjects, nameof(MsgPackOptions) + "." + nameof(MsgPackOptions.MaxObjects))
+        : MsgPackOptions.OverLimit("array elements and map entries", _maxItems, nameof(MsgPackOptions) + "." + nameof(MsgPackOptions.MaxItems));
+    }
+
+    private MsgPackException StringError(long length)
+    {
+      return length > End - Pos ? EndOfData() : MsgPackOptions.TooLong("a string", length, _maxStringLength, nameof(MsgPackOptions) + "." + nameof(MsgPackOptions.MaxStringLength));
+    }
+
+    private MsgPackException BinError(long length)
+    {
+      return length > End - Pos ? EndOfData() : MsgPackOptions.TooLong("a binary value or extension", length, _maxBinLength, nameof(MsgPackOptions) + "." + nameof(MsgPackOptions.MaxBinLength));
     }
 
     #endregion
@@ -176,8 +234,8 @@ namespace LsMsgPack.IO
       else if (c == 0xDB) { Pos++; length = U32(); }
       else return -1;
 
-      if (length > End - Pos)
-        throw EndOfData();
+      if (length > End - Pos || length > _maxStringLength)
+        throw StringError(length);
       return (int)length;
     }
 
@@ -739,8 +797,8 @@ namespace LsMsgPack.IO
       else if (c == 0xC6) { Pos++; length = U32(); }
       else return -1;
 
-      if (length > End - Pos)
-        throw EndOfData();
+      if (length > End - Pos || length > _maxBinLength)
+        throw BinError(length);
       return (int)length;
     }
 
@@ -813,9 +871,9 @@ namespace LsMsgPack.IO
         case 0xD6: Pos++; len = 4; break;
         case 0xD7: Pos++; len = 8; break;
         case 0xD8: Pos++; len = 16; break;
-        case 0xC7: Pos++; len = ReadByte(); break;
-        case 0xC8: Pos++; len = U16(); break;
-        case 0xC9: Pos++; len = U32(); break;
+        case 0xC7: Pos++; len = ReadByte(); if (len > _maxBinLength) throw BinError(len); break; // MsgPackOptions.MaxBinLength: not the fixed sizes of 1-16 bytes
+        case 0xC8: Pos++; len = U16(); if (len > _maxBinLength) throw BinError(len); break;
+        case 0xC9: Pos++; len = U32(); if (len > _maxBinLength) throw BinError(len); break;
         default:
           typeCode = 0;
           length = 0;
@@ -998,8 +1056,8 @@ namespace LsMsgPack.IO
 
     private string ReadStringBody(long length)
     {
-      if (length > End - Pos)
-        throw EndOfData();
+      if (length > End - Pos || length > _maxStringLength)
+        throw StringError(length);
       string value = Decode((int)length);
       Pos += (int)length;
       return value;

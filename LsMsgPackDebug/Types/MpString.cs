@@ -185,6 +185,7 @@ namespace LsMsgPackDebug
           default: throw new MsgPackException($"MpString does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position - 1, typeId);
         }
       }
+      ThrowIfTooLong(len, true);
 #if KEEPTRACK
       if (Truncates(len, BytesForKeptCharacters))
       {

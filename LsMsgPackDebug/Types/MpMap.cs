@@ -193,6 +193,7 @@ namespace LsMsgPackDebug
       }
 
       long slots = SlotsFor(data, len, 2);
+      CountContainer(len);
       value = new KeyValuePair<object, object>[slots];
 
 #if KEEPTRACK

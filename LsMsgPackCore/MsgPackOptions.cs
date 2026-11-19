@@ -232,6 +232,10 @@ namespace LsMsgPack
     internal bool _propertyNameCaseInsensitive = Default_PropertyNameCaseInsensitive;
     internal SchemaVersion _schemaVersion = Default_SchemaVersion;
     internal int _maxDepth = Default_MaxDepth;
+    internal int _maxObjects = int.MaxValue;
+    internal long _maxItems = int.MaxValue;
+    internal int _maxStringLength = int.MaxValue;
+    internal int _maxBinLength = int.MaxValue;
     internal ReferenceHandling _referenceHandling = Default_ReferenceHandling;
     internal ObjectCreation _objectCreation = Default_ObjectCreation;
     internal ReadErrorHandling _readErrors = Default_ReadErrors;
@@ -619,6 +623,79 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// The most arrays and maps one call reads (each object, collection, type id wrapper, and the arrays of tuples, pairs and the like), those read again for a copy included;
+    /// more throw a <see cref="MsgPackException"/>. Unlimited (<see cref="int.MaxValue"/>) by default, 1,000,000 in the HTTP serializer.
+    /// <para>A limit for untrusted data: an empty map is one byte and becomes a whole object (constructor, fields, the collections it creates), so a body of 30 MB can claim
+    /// 30 million objects (see docs/security.md). Values that are skipped (members the class does not have) are not counted.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max Objects")]
+    [Description("The most arrays and maps (objects, collections) one call reads before an exception is thrown. Protects against small data that becomes many objects.")]
+    [DefaultValue(int.MaxValue)]
+    public int MaxObjects
+    {
+      get { return _maxObjects; }
+      set { _maxObjects = value < 0 ? 0 : value; }
+    }
+
+    /// <summary>
+    /// The most array elements and map entries one call reads, all arrays and maps together (those read again for a copy included); more throw a <see cref="MsgPackException"/>.
+    /// Unlimited (<see cref="int.MaxValue"/>) by default, 10,000,000 in the HTTP serializer.
+    /// <para>A limit for untrusted data: an entry of a dictionary takes two bytes in the data and dozens in memory (see docs/security.md). Values that are skipped are not counted.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max Items")]
+    [Description("The most array elements and map entries one call reads, in all arrays and maps together, before an exception is thrown.")]
+    [DefaultValue(int.MaxValue)]
+    public int MaxItems
+    {
+      get { return (int)_maxItems; }
+      set { _maxItems = value < 0 ? 0 : value; }
+    }
+
+    /// <summary>
+    /// The longest string read, in bytes as written (UTF-8); a longer one throws a <see cref="MsgPackException"/>. Unlimited (<see cref="int.MaxValue"/>) by default.
+    /// <para>Map keys count where they are read as strings (the compiled and generated readers compare the keys of a class's members in place: no string is made).
+    /// A string is at most about twice its bytes in memory: the size of the data limits it as well (in ASP.NET Core: <c>MaxRequestBodySize</c>).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max String Length")]
+    [Description("The longest string read, in bytes as written, before an exception is thrown.")]
+    [DefaultValue(int.MaxValue)]
+    public int MaxStringLength
+    {
+      get { return _maxStringLength; }
+      set { _maxStringLength = value < 0 ? 0 : value; }
+    }
+
+    /// <summary>
+    /// The longest binary value (bin) or extension read, in bytes; a longer one throws a <see cref="MsgPackException"/>. Unlimited (<see cref="int.MaxValue"/>) by default.
+    /// <para>Extensions of a fixed size (1 to 16 bytes: dates, decimals, Guids, references) are not checked.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max Bin Length")]
+    [Description("The longest binary value or extension read, in bytes, before an exception is thrown.")]
+    [DefaultValue(int.MaxValue)]
+    public int MaxBinLength
+    {
+      get { return _maxBinLength; }
+      set { _maxBinLength = value < 0 ? 0 : value; }
+    }
+
+    /// <summary>
+    /// The message of a limit that is exceeded: what, the limit and the option.
+    /// </summary>
+    internal static MsgPackException OverLimit(string what, long limit, string option)
+    {
+      return new MsgPackException($"The data holds more {what} than {option} ({limit}) allows. Raise it for data you trust (see docs/security.md).");
+    }
+
+    internal static MsgPackException TooLong(string what, long length, long limit, string option)
+    {
+      return new MsgPackException($"The data holds {what} of {length} bytes, longer than {option} ({limit}) allows. Raise it for data you trust (see docs/security.md).");
+    }
+
+    /// <summary>
     /// What happens to an object or collection that is met again while writing (<see cref="LsMsgPack.ReferenceHandling.None"/> by default: it is written again, a cycle ends at
     /// <see cref="MaxDepth"/> with a <see cref="MsgPackException"/>). See docs/References.md.
     /// <para><see cref="LsMsgPack.ReferenceHandling.IgnoreCycles"/>: a reference to an object that is being written is nil, as System.Text.Json's <c>ReferenceHandler.IgnoreCycles</c>.
@@ -869,6 +946,17 @@ namespace LsMsgPack
       copy._serializedPropsCache = null;
       copy._staticPropsCache = null;
       copy._schemaFrozen = false;
+      return copy;
+    }
+
+    /// <summary>
+    /// A copy of these options for a conversion repeated with <see cref="ReferenceHandling.Preserve"/> (data with references read by settings without the option, see
+    /// References.ReadAgainPreserving): everything else is shared, the caches of a schema session and the differences collected too.
+    /// </summary>
+    internal MsgPackOptions Preserving()
+    {
+      MsgPackOptions copy = (MsgPackOptions)MemberwiseClone();
+      copy._referenceHandling = ReferenceHandling.Preserve;
       return copy;
     }
 

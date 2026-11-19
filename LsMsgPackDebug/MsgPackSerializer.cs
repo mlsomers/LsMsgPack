@@ -250,8 +250,9 @@ namespace LsMsgPackDebug
       if (settings.UseInexedSchema)
         return DeserializeWithSchema(tType, stream, settings);
 
+      long length = BodyLength(stream);
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
-      return ConvertDeserializeValue(unpacked.UnpackedValue, tType, settings, null);
+      return ConvertDeserializeValue(unpacked.UnpackedValue, tType, settings, null, length);
     }
 
     /// <summary>
@@ -337,13 +338,22 @@ namespace LsMsgPackDebug
       try
       {
         SerializationRules.BindReaderTypes(tType, schemaSettings);
+        long length = BodyLength(stream);
         MsgPackItem unpacked = MsgPackItem.Unpack(stream, schemaSettings);
-        return ConvertDeserializeValue(unpacked.UnpackedValue, tType, schemaSettings, null);
+        return ConvertDeserializeValue(unpacked.UnpackedValue, tType, schemaSettings, null, length);
       }
       finally
       {
         settings.FileContainsErrors |= schemaSettings.FileContainsErrors;
       }
+    }
+
+    /// <summary>
+    /// The bytes from the value's start to the end of the data (the copies of kept values may add about that much, see References.ReferenceResolver.Expand), -1 when the stream does not know its length.
+    /// </summary>
+    private static long BodyLength(Stream stream)
+    {
+      return stream.CanSeek ? stream.Length - stream.Position : -1;
     }
 
     /// <exception cref="MsgPackException">When the extension is not a schema reference</exception>
@@ -373,6 +383,7 @@ namespace LsMsgPackDebug
     /// <param name="lengthSettings">The byte order the schema bytes were read with, null for the one of the specification (see <see cref="IndexedSchemaTypeResolver.FromBytes"/>)</param>
     private static object DeserializeWithStoredSchema(Type tType, Stream stream, MsgPackSettings settings, SchemaStore.Entry schema, MsgPackSettings lengthSettings)
     {
+      long length = BodyLength(stream);
       MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
       object value = unpacked.UnpackedValue;
 
@@ -380,7 +391,7 @@ namespace LsMsgPackDebug
       {
         schemaSettings._differences?.Reset(); // the work is repeated when the shared session has to grow
         SerializationRules.BindReaderTypes(tType, schemaSettings);
-        return ConvertDeserializeValue(value, tType, schemaSettings, null);
+        return ConvertDeserializeValue(value, tType, schemaSettings, null, length);
       });
     }
   }

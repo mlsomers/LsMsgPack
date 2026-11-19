@@ -85,12 +85,14 @@ namespace LsMsgPack.Http
       plain.PropertyNameCaseInsensitive |= options.PropertyNameCaseInsensitive;
       plain.CompileWritersAfter = options.CompileWritersAfter;
       plain.CompileReadersAfter = options.CompileReadersAfter;
+      Limit(plain, options);
       _plain = new LsMsgPackSerializer(plain, context);
 
       LsMsgPackOptions ls = (options.XLsMsgPack ?? LsMsgPackPresets.LsMsgPack()).Clone();
       ls.PropertyNameCaseInsensitive |= options.PropertyNameCaseInsensitive;
       ls.CompileWritersAfter = options.CompileWritersAfter;
       ls.CompileReadersAfter = options.CompileReadersAfter;
+      Limit(ls, options);
       _negotiate = options.NegotiateSchemas && ls.UseInexedSchema;
       if (_negotiate)
       {
@@ -120,6 +122,17 @@ namespace LsMsgPack.Http
       if (context is null)
         throw new ArgumentNullException(nameof(context));
       return context;
+    }
+
+    /// <summary>
+    /// The limits for request bodies (untrusted data, docs/security.md): those of the HTTP options, on the options of both media types.
+    /// </summary>
+    private static void Limit(LsMsgPackOptions target, LsMsgPackHttpOptions options)
+    {
+      target.MaxObjects = options.MaxObjects;
+      target.MaxItems = options.MaxItems;
+      target.MaxStringLength = options.MaxStringLength;
+      target.MaxBinLength = options.MaxBinLength;
     }
 
     /// <summary>

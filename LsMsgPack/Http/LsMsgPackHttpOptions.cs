@@ -70,6 +70,31 @@ namespace LsMsgPack.Http
     public int CompileReadersAfter { get; set; } = 0;
 
     /// <summary>
+    /// The most arrays and maps (objects, collections) one body may hold (<see cref="MsgPackOptions.MaxObjects"/>, replaces the value of <see cref="XLsMsgPack"/> and <see cref="Plain"/>),
+    /// default 1,000,000; more are refused (ASP.NET Core: 400 Bad Request). An empty map is one byte that becomes a whole object, so the size of the body alone does not limit the memory
+    /// a request takes (docs/security.md). <see cref="int.MaxValue"/> for no limit.
+    /// </summary>
+    public int MaxObjects { get; set; } = 1000000;
+
+    /// <summary>
+    /// The most array elements and map entries one body may hold, all together (<see cref="MsgPackOptions.MaxItems"/>, replaces the value of <see cref="XLsMsgPack"/> and <see cref="Plain"/>),
+    /// default 10,000,000. <see cref="int.MaxValue"/> for no limit.
+    /// </summary>
+    public int MaxItems { get; set; } = 10000000;
+
+    /// <summary>
+    /// The longest string in a body, in bytes (<see cref="MsgPackOptions.MaxStringLength"/>, replaces the value of <see cref="XLsMsgPack"/> and <see cref="Plain"/>), default no limit
+    /// (<see cref="int.MaxValue"/>): the size of the body limits it (<c>MaxRequestBodySize</c>).
+    /// </summary>
+    public int MaxStringLength { get; set; } = int.MaxValue;
+
+    /// <summary>
+    /// The longest binary value or extension in a body, in bytes (<see cref="MsgPackOptions.MaxBinLength"/>, replaces the value of <see cref="XLsMsgPack"/> and <see cref="Plain"/>),
+    /// default no limit (<see cref="int.MaxValue"/>): the size of the body limits it.
+    /// </summary>
+    public int MaxBinLength { get; set; } = int.MaxValue;
+
+    /// <summary>
     /// Collect what did not match between a body and the classes it is read into (<see cref="ReadDifferences"/>: unknown properties, classes without a schema entry, type ids that are not found...). Default false.
     /// <para>ASP.NET Core: in <c>HttpContext.Features</c> (<c>HttpContext.GetReadDifferences()</c>) and logged (see <see cref="LogDifferencesAsWarning"/>). Web API and HttpClient: <c>HttpContent.GetReadDifferences()</c> (also <c>request.GetReadDifferences()</c>).
     /// MVC 5: <c>HttpContextBase.GetReadDifferences()</c>. Reading with it is a bit slower (see docs/ReadDifferences.md), the report itself is only made when it is asked for.</para>

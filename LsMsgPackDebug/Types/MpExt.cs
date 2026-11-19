@@ -153,6 +153,8 @@ namespace LsMsgPackDebug {
         default: throw new MsgPackException($"Ext does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position-1, typeId);
       }
       typeSpecifier = unchecked((sbyte)ReadByteExactly(data)); // at the end of the data ReadByte returns -1: the timestamp type
+      if (typeId == MsgPackTypeId.MpExt8 || typeId == MsgPackTypeId.MpExt16 || typeId == MsgPackTypeId.MpExt32) // MsgPackOptions.MaxBinLength: not the fixed sizes of 1-16 bytes
+        ThrowIfTooLong(len, false);
 #if KEEPTRACK
       // Nothing can read a type from its ends: it stays an extension with its type specifier. The index of a stream is needed whole, it has a tail to check it.
       if (Truncates(len, KeptBytes) && !(_settings._readStreams && _depth == 0 && typeSpecifier == MsgPackStreamIndex.IndexExtensionType)) {
