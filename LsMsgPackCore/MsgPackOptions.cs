@@ -196,6 +196,12 @@ namespace LsMsgPack
     [IgnoreDataMember]
     public static DateTimeFormat Default_DateTimeFormat { get; set; } = DateTimeFormat.Native;
 
+    /// <summary>
+    /// The <see cref="EnumFormat"/> of new settings (<see cref="LsMsgPack.EnumFormat.Number"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static EnumFormat Default_EnumFormat { get; set; } = EnumFormat.Number;
+
     #endregion
 
     /// <summary>
@@ -226,6 +232,10 @@ namespace LsMsgPack
     internal bool _propertyNameCaseInsensitive = Default_PropertyNameCaseInsensitive;
     internal SchemaVersion _schemaVersion = Default_SchemaVersion;
     internal int _maxDepth = Default_MaxDepth;
+    internal int _maxObjects = int.MaxValue;
+    internal long _maxItems = int.MaxValue;
+    internal int _maxStringLength = int.MaxValue;
+    internal int _maxBinLength = int.MaxValue;
     internal ReferenceHandling _referenceHandling = Default_ReferenceHandling;
     internal ObjectCreation _objectCreation = Default_ObjectCreation;
     internal ReadErrorHandling _readErrors = Default_ReadErrors;
@@ -233,6 +243,7 @@ namespace LsMsgPack
     internal DateTimeKind _readDateTimeKind = Default_ReadDateTimeKind;
     internal DateTimeOffsetFormat _dateTimeOffsetFormat = Default_DateTimeOffsetFormat;
     internal bool _nativeDateTime = Default_DateTimeFormat == DateTimeFormat.Native;
+    internal EnumFormat _enumFormat = Default_EnumFormat;
 
     /// <summary>
     /// The cache of the serialized properties for <see cref="_staticFilters"/> (see FullPropertyInfo.GetSerializedProps without a session), looked up again when the filters are replaced.
@@ -612,6 +623,79 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// The most arrays and maps one call reads (each object, collection, type id wrapper, and the arrays of tuples, pairs and the like), those read again for a copy included;
+    /// more throw a <see cref="MsgPackException"/>. Unlimited (<see cref="int.MaxValue"/>) by default, 1,000,000 in the HTTP serializer.
+    /// <para>A limit for untrusted data: an empty map is one byte and becomes a whole object (constructor, fields, the collections it creates), so a body of 30 MB can claim
+    /// 30 million objects (see docs/security.md). Values that are skipped (members the class does not have) are not counted.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max Objects")]
+    [Description("The most arrays and maps (objects, collections) one call reads before an exception is thrown. Protects against small data that becomes many objects.")]
+    [DefaultValue(int.MaxValue)]
+    public int MaxObjects
+    {
+      get { return _maxObjects; }
+      set { _maxObjects = value < 0 ? 0 : value; }
+    }
+
+    /// <summary>
+    /// The most array elements and map entries one call reads, all arrays and maps together (those read again for a copy included); more throw a <see cref="MsgPackException"/>.
+    /// Unlimited (<see cref="int.MaxValue"/>) by default, 10,000,000 in the HTTP serializer.
+    /// <para>A limit for untrusted data: an entry of a dictionary takes two bytes in the data and dozens in memory (see docs/security.md). Values that are skipped are not counted.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max Items")]
+    [Description("The most array elements and map entries one call reads, in all arrays and maps together, before an exception is thrown.")]
+    [DefaultValue(int.MaxValue)]
+    public int MaxItems
+    {
+      get { return (int)_maxItems; }
+      set { _maxItems = value < 0 ? 0 : value; }
+    }
+
+    /// <summary>
+    /// The longest string read, in bytes as written (UTF-8); a longer one throws a <see cref="MsgPackException"/>. Unlimited (<see cref="int.MaxValue"/>) by default.
+    /// <para>Map keys count where they are read as strings (the compiled and generated readers compare the keys of a class's members in place: no string is made).
+    /// A string is at most about twice its bytes in memory: the size of the data limits it as well (in ASP.NET Core: <c>MaxRequestBodySize</c>).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max String Length")]
+    [Description("The longest string read, in bytes as written, before an exception is thrown.")]
+    [DefaultValue(int.MaxValue)]
+    public int MaxStringLength
+    {
+      get { return _maxStringLength; }
+      set { _maxStringLength = value < 0 ? 0 : value; }
+    }
+
+    /// <summary>
+    /// The longest binary value (bin) or extension read, in bytes; a longer one throws a <see cref="MsgPackException"/>. Unlimited (<see cref="int.MaxValue"/>) by default.
+    /// <para>Extensions of a fixed size (1 to 16 bytes: dates, decimals, Guids, references) are not checked.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max Bin Length")]
+    [Description("The longest binary value or extension read, in bytes, before an exception is thrown.")]
+    [DefaultValue(int.MaxValue)]
+    public int MaxBinLength
+    {
+      get { return _maxBinLength; }
+      set { _maxBinLength = value < 0 ? 0 : value; }
+    }
+
+    /// <summary>
+    /// The message of a limit that is exceeded: what, the limit and the option.
+    /// </summary>
+    internal static MsgPackException OverLimit(string what, long limit, string option)
+    {
+      return new MsgPackException($"The data holds more {what} than {option} ({limit}) allows. Raise it for data you trust (see docs/security.md).");
+    }
+
+    internal static MsgPackException TooLong(string what, long length, long limit, string option)
+    {
+      return new MsgPackException($"The data holds {what} of {length} bytes, longer than {option} ({limit}) allows. Raise it for data you trust (see docs/security.md).");
+    }
+
+    /// <summary>
     /// What happens to an object or collection that is met again while writing (<see cref="LsMsgPack.ReferenceHandling.None"/> by default: it is written again, a cycle ends at
     /// <see cref="MaxDepth"/> with a <see cref="MsgPackException"/>). See docs/References.md.
     /// <para><see cref="LsMsgPack.ReferenceHandling.IgnoreCycles"/>: a reference to an object that is being written is nil, as System.Text.Json's <c>ReferenceHandler.IgnoreCycles</c>.
@@ -683,6 +767,45 @@ namespace LsMsgPack
     {
       get { return _nativeDateTime ? DateTimeFormat.Native : DateTimeFormat.Timestamp; }
       set { _nativeDateTime = value == DateTimeFormat.Native; }
+    }
+
+    /// <summary>
+    /// How enum values are written: <see cref="LsMsgPack.EnumFormat.Number"/> (the default: the underlying integer) or <see cref="LsMsgPack.EnumFormat.Name"/> (the name as a string, as the JSON serializers write it with a string enum converter).
+    /// <para>An enum type or a property or field can choose for itself with <see cref="MsgPackEnumFormatAttribute"/> (or the attributes of other serializers that mean the same, see docs/Enums.md), which wins over this option.
+    /// Readers take both forms, whatever this option says: a number, or a name (also the custom names of <c>[EnumMember]</c>, <c>[JsonStringEnumMemberName]</c>, <c>[EnumMemberShape]</c>, ignoring case as a fallback).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Enum Format")]
+    [Description("How enum values are written: Number (default, the underlying integer) or Name (the name as a string). Readers take both. [MsgPackEnumFormat] on an enum or member wins.")]
+    [DefaultValue(EnumFormat.Number)]
+    public EnumFormat EnumFormat
+    {
+      get { return _enumFormat; }
+      set { _enumFormat = value; }
+    }
+
+    /// <summary>
+    /// How a value of this enum type is written: its own attribute (<see cref="MsgPackEnumFormatAttribute"/> or another serializer's), otherwise <see cref="EnumFormat"/>.
+    /// </summary>
+    internal EnumFormat EnumFormatOf(Type enumType)
+    {
+      EnumFormat? own = Meta.EnumFormats.OfType(enumType);
+      return own ?? _enumFormat;
+    }
+
+    /// <summary>
+    /// How a value of this enum type assigned to the member is written: the member's own attribute when the value is of the member's type (or the underlying type of a nullable member: not elements), otherwise <see cref="EnumFormatOf(Type)"/>.
+    /// </summary>
+    internal EnumFormat EnumFormatOf(Type enumType, Meta.FullPropertyInfo assignedTo)
+    {
+      Meta.PropertyAttributeSet attributes = assignedTo?.Attributes;
+      if (attributes != null)
+      {
+        EnumFormat? member = attributes.EnumFormat;
+        if (member != null && attributes.EnumType == enumType)
+          return member.Value;
+      }
+      return EnumFormatOf(enumType);
     }
 
     /// <summary>
@@ -823,6 +946,17 @@ namespace LsMsgPack
       copy._serializedPropsCache = null;
       copy._staticPropsCache = null;
       copy._schemaFrozen = false;
+      return copy;
+    }
+
+    /// <summary>
+    /// A copy of these options for a conversion repeated with <see cref="ReferenceHandling.Preserve"/> (data with references read by settings without the option, see
+    /// References.ReadAgainPreserving): everything else is shared, the caches of a schema session and the differences collected too.
+    /// </summary>
+    internal MsgPackOptions Preserving()
+    {
+      MsgPackOptions copy = (MsgPackOptions)MemberwiseClone();
+      copy._referenceHandling = ReferenceHandling.Preserve;
       return copy;
     }
 
@@ -992,6 +1126,26 @@ namespace LsMsgPack
     /// </summary>
     [Description("Grouped by the type of the property (by its name, without the assembly), then in declaration order.")]
     TypeThenDeclaration = 4
+  }
+
+  /// <summary>
+  /// How enum values are written (see <see cref="MsgPackOptions.EnumFormat"/> and <see cref="MsgPackEnumFormatAttribute"/>). Readers take both.
+  /// </summary>
+  public enum EnumFormat
+  {
+    /// <summary>
+    /// The underlying integer (default): compact and fast, but a reader in another language sees a number, and renumbering the enum changes the meaning of stored data.
+    /// </summary>
+    [Description("The underlying integer (default).")]
+    Number = 0,
+
+    /// <summary>
+    /// The name as a string, as System.Text.Json and Json.NET write it with their string enum converters: robust against reordering, readable for other languages.
+    /// A custom name (<c>[EnumMember(Value = ...)]</c>, <c>[JsonStringEnumMemberName]</c>, <c>[EnumMemberShape(Name = ...)]</c>) is written instead of the .NET name;
+    /// a combination of <c>[Flags]</c> values as <c>"A, B"</c>; a value that has no name (and is no combination of named flags) as its number.
+    /// </summary>
+    [Description("The name as a string (custom names of [EnumMember], [JsonStringEnumMemberName]; flags as \"A, B\"; a value without a name as its number).")]
+    Name = 1
   }
 
   /// <summary>

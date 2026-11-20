@@ -120,6 +120,21 @@ options.Plain.TypeGuard = guard;
 
 Alternatively, set `MsgPackOptions.Default_TypeGuard` before the formatters are created.
 
+### SignalR
+
+The hub protocol ([SignalR.md](SignalR.md)) reads the arguments clients send. Set the guard on its options:
+
+```csharp
+builder.Services.AddSignalR().AddLsMsgPackProtocol(o =>
+{
+  LsMsgPackOptions values = LsMsgPackHubProtocolOptions.DefaultSerializerOptions(false);
+  values.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(ChatMessage));
+  o.SerializerOptions = values;
+});
+```
+
+It also limits each value as the web formatters do (`MaxObjects`, `MaxItems`).
+
 Declare the types you expect
 ----------------------------
 
@@ -176,5 +191,16 @@ What else to keep in mind
 - **Static properties** are left out by `FilterStatic`, one of the default `StaticFilters`, so the data can't change state that the whole application shares. If you replace the static filters, keep `FilterStatic` in the list. Without it, settable public static properties are written with every instance and set again when reading.
 - **Deep nesting**: both serializers refuse data with arrays and maps nested deeper than `MsgPackOptions.MaxDepth` (256 by default) and throw a `MsgPackException`. Without a limit, a few kilobytes of nested arrays exhaust the stack, and a stack overflow ends the process. Writing stops at the same depth, so an object graph with a cycle throws instead of overflowing the stack (or set `IgnoreCycles`, see [Cycles](schema.md#cycles)).
 - **Claimed lengths**: a header of a few bytes can claim billions of items or bytes. Both serializers check a length against the rest of the data before they allocate anything for it, and throw a `MsgPackException` ("The data claims ... items, more than the remaining ... bytes can hold.", or "Unexpected end of data." for strings, bin and extensions). LsMsgPackDebug can only check this on a stream that knows its length (`CanSeek`): read untrusted data from a byte array or a `MemoryStream`, not directly from a network stream.
+- **Small data that becomes many objects**: an empty map is one byte, and read into a class it becomes a whole object (its constructor runs, its fields take memory, the collections it creates too). A body of 30 MB can hold 30 million of them, a few GB of objects. The claimed-length check doesn't help: each element takes the byte it needs. Four options limit what one call reads, and throw a `MsgPackException` past them:
+
+  | Option | What it counts | Library default | HTTP serializer and web formatters |
+  |---|---|---|---|
+  | `MaxObjects` | arrays and maps (objects, collections, type id wrappers) | unlimited | 1,000,000 |
+  | `MaxItems` | array elements and map entries, all together | unlimited | 10,000,000 |
+  | `MaxStringLength` | the longest string, in bytes as written | unlimited | unlimited |
+  | `MaxBinLength` | the longest bin or extension (not the fixed sizes of 1-16 bytes) | unlimited | unlimited |
+
+  Set them on the options of the serializer (`MsgPackOptions`), or on `LsMsgPackHttpOptions` for the formatters (which set them on the options of both media types; ASP.NET Core answers 400 Bad Request). They apply to every read, including the responses an `HttpClient` reads with the HTTP serializer: raise them for large data you trust. They're security checks, so `ReadErrors` doesn't skip them. LsMsgPack doesn't count the values it skips (members the class doesn't have), LsMsgPackDebug reads every value into its items and counts those too. A value LsMsgPack reads again, such as a copy of a reference into kept extension data, counts again. Strings are at most about twice their bytes in memory, so the size of the body limits them too: keep `MaxRequestBodySize` at a sensible value.
+- **References** (extension type 5, [References.md](References.md)): a reader without `ReferenceHandling.Preserve` reads data that contains references again with it, so each value a reference points to is read once and shared. When each reference was read again as a copy, the work grew exponentially: a value holding two references to the one before it, nested 18 times, is 1.2 KB that became 1.4 GB. References in [extension data](ExtensionData.md) still become copies (the kept value has to stand on its own), but the copies of a call may add at most about the size of the payload; more is an error that follows `ReadErrors`.
 - **Other resource use** (such as payloads that are large but valid) is a separate topic. A `SchemaStore` caches at most `MaxSchemas` received schemas.
 - **Custom type resolvers** are your code: a resolver that maps names to types decides what the data can reach. The guard is still asked about the types it returns.

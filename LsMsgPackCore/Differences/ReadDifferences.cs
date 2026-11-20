@@ -222,7 +222,7 @@ namespace LsMsgPack
     /// <returns>False (an exception filter)</returns>
     internal static bool MarkNotConverted(MsgPackOptions settings, Exception ex)
     {
-      if (settings?._differences is null)
+      if (settings?._differences is null || ex is References.ReadAgainPreserving) // reaches the call, which reads again
         return false;
       try
       {

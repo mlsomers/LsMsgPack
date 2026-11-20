@@ -32,6 +32,11 @@ Three packages let ASP.NET controllers and `HttpClient` receive and return MsgPa
 
 See [docs/WebFormatters.md](docs/WebFormatters.md) for the settings per media type, examples for each package, and how schemas are negotiated.
 
+SignalR
+-------
+
+`LsMsgPack.SignalR` is a MessagePack hub protocol for ASP.NET Core SignalR, for the server and the .NET client: `services.AddSignalR().AddLsMsgPackProtocol();`. The browser uses `@lsmsgpack/client/signalr`. Registered as "messagepack" (`AddLsMsgPackAsMessagePackProtocol()`), it writes the bytes of Microsoft's MessagePack protocol, so existing clients connect unchanged. It writes and reads in about half the time of Microsoft's protocol. See [docs/SignalR.md](docs/SignalR.md).
+
 Client applications
 -------------------
 
@@ -58,11 +63,13 @@ graph BT
   WebApi["LsMsgPack.AspNet.WebApi"]
   Mvc["LsMsgPack.AspNet.Mvc"]
   Data["LsMsgPack.Data<br/><i>ADO.NET data readers</i>"]
+  SignalR["LsMsgPack.SignalR<br/><i>SignalR hub protocol</i>"]
   Mem(["System.Memory"])
   Unsafe(["System.Runtime.CompilerServices.Unsafe"])
   AspNetCoreFx(["Microsoft.AspNetCore.Mvc.Core 2.x /<br/>Microsoft.AspNetCore.App"])
   WebApiClient(["Microsoft.AspNet.WebApi.Client"])
   AspNetMvc(["Microsoft.AspNet.Mvc"])
+  SignalRCommon(["Microsoft.AspNetCore.SignalR.Common"])
 
   Debug --> Core
   Fast --> Core
@@ -70,6 +77,7 @@ graph BT
   WebApi --> Fast
   Mvc --> Fast
   Data --> Fast
+  SignalR --> Fast
   Core -.-> Mem
   Debug -.-> Mem
   Fast -.-> Mem
@@ -77,9 +85,10 @@ graph BT
   AspNetCore -.-> AspNetCoreFx
   WebApi -.-> WebApiClient
   Mvc -.-> AspNetMvc
+  SignalR -.-> SignalRCommon
 ```
 
-Solid arrows are the packages of this repository, dotted ones external dependencies. The web formatters depend on LsMsgPack only, so add `LsMsgPackDebug` yourself when you want to inspect data. Both serializers share `LsMsgPack.Core` and its namespaces (`LsMsgPack.*`), so attributes, type resolvers and filters work with either. `LsMsgPack.Data` writes the rows of ADO.NET data readers as MsgPack and reads dumps back as a `DbDataReader`, see [docs/DataReader.md](docs/DataReader.md).
+Solid arrows are the packages of this repository, dotted ones external dependencies. The web formatters depend on LsMsgPack only, so add `LsMsgPackDebug` yourself when you want to inspect data. Both serializers share `LsMsgPack.Core` and its namespaces (`LsMsgPack.*`), so attributes, type resolvers and filters work with either. `LsMsgPack.Data` writes the rows of ADO.NET data readers as MsgPack and reads dumps back as a `DbDataReader`, see [docs/DataReader.md](docs/DataReader.md). `LsMsgPack.SignalR` is the SignalR hub protocol, see [docs/SignalR.md](docs/SignalR.md).
 
 Not in the diagram, because they aren't referenced by your code: the .NET tools `LsMsgPack.Mcp` ([`lsmsgpack-mcp`](#ai-agents-mcp), MsgPack for AI agents) and `LsMsgPack.TypeScript` ([`lsmsgpack-ts`](#typescript), TypeScript models for the web formatters), which bring their own copies of the libraries, and the npm package [`@lsmsgpack/client`](#typescript).
 
@@ -108,6 +117,8 @@ Reading data you don't trust (request bodies, messages from clients)? Type ids l
 The packages include analyzers that check the classes you serialize while you type: initialized properties whose left-out default would be read back as another value (with code fixes that add the `[DefaultValue]`), properties declared as `object` where the data picks the type, public fields that are not serialized, and extension data members the serializers refuse. See [docs/Analyzers.md](docs/Analyzers.md).
 
 Types that shouldn't be written as their own properties (value objects, types of another library, a `DateTime` a peer expects as Unix time) can be written as another type with a converter: see [docs/Converters.md](docs/Converters.md).
+
+Enums are written as their numbers by default, or as their names (`EnumFormat.Name`, or `[MsgPackEnumFormat]` on an enum or property). The string enum attributes of System.Text.Json, Json.NET, MessagePack-CSharp and MsgPack.Cli are recognized too, and readers take both forms: see [docs/Enums.md](docs/Enums.md).
 
 Data that doesn't match your classes exactly (older or newer versions, a misspelled name) is read anyway, like the JSON serializers do. Pass an `out ReadDifferences` to `Deserialize` to find out what was skipped, counted per class and property, with the paths of the objects: see [docs/ReadDifferences.md](docs/ReadDifferences.md). An older version of a service that reads, changes and writes back an object keeps the members it doesn't have in a `MsgPackExtensionData` (or a `[JsonExtensionData]` dictionary) and writes them again: see [docs/ExtensionData.md](docs/ExtensionData.md). A class can run code before and after it's written or read, for example to validate what it read (`IMsgPackOnDeserialized`, or System.Text.Json's `IJsonOnDeserialized`): see [docs/Callbacks.md](docs/Callbacks.md).
 

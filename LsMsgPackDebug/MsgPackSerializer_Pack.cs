@@ -268,7 +268,9 @@ namespace LsMsgPackDebug
       if (converter != null)
         return SerializeConverted(item, tType, converter, settings, assignedTo, depth, byNames);
 
-      MsgPackItem packed = MsgPackItem.Pack(item, settings, tType);
+      MsgPackItem packed = assignedTo?.Attributes?.EnumType == tType && assignedTo.Attributes.EnumFormat != null // EnumType is null for other members: no IsEnum per value
+        ? MsgPackItem.PackEnum(item, tType, settings.EnumFormatOf(tType, assignedTo), settings) // the member's own format
+        : MsgPackItem.Pack(item, settings, tType);
 
       // Strings, byte[] and Guid (MpBin) are enumerable but not treated as a collection
       if (packed != null && (packed is MpArray || packed is MpMap) && item is IEnumerable) // objects have no packed item: no interface check for them

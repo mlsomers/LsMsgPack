@@ -11,8 +11,20 @@ namespace LsMsgPackInteropTests
 {
   [GenerateShapeFor<Invoice>]
   [GenerateShapeFor<NerdbankFrameworkProbe>]
+  [GenerateShapeFor<NerdbankEnums>]
   public partial class NerdbankShapes
   {
+  }
+
+  public enum NerdbankSize { Small, [EnumMemberShape(Name = "XL")] Large }
+
+  /// <summary>
+  /// Enums by name: Nerdbank's SerializeEnumValuesByName with PolyType's custom names (<c>[EnumMemberShape(Name = ...)]</c>) and LsMsgPack's EnumFormat.Name.
+  /// </summary>
+  public class NerdbankEnums
+  {
+    public NerdbankSize Size { get; set; }
+    public UnitOfMeasure Unit { get; set; }
   }
 
   /// <summary>
@@ -135,6 +147,23 @@ namespace LsMsgPackInteropTests
       Assert.AreEqual(expected.When.Offset, actual.When.Offset);
       Assert.AreEqual(expected.Big, actual.Big);
       Assert.AreEqual(expected.Wide, actual.Wide);
+    }
+
+    [TestMethod]
+    public void SameBytes_EnumsByName()
+    {
+      NB.MessagePackSerializer byName = new NB.MessagePackSerializer() { SerializeEnumValuesByName = true };
+      MsgPackSettings names = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name };
+      NerdbankEnums value = new NerdbankEnums() { Size = NerdbankSize.Large, Unit = UnitOfMeasure.Hour };
+      byte[] nb = byName.Serialize<NerdbankEnums, NerdbankShapes>(value);
+      byte[] ls = Serializer.Serialize(value, names);
+      CollectionAssert.AreEqual(nb, ls, $"LsMsgPack {Convert.ToHexString(ls)}, Nerdbank {Convert.ToHexString(nb)}");
+      NerdbankEnums back = Serializer.Deserialize<NerdbankEnums>(nb, names);
+      Assert.AreEqual(NerdbankSize.Large, back.Size);
+      Assert.AreEqual(UnitOfMeasure.Hour, back.Unit);
+      back = byName.Deserialize<NerdbankEnums, NerdbankShapes>(ls);
+      Assert.AreEqual(NerdbankSize.Large, back.Size);
+      Assert.AreEqual(UnitOfMeasure.Hour, back.Unit);
     }
 
     [TestMethod]

@@ -311,6 +311,9 @@ button:focus-visible,
 .badge.index { background: #8a5a1a; }
 .badge.tail { background: #6a5a3a; }
 .badge.sidecar { background: #5a6a3a; }
+.badge.message { background: #3a5a8a; } /* SignalR */
+.badge.prefix { background: #4a4a6a; }
+.badge.handshake { background: #4a4a6a; }
 .badge.other { background: #555; }
 .badge.limit { background: transparent; color: var(--vscode-descriptionForeground); }
 

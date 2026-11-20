@@ -470,6 +470,11 @@ namespace LsMsgPack.Writing
 
     internal override void Write(WriteContext c, TEnum value, FullPropertyInfo assignedTo)
     {
+      WriteNumber(c, value);
+    }
+
+    internal static void WriteNumber(WriteContext c, TEnum value)
+    {
       switch (Underlying)
       {
         case TypeCode.SByte: c.W.SByte(Unsafe.As<TEnum, sbyte>(ref value)); return;
@@ -480,6 +485,100 @@ namespace LsMsgPack.Writing
         case TypeCode.UInt16: c.W.UInt16(Unsafe.As<TEnum, ushort>(ref value)); return;
         case TypeCode.UInt32: c.W.UInt32(Unsafe.As<TEnum, uint>(ref value)); return;
         default: c.W.UInt64(Unsafe.As<TEnum, ulong>(ref value)); return;
+      }
+    }
+
+    internal override bool IncludeByDefault(TEnum value, FullPropertyInfo info)
+    {
+      return !EqualityComparer<TEnum>.Default.Equals(value, default(TEnum));
+    }
+  }
+
+  /// <summary>
+  /// An enum by its name (<see cref="EnumFormat.Name"/>): the names encoded once (Core's EnumNames: custom names, aliases), a value without a name as its number (EnumHandler),
+  /// a combination of [Flags] values as "A, B" (encoded when first written, up to <see cref="MaxCombinations"/> kept).
+  /// </summary>
+  internal sealed class EnumNameHandler<TEnum> : ValueHandler<TEnum> where TEnum : struct
+  {
+    private const int MaxDense = 64;
+    private const int MaxCombinations = 256;
+
+    private readonly Serializer _serializer;
+    private readonly EnumNames _names;
+    private readonly byte[][] _encoded; // per value of _names.Values
+    private readonly byte[][] _dense; // by value, for the values 0 to MaxDense - 1 (null: no name of its own)
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<ulong, byte[]> _combinations; // [Flags] only; an empty array: no name, the number
+
+    internal EnumNameHandler(Serializer serializer)
+    {
+      _serializer = serializer;
+      _names = EnumNames.Of(typeof(TEnum));
+      ulong[] values = _names.Values;
+      _encoded = new byte[values.Length][];
+      int dense = 0;
+      for (int t = 0; t < values.Length; t++)
+      {
+        _encoded[t] = serializer.EncodeKey(_names.Names[t]); // a string as the writer writes it
+        if (values[t] < MaxDense)
+          dense = (int)values[t] + 1;
+      }
+      _dense = new byte[dense][];
+      for (int t = 0; t < values.Length; t++)
+      {
+        if (values[t] < (ulong)dense)
+          _dense[values[t]] = _encoded[t];
+      }
+      if (_names.IsFlags)
+        _combinations = new System.Collections.Concurrent.ConcurrentDictionary<ulong, byte[]>();
+    }
+
+    internal override void Write(WriteContext c, TEnum value, FullPropertyInfo assignedTo)
+    {
+      ulong bits = Bits(value);
+      byte[][] dense = _dense;
+      if (bits < (ulong)dense.Length)
+      {
+        byte[] known = dense[bits];
+        if (known != null)
+        {
+          c.W.Raw(known);
+          return;
+        }
+      }
+      byte[] encoded = Find(bits);
+      if (encoded != null)
+        c.W.Raw(encoded);
+      else
+        EnumHandler<TEnum>.WriteNumber(c, value);
+    }
+
+    private byte[] Find(ulong bits)
+    {
+      int at = _names.IndexOf(bits);
+      if (at >= 0)
+        return _encoded[at];
+      if (_combinations is null)
+        return null;
+      if (_combinations.TryGetValue(bits, out byte[] combination))
+        return combination.Length == 0 ? null : combination;
+      string name = _names.Combination(bits);
+      combination = name is null ? new byte[0] : _serializer.EncodeKey(name);
+      if (_combinations.Count < MaxCombinations)
+        _combinations.TryAdd(bits, combination);
+      return name is null ? null : combination;
+    }
+
+    /// <summary>
+    /// The value's bits as Core's EnumNames keeps them (signed types sign-extended).
+    /// </summary>
+    internal static ulong Bits(TEnum value)
+    {
+      switch (Unsafe.SizeOf<TEnum>())
+      {
+        case 1: return Reading.EnumNameReading<TEnum>.Signed ? unchecked((ulong)Unsafe.As<TEnum, sbyte>(ref value)) : Unsafe.As<TEnum, byte>(ref value);
+        case 2: return Reading.EnumNameReading<TEnum>.Signed ? unchecked((ulong)Unsafe.As<TEnum, short>(ref value)) : Unsafe.As<TEnum, ushort>(ref value);
+        case 4: return Reading.EnumNameReading<TEnum>.Signed ? unchecked((ulong)Unsafe.As<TEnum, int>(ref value)) : Unsafe.As<TEnum, uint>(ref value);
+        default: return Unsafe.As<TEnum, ulong>(ref value);
       }
     }
 

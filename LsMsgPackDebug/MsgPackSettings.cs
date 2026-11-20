@@ -65,6 +65,25 @@ namespace LsMsgPackDebug
       set { _readStreams = value; }
     }
 
+    internal bool _readHubMessages;
+
+    /// <summary>
+    /// Data captured from a SignalR hub connection (the MessagePack hub protocols, "messagepack" and LsMsgPack.SignalR's "lsmsgpack") is read as its messages: the JSON handshake
+    /// (<see cref="MpHubHandshake"/>), each length prefix (<see cref="MpHubPrefix"/>, a VarInt, not MsgPack) and message (<see cref="MpHubMessage"/>). Only when the whole data has that shape
+    /// (<see cref="HubCapture.Recognize(System.IO.Stream)"/>), otherwise it is read as usual. Off by default; the explorers turn it on.
+    /// </summary>
+#if KEEPTRACK
+    [Category("Control")]
+    [DisplayName("Read SignalR messages")]
+    [Description("Read data captured from a SignalR hub connection (MessagePack hub protocol) as its handshake, length prefixes and messages, when the whole data has that shape.")]
+    [DefaultValue(false)]
+#endif
+    public bool ReadHubMessages
+    {
+      get { return _readHubMessages; }
+      set { _readHubMessages = value; }
+    }
+
     internal bool _readLsMsgPackExtensions = true;
 
     /// <summary>

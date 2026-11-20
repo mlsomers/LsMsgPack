@@ -143,15 +143,20 @@ namespace ObjectDebugger
     }
 
     /// <summary>
-    /// The index of a stream, its tail and sidecars are no data (<see cref="MsgPackSettings.ReadStreams"/>).
+    /// The index of a stream, its tail and sidecars are no data (<see cref="MsgPackSettings.ReadStreams"/>), nor are the handshake and length prefixes of SignalR messages (<see cref="MsgPackSettings.ReadHubMessages"/>).
     /// </summary>
     internal static bool IsStreamPart(MsgPackItem item)
     {
-      return item is MpStreamIndex || item is MpStreamTail || item is MpStreamSidecar;
+      return item is MpStreamIndex || item is MpStreamTail || item is MpStreamSidecar || item is MpHubPrefix || item is MpHubHandshake;
     }
 
     private void Reconstruct(Payload payload)
     {
+      if (payload.Body is MpHubMessage message)
+      {
+        ReconstructHubMessage(message);
+        return;
+      }
       Schema = payload.Schema;
       FirstItemRef = payload.SchemaItem ?? payload.Body;
       LastItemRef = payload.Body;
@@ -182,6 +187,75 @@ namespace ObjectDebugger
       catch (Exception ex)
       {
         AddError(ex.Message);
+      }
+    }
+
+    /// <summary>
+    /// A SignalR message: an object of its fields by name (<see cref="HubCapture.FieldName"/>), each value reconstructed on its own as the protocol writes it (an argument, a stream item,
+    /// a result: each one a payload without a schema, its references point into it).
+    /// </summary>
+    private void ReconstructHubMessage(MpHubMessage message)
+    {
+      Kind = ObjectKind.Object;
+      Type = "SignalR " + (message.MessageTypeName ?? "message");
+      FirstItemRef = message;
+      LastItemRef = message;
+      Node body = Node.FromItem(message);
+      if (body.Error != null)
+        AddError(body.Error);
+      if (body.Elements is null)
+        return;
+
+      int resultKind = message.ResultKind;
+      for (int f = 0; f < body.Elements.Length; f++)
+      {
+        string name = HubCapture.FieldName(message.MessageType, f, resultKind) ?? string.Concat("[", f.ToString(), "]");
+        Node node = body.Elements[f];
+        if (name == "arguments" && node.Elements != null)
+        {
+          RootObject arguments = new RootObject() { Name = name, Parent = this, Kind = ObjectKind.Collection, Type = "arguments", FirstItemRef = node.Item, LastItemRef = node.Item };
+          Members.Add(arguments);
+          for (int a = 0; a < node.Elements.Length; a++)
+            AddHubValue(arguments, string.Concat("[", a.ToString(), "]"), node.Elements[a]);
+          continue;
+        }
+        PrimitiveObject field = AddHubValue(this, name, node);
+        if (name == "type")
+          field.Type = message.MessageTypeName;
+        else if (name == "resultKind")
+          field.Type = HubCapture.ResultKindName(resultKind);
+      }
+    }
+
+    /// <summary>
+    /// A field or argument of a SignalR message: a primitive as a member, anything else reconstructed as a payload of its own (its references point into it).
+    /// </summary>
+    private static PrimitiveObject AddHubValue(ComplexObject parent, string name, Node node)
+    {
+      if (!node.IsContainer && node.Kind != ValueKind.Reference)
+      {
+        PrimitiveObject value = new PrimitiveObject() { Name = name, Parent = parent, FirstItemRef = node.Item, LastItemRef = node.Item, ValueKind = node.Kind, Value = node.Value };
+        if (node.Error != null)
+          value.AddError(node.Error);
+        parent.Members.Add(value);
+        return value;
+      }
+      RootObject root = new RootObject() { Name = name, Parent = parent };
+      parent.Members.Add(root);
+      FillHubValue(root, node);
+      return root;
+    }
+
+    private static void FillHubValue(RootObject target, Node node)
+    {
+      try
+      {
+        Node.LinkReferences(node);
+        new ObjectReconstructor(null).FillRoot(target, node);
+      }
+      catch (Exception ex)
+      {
+        target.AddError(ex.Message);
       }
     }
 

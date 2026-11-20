@@ -191,6 +191,8 @@ namespace LsMsgPack.Reading
     /// </summary>
     protected static T Slow(ReadContext c, int start, FullPropertyInfo assignedTo)
     {
+      if (c.R.Pos > start) // the header was read (and counted for MsgPackOptions.MaxObjects): ReadPlain counts it again
+        c.R.Uncount(start);
       c.R.Pos = start;
       object plain = c.R.ReadPlain(c.Depth);
       ByteReferences references = c.References;
@@ -624,7 +626,8 @@ namespace LsMsgPack.Reading
   }
 
   /// <summary>
-  /// An enum from any integer (Enum.ToObject: values out of range wrap around, as in LsMsgPack).
+  /// An enum from any integer (Enum.ToObject: values out of range wrap around, as in LsMsgPack), or from a name (<see cref="EnumFormat.Name"/>, whatever the options write):
+  /// a written or .NET name matched as UTF-8 bytes in place, anything else (other case, flags "A, B", numbers as text, other encodings) through Core (EnumNames.Parse).
   /// </summary>
   internal sealed class EnumReader<TEnum> : ValueReader<TEnum> where TEnum : struct
   {
@@ -642,7 +645,87 @@ namespace LsMsgPack.Reading
         }
       }
       if (c.R.TryReadNil()) return default(TEnum);
+      return ReadName(c, start, assignedTo); // not inlined into the integer path: names are the rare form
+    }
+
+    private static TEnum ReadName(ReadContext c, int start, FullPropertyInfo assignedTo)
+    {
+      int length = c.R.TryReadStringHeader();
+      if (length >= 0 && EnumNameReading<TEnum>.TryMatch(c.R.Buf, c.R.Pos, length, out ulong bits))
+      {
+        c.R.Pos += length;
+        return FromBits(bits);
+      }
+      c.R.Pos = start;
       return Slow(c, start, assignedTo);
+    }
+
+    internal static TEnum FromBits(ulong value)
+    {
+      switch (Unsafe.SizeOf<TEnum>())
+      {
+        case 1: { byte b = (byte)value; return Unsafe.As<byte, TEnum>(ref b); }
+        case 2: { ushort s = (ushort)value; return Unsafe.As<ushort, TEnum>(ref s); }
+        case 4: { uint i = (uint)value; return Unsafe.As<uint, TEnum>(ref i); }
+        default: return Unsafe.As<ulong, TEnum>(ref value);
+      }
+    }
+  }
+
+  /// <summary>
+  /// The written and .NET names of an enum as UTF-8 bytes (made when the first name is read), compared in place: exact matches only, Core does the rest.
+  /// </summary>
+  internal static class EnumNameReading<TEnum> where TEnum : struct
+  {
+    internal static readonly bool Signed = IsSigned();
+
+    private struct Name
+    {
+      internal byte[] Bytes;
+      internal ulong Bits;
+    }
+
+    private static Name[] _names; // null until the first name is read (the same table by any thread)
+
+    private static bool IsSigned()
+    {
+      TypeCode code = Type.GetTypeCode(Enum.GetUnderlyingType(typeof(TEnum)));
+      return code == TypeCode.SByte || code == TypeCode.Int16 || code == TypeCode.Int32 || code == TypeCode.Int64;
+    }
+
+    internal static bool TryMatch(byte[] buffer, int at, int length, out ulong bits)
+    {
+      Name[] names = _names;
+      if (names is null)
+      {
+        if (!MsgPackWriter.IsUtf8(MsgPackOptions.StringEncoding))
+        {
+          bits = 0;
+          return false;
+        }
+        names = Build();
+      }
+      for (int t = 0; t < names.Length; t++)
+      {
+        byte[] name = names[t].Bytes;
+        if (name.Length == length && new ReadOnlySpan<byte>(buffer, at, length).SequenceEqual(name))
+        {
+          bits = names[t].Bits;
+          return true;
+        }
+      }
+      bits = 0;
+      return false;
+    }
+
+    private static Name[] Build()
+    {
+      List<KeyValuePair<string, ulong>> all = EnumNames.Of(typeof(TEnum)).AllNames();
+      Name[] names = new Name[all.Count];
+      for (int t = 0; t < all.Count; t++)
+        names[t] = new Name { Bytes = Encoding.UTF8.GetBytes(all[t].Key), Bits = all[t].Value };
+      _names = names;
+      return names;
     }
   }
 

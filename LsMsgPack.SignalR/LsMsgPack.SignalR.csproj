@@ -1,0 +1,48 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\Packaging.props" />
+
+  <PropertyGroup>
+    <!-- netstandard2.0: the .NET client on .NET Framework too; net8.0: the trim and AOT analyzers. SignalR.Common 8 has both (and the messages of protocol version 2: Ack, Sequence) -->
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+    <RootNamespace>LsMsgPack.SignalR</RootNamespace>
+    <PackageId>LsMsgPack.SignalR</PackageId>
+    <PackageTags>$(PackageTags);signalr;aspnetcore;hubprotocol;websocket;realtime</PackageTags>
+    <Description>A MessagePack hub protocol for ASP.NET Core SignalR (server and .NET client) on the fast LsMsgPack serializer: "lsmsgpack" with LsMsgPack's values for its TypeScript client and .NET clients, or registered as "messagepack" with the bytes of Microsoft's MessagePack protocol for the existing clients.</Description>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)'=='net8.0'">
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='ReleaseKeepTrack'">
+    <Optimize>True</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The package (not the shared framework): the .NET client of console, desktop and mobile apps needs the protocol without ASP.NET Core; on a server the framework's newer assembly wins -->
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Common" Version="8.0.34" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The trim and AOT attributes for the .NET Standard build (Core's polyfill is internal to Core) -->
+    <Compile Include="..\LsMsgPackWebApiFormatters\TrimAttributes.cs" Link="Meta\TrimAttributes.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- PrivateAssets none: the analyzers of LsMsgPack.Core and LsMsgPack's source generator reach the projects that reference this package -->
+    <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj" PrivateAssets="none" />
+  </ItemGroup>
+
+  <!-- This package uses the internals of LsMsgPack (InternalsVisibleTo), which may change in any release: it depends on exactly the version it was built with ([x.y.z], not >= x.y.z) -->
+  <Target Name="ExactProjectReferenceVersions" AfterTargets="_GetProjectReferenceVersions">
+    <ItemGroup>
+      <_ExactProjectReferenceVersions Include="@(_ProjectReferencesWithVersions)" ProjectVersion="[%(_ProjectReferencesWithVersions.ProjectVersion)]" />
+      <_ProjectReferencesWithVersions Remove="@(_ProjectReferencesWithVersions)" />
+      <_ProjectReferencesWithVersions Include="@(_ExactProjectReferenceVersions)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

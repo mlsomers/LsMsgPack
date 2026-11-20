@@ -38,8 +38,10 @@ export interface DecodeOptions extends ReaderOptions {
   generateCode?: boolean;
   /**
    * References (ReferenceHandling.Preserve of the server: an object or collection written twice is the second time an extension of type 5 with the path to its first occurrence):
-   * 'copies' (default) reads the value at the path again, so a shared object is read as copies and a cycle fails; 'preserve' gives the same instance, a cycle included
-   * (every object and array read is kept by its place while a payload is read, and objects are made before their properties are read, which costs a part of the speed);
+   * the same instance, a cycle included, with both 'default' and 'preserve' (every object and array read is kept by its place while a payload is read, and objects are made
+   * before their properties are read, which costs a part of the speed). 'default' reads without that and, at the first reference it meets, reads the payload again as 'preserve'
+   * does: data without references keeps the full speed, data with them is read twice ('preserve' when most responses have references).
+   * Each value a reference points to is read once: reading it again per reference (copies) grows exponentially with references to values that hold references.
    * 'none' leaves an extension of type 5 as a MsgPackExtension (a server without the option that writes its own extension 5).
    * The client writes request bodies with the same setting: with 'preserve' an object met again is a reference (EncodeOptions.references).
    */
@@ -47,7 +49,10 @@ export interface DecodeOptions extends ReaderOptions {
 }
 
 /** How the decoder reads a reference (extension type 5) and the encoder writes an object met again, see DecodeOptions.references and EncodeOptions.references. */
-export type ReferenceHandling = 'preserve' | 'copies' | 'none';
+export type ReferenceHandling = 'default' | 'preserve' | 'none';
+
+/** Thrown by a SchemaReader without 'preserve' at the first reference: the Decoder reads the payload again with it (not an Error: no stack is captured). */
+const ReadAgainPreserving = { readAgainPreserving: true } as const;
 
 type Fill = (r: SchemaReader, o: Record<string, unknown>, n: number) => void;
 
@@ -620,8 +625,8 @@ interface ResolvedOptions {
 /**
  * The reader of a body: values wrapped with a type id ({ "": index, "@": content }, or { "": index, 0: value, ... }) become what their schema entry describes.
  * References (extension type 5, docs/References.md): the content is the path from the root value to the first occurrence (the index in an array, the number of the entry in a map,
- * as positive integers). With 'preserve' every object and array is kept by the offset of its first byte when it is made, before its values, and the reference is that value;
- * otherwise the bytes at the path are read again (a copy).
+ * as positive integers). With 'preserve' every object and array is kept by the offset of its first byte when it is made, before its values, and the reference is that value
+ * (a target that was not made, such as a value of a member that was skipped, is read again once and kept); with 'default' the first reference throws ReadAgainPreserving.
  */
 export class SchemaReader extends MsgPackReader {
   /** 'preserve': the objects and arrays made, by the offset of their first byte. */
@@ -629,14 +634,14 @@ export class SchemaReader extends MsgPackReader {
   private readonly references: ReferenceHandling;
   /** The element offsets of the arrays and maps a path went through, by the offset of the container: the items found so far, and where the next one starts. */
   private walked?: Map<number, { items: number[]; next: number }>;
-  /** The offsets of the targets being read again (a path back into one of them is a cycle, which only 'preserve' resolves). */
+  /** The offsets of the targets being read again (a path back into one of them is a cycle through a value that is not kept). */
   private rereading?: Set<number>;
 
   /**
    * @param root the offset of the root value: where the paths of references start
    * @param prefix in a value of the body of a stream head: the path of this value in the body's root (the paths start with it; the stream writer's paths start at the body's root value)
    */
-  constructor(bytes: Uint8Array, options: ReaderOptions, private readonly plans: Plans | null, pos: number, references: ReferenceHandling = 'copies', private readonly root = pos,
+  constructor(bytes: Uint8Array, options: ReaderOptions, private readonly plans: Plans | null, pos: number, references: ReferenceHandling = 'default', private readonly root = pos,
     private readonly prefix?: number[]) {
     super(bytes, options, pos);
     this.references = references;
@@ -654,7 +659,7 @@ export class SchemaReader extends MsgPackReader {
     return false;
   }
 
-  /** The value the reference at the current position points to (its extension is read); `read` reads the target again when it was not made (a copy). */
+  /** The value the reference at the current position points to (its extension is read); `read` reads the target again when it was not made. */
   private reference(read: Read): unknown {
     const bytes = this.bytes, b = bytes[this.pos], at = this.pos;
     let length: number;
@@ -686,21 +691,20 @@ export class SchemaReader extends MsgPackReader {
 
   /** The value at the path in bytes[start, start + length), the reference's extension at `at`: the instance made there, or the bytes read again with `read`. */
   private resolve(start: number, length: number, at: number, read: Read): unknown {
+    const made = this.made;
+    if (made === null) throw ReadAgainPreserving; // 'default': the Decoder reads the payload again with 'preserve', so each target is read once
     const target = this.offsetOf(this.path(start, length, at), at);
     if (target >= at) throw new MsgPackError('A reference points to a value that does not come before it.', at);
-    const made = this.made;
-    if (made !== null) {
-      const value = made.get(target);
-      if (value !== undefined) return value;
-    }
+    const value = made.get(target);
+    if (value !== undefined) return value;
     const rereading = this.rereading ??= new Set();
-    if (rereading.has(target)) throw new MsgPackError(`A reference points into a value that is being read (a cycle): read with references: 'preserve'.`, at);
+    if (rereading.has(target)) throw new MsgPackError('A reference points into a value that is being read (a cycle) and is not kept as an object.', at);
     rereading.add(target);
     const end = this.pos;
     this.pos = target;
     try {
       const value = read(this);
-      if (made !== null && typeof value === 'object' && value !== null) made.set(target, value); // later references to the same place get this one
+      if (typeof value === 'object' && value !== null) made.set(target, value); // later references to the same place get this one
       return value;
     } finally {
       this.pos = end;
@@ -783,9 +787,16 @@ export class SchemaReader extends MsgPackReader {
     return k === 0xa0 || (k === 0xd9 && this.bytes[this.pos + 1] === 0);
   }
 
+  /**
+   * LsMsgPack's values without the indexed schema (DecodeOptions.indexedSchema false, the hub protocol): a type id is the type's name, `{ "": name, ...properties }` an object
+   * with `$type`, `{ "": name, "@": value }` the value (a collection of a derived class). False for plain MsgPack (decodePlain), where a key "" is data. @internal
+   */
+  typeNames = false;
+
   protected override map(n: number): unknown {
     const made = this.made;
     if (this.plans !== null && n > 0 && this.firstKeyIsTypeId()) return this.wrapped(n, made === null ? -1 : this.headerStart(n, 0x80, 0xde));
+    if (this.typeNames && this.plans === null && n > 0 && this.firstKeyIsTypeId()) return this.named(n, made === null ? -1 : this.headerStart(n, 0x80, 0xde));
     if (made === null) return super.map(n);
     this.count(n);
     const start = this.headerStart(n, 0x80, 0xde);
@@ -793,6 +804,30 @@ export class SchemaReader extends MsgPackReader {
     const result: Record<string, unknown> = {};
     made.set(start, result);
     for (let t = 0; t < n; t++) {
+      const key = this.key();
+      setOwn(result, typeof key === 'string' ? key : String(key), this.value());
+    }
+    this.depth--;
+    return result;
+  }
+
+  /** A value with a type id of the names mode (see typeNames), the header (n entries) is read. @param start as wrapped */
+  private named(n: number, start: number): unknown {
+    this.pos += this.bytes[this.pos] === 0xa0 ? 1 : 2; // the key ""
+    const name = this.value();
+    this.enter();
+    const b = this.bytes;
+    if (n === 2 && b[this.pos] === 0xa1 && b[this.pos + 1] === 0x40) { // { "": name, "@": value }
+      this.pos += 2;
+      const value = this.value();
+      if (start >= 0 && typeof value === 'object' && value !== null) this.made!.set(start, value);
+      this.depth--;
+      return value;
+    }
+    const result: Record<string, unknown> = {};
+    result[TypeProperty] = name; // first, as the objects of the schema's entries
+    if (start >= 0) this.made!.set(start, result);
+    for (let t = 1; t < n; t++) {
       const key = this.key();
       setOwn(result, typeof key === 'string' ? key : String(key), this.value());
     }
@@ -820,11 +855,10 @@ export class SchemaReader extends MsgPackReader {
           const count = this.arrayLength();
           if (count >= 0) this.fill(plan, o, count);
           else if (this.isReference()) { // { "": index, "@": <reference> }: a reference to an object of another type than the place declares
-            result = this.reference((r) => { // read again (a copy): with its type name, as the value would have (the instance made at the target is returned as it is)
-              const copy = r.readObject(plan);
-              if (!plan.model && typeof copy === 'object' && copy !== null && !Array.isArray(copy) && plan.entry.name !== null && !(TypeProperty in copy)) (copy as Record<string, unknown>)[TypeProperty] = plan.entry.name;
-              return copy;
-            });
+            result = this.reference((r) => r.readObject(plan)); // read again when the target was not made
+            // its type name, as the value would have here: also on the instance of the target, read where its class was the declared type (a List<Dog>), so written back
+            // in full (without references) it keeps its class where an Animal is declared
+            if (!plan.model && typeof result === 'object' && result !== null && !Array.isArray(result) && plan.entry.name !== null && !(TypeProperty in result)) (result as Record<string, unknown>)[TypeProperty] = plan.entry.name;
             if (start >= 0) this.made!.set(start, result); // not the object made above
             this.depth--;
             return result;
@@ -1010,6 +1044,8 @@ export class Decoder {
   private readonly readerOptions: ReaderOptions;
   private readonly indexedSchema: boolean;
   private readonly plans = new WeakMap<Schema, Plans>();
+  /** 'default': the options and the plans of the second read of a payload with references (the plans differ: objects made before their values). */
+  private preserving?: { options: ResolvedOptions; plans: WeakMap<Schema, Plans> };
 
   constructor(options: DecodeOptions = {}) {
     const models = options.models;
@@ -1021,7 +1057,7 @@ export class Decoder {
       classes: options.classes,
       propertyNames: options.propertyNames ?? models?.propertyNames ?? 'camelCase',
       generateCode: options.generateCode ?? true,
-      references: options.references ?? 'copies',
+      references: options.references ?? 'default',
     };
     if (models !== undefined) checkModelOptions(models, this.options);
     this.readerOptions = { decimal: this.options.decimal, maxDepth: options.maxDepth };
@@ -1081,8 +1117,15 @@ export class Decoder {
   }
 
   private read(bytes: Uint8Array, schema: Schema | null, pos: number): unknown {
-    const reader = new SchemaReader(bytes, this.readerOptions, schema === null ? null : this.plansOf(schema), pos, this.options.references);
-    const value = reader.readRoot();
+    let reader = new SchemaReader(bytes, this.readerOptions, schema === null ? null : this.plansOf(schema), pos, this.options.references);
+    let value: unknown;
+    try {
+      value = reader.readRoot();
+    } catch (e) {
+      if (e !== ReadAgainPreserving) throw e;
+      reader = new SchemaReader(bytes, this.readerOptions, schema === null ? null : this.preservingPlansOf(schema), pos, 'preserve');
+      value = reader.readRoot();
+    }
     if (reader.pos !== bytes.length) throw new MsgPackError('Data after the value.', reader.pos);
     return value;
   }
@@ -1097,8 +1140,19 @@ export class Decoder {
     const data = end >= bytes.length ? bytes : bytes.subarray(0, end);
     const plans = schema === null ? null : this.plansOf(schema);
     const reader = new SchemaReader(data, this.readerOptions, plans, start, this.options.references, start, prefix);
-    const value = plans === null ? reader.value() : type === undefined ? reader.readRoot() : plans.readOf(type)(reader);
-    return { value, end: reader.pos };
+    reader.typeNames = !this.indexedSchema;
+    try {
+      const value = plans === null ? reader.value() : type === undefined ? reader.readRoot() : plans.readOf(type)(reader);
+      return { value, end: reader.pos };
+    } catch (e) {
+      if (e !== ReadAgainPreserving) throw e;
+    }
+    // the value has references: read it again with 'preserve' (the objects of the first read are dropped)
+    const again = schema === null ? null : this.preservingPlansOf(schema);
+    const preserving = new SchemaReader(data, this.readerOptions, again, start, 'preserve', start, prefix);
+    preserving.typeNames = !this.indexedSchema;
+    const value = again === null ? preserving.value() : type === undefined ? preserving.readRoot() : again.readOf(type)(preserving);
+    return { value, end: preserving.pos };
   }
 
   /** The data starts with the indexed schema (internal: the stream reader). @internal */
@@ -1121,6 +1175,17 @@ export class Decoder {
     if (plans === undefined) {
       plans = new Plans(schema, this.options);
       this.plans.set(schema, plans);
+    }
+    return plans;
+  }
+
+  /** The plans of the second read of a payload with references ('default'). */
+  private preservingPlansOf(schema: Schema): Plans {
+    const preserving = this.preserving ??= { options: { ...this.options, references: 'preserve' }, plans: new WeakMap() };
+    let plans = preserving.plans.get(schema);
+    if (plans === undefined) {
+      plans = new Plans(schema, preserving.options);
+      preserving.plans.set(schema, plans);
     }
     return plans;
   }

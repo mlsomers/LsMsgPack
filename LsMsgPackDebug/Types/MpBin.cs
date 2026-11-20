@@ -126,6 +126,7 @@ namespace LsMsgPackDebug {
         case MsgPackTypeId.MpBin32: len = ReadLen(data, 4); break;
         default: throw new MsgPackException($"MpBin does not support a type ID of {GetOfficialTypeName(typeId)}.", data.Position - 1, typeId);
       }
+      ThrowIfTooLong(len, false);
 #if KEEPTRACK
       if(Truncates(len, KeptBytes)) {
         byte[] head;

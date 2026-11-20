@@ -26,6 +26,7 @@ graph LR
   Network -->|others' programs| Foreign{{"Server or client?"}}
   DotNet -->|HTTP| DotNetHttp[".NET to .NET over HTTP"]
   DotNet -->|queue, socket| Messaging[".NET messaging"]
+  DotNet -->|SignalR| SignalR["SignalR"]
   Browser -->|yes| TsModels["TypeScript with models"]
   Browser -->|no| TsPlain["TypeScript without models"]
   Foreign -->|my server| PublicApi["Public API"]
@@ -33,7 +34,7 @@ graph LR
 ```
 
 - Questions: [Files](Files.md), [Files of your own app](FilesOwnApp.md), [Files for other programs](FilesOtherPrograms.md), [Network](Network.md), [Between .NET programs](NetworkDotNet.md), [Browser and TypeScript](NetworkBrowser.md), [Other parties](NetworkOthers.md)
-- Setups: [Documents](Setup-Documents.md), [Cache](Setup-Cache.md), [Files for JavaScript](Setup-FilesJavaScript.md), [Plain MsgPack files](Setup-FilesPlain.md), [.NET to .NET over HTTP](Setup-DotNetHttp.md), [.NET messaging](Setup-DotNetMessaging.md), [TypeScript with models](Setup-TypeScriptModels.md), [TypeScript without models](Setup-TypeScriptPlain.md), [Public API](Setup-PublicApi.md), [Calling another service](Setup-ForeignService.md)
+- Setups: [Documents](Setup-Documents.md), [Cache](Setup-Cache.md), [Files for JavaScript](Setup-FilesJavaScript.md), [Plain MsgPack files](Setup-FilesPlain.md), [.NET to .NET over HTTP](Setup-DotNetHttp.md), [.NET messaging](Setup-DotNetMessaging.md), [SignalR](Setup-SignalR.md), [TypeScript with models](Setup-TypeScriptModels.md), [TypeScript without models](Setup-TypeScriptPlain.md), [Public API](Setup-PublicApi.md), [Calling another service](Setup-ForeignService.md)
 - For every setup: [Add-ons](Extras.md) (trimming and AOT, analyzers, finding mismatches, untrusted data, looking inside the bytes)
 
 ---

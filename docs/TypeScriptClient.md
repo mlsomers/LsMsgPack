@@ -74,7 +74,7 @@ new LsMsgPackClient({
   describedSchema: true,  // ask for the described schema (below)
   negotiateSchemas: true, // advertise the schemas the client holds
   generateCode: true,     // see "Security"
-  references: 'copies',   // a server with ReferenceHandling.Preserve: 'copies' (default), 'preserve' (the same instance, cycles too) or 'none', see below
+  references: 'default',  // a server with ReferenceHandling.Preserve: 'default' or 'preserve' (the same instance, cycles too; 'preserve' also writes references) or 'none', see below
   maxDepth: 256,          // arrays and maps nested deeper are refused
 });
 ```
@@ -119,11 +119,12 @@ await api.post('api/zoo', zoo); // the server creates a Cat
 
 A server with [`ReferenceHandling.Preserve`](References.md) writes an object or collection that appears twice once, and the second time a reference to it: an extension of type 5 with the path to its first occurrence. The client reads it as the `references` option says:
 
-- `'copies'` (default): the value at the path is read again, so a shared object becomes copies, as without the option on the server. A cycle can't be copied and throws a `MsgPackError`.
-- `'preserve'`: the same instance, cycles included (`order.customer === invoice.customer`, `node.parent.children[0] === node`). Objects and arrays are kept by their place while a response is read, and the objects of the array layout are made before their values are read, not by the generated constructor function after them: reading costs a part of the speed, only with the option.
+- `'default'` and `'preserve'`: the same instance, cycles included (`order.customer === invoice.customer`, `node.parent.children[0] === node`). Objects and arrays are kept by their place while a response is read, and the objects of the array layout are made before their values are read, not by the generated constructor function after them, which costs a part of the speed. `'default'` reads without that until it meets the first reference, then reads the response again as `'preserve'` does: responses without references keep the full speed, responses with them are read twice. Use `'preserve'` when most responses have references.
 - `'none'`: the extension as a `MsgPackExtension` (for a server that uses type 5 for an extension of its own).
 
-With `'preserve'` the client also writes request bodies with references: an object, array or `Map` met again is a reference to its first occurrence, which the server reads as one instance (when its plain reader has `Preserve`). Strings, `Date`s, bytes and the keys of a `Map` are always written in full. A reference where the server's declared type differs from the class gets the object's type id, as the value would: an instance of a model, or a plain object with `$type`. A plain object read without `$type` (in a `List<Dog>`) and sent again where an `Animal` is declared has none, there or at its first place; the server then reads the reference as the object of its first place.
+Each value a reference points to is read once. Reading it again for each reference (as copies) would grow exponentially with values that hold references to each other: 341 bytes of data with 18 levels took 249 MB and half a second that way. A reference with a type id (an object of another class than the place declares, a `Dog` where an `Animal` is declared) puts the type name in `$type` of the shared object when it has none (it was read where `Dog` was the declared type, in a `List<Dog>`), so the object keeps its class when it is sent back.
+
+With `'preserve'` the client also writes request bodies with references: an object, array or `Map` met again is a reference to its first occurrence, which the server reads as one instance (with or without `Preserve` in its options: data with references is read as with the option). Strings, `Date`s, bytes and the keys of a `Map` are always written in full. A reference where the server's declared type differs from the class gets the object's type id, as the value would: an instance of a model, or a plain object with `$type`. A plain object without `$type` (made by your code, or read only where `Dog` was declared) sent again where an `Animal` is declared has none, there or at its first place; the server then reads the reference as the object of its first place.
 
 In a stream each value (`MsgPackStreamWriter.write`, each `readObject`) has its own references: they never point into another value. In the body of a stream head of the server the paths start at the body's root value (the element's position first); the reader takes that into account.
 
@@ -201,6 +202,29 @@ await writer.close();    // writes the index and closes the sink
 
 Not supported: writing heads or the indexed schema, a byte order other than the specification's (`EndianAction`), and appending to a stream.
 
+## SignalR
+
+`@lsmsgpack/client/signalr` is a hub protocol for `@microsoft/signalr` (version 8 and up), for a server with LsMsgPack.SignalR ([SignalR.md](SignalR.md)):
+
+```ts
+import { HubConnectionBuilder } from '@microsoft/signalr';
+import { LsMsgPackHubProtocol } from '@lsmsgpack/client/signalr';
+
+const connection = new HubConnectionBuilder()
+  .withUrl('/chat')
+  .withHubProtocol(new LsMsgPackHubProtocol({ decimal: 'string' }))
+  .build();
+```
+
+- `name`: `'lsmsgpack'` (default, the server's `AddLsMsgPackProtocol()`) or `'messagepack'` (`AddLsMsgPackAsMessagePackProtocol()`, or Microsoft's `AddMessagePackProtocol()`).
+- The other options are the decoder's and the encoder's: `decimal`, `int64`, `references`, `maxDepth`, `generateCode`.
+- The protocol imports nothing of `@microsoft/signalr` (it has the shape of its `IHubProtocol`), so it adds no dependency.
+- The messages have no schema (SignalR writes a message once for every connection it goes to): objects have the .NET property names (`message.User`), whatever `propertyNames` says, and only the properties in the data. LsMsgPack's server writes every value, so they are all there. A type id becomes `$type`, Guids are text, and DateTimes are `Date`s. The values follow the table in [Values](#values) for what the data holds.
+- Sent objects may use camelCase names (the server reads names ignoring case); `$type` is written as the type id, as in request bodies.
+- Each argument, stream item and result is read and written on its own: with `references: 'preserve'` a shared object within one argument is one instance.
+
+A decoder with `indexedSchema: false` (data without the schema, as the hub protocol reads it) also makes `$type` objects of type ids, and the value of a wrapped collection (`{ "": name, "@": [...] }`) its array. `decodePlain` (plain MsgPack of other writers) leaves a key `""` as it is.
+
 ## The server
 
 Nothing to change: the [ASP.NET Core, Web API and MVC 5 formatters](WebFormatters.md) support it (`LsMsgPackHttpOptions.DescribeSchemas`, `CompleteSchemas` and, for camelCase request bodies, `PropertyNameCaseInsensitive`, on by default).
@@ -236,7 +260,7 @@ The `Accept` header needs no CORS setting.
 | `long`, `ulong` | `number` (`int64: 'bigint'`: `bigint`) | `0` |
 | `decimal` | `number` (`decimal` option) | `0` |
 | `BigInteger`, `Int128`, `UInt128` | `bigint` | `0n` |
-| enums | `number` (the underlying value; the models have a const object with the names) | `0` |
+| enums | `number` (the underlying value; the models have a const object with the names), `string` for an enum the server writes by name ([Enums.md](Enums.md)) | `0` |
 | `char` | `string` (one character) | `'\0'` |
 | `Guid` | `string` (`"0f8fad5b-d9cb-469f-a165-70867728950e"`) | `"00000000-0000-0000-0000-000000000000"` |
 | `DateTime` | `Date` (`dates: 'iso'`: UTC text), from LsMsgPack's extension type 6 (the server's default) or a timestamp: a `Utc` or `Local` value is its moment, an `Unspecified` one its clock time as UTC | `0001-01-01T00:00:00Z` (`DateTime.MinValue`) |

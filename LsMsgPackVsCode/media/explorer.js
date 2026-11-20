@@ -15,7 +15,8 @@
   const LIMITS = [500, 1000, 10000, 100000, 0];
   const BADGES = {
     nil: 'nil', bool: 'bool', int: '123', float: '1.5', bin: 'bin', str: 'abc', array: '[ ]', map: '{ }',
-    entry: 'k:v', ext: 'ext', error: '!', root: 'root', index: 'idx', tail: 'tail', sidecar: 'side', other: '?'
+    entry: 'k:v', ext: 'ext', error: '!', root: 'root', index: 'idx', tail: 'tail', sidecar: 'side',
+    message: 'hub', prefix: 'len', handshake: 'json', other: '?'
   };
   const SEVERITY = {
     Error: ['✖', 'Error'],

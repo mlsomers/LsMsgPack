@@ -1,4 +1,7 @@
 ﻿using LsMsgPack;
+using LsMsgPack.SignalR;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR.Protocol;
 using System;
 using System.Collections.Frozen;
 using System.Collections.Generic;
@@ -16,6 +19,12 @@ namespace LsMsgPackAotSmokeTest
 {
   public enum InvoiceStatus { Draft, Sent, Paid }
   public enum Unit : byte { Piece, Hour, Kilogram }
+
+  /// <summary>
+  /// Written by name (its attribute; the names are read from the enum's fields by reflection), with a custom name.
+  /// </summary>
+  [MsgPackEnumFormat(EnumFormat.Name)]
+  public enum Priority { Low, [System.Runtime.Serialization.EnumMember(Value = "high")] High }
 
   public class Address
   {
@@ -343,6 +352,9 @@ namespace LsMsgPackAotSmokeTest
     public List<Shape> Shapes { get; set; }
     public decimal Total { get; set; }
     public bool Urgent { get; set; }
+    public Priority Priority { get; set; }
+    [MsgPackEnumFormat(EnumFormat.Name)]
+    public InvoiceStatus StatusName { get; set; } // the member's own format
     public Extras Extras { get; set; }
     public Payment Payment { get; set; }
     public Signature Signed { get; set; }
@@ -447,6 +459,19 @@ namespace LsMsgPackAotSmokeTest
         golden.Append(name).Append('|').Append(Convert.ToHexString(runtime)).Append('|').Append(expected).Append('\n');
         Console.WriteLine($"{name}: {runtime.Length} bytes, the same with the generated code");
       }
+      foreach ((string name, bool asMessagePack) in HubProtocols())
+      {
+        byte[] runtime = HubBytes(RuntimeHub(asMessagePack), HubSample(asMessagePack));
+        byte[] generated = HubBytes(ExplicitHub(asMessagePack), HubSample(asMessagePack));
+        if (!runtime.AsSpan().SequenceEqual(generated))
+          throw new Exception($"{name}: the generated code writes other bytes\n  runtime   {Convert.ToHexString(runtime)}\n  generated {Convert.ToHexString(generated)}");
+        string expected = Dump(HubRead(RuntimeHub(asMessagePack), runtime));
+        string read = Dump(HubRead(ExplicitHub(asMessagePack), runtime));
+        if (expected != read)
+          throw new Exception($"{name}: the generated code reads other values\n  runtime   {expected}\n  generated {read}");
+        golden.Append(name).Append('|').Append(Convert.ToHexString(runtime)).Append('|').Append(expected).Append('\n');
+        Console.WriteLine($"{name}: an invocation of {runtime.Length} bytes, the same with the generated code");
+      }
       File.WriteAllText(path, golden.ToString());
       Console.WriteLine("Written " + path);
       return 0;
@@ -465,6 +490,15 @@ namespace LsMsgPackAotSmokeTest
         string name = parts[0];
         byte[] expected = Convert.FromHexString(parts[1]);
         string values = parts[2];
+        if (name.StartsWith("hub-", StringComparison.Ordinal))
+        {
+          bool asMessagePack = HubProtocols().First(h => h.Name == name).AsMessagePack;
+          string hubProblem = HubProblem(ExplicitHub(asMessagePack), HubSample(asMessagePack), expected, values);
+          Console.WriteLine($"{name} explicit: {hubProblem ?? "OK"}");
+          if (hubProblem != null)
+            failures++;
+          continue;
+        }
         Func<LsMsgPackOptions> options = OptionSets().First(o => o.Name == name).Options;
 
         foreach ((string which, Func<LsMsgPackOptions, LsMsgPackSerializer> create) in new (string, Func<LsMsgPackOptions, LsMsgPackSerializer>)[] { ("explicit", Explicit), ("registered", Registered) })
@@ -484,6 +518,97 @@ namespace LsMsgPackAotSmokeTest
       Console.WriteLine(failures == 0 ? "PASSED" : $"FAILED: {failures}");
       return failures == 0 ? 0 : 1;
     }
+
+    #region SignalR: LsMsgPack.SignalR's hub protocol with the context (the types of the hub methods' parameters come from the binder at runtime)
+
+    private static IEnumerable<(string Name, bool AsMessagePack)> HubProtocols()
+    {
+      yield return ("hub-lsmsgpack", false);
+      yield return ("hub-messagepack", true);
+    }
+
+    /// <summary>
+    /// "messagepack" writes no type ids (as Microsoft's protocol: MessagePack-CSharp's contractless resolver), so it has no class hierarchies: the invoice without its shapes.
+    /// </summary>
+    private static Invoice HubSample(bool asMessagePack)
+    {
+      Invoice sample = Sample();
+      if (asMessagePack)
+      {
+        sample.Stamp = null;
+        sample.Shapes = null;
+      }
+      return sample;
+    }
+
+    private static LsMsgPackHubProtocolOptions HubOptions(bool asMessagePack)
+    {
+      LsMsgPackOptions values = Converted(LsMsgPackHubProtocolOptions.DefaultSerializerOptions(asMessagePack));
+      return new LsMsgPackHubProtocolOptions() { AsMessagePack = asMessagePack, SerializerOptions = values };
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = "Deliberately without generated code: the JIT run writes the expected data with it.")]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Deliberately without generated code: the JIT run writes the expected data with it.")]
+    private static LsMsgPackHubProtocol RuntimeHub(bool asMessagePack)
+    {
+      LsMsgPackHubProtocolOptions options = HubOptions(asMessagePack);
+      options.SerializerOptions.Contexts = null;
+      options.SerializerOptions.UseRegisteredContexts = false;
+      return new LsMsgPackHubProtocol(options);
+    }
+
+    private static LsMsgPackHubProtocol ExplicitHub(bool asMessagePack)
+    {
+      return new LsMsgPackHubProtocol(SmokeContext.Default, HubOptions(asMessagePack)); // the warning-free constructor (AddLsMsgPackProtocol(context) uses it)
+    }
+
+    private static byte[] HubBytes(IHubProtocol protocol, Invoice sample)
+    {
+      return protocol.GetMessageBytes(new InvocationMessage("1", "Send", new object[] { sample, 7 })).ToArray();
+    }
+
+    private static Invoice HubRead(IHubProtocol protocol, byte[] bytes)
+    {
+      System.Buffers.ReadOnlySequence<byte> input = new System.Buffers.ReadOnlySequence<byte>(bytes);
+      if (!protocol.TryParseMessage(ref input, new HubBinder(), out HubMessage message))
+        throw new Exception("no message");
+      if (message is InvocationBindingFailureMessage failure)
+        throw new Exception("binding failed", failure.BindingFailure.SourceException);
+      InvocationMessage invocation = (InvocationMessage)message;
+      if (!(invocation.Arguments[1] is int number) || number != 7)
+        throw new Exception("the second argument is not 7");
+      return (Invoice)invocation.Arguments[0];
+    }
+
+    private static string HubProblem(IHubProtocol protocol, Invoice sample, byte[] expected, string values)
+    {
+      try
+      {
+        byte[] written = HubBytes(protocol, sample);
+        if (!written.AsSpan().SequenceEqual(expected))
+          return $"other bytes\n  expected {Convert.ToHexString(expected)}\n  written  {Convert.ToHexString(written)}";
+        string read = Dump(HubRead(protocol, expected));
+        return read == values ? null : $"other values\n  expected {values}\n  read     {read}";
+      }
+      catch (Exception ex)
+      {
+        return ex.ToString();
+      }
+    }
+
+    /// <summary>
+    /// What a hub tells its protocol: the parameter types of a method.
+    /// </summary>
+    private sealed class HubBinder : IInvocationBinder
+    {
+      public IReadOnlyList<Type> GetParameterTypes(string methodName) => new[] { typeof(Invoice), typeof(int) };
+
+      public Type GetReturnType(string invocationId) => typeof(Invoice);
+
+      public Type GetStreamItemType(string streamId) => typeof(Invoice);
+    }
+
+    #endregion
 
     private static string SharingProblem(LsMsgPackSerializer serializer, byte[] expected)
     {
@@ -551,6 +676,8 @@ namespace LsMsgPackAotSmokeTest
         Audit = new Audit(),
         JsonAudit = new JsonAudit { Note = "j" },
         Urgent = true,
+        Priority = Priority.High,
+        StatusName = InvoiceStatus.Paid,
         Payment = new Payment(100.5m) { Note = "first" },
         Signed = new Signature("Clerk", new DateTime(2026, 10, 21, 9, 0, 0, DateTimeKind.Utc)),
         Route = SampleRoute(),
@@ -720,7 +847,7 @@ namespace LsMsgPackAotSmokeTest
         .Append(Dump(o.Customer)).Append(';').Append(o.Lines is null ? "null" : string.Join(",", o.Lines.Select(Dump))).Append(';')
         .Append(o.Extra is null ? "null" : string.Join(",", o.Extra.Select(Dump))).Append(';').Append(o.Reference?.ToString() ?? "null").Append(';')
         .Append(o.Numbers is null ? "null" : string.Join(",", o.Numbers)).Append(';').Append(Dump(o.Stamp)).Append(';')
-        .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent).Append(';').Append(Dump(o.Extras)).Append(';')
+        .Append(o.Shapes is null ? "null" : string.Join(",", o.Shapes.Select(Dump))).Append(';').Append(o.Total.ToString(CultureInfo.InvariantCulture)).Append(';').Append(o.Urgent).Append(';').Append(o.Priority).Append(';').Append(o.StatusName).Append(';').Append(Dump(o.Extras)).Append(';')
         .Append(o.Payment is null ? "null" : $"[{o.Payment.Amount.ToString(CultureInfo.InvariantCulture)} {o.Payment.Note ?? "null"} {o.Payment.Logged}]").Append(';')
         .Append(o.Signed is null ? "null" : $"[{o.Signed.By ?? "null"} {Time(o.Signed.At)}]").Append(';').Append(Dump(o.Route)).Append(';')
         .Append(o.Discount is null ? "null" : o.Discount.Percent.ToString(CultureInfo.InvariantCulture) + "/" + o.Discount.Code).Append(';')

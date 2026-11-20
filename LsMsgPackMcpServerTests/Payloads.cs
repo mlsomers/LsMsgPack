@@ -123,5 +123,38 @@ namespace LsMsgPackMcpServerTests
       }
       return ms.ToArray();
     }
+
+    /// <summary>
+    /// A capture of a SignalR connection as LsMsgPack.SignalR and Microsoft's MessagePack protocol write it: the client's handshake, then each message a VarInt length prefix and an array:
+    /// an invocation of "Send" with an invoice (more than 127 bytes: a prefix of 2 bytes), its completion with a result, a completion with an error and a ping.
+    /// </summary>
+    public static byte[] HubCapture()
+    {
+      LsMsgPackSerializer values = new LsMsgPackSerializer(LsMsgPackPresets.Generic());
+      MemoryStream ms = new MemoryStream();
+      byte[] handshake = System.Text.Encoding.UTF8.GetBytes("{\"protocol\":\"messagepack\",\"version\":2}\u001e");
+      ms.Write(handshake, 0, handshake.Length);
+      Dictionary<string, string> none = new Dictionary<string, string>();
+      WriteFrame(ms, values.Serialize(new object[] { 1, new Dictionary<string, string>() { { "trace", "abc" } }, "1", "Send", new object[] { Invoice(), 7 }, new string[0] }));
+      WriteFrame(ms, values.Serialize(new object[] { 3, none, "1", 3, Invoice() }));
+      WriteFrame(ms, values.Serialize(new object[] { 3, none, "2", 1, "it failed" }));
+      WriteFrame(ms, values.Serialize(new object[] { 6 }));
+      return ms.ToArray();
+    }
+
+    private static void WriteFrame(MemoryStream target, byte[] message)
+    {
+      long length = message.Length;
+      do
+      {
+        byte b = (byte)(length & 0x7F);
+        length >>= 7;
+        if (length > 0)
+          b |= 0x80;
+        target.WriteByte(b);
+      }
+      while (length > 0);
+      target.Write(message, 0, message.Length);
+    }
   }
 }

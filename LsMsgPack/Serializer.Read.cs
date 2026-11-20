@@ -6,6 +6,7 @@ using LsMsgPack.Extensions;
 using LsMsgPack.Generated;
 using LsMsgPack.IO;
 using LsMsgPack.Reading;
+using LsMsgPack.References;
 using LsMsgPack.Writing;
 using System;
 using System.Collections.Concurrent;
@@ -14,6 +15,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace LsMsgPack
 {
@@ -372,6 +374,7 @@ namespace LsMsgPack
         case TypeKind.Converted:
           return (ValueReader)info.Converter.Accept(new ConverterReaders(this));
         case TypeKind.Enum:
+        case TypeKind.EnumName: // numbers and names, whatever is written
           return (ValueReader)Instantiate(type, typeof(EnumReader<>), type, null);
         case TypeKind.Array:
           ValueReader numbers = NumberReader(type);
@@ -678,10 +681,40 @@ namespace LsMsgPack
         consumed = c.R.Pos;
         return result;
       }
+      catch (ReadAgainPreserving) // the data has references and the options do not preserve them: read again with the option (a handler here costs nothing on the usual path)
+      {
+      }
       finally
       {
         ReturnContext(c);
       }
+      differences?.Reset();
+      return PreservingReader().Deserialize(type, buffer, offset, end, out consumed, differences, intoSlot, referencePrefix);
+    }
+
+    private Serializer _preservingReader;
+
+    /// <summary>
+    /// Reads data with references when the options leave <see cref="ReferenceHandling.Preserve"/> off (maintainer's decision 2026-11-19, gaps checklist item 9): the same options with it,
+    /// so each value a reference points to is read once and shared. Reading each reference again as a copy grew exponentially (1.2 KB of data made 1.4 GB). Made at the first such call.
+    /// <para>The objects of the first attempt are dropped: they had their OnDeserializing callbacks, as a read repeated after a schema grew.</para>
+    /// </summary>
+    private Serializer PreservingReader()
+    {
+      Serializer reader = _preservingReader;
+      if (reader != null)
+        return reader;
+      LsMsgPackOptions options = Options.Clone();
+      options._referenceHandling = ReferenceHandling.Preserve;
+      try
+      {
+        reader = new Serializer(options) { SlowObjects = SlowObjects, CompileReadersAfter = CompileReadersAfter };
+      }
+      catch (InvalidOperationException ex) // a converter or custom extension of type code 5, which reads references as its values without the option
+      {
+        throw new MsgPackException($"The data has references (extension type {MsgPackOptions.ReferenceExtensionType}, written with ReferenceHandling.Preserve), which these options cannot read: {ex.Message}");
+      }
+      return Interlocked.CompareExchange(ref _preservingReader, reader, null) ?? reader;
     }
 
     // The lambdas are in methods of their own: a lambda that captures parameters allocates its closure where the method starts, on every call
@@ -892,6 +925,7 @@ namespace LsMsgPack
     {
       SerializationRules.BindReaderTypes(root, sessionSettings); // once per root type and schema
       c.R.Pos = bodyStart;
+      c.R.ResetCounts(); // the limits count the body (read again when the shared session has to grow), not the schema
       c.Depth = 0;
       c.Schema = true;
       if (!ReferenceEquals(c.SlowSettings, sessionSettings))
@@ -982,10 +1016,15 @@ namespace LsMsgPack
         consumed = c.R.Pos;
         return result;
       }
+      catch (ReadAgainPreserving) // as in Deserialize
+      {
+      }
       finally
       {
         ReturnContext(c);
       }
+      differences?.Reset();
+      return PreservingReader().DeserializeBody(head, root, type, buffer, offset, end, out consumed, differences, intoSlot, referencePrefix);
     }
 
     private object DeserializeBodyCollecting(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, Func<int[]> referencePrefix)

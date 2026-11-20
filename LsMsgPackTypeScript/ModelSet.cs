@@ -209,6 +209,11 @@ namespace LsMsgPackTypeScript
     /// </summary>
     internal Spec SpecOf(ModelProperty prop)
     {
+      if (prop.Converter is null && prop.EnumFormat != null) // the member's own enum format
+      {
+        Spec own = EnumSpec(prop.EnumType, prop.EnumFormat.Value);
+        return prop.Type == prop.EnumType ? own : Spec.Of("?", prop.Type, own);
+      }
       if (prop.Converter is null)
         return SpecOf(prop.Type);
       Spec surrogate = SurrogateSpec(prop.Converter);
@@ -226,6 +231,27 @@ namespace LsMsgPackTypeScript
       if (converter is MsgPackBinaryConverter binary && binary.ExtensionTypeCode != null)
         return Spec.Kind("any", converter.ConvertedType);
       return SpecOf(converter.SurrogateType);
+    }
+
+    /// <summary>
+    /// The values of an enum are written by name (the options or the enum's attribute, as the serializers decide).
+    /// </summary>
+    internal bool ByName(Type enumType)
+    {
+      return _settings.EnumFormatOf(enumType) == EnumFormat.Name;
+    }
+
+    /// <summary>
+    /// An enum written in this format: its underlying integer kind, or <c>string</c> by name (as DescribedSchema describes it).
+    /// </summary>
+    private Spec EnumSpec(Type type, EnumFormat format)
+    {
+      if (format == EnumFormat.Name)
+        return new Spec() { Name = "string", Type = type, Enum = type, ByName = true };
+      Spec underlying = SpecOf(Enum.GetUnderlyingType(type));
+      underlying.Enum = type;
+      underlying.Type = type;
+      return underlying;
     }
 
     internal Spec SpecOf(Type type)
@@ -284,12 +310,7 @@ namespace LsMsgPackTypeScript
       }
 
       if (type.IsEnum)
-      {
-        Spec underlying = SpecOf(Enum.GetUnderlyingType(type));
-        underlying.Enum = type;
-        underlying.Type = type;
-        return underlying;
-      }
+        return EnumSpec(type, _settings.EnumFormatOf(type));
       if (FrameworkTypeInfo.IsKeyValuePair(type))
         return Spec.Of("pair", type, type.GetGenericArguments().Select(SpecOf).ToArray());
       if (FrameworkTypeInfo.IsTuple(type))
@@ -387,6 +408,12 @@ namespace LsMsgPackTypeScript
     /// </summary>
     internal readonly MsgPackConverter Converter;
 
+    /// <summary>
+    /// The enum format the member's own attribute asks for ([MsgPackEnumFormat] or another serializer's), null without one; <see cref="EnumType"/> is its enum.
+    /// </summary>
+    internal readonly EnumFormat? EnumFormat;
+    internal readonly Type EnumType;
+
     /// <param name="member">A property or a field</param>
     internal ModelProperty(MemberInfo member)
     {
@@ -394,7 +421,10 @@ namespace LsMsgPackTypeScript
       Member = member;
       FieldInfo field = member as FieldInfo;
       Type = field?.FieldType ?? ((PropertyInfo)member).PropertyType;
-      Converter = FullPropertyInfo.AttributesOf(member).Converter;
+      PropertyAttributeSet attributes = FullPropertyInfo.AttributesOf(member);
+      Converter = attributes.Converter;
+      EnumFormat = attributes.EnumFormat;
+      EnumType = attributes.EnumType;
       try
       {
         lock (NullabilityContext) // not thread-safe
@@ -419,9 +449,14 @@ namespace LsMsgPackTypeScript
     internal ModelInterface Interface;
 
     /// <summary>
-    /// An enum (the kind is its underlying integer).
+    /// An enum (the kind is its underlying integer, or <c>string</c> when <see cref="ByName"/>).
     /// </summary>
     internal Type Enum;
+
+    /// <summary>
+    /// The enum is written by its names (<see cref="EnumFormat.Name"/>).
+    /// </summary>
+    internal bool ByName;
 
     /// <summary>
     /// The surrogate of a converted reference type: null is written as nil, also when the surrogate is a struct (a class converted to a <c>double</c>).

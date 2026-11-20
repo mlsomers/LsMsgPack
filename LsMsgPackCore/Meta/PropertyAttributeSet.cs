@@ -51,6 +51,9 @@ namespace LsMsgPack.Meta
       if (type.IsValueType)
       {
         IsNullable = Nullable.GetUnderlyingType(type) != null;
+        Type underlying = IsNullable ? Nullable.GetUnderlyingType(type) : type;
+        if (underlying.IsEnum)
+          EnumType = underlying;
         if (!IsNullable)
         {
           ValueType = type;
@@ -63,6 +66,30 @@ namespace LsMsgPack.Meta
     /// The property or field.
     /// </summary>
     internal MemberInfo Member { get { return _member; } }
+
+    /// <summary>
+    /// The member's type when it is an enum, or the enum of a nullable member; null otherwise. Only for such members <see cref="EnumFormat"/> is asked (a member's format is about its own value).
+    /// </summary>
+    internal readonly Type EnumType;
+
+    private volatile int _enumLooked; // 0: not decided yet, 1: done
+    private EnumFormat? _enumFormat;
+
+    /// <summary>
+    /// The format the member's own attributes ask for (<see cref="MsgPackEnumFormatAttribute"/>, or another serializer's), null when none does or the member is no enum (<see cref="EnumType"/>).
+    /// </summary>
+    internal EnumFormat? EnumFormat
+    {
+      get
+      {
+        if (_enumLooked == 0)
+        {
+          _enumFormat = EnumType is null ? null : EnumFormats.OfMember(_member); // the same value by any thread
+          _enumLooked = 1;
+        }
+        return _enumFormat;
+      }
+    }
 
     /// <summary>
     /// The type of the property when it is a value type other than <see cref="Nullable{T}"/>: its values are boxed as this type, and FilterDefaultValues compares them as <see cref="Default"/> says.

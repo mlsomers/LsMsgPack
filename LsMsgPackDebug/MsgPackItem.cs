@@ -312,6 +312,20 @@ namespace LsMsgPackDebug
       return list.ToArray();
     }
 
+    /// <summary>
+    /// An enum value as its number or, with <see cref="EnumFormat.Name"/>, its name (the number when it has none, see Core's EnumNames.NameOf).
+    /// </summary>
+    internal static MsgPackItem PackEnum(object value, Type enumType, EnumFormat format, MsgPackSettings settings)
+    {
+      if (format == EnumFormat.Name)
+      {
+        string name = LsMsgPack.Meta.EnumNames.Of(enumType).NameOf(LsMsgPack.Meta.EnumNames.ToBits(value));
+        if (name != null)
+          return new MpString(settings) { Value = name };
+      }
+      return new MpInt(settings).SetEnumVal(value);
+    }
+
     public static MsgPackItem Pack(object value, MsgPackSettings settings, Type valuesType = null)
     {
       if (ReferenceEquals(value, null)) return new MpNull(settings);
@@ -353,7 +367,7 @@ namespace LsMsgPackDebug
       if (plain != LsMsgPack.Meta.PlainForm.None)
         return Meta.FrameworkTypes.PackPlain(LsMsgPack.Meta.FrameworkTypeInfo.ToPlain(value, plain), settings);
 
-      if (valuesType.IsEnum) return new MpInt(settings).SetEnumVal(value);
+      if (valuesType.IsEnum) return PackEnum(value, valuesType, settings.EnumFormatOf(valuesType), settings);
       if (IsSubclassOfArrayOfRawGeneric(typeof(KeyValuePair<,>), valuesType)) return new MpMap(settings) { Value = value };
       if (value is IDictionary) return new MpMap(settings) { Value = value };
       if (value is IEnumerable enumerable && !valuesType.IsArray)
@@ -493,6 +507,13 @@ namespace LsMsgPackDebug
 
     public static MpRoot UnpackMultiple(Stream stream, MsgPackSettings settings)
     {
+      if (settings._readHubMessages)
+      {
+        List<HubCapture.Frame> frames = HubCapture.Recognize(stream);
+        if (frames != null)
+          return UnpackHubMessages(stream, settings, frames);
+      }
+
 #if KEEPTRACK
       MpRoot items = new MpRoot(settings) { storedOffset = stream.Position };
 #else
@@ -544,8 +565,67 @@ namespace LsMsgPackDebug
       return items;
     }
 
+    /// <summary>
+    /// A capture of a SignalR hub connection (<see cref="MsgPackSettings.ReadHubMessages"/>): the handshake, then per message its length prefix and the message, each message read from where its prefix ends
+    /// (an error in one does not move the next).
+    /// </summary>
+    private static MpRoot UnpackHubMessages(Stream stream, MsgPackSettings settings, List<HubCapture.Frame> frames)
+    {
+      long start = stream.Position;
+#if KEEPTRACK
+      MpRoot items = new MpRoot(settings) { storedOffset = start };
+#else
+      MpRoot items = new MpRoot(settings);
+#endif
+      for (int t = 0; t < frames.Count; t++)
+      {
+        HubCapture.Frame frame = frames[t];
+        long body = frame.Offset + frame.PrefixLength;
+        if (frame.Type == 0)
+        {
+          MpHubHandshake handshake = new MpHubHandshake(settings, frame.Text);
+#if KEEPTRACK
+          handshake.SetStoredRange(frame.Offset, frame.Length);
+#endif
+          items.Add(handshake);
+          stream.Position = frame.Offset + frame.Length;
+          continue;
+        }
+
+        MpHubPrefix prefix = new MpHubPrefix(settings, frame.Length);
+#if KEEPTRACK
+        prefix.SetStoredRange(frame.Offset, frame.PrefixLength);
+#endif
+        items.Add(prefix);
+        stream.Position = body;
+        MsgPackItem item;
+#if KEEPTRACK
+        try
+        {
+          item = Unpack(stream, settings);
+        }
+        catch (Exception ex)
+        {
+          item = new MpError(settings, ex, "Offset after parsing error is ", stream.Position) { storedOffset = body, storedLength = stream.Position - body };
+        }
+#else
+        item = Unpack(stream, settings);
+#endif
+        MpArray array = item as MpArray;
+        if (array != null)
+          item = new MpHubMessage(array, frame);
+        items.Add(item);
+        stream.Position = body + frame.Length;
+      }
+#if KEEPTRACK
+      items.storedLength = stream.Position - start;
+#endif
+      return items;
+    }
+
     public static MsgPackItem Unpack(Stream stream, MsgPackSettings settings)
     {
+      MsgPackVarLen.StartCounting(); // MsgPackOptions.MaxObjects and MaxItems count per value
       return Unpack(stream, settings, 0);
     }
 
@@ -597,7 +677,14 @@ namespace LsMsgPackDebug
 
     private static MsgPackException TooDeep(int maxDepth, long offset, MsgPackTypeId typeId)
     {
-      MsgPackException ex = new MsgPackException($"The data is nested deeper than {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.MaxDepth)} ({maxDepth}).", offset, typeId);
+      return PassedOn(new MsgPackException($"The data is nested deeper than {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.MaxDepth)} ({maxDepth}).", offset, typeId));
+    }
+
+    /// <summary>
+    /// The levels above pass the exception on as it is (the limits for untrusted data: MaxDepth, MaxObjects, MaxItems, MaxStringLength, MaxBinLength).
+    /// </summary>
+    internal static MsgPackException PassedOn(MsgPackException ex)
+    {
       ex.Data[TooDeepKey] = true;
       return ex;
     }

@@ -948,7 +948,7 @@ namespace LsMsgPack.Meta
         if (targetType == typeof(Guid) && Guid.TryParse(str, out Guid guid)) // as other libraries write Guids (e.g. MessagePack-CSharp)
           return guid;
         if (targetType.IsEnum)
-          return Enum.Parse(targetType, str, true); // the name, as the JSON serializers write enums with a string converter
+          return EnumNames.Of(targetType).Parse(str); // the name (EnumFormat.Name), as the JSON serializers write enums with a string converter: custom names too
       }
 
       if (targetType.IsEnum)

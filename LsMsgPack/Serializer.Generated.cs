@@ -84,7 +84,7 @@ namespace LsMsgPack
       GeneratedMember member = code.Members[id];
       if (member.Kind == GeneratedKind.None || !member.CanWrite)
         return id; // the generated code leaves it to the runtime (at this position)
-      if (info.CustomAttributes.ContainsKey(nameof(System.ComponentModel.DefaultValueAttribute)) || info.MemberConverter != null
+      if (info.CustomAttributes.ContainsKey(nameof(System.ComponentModel.DefaultValueAttribute)) || info.MemberConverter != null || OwnEnumFormat(info, out EnumFormat unused)
         || !Fits(member, false, (code.Capabilities & GeneratedCapabilities.WriteFormats) != 0, (code.Capabilities & GeneratedCapabilities.DateTimeFormats) != 0))
         return -1; // the generated code would write it otherwise than these options do
       return id;
@@ -174,7 +174,7 @@ namespace LsMsgPack
         case GeneratedKind.Guid: return info.Kind == TypeKind.Guid || (formats && info.Kind == TypeKind.GuidString);
         case GeneratedKind.DateTime: return info.Kind == TypeKind.DateTimeTimestamp || (info.Kind == TypeKind.DateTime && (reading || dateFormats));
         case GeneratedKind.TimeSpan: return info.Kind == TypeKind.TimeSpan;
-        case GeneratedKind.Enum: return info.Kind == TypeKind.Enum;
+        case GeneratedKind.Enum: return info.Kind == TypeKind.Enum || (reading && info.Kind == TypeKind.EnumName); // the generated readers leave a name to the runtime's EnumReader
         case GeneratedKind.Decimal: // the built-in extension (DecimalHandler's and DecimalReader's fast paths)
           if (formats && info.Kind == TypeKind.DecimalString)
             return !reading || IsBuiltInDecimal(info.Extension); // writing: whatever the extension; reading: the built-in one, which DecimalStringReader reads in place too (GeneratedIO.TryReadDecimal)

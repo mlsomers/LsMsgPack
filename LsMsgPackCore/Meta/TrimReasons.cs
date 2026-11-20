@@ -8,6 +8,11 @@
   internal static class TrimReasons
   {
     /// <summary>
+    /// The names of an enum are its fields.
+    /// </summary>
+    internal const string EnumFields = "Reads the names and attributes of an enum's fields: ILLink and NativeAOT keep every field of an enum they keep (Enum.ToString needs them).";
+
+    /// <summary>
     /// Reflection over the types of the values: the application's classes and the framework types they use.
     /// </summary>
     internal const string ModelTypes = "Reflects over the types of the values: the generated code keeps the properties and constructors of the classes it describes (DynamicDependency) and LSMP110 names those it misses; without generated code the serializer's constructor requires unreferenced code.";

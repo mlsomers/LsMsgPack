@@ -212,6 +212,8 @@ namespace LsMsgPack
         MsgPackConverter member = declared.MemberConverter;
         if (member != null)
           return MemberHandler<T>(member);
+        if (OwnEnumFormat(declared, out EnumFormat format))
+          return MemberEnumHandler<T>(declared.Attributes.EnumType, format);
         if (declared.CustomAttributes.ContainsKey(nameof(SerializeEnumerableAttribute)))
           return new BoxedHandler<T>(this);
       }
@@ -219,6 +221,36 @@ namespace LsMsgPack
       if (_handlers.TryGetValue(typeof(T), out object handler))
         return (ValueHandler<T>)handler;
       return (ValueHandler<T>)_handlers.GetOrAdd(typeof(T), t => CreateHandler(t));
+    }
+
+    /// <summary>
+    /// The member asks for another enum format than its enum type is written in ([MsgPackEnumFormat] or another serializer's attribute on the member): the generated and compiled code leave it to its handler.
+    /// </summary>
+    internal bool OwnEnumFormat(FullPropertyInfo info, out EnumFormat format)
+    {
+      PropertyAttributeSet attributes = info.Attributes;
+      EnumFormat? own = attributes?.EnumFormat;
+      if (own is null)
+      {
+        format = EnumFormat.Number;
+        return false;
+      }
+      format = own.Value;
+      TypeKind kind = GetTypeInfo(attributes.EnumType).Kind;
+      return (kind == TypeKind.Enum || kind == TypeKind.EnumName) && (kind == TypeKind.EnumName) != (format == EnumFormat.Name); // a converter of the enum wins, as over every built-in format
+    }
+
+    /// <summary>
+    /// The handler of an enum member in its own format, of its type or of the nullable of its type (the member's declared type).
+    /// </summary>
+    private ValueHandler<T> MemberEnumHandler<T>(Type enumType, EnumFormat format)
+    {
+      if (format == EnumFormat.Name)
+        EnumNames.Of(enumType); // its error as it is (see HandlerOf)
+      object exact = format == EnumFormat.Name ? Instantiate(enumType, typeof(EnumNameHandler<>), enumType, this) : Instantiate(enumType, typeof(EnumHandler<>), enumType, null);
+      if (typeof(T) == enumType)
+        return (ValueHandler<T>)exact;
+      return (ValueHandler<T>)Instantiate(typeof(T), typeof(NullableHandler<>), enumType, exact);
     }
 
     /// <summary>
@@ -251,6 +283,13 @@ namespace LsMsgPack
         if (handler is IPreservingHandler preserving) // ReferenceHandling.Preserve: WriteConverted tracks the value itself
           handler = preserving.Inner;
         WriteConverted(c, value, member.ConvertedType, (IConvertedWriter)handler, info);
+      }
+      else if (value != null && value.GetType() == info.Attributes?.EnumType && OwnEnumFormat(info, out EnumFormat format)) // the member's own enum format: its value, no type id
+      {
+        if (format == EnumFormat.Name)
+          WriteEnumName(c.W, value, info.Attributes.EnumType);
+        else
+          WriteEnum(c.W, value, info.Attributes.EnumType);
       }
       else
         WriteBoxed(c, value, info);
@@ -370,6 +409,9 @@ namespace LsMsgPack
           return Instantiate(type, typeof(ExtensionHandler<>), type, info.Extension);
         case TypeKind.Enum:
           return Instantiate(type, typeof(EnumHandler<>), type, null);
+        case TypeKind.EnumName:
+          EnumNames.Of(type); // its error (two values with one name) as it is, not in a TargetInvocationException of the instantiation
+          return Instantiate(type, typeof(EnumNameHandler<>), type, this);
         case TypeKind.Array:
           object numbers = NumberHandler(type);
           if (numbers != null)
@@ -1022,6 +1064,7 @@ namespace LsMsgPack
         case TypeKind.BigIntegerBinary: w.Bin(FrameworkTypeInfo.BigIntegerBinary(value)); return;
         case TypeKind.Extension: ExtensionHandler<object>.WriteExtensionBoxed(c, info.Extension, value); return;
         case TypeKind.Enum: WriteEnum(w, value, info.Type); return;
+        case TypeKind.EnumName: WriteEnumName(w, value, info.Type); return;
         case TypeKind.Char: w.UInt16((char)value); return;
         case TypeKind.TimeSpan: w.Int64(((TimeSpan)value).Ticks); return;
         case TypeKind.Uri: w.String(((Uri)value).OriginalString); return;
@@ -1057,6 +1100,18 @@ namespace LsMsgPack
           return;
       }
       throw new InvalidOperationException($"{plain.GetType()} is not a plain value.");
+    }
+
+    /// <summary>
+    /// A boxed enum by its name (<see cref="EnumFormat.Name"/>), its number when it has none.
+    /// </summary>
+    private static void WriteEnumName(MsgPackWriter w, object value, Type type)
+    {
+      string name = EnumNames.Of(type).NameOf(EnumNames.ToBits(value));
+      if (name is null)
+        WriteEnum(w, value, type);
+      else
+        w.String(name);
     }
 
     private static void WriteEnum(MsgPackWriter w, object value, Type type)
@@ -1454,6 +1509,8 @@ namespace LsMsgPack
         Kind = TypeKind.BigIntegerBinary;
       else if (type == typeof(decimal) && options._decimalFormat == DecimalFormat.String)
         Kind = TypeKind.DecimalString; // the extension (if any) still reads
+      else if (Kind == TypeKind.Enum && options.EnumFormatOf(type) == EnumFormat.Name)
+        Kind = TypeKind.EnumName;
       NeverWrapped = TypeKinds.NeverWrapped(type);
       Tracked = !type.IsValueType && (Kind == TypeKind.Converted || (Kind == TypeKind.Complex || Kind == TypeKind.Extended || Kind == TypeKind.Map || Kind == TypeKind.Array) && SerializationRules.TracksReferences(type, options));
       if (Kind == TypeKind.MultiArray)

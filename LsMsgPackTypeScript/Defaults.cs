@@ -116,6 +116,10 @@ namespace LsMsgPackTypeScript
         case "float": return EnumDefault(spec) ?? "0";
         case "long":
         case "ulong": return EnumDefault(spec) ?? (_options.Int64 == "bigint" ? "0n" : "0");
+        case "string":
+          if (spec.ByName) // an enum by name: its default value's name
+            return EnumDefault(spec) ?? "null";
+          break;
         case "bigint": return "0n";
         case "decimal": return _options.Decimal == "string" ? "'0'" : "0";
         case "char": return "'\\0'";
@@ -181,8 +185,11 @@ namespace LsMsgPackTypeScript
           string text = ((decimal)value).ToString(CultureInfo.InvariantCulture);
           return _options.Decimal == "string" ? Quote(text) : text;
         case "string":
-        case "uri":
+          if (spec.ByName && value is Enum)
+            return EnumName(spec.Enum, value);
           return Quote(value is Uri uri ? uri.OriginalString : Convert.ToString(value, CultureInfo.InvariantCulture));
+        case "uri":
+          return Quote(value is Uri uri2 ? uri2.OriginalString : Convert.ToString(value, CultureInfo.InvariantCulture));
         case "char": return Quote(((char)value).ToString());
         case "guid": return Quote(((Guid)value).ToString("D"));
         case "datetime": return Moment(_models.Settings.ToTimestamp((DateTime)value), 0, false);
@@ -299,11 +306,25 @@ namespace LsMsgPackTypeScript
       return string.Concat("new Uint8Array([", string.Join(", ", bytes.Select(b => b.ToString(CultureInfo.InvariantCulture))), "])");
     }
 
+    /// <summary>
+    /// An enum value written by name: the member of the enum's const object when that has the names, otherwise the name it is written as (its number when it has none).
+    /// </summary>
+    private string EnumName(Type type, object value)
+    {
+      string member = Enum.GetName(type, value);
+      if (member != null && _models.Enums.Contains(type) && _models.ByName(type) && !type.IsDefined(typeof(FlagsAttribute), false))
+        return string.Concat(_models.EnumName(type), ".", TypeScriptWriter.Member(member));
+      string name = LsMsgPack.Meta.EnumNames.Of(type).NameOf(LsMsgPack.Meta.EnumNames.ToBits(value));
+      if (name != null)
+        return Quote(name);
+      return Convert.ToString(Convert.ChangeType(value, Enum.GetUnderlyingType(type), CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+    }
+
     private string EnumMember(Type type, object value)
     {
       object underlying = Convert.ChangeType(value, Enum.GetUnderlyingType(type), CultureInfo.InvariantCulture);
       string name = Enum.GetName(type, value);
-      bool emitted = _models.Enums.Contains(type);
+      bool emitted = _models.Enums.Contains(type) && !_models.ByName(type); // a member by number of an enum written by name: the number
       if (name != null && emitted && !type.IsDefined(typeof(FlagsAttribute), false))
         return string.Concat(_models.EnumName(type), ".", TypeScriptWriter.Member(name));
       bool int64 = Enum.GetUnderlyingType(type) == typeof(long) || Enum.GetUnderlyingType(type) == typeof(ulong);

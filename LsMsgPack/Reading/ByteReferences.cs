@@ -9,7 +9,8 @@ namespace LsMsgPack.Reading
   /// <summary>
   /// The references of one call (LsMsgPackDebug: PlainReferences): a path is followed through the bytes from the root value (the starts of the elements found are kept per array or map,
   /// so each is skipped once), the objects and collections are registered by where their value starts (<see cref="ReferenceHandling.Preserve"/>). A value that was not made (a member the class
-  /// does not have, or a reader without the option) is read again from its bytes.
+  /// does not have) is read again from its bytes. A reader without the option reads the call again with it at the first reference it resolves (<see cref="ReadAgainPreserving"/>);
+  /// its table only follows the paths of kept extension data (<see cref="ReferenceResolver.PlainAt"/>).
   /// </summary>
   internal sealed class ByteReferences : ReferenceResolver
   {
@@ -71,6 +72,7 @@ namespace LsMsgPack.Reading
         _containers.Clear();
       _plainOffsets?.Clear();
       _reading?.Clear();
+      ResetCopies();
     }
 
     /// <summary>
@@ -221,6 +223,11 @@ namespace LsMsgPack.Reading
       return Resolve(reference.Offset, reference.Path, reference, type, prop, settings);
     }
 
+    protected override long PayloadSize()
+    {
+      return _c.R.End - _bodyStart;
+    }
+
     internal override object PlainAt(MsgPackReference reference, MsgPackOptions settings)
     {
       int target = reference.Path is null ? -1 : Follow(reference.Path);
@@ -246,6 +253,8 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal object Resolve(int at, int[] path, MsgPackReference reference, Type type, FullPropertyInfo prop, MsgPackOptions settings)
     {
+      if (!_preserves)
+        throw new ReadAgainPreserving(); // Serializer.Deserialize reads the call again with the option
       if (reference is null)
         reference = new MsgPackReference(path is null ? new byte[0] : ReferencePath.Encode(path), this) { Offset = at };
       int target = path is null ? -1 : Follow(path);

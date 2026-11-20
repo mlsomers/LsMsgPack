@@ -427,6 +427,41 @@ namespace LsMsgPackDebug {
       return new MsgPackException($"The data claims a value of {len} bytes, longer than a .NET array can hold.", offset, MsgPackTypeId.NeverUsed);
     }
 
+    // What the value being read (MsgPackItem.Unpack at depth 0, a thread's own) read so far, for MsgPackOptions.MaxObjects and MaxItems: not on the settings, which calls share
+    [ThreadStatic]
+    private static int _objectsRead;
+    [ThreadStatic]
+    private static long _itemsRead;
+
+    /// <summary>
+    /// A new value is read (<see cref="MsgPackItem.Unpack(Stream, MsgPackSettings)"/>): the counts of the limits start again.
+    /// </summary>
+    internal static void StartCounting() {
+      _objectsRead = 0;
+      _itemsRead = 0;
+    }
+
+    /// <summary>
+    /// An array or map of <paramref name="count"/> items is read: <see cref="MsgPackOptions.MaxObjects"/> and <see cref="MsgPackOptions.MaxItems"/> (unlimited by default).
+    /// </summary>
+    protected void CountContainer(long count) {
+      if(++_objectsRead > _settings._maxObjects || (_itemsRead += count) > _settings._maxItems)
+        throw PassedOn(_objectsRead > _settings._maxObjects
+          ? MsgPackOptions.OverLimit("arrays and maps (objects, collections)", _settings._maxObjects, nameof(MsgPackSettings) + "." + nameof(MsgPackSettings.MaxObjects))
+          : MsgPackOptions.OverLimit("array elements and map entries", _settings._maxItems, nameof(MsgPackSettings) + "." + nameof(MsgPackSettings.MaxItems)));
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.MaxStringLength"/> and <see cref="MsgPackOptions.MaxBinLength"/> (unlimited by default), checked before anything is allocated.
+    /// </summary>
+    protected void ThrowIfTooLong(long len, bool text) {
+      int limit = text ? _settings._maxStringLength : _settings._maxBinLength;
+      if(len > limit && limit != int.MaxValue) // unlimited: longer than an array is ReadBytes' error
+        throw PassedOn(text
+          ? MsgPackOptions.TooLong("a string", len, _settings._maxStringLength, nameof(MsgPackSettings) + "." + nameof(MsgPackSettings.MaxStringLength))
+          : MsgPackOptions.TooLong("a binary value or extension", len, _settings._maxBinLength, nameof(MsgPackSettings) + "." + nameof(MsgPackSettings.MaxBinLength)));
+    }
+
     private static void ThrowWhenNotInData(Stream data, long len) {
       if(data.CanSeek && len > data.Length - data.Position) {
         // What reading would do (consume the rest, then fail), without allocating the claimed length first

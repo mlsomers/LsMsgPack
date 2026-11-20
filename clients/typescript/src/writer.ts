@@ -22,7 +22,7 @@ export interface EncodeOptions {
   generateCode?: boolean;
   /**
    * 'preserve': an object, array or Map met again is written as a reference to its first occurrence (an extension of type 5 with the path to it, as the server's ReferenceHandling.Preserve
-   * writes and reads: the same instance there, a cycle included). Default 'copies': every value is written where it appears, a cycle fails at maxDepth ('none' is the same).
+   * writes and reads: the same instance there, a cycle included). Default ('default', 'none' is the same): every value is written where it appears, a cycle fails at maxDepth.
    * Strings, Dates, bytes and the keys of a Map are never references.
    */
   references?: ReferenceHandling;

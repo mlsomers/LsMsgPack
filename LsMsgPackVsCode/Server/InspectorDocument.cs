@@ -120,6 +120,7 @@ namespace LsMsgPackInspector
         CustomExtentionTypes = settings.LsMsgPackExtensions ? MsgPackSettings.Default_CustomExtentionTypes : new ICustomExt[0],
         ReadLsMsgPackExtensions = settings.LsMsgPackExtensions,
         ReadStreams = settings.LsMsgPackExtensions,
+        ReadHubMessages = true, // a capture of a SignalR connection (only when the whole data is one): its handshake, length prefixes and messages
         TruncateValuesLargerThan = settings.LargeValueLimit
       };
 
@@ -253,8 +254,8 @@ namespace LsMsgPackInspector
         }
         else
         {
-          model.TypeBytes = item is MpRoot || error != null && !ReferenceEquals(error.PartialItem, null) ? 0 : 1;
-          model.LengthBytes = varLen != null ? GetLengthBytes(item.TypeId) : 0;
+          model.TypeBytes = item is MpRoot || item is MpHubHandshake || error != null && !ReferenceEquals(error.PartialItem, null) ? 0 : item is MpHubPrefix ? (int)item.StoredLength : 1;
+          model.LengthBytes = varLen != null && !(item is MpHubHandshake) ? GetLengthBytes(item.TypeId) : 0;
         }
         model.Props = GetProperties(item);
       }
@@ -291,11 +292,12 @@ namespace LsMsgPackInspector
       else if (item is MpArray array)
       {
         MsgPackItem[] elements = array.PackedValues;
+        MpHubMessage message = item as MpHubMessage; // a SignalR message: its fields by name
         for (int t = 0; t < elements.Length; t++)
         {
           if (ReferenceEquals(elements[t], null))
             break; // the slots after an error were not read (the header claims them): they showed as NULL items, as if the data had them
-          int child = AddItem(result, elements[t], id, index?.NameOf(elements[t]), schema || isTreeRoot && IsSchemaItem(elements[t]));
+          int child = AddItem(result, elements[t], id, message?.FieldName(t) ?? index?.NameOf(elements[t]), schema || isTreeRoot && IsSchemaItem(elements[t]));
           Traverse(result, child, elements[t], index);
           if (_nodeCount > _displayLimit)
             return;
@@ -375,6 +377,9 @@ namespace LsMsgPackInspector
       if (item is MpStreamIndex) return "index";
       if (item is MpStreamTail) return "tail";
       if (item is MpStreamSidecar) return "sidecar";
+      if (item is MpHubMessage) return "message";
+      if (item is MpHubPrefix) return "prefix";
+      if (item is MpHubHandshake) return "handshake";
       Type typ = item.GetType();
       if (typ == typeof(MpNull)) return "nil";
       if (typ == typeof(MpBool)) return "bool";

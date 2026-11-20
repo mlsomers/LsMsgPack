@@ -10,6 +10,7 @@
 | `LsMsgPackFormatters` | `LsMsgPack.AspNetCore` | Input and output formatters for ASP.NET Core, see [WebFormatters.md](WebFormatters.md). |
 | `LsMsgPackWebApiFormatters` | `LsMsgPack.AspNet.WebApi` | `MediaTypeFormatter` for ASP.NET Web API 2 and `HttpClient`, and the client side of the schema negotiation (`LsMsgPackSchemaHandler`). |
 | `LsMsgPackMvc` | `LsMsgPack.AspNet.Mvc` | Model binder and action result for ASP.NET MVC 5 (.NET Framework 4.5 through 4.8). |
+| `LsMsgPack.SignalR` | `LsMsgPack.SignalR` | A SignalR hub protocol on LsMsgPack for the server and the .NET client ("lsmsgpack", or "messagepack" with the bytes of Microsoft's protocol), see [SignalR.md](SignalR.md). |
 | `MsgPackExplorer` | `MsgPackExplorer.exe` | The WinForms debugging tool (Windows, .NET Framework). The `MsgPackExplorer` UserControl can be used in other tools, like the two below. |
 | `LsMsgPackFiddlerInspector` | `LsMsgPackFiddlerInspector.dll` | A tiny wrapper that makes MsgPack Explorer a Fiddler Inspector. |
 | `LsMsgPackVisualStudioPlugin` | Visual Studio extension | MsgPack Explorer as a debugger visualizer for `byte[]`, `List<byte>`, streams and more. |
@@ -22,6 +23,7 @@ Tests:
 - `LsMsgPackUnitTests` (`LsMsgPackUnitTests`): most test classes run against both serializers (a `Debug...` subclass for LsMsgPackDebug and an `Ls...` subclass for LsMsgPack each), `CrossLibraryTests` checks that they write the same bytes in all settings, and `BenchmarkInvoices` compares them with System.Text.Json.
 - `LsMsgPackInteropTests`: what MessagePack-CSharp and Nerdbank.MessagePack read of our output and the other way around, the source of [Compatibility.md](Compatibility.md); `BenchmarkLibraries` compares the speed with them, the source of [Comparison.md](Comparison.md).
 - `LsMsgPackFormattersTests`, `LsMsgPackWebApiFormattersTests`, `LsMsgPackMvcTests`: the web formatters, in process.
+- `LsMsgPack.SignalRTests`: the hub protocol against Microsoft's MessagePack protocol (the same bytes as "messagepack") and live hubs with the .NET clients on a TestServer.
 - `LsMsgPackVsCode/test`: the VS Code extension (`npm test`): reading bytes from debuggers, text formats, and the inspector process.
 
 `LsMsgPack.slnf` contains the projects that build on any platform (what CI builds). `LsMsgPack.sln` also has the Windows-only projects (the explorer, the Fiddler inspector and the Visual Studio plugin).

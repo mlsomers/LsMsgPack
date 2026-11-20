@@ -30,7 +30,7 @@ public partial class AppMsgPackContext : LsMsgPackContext { }
 LsMsgPackSerializer serializer = new LsMsgPackSerializer(AppMsgPackContext.Default, new LsMsgPackOptions());
 ```
 
-The web formatters take it too: `AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)`, `AddLsMsgPack(AppMsgPackContext.Default)`, and on the client `new LsMsgPackMediaTypeFormatter(new LsMsgPackHttpSerializer(AppMsgPackContext.Default, options))`.
+The web formatters take it too: `AddLsMsgPackSerializerFormatters(AppMsgPackContext.Default, o => ...)`, `AddLsMsgPack(AppMsgPackContext.Default)`, and on the client `new LsMsgPackMediaTypeFormatter(new LsMsgPackHttpSerializer(AppMsgPackContext.Default, options))`. So does SignalR: `AddSignalR().AddLsMsgPackProtocol(AppMsgPackContext.Default)`, with the parameter types of the hub methods in the context.
 
 Without AOT it's several times faster under WebAssembly. With a JIT, LsMsgPack compiles the same writers and readers at runtime once a class has been written or read 1000 times, so there the generator helps the first objects of each class (maps keyed by property names are read faster without it). The bytes are exactly the same with or without it, so you can switch it on at any time. More: [SourceGenerator.md](../SourceGenerator.md).
 
@@ -64,6 +64,8 @@ if (differences != null)
 The web formatters do this with `o.ReportDifferences = true` and write it to the log. A value that can't be converted (text where a number is expected) throws by default; with `ReadErrors = ReadErrorHandling.ReportAndContinue` it's skipped and reported instead. More: [ReadDifferences.md](../ReadDifferences.md).
 
 A service that reads an object, changes it and writes it back loses the members it doesn't have (newer fields during a rolling upgrade). Add a `public MsgPackExtensionData Extra { get; set; }` to the class and they're kept and written again. With the indexed schema, write the data with `SchemaVersion = SchemaVersion.Described` so values with objects and lists are kept too. More: [ExtensionData.md](../ExtensionData.md).
+
+Enums are written as their numbers, so inserting a value in the middle of an enum changes what stored data means. To write the names instead, set `EnumFormat = EnumFormat.Name` in the options, or put `[MsgPackEnumFormat(EnumFormat.Name)]` on the enum. The string enum attributes of System.Text.Json and Json.NET (`[JsonConverter(typeof(JsonStringEnumConverter))]`...) do the same. Readers take numbers and names, so data written before the switch still reads. More: [Enums.md](../Enums.md).
 
 ## Reading data you don't trust
 
@@ -104,6 +106,6 @@ MsgPack is binary, so you can't read it in a text editor. These tools show it as
 | VS Code extension | any OS | Install from the [marketplace](https://marketplace.visualstudio.com/items?itemName=mlsomers.lsmsgpack-explorer), see the [README](../../LsMsgPackVsCode/README.md); **View as MsgPack** on a variable while debugging, or open a `.msgpack` file |
 | MCP server | AI agents (Claude Code, VS Code chat...) | `dotnet tool install -g LsMsgPack.Mcp`, then add `lsmsgpack-mcp` to your agent, see [Mcp.md](../Mcp.md) |
 
-They also validate the data: for example, they flag places where the data picks a class for a property declared as `object`.
+They also validate the data: for example, they flag places where the data picks a class for a property declared as `object`. The bytes of a SignalR connection are shown message by message, with the fields of each message by name.
 
 In your own code, the `LsMsgPackDebug` package gives you the same tree: `MsgPackItem.Unpack(bytes)` returns the maps, arrays and values of any MsgPack data, also without classes. It writes and reads the same data as LsMsgPack, only slower, so use it for inspecting, not as your serializer.

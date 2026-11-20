@@ -32,4 +32,4 @@ Choose this when:
 
 Start without models: it's one `npm install`. Adding the models later changes only the client's constructor call, the server stays the same.
 
-Not HTTP but a WebSocket? Both pages have a section on that.
+Not HTTP but a WebSocket? Both pages have a section on that. With SignalR hubs, see [SignalR](Setup-SignalR.md): the browser uses the same package.

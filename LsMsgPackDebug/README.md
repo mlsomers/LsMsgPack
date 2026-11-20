@@ -36,6 +36,7 @@ MsgPackItem item = MsgPackItem.Unpack(data);
 - [Compatibility with other MsgPack libraries](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Compatibility.md)
 - [Security](https://github.com/mlsomers/LsMsgPack/blob/master/docs/security.md): reading data you don't trust
 - [Converters](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Converters.md): write a type as another type (value objects, types of other libraries, other formats for built-in types)
+- [Enums](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Enums.md): by number (the default) or by name (`EnumFormat.Name`, `[MsgPackEnumFormat]`, or the string enum attributes of System.Text.Json, Json.NET, MessagePack-CSharp and MsgPack.Cli); readers take both
 - [Reporting differences](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ReadDifferences.md): what didn't match between the data and your classes (`Deserialize(data, settings, out ReadDifferences differences)`)
 - [Extension data](https://github.com/mlsomers/LsMsgPack/blob/master/docs/ExtensionData.md): keep the members of the data a class doesn't have and write them again (`MsgPackExtensionData`, `[JsonExtensionData]`)
 - [Serialization callbacks](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Callbacks.md): run code before and after an object is written or read, e.g. to validate it (`IMsgPackOnDeserialized`..., System.Text.Json's `IJsonOnDeserialized`...)
