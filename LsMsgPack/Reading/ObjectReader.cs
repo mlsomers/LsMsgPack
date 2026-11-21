@@ -689,6 +689,7 @@ namespace LsMsgPack.Reading
       _infos = infos;
       _caseInsensitive = serializer.Options._propertyNameCaseInsensitive;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
+      serializer.ThrowIfTrimmed(type);
       Extended = ExtensionDataMember.Of(type) != null;
       Props = new PropReader[infos.Length];
       ObjectConstructor constructor = ObjectConstructor.Of(type);

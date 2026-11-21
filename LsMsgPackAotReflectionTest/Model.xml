@@ -1,0 +1,5 @@
+<linker>
+  <assembly fullname="LsMsgPackAotReflectionTest">
+    <namespace fullname="LsMsgPackAotSmokeTest" />
+  </assembly>
+</linker>

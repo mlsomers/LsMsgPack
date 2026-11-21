@@ -7,6 +7,7 @@ using LsMsgPack.Writing;
 using System;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 
 namespace LsMsgPack
 {
@@ -209,15 +210,14 @@ namespace LsMsgPack
 
     /// <summary>
     /// A generic handler or reader for <paramref name="handled"/>: created by its generated description (an instantiation compilers ahead of time know of),
-    /// otherwise with <see cref="Type.MakeGenericType"/> (as before).
+    /// otherwise with <see cref="Type.MakeGenericType"/>. Without dynamic code (NativeAOT) that works for reference type arguments (the shared code, the constructors kept
+    /// by <see cref="ReflectionInstantiations"/>) and for the instantiations the application compiled anyway; for others it returns null and the caller writes or reads boxed.
     /// </summary>
     /// <param name="handled">The type the handler or reader is for (the type of the description)</param>
     /// <param name="definition">E.g. <c>typeof(ListHandler&lt;&gt;)</c></param>
     /// <param name="argument">The type argument of <paramref name="definition"/> (the element type of a list...)</param>
     /// <param name="constructorArgument">What its constructor takes, null for none</param>
-    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.Fallback)]
-    [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.Fallback)]
-    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
+    /// <returns>null when the runtime has no code for the instantiation (only without dynamic code)</returns>
     private object Instantiate(Type handled, Type definition, Type argument, object constructorArgument)
     {
       if (Generated(handled) is IGeneratedInstantiations generated)
@@ -226,8 +226,78 @@ namespace LsMsgPack
         if (instance != null)
           return instance;
       }
-      return Activator.CreateInstance(definition.MakeGenericType(argument), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null,
-        constructorArgument is null ? new object[0] : new object[] { constructorArgument }, null);
+      return CreateInstantiation(definition, new[] { argument }, constructorArgument is null ? new object[0] : new object[] { constructorArgument });
+    }
+
+    /// <returns>null when the runtime has no code for the instantiation: NativeAOT has no code for a value type argument the application did not use (NotSupportedException),
+    /// nor the constructors of a definition <see cref="ReflectionInstantiations"/> did not keep (a serializer with a context: MissingMethodException)</returns>
+    [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
+    private object CreateInstantiation(Type definition, Type[] arguments, object[] constructorArguments)
+    {
+      if (CanBindDelegates)
+        return Activator.CreateInstance(definition.MakeGenericType(arguments), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, constructorArguments, null);
+      try
+      {
+        return Activator.CreateInstance(definition.MakeGenericType(arguments), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, constructorArguments, null);
+      }
+      catch (Exception ex) when (ex is NotSupportedException || ex is MissingMethodException || ex is TypeLoadException)
+      {
+        return null;
+      }
+    }
+
+    /// <summary>
+    /// Keeps the constructors of the generic handlers and readers <see cref="Instantiate"/> creates, so NativeAOT can create them for the application's classes
+    /// (reference type arguments share one compiled code) with a serializer without a context. Referenced only by those constructors (LsMsgPackSerializer, LsMsgPackHttpSerializer):
+    /// an application that creates its serializers with a context does not get this code.
+    /// </summary>
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(ObjectHandler<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(ObjectReader<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(BoxedHandler<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(BoxedReader<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(ListHandler<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(ListReader<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(ArrayHandler<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(ArrayReader<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(ExtensionHandler<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.NonPublicConstructors, typeof(ExtensionReader<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(Creator<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(System.Numerics.Vector2))] // framework structs written by their public fields (SerializationRules.IsFieldStruct)
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(System.Numerics.Vector3))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(System.Numerics.Vector4))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(System.Numerics.Quaternion))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(System.Numerics.Plane))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(System.Numerics.Matrix3x2))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicFields, typeof(System.Numerics.Matrix4x4))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(System.Collections.Generic.List<>))] // created by Core: the concrete types of the collection interfaces, the collections read boxed
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(System.Collections.Generic.Dictionary<,>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(System.Collections.Generic.HashSet<>))]
+    internal static void ReflectionInstantiations()
+    {
+    }
+
+    /// <summary>
+    /// NativeAOT without generated code for the type: when the application does not keep its model, trimming removes the properties' metadata and a class would be written
+    /// and read as an empty object, silently. A class without any property or field is refused instead (one without members at all can't be told apart from a trimmed one).
+    /// Called once per plan; the test of <see cref="RuntimeFeature.IsDynamicCodeSupported"/> itself is a constant for ILC (nothing of this with a JIT).
+    /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
+    internal void ThrowIfTrimmed(Type type)
+    {
+#if NET8_0_OR_GREATER
+      if (RuntimeFeature.IsDynamicCodeSupported || Generated(type) != null)
+        return;
+      const BindingFlags members = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+      if (type.GetProperties(members).Length != 0 || type.GetFields(members).Length != 0)
+        return;
+      string keep = TypeResolver.IsFrameworkAssembly(type.Assembly)
+        ? $"Keep its members (e.g. [DynamicDependency(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicFields, typeof({type.Name}))] in the application)"
+        : $"Keep the model (e.g. <TrimmerRootAssembly Include=\"{type.Assembly.GetName().Name}\" /> in the project file)";
+      throw new MsgPackException($"{type} has no properties or fields: without dynamic code (NativeAOT) and without generated code for it, the members of a type the application does not keep are trimmed away. "
+        + keep + ", or create the serializer with the context of LsMsgPack's source generator.");
+#endif
     }
 
     /// <summary>
@@ -250,7 +320,7 @@ namespace LsMsgPack
       }
       if (!CanBindDelegates)
         return null;
-      return Activator.CreateInstance(definition.MakeGenericType(arguments), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, new object[] { constructorArgument }, null);
+      return CreateInstantiation(definition, arguments, new object[] { constructorArgument });
     }
   }
 }

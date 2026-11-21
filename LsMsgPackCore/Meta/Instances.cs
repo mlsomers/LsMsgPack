@@ -63,7 +63,21 @@ namespace LsMsgPack.Meta
       if (creation == ObjectCreation.Constructor)
         throw NoConstructor(type);
 
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      if (!System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported && TypeResolver.IsFrameworkAssembly(type.Assembly))
+        throw TrimmedConstructor(type);
+#endif
       return Uninitialized(type);
+    }
+
+    /// <summary>
+    /// NativeAOT: a framework type whose parameterless constructor reflection doesn't see (its metadata trimmed away). Created uninitialized it would be broken
+    /// (a List without its array: a NullReferenceException at the first Add), so it is refused.
+    /// </summary>
+    private static MsgPackException TrimmedConstructor(Type type)
+    {
+      return new MsgPackException($"Unable to create {type}: without dynamic code (NativeAOT) its constructor was trimmed away. Create the serializer with the context of LsMsgPack's source generator "
+        + "(it creates the collections its classes hold), or keep the constructor (e.g. [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(...))] in the application).");
     }
 
     /// <summary>
@@ -81,6 +95,41 @@ namespace LsMsgPack.Meta
         ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
         throw; // not reached
       }
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      catch (NotSupportedException ex) when (!System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported) // NativeAOT: e.g. a List<Guid> for an IList<Guid> the application never creates
+      {
+        throw NoCode(Display(type), "Create one in the application (e.g. new " + Display(type) + "())", ex);
+      }
+#endif
+    }
+
+    /// <summary>
+    /// NativeAOT has no code for an instantiation the application never uses (a value type argument), e.g. the List&lt;Guid&gt; created for a member declared as IList&lt;Guid&gt;.
+    /// </summary>
+    /// <param name="missing">What has no code (the type or the factory method)</param>
+    /// <param name="fix">How the application gets it</param>
+    internal static MsgPackException NoCode(string missing, string fix, Exception ex)
+    {
+      return new MsgPackException($"Unable to create {missing}: without dynamic code (NativeAOT) the application has no code for it (it never uses it). {fix}, "
+        + "or create the serializer with the context of LsMsgPack's source generator (it creates the collections its classes hold).", ex);
+    }
+
+    /// <summary>
+    /// The name as C# writes it, for messages: List&lt;Guid&gt;, not List`1[System.Guid].
+    /// </summary>
+    internal static string Display(Type type)
+    {
+      if (type.IsArray)
+        return Display(type.GetElementType()) + "[" + new string(',', type.GetArrayRank() - 1) + "]";
+      if (!type.IsGenericType)
+        return type.Name;
+      string name = type.Name;
+      int tick = name.IndexOf('`');
+      Type[] arguments = type.GetGenericArguments();
+      string[] names = new string[arguments.Length];
+      for (int t = 0; t < arguments.Length; t++)
+        names[t] = Display(arguments[t]);
+      return (tick < 0 ? name : name.Substring(0, tick)) + "<" + string.Join(", ", names) + ">";
     }
 
     internal static MsgPackException NoConstructor(Type type)

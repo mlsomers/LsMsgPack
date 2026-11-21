@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NativeAOT smoke test of LsMsgPack's source generator: the JIT run writes golden.txt with the runtime plans (and checks the generated code against them),
+# NativeAOT smoke test of LsMsgPack's source generator (and, at the end, of the serializer without it): the JIT run writes golden.txt with the runtime plans (and checks the generated code against them),
 # the NativeAOT binary checks the generated code against golden.txt. The publish must not report trim or AOT warnings. NativeAOT needs clang (or gcc, used when clang is missing) on Linux.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -30,3 +30,13 @@ if ! grep -q 'ConstructedEEType Name="[^"]*NumberArrayHandler_1&lt;Int32&gt;' "$
   exit 1
 fi
 "$out/publish/LsMsgPackAotSmokeTest" check "$out/golden.txt"
+
+# Without the source generator (LsMsgPackAotReflectionTest: this Program.cs with NO_GENERATOR, the model kept by a descriptor): the same bytes and values by reflection
+rm -rf ../LsMsgPackAotReflectionTest/obj/Release/net10.0/linux-x64
+dotnet publish ../LsMsgPackAotReflectionTest/LsMsgPackAotReflectionTest.csproj -c Release -r linux-x64 -o "$out/reflection" -p:TrimmerSingleWarn=false "${linker[@]}" | tee "$out/reflection.log"
+# The app suppresses the warnings of its serializers without a context (deliberately reflection), the libraries report none of their own
+if grep -E "warning IL[0-9]{4}" "$out/reflection.log"; then
+  echo "FAILED: trim or AOT warnings without the source generator (above)"
+  exit 1
+fi
+"$out/reflection/LsMsgPackAotReflectionTest" check "$out/golden.txt"

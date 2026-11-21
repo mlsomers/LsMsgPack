@@ -28,11 +28,13 @@ namespace LsMsgPack
 
     [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+    [DynamicDependency(nameof(Serializer.ReflectionInstantiations), typeof(Serializer))] // NativeAOT: the generic code for the classes (see there)
     public LsMsgPackSerializer() : this(new LsMsgPackOptions(), null) { }
 
     /// <param name="options">Copied, later changes do not apply</param>
     [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+    [DynamicDependency(nameof(Serializer.ReflectionInstantiations), typeof(Serializer))] // NativeAOT: the generic code for the classes (see there)
     public LsMsgPackSerializer(LsMsgPackOptions options) : this(options, null) { }
 
     /// <summary>
@@ -105,6 +107,7 @@ namespace LsMsgPack
     {
       [RequiresUnreferencedCode(RequiresUnreferencedCodeMessage)]
       [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+      [DynamicDependency(nameof(Serializer.ReflectionInstantiations), typeof(Serializer))] // NativeAOT: the generic code for the classes (see there)
       get { return _default ?? (_default = new LsMsgPackSerializer()); }
     }
 

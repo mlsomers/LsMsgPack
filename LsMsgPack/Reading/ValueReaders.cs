@@ -163,6 +163,23 @@ namespace LsMsgPack.Reading
     /// Reads the root value into the context's <see cref="RootSlot{T}"/> and returns the slot (<see cref="ReadContext.IntoSlot"/>).
     /// </summary>
     internal abstract object ReadIntoSlot(ReadContext c);
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: Core registers what it makes by the plain values (their offsets noted by ReadPlain) and finds what a reference read first.
+    /// </summary>
+    protected static object ConvertPreserving(object plain, Type type, ReadContext c, FullPropertyInfo assignedTo, ByteReferences references)
+    {
+      ReferenceResolver outer = ReferenceResolver.Current;
+      ReferenceResolver.Current = references;
+      try
+      {
+        return ValueConverter.ConvertDeserializeValue(plain, type, c.ConversionSettings(), assignedTo);
+      }
+      finally
+      {
+        ReferenceResolver.Current = outer;
+      }
+    }
   }
 
   /// <summary>
@@ -190,23 +207,6 @@ namespace LsMsgPack.Reading
       RootSlot<T> slot = RootSlot<T>.Of(ref c.Slot);
       slot.Value = Read(c, null);
       return slot;
-    }
-
-    /// <summary>
-    /// <see cref="ReferenceHandling.Preserve"/>: Core registers what it makes by the plain values (their offsets noted by ReadPlain) and finds what a reference read first.
-    /// </summary>
-    private static object ConvertPreserving(object plain, Type type, ReadContext c, FullPropertyInfo assignedTo, ByteReferences references)
-    {
-      ReferenceResolver outer = ReferenceResolver.Current;
-      ReferenceResolver.Current = references;
-      try
-      {
-        return ValueConverter.ConvertDeserializeValue(plain, type, c.ConversionSettings(), assignedTo);
-      }
-      finally
-      {
-        ReferenceResolver.Current = outer;
-      }
     }
 
     /// <summary>
@@ -356,6 +356,62 @@ namespace LsMsgPack.Reading
     internal override T Read(ReadContext c, FullPropertyInfo assignedTo)
     {
       return Slow(c, c.R.Pos, assignedTo);
+    }
+  }
+
+  /// <summary>
+  /// <see cref="BoxedReader{T}"/> without a type argument: the reader of a value type NativeAOT has no generic reader of (no dynamic code, a type the application and the
+  /// source generator did not use as a type argument: <see cref="Serializer.Instantiate"/> returned null). Read as LsMsgPack does, the same steps as <see cref="ValueReader{T}.Slow"/>;
+  /// nil is null (a property or argument set by reflection takes it as the default, <see cref="RootSlot{T}.Take"/> too).
+  /// Generic code asking for a <see cref="ValueReader{T}"/> of the type gets a BoxedReader of its own (<see cref="Serializer.Reader{T}"/>): it has that instantiation.
+  /// </summary>
+  internal sealed class ConvertingReader : ValueReader
+  {
+    private readonly Type _type;
+
+    internal ConvertingReader(Type type)
+    {
+      _type = type;
+    }
+
+    internal override object ReadBoxed(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      object plain = c.R.ReadPlain(c.Depth);
+      ByteReferences references = c.References;
+      object value;
+      MsgPackOptions settings = c.ConversionSettings();
+      bool into = c.IntoAt == start && c.Into != null;
+      if (into) // read into an existing object (Populate)
+      {
+        ReferenceResolver outer = ReferenceResolver.Current;
+        if (references != null && references.Preserves)
+          ReferenceResolver.Current = references;
+        try
+        {
+          value = ValueConverter.ConvertInto(plain, _type, c.Into, settings, assignedTo);
+        }
+        finally
+        {
+          ReferenceResolver.Current = outer;
+        }
+      }
+      else
+      {
+        value = references != null && references.Preserves
+          ? ConvertPreserving(plain, _type, c, assignedTo, references)
+          : ValueConverter.ConvertDeserializeValue(plain, _type, settings, assignedTo);
+      }
+      if (value is null || _type.IsInstanceOfType(value))
+        return value;
+      if (!into && c.Depth == 0 && assignedTo is null) // the root: LsMsgPack returns what it could convert, only its generic Deserialize casts
+        throw new RootValue(value);
+      throw ReadDifferences.NotConverted(settings, new ArgumentException($"Object of type '{value.GetType()}' cannot be converted to type '{_type}'."));
+    }
+
+    internal override object ReadIntoSlot(ReadContext c)
+    {
+      return ReadBoxed(c, null); // RootSlot<T>.Take takes a boxed value
     }
   }
 

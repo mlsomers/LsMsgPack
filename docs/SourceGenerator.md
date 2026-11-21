@@ -2,7 +2,7 @@
 
 LsMsgPack builds a plan per class the first time it meets the class: typed property accessors, generic handlers and readers, created with reflection. The source generator writes that code at compile time instead, for the classes you name:
 
-- **NativeAOT, WebAssembly AOT (Blazor), iOS:** code that can't be generated at runtime. Without the generator, LsMsgPack fails under NativeAOT on the first object. With it, the generated code runs compiled where the runtime plans would be interpreted.
+- **NativeAOT, WebAssembly AOT (Blazor), iOS:** code that can't be generated at runtime. Without the generator, LsMsgPack runs there by reflection only when the app keeps its model (see [Without the generator](#without-the-generator)). With it, the generated code runs compiled where the runtime plans would be interpreted.
 - **Trimming:** the generated code refers to your classes and their properties, so the trimmer keeps them (.NET 5 and later). A serializer created with the context has no trim or AOT warnings (see [Trimming and NativeAOT](#trimming-and-nativeaot)).
 - **Speed:** with a JIT, LsMsgPack compiles the same writers and readers at runtime once a type has been written or read 1000 times (`LsMsgPackOptions.CompileWritersAfter`, `CompileReadersAfter`; 0 compiles at the first object, -1 never), after which both are about as fast. So the generated code gains on the first objects of each type. Under WebAssembly AOT writing is 7-8x and reading about 3x as fast (measurements below).
 
@@ -164,7 +164,24 @@ What the generated code does for a trimmed or NativeAOT app:
 
 Classes the generated code doesn't know of are not kept. In a trimmed or AOT project, `LSMP110` points at the properties whose values are only known at runtime (interfaces, abstract classes, `object`), so you can list their classes. Type ids name classes. After trimming, only the classes the app keeps can be found, which includes those of the context.
 
-The NativeAOT smoke test (`LsMsgPackAotSmokeTest/run.sh`, CI job `aot-smoke`) publishes with every warning reported separately (`TrimmerSingleWarn=false`) and fails on any trim or AOT warning. It checks an invoice model with polymorphic properties, framework types (`DateOnly`, `Half`, `Int128`, `BigInteger`, `Complex`, `Rune`, tuples, `KeyValuePair`) and collections (`IList<int>`, `IReadOnlyList<T>`, `ImmutableArray<int>`, `IImmutableSet<string>`, `FrozenSet<string>`, `List<KeyValuePair<string, double>>`, collections in bulk) in six option sets, with the context registered by the module initializer and only passed to the constructor.
+### Without the generator
+
+A serializer without a context also works under NativeAOT, by reflection, when the app keeps its model classes from the trimmer, for example by marking the assembly with your models as a root:
+
+```xml
+<ItemGroup>
+  <TrimmerRootAssembly Include="MyApp.Models" />
+</ItemGroup>
+```
+
+- The bytes are the same as with the generated code. Classes are written and read by the runtime's plans; structs, enums, nullables and collections of value types go through reflection, boxed. Nothing is compiled at runtime there, so it is slower than the generated code (not measured).
+- A class or struct the trimmer stripped of every property and field is refused with a `MsgPackException` that names it and the fix, instead of being written as an empty object. A class without any property or field is refused the same way: under NativeAOT it can't be told apart from a trimmed one (the generated code covers it).
+- NativeAOT only has code for the generic types the app uses with value types. A member declared as a collection interface of a value type (`IList<Guid>`, or `IEnumerable<long>` read without a type id) gets the class LsMsgPack creates for it (`List<Guid>`): if the app never uses that class, reading it throws a `MsgPackException` that names it. Declare the member as the class, or use the class once in the app.
+- Immutable and frozen collections are filled by their factory (`ImmutableList.CreateRange`, `FrozenSet.ToFrozenSet`...), which the trimmer removes. LsMsgPack doesn't keep them (that would add 300 KB to every app): reading one throws a `MsgPackException` naming the attribute that keeps it, e.g. `[DynamicDependency("CreateRange``1(System.Collections.Generic.IEnumerable{``0})", typeof(ImmutableList))]` on a method of your app. For a value type element, also call the factory once (`ImmutableArray.CreateRange<int>(...)`).
+- The constructor still reports IL2026 and IL3050: suppress them where you create the serializer.
+- An app with one small class (.NET 10, linux-x64) was 47 KB larger than the same app with the generated code.
+
+The NativeAOT smoke test (`LsMsgPackAotSmokeTest/run.sh`, CI job `aot-smoke`) publishes with every warning reported separately (`TrimmerSingleWarn=false`) and fails on any trim or AOT warning. It checks an invoice model with polymorphic properties, framework types (`DateOnly`, `Half`, `Int128`, `BigInteger`, `Complex`, `Rune`, tuples, `KeyValuePair`) and collections (`IList<int>`, `IReadOnlyList<T>`, `ImmutableArray<int>`, `IImmutableSet<string>`, `FrozenSet<string>`, `List<KeyValuePair<string, double>>`, collections in bulk) in nine option sets, with the context registered by the module initializer and only passed to the constructor. `LsMsgPackAotReflectionTest` then publishes the same program without the generator (its model kept by a descriptor) and checks the same bytes and values by reflection, and that a class it doesn't keep is refused.
 
 ## Measurements
 

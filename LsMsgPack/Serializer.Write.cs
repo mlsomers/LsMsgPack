@@ -218,9 +218,21 @@ namespace LsMsgPack
           return new BoxedHandler<T>(this);
       }
 
-      if (_handlers.TryGetValue(typeof(T), out object handler))
+      if (_handlers.TryGetValue(typeof(T), out object handler) && handler != null)
         return (ValueHandler<T>)handler;
-      return (ValueHandler<T>)_handlers.GetOrAdd(typeof(T), t => CreateHandler(t));
+      handler = _handlers.GetOrAdd(typeof(T), t => CreateHandler(t));
+      return handler != null ? (ValueHandler<T>)handler : BoxedOf<T>();
+    }
+
+    /// <summary>
+    /// No dynamic code and no instantiation of a handler for the value type (NativeAOT, <see cref="HandlerOf"/> returned null): the boxed handler, which exists here,
+    /// since this code was compiled for T. It replaces the null, so the boxed paths that look the handler up get it too.
+    /// </summary>
+    private ValueHandler<T> BoxedOf<T>()
+    {
+      ValueHandler<T> boxed = new BoxedHandler<T>(this);
+      _handlers.TryUpdate(typeof(T), boxed, null);
+      return boxed;
     }
 
     /// <summary>
@@ -295,10 +307,11 @@ namespace LsMsgPack
         WriteBoxed(c, value, info);
     }
 
+    /// <returns>null when the runtime has no code for any handler of the type (NativeAOT, a value type): <see cref="Handler{T}"/> makes it</returns>
     private object CreateHandler(Type type)
     {
       object handler = HandlerOf(type);
-      return PreserveReferences && !type.IsValueType ? Preserving(type, handler, GetTypeInfo(type).Kind == TypeKind.Converted) : handler;
+      return PreserveReferences && !type.IsValueType && handler != null ? Preserving(type, handler, GetTypeInfo(type).Kind == TypeKind.Converted) : handler;
     }
 
     /// <summary>
@@ -371,9 +384,9 @@ namespace LsMsgPack
       if (underlying != null)
       {
         object inner = _handlers.TryGetValue(underlying, out object found) ? found : _handlers.GetOrAdd(underlying, t => CreateHandler(t)); // Handler<T>(null)
-        if (inner.GetType().IsGenericType && inner.GetType().GetGenericTypeDefinition() == typeof(BoxedHandler<>))
+        if (inner is null || inner.GetType().IsGenericType && inner.GetType().GetGenericTypeDefinition() == typeof(BoxedHandler<>))
           return Boxed(type);
-        return Instantiate(type, typeof(NullableHandler<>), underlying, inner);
+        return Instantiate(type, typeof(NullableHandler<>), underlying, inner) ?? Boxed(type);
       }
 
       WriteTypeInfo info = GetTypeInfo(type);
@@ -408,20 +421,20 @@ namespace LsMsgPack
         case TypeKind.Extension:
           if (type == typeof(decimal) && info.Extension is LsExtension<decimal> dec)
             return new DecimalHandler(dec);
-          return Instantiate(type, typeof(ExtensionHandler<>), type, info.Extension);
+          return Instantiate(type, typeof(ExtensionHandler<>), type, info.Extension) ?? Boxed(type); // without code for it (NativeAOT): boxed, the same bytes
         case TypeKind.Enum:
-          return Instantiate(type, typeof(EnumHandler<>), type, null);
+          return Instantiate(type, typeof(EnumHandler<>), type, null) ?? Boxed(type);
         case TypeKind.EnumName:
           EnumNames.Of(type, Options); // its error (two values with one name) as it is, not in a TargetInvocationException of the instantiation
-          return Instantiate(type, typeof(EnumNameHandler<>), type, this);
+          return Instantiate(type, typeof(EnumNameHandler<>), type, this) ?? Boxed(type);
         case TypeKind.Array:
           object numbers = NumberHandler(type);
           if (numbers != null)
             return numbers;
           if (IsVector(type))
-            return Instantiate(type, typeof(ArrayHandler<>), type.GetElementType(), this);
+            return Instantiate(type, typeof(ArrayHandler<>), type.GetElementType(), this) ?? Boxed(type);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
-            return Instantiate(type, typeof(ListHandler<>), type.GenericTypeArguments[0], this);
+            return Instantiate(type, typeof(ListHandler<>), type.GenericTypeArguments[0], this) ?? Boxed(type);
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
           {
             object bulk = InBulk(type.GenericTypeArguments[0]) ? CreateInBulk(type, type.GenericTypeArguments[0], BulkCollection.Set, new BulkHandlers(this)) : null;
@@ -440,6 +453,8 @@ namespace LsMsgPack
           if (type.IsValueType ? StructPlans(type) : !type.IsAbstract && !type.ContainsGenericParameters)
           {
             object handler = Instantiate(type, typeof(ObjectHandler<>), type, this);
+            if (handler is null) // no code for it (NativeAOT)
+              return Boxed(type);
             if (info.Callbacks != null)
               return ((ICallbackWriting)handler).WithCallbacks(info.Callbacks, info.ExtensionData);
             return ((IExtensionDataWriting)handler).Extended(info.ExtensionData);
@@ -449,6 +464,8 @@ namespace LsMsgPack
           if (type.IsValueType ? StructPlans(type) : type != typeof(object) && !type.IsInterface && !type.IsAbstract && !type.ContainsGenericParameters)
           {
             object handler = Instantiate(type, typeof(ObjectHandler<>), type, this);
+            if (handler is null) // no code for it (NativeAOT)
+              return Boxed(type);
             if (info.Callbacks != null) // apart, so the handler without callbacks stays as it is
               return ((ICallbackWriting)handler).WithCallbacks(info.Callbacks, null);
             return IgnoreCycles && !type.IsValueType && CanContainObjects(type) ? ((ICycleTracking)handler).Tracked() : handler; // apart, so the handler without the option stays as it is
@@ -623,6 +640,7 @@ namespace LsMsgPack
       return type.IsArray && type.GetArrayRank() == 1 && !type.Name.EndsWith("[*]", StringComparison.Ordinal);
     }
 
+    /// <returns>null when the runtime has no code for it (NativeAOT, a value type the application did not use as a type argument): <see cref="Handler{T}"/> makes it</returns>
     private object Boxed(Type type)
     {
       return Instantiate(type, typeof(BoxedHandler<>), type, this);

@@ -34,7 +34,7 @@ All three serialize .NET classes to MsgPack. This page compares their features, 
 **Not LsMsgPack (yet) when:**
 
 - **You need a track record.** It has no known production users, and breaking changes are still allowed. Pin the version and check the release notes before upgrading.
-- **You target NativeAOT, WebAssembly AOT or iOS and don't want a source generator.** Without it, LsMsgPack fails under NativeAOT on the first object.
+- **You target NativeAOT, WebAssembly AOT or iOS and don't want a source generator.** Without it, LsMsgPack runs under NativeAOT by reflection only when the app keeps its model classes from the trimmer, and the app has to keep some collections itself (see [Without the generator](SourceGenerator.md#without-the-generator)).
 - **The other side uses another library's polymorphism format.** LsMsgPack can't read or write their unions. See [what settings cannot match](Compatibility.md#what-settings-cannot-match).
 - **You need Unity:** LsMsgPack isn't tested there.
 

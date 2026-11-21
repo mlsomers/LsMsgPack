@@ -119,6 +119,7 @@ namespace LsMsgPack.Writing
     {
       Type = type;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
+      serializer.ThrowIfTrimmed(type);
       LsMsgPackOptions options = serializer.Options;
       _array = options._objectLayout == ObjectLayout.Array;
       _trim = options._trimTrailingNulls;
