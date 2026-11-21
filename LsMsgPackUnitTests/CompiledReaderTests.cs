@@ -437,6 +437,8 @@ namespace LsMsgPackUnitTests
       public int TwinsabcdAefghijklmn { get; set; }
       public int TriplesabcdefghijBklmnopqrst { get; set; }
       public int TriplesabcdefghijAklmnopqrst { get; set; }
+      public int Amb { get; set; } // equal ignoring case (PropertyNameCaseInsensitive: a key that is neither name sets none of them)
+      public int AMB { get; set; }
     }
 
     private static CrNames Names()
@@ -475,6 +477,20 @@ namespace LsMsgPackUnitTests
       data.Add(new byte[] { 0x80 });
       data.Add(plain.Serialize(new Dictionary<string, object> { { "TwinsabcdAefghijklmn", 1 }, { "TriplesabcdefghijAklmnopqrst", 2 } }));
       data.Add(plain.Serialize(new Dictionary<string, object> { { "TwinsabcdBefghijklmn", 3 }, { "TwinsabcdAefghijklmn", 4 }, { "TriplesabcdefghijBklmnopqrst", 5 }, { "TriplesabcdefghijAklmnopqrst", 6 } }));
+      // keys that differ in case (PropertyNameCaseInsensitive: the straight-line code takes the names only, the runtime's loop matches the others)
+      Dictionary<string, object> camel = new Dictionary<string, object>();
+      for (int t = 0; t < names.Length; t++)
+        camel[char.ToLowerInvariant(names[t][0]) + names[t].Substring(1)] = t;
+      data.Add(plain.Serialize(camel));
+      Dictionary<string, object> upper = new Dictionary<string, object>();
+      for (int t = 0; t < names.Length; t++)
+        upper[names[t].ToUpperInvariant()] = t + 100;
+      data.Add(plain.Serialize(upper));
+      data.Add(plain.Serialize(new Dictionary<string, object> { { names[0], 1 }, { "na", "camel" }, { names[2], 2.5 }, { "NABC", true }, { names[4], 7L }, { "nabcdef", 8 } })); // names and other cases in turn
+      data.Add(plain.Serialize(new Dictionary<string, object> { { names[1], "name" }, { "na", "camel" }, { "nab", 1.5 }, { names[2], 2.5 } })); // both cases of one property: the last one is set
+      data.Add(plain.Serialize(new Dictionary<string, object> { { "amb", 1 }, { "Amb", 2 }, { "aMB", 3 }, { "AMB", 4 }, { names[0], 5 } })); // two properties equal ignoring case
+      data.Add(plain.Serialize(new Dictionary<string, object> { { "Amb", 2 }, { "AMB", 4 }, { "größe", 6 }, { "GRÖßE", 7 } }));
+      data.Add(plain.Serialize(new Dictionary<string, object> { { "nabcdefghijklmnopqrstuvwxyzabcdefghijklm", 1 }, { "TWINSABCDAEFGHIJKLMN", 2 }, { "triplesabcdefghijbklmnopqrst", 3 } }));
       foreach (bool filter in new[] { false, true })
       {
         LsMsgPackSerializer writer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false,
@@ -509,8 +525,8 @@ namespace LsMsgPackUnitTests
         }
         Assert.IsEmpty(differences, string.Join("\n", differences));
         Assert.AreEqual("CompiledObjectReader", ReaderOf(compiled, typeof(CrNames)));
-        Assert.AreEqual(!ignoreCase, IsCompiled(compiled, typeof(CrNames), true), "maps with names ignoring case stay with the runtime's loop");
-        Assert.AreEqual(!ignoreCase, NamesInOrder(generated, typeof(CrNames)), "the generated code reads the names straight-line, not ignoring case");
+        Assert.IsTrue(IsCompiled(compiled, typeof(CrNames), true), "maps with names are read by the compiled code, also ignoring case");
+        Assert.IsTrue(NamesInOrder(generated, typeof(CrNames)), "the generated code reads the names straight-line, also ignoring case");
       }
     }
 

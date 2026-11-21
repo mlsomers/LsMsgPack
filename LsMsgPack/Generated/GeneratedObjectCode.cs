@@ -654,8 +654,8 @@ namespace LsMsgPack.Generated
 
     /// <summary>
     /// The plan's properties when a map keyed by names may be read straight-line by the generated <see cref="GeneratedObjectCode{T}.ReadMap"/> (version 5): property t of the plan is
-    /// member <see cref="GeneratedObjectCode.UnrolledIds"/>[t], so its key is that member's name. Null with the indexed schema, PropertyNameCaseInsensitive or another order of the properties:
-    /// the keys are then read by the loop (<see cref="TryReadKey"/>).
+    /// member <see cref="GeneratedObjectCode.UnrolledIds"/>[t], so its key is that member's name. Null with the indexed schema or another order of the properties: the keys are then read by the loop
+    /// (<see cref="TryReadKey"/>). With PropertyNameCaseInsensitive only the keys that are the names are read straight-line (such a key sets that property in the loop too), the loop matches the others.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static PropReader[] NamesInOrder(ReadContext c, ReadPlan plan)

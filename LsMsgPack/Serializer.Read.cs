@@ -751,7 +751,7 @@ namespace LsMsgPack
 
     private static void ReturnContext(ReadContext c)
     {
-      c.R.Reset(null, 0, 0); // the data is not kept alive
+      c.R.Release(); // the data is not kept alive
       if (c.References != null)
       {
         if (ReferenceEquals(c.References, c.PreservingReferences))

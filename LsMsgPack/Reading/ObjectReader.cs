@@ -101,6 +101,8 @@ namespace LsMsgPack.Reading
 
       if (plan.Map) // the reader of the source generator: the same loop, apart so this method stays as small as without it (inlined here the runtime's maps read 2-5% slower)
         return ReadGeneratedMap(c, plan, bound, count, start, assignedTo);
+      if (plan.MapUnlessCamelCase && plan.KeysAreNames(c)) // PropertyNameCaseInsensitive: the same, unless the keys are in camelCase (a test only with the option)
+        return ReadGeneratedMap(c, plan, bound, count, start, assignedTo);
 
       int depth = c.Depth;
       c.Enter();
@@ -249,7 +251,7 @@ namespace LsMsgPack.Reading
       int depth = c.Depth;
       c.Enter();
       T result = default(T); // what StructCreator makes (no declared parameterless constructor)
-      if (plan.Map) // the reader of the source generator: the same loop
+      if (plan.Map || plan.MapUnlessCamelCase && plan.KeysAreNames(c)) // the reader of the source generator: the same loop (see Read)
       {
         if (!Unsafe.As<GeneratedStructCode<T>>(plan.Code).ReadMap(c, ref result, plan, bound, count, plan.GeneratedRead))
           return Restart(c, start, depth, assignedTo);
@@ -581,6 +583,44 @@ namespace LsMsgPack.Reading
     internal volatile bool Map;
 
     /// <summary>
+    /// <see cref="Map"/> with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>, when every property's name starts with an ASCII capital (the .NET convention): an object whose first key
+    /// starts with a lower case letter (camelCase, as the TypeScript client and most JSON writers write) is read by the runtime's loop (<see cref="KeysAreNames"/>). The generated and compiled code read
+    /// the keys that are the names straight-line, a key that differs in case only in the loop they hand over to (CompiledReader.Entries, shared by all types): camelCase invoices read
+    /// 8.7 -> 11 ms that way, where the runtime's loop is inlined into the caller (the list reader) with the property readers devirtualized. Other keys are the names, or the loop takes over.
+    /// </summary>
+    internal volatile bool MapUnlessCamelCase;
+
+    /// <summary>
+    /// <see cref="MapUnlessCamelCase"/>: the indexed schema (index keys), or the first key does not start with a lower case ASCII letter (a str 8 key, longer than 31 bytes, is not looked at).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal bool KeysAreNames(ReadContext c)
+    {
+      if (c.Schema)
+        return true;
+      LsMsgPack.IO.MsgPackReader r = c.R;
+      int pos = r.Pos;
+      return pos + 1 >= r.End || (r.Buf[pos] & 0xE0) != 0xA0 || (uint)(r.Buf[pos + 1] - 'a') > 'z' - 'a';
+    }
+
+    /// <summary>
+    /// The value of <see cref="Map"/> and <see cref="MapUnlessCamelCase"/> for code that reads maps: with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/> and names that all start with
+    /// an ASCII capital, MapUnlessCamelCase.
+    /// </summary>
+    private bool UnlessCamelCase()
+    {
+      if (!_caseInsensitive)
+        return false;
+      for (int t = Props.Length - 1; t >= 0; t--)
+      {
+        string name = Props[t].Name;
+        if (name.Length == 0 || (uint)(name[0] - 'A') > 'Z' - 'A')
+          return false;
+      }
+      return true;
+    }
+
+    /// <summary>
     /// The <see cref="Props"/> when they are the generated code's <see cref="GeneratedObjectCode.UnrolledIds"/> (the order the generator predicted) and the names are compared exactly:
     /// its <see cref="GeneratedObjectCode{T}.ReadMap"/> then compares the keys with the names as constants, straight-line (<see cref="GeneratedIO.NamesInOrder"/>). Null otherwise.
     /// </summary>
@@ -676,14 +716,17 @@ namespace LsMsgPack.Reading
       if (code != null && (code.Capabilities & (GeneratedCapabilities.ReadValue | GeneratedCapabilities.ReadMap)) != 0)
       {
         Code = code;
-        Map = (code.Capabilities & GeneratedCapabilities.ReadMap) != 0;
+        bool map = (code.Capabilities & GeneratedCapabilities.ReadMap) != 0;
+        bool unlessCamelCase = map && UnlessCamelCase();
+        Map = map && !unlessCamelCase;
+        MapUnlessCamelCase = unlessCamelCase;
         GeneratedRead = serializer.GeneratedReadPlan;
         // Version 1 of the generated code left a nil as the constructor made it: the runtime reads the array layout then
         GeneratedCapabilities positional = GeneratedCapabilities.ReadPositional | GeneratedCapabilities.ReadPositionalNil;
         Positional = (code.Capabilities & positional) == positional;
         for (int t = 0; t < infos.Length; t++)
           Props[t].GeneratedId = serializer.ReadMember(code, infos[t]);
-        if (Map && !_caseInsensitive && serializer.InUnrolledOrder(code, infos)) // keys ignoring case stay with the loop (FindOrMatchIgnoringCase), as for the compiled readers
+        if (map && serializer.InUnrolledOrder(code, infos)) // also ignoring case: only keys that are the names are read straight-line, the loop matches the others (FindOrMatchIgnoringCase)
           NamesInOrder = Props;
       }
       if (type.IsValueType && !Extended && Callbacks is null && _create.Target is ICreator creator && creator.GetType().IsGenericType && creator.GetType().GetGenericTypeDefinition() == typeof(StructCreator<>))
@@ -810,7 +853,9 @@ namespace LsMsgPack.Reading
         GeneratedRead = _serializer.GeneratedReadPlan;
         Code = code;
         Positional = true; // volatile: after the code
-        Map = _serializer.Options._useInexedSchema || !_caseInsensitive; // maps keyed by names ignoring case stay with the runtime's loop (see CompiledReader)
+        bool unlessCamelCase = UnlessCamelCase(); // also ignoring case: the compiled code takes the keys that are the names, the first other key goes to the runtime's loop (FindByName)
+        Map = !unlessCamelCase;
+        MapUnlessCamelCase = unlessCamelCase;
       }
       catch (Exception) // a type or runtime the expressions do not handle: the runtime's readers read it, as before (CompiledReaderTests check that the readers are used)
       {
