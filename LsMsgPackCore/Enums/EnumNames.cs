@@ -31,15 +31,38 @@ namespace LsMsgPack.Meta
     private readonly Dictionary<string, ulong> _exact; // the written names and the .NET names
     private readonly Dictionary<string, ulong> _ignoringCase; // the same, the first one of names that differ only in case
 
+    // The tables of the naming policies (MsgPackOptions.EnumNamingPolicy), by policy, then type
+    private static readonly ConcurrentDictionary<MsgPackNamingPolicy, ConcurrentDictionary<Type, EnumNames>> ByPolicy = new ConcurrentDictionary<MsgPackNamingPolicy, ConcurrentDictionary<Type, EnumNames>>();
+
     internal static EnumNames Of(Type type)
     {
       if (Cache.TryGetValue(type, out EnumNames names))
         return names;
-      return Cache.GetOrAdd(type, t => new EnumNames(t));
+      return Cache.GetOrAdd(type, t => new EnumNames(t, null));
+    }
+
+    /// <summary>
+    /// The names as the options write them: <see cref="MsgPackOptions.EnumNamingPolicy"/> converts the .NET names (custom names stay as they are); readers take the .NET names too.
+    /// </summary>
+    internal static EnumNames Of(Type type, MsgPackOptions settings)
+    {
+      return Of(type, settings._enumNamingPolicy);
+    }
+
+    internal static EnumNames Of(Type type, MsgPackNamingPolicy policy)
+    {
+      if (policy is null)
+        return Of(type);
+      ConcurrentDictionary<Type, EnumNames> cache;
+      if (!ByPolicy.TryGetValue(policy, out cache))
+        cache = ByPolicy.GetOrAdd(policy, p => new ConcurrentDictionary<Type, EnumNames>());
+      if (cache.TryGetValue(type, out EnumNames names))
+        return names;
+      return cache.GetOrAdd(type, t => new EnumNames(t, policy));
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.EnumFields)]
-    private EnumNames(Type type)
+    private EnumNames(Type type, MsgPackNamingPolicy policy)
     {
       Type = type;
       IsFlags = type.IsDefined(typeof(FlagsAttribute), false);
@@ -55,7 +78,7 @@ namespace LsMsgPack.Meta
       {
         FieldInfo field = fields[t];
         ulong bits = ToBits(field.GetRawConstantValue());
-        string name = CustomName(field) ?? field.Name;
+        string name = CustomName(field) ?? (policy is null ? field.Name : MsgPackNamingPolicy.Convert(policy, field.Name));
         if (!seen.TryGetValue(bits, out string first))
         {
           seen.Add(bits, name);

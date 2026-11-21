@@ -136,7 +136,7 @@ namespace LsMsgPackTypeScript
         _interfaces.Add(model);
         foreach (PropertyInfo prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.GetIndexParameters().Length == 0 && p.GetMethod != null))
         {
-          model.Props.Add(new ModelProperty(prop));
+          model.Props.Add(new ModelProperty(prop, FullPropertyInfo.WrittenNameOf(prop.Name, _settings)));
           Visit(prop.PropertyType, depth + 1);
         }
       }
@@ -154,7 +154,7 @@ namespace LsMsgPackTypeScript
         HashSet<string> inherited = model.Base is null ? new HashSet<string>() : new HashSet<string>(model.Base.AllProps.Select(p => p.Name), StringComparer.Ordinal);
         foreach (FullPropertyInfo prop in props)
         {
-          ModelProperty property = new ModelProperty(prop.Member);
+          ModelProperty property = new ModelProperty(prop.Member, prop.WrittenName);
           model.AllProps.Add(property);
           if (!inherited.Contains(property.Name))
             model.OwnProps.Add(property);
@@ -390,7 +390,16 @@ namespace LsMsgPackTypeScript
   {
     private static readonly NullabilityInfoContext NullabilityContext = new NullabilityInfoContext();
 
+    /// <summary>
+    /// The .NET name (the key of the initial values).
+    /// </summary>
     internal readonly string Name;
+
+    /// <summary>
+    /// The name the server writes and reads: the .NET name, or as the options' PropertyNamingPolicy converts it. The models list it, the field is named from it.
+    /// </summary>
+    internal readonly string WrittenName;
+
     internal readonly Type Type;
 
     /// <summary>
@@ -415,9 +424,10 @@ namespace LsMsgPackTypeScript
     internal readonly Type EnumType;
 
     /// <param name="member">A property or a field</param>
-    internal ModelProperty(MemberInfo member)
+    internal ModelProperty(MemberInfo member, string writtenName)
     {
       Name = member.Name;
+      WrittenName = writtenName ?? Name;
       Member = member;
       FieldInfo field = member as FieldInfo;
       Type = field?.FieldType ?? ((PropertyInfo)member).PropertyType;

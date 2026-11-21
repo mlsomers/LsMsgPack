@@ -78,7 +78,8 @@ Other libraries, and what to watch with each (Go structs, Rust's `to_vec_named`,
 The keys are the .NET property names (`Title`, `StartedAt`), and they must match exactly when read back. Two ways to adapt to the other side's style:
 
 - **Different case only** (`title` from JavaScript): `options.PropertyNameCaseInsensitive = true` on the preset matches keys ignoring case.
-- **Other names** (`started_at` from Python): put the name on the property and turn on the attribute names:
+- **Another style for every name** (`started_at`, `file_name` from Python): `options.PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower` writes and reads `StartedAt` as `started_at` (`CamelCase` for `startedAt`; [NamingPolicies.md](../NamingPolicies.md)).
+- **Other names** for some properties: put the name on the property and turn on the attribute names:
 
 ```csharp
 using LsMsgPack.TypeResolving.Interfaces;

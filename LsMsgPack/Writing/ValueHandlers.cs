@@ -512,7 +512,7 @@ namespace LsMsgPack.Writing
     internal EnumNameHandler(Serializer serializer)
     {
       _serializer = serializer;
-      _names = EnumNames.Of(typeof(TEnum));
+      _names = EnumNames.Of(typeof(TEnum), serializer.Options);
       ulong[] values = _names.Values;
       _encoded = new byte[values.Length][];
       int dense = 0;
@@ -1203,9 +1203,15 @@ namespace LsMsgPack.Writing
     private ValueHandler<TKey> _key;
     private ValueHandler<TValue> _value;
 
+    /// <summary>
+    /// <see cref="MsgPackOptions.DictionaryKeyPolicy"/> for string keys (keys declared as string or object), null otherwise.
+    /// </summary>
+    private readonly MsgPackNamingPolicy _keyPolicy;
+
     internal DictionaryHandler(Serializer serializer)
     {
       _serializer = serializer;
+      _keyPolicy = typeof(TKey) == typeof(string) || typeof(TKey) == typeof(object) ? serializer.Options._dictionaryKeyPolicy : null;
     }
 
     internal override void Write(WriteContext c, Dictionary<TKey, TValue> value, FullPropertyInfo assignedTo)
@@ -1220,9 +1226,9 @@ namespace LsMsgPack.Writing
       ValueHandler<TValue> values = _value ?? (_value = _serializer.Handler<TValue>(null));
       c.EnterContainer();
       c.W.MapHeader(value.Count);
-      if (c.References != null && _serializer.PreserveReferences)
+      if (_keyPolicy != null || (c.References != null && _serializer.PreserveReferences))
       {
-        WritePreserving(c, value, keys, values);
+        WriteOther(c, value, keys, values);
         return;
       }
       foreach (KeyValuePair<TKey, TValue> entry in value)
@@ -1238,21 +1244,29 @@ namespace LsMsgPack.Writing
     }
 
     /// <summary>
-    /// <see cref="ReferenceHandling.Preserve"/>: the keys are never references (a path step stands for an entry's value). A loop of its own, so the usual one has no test per entry.
+    /// <see cref="ReferenceHandling.Preserve"/>: the keys are never references (a path step stands for an entry's value); <see cref="MsgPackOptions.DictionaryKeyPolicy"/>: string keys converted.
+    /// A loop of its own, so the usual one has no test per entry.
     /// </summary>
-    private void WritePreserving(WriteContext c, Dictionary<TKey, TValue> value, ValueHandler<TKey> keys, ValueHandler<TValue> values)
+    private void WriteOther(WriteContext c, Dictionary<TKey, TValue> value, ValueHandler<TKey> keys, ValueHandler<TValue> values)
     {
-      ReferenceWriting references = c.References;
+      ReferenceWriting references = _serializer.PreserveReferences ? c.References : null;
+      MsgPackNamingPolicy policy = _keyPolicy;
       foreach (KeyValuePair<TKey, TValue> entry in value)
       {
-        references.InKeys++;
-        try
+        TKey key = policy != null && (object)entry.Key is string name ? (TKey)(object)MsgPackNamingPolicy.Convert(policy, name) : entry.Key;
+        if (references is null)
+          keys.Write(c, key, _keyInfo);
+        else
         {
-          keys.Write(c, entry.Key, _keyInfo);
-        }
-        finally
-        {
-          references.InKeys--;
+          references.InKeys++;
+          try
+          {
+            keys.Write(c, key, _keyInfo);
+          }
+          finally
+          {
+            references.InKeys--;
+          }
         }
         TValue item = entry.Value;
         if (item == null)

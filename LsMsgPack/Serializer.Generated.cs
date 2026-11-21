@@ -112,7 +112,7 @@ namespace LsMsgPack
         return false;
       for (int t = infos.Length - 1; t >= 0; t--)
       {
-        if (FindMember(code, infos[t]) != unrolled[t])
+        if (FindMember(code, infos[t]) != unrolled[t] || !string.Equals(infos[t].WrittenName, infos[t].Name, StringComparison.Ordinal)) // its constants are the .NET names (not PropertyNamingPolicy's)
           return false;
       }
       return true;

@@ -226,7 +226,7 @@ namespace LsMsgPack
       {
         if (_settings.EnumFormatOf(valueType, prop) == EnumFormat.Name)
         {
-          string name = EnumNames.Of(valueType).NameOf(EnumNames.ToBits(value));
+          string name = EnumNames.Of(valueType, _settings).NameOf(EnumNames.ToBits(value));
           if (name != null)
             return _settings.SerializePlainValue(name, typeof(string), _byteOrder._endianAction);
         }

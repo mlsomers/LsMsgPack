@@ -88,7 +88,7 @@ namespace LsMsgPack.TypeResolving.Types
         if (def.IsCollection || names.Count != props.Length)
           return false;
         for (int t = 0; t < props.Length; t++)
-          if (!string.Equals(names[t], props[t].Name, StringComparison.Ordinal))
+          if (!string.Equals(names[t], props[t].WrittenName, StringComparison.Ordinal))
             return false;
       }
 
@@ -377,7 +377,10 @@ namespace LsMsgPack.TypeResolving.Types
       }
       if (def.ValueEntries is null)
         return null;
-      int position = PositionOf(def, name, ignoreCase);
+      string written = FullPropertyInfo.WrittenNameOf(name, settings);
+      int position = written == name ? -1 : PositionOf(def, written, ignoreCase); // PropertyNamingPolicy: the reader's name for it, then its .NET name
+      if (position < 0)
+        position = PositionOf(def, name, ignoreCase);
       int entry = position < 0 || position >= def.ValueEntries.Length ? -1 : def.ValueEntries[position];
       return entry >= 0 && entry < ByTypeId.Count ? ByTypeId[entry] : null;
     }
@@ -567,7 +570,9 @@ namespace LsMsgPack.TypeResolving.Types
         def = GetComplex(assignedTo.Member.ReflectedType, settings); // does not resolve property ids, so no recursion
       }
 
-      object found = IdIn(def, assignedTo.Name);
+      object found = IdIn(def, assignedTo.WrittenName);
+      if (found is null && assignedTo.WrittenName != assignedTo.Name && def.IdByName.TryGetValue(assignedTo.Name, out int byName)) // PropertyNamingPolicy: the .NET name (a writer without the policy)
+        return BoxedId(byName);
       if (found is null && settings._propertyNameCaseInsensitive && IdIgnoringCase(def, assignedTo, settings, out int id))
         return BoxedId(id);
       return found;
@@ -629,10 +634,10 @@ namespace LsMsgPack.TypeResolving.Types
         FullPropertyInfo[] props = FullPropertyInfo.GetStaticallyIncludedProps(reader, settings);
         string[] names = new string[props.Length];
         for (int t = 0; t < props.Length; t++)
-          names[t] = props[t].Name; // GetId is only asked for the properties without a name of another resolver
+          names[t] = props[t].WrittenName; // GetId is only asked for the properties without a name of another resolver
         def.IgnoringCase = known = new ComplexTypeDef.CaseInsensitiveIds(reader, def.IdsIgnoringCase(names));
       }
-      return known.Ids.TryGetValue(assignedTo.Name, out id);
+      return known.Ids.TryGetValue(assignedTo.WrittenName, out id);
     }
 
     private void ResolveDeserializedTypes(MsgPackOptions settings)

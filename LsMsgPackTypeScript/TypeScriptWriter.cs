@@ -88,7 +88,7 @@ namespace LsMsgPackTypeScript
       bool int64 = Enum.GetUnderlyingType(type) == typeof(long) || Enum.GetUnderlyingType(type) == typeof(ulong);
       bool byName = _models.ByName(type);
       string suffix = int64 && _options.Int64 == "bigint" ? "n" : string.Empty;
-      LsMsgPack.Meta.EnumNames names = byName ? LsMsgPack.Meta.EnumNames.Of(type) : null;
+      LsMsgPack.Meta.EnumNames names = byName ? LsMsgPack.Meta.EnumNames.Of(type, _models.Settings) : null;
       _sb.Append("\n/** .NET ").Append(type.FullName).Append(byName ? ", written by name" : string.Empty).Append(" */\n");
       _sb.Append("export const ").Append(name).Append(" = {\n");
       foreach (string member in Enum.GetNames(type))
@@ -122,7 +122,7 @@ namespace LsMsgPackTypeScript
         return _models.EnumName(type); // [Flags]: its type is string
       if (type.IsDefined(typeof(FlagsAttribute), false))
         return "string";
-      LsMsgPack.Meta.EnumNames names = LsMsgPack.Meta.EnumNames.Of(type);
+      LsMsgPack.Meta.EnumNames names = LsMsgPack.Meta.EnumNames.Of(type, _models.Settings);
       return string.Join(" | ", names.Names.Select(Defaults.Quote));
     }
 
@@ -132,7 +132,7 @@ namespace LsMsgPackTypeScript
       _sb.Append("export interface ").Append(model.TsName).Append(" {\n");
       _sb.Append("  readonly $type: string;\n");
       foreach (ModelProperty prop in model.Props)
-        _sb.Append("  readonly ").Append(PropertyKey(_options.Field(prop.Name))).Append("?: ").Append(TsType(_models.SpecOf(prop), prop.Nullability, true)).Append(";\n");
+        _sb.Append("  readonly ").Append(PropertyKey(_options.Field(prop.WrittenName))).Append("?: ").Append(TsType(_models.SpecOf(prop), prop.Nullability, true)).Append(";\n");
       _sb.Append("}\n");
     }
 
@@ -155,7 +155,7 @@ namespace LsMsgPackTypeScript
         bool own = model.OwnProps.Contains(prop);
         if (!own && (inherited is null || !inherited.TryGetValue(prop.Name, out string baseValue) || string.Equals(baseValue, values[prop.Name], StringComparison.Ordinal)))
           continue; // the base class initializes it the same way
-        string field = _options.Field(prop.Name);
+        string field = _options.Field(prop.WrittenName);
         if (field == "constructor")
           continue; // not a field name a class can have
         string value = values[prop.Name];
@@ -172,7 +172,7 @@ namespace LsMsgPackTypeScript
     /// </summary>
     private void ThrowIfFieldsCollide(ModelClass model)
     {
-      foreach (IGrouping<string, ModelProperty> same in model.AllProps.GroupBy(p => _options.Field(p.Name), StringComparer.Ordinal).Where(g => g.Count() > 1))
+      foreach (IGrouping<string, ModelProperty> same in model.AllProps.GroupBy(p => _options.Field(p.WrittenName), StringComparer.Ordinal).Where(g => g.Count() > 1))
         throw new UsageException(string.Concat(model.Type.FullName, ": the properties ", string.Join(" and ", same.Select(p => p.Name)), " have the same field name ", same.Key,
           " with --property-names ", _options.PropertyNames, "."));
     }
@@ -199,7 +199,7 @@ namespace LsMsgPackTypeScript
       foreach (ModelClass model in classes.Where(c => !c.IsAbstract))
       {
         _sb.Append("    [").Append(model.TsName).Append(", ").Append(Defaults.Quote(model.TypeName)).Append(", [");
-        _sb.Append(string.Join(", ", model.AllProps.Select(p => string.Concat("[", Defaults.Quote(p.Name), ", ", SpecText(_models.SpecOf(p)), "]"))));
+        _sb.Append(string.Join(", ", model.AllProps.Select(p => string.Concat("[", Defaults.Quote(p.WrittenName), ", ", SpecText(_models.SpecOf(p)), "]"))));
         _sb.Append("]],\n");
       }
       _sb.Append("  ],\n");

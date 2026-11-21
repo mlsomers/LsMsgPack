@@ -321,7 +321,7 @@ namespace LsMsgPackDebug
     {
       if (format == EnumFormat.Name)
       {
-        string name = LsMsgPack.Meta.EnumNames.Of(enumType).NameOf(LsMsgPack.Meta.EnumNames.ToBits(value));
+        string name = LsMsgPack.Meta.EnumNames.Of(enumType, settings).NameOf(LsMsgPack.Meta.EnumNames.ToBits(value));
         if (name != null)
           return new MpString(settings) { Value = name };
       }

@@ -122,6 +122,24 @@ namespace LsMsgPackTypeScriptTests
     }
 
     [TestMethod]
+    public void NamingPoliciesOfTheOptions()
+    {
+      // The models list the names the server writes (PropertyNamingPolicy), the fields are named from them; enums by the names EnumNamingPolicy gives
+      foreach (string fields in new[] { "camelCase", "dotnet" })
+      {
+        string models = Run("--root", "LsMsgPackTypeScriptTests.TsShirt", "--property-names", fields, "--options", "LsMsgPackTypeScriptTests.TsSetup.SnakeCase").Models;
+        string shirt = ClassOf(models, "TsShirt");
+        StringAssert.Contains(models, "['maybe_size', ['?', 'string']]", fields);
+        StringAssert.Contains(models, "['size_number', 'int']", fields);
+        StringAssert.Contains(shirt, "  size_number: number", fields);
+        Assert.IsFalse(models.Contains("SizeNumber", StringComparison.Ordinal), fields);
+        StringAssert.Contains(models, "  Open: 'open',\n", fields);
+        StringAssert.Contains(models, "  Small: 'small',\n", fields);
+        StringAssert.Contains(models, "  Large: 'large',\n", "a custom name: " + fields);
+      }
+    }
+
+    [TestMethod]
     public void ConvertersOfTheOptionsAreTheirSurrogates()
     {
       Result result = Run("--root", "LsMsgPackTypeScriptTests.TsDiscount", "--property-names", "dotnet", "--options", "LsMsgPackTypeScriptTests.TsSetup.WithConverters");

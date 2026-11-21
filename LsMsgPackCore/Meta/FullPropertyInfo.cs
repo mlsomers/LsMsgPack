@@ -9,6 +9,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.Serialization;
+using System.Threading;
 
 namespace LsMsgPack.Meta
 {
@@ -25,15 +26,17 @@ namespace LsMsgPack.Meta
         return null;
 
       FullPropertyInfo full;
-      if (settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0){ // Only cache for default resolver, Implemented resolvers must have their own cache (or not)
+      bool cached = (settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0) && settings._propertyNamingPolicy is null; // the global cache has the .NET names
+      if (cached){ // Only cache for default resolver, Implemented resolvers must have their own cache (or not)
         if (Cache.TryGetValue(member, out full))
           return full;
       }
 
       full = new FullPropertyInfo(member);
+      full.WrittenName = WrittenNameOf(full.Name, settings);
       ResolvePropertyId(full, settings);
 
-      if (settings._propertyNameResolvers is null || settings._propertyNameResolvers.Length == 0)
+      if (cached)
         return Cache.GetOrAdd(member, full); // another thread may have been first
       return full;
     }
@@ -55,7 +58,7 @@ namespace LsMsgPack.Meta
 
       if (full.PropertyId == null)
       {
-        full.PropertyId = full.Name;
+        full.PropertyId = full.WrittenName;
         return;
       }
 
@@ -106,7 +109,25 @@ namespace LsMsgPack.Meta
           return full.SchemaName = name;
         break;
       }
-      return full.Name;
+      return full.WrittenName;
+    }
+
+    /// <summary>
+    /// The name a property with the .NET name <paramref name="name"/> is written by when no property id resolver gives it another: converted by <see cref="MsgPackOptions.PropertyNamingPolicy"/>.
+    /// </summary>
+    internal static string WrittenNameOf(string name, MsgPackOptions settings)
+    {
+      MsgPackNamingPolicy policy = settings._propertyNamingPolicy;
+      return policy is null || name is null ? name : MsgPackNamingPolicy.Convert(policy, name);
+    }
+
+    /// <summary>
+    /// Reading with <see cref="MsgPackOptions.PropertyNamingPolicy"/>: the .NET name is a second name of the property (data of writers without the policy), when it differs from the written name
+    /// and the property's id is that name (not the id of a property id resolver). Null otherwise.
+    /// </summary>
+    internal string OtherName
+    {
+      get { return !ReferenceEquals(WrittenName, Name) && WrittenName != Name && PropertyId is string id && id == WrittenName ? Name : null; }
     }
 
     // Attributes are static metadata, so they are read once per member (even when the FullPropertyInfo itself cannot be cached because of custom property id resolvers)
@@ -126,6 +147,7 @@ namespace LsMsgPack.Meta
       if (PropertyInfo is null && FieldInfo is null)
         throw new ArgumentException($"{member.MemberType} {member.Name} is not a property or a field.", nameof(member));
       Name = member.Name;
+      WrittenName = Name;
       DeclaredType = PropertyInfo?.PropertyType ?? FieldInfo.FieldType;
       Attributes = AttributesOf(member);
       CustomAttributes = Attributes.ByName;
@@ -149,13 +171,14 @@ namespace LsMsgPack.Meta
       PropertyInfo = kept.PropertyInfo;
       FieldInfo = kept.FieldInfo;
       Name = kept.Name;
+      WrittenName = kept.WrittenName;
       DeclaredType = kept.DeclaredType;
       Attributes = kept.Attributes;
       CustomAttributes = kept.CustomAttributes;
       _assignedToType = kept._assignedToType;
       _accessor = kept._accessor;
       _uniqueName = kept._uniqueName;
-      PropertyId = kept.Name;
+      PropertyId = kept.WrittenName;
       SchemaName = null;
       StaticallyIgnored = false;
     }
@@ -215,6 +238,12 @@ namespace LsMsgPack.Meta
     /// The .NET name of the property or field (also the default property id), null without a member.
     /// </summary>
     public string Name { get; }
+
+    /// <summary>
+    /// The name the property is written by when no property id resolver gives it another id: its .NET name converted by <see cref="MsgPackOptions.PropertyNamingPolicy"/>
+    /// (the .NET name without one), null without a member. Set when the instance is made for the options (the instances are cached per policy).
+    /// </summary>
+    internal string WrittenName;
 
     /// <summary>
     /// The type of the property or field as declared (a <see cref="Nullable{T}"/> stays one, <see cref="AssignedToType"/> is its underlying type), null without a member.
@@ -702,6 +731,17 @@ namespace LsMsgPack.Meta
     internal sealed class SharedPropsCache
     {
       internal readonly IMsgPackPropertyIncludeStatically[] Filters;
+
+      /// <summary>
+      /// The <see cref="MsgPackOptions.PropertyNamingPolicy"/> of the instances (their ids are the converted names), null for the .NET names.
+      /// </summary>
+      internal readonly MsgPackNamingPolicy Policy;
+
+      /// <summary>
+      /// The caches of the same filters with a naming policy (by policy, on the cache without one), made when first asked.
+      /// </summary>
+      private ConcurrentDictionary<MsgPackNamingPolicy, SharedPropsCache> _withPolicy;
+
       internal readonly ConcurrentDictionary<Type, FullPropertyInfo[]>[] PerOrder = CachePerOrder<FullPropertyInfo[]>();
 
       /// <summary>
@@ -720,12 +760,31 @@ namespace LsMsgPack.Meta
       /// </summary>
       internal readonly MemberSelection Selection = MemberSelection.Default;
 
-      internal SharedPropsCache(IMsgPackPropertyIncludeStatically[] filters)
+      internal SharedPropsCache(IMsgPackPropertyIncludeStatically[] filters, MsgPackNamingPolicy policy = null)
       {
         Filters = filters;
+        Policy = policy;
         for (int t = 0; t < filters.Length; t++)
           if (filters[t] is FilterNonSettable nonSettable)
             Selection = new MemberSelection(nonSettable.NonPublicProperties, nonSettable.Fields);
+      }
+
+      /// <summary>
+      /// The cache of the same filters for the naming policy (this one for null).
+      /// </summary>
+      internal SharedPropsCache For(MsgPackNamingPolicy policy)
+      {
+        if (policy is null)
+          return this;
+        ConcurrentDictionary<MsgPackNamingPolicy, SharedPropsCache> caches = _withPolicy;
+        if (caches is null)
+        {
+          Interlocked.CompareExchange(ref _withPolicy, new ConcurrentDictionary<MsgPackNamingPolicy, SharedPropsCache>(), null);
+          caches = _withPolicy;
+        }
+        if (caches.TryGetValue(policy, out SharedPropsCache cache))
+          return cache;
+        return caches.GetOrAdd(policy, new SharedPropsCache(Filters, policy));
       }
     }
 
@@ -738,8 +797,8 @@ namespace LsMsgPack.Meta
       // The settings remember the cache of their filters, so the table is only consulted when the filters change (or for new settings)
       IMsgPackPropertyIncludeStatically[] filters = settings._staticFilters ?? NoStaticFilters;
       SharedPropsCache cache = settings._sharedPropsCache;
-      if (cache is null || !ReferenceEquals(cache.Filters, filters))
-        settings._sharedPropsCache = cache = SharedPropsCaches.GetValue(filters, f => new SharedPropsCache(f));
+      if (cache is null || !ReferenceEquals(cache.Filters, filters) || !ReferenceEquals(cache.Policy, settings._propertyNamingPolicy))
+        settings._sharedPropsCache = cache = SharedPropsCaches.GetValue(filters, f => new SharedPropsCache(f)).For(settings._propertyNamingPolicy);
       return cache;
     }
 
@@ -901,7 +960,8 @@ namespace LsMsgPack.Meta
       List<FullPropertyInfo> keptProps = new List<FullPropertyInfo>(props.Length);
       for (int t = 0; t < props.Length; t++)
       {
-        FullPropertyInfo full = new FullPropertyInfo(props[t]) { PropertyId = props[t].Name };
+        FullPropertyInfo full = new FullPropertyInfo(props[t]);
+        full.PropertyId = full.WrittenName = WrittenNameOf(full.Name, settings);
         if (IsStaticallyIncluded(full, settings))
         {
           full._accessor = PropertyAccessor.Get(props[t]); // shared by the copies (the accessors are global anyway)
@@ -913,7 +973,7 @@ namespace LsMsgPack.Meta
       {
         bool unique = true;
         for (int i = 0; i < keptProps.Count && unique; i++)
-          unique = i == t || !string.Equals(keptProps[i].Name, keptProps[t].Name, StringComparison.Ordinal);
+          unique = i == t || !string.Equals(keptProps[i].WrittenName, keptProps[t].WrittenName, StringComparison.Ordinal);
         keptProps[t]._uniqueName = unique;
       }
       return keptProps.ToArray();

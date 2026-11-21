@@ -412,6 +412,11 @@ namespace LsMsgPackAotSmokeTest
       yield return ("reference", () => Converted(new LsMsgPackOptions() { SchemaStore = Store, WriteSchemaReference = true }));
       yield return ("trimmed", () => Converted(new LsMsgPackOptions() { TrimTrailingNulls = true, DynamicallyCompact = false }));
       yield return ("public-fields", () => Converted(new LsMsgPackOptions() { StaticFilters = PublicFields }));
+      yield return ("naming-policies", () => Converted(new LsMsgPackOptions() // the generated code's straight-line names steps aside (its constants are the .NET names), its loop reads the written names
+      {
+        UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name,
+        PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower, DictionaryKeyPolicy = MsgPackNamingPolicy.CamelCase, EnumNamingPolicy = MsgPackNamingPolicy.KebabCaseLower
+      }));
       yield return ("preserve", () => Converted(new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve })); // the generated code, the nested values through PreservingHandler/PreservingReader
     }
 

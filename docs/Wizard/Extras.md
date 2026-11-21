@@ -68,6 +68,8 @@ A service that reads an object, changes it and writes it back loses the members 
 
 `serializer.Populate(bytes, current)` reads a payload into an object other code holds (a settings object, a view model): the members the data lacks keep their values. A member without a setter that holds an object (`public Address ShipTo { get; } = new Address();`) is skipped when read, as System.Text.Json skips it: `Populate = PopulateMembers.GetOnly` in the options (or `[MsgPackPopulate]` on the member) reads into it instead, `PopulateMembers.All` also keeps the objects and collections of settable members. More: [Populate.md](../Populate.md).
 
+Readers in other languages often expect `invoiceDate` or `invoice_date` rather than the .NET name `InvoiceDate`: `PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase` (or `SnakeCaseLower`, `KebabCaseLower`...) converts the names when they're written, and readers take both forms. `DictionaryKeyPolicy` and `EnumNamingPolicy` do the same for dictionary keys and enum names. The [TypeScript client](../TypeScriptClient.md) doesn't need it: it converts the names itself. More: [NamingPolicies.md](../NamingPolicies.md).
+
 Enums are written as their numbers, so inserting a value in the middle of an enum changes what stored data means. To write the names instead, set `EnumFormat = EnumFormat.Name` in the options, or put `[MsgPackEnumFormat(EnumFormat.Name)]` on the enum. The string enum attributes of System.Text.Json and Json.NET (`[JsonConverter(typeof(JsonStringEnumConverter))]`...) do the same. Readers take numbers and names, so data written before the switch still reads. More: [Enums.md](../Enums.md).
 
 ## Reading data you don't trust

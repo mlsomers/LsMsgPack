@@ -566,6 +566,39 @@ namespace LsMsgPackUnitTests
       CompareCorpus(ls, ltOptions);
     }
 
+    private static IEnumerable<object[]> NamingPolicySettings()
+    {
+      foreach (string policy in new[] { "CamelCase", "SnakeCaseLower", "KebabCaseUpper" })
+        foreach (SchemaMode mode in Enum.GetValues(typeof(SchemaMode)))
+          foreach (ObjectLayout layout in Enum.GetValues(typeof(ObjectLayout)))
+            yield return new object[] { policy, mode, layout };
+    }
+
+    /// <summary>
+    /// The naming policies (property names, dictionary keys and enum names, each another one), enums by name: the corpus in both schema versions.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(NamingPolicySettings))]
+    public void SameBytesAndValuesNamingPolicies(string policy, SchemaMode mode, ObjectLayout layout)
+    {
+      MsgPackNamingPolicy[] policies = NamingPolicyTests.Policies;
+      int p = Array.FindIndex(policies, n => n == (MsgPackNamingPolicy)typeof(MsgPackNamingPolicy).GetProperty(policy).GetValue(null));
+      foreach (SchemaVersion version in new[] { SchemaVersion.Names, SchemaVersion.Described })
+      {
+        MsgPackSettings ls = new MsgPackSettings()
+        {
+          SchemaVersion = version, PropertyNamingPolicy = policies[p], DictionaryKeyPolicy = policies[(p + 1) % policies.Length], EnumNamingPolicy = policies[(p + 2) % policies.Length], EnumFormat = EnumFormat.Name
+        };
+        Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
+        LsMsgPackOptions ltOptions = new LsMsgPackOptions()
+        {
+          SchemaVersion = version, PropertyNamingPolicy = ls.PropertyNamingPolicy, DictionaryKeyPolicy = ls.DictionaryKeyPolicy, EnumNamingPolicy = ls.EnumNamingPolicy, EnumFormat = EnumFormat.Name
+        };
+        Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
+        CompareCorpus(ls, ltOptions);
+      }
+    }
+
     private static IEnumerable<object[]> NonPublicSettings()
     {
       foreach (NonPublicProperties nonPublic in new[] { NonPublicProperties.Attributed, NonPublicProperties.All })

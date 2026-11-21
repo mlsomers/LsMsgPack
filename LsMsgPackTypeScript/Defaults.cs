@@ -262,7 +262,7 @@ namespace LsMsgPackTypeScript
         if (v == null)
           return null;
         if (!defaults.TryGetValue(prop.Name, out string d) || !string.Equals(d, v, StringComparison.Ordinal))
-          differ.Add(string.Concat(TypeScriptWriter.PropertyKey(_options.Field(prop.Name)), ": ", v));
+          differ.Add(string.Concat(TypeScriptWriter.PropertyKey(_options.Field(prop.WrittenName)), ": ", v));
       }
       string created = string.Concat("new ", model.TsName, "()");
       return differ.Count == 0 ? created : string.Concat("Object.assign(", created, ", { ", string.Join(", ", differ), " })");
@@ -314,7 +314,7 @@ namespace LsMsgPackTypeScript
       string member = Enum.GetName(type, value);
       if (member != null && _models.Enums.Contains(type) && _models.ByName(type) && !type.IsDefined(typeof(FlagsAttribute), false))
         return string.Concat(_models.EnumName(type), ".", TypeScriptWriter.Member(member));
-      string name = LsMsgPack.Meta.EnumNames.Of(type).NameOf(LsMsgPack.Meta.EnumNames.ToBits(value));
+      string name = LsMsgPack.Meta.EnumNames.Of(type, _models.Settings).NameOf(LsMsgPack.Meta.EnumNames.ToBits(value));
       if (name != null)
         return Quote(name);
       return Convert.ToString(Convert.ChangeType(value, Enum.GetUnderlyingType(type), CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);

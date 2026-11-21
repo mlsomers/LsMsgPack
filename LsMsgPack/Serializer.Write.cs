@@ -246,7 +246,7 @@ namespace LsMsgPack
     private ValueHandler<T> MemberEnumHandler<T>(Type enumType, EnumFormat format)
     {
       if (format == EnumFormat.Name)
-        EnumNames.Of(enumType); // its error as it is (see HandlerOf)
+        EnumNames.Of(enumType, Options); // its error as it is (see HandlerOf)
       object exact = format == EnumFormat.Name ? Instantiate(enumType, typeof(EnumNameHandler<>), enumType, this) : Instantiate(enumType, typeof(EnumHandler<>), enumType, null);
       if (typeof(T) == enumType)
         return (ValueHandler<T>)exact;
@@ -343,6 +343,8 @@ namespace LsMsgPack
     /// </summary>
     private void WriteKey(WriteContext c, object key, FullPropertyInfo keyInfo)
     {
+      if (key is string name && Options._dictionaryKeyPolicy != null) // DictionaryKeyPolicy: string keys converted
+        key = MsgPackNamingPolicy.Convert(Options._dictionaryKeyPolicy, name);
       ReferenceWriting references = c.References;
       if (references is null || !PreserveReferences)
       {
@@ -410,7 +412,7 @@ namespace LsMsgPack
         case TypeKind.Enum:
           return Instantiate(type, typeof(EnumHandler<>), type, null);
         case TypeKind.EnumName:
-          EnumNames.Of(type); // its error (two values with one name) as it is, not in a TargetInvocationException of the instantiation
+          EnumNames.Of(type, Options); // its error (two values with one name) as it is, not in a TargetInvocationException of the instantiation
           return Instantiate(type, typeof(EnumNameHandler<>), type, this);
         case TypeKind.Array:
           object numbers = NumberHandler(type);
@@ -675,7 +677,7 @@ namespace LsMsgPack
         FullPropertyInfo[] props = Options.ConverterFor(t) != null ? new FullPropertyInfo[0] : FullPropertyInfo.GetStaticallyIncludedProps(t, Options); // a converted type only named (IndexedSchemaTypeResolver.GetComplex)
         string[] names = new string[props.Length];
         for (int p = 0; p < props.Length; p++)
-          names[p] = props[p].Name;
+          names[p] = props[p].WrittenName; // PropertyNamingPolicy
         return new SchemaTypeInfo() { Type = t, Name = def.TypeName, IsCollection = t != typeof(string) && typeof(IEnumerable).IsAssignableFrom(t), PropertyNames = names };
       });
     }
@@ -1105,9 +1107,9 @@ namespace LsMsgPack
     /// <summary>
     /// A boxed enum by its name (<see cref="EnumFormat.Name"/>), its number when it has none.
     /// </summary>
-    private static void WriteEnumName(MsgPackWriter w, object value, Type type)
+    private void WriteEnumName(MsgPackWriter w, object value, Type type)
     {
-      string name = EnumNames.Of(type).NameOf(EnumNames.ToBits(value));
+      string name = EnumNames.Of(type, Options).NameOf(EnumNames.ToBits(value));
       if (name is null)
         WriteEnum(w, value, type);
       else

@@ -663,6 +663,16 @@ namespace LsMsgPack.Reading
     internal bool CaseInsensitive { get { return _caseInsensitive; } }
 
     /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNamingPolicy"/> writes another name than the .NET name for some property: keys that are not the written names are looked up by the .NET names too.
+    /// </summary>
+    private readonly bool _otherNames;
+
+    /// <summary>
+    /// <see cref="_caseInsensitive"/> or <see cref="_otherNames"/>: one test in FindByName (extra code there cost 2-3% on reading names without the options).
+    /// </summary>
+    private readonly bool _lookFurther;
+
+    /// <summary>
     /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the properties whose name equals another one's ignoring case (a key matching them sets none), null without the option.
     /// </summary>
     private readonly bool[] _ambiguous;
@@ -692,6 +702,9 @@ namespace LsMsgPack.Reading
           Props[t] = PropReader.Create(serializer, infos[t]);
       }
       Finishes = WithValues != null || Callbacks != null;
+      for (int t = Props.Length - 1; t >= 0; t--)
+        _otherNames |= Props[t].DotNetName != null;
+      _lookFurther = _caseInsensitive || _otherNames;
       if (_caseInsensitive)
       {
         _ambiguous = new bool[Props.Length];
@@ -885,9 +898,41 @@ namespace LsMsgPack.Reading
       PropReader[] props = Props;
       if (next < props.Length && props[next].NameIs(buffer, offset, length))
         return props[next++];
-      if (_caseInsensitive)
-        return FindOrMatchIgnoringCase(buffer, offset, length, ref next);
+      if (_lookFurther)
+        return _otherNames ? FindOtherName(buffer, offset, length, ref next) : FindOrMatchIgnoringCase(buffer, offset, length, ref next);
       return Search(buffer, offset, length, ref next);
+    }
+
+    /// <summary>
+    /// FindByName with <see cref="MsgPackOptions.PropertyNamingPolicy"/> when a property's .NET name is not its written name (apart, so FindByName stays small): the written names,
+    /// then the .NET names (data of writers without the policy), then with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/> ignoring case (written names, then .NET names).
+    /// </summary>
+    private PropReader FindOtherName(byte[] buffer, int offset, int length, ref int next)
+    {
+      PropReader found = _caseInsensitive ? FindOrMatchIgnoringCase(buffer, offset, length, ref next) : Search(buffer, offset, length, ref next);
+      if (found != null)
+        return found;
+      PropReader[] props = Props;
+      for (int t = 0; t < props.Length; t++)
+      {
+        if (props[t].DotNetNameIs(buffer, offset, length))
+        {
+          next = t + 1;
+          return props[t];
+        }
+      }
+      if (!_caseInsensitive)
+        return null;
+      string name = MsgPackOptions.StringEncoding.GetString(buffer, offset, length);
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        if (props[t].DotNetName is null || !string.Equals(props[t].DotNetName, name, StringComparison.OrdinalIgnoreCase))
+          continue;
+        if (found != null)
+          return null; // several (as FindIgnoringCase)
+        found = props[t];
+      }
+      return found;
     }
 
     /// <summary>
@@ -1036,6 +1081,19 @@ namespace LsMsgPack.Reading
     }
 
     /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNamingPolicy"/>: the property whose .NET name this is when the policy writes it otherwise, null for none.
+    /// </summary>
+    internal PropReader FindByDotNetName(string name)
+    {
+      for (int t = 0; t < Props.Length; t++)
+        if (Props[t].DotNetName == name)
+          return Props[t];
+      return null;
+    }
+
+    internal bool OtherNames { get { return _otherNames; } }
+
+    /// <summary>
     /// Creates the instances as <see cref="MsgPackOptions.ObjectCreation"/> says (decided once per type, the options of a serializer do not change).
     /// </summary>
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.Fallback)]
@@ -1165,8 +1223,25 @@ namespace LsMsgPack.Reading
     internal PropReader(FullPropertyInfo info)
     {
       Info = info;
-      Name = info.Name;
+      Name = info.WrittenName ?? info.Name;
       _nameBytes = MsgPackOptions.StringEncoding.GetBytes(Name);
+      if (info.Name != null && !string.Equals(Name, info.Name, StringComparison.Ordinal))
+      {
+        DotNetName = info.Name;
+        _dotNetBytes = MsgPackOptions.StringEncoding.GetBytes(info.Name);
+      }
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNamingPolicy"/>: the .NET name when the policy writes another one (read as a second name, data of writers without the policy), otherwise null.
+    /// </summary>
+    internal readonly string DotNetName;
+    private readonly byte[] _dotNetBytes;
+
+    internal bool DotNetNameIs(byte[] buffer, int offset, int length)
+    {
+      byte[] name = _dotNetBytes;
+      return name != null && name.Length == length && new ReadOnlySpan<byte>(buffer, offset, length).SequenceEqual(name);
     }
 
     /// <summary>
@@ -1924,10 +1999,27 @@ namespace LsMsgPack.Reading
         bound = new PropReader[def.Props.Count];
         for (int t = 0; t < bound.Length; t++)
           bound[t] = def.Props[t] is null ? null : plan.FindByName(def.Props[t]);
+        if (plan.OtherNames)
+          BindDotNetNames(bound, plan, def);
         if (plan.CaseInsensitive)
           BindIgnoringCase(bound, plan, def);
       }
       return _bindings.GetOrAdd(plan, new Cached(this, bound)); // another thread's binding is the same
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNamingPolicy"/>: the properties the entry names by their .NET names (a writer without the policy), where the written name is not in it.
+    /// </summary>
+    private static void BindDotNetNames(PropReader[] bound, ReadPlan plan, ComplexTypeDef def)
+    {
+      for (int t = 0; t < bound.Length; t++)
+      {
+        if (bound[t] != null || def.Props[t] is null)
+          continue;
+        PropReader prop = plan.FindByDotNetName(def.Props[t]);
+        if (prop != null && Array.IndexOf(bound, prop) < 0)
+          bound[t] = prop;
+      }
     }
 
     /// <summary>

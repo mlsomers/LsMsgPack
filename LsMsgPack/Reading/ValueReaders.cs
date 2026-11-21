@@ -706,7 +706,7 @@ namespace LsMsgPack.Reading
     private static TEnum ReadName(ReadContext c, int start, FullPropertyInfo assignedTo)
     {
       int length = c.R.TryReadStringHeader();
-      if (length >= 0 && EnumNameReading<TEnum>.TryMatch(c.R.Buf, c.R.Pos, length, out ulong bits))
+      if (length >= 0 && EnumNameReading<TEnum>.TryMatch(c.R.Buf, c.R.Pos, length, c.Serializer.Options._enumNamingPolicy, out ulong bits))
       {
         c.R.Pos += length;
         return FromBits(bits);
@@ -742,15 +742,26 @@ namespace LsMsgPack.Reading
 
     private static Name[] _names; // null until the first name is read (the same table by any thread)
 
+    /// <summary>
+    /// The table of the last <see cref="MsgPackOptions.EnumNamingPolicy"/> read with (an application has one, usually), replaced by another policy's.
+    /// </summary>
+    private static PolicyNames _ofPolicy;
+
+    private sealed class PolicyNames
+    {
+      internal MsgPackNamingPolicy Policy;
+      internal Name[] Names;
+    }
+
     private static bool IsSigned()
     {
       TypeCode code = Type.GetTypeCode(Enum.GetUnderlyingType(typeof(TEnum)));
       return code == TypeCode.SByte || code == TypeCode.Int16 || code == TypeCode.Int32 || code == TypeCode.Int64;
     }
 
-    internal static bool TryMatch(byte[] buffer, int at, int length, out ulong bits)
+    internal static bool TryMatch(byte[] buffer, int at, int length, MsgPackNamingPolicy policy, out ulong bits)
     {
-      Name[] names = _names;
+      Name[] names = policy is null ? _names : OfPolicy(policy);
       if (names is null)
       {
         if (!MsgPackWriter.IsUtf8(MsgPackOptions.StringEncoding))
@@ -758,7 +769,7 @@ namespace LsMsgPack.Reading
           bits = 0;
           return false;
         }
-        names = Build();
+        names = Build(policy);
       }
       for (int t = 0; t < names.Length; t++)
       {
@@ -773,13 +784,22 @@ namespace LsMsgPack.Reading
       return false;
     }
 
-    private static Name[] Build()
+    private static Name[] OfPolicy(MsgPackNamingPolicy policy)
     {
-      List<KeyValuePair<string, ulong>> all = EnumNames.Of(typeof(TEnum)).AllNames();
+      PolicyNames last = _ofPolicy;
+      return last != null && ReferenceEquals(last.Policy, policy) ? last.Names : null;
+    }
+
+    private static Name[] Build(MsgPackNamingPolicy policy)
+    {
+      List<KeyValuePair<string, ulong>> all = EnumNames.Of(typeof(TEnum), policy).AllNames();
       Name[] names = new Name[all.Count];
       for (int t = 0; t < all.Count; t++)
         names[t] = new Name { Bytes = Encoding.UTF8.GetBytes(all[t].Key), Bits = all[t].Value };
-      _names = names;
+      if (policy is null)
+        _names = names;
+      else
+        _ofPolicy = new PolicyNames { Policy = policy, Names = names };
       return names;
     }
   }
