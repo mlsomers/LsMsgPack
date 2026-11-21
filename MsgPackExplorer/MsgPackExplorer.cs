@@ -241,8 +241,47 @@ namespace MsgPackExplorer
                 ReadLsMsgPackExtensions = _lsMsgPackExtensions,
                 ReadStreams = _lsMsgPackExtensions,
                 ReadHubMessages = true, // a capture of a SignalR connection (only when the whole data is one): its handshake, length prefixes and messages
+                Compression = Lz4OrNull(), // LZ4 compressed bodies (either layout, MessagePack-CSharp's too) with their decompressed body
                 TruncateValuesLargerThan = MsgPackSettings.PracticalDebuggingLimit
             };
+        }
+
+        /// <summary>
+        /// LZ4 (LsMsgPack.Lz4 with K4os.Compression.LZ4), null when the application hosting this control does not have those assemblies (compressed bodies then show as they are).
+        /// </summary>
+        private static LsMsgPack.Compression.MsgPackCompression Lz4OrNull()
+        {
+            try
+            {
+                return Lz4();
+            }
+            catch (FileNotFoundException)
+            {
+                return null;
+            }
+            catch (FileLoadException)
+            {
+                return null;
+            }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)] // the assemblies are loaded when this is compiled, inside the caller's try
+        private static LsMsgPack.Compression.MsgPackCompression Lz4()
+        {
+            return LsMsgPack.Compression.Lz4Compression.Block;
+        }
+
+        /// <summary>
+        /// The <see cref="TreeNode.Name"/> of the decompressed body of a compressed body: its offsets count in the decompressed bytes, so it is not in the hex view.
+        /// </summary>
+        private const string DecompressedNodeName = "decompressed";
+
+        private static bool InDecompressedBody(TreeNode node)
+        {
+            for (TreeNode n = node; !ReferenceEquals(n, null); n = n.Parent)
+                if (n.Name == DecompressedNodeName)
+                    return true;
+            return false;
         }
 
         /// <summary>
@@ -573,6 +612,8 @@ namespace MsgPackExplorer
 
             for (int t = 0; t < node.Nodes.Count; t++)
             {
+                if (node.Nodes[t].Name == DecompressedNodeName) // other bytes than the data's: not in the hex view
+                    continue;
                 AddParts(hex, node.Nodes[t], ref previousMeta);
             }
 
@@ -628,6 +669,28 @@ namespace MsgPackExplorer
                 return;
             if (ReferenceEquals(item, null)) return;
             Type typ = item.GetType();
+            IMpCompressed compressed = item as IMpCompressed;
+            if (!ReferenceEquals(compressed, null))
+            {
+                // A compressed body: the blocks (an array of them), then the decompressed body
+                MpCompressedBlocks blocks = item as MpCompressedBlocks;
+                if (!ReferenceEquals(blocks, null))
+                {
+                    MsgPackItem[] parts = blocks.PackedValues;
+                    for (int t = 0; t < parts.Length && !ReferenceEquals(parts[t], null); t++)
+                    {
+                        TreeNode part = GetTreeNodeFor(parts[t]);
+                        part.Text = string.Concat(t == 0 ? "lengths" : "block " + t.ToString(), ": ", part.Text);
+                        node.Nodes.Add(part);
+                    }
+                }
+                TreeNode body = GetTreeNodeFor(compressed.Body);
+                body.Text = "decompressed: " + body.Text;
+                body.Name = DecompressedNodeName;
+                node.Nodes.Add(body);
+                Traverse(body, compressed.Body, index);
+                return;
+            }
             if (typ == typeof(MpBool)) return;
             if (typ == typeof(MpInt) || typ == typeof(MpHubPrefix)) return;
             if (typ == typeof(MpFloat)) return;
@@ -768,6 +831,7 @@ namespace MsgPackExplorer
             if (typ == typeof(MpStreamIndex) || typ == typeof(MpStreamSidecar)) return 10;
             if (typ == typeof(MpError)) return 11;
             if (typ == typeof(MpRoot)) return 12;
+            if (item is MpCompressedBlocks) return 6; // an LZ4 compressed body: an array of blocks, or an extension (below)
             if (item is MpExt) return 10; // timestamps and other custom extensions (-1 would show the icon of nil)
             return -1;
         }
@@ -797,7 +861,7 @@ namespace MsgPackExplorer
                 }
                 else
                 {
-                    statusOffset.Text = string.Concat(item.StoredOffset, " (0x", item.StoredOffset.ToString("X"), ")");
+                    statusOffset.Text = string.Concat(InDecompressedBody(e.Node) ? "decompressed " : string.Empty, item.StoredOffset, " (0x", item.StoredOffset.ToString("X"), ")");
                     EditorMetaData meta = item.Tag as EditorMetaData;
                     ColorSelectedNodeInHexView(meta);
                 }

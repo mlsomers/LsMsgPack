@@ -126,6 +126,8 @@ namespace LsMsgPackDebug
           return this;
         if (type == typeof(MpReference))
           return ((MpReference)this).Plain;
+        if (type == typeof(MpCompressed) || type == typeof(MpCompressedBlocks)) // the decompressed body
+          return ((IMpCompressed)this).Body.UnpackedValue;
         return Value;
       }
     }

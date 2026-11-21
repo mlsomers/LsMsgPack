@@ -100,6 +100,8 @@ namespace LsMsgPackInspector
     private LoadResult Read(InspectorSettings settings)
     {
       _items.Clear();
+      _inCompressed.Clear();
+      _compressedBody = null;
       _ids.Clear();
       _children.Clear();
       _item = null;
@@ -121,6 +123,7 @@ namespace LsMsgPackInspector
         ReadLsMsgPackExtensions = settings.LsMsgPackExtensions,
         ReadStreams = settings.LsMsgPackExtensions,
         ReadHubMessages = true, // a capture of a SignalR connection (only when the whole data is one): its handshake, length prefixes and messages
+        Compression = LsMsgPack.Compression.Lz4Compression.Block, // LZ4 compressed bodies (either layout, MessagePack-CSharp's too) with their decompressed body
         TruncateValuesLargerThan = settings.LargeValueLimit
       };
 
@@ -212,6 +215,24 @@ namespace LsMsgPackInspector
 
     #region The MsgPack tree
 
+    /// <summary>
+    /// While the items of a decompressed body are added: the compressed body in the data that holds them (their offsets count in the decompressed bytes, the hex view selects the compressed body).
+    /// </summary>
+    private MsgPackItem _compressedBody;
+
+    /// <summary>
+    /// The items of decompressed bodies and the compressed body in the data that holds each.
+    /// </summary>
+    private readonly Dictionary<MsgPackItem, MsgPackItem> _inCompressed = new Dictionary<MsgPackItem, MsgPackItem>(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// The item whose bytes are in the data for this one: itself, or the compressed body it is decompressed from.
+    /// </summary>
+    private MsgPackItem InData(MsgPackItem item)
+    {
+      return !ReferenceEquals(item, null) && _inCompressed.TryGetValue(item, out MsgPackItem compressed) ? compressed : item;
+    }
+
     private int AddItem(LoadResult result, MsgPackItem item, int parent, string role, bool schema)
     {
       int id = _items.Count;
@@ -258,6 +279,16 @@ namespace LsMsgPackInspector
           model.LengthBytes = varLen != null && !(item is MpHubHandshake) ? GetLengthBytes(item.TypeId) : 0;
         }
         model.Props = GetProperties(item);
+        if (_compressedBody != null) // in a decompressed body: the hex view selects the compressed body
+        {
+          _inCompressed[item] = _compressedBody;
+          model.Props.Add(new PropModel("Compression", "Decompressed offset", "The offset in the decompressed body (the hex view shows the compressed bytes).", item.StoredOffset.ToString(CultureInfo.InvariantCulture)));
+          model.Offset = _compressedBody.StoredOffset;
+          model.Length = _compressedBody.StoredLength;
+          model.TypeBytes = 0;
+          model.LengthBytes = 0;
+          model.EndBytes = 0;
+        }
       }
       result.Items.Add(model);
       return id;
@@ -287,6 +318,26 @@ namespace LsMsgPackInspector
           Traverse(result, child, root[t]);
           if (_nodeCount > _displayLimit)
             return;
+        }
+      }
+      else if (item is IMpCompressed compressed)
+      {
+        if (item is MpArray blocks) // the extension with the lengths, then the blocks
+        {
+          MsgPackItem[] parts = blocks.PackedValues;
+          for (int t = 0; t < parts.Length && !ReferenceEquals(parts[t], null); t++)
+            AddItem(result, parts[t], id, t == 0 ? "lengths" : string.Concat("block ", t.ToString(CultureInfo.InvariantCulture)), false);
+        }
+        MsgPackItem outer = _compressedBody;
+        _compressedBody = outer ?? item;
+        try
+        {
+          int body = AddItem(result, compressed.Body, id, "decompressed", false);
+          Traverse(result, body, compressed.Body, index);
+        }
+        finally
+        {
+          _compressedBody = outer;
         }
       }
       else if (item is MpArray array)
@@ -380,6 +431,7 @@ namespace LsMsgPackInspector
       if (item is MpHubMessage) return "message";
       if (item is MpHubPrefix) return "prefix";
       if (item is MpHubHandshake) return "handshake";
+      if (item is IMpCompressed) return "compressed";
       Type typ = item.GetType();
       if (typ == typeof(MpNull)) return "nil";
       if (typ == typeof(MpBool)) return "bool";
@@ -587,8 +639,9 @@ namespace LsMsgPackInspector
 
       long start = -1;
       long end = -1;
-      foreach (MsgPackItem item in new[] { obj.FirstItemRef, obj.LastItemRef })
+      foreach (MsgPackItem reference in new[] { obj.FirstItemRef, obj.LastItemRef })
       {
+        MsgPackItem item = InData(reference); // the objects of a decompressed body select the compressed body
         if (ReferenceEquals(item, null))
           continue;
         if (start < 0 || item.StoredOffset < start)

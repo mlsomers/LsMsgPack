@@ -236,6 +236,8 @@ namespace LsMsgPack
     internal long _maxItems = int.MaxValue;
     internal int _maxStringLength = int.MaxValue;
     internal int _maxBinLength = int.MaxValue;
+    internal Compression.MsgPackCompression _compression;
+    internal int _maxDecompressedLength = int.MaxValue;
     internal ReferenceHandling _referenceHandling = Default_ReferenceHandling;
     internal ObjectCreation _objectCreation = Default_ObjectCreation;
     internal ReadErrorHandling _readErrors = Default_ReadErrors;
@@ -680,6 +682,30 @@ namespace LsMsgPack
     {
       get { return _maxBinLength; }
       set { _maxBinLength = value < 0 ? 0 : value; }
+    }
+
+    /// <summary>
+    /// Compresses the body of each payload with LZ4 (null, off, by default): <c>Lz4Compression.Block</c> or <c>Lz4Compression.BlockArray</c> of the package LsMsgPack.Lz4, in the format of
+    /// MessagePack-CSharp's <c>Lz4Block</c> and <c>Lz4BlockArray</c> (see <see cref="Compression.MsgPackCompression"/> and docs/Compression.md).
+    /// <para>The schema (or the reference to it) stays in front of the body as it is; a body shorter than <see cref="Compression.MsgPackCompression.MinimumLength"/> (64 bytes), or one compression would
+    /// not make shorter, is written as it is. Readers need the option too: with it they take compressed and uncompressed bodies (either layout), without it a compressed body is an extension value.</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public Compression.MsgPackCompression Compression { get { return _compression; } set { _compression = value; } }
+
+    /// <summary>
+    /// The longest body a compressed body may decompress to, in bytes; a longer one throws a <see cref="MsgPackException"/> before anything is allocated. Unlimited (<see cref="int.MaxValue"/>)
+    /// by default, 64 MiB in the HTTP serializer.
+    /// <para>A limit for untrusted data: LZ4 makes up to 255 bytes of each byte (a body of 30 MB can claim gigabytes). Whatever this says, a body cannot claim more than its blocks can produce.</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Max Decompressed Length")]
+    [Description("The longest body a compressed body may decompress to, in bytes, before an exception is thrown.")]
+    [DefaultValue(int.MaxValue)]
+    public int MaxDecompressedLength
+    {
+      get { return _maxDecompressedLength; }
+      set { _maxDecompressedLength = value < 0 ? 0 : value; }
     }
 
     /// <summary>

@@ -9,6 +9,7 @@
       "LsMsgPackDebug/LsMsgPackDebug.csproj",
       "LsMsgPack/LsMsgPack.csproj",
       "LsMsgPack.Data/LsMsgPack.Data.csproj",
+      "LsMsgPack.Lz4/LsMsgPack.Lz4.csproj",
       "LsMsgPack.SignalR/LsMsgPack.SignalR.csproj",
       "LsMsgPack.Generator/LsMsgPack.Generator.csproj",
       "LsMsgPack.GeneratorTests/LsMsgPack.GeneratorTests.csproj",

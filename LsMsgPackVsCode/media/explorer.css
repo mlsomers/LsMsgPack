@@ -314,6 +314,7 @@ button:focus-visible,
 .badge.message { background: #3a5a8a; } /* SignalR */
 .badge.prefix { background: #4a4a6a; }
 .badge.handshake { background: #4a4a6a; }
+.badge.compressed { background: #3a6a6a; } /* LZ4 compressed body */
 .badge.other { background: #555; }
 .badge.limit { background: transparent; color: var(--vscode-descriptionForeground); }
 

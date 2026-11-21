@@ -181,6 +181,9 @@ namespace LsMsgPackDebug
 #else
       }
 #endif
+      // A body compressed in blocks (MsgPackOptions.Compression) where a payload's body starts, as LsMsgPack reads it
+      if (_depth == 0 && len >= 2 && _settings._compression != null && items[0] is MpExt ext && ext.TypeSpecifier == LsMsgPack.Compression.MsgPackCompression.BlockArrayExtensionType)
+        return new MpCompressedBlocks(this);
       return this;
     }
 

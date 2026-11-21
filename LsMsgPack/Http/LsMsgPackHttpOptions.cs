@@ -95,6 +95,12 @@ namespace LsMsgPack.Http
     public int MaxBinLength { get; set; } = int.MaxValue;
 
     /// <summary>
+    /// The longest body a compressed body may decompress to, in bytes (<see cref="MsgPackOptions.MaxDecompressedLength"/>, replaces the value of <see cref="XLsMsgPack"/> and <see cref="Plain"/>),
+    /// default 64 MiB. Only read when the options have <see cref="MsgPackOptions.Compression"/> (off by default: HTTP has its own compression).
+    /// </summary>
+    public int MaxDecompressedLength { get; set; } = 64 * 1024 * 1024;
+
+    /// <summary>
     /// Collect what did not match between a body and the classes it is read into (<see cref="ReadDifferences"/>: unknown properties, classes without a schema entry, type ids that are not found...). Default false.
     /// <para>ASP.NET Core: in <c>HttpContext.Features</c> (<c>HttpContext.GetReadDifferences()</c>) and logged (see <see cref="LogDifferencesAsWarning"/>). Web API and HttpClient: <c>HttpContent.GetReadDifferences()</c> (also <c>request.GetReadDifferences()</c>).
     /// MVC 5: <c>HttpContextBase.GetReadDifferences()</c>. Reading with it is a bit slower (see docs/ReadDifferences.md), the report itself is only made when it is asked for.</para>

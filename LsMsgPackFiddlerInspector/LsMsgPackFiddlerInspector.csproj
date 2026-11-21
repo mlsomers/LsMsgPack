@@ -95,6 +95,10 @@
       <Project>{341c8f0f-1d80-4129-92cf-a8494dd78fd0}</Project>
       <Name>LsMsgPack.Core</Name>
     </ProjectReference>
+    <ProjectReference Include="..\LsMsgPack.Lz4\LsMsgPack.Lz4.csproj">
+      <Project>{11ce1fa5-206f-494c-8374-9a1161019d01}</Project>
+      <Name>LsMsgPack.Lz4</Name>
+    </ProjectReference>
     <ProjectReference Include="..\MsgPackExplorer\MsgPackExplorer.csproj">
       <Project>{a43ed63b-ca9c-4fdf-b02b-8e7f958903a2}</Project>
       <Name>MsgPackExplorer</Name>

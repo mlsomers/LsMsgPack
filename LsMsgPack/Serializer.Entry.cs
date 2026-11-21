@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Compression;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Types;
 using LsMsgPack.IO;
@@ -30,6 +31,11 @@ namespace LsMsgPack
       internal WriteContext Context;
       internal MsgPackWriter Body = new MsgPackWriter(1024);
       internal MsgPackWriter Schema = new MsgPackWriter(256);
+
+      /// <summary>
+      /// The compressed body (<see cref="MsgPackOptions.Compression"/>), made at the first one.
+      /// </summary>
+      internal MsgPackWriter Compressed;
       internal InlineSchema Inline = new InlineSchema();
 
       /// <summary>
@@ -71,6 +77,8 @@ namespace LsMsgPack
     {
       if (state.Body.Buf.Length > 1024 * 1024) // do not keep a huge buffer alive
         state.Body = new MsgPackWriter(1024);
+      if (state.Compressed != null && state.Compressed.Buf.Length > 1024 * 1024)
+        state.Compressed = null;
       _threadState = state;
     }
 
@@ -203,7 +211,7 @@ namespace LsMsgPack
           if (!ReferenceEquals(c.IdSettings, Options))
             c.IdSettings = Options;
           RunWrite(c, root, write);
-          Output(null, 0, false, c.W, target, sink, out result);
+          Output(state, null, 0, false, c.W, target, sink, out result);
           return;
         }
 
@@ -229,7 +237,7 @@ namespace LsMsgPack
               c.Mode = IdMode.Session;
               c.IdSettings = shared.Settings(Options);
               RunWrite(c, root, write);
-              Output(current.Reference, current.Reference.Length, true, c.W, target, sink, out result);
+              Output(state, current.Reference, current.Reference.Length, true, c.W, target, sink, out result);
               return;
             }
             catch (SchemaGrowthException) // something the session does not have yet, RunWriter grows it
@@ -238,7 +246,7 @@ namespace LsMsgPack
           }
 
           SchemaSession session = WriteGrowing(store, assignedTo, c, root, write);
-          Output(session.Reference, session.Reference.Length, true, c.W, target, sink, out result);
+          Output(state, session.Reference, session.Reference.Length, true, c.W, target, sink, out result);
           return;
         }
 
@@ -267,7 +275,7 @@ namespace LsMsgPack
           RunWrite(c, root, write);
           schema.Raw(resolver.Pack(Options, assignedTo, Options));
         }
-        Output(schema.Buf, schema.Pos, false, c.W, target, sink, out result);
+        Output(state, schema.Buf, schema.Pos, false, c.W, target, sink, out result);
       }
       finally
       {
@@ -506,8 +514,12 @@ namespace LsMsgPack
     }
 
     /// <param name="reference">The head is a reference to a schema of the store (<see cref="SchemaStore.ReferenceLength"/> bytes)</param>
-    private static void Output(byte[] head, int headLength, bool reference, MsgPackWriter body, Stream target, IPayloadSink sink, out byte[] result)
+    private void Output(WriteState state, byte[] head, int headLength, bool reference, MsgPackWriter body, Stream target, IPayloadSink sink, out byte[] result)
     {
+      MsgPackCompression compression = Options._compression;
+      if (compression != null && CompressedBody.Compresses(compression, body.Pos))
+        body = Compressed(state, compression, body);
+
       if (sink != null)
       {
         result = null;
@@ -528,6 +540,25 @@ namespace LsMsgPack
       if (headLength > 0)
         new ReadOnlySpan<byte>(head, 0, headLength).CopyTo(result); // Buffer.BlockCopy checks the array types first
       new ReadOnlySpan<byte>(body.Buf, 0, body.Pos).CopyTo(new Span<byte>(result, headLength, body.Pos));
+    }
+
+    /// <summary>
+    /// The body compressed into the state's second writer (<see cref="MsgPackOptions.Compression"/>), or <paramref name="body"/> itself when compressing would not make it shorter.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private MsgPackWriter Compressed(WriteState state, MsgPackCompression compression, MsgPackWriter body)
+    {
+      int max = CompressedBody.MaxLength(compression, body.Pos);
+      if (max < 0)
+        return body;
+      MsgPackWriter compressed = state.Compressed ?? (state.Compressed = new MsgPackWriter(Math.Max(max, 1024)));
+      compressed.Reset(Options);
+      compressed.Ensure(max);
+      int written = CompressedBody.Write(compression, new ReadOnlySpan<byte>(body.Buf, 0, body.Pos), new Span<byte>(compressed.Buf, 0, max), CompressedBody.BigEndian(Options));
+      if (written == 0)
+        return body;
+      compressed.Pos = written;
+      return compressed;
     }
   }
 

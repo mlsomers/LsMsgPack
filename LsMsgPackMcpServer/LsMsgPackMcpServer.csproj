@@ -60,6 +60,8 @@
     <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
     <ProjectReference Include="..\LsMsgPackDebug\LsMsgPackDebug.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
     <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
+    <!-- LZ4 compressed bodies (MsgPackOptions.Compression) are shown decompressed -->
+    <ProjectReference Include="..\LsMsgPack.Lz4\LsMsgPack.Lz4.csproj" AdditionalProperties="Configuration=$(KeepTrackConfiguration)" GlobalPropertiesToRemove="CurrentSolutionConfigurationContents;BuildingSolutionFile" />
   </ItemGroup>
 
 </Project>

@@ -123,6 +123,9 @@ namespace ObjectDebugger
       }
 #endif
 
+      if (item is IMpCompressed compressed) // a compressed body (MsgPackOptions.Compression): its decompressed body is the value
+        return FromItem(compressed.Body);
+
       if (item is MpArray array)
       {
         Array values = (Array)array.Value;

@@ -153,6 +153,32 @@ test('a capture of a SignalR connection: the handshake, length prefixes and mess
   }
 });
 
+test('an LZ4 compressed body: the decompressed items select the compressed bytes', { skip }, async () => {
+  // Six objects as MessagePack-CSharp writes them with Lz4Block (ext 99) and Lz4BlockArray (an array starting with ext 98)
+  const block = Buffer.from('c77263d200000127c49683a8437573746f6d6572aa0900f3062030a85175616e7469747900a750726f64756374a908002f2030310001153131001d0131001f31310001153231001d0231001f323100010693001d0331001f333100010693001d0431001f3431000106930019053100507563742030', 'hex');
+  const blocks = Buffer.from('92c70362cd0127c60000006dc49683a8437573746f6d6572aa0900f3062030a85175616e7469747900a750726f64756374a908002f2030310001153131001d0131001f31310001153231001d0231001f323100010693001d0331001f333100010693001d0431001f3431000106930019053100507563742030', 'hex');
+  const client = new InspectorClient(process.env.DOTNET || 'dotnet', assembly);
+  try {
+    for (const [name, bytes, roles] of [['block', block, ['decompressed']], ['blocks', blocks, ['lengths', 'block 1', 'decompressed']]]) {
+      const model = await client.load(name, bytes.toString('base64'), Object.assign({}, settings, { objects: 'show' }));
+      const compressed = model.items[0];
+      assert.strictEqual(compressed.kind, 'compressed', name);
+      assert.deepStrictEqual(model.items.filter((i) => i.parent === compressed.id).map((i) => i.role), roles, name);
+      const body = model.items.find((i) => i.role === 'decompressed');
+      assert.match(body.text, /6 items/, name);
+      const value = model.items.find((i) => i.role === 'value' && /Customer 2/.test(i.text));
+      assert.ok(value, name);
+      assert.strictEqual(value.offset, 0, 'the hex view selects the compressed body');
+      assert.strictEqual(value.length, bytes.length);
+      assert.ok(value.props.some((p) => p.name === 'Decompressed offset'), name);
+      assert.ok(!model.issues.some((issue) => issue.severity === 'Error'), name);
+      assert.ok(model.objects.nodes.some((n) => /Customer/.test(JSON.stringify(n))), 'the objects of the decompressed body');
+    }
+  } finally {
+    client.dispose();
+  }
+});
+
 test('started again after it stopped', { skip }, async () => {
   const client = new InspectorClient(process.env.DOTNET || 'dotnet', assembly);
   try {

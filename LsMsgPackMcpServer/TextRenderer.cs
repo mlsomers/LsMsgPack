@@ -277,6 +277,10 @@ namespace LsMsgPackMcp
         else
           parts.Add(string.Concat("a single ", TypeName(doc, error.PartialItem), error.IsInNestedItem ? " holding an error" : " that could not be read"));
       }
+      else if (doc.Root.Item is IMpCompressed compressedRoot)
+      {
+        parts.Add(string.Concat("a single ", TypeName(doc, compressedRoot.Body), " (compressed)"));
+      }
       else
       {
         parts.Add(string.Concat("a single ", TypeName(doc, doc.Root.Item)));
@@ -289,7 +293,36 @@ namespace LsMsgPackMcp
       string hub = DescribeHubCapture(doc);
       if (hub != null)
         parts.Insert(0, hub);
+      string compressed = DescribeCompression(doc);
+      if (compressed != null)
+        parts.Add(compressed);
       return string.Join("; ", parts);
+    }
+
+    /// <summary>
+    /// The LZ4 compressed bodies (MsgPackOptions.Compression, MessagePack-CSharp's Lz4Block and Lz4BlockArray), null without them.
+    /// </summary>
+    private static string DescribeCompression(PayloadDocument doc)
+    {
+      int count = 0;
+      long compressed = 0;
+      long decompressed = 0;
+      string layout = null;
+      foreach (ItemNode node in doc.Items)
+      {
+        if (node.Item is IMpCompressed body && node.Decompressed is null)
+        {
+          count++;
+          compressed += node.Length;
+          decompressed += body.Decompressed.Length;
+          string name = body.Layout == LsMsgPack.Compression.MsgPackCompressionLayout.Block ? "one block, MessagePack-CSharp's Lz4Block" : "blocks, MessagePack-CSharp's Lz4BlockArray";
+          layout = layout is null || layout == name ? name : "both layouts";
+        }
+      }
+      if (count == 0)
+        return null;
+      return string.Concat(count == 1 ? "the body is LZ4 compressed (" : string.Concat(count.ToString(CultureInfo.InvariantCulture), " bodies are LZ4 compressed ("), layout, "): ",
+        Count(compressed, "byte", "bytes"), ", ", Count(decompressed, "byte", "bytes"), " decompressed; the items view shows them decompressed with offsets after d+ counting in the decompressed body");
     }
 
     /// <summary>
@@ -776,9 +809,10 @@ namespace LsMsgPackMcp
       int skipped = 0;
       foreach (ItemNode node in doc.Items)
       {
+        ItemNode inData = node.InData; // the items of a decompressed body are shown with the compressed body that holds them
         long start = node.Offset;
-        long end = start + Math.Max(1, node.Length) - 1;
-        if (end < options.From || start > options.To)
+        long end = inData.Offset + Math.Max(1, inData.Length) - 1;
+        if (end < options.From || inData.Offset > options.To)
           continue;
         if (budget <= 0)
         {
@@ -786,7 +820,7 @@ namespace LsMsgPackMcp
           continue;
         }
         budget--;
-        sb.Append("0x").Append(start < 0 ? new string('?', width) : start.ToString("X" + width.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture)).Append(' ');
+        sb.Append(node.Decompressed is null ? "0x" : "d+").Append(start < 0 ? new string('?', width) : start.ToString("X" + width.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture)).Append(' ');
         sb.Append(' ', Math.Min(node.Depth, MaxLevels) * 2);
         if (node.Depth > MaxLevels)
           sb.Append("(level ").Append(node.Depth.ToString(CultureInfo.InvariantCulture)).Append(") ");
@@ -844,6 +878,9 @@ namespace LsMsgPackMcp
       long claimed = doc.ClaimedLength(item);
       // The slots of a container cut off by an error that were not read are null
       bool cutOff = doc.ErrorAround(item) != null;
+      if (item is MpCompressedBlocks blocks)
+        return string.Concat(type, ", ", Count(blocks.PackedValues.Length, "item", "items"), ": LZ4 compressed body in ", Count(blocks.BlockCount, "block", "blocks"),
+          " (MessagePack-CSharp's Lz4BlockArray), ", Count(blocks.Decompressed.Length, "byte", "bytes"), " decompressed");
       if (item is MpArray array)
         return string.Concat(type, ", ", Claimed(cutOff ? Array.FindAll(array.PackedValues, v => !(v is null)).Length : array.PackedValues.Length, claimed, "item", "items"));
       if (item is MpMap map)
@@ -872,6 +909,9 @@ namespace LsMsgPackMcp
         string head = string.Concat(type, ", type ", ext.TypeSpecifier.ToString(CultureInfo.InvariantCulture));
         if (item is MpReference reference)
           return string.Concat(head, " (reference): the value at path ", reference.PathText ?? "? (not a valid path)");
+        if (item is MpCompressed compressed)
+          return string.Concat(head, " (LZ4 compressed body, one block: MessagePack-CSharp's Lz4Block), ", Count(compressed.Count, "byte", "bytes"), ", ",
+            Count(compressed.Decompressed.Length, "byte", "bytes"), " decompressed");
         if (item is MpStreamIndex index)
         {
           if (index.Index is null)
@@ -1064,6 +1104,8 @@ namespace LsMsgPackMcp
         sb.Append(", a byte of a SignalR length prefix (VarInt: 7 bits of the length, the high bit set when another byte follows), not MsgPack.").Append('\n');
       else if (node?.Item is MpHubHandshake)
         sb.Append(", in the JSON text of the SignalR handshake, not MsgPack.").Append('\n');
+      else if (InCompressedData(doc, node, offset))
+        sb.Append(", in LZ4 compressed data, not MsgPack (the items view shows the decompressed body).").Append('\n');
       else
         sb.Append(", as a type byte: ").Append(DescribeTypeByte(b, offset + 1 < doc.Data.Length ? doc.Data[offset + 1] : -1)).Append(".").Append('\n');
 
@@ -1135,6 +1177,18 @@ namespace LsMsgPackMcp
     /// <summary>
     /// The bytes before the content: the type byte and the length that follows it (and the type of an extension).
     /// </summary>
+    /// <summary>
+    /// The byte is in the LZ4 data of a compressed body: after the length (int32) of one block, or in the content of a block of an array of blocks.
+    /// </summary>
+    private static bool InCompressedData(PayloadDocument doc, ItemNode node, long offset)
+    {
+      if (node?.Item is MpCompressed)
+        return offset >= node.Offset + HeaderLength(node.Item, doc.Data, node.Offset) + 5;
+      if (node?.Parent?.Item is MpCompressedBlocks && node.Role != "lengths" && !(node.Item is null))
+        return offset >= node.Offset + HeaderLength(node.Item, doc.Data, node.Offset);
+      return false;
+    }
+
     private static int HeaderLength(MsgPackItem item, byte[] data, long offset)
     {
       if (item is null || item is MpError || offset >= data.Length)
@@ -1248,7 +1302,7 @@ namespace LsMsgPackMcp
       for (int t = 0; t < matches.Count && t < max; t++)
       {
         ItemNode node = doc.GetNode(matches[t]);
-        sb.Append("  ").Append(Hex(matches[t].StoredOffset)).Append(' ');
+        sb.Append("  ").Append(node?.Decompressed is null ? Hex(matches[t].StoredOffset) : string.Concat("d+", matches[t].StoredOffset.ToString("X", CultureInfo.InvariantCulture), " (in a decompressed body)")).Append(' ');
         if (node != null && node.Role == "key")
           sb.Append("key ");
         sb.Append(DescribeItem(doc, matches[t], options));

@@ -453,6 +453,43 @@ namespace LsMsgPackMcpServerTests
       Assert.IsFalse(Render(new byte[] { 0x02, 0x91, 0x01 }).Contains("SignalR", StringComparison.Ordinal));
     }
 
+    public class McpCompressedLine
+    {
+      public string Product { get; set; }
+      public int Quantity { get; set; }
+    }
+
+    /// <summary>
+    /// An LZ4 compressed body (MsgPackOptions.Compression, both layouts) after an inline schema: shown decompressed, its items with offsets in the decompressed body (d+),
+    /// a byte of the compressed data explained as such, values found by search.
+    /// </summary>
+    [TestMethod]
+    public void CompressedBody_ShownDecompressed()
+    {
+      System.Collections.Generic.List<McpCompressedLine> lines = new System.Collections.Generic.List<McpCompressedLine>();
+      for (int t = 0; t < 50; t++)
+        lines.Add(new McpCompressedLine() { Product = "Product " + (t % 4), Quantity = t });
+      foreach (LsMsgPack.Compression.Lz4Compression compression in new[] { LsMsgPack.Compression.Lz4Compression.Block, LsMsgPack.Compression.Lz4Compression.BlockArray })
+      {
+        byte[] bytes = new LsMsgPackSerializer(new LsMsgPackOptions() { Compression = compression, ObjectLayout = ObjectLayout.Map }).Serialize(lines);
+        string text = Render(bytes, new RenderOptions() { Issues = IssueLevel.All });
+        AssertContains(text, "Structure: indexed schema (inline, 1 types) followed by the body; the body is LZ4 compressed (");
+        AssertContains(text, compression.Layout == LsMsgPack.Compression.MsgPackCompressionLayout.Block ? "one block, MessagePack-CSharp's Lz4Block" : "blocks, MessagePack-CSharp's Lz4BlockArray");
+        AssertContains(text, "No errors");
+        AssertContains(text, "{ \"Product\": \"Product 1\", \"Quantity\": 49 }");
+
+        string items = Render(bytes, new RenderOptions() { View = DecodeView.Items });
+        AssertContains(items, "LZ4 compressed body");
+        AssertContains(items, " decompressed array 16, 50 items\n");
+        AssertContains(items, " value fixstr \"Product 1\" // [49].Product\n");
+        AssertContains(items, "d+00");
+
+        PayloadDocument doc = new PayloadDocument(bytes, "test", new DecodeOptions()) { Id = "doc1" };
+        AssertContains(TextRenderer.ExplainOffset(doc, bytes.Length - 3, new RenderOptions()), "in LZ4 compressed data, not MsgPack");
+        AssertContains(TextRenderer.Search(doc, "Product 3", false, new RenderOptions()), "(in a decompressed body)");
+      }
+    }
+
     /// <summary>
     /// A stream of MsgPackStreamWriter: values of unknown length, the schema written once and referenced, a head with its body, the index with its entries and its tail.
     /// </summary>

@@ -86,4 +86,5 @@ options.TypeGuard = new AllowedTypesGuard().AllowAssemblyOf(typeof(IShape));
 - [Shared objects and cycles](https://github.com/mlsomers/LsMsgPack/blob/master/docs/References.md): an object referenced twice or a cycle is written once and read back as the same instance (`ReferenceHandling.Preserve`)
 - ASP.NET formatters built on LsMsgPack: [LsMsgPack.AspNetCore](https://www.nuget.org/packages/LsMsgPack.AspNetCore), [LsMsgPack.AspNet.WebApi](https://www.nuget.org/packages/LsMsgPack.AspNet.WebApi), [LsMsgPack.AspNet.Mvc](https://www.nuget.org/packages/LsMsgPack.AspNet.Mvc)
 - SignalR hub protocol: [LsMsgPack.SignalR](https://www.nuget.org/packages/LsMsgPack.SignalR)
+- LZ4 compression of the body in MessagePack-CSharp's format (`Compression = Lz4Compression.Block`): [LsMsgPack.Lz4](https://www.nuget.org/packages/LsMsgPack.Lz4), see [compression](https://github.com/mlsomers/LsMsgPack/blob/master/docs/Compression.md)
 - Source, issues and MsgPack Explorer (a tool to look inside MsgPack data): [github.com/mlsomers/LsMsgPack](https://github.com/mlsomers/LsMsgPack)

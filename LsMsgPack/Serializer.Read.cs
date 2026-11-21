@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Compression;
 using LsMsgPack.Converters;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Types;
@@ -673,12 +674,14 @@ namespace LsMsgPack
         {
           if (!ReferenceEquals(c.SlowSettings, Options))
             c.SlowSettings = Options;
+          if (Options._compression != null && StartsCompressed(c.R))
+            Decompress(c);
           result = ReadRoot(c, type);
         }
         else
           result = DeserializeWithSchema(c, type);
 
-        consumed = c.R.Pos;
+        consumed = c.Decompressed is null ? c.R.Pos : c.CompressedEnd;
         return result;
       }
       catch (ReadAgainPreserving) // the data has references and the options do not preserve them: read again with the option (a handler here costs nothing on the usual path)
@@ -752,6 +755,12 @@ namespace LsMsgPack
     private static void ReturnContext(ReadContext c)
     {
       c.R.Release(); // the data is not kept alive
+      if (c.Decompressed != null)
+      {
+        new Span<byte>(c.Decompressed, 0, c.DecompressedLength).Clear(); // a pooled array is shared with other code
+        System.Buffers.ArrayPool<byte>.Shared.Return(c.Decompressed);
+        c.Decompressed = null;
+      }
       if (c.References != null)
       {
         if (ReferenceEquals(c.References, c.PreservingReferences))
@@ -770,7 +779,28 @@ namespace LsMsgPack
       MsgPackReader r = c.R;
       if (!ReadSchema(r, out SchemaStore.Entry schema, out MsgPackOptions lengthSettings, out SchemaStore.SessionState state, out byte[] raw, out SchemaHit hit))
         return null; // null is serialized without a schema
-      return ReadWithSchema(c, type, type, r.Pos, schema, lengthSettings, state, raw, hit);
+      if (Options._compression != null && StartsCompressed(r))
+        Decompress(c);
+      return ReadWithSchema(c, type, type, c.R.Pos, schema, lengthSettings, state, raw, hit);
+    }
+
+    private static bool StartsCompressed(MsgPackReader r)
+    {
+      return CompressedBody.StartsCompressed(new ReadOnlySpan<byte>(r.Buf, r.Pos, r.End - r.Pos));
+    }
+
+    /// <summary>
+    /// The body at the reader's position is compressed (<see cref="MsgPackOptions.Compression"/>): from here on the reader reads the decompressed body (a rented array, returned by <see cref="ReturnContext"/>).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void Decompress(ReadContext c)
+    {
+      MsgPackReader r = c.R;
+      byte[] body = CompressedBody.Read(Options._compression, new ReadOnlySpan<byte>(r.Buf, r.Pos, r.End - r.Pos), Options, out int length, out int compressed);
+      c.Decompressed = body;
+      c.DecompressedLength = length;
+      c.CompressedEnd = r.Pos + compressed;
+      r.Reset(body, 0, length);
     }
 
     /// <summary>

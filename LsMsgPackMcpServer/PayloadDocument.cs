@@ -44,6 +44,25 @@ namespace LsMsgPackMcp
     public List<ItemNode> Children { get; } = new List<ItemNode>();
 
     /// <summary>
+    /// The bytes the offsets of the item count in: null for the data, the decompressed body for the items of a compressed body (<see cref="IMpCompressed"/>) and those inside them.
+    /// </summary>
+    public byte[] Decompressed { get; set; }
+
+    /// <summary>
+    /// The outermost item that holds this one and is in the data itself: this one, or the compressed body this one is decompressed from.
+    /// </summary>
+    public ItemNode InData
+    {
+      get
+      {
+        ItemNode node = this;
+        while (node.Decompressed != null && node.Parent != null)
+          node = node.Parent;
+        return node;
+      }
+    }
+
+    /// <summary>
     /// An item that could not be read and its error cover the item from its start to where the reading stopped: the error's own offset is
     /// the last byte read (the offset in its exception is where the reader went on after it), the item has no length.
     /// </summary>
@@ -210,7 +229,7 @@ namespace LsMsgPackMcp
 
     private static bool Contains(ItemNode node, long offset)
     {
-      return !(node.Item is null) && offset >= node.Offset && offset < node.Offset + Math.Max(1, node.Length);
+      return !(node.Item is null) && node.Decompressed is null && offset >= node.Offset && offset < node.Offset + Math.Max(1, node.Length);
     }
 
     /// <summary>
@@ -220,9 +239,10 @@ namespace LsMsgPackMcp
     public MsgPackTypeId Encoding(MsgPackItem item)
     {
       long offset = item.StoredOffset;
-      if (item is MpRoot || item is MpError || offset < 0 || offset >= Data.Length || item is MsgPackVarLen v && v.LengthUnknown)
+      byte[] data = BytesOf(item);
+      if (item is MpRoot || item is MpError || offset < 0 || offset >= data.Length || item is MsgPackVarLen v && v.LengthUnknown)
         return item.TypeId;
-      byte b = Data[offset];
+      byte b = data[offset];
       if (b <= 0x7f) return MsgPackTypeId.MpBytePart;
       if (b >= 0xe0) return MsgPackTypeId.MpSBytePart;
       if (b >= 0xa0 && b <= 0xbf) return MsgPackTypeId.MpStr5;
@@ -237,9 +257,10 @@ namespace LsMsgPackMcp
     public long ClaimedLength(MsgPackItem item)
     {
       long offset = item.StoredOffset;
-      if (item is MpRoot || item is MpError || offset < 0 || offset >= Data.Length)
+      byte[] data = BytesOf(item);
+      if (item is MpRoot || item is MpError || offset < 0 || offset >= data.Length)
         return -1;
-      byte b = Data[offset];
+      byte b = data[offset];
       if (b >= 0x80 && b <= 0x8f || b >= 0x90 && b <= 0x9f)
         return b & 0x0f;
       if (b >= 0xa0 && b <= 0xbf)
@@ -257,14 +278,22 @@ namespace LsMsgPackMcp
         case 0xd8: return 16;
         default: return -1;
       }
-      if (offset + 1 + size > Data.Length)
+      if (offset + 1 + size > data.Length)
         return -1;
       byte[] bytes = new byte[size];
-      Array.Copy(Data, offset + 1, bytes, 0, size);
+      Array.Copy(data, offset + 1, bytes, 0, size);
       // As MsgPackVarLen.ReadLen reads it (one byte is never swapped)
       if (size > 1 && MsgPackItem.SwapEndianChoice(_settings, size))
         Array.Reverse(bytes);
       return size == 1 ? bytes[0] : size == 2 ? BitConverter.ToUInt16(bytes, 0) : (long)BitConverter.ToUInt32(bytes, 0);
+    }
+
+    /// <summary>
+    /// The bytes the offsets of the item count in: the data, or the decompressed body it is in (<see cref="ItemNode.Decompressed"/>).
+    /// </summary>
+    public byte[] BytesOf(MsgPackItem item)
+    {
+      return GetNode(item)?.Decompressed ?? Data;
     }
 
     /// <summary>
@@ -356,7 +385,8 @@ namespace LsMsgPackMcp
         ContinueProcessingOnBreakingError = Options.ContinueOnError,
         EndianAction = Options.Endian,
         ReadStreams = true, // values of unknown length and the index of a stream, as LsMsgPack's MsgPackStreamWriter writes them
-        ReadHubMessages = true // a capture of a SignalR connection (when the whole data is one): its handshake, length prefixes and messages
+        ReadHubMessages = true, // a capture of a SignalR connection (when the whole data is one): its handshake, length prefixes and messages
+        Compression = LsMsgPack.Compression.Lz4Compression.Block // LZ4 compressed bodies (either layout, MessagePack-CSharp's too) with their decompressed body
       };
       _settings = settings;
 
@@ -415,7 +445,8 @@ namespace LsMsgPackMcp
         Parent = parent,
         Depth = parent is null ? 0 : parent.Depth + 1,
         Role = role,
-        IsSchema = schema
+        IsSchema = schema,
+        Decompressed = parent?.Decompressed
       };
       Items.Add(node);
       if (!(item is null))
@@ -433,6 +464,18 @@ namespace LsMsgPackMcp
       {
         for (int t = 0; t < root.Count; t++)
           Traverse(AddNode(root[t], node, Index(t), node.IsSchema || schemaItems.Exists(s => ReferenceEquals(s, root[t]))), schemaItems);
+      }
+      else if (item is IMpCompressed compressed)
+      {
+        if (item is MpArray blocks) // the extension with the lengths, then the blocks
+        {
+          MsgPackItem[] parts = blocks.PackedValues;
+          for (int t = 0; t < parts.Length; t++)
+            AddNode(parts[t], node, t == 0 ? "lengths" : string.Concat("block ", t.ToString(System.Globalization.CultureInfo.InvariantCulture)), false);
+        }
+        ItemNode body = AddNode(compressed.Body, node, "decompressed", false);
+        body.Decompressed = compressed.Decompressed;
+        Traverse(body, schemaItems);
       }
       else if (item is MpArray array)
       {

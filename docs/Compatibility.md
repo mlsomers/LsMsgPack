@@ -157,7 +157,8 @@ With these options MessagePack-CSharp also writes what LsMsgPackDebug reads.
 
 - Write objects as maps keyed by property names (contractless, `keyAsPropertyName: true`, or string keys equal to the property names), or use integer keys (arrays) with the settings below.
 - Guids and decimals: LsMsgPackDebug reads the default strings.
-- Do not use LZ4 compression (`WithCompression`, extension types 98 and 99) or the typeless serializer (extension type 100).
+- LZ4 compression (`WithCompression`, extension types 98 and 99): LsMsgPack reads both modes with `Compression = Lz4Compression.Block` (or `BlockArray`) of the package LsMsgPack.Lz4, and MessagePack-CSharp reads what it writes with `WithCompression`. See [Compression.md](Compression.md).
+- Do not use the typeless serializer (extension type 100).
 
 ```csharp
 byte[] bytes = MessagePackSerializer.Serialize(invoice, ContractlessStandardResolver.Options);

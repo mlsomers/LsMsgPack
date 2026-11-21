@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Compression;
 using LsMsgPack.Meta;
 using LsMsgPack.TypeResolving.Interfaces;
 using LsMsgPack.TypeResolving.Types;
@@ -93,7 +94,7 @@ namespace LsMsgPackDebug
       MsgPackItem packed = SerializeObject(item, settings, new FullPropertyInfo(assignedTo));
       ByteWriter buffer = new ByteWriter();
       packed.WriteTo(buffer);
-      buffer.CopyTo(target);
+      WriteBody(buffer, target, settings);
     }
 
     public static MsgPackItem SerializeObject(object item, bool dynamicallyCompact = true)
@@ -112,7 +113,7 @@ namespace LsMsgPackDebug
 
       byte[] schema = resolver.Pack(settings, assignedTo, settings);
       target.Write(schema, 0, schema.Length);
-      buffer.CopyTo(target);
+      WriteBody(buffer, target, settings);
     }
 
     /// <summary>
@@ -145,9 +146,36 @@ namespace LsMsgPackDebug
       }
 
       ByteWriter buffer = new ByteWriter();
-      buffer.Write(session.Reference);
       packed.WriteTo(buffer);
-      buffer.CopyTo(target);
+      target.Write(session.Reference, 0, session.Reference.Length);
+      WriteBody(buffer, target, settings);
+    }
+
+    /// <summary>
+    /// Writes the body, compressed with <see cref="MsgPackOptions.Compression"/> when it is set and that makes it shorter.
+    /// </summary>
+    private static void WriteBody(ByteWriter body, Stream target, MsgPackSettings settings)
+    {
+      MsgPackCompression compression = settings._compression;
+      byte[] compressed = compression is null ? null : CompressedBody.Compress(compression, body.Written, settings);
+      if (compressed is null)
+        body.CopyTo(target);
+      else
+        target.Write(compressed, 0, compressed.Length);
+    }
+
+    /// <summary>
+    /// Reads the body as plain values (a compressed body is decompressed by its item: <see cref="MpCompressed"/>, <see cref="MpCompressedBlocks"/>).
+    /// </summary>
+    /// <param name="length">See <see cref="BodyLength"/>; the decompressed length for a compressed body</param>
+    private static object UnpackBody(Stream stream, MsgPackSettings settings, out long length)
+    {
+      length = BodyLength(stream);
+      MsgPackItem item = MsgPackItem.Unpack(stream, settings);
+      IMpCompressed compressed = item as IMpCompressed;
+      if (compressed != null)
+        length = compressed.Decompressed.Length;
+      return item.UnpackedValue;
     }
 
 
@@ -250,9 +278,8 @@ namespace LsMsgPackDebug
       if (settings.UseInexedSchema)
         return DeserializeWithSchema(tType, stream, settings);
 
-      long length = BodyLength(stream);
-      MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
-      return ConvertDeserializeValue(unpacked.UnpackedValue, tType, settings, null, length);
+      object value = UnpackBody(stream, settings, out long length);
+      return ConvertDeserializeValue(value, tType, settings, null, length);
     }
 
     /// <summary>
@@ -338,9 +365,8 @@ namespace LsMsgPackDebug
       try
       {
         SerializationRules.BindReaderTypes(tType, schemaSettings);
-        long length = BodyLength(stream);
-        MsgPackItem unpacked = MsgPackItem.Unpack(stream, schemaSettings);
-        return ConvertDeserializeValue(unpacked.UnpackedValue, tType, schemaSettings, null, length);
+        object value = UnpackBody(stream, schemaSettings, out long length);
+        return ConvertDeserializeValue(value, tType, schemaSettings, null, length);
       }
       finally
       {
@@ -383,9 +409,7 @@ namespace LsMsgPackDebug
     /// <param name="lengthSettings">The byte order the schema bytes were read with, null for the one of the specification (see <see cref="IndexedSchemaTypeResolver.FromBytes"/>)</param>
     private static object DeserializeWithStoredSchema(Type tType, Stream stream, MsgPackSettings settings, SchemaStore.Entry schema, MsgPackSettings lengthSettings)
     {
-      long length = BodyLength(stream);
-      MsgPackItem unpacked = MsgPackItem.Unpack(stream, settings);
-      object value = unpacked.UnpackedValue;
+      object value = UnpackBody(stream, settings, out long length);
 
       return schema.RunReader(settings, lengthSettings, (s, schemaSettings) =>
       {

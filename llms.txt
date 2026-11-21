@@ -29,6 +29,7 @@ Key facts:
 - [Source generator](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/SourceGenerator.md): compile-time plans for NativeAOT, WebAssembly AOT, iOS and trimming
 - [Streaming](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Streaming.md): MsgPackStreamWriter and MsgPackStreamReader, values of unknown length, tables with one schema, async reading
 - [SignalR](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/SignalR.md): LsMsgPack.SignalR, a hub protocol for the server, the .NET client and the browser, "lsmsgpack" or Microsoft's "messagepack" bytes, NativeAOT, debugging captures
+- [Compression](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/Compression.md): LsMsgPack.Lz4, LZ4 compression of the body in MessagePack-CSharp's format (Lz4Block, Lz4BlockArray), MaxDecompressedLength
 - [Data readers](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/DataReader.md): LsMsgPack.Data, ADO.NET result sets and table dumps as MsgPack streams, dumps read back as a DbDataReader
 - [Reading differences](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/ReadDifferences.md): finding out what didn't match between the data and the classes while reading
 - [Extension data](https://raw.githubusercontent.com/mlsomers/LsMsgPack/master/docs/ExtensionData.md): keeping the members of the data a class doesn't have (MsgPackExtensionData, [JsonExtensionData]) and writing them again, for rolling upgrades

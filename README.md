@@ -64,12 +64,14 @@ graph BT
   Mvc["LsMsgPack.AspNet.Mvc"]
   Data["LsMsgPack.Data<br/><i>ADO.NET data readers</i>"]
   SignalR["LsMsgPack.SignalR<br/><i>SignalR hub protocol</i>"]
+  Lz4["LsMsgPack.Lz4<br/><i>LZ4 compression</i>"]
   Mem(["System.Memory"])
   Unsafe(["System.Runtime.CompilerServices.Unsafe"])
   AspNetCoreFx(["Microsoft.AspNetCore.Mvc.Core 2.x /<br/>Microsoft.AspNetCore.App"])
   WebApiClient(["Microsoft.AspNet.WebApi.Client"])
   AspNetMvc(["Microsoft.AspNet.Mvc"])
   SignalRCommon(["Microsoft.AspNetCore.SignalR.Common"])
+  K4os(["K4os.Compression.LZ4"])
 
   Debug --> Core
   Fast --> Core
@@ -78,6 +80,7 @@ graph BT
   Mvc --> Fast
   Data --> Fast
   SignalR --> Fast
+  Lz4 --> Core
   Core -.-> Mem
   Debug -.-> Mem
   Fast -.-> Mem
@@ -86,9 +89,10 @@ graph BT
   WebApi -.-> WebApiClient
   Mvc -.-> AspNetMvc
   SignalR -.-> SignalRCommon
+  Lz4 -.-> K4os
 ```
 
-Solid arrows are the packages of this repository, dotted ones external dependencies. The web formatters depend on LsMsgPack only, so add `LsMsgPackDebug` yourself when you want to inspect data. Both serializers share `LsMsgPack.Core` and its namespaces (`LsMsgPack.*`), so attributes, type resolvers and filters work with either. `LsMsgPack.Data` writes the rows of ADO.NET data readers as MsgPack and reads dumps back as a `DbDataReader`, see [docs/DataReader.md](docs/DataReader.md). `LsMsgPack.SignalR` is the SignalR hub protocol, see [docs/SignalR.md](docs/SignalR.md).
+Solid arrows are the packages of this repository, dotted ones external dependencies. The web formatters depend on LsMsgPack only, so add `LsMsgPackDebug` yourself when you want to inspect data. Both serializers share `LsMsgPack.Core` and its namespaces (`LsMsgPack.*`), so attributes, type resolvers and filters work with either. `LsMsgPack.Data` writes the rows of ADO.NET data readers as MsgPack and reads dumps back as a `DbDataReader`, see [docs/DataReader.md](docs/DataReader.md). `LsMsgPack.SignalR` is the SignalR hub protocol, see [docs/SignalR.md](docs/SignalR.md). `LsMsgPack.Lz4` compresses the body with LZ4 (`Compression = Lz4Compression.Block`, MessagePack-CSharp's format), see [docs/Compression.md](docs/Compression.md).
 
 Not in the diagram, because they aren't referenced by your code: the .NET tools `LsMsgPack.Mcp` ([`lsmsgpack-mcp`](#ai-agents-mcp), MsgPack for AI agents) and `LsMsgPack.TypeScript` ([`lsmsgpack-ts`](#typescript), TypeScript models for the web formatters), which bring their own copies of the libraries, and the npm package [`@lsmsgpack/client`](#typescript).
 
