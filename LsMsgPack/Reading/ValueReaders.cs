@@ -126,6 +126,17 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal int CompressedEnd;
 
+    /// <summary>
+    /// An existing object the value starting at <see cref="IntoAt"/> is read into instead of a new one (docs/Populate.md): the root of a Populate call, or the object a member holds
+    /// (<see cref="PopulatePropReader"/>). Taken by ReadPlan.Create, and by the conversions of LsMsgPack.Core when the value is read there (<see cref="ValueReader{T}"/>.Slow), also when it is read again.
+    /// </summary>
+    internal object Into;
+
+    /// <summary>
+    /// Where the value read into <see cref="Into"/> starts, -1 for none: the objects inside it start further on, so they are created as usual.
+    /// </summary>
+    internal int IntoAt = -1;
+
     internal ByteReferences ReferencesOfCall()
     {
       return References ?? (References = new ByteReferences(this, BodyStart, false));
@@ -199,6 +210,36 @@ namespace LsMsgPack.Reading
     }
 
     /// <summary>
+    /// <see cref="Slow"/> of a value read into <see cref="ReadContext.Into"/> (Core's ValueConverter.ConvertInto): returns that object, or what the data has instead (a reference to another one).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static T SlowInto(ReadContext c, object plain, FullPropertyInfo assignedTo, ByteReferences references)
+    {
+      MsgPackOptions settings = c.ConversionSettings();
+      object value;
+      if (references != null && references.Preserves)
+      {
+        ReferenceResolver outer = ReferenceResolver.Current;
+        ReferenceResolver.Current = references;
+        try
+        {
+          value = ValueConverter.ConvertInto(plain, typeof(T), c.Into, settings, assignedTo);
+        }
+        finally
+        {
+          ReferenceResolver.Current = outer;
+        }
+      }
+      else
+        value = ValueConverter.ConvertInto(plain, typeof(T), c.Into, settings, assignedTo);
+      if (value is null)
+        return default(T);
+      if (value is T typed)
+        return typed;
+      throw ReadDifferences.NotConverted(settings, new ArgumentException($"Object of type '{value.GetType()}' cannot be converted to type '{typeof(T)}'."));
+    }
+
+    /// <summary>
     /// Reads the value at <paramref name="start"/> as LsMsgPack does: unpacked, then converted.
     /// </summary>
     protected static T Slow(ReadContext c, int start, FullPropertyInfo assignedTo)
@@ -208,6 +249,8 @@ namespace LsMsgPack.Reading
       c.R.Pos = start;
       object plain = c.R.ReadPlain(c.Depth);
       ByteReferences references = c.References;
+      if (c.IntoAt == start && c.Into != null) // read into an existing object (Populate)
+        return SlowInto(c, plain, assignedTo, references);
       object value = references != null && references.Preserves
         ? ConvertPreserving(plain, typeof(T), c, assignedTo, references)
         : ValueConverter.ConvertDeserializeValue(plain, typeof(T), c.ConversionSettings(), assignedTo);

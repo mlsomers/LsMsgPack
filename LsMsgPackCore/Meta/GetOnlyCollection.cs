@@ -70,6 +70,20 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
+    /// Whether <see cref="Fill"/> changes the collection: not read-only, not of a fixed size (a settable member holding such a collection gets a new one instead, see Population).
+    /// </summary>
+    internal static bool CanFill(object target)
+    {
+      if (target is IDictionary dictionary)
+        return !dictionary.IsReadOnly && !dictionary.IsFixedSize;
+      if (target is IList list)
+        return !list.IsReadOnly && !list.IsFixedSize;
+      if (!IsFillable(target.GetType()))
+        return false;
+      return Fillers.GetOrAdd(target.GetType(), t => new Filler(t)).CanFill(target);
+    }
+
+    /// <summary>
     /// ICollection&lt;T&gt; (e.g. HashSet&lt;T&gt;, or a dictionary without IDictionary) by reflection, a rare case.
     /// </summary>
     private sealed class Filler
@@ -93,6 +107,21 @@ namespace LsMsgPack.Meta
           _clear = interfaces[t].GetMethod(nameof(ICollection<object>.Clear));
           _add = interfaces[t].GetMethod(nameof(ICollection<object>.Add));
           return;
+        }
+      }
+
+      internal bool CanFill(object target)
+      {
+        if (_add is null)
+          return false;
+        try
+        {
+          return !(bool)_isReadOnly.Invoke(target, null);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException != null)
+        {
+          ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+          throw; // not reached
         }
       }
 

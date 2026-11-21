@@ -202,6 +202,12 @@ namespace LsMsgPack
     [IgnoreDataMember]
     public static EnumFormat Default_EnumFormat { get; set; } = EnumFormat.Number;
 
+    /// <summary>
+    /// The <see cref="Populate"/> of new settings (<see cref="PopulateMembers.Collections"/> by default).
+    /// </summary>
+    [IgnoreDataMember]
+    public static PopulateMembers Default_Populate { get; set; } = PopulateMembers.Collections;
+
     #endregion
 
     /// <summary>
@@ -246,6 +252,7 @@ namespace LsMsgPack
     internal DateTimeOffsetFormat _dateTimeOffsetFormat = Default_DateTimeOffsetFormat;
     internal bool _nativeDateTime = Default_DateTimeFormat == DateTimeFormat.Native;
     internal EnumFormat _enumFormat = Default_EnumFormat;
+    internal PopulateMembers _populate = Default_Populate;
 
     /// <summary>
     /// The cache of the serialized properties for <see cref="_staticFilters"/> (see FullPropertyInfo.GetSerializedProps without a session), looked up again when the filters are replaced.
@@ -811,6 +818,22 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// Which members reading fills instead of replacing them (docs/Populate.md): <see cref="PopulateMembers.Collections"/> (the default) fills the collections of members without a setter
+    /// and skips their other values, as System.Text.Json does with objects; <see cref="PopulateMembers.GetOnly"/> also reads into the object a property without a setter
+    /// (an auto-property, <c>public Address ShipTo { get; } = new Address();</c>) or a readonly field holds; <see cref="PopulateMembers.All"/> also reads into the instances that settable members hold.
+    /// <para><see cref="MsgPackPopulateAttribute"/> on a member or class wins (and System.Text.Json's <c>[JsonObjectCreationHandling]</c>, Json.NET's <c>[JsonProperty(ObjectCreationHandling = ...)]</c>).</para>
+    /// </summary>
+    [Category("Control")]
+    [DisplayName("Populate")]
+    [Description("Which members reading fills instead of replacing them: Collections (default: the collections of members without a setter; their other values are skipped), GetOnly (also the objects of members without a setter) or All (also settable members holding an instance).")]
+    [DefaultValue(PopulateMembers.Collections)]
+    public PopulateMembers Populate
+    {
+      get { return _populate; }
+      set { _populate = value; }
+    }
+
+    /// <summary>
     /// How a value of this enum type is written: its own attribute (<see cref="MsgPackEnumFormatAttribute"/> or another serializer's), otherwise <see cref="EnumFormat"/>.
     /// </summary>
     internal EnumFormat EnumFormatOf(Type enumType)
@@ -1152,6 +1175,33 @@ namespace LsMsgPack
     /// </summary>
     [Description("Grouped by the type of the property (by its name, without the assembly), then in declaration order.")]
     TypeThenDeclaration = 4
+  }
+
+  /// <summary>
+  /// Which members reading fills instead of replacing them (see <see cref="MsgPackOptions.Populate"/> and <see cref="MsgPackPopulateAttribute"/>). An object is read into the instance
+  /// (the members the data lacks keep their values), a collection is cleared and filled. A member whose getter returns null, or whose value is nil, is left as it is.
+  /// </summary>
+  public enum PopulateMembers
+  {
+    /// <summary>
+    /// Only the collections of members without a setter are filled (<c>public List&lt;Line&gt; Lines { get; } = new List&lt;Line&gt;();</c>); other members without a setter are skipped when read (default).
+    /// </summary>
+    [Description("Only the collections of members without a setter are filled; other members without a setter are skipped (default).")]
+    Collections = 0,
+
+    /// <summary>
+    /// Also the objects of auto-properties without a setter and of readonly fields (<c>public Address ShipTo { get; } = new Address();</c>) are read into.
+    /// A getter written by hand (<c>public Settings Settings =&gt; Settings.Global;</c>) is left alone: it may return shared state (opt in with <see cref="MsgPackPopulateAttribute"/>).
+    /// </summary>
+    [Description("Also the objects of auto-properties without a setter and of readonly fields are read into.")]
+    GetOnly = 1,
+
+    /// <summary>
+    /// Also settable members: the object a member holds is read into, its collection is filled (an array, or a read-only collection, is replaced); a member holding null gets a new instance.
+    /// As System.Text.Json's <c>JsonObjectCreationHandling.Populate</c>, except that collections are cleared before they are filled (System.Text.Json appends).
+    /// </summary>
+    [Description("Also settable members holding an instance: objects are read into, collections cleared and filled.")]
+    All = 2
   }
 
   /// <summary>

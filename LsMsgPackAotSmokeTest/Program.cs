@@ -322,8 +322,21 @@ namespace LsMsgPackAotSmokeTest
     void System.Text.Json.Serialization.IJsonOnDeserialized.OnDeserialized() { Note += "+json-read"; }
   }
 
+  /// <summary>
+  /// Read into existing instances (docs/Populate.md): the attributes (own and System.Text.Json's) are read from the metadata.
+  /// </summary>
+  public class Delivery
+  {
+    public string Street { get; set; }
+    internal string Origin; // not serialized: which code made the instance
+  }
+
   public class Invoice
   {
+    [MsgPackPopulate]
+    public Delivery ShipTo { get; } = new Delivery() { Origin = "ctor" };
+    [System.Text.Json.Serialization.JsonObjectCreationHandling(System.Text.Json.Serialization.JsonObjectCreationHandling.Populate)]
+    public Delivery Return { get; set; } = new Delivery() { Origin = "ctor" };
     public Audit Audit { get; set; }
     public JsonAudit JsonAudit { get; set; }
     public Remark Remark { get; set; }
@@ -673,6 +686,8 @@ namespace LsMsgPackAotSmokeTest
         Postmarks = new List<Postmark> { new Postmark("Utrecht", 12), null },
         Parcel = new Parcel("PX-7", 2.25),
         Remark = SampleRemark(),
+        ShipTo = { Street = "Dock 4" },
+        Return = new Delivery() { Street = "Desk 2" },
         Audit = new Audit(),
         JsonAudit = new JsonAudit { Note = "j" },
         Urgent = true,
@@ -855,6 +870,7 @@ namespace LsMsgPackAotSmokeTest
         .Append(o.Postmarks is null ? "null" : string.Join(",", o.Postmarks.Select(p => p is null ? "null" : p.Office + "/" + p.Day))).Append(';')
         .Append(o.Parcel is null ? "null" : o.Parcel.Code + "/" + o.Parcel.Weight.ToString("R", CultureInfo.InvariantCulture)).Append(';')
         .Append(Dump(o.Remark)).Append(';')
+        .Append(o.ShipTo is null ? "null" : o.ShipTo.Street + "/" + o.ShipTo.Origin).Append(';').Append(o.Return is null ? "null" : o.Return.Street + "/" + o.Return.Origin).Append(';')
         .Append(o.Audit is null ? "null" : o.Audit.Written + "/" + o.Audit.Read).Append(';').Append(o.JsonAudit is null ? "null" : o.JsonAudit.Note + "/" + o.JsonAudit.Written);
       return text.ToString();
     }

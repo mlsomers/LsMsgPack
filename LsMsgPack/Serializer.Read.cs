@@ -652,10 +652,11 @@ namespace LsMsgPack
     /// <param name="differences">Collects the differences between the data and the classes, null when not asked for</param>
     /// <param name="intoSlot">A struct root value of <paramref name="type"/> is read into the context's slot, which is returned instead of a box (<see cref="ReadContext.IntoSlot"/>, read it with <see cref="RootSlot{T}.Take"/>: the paths that collect the differences or errors return the boxed value)</param>
     /// <param name="referencePrefix">A value of a head's body without the indexed schema (the stream reader): see <see cref="ReadContext.ReferencePrefix"/></param>
-    internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false, Func<int[]> referencePrefix = null)
+    /// <param name="into">An existing object the root value is read into (Populate, see <see cref="ReadContext.Into"/>), null to create it</param>
+    internal object Deserialize(Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false, Func<int[]> referencePrefix = null, object into = null)
     {
       if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
-        return DeserializeCollecting(type, buffer, offset, end, out consumed, intoSlot, referencePrefix);
+        return DeserializeCollecting(type, buffer, offset, end, out consumed, intoSlot, referencePrefix, into);
 
       if (type != _cachedRoot)
         CacheRoot(type);
@@ -669,6 +670,8 @@ namespace LsMsgPack
         c.Unusual = SlowObjects || differences != null;
         if (referencePrefix != null)
           c.ReferencePrefix = referencePrefix;
+        if (into != null)
+          c.Into = into;
         object result;
         if (!Options._useInexedSchema)
         {
@@ -692,7 +695,7 @@ namespace LsMsgPack
         ReturnContext(c);
       }
       differences?.Reset();
-      return PreservingReader().Deserialize(type, buffer, offset, end, out consumed, differences, intoSlot, referencePrefix);
+      return PreservingReader().Deserialize(type, buffer, offset, end, out consumed, differences, intoSlot, referencePrefix, into);
     }
 
     private Serializer _preservingReader;
@@ -721,11 +724,11 @@ namespace LsMsgPack
     }
 
     // The lambdas are in methods of their own: a lambda that captures parameters allocates its closure where the method starts, on every call
-    private object DeserializeCollecting(Type type, byte[] buffer, int offset, int end, out int consumed, bool intoSlot = false, Func<int[]> referencePrefix = null)
+    private object DeserializeCollecting(Type type, byte[] buffer, int offset, int end, out int consumed, bool intoSlot = false, Func<int[]> referencePrefix = null, object into = null)
     {
       ReadDifferences found = new ReadDifferences(Options);
       int used = 0;
-      object read = ReadDifferences.Collect(found, () => Deserialize(type, buffer, offset, end, out used, found, intoSlot, referencePrefix));
+      object read = ReadDifferences.Collect(found, () => Deserialize(type, buffer, offset, end, out used, found, intoSlot, referencePrefix, into));
       consumed = used;
       return read;
     }
@@ -771,6 +774,11 @@ namespace LsMsgPack
         c.ReferencePrefix = null;
       if (c.Differences != null)
         c.EndDifferences();
+      if (c.Into != null)
+      {
+        c.Into = null;
+        c.IntoAt = -1;
+      }
       _threadContext = c; // Bound and SlowSettings are kept: usually the next call has the same
     }
 
@@ -1073,6 +1081,8 @@ namespace LsMsgPack
     private object ReadRoot(ReadContext c, Type type)
     {
       c.BodyStart = c.R.Pos;
+      if (c.Into != null) // Populate: the root value is read into it
+        c.IntoAt = c.R.Pos;
       if (PreserveReferences)
         c.References = c.PreservingReferences?.Restart(c.R.Pos) ?? (c.PreservingReferences = new ByteReferences(c, c.R.Pos, true));
       try

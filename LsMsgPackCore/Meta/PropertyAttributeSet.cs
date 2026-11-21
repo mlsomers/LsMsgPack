@@ -91,6 +91,16 @@ namespace LsMsgPack.Meta
       }
     }
 
+    private volatile Meta.Population.MemberFacts _population;
+
+    /// <summary>
+    /// Whether reading may fill the instance the member holds, and what its attributes ask for (see <see cref="Meta.Population"/>), decided once per member.
+    /// </summary>
+    internal Meta.Population.MemberFacts Population
+    {
+      get { return _population ?? (_population = Meta.Population.FactsOf(_member, _type)); } // the same value by any thread
+    }
+
     /// <summary>
     /// The type of the property when it is a value type other than <see cref="Nullable{T}"/>: its values are boxed as this type, and FilterDefaultValues compares them as <see cref="Default"/> says.
     /// Null for other properties.

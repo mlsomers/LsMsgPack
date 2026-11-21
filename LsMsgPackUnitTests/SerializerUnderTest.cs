@@ -41,6 +41,13 @@ namespace LsMsgPackUnitTests
     object Deserialize(Type type, byte[] source, MsgPackSettings settings, out ReadDifferences differences);
 
     /// <summary>
+    /// Reads the data into an existing object or collection (docs/Populate.md).
+    /// </summary>
+    void Populate<T>(byte[] source, T target, MsgPackSettings settings) where T : class;
+
+    void Populate<T>(byte[] source, T target, MsgPackSettings settings, out ReadDifferences differences) where T : class;
+
+    /// <summary>
     /// Whether the value is an extension the serializer has no custom extension for (LsMsgPack: MpExt, LsMsgPack: MsgPackExtension).
     /// </summary>
     bool IsUnknownExtension(object value, out sbyte typeCode, out byte[] data);
@@ -107,6 +114,8 @@ namespace LsMsgPackUnitTests
     public object Deserialize(Type type, Stream source, MsgPackSettings settings) { return MsgPackSerializer.Deserialize(type, source, settings); }
     public T Deserialize<T>(byte[] source, MsgPackSettings settings, out ReadDifferences differences) { return MsgPackSerializer.Deserialize<T>(source, settings, out differences); }
     public object Deserialize(Type type, byte[] source, MsgPackSettings settings, out ReadDifferences differences) { return MsgPackSerializer.Deserialize(type, source, settings, out differences); }
+    public void Populate<T>(byte[] source, T target, MsgPackSettings settings) where T : class { MsgPackSerializer.Populate(source, target, settings ?? new MsgPackSettings()); }
+    public void Populate<T>(byte[] source, T target, MsgPackSettings settings, out ReadDifferences differences) where T : class { MsgPackSerializer.Populate(source, target, settings ?? new MsgPackSettings(), out differences); }
 
     public bool IsUnknownExtension(object value, out sbyte typeCode, out byte[] data)
     {
@@ -149,7 +158,7 @@ namespace LsMsgPackUnitTests
       LsExtension[] extensions = Extensions(settings.CustomExtentionTypes);
       object key = (settings.UseInexedSchema, settings.DynamicallyCompact, settings.EndianAction, settings.AddTypeIdOptions,
         settings.TypeResolvers, settings.StaticFilters, settings.DynamicFilters, settings.PropertyNameResolvers,
-        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.ReferenceHandling, settings.DateTimeFormat, settings.EnumFormat), (settings.MaxObjects, settings.MaxItems, settings.MaxStringLength, settings.MaxBinLength, settings.Compression, settings.MaxDecompressedLength));
+        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.ReferenceHandling, settings.DateTimeFormat, settings.EnumFormat), (settings.Populate, settings.MaxObjects, settings.MaxItems, settings.MaxStringLength, settings.MaxBinLength, settings.Compression, settings.MaxDecompressedLength));
       return _serializers.GetOrAdd(key, k => new LsMsgPackSerializer(new LsMsgPackOptions()
       {
         UseInexedSchema = settings.UseInexedSchema,
@@ -179,6 +188,7 @@ namespace LsMsgPackUnitTests
         DateTimeOffsetFormat = settings.DateTimeOffsetFormat,
         DateTimeFormat = settings.DateTimeFormat,
         EnumFormat = settings.EnumFormat,
+        Populate = settings.Populate,
         SchemaVersion = settings.SchemaVersion,
         CompleteSchemas = settings.CompleteSchemas,
         PropertyNameCaseInsensitive = settings.PropertyNameCaseInsensitive,
@@ -225,6 +235,8 @@ namespace LsMsgPackUnitTests
     public object Deserialize(Type type, Stream source, MsgPackSettings settings) { return For(settings).Deserialize(type, source); }
     public T Deserialize<T>(byte[] source, MsgPackSettings settings, out ReadDifferences differences) { return For(settings).Deserialize<T>(source, out differences); }
     public object Deserialize(Type type, byte[] source, MsgPackSettings settings, out ReadDifferences differences) { return For(settings).Deserialize(type, source, out differences); }
+    public void Populate<T>(byte[] source, T target, MsgPackSettings settings) where T : class { For(settings).Populate(source, target); }
+    public void Populate<T>(byte[] source, T target, MsgPackSettings settings, out ReadDifferences differences) where T : class { For(settings).Populate(source, target, out differences); }
 
     public bool IsUnknownExtension(object value, out sbyte typeCode, out byte[] data)
     {

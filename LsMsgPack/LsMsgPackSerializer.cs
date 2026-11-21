@@ -690,6 +690,164 @@ namespace LsMsgPack
       }
     }
 
+    #region Populate
+
+    /// <summary>
+    /// Reads the data into an existing object instead of creating one (docs/Populate.md): the members the data has get their values (members holding an object or a collection
+    /// as <see cref="MsgPackOptions.Populate"/> says), the others keep theirs. The data is read as the target's own class (as <c>Serialize(target)</c> writes it).
+    /// A collection target is cleared and filled. Nil leaves the target as it is.
+    /// </summary>
+    /// <param name="target">A class with members (not one created by a constructor taking its values, nor one with a converter), or a collection with Add</param>
+    /// <exception cref="ArgumentException">The target cannot be read into</exception>
+    /// <exception cref="MsgPackException">The data holds another class than the target's (or one it derives from), or no object</exception>
+    public void Populate<T>(byte[] data, T target) where T : class
+    {
+      if (data is null)
+        throw new ArgumentNullException(nameof(data));
+      PopulateArray(data, 0, data.Length, target, null, out int consumed);
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T)"/>
+    /// <param name="offset">Where the data starts</param>
+    /// <param name="count">The number of bytes of the data</param>
+    public void Populate<T>(byte[] data, int offset, int count, T target) where T : class
+    {
+      if (data is null)
+        throw new ArgumentNullException(nameof(data));
+      if (offset < 0 || count < 0 || data.Length - offset < count)
+        throw new ArgumentOutOfRangeException(nameof(count));
+      PopulateArray(data, offset, offset + count, target, null, out int consumed);
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T)"/>
+    /// <remarks>Read in place when the memory is an array's, otherwise from a pooled copy (cleared afterwards).</remarks>
+    public void Populate<T>(ReadOnlyMemory<byte> data, T target) where T : class
+    {
+      PopulateMemory(data, target, null);
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T)"/>
+    /// <remarks>Reads one value (with its schema) from the stream, the stream is left after it.</remarks>
+    public void Populate<T>(Stream source, T target) where T : class
+    {
+      PopulateStream(source, target, null);
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T)"/>
+    /// <param name="differences">Null when the data matched the classes. See <see cref="ReadDifferences.GenerateReport"/>.</param>
+    public void Populate<T>(byte[] data, T target, out ReadDifferences differences) where T : class
+    {
+      if (data is null)
+        throw new ArgumentNullException(nameof(data));
+      ReadDifferences found = new ReadDifferences(_serializer.Options);
+      try // ReadDifferences.Collect without the delegate (a closure per call)
+      {
+        PopulateArray(data, 0, data.Length, target, found, out int consumed);
+        found.Collected(target);
+      }
+      catch (Exception ex) when (found.AttachTo(ex))
+      {
+        throw; // not reached, the filter attaches the differences and passes it on as it is
+      }
+      differences = found.IsEmpty ? null : found;
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T, out ReadDifferences)"/>
+    public void Populate<T>(ReadOnlyMemory<byte> data, T target, out ReadDifferences differences) where T : class
+    {
+      ReadDifferences found = new ReadDifferences(_serializer.Options);
+      try
+      {
+        PopulateMemory(data, target, found);
+        found.Collected(target);
+      }
+      catch (Exception ex) when (found.AttachTo(ex))
+      {
+        throw; // not reached
+      }
+      differences = found.IsEmpty ? null : found;
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T, out ReadDifferences)"/>
+    public void Populate<T>(Stream source, T target, out ReadDifferences differences) where T : class
+    {
+      ReadDifferences found = new ReadDifferences(_serializer.Options);
+      try
+      {
+        PopulateStream(source, target, found);
+        found.Collected(target);
+      }
+      catch (Exception ex) when (found.AttachTo(ex))
+      {
+        throw; // not reached
+      }
+      differences = found.IsEmpty ? null : found;
+    }
+
+    private void PopulateMemory(ReadOnlyMemory<byte> data, object target, ReadDifferences differences)
+    {
+      if (MemoryMarshal.TryGetArray(data, out ArraySegment<byte> segment)) // read in place
+      {
+        PopulateArray(segment.Array, segment.Offset, segment.Offset + segment.Count, target, differences, out int consumed);
+        return;
+      }
+      byte[] copy = ArrayPool<byte>.Shared.Rent(data.Length);
+      try
+      {
+        data.Span.CopyTo(copy);
+        PopulateArray(copy, 0, data.Length, target, differences, out int consumed);
+      }
+      finally
+      {
+        new Span<byte>(copy, 0, data.Length).Clear();
+        ArrayPool<byte>.Shared.Return(copy);
+      }
+    }
+
+    private void PopulateStream(Stream source, object target, ReadDifferences differences)
+    {
+      if (source is null)
+        throw new ArgumentNullException(nameof(source));
+      if (source is MemoryStream memory && memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
+      {
+        int offset = segment.Offset + (int)memory.Position;
+        PopulateArray(segment.Array, offset, segment.Offset + (int)memory.Length, target, differences, out int consumed);
+        memory.Position += consumed - offset;
+        return;
+      }
+      StreamPayload payload = new StreamPayload(_serializer.Options);
+      try
+      {
+        payload.ReadFrom(source);
+        PopulateArray(payload.Buffer, 0, payload.Length, target, differences, out int end);
+      }
+      finally
+      {
+        payload.Release();
+      }
+    }
+
+    /// <summary>
+    /// A collection is read as a new one and copied into the target (cleared first), an object is read into the target itself (ReadContext.Into).
+    /// </summary>
+    private void PopulateArray(byte[] buffer, int offset, int end, object target, ReadDifferences differences, out int consumed)
+    {
+      Population.ThrowIfNotPopulatable(target, _serializer.Options);
+      Type type = target.GetType();
+      if (GetOnlyCollection.IsFillable(type))
+      {
+        object items = _serializer.Deserialize(type, buffer, offset, end, out consumed, differences);
+        if (items != null && !ReferenceEquals(items, target))
+          GetOnlyCollection.Fill(target, items);
+        return;
+      }
+      object result = _serializer.Deserialize(type, buffer, offset, end, out consumed, differences, false, null, target);
+      if (result != null && !ReferenceEquals(result, target))
+        throw new MsgPackException($"The data cannot be read into the {type.Name}: its root value is another object (a reference).");
+    }
+
+    #endregion
+
     /// <summary>
     /// The value read once its payload has arrived: the bytes are read asynchronously, the value from memory (as <see cref="Streaming.MsgPackStreamReader.ReadObjectAsync{T}"/>).
     /// A struct's slot is taken in the same step as the read (the slot is the thread's).
