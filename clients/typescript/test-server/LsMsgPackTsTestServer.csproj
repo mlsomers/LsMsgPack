@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\LsMsgPackFormatters\LsMsgPackFormatters.csproj" />
     <ProjectReference Include="..\..\..\LsMsgPack.SignalR\LsMsgPack.SignalR.csproj" />
+    <ProjectReference Include="..\..\..\LsMsgPack.Lz4\LsMsgPack.Lz4.csproj" />
   </ItemGroup>
 
 </Project>

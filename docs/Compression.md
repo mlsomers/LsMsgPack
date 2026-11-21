@@ -19,7 +19,7 @@ List<Invoice> read = serializer.Deserialize<List<Invoice>>(bytes);
 
 Readers need the option too. With it they read compressed bodies in either layout and uncompressed bodies. Without it, a compressed body is just an extension value.
 
-Use it where size matters more than a little time: files, caches, message queues, data kept in a database. Over HTTP, use the response compression of the web server instead: browsers and other clients understand that, and the [TypeScript client](TypeScriptClient.md) doesn't read LZ4.
+Use it where size matters more than a little time: files, caches, message queues, data kept in a database. Over HTTP, use the response compression of the web server instead: browsers and other clients understand that, and decompress faster. The [TypeScript client](TypeScriptClient.md#compressed-bodies) reads LZ4 with the optional `@lsmsgpack/client/lz4`.
 
 ## What it costs and saves
 
@@ -63,7 +63,8 @@ A block must decompress to exactly the length it claims. The [other limits](secu
 ## Other readers
 
 - **MessagePack-CSharp** reads both layouts with `options.WithCompression(MessagePackCompression.Lz4Block)` (or `Lz4BlockArray`: its readers also take both), and LsMsgPack reads what it writes in either mode. For the rest of the format see [Compatibility](Compatibility.md#messagepack-csharp).
-- **Readers without LZ4** (the TypeScript client, other libraries) see an extension of type 99, or an array that starts with an extension of type 98.
+- **The TypeScript client** reads both layouts with `compression: lz4` from `@lsmsgpack/client/lz4` (reading only), see [TypeScriptClient.md](TypeScriptClient.md#compressed-bodies).
+- **Readers without LZ4** (other libraries, the TypeScript client without the option) see an extension of type 99, or an array that starts with an extension of type 98.
 - **Extension types 98 and 99** mean a compressed body only where a body starts, and only for readers with the option. Elsewhere they are ordinary extension values. Still, don't use them for your own extensions when you use compression.
 
 ## Debugging

@@ -576,7 +576,7 @@ export class MsgPackStreamReader {
   /** @param headSchema in the body of a head: its schema (null without the indexed schema), otherwise undefined */
   private decodeObject(bytes: Uint8Array, start: number, end: number, headSchema: Schema | null | undefined, type: TypeExpr | undefined, prefix: number[] | undefined): { value: unknown; end: number } {
     if (headSchema !== undefined) return this.decoder.readValue(bytes, start, end, headSchema, type, prefix);
-    if (!this.decoder.usesIndexedSchema) return this.decoder.readValue(bytes, start, end, null);
+    if (!this.decoder.usesIndexedSchema) return this.decoder.decodeAt(bytes, start, end); // each object a payload of its own: a compressed body too (DecodeOptions.compression)
     return this.decoder.decodeAt(bytes, start, end, (id) => this.store.get(id), (schemaBytes) => this.inlineSchema(schemaBytes), type);
   }
 

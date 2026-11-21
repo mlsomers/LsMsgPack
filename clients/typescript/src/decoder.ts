@@ -46,6 +46,23 @@ export interface DecodeOptions extends ReaderOptions {
    * The client writes request bodies with the same setting: with 'preserve' an object met again is a reference (EncodeOptions.references).
    */
   references?: ReferenceHandling;
+  /**
+   * Decompresses LZ4 compressed bodies (MsgPackOptions.Compression of LsMsgPack, MessagePack-CSharp's Lz4Block and Lz4BlockArray): `lz4` of '@lsmsgpack/client/lz4',
+   * an optional import so the main entry point carries none of it. Without it a compressed body is an extension value (type 99, or an array starting with type 98).
+   */
+  compression?: BodyDecompression;
+  /** The longest body a compressed body may decompress to, in bytes (MsgPackOptions.MaxDecompressedLength), unlimited by default; a claim beyond what LZ4 can produce is refused anyway. */
+  maxDecompressedLength?: number;
+}
+
+/**
+ * Reads a compressed body where a body starts (see DecodeOptions.compression): `lz4` of '@lsmsgpack/client/lz4'.
+ */
+export interface BodyDecompression {
+  /** Whether bytes[pos, end) starts with a compressed body (only its headers are looked at). */
+  startsAt(bytes: Uint8Array, pos: number, end: number): boolean;
+  /** The decompressed body and where the compressed one ends. Throws a MsgPackError for data that is not valid or longer than maxLength once decompressed. */
+  decompress(bytes: Uint8Array, pos: number, end: number, maxLength: number): { body: Uint8Array; end: number };
 }
 
 /** How the decoder reads a reference (extension type 5) and the encoder writes an object met again, see DecodeOptions.references and EncodeOptions.references. */
@@ -1043,6 +1060,8 @@ export class Decoder {
   private readonly options: ResolvedOptions;
   private readonly readerOptions: ReaderOptions;
   private readonly indexedSchema: boolean;
+  private readonly compression?: BodyDecompression;
+  private readonly maxDecompressedLength: number;
   private readonly plans = new WeakMap<Schema, Plans>();
   /** 'default': the options and the plans of the second read of a payload with references (the plans differ: objects made before their values). */
   private preserving?: { options: ResolvedOptions; plans: WeakMap<Schema, Plans> };
@@ -1062,6 +1081,8 @@ export class Decoder {
     if (models !== undefined) checkModelOptions(models, this.options);
     this.readerOptions = { decimal: this.options.decimal, maxDepth: options.maxDepth };
     this.indexedSchema = options.indexedSchema ?? true;
+    this.compression = options.compression;
+    this.maxDecompressedLength = options.maxDecompressedLength ?? Number.MAX_SAFE_INTEGER;
   }
 
   /**
@@ -1087,7 +1108,7 @@ export class Decoder {
     const data = end === bytes.length ? bytes : bytes.subarray(0, end);
     const b = data[start];
     if (!this.indexedSchema || b === 0xc0) { // null is written without a schema
-      const read = this.readValue(data, start, end, null);
+      const read = this.readBody(data, start, end, null);
       return { value: read.value, reference: false, end: read.end };
     }
 
@@ -1096,7 +1117,7 @@ export class Decoder {
       const id = toHex(data, start + 2, start + 18);
       const schema = lookup?.(id);
       if (schema === undefined) throw new MissingSchemaError(id);
-      const read = this.readValue(data, start + 18, end, schema, type);
+      const read = this.readBody(data, start + 18, end, schema, type);
       return { value: read.value, schema, reference: true, end: read.end };
     }
 
@@ -1106,13 +1127,29 @@ export class Decoder {
     skip.skip();
     const schemaBytes = data.subarray(start, skip.pos);
     const schema = inline ? inline(schemaBytes) : new Schema(schemaBytes.slice());
-    const read = this.readValue(data, skip.pos, end, schema, type);
+    const read = this.readBody(data, skip.pos, end, schema, type);
     return { value: read.value, schema, reference: false, end: read.end };
+  }
+
+  /** The body at `start` (after the schema or its reference, or the whole payload without one): decompressed first when it is a compressed body (DecodeOptions.compression). */
+  private readBody(data: Uint8Array, start: number, end: number, schema: Schema | null, type?: TypeExpr): { value: unknown; end: number } {
+    const compression = this.compression;
+    if (compression === undefined || !compression.startsAt(data, start, end)) return this.readValue(data, start, end, schema, type);
+    const decompressed = compression.decompress(data, start, end, this.maxDecompressedLength);
+    const body = decompressed.body;
+    const read = this.readValue(body, 0, body.length, schema, type); // reference paths start at the decompressed body's root, as LsMsgPack reads them
+    if (read.end !== body.length) throw new MsgPackError('Data after the value in the decompressed body.', start);
+    return { value: read.value, end: decompressed.end };
   }
 
   /** Plain MsgPack (application/msgpack): any value, maps as objects. */
   decodePlain(bytes: Uint8Array): unknown {
     if (bytes.length === 0) return undefined;
+    if (this.compression?.startsAt(bytes, 0, bytes.length)) {
+      const decompressed = this.compression.decompress(bytes, 0, bytes.length, this.maxDecompressedLength);
+      if (decompressed.end !== bytes.length) throw new MsgPackError('Data after the value.', decompressed.end);
+      return this.read(decompressed.body, null, 0);
+    }
     return this.read(bytes, null, 0);
   }
 
