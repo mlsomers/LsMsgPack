@@ -25,13 +25,14 @@ namespace LsMsgPack.IO
     private readonly int _maxDepth;
     private readonly LsExtension[] _extensions;
     private readonly DateTimeKind _dateTimeKind;
-    // The limits for untrusted data (MsgPackOptions.MaxObjects, MaxItems, MaxStringLength, MaxBinLength; unlimited by default) and what the call read so far (Reset)
+    // The limits for untrusted data (MsgPackOptions.MaxObjects, MaxItems, MaxStringLength, MaxBinLength; unlimited by default) and what the call may still read (Reset):
+    // counted down, so Count tests one sign (see there)
     private readonly int _maxObjects;
     private readonly long _maxItems;
     private readonly int _maxStringLength;
     private readonly int _maxBinLength;
-    private int _objects;
-    private long _items;
+    private int _objectsLeft;
+    private long _itemsLeft;
 
     internal MsgPackReader(byte[] buffer, int offset, int end, LsMsgPackOptions options)
     {
@@ -46,6 +47,8 @@ namespace LsMsgPack.IO
       _maxItems = options._maxItems;
       _maxStringLength = options._maxStringLength;
       _maxBinLength = options._maxBinLength;
+      _objectsLeft = _maxObjects;
+      _itemsLeft = _maxItems;
     }
 
     /// <summary>
@@ -56,8 +59,18 @@ namespace LsMsgPack.IO
       Buf = buffer;
       Pos = offset;
       End = end;
-      _objects = 0;
-      _items = 0;
+      _objectsLeft = _maxObjects;
+      _itemsLeft = _maxItems;
+    }
+
+    /// <summary>
+    /// The call is done: the data is not kept alive (the counts start again with the next <see cref="Reset"/>).
+    /// </summary>
+    internal void Release()
+    {
+      Buf = null;
+      Pos = 0;
+      End = 0;
     }
 
     /// <summary>
@@ -73,8 +86,8 @@ namespace LsMsgPack.IO
       else if ((c == 0xDC || c == 0xDE) && start + 2 < End) count = U16(new ReadOnlySpan<byte>(Buf, start + 1, 2));
       else if ((c == 0xDD || c == 0xDF) && start + 4 < End) count = U32(new ReadOnlySpan<byte>(Buf, start + 1, 4));
       else return;
-      _objects--;
-      _items -= count;
+      _objectsLeft++;
+      _itemsLeft += count;
     }
 
     /// <summary>
@@ -82,8 +95,8 @@ namespace LsMsgPack.IO
     /// </summary>
     internal void ResetCounts()
     {
-      _objects = 0;
-      _items = 0;
+      _objectsLeft = _maxObjects;
+      _itemsLeft = _maxItems;
     }
 
     internal int MaxDepth { get { return _maxDepth; } }
@@ -164,7 +177,9 @@ namespace LsMsgPack.IO
     {
       if (count > (End - Pos) / bytesPerItem)
         throw TooMany(count);
-      if (++_objects > _maxObjects || (_items += count) > _maxItems) // the limits for untrusted data (unlimited by default): every array and map read, not the ones skipped
+      // The limits for untrusted data (unlimited by default): every array and map read, not the ones skipped. Counted down to one sign test for both (counted up and compared with
+      // each limit, a small message took 25-45 instructions more to read)
+      if (((long)--_objectsLeft | (_itemsLeft -= count)) < 0)
         throw OverLimit();
       return (int)count;
     }
@@ -176,7 +191,7 @@ namespace LsMsgPack.IO
 
     private MsgPackException OverLimit()
     {
-      return _objects > _maxObjects
+      return _objectsLeft < 0
         ? MsgPackOptions.OverLimit("arrays and maps (objects, collections)", _maxObjects, nameof(MsgPackOptions) + "." + nameof(MsgPackOptions.MaxObjects))
         : MsgPackOptions.OverLimit("array elements and map entries", _maxItems, nameof(MsgPackOptions) + "." + nameof(MsgPackOptions.MaxItems));
     }

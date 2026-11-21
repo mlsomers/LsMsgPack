@@ -76,7 +76,7 @@ namespace LsMsgPack.Reading
     }
 
     /// <param name="atOnce">A layout is compiled when its first object is read, on the calling thread (<see cref="LsMsgPackOptions.CompileReadersAfter"/> 0), otherwise on the thread pool</param>
-    /// <param name="names">Maps are keyed by names (not with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: ReadPlan.Map stays false then)</param>
+    /// <param name="names">Maps are keyed by names (also with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the keys that are the names are read straight-line, the runtime's loop matches the others)</param>
     internal CompiledReads(Type type, CompiledReader.Member[] members, PropReader[] props, bool atOnce, bool names)
     {
       Type = type;
@@ -340,7 +340,8 @@ namespace LsMsgPack.Reading
   /// costs of the runtime's plans go for the values of simple types (a virtual call and a setter delegate per property: <see cref="PropReader{TTarget, TValue}"/>). The counterpart of the compiled writers (CompiledWriter).
   /// <para>Per plan. Arrays are read straight-line: position t is the plan's property t (see <see cref="CompiledReads.Limit"/>). Maps with the indexed schema by a loop over the keys with a switch over
   /// the plan's properties (<see cref="PropReader.CompiledId"/>), as the generated code. Maps keyed by names straight-line, each key compared with the next property's name as constants
-  /// (<see cref="Names{TDelegate}"/>; not with PropertyNameCaseInsensitive: ReadPlan.Map is not set then, its rules stay in the runtime's loop). Invoices, A/B on .NET 8: arrays 5.7 -> 4.4 ms,
+  /// (<see cref="Names{TDelegate}"/>; also with PropertyNameCaseInsensitive: a key that is a property's name sets that property in the runtime's loop too, the first other key goes to it with its rules).
+  /// Invoices, A/B on .NET 8: arrays 5.7 -> 4.4 ms,
   /// maps with the schema 5.7 -> 5.3 ms, with names 6.8-6.9 -> 4.7 ms (a loop over the keys with the names compared inline: 6.7 ms; a call per key: 7.9 ms).</para>
   /// <para>A value is read here when it is in the format the reader of its type reads directly (the same calls as that reader makes), otherwise the property's reader reads it from where it starts:
   /// the same values, conversions and errors. Properties of other types (objects, collections...) and the ones without a setter this code can call are read by their readers.</para>
@@ -411,10 +412,7 @@ namespace LsMsgPack.Reading
       CompiledReads reads = new CompiledReads(type, members, props, serializer.CompileReadersAfter == 0, names);
       Type codeType = (type.IsValueType ? typeof(CompiledStructReader<>) : typeof(CompiledObjectReader<>)).MakeGenericType(type);
       GeneratedObjectCode code = (GeneratedObjectCode)Activator.CreateInstance(codeType, new object[] { reads });
-      if (serializer.Options._objectLayout == ObjectLayout.Array)
-        ((ICompiledReader)code).Compile(false);
-      else if (!names || !serializer.Options._propertyNameCaseInsensitive)
-        ((ICompiledReader)code).Compile(true);
+      ((ICompiledReader)code).Compile(serializer.Options._objectLayout != ObjectLayout.Array);
       return code; // the other layout (also arrays read by a serializer of maps with names) when its first object is read
     }
 
