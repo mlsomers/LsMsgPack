@@ -266,20 +266,26 @@ namespace LsMsgPackDebug
     /// <returns>The deserialized object</returns>
     public static object Deserialize(Type tType, Stream stream, MsgPackSettings settings)
     {
+      return Read(tType, stream, settings, null);
+    }
+
+    /// <param name="into">An existing object or collection the root value is read into (Populate), null to create it</param>
+    private static object Read(Type tType, Stream stream, MsgPackSettings settings, object into)
+    {
       if (settings is null)
         settings = new MsgPackSettings();
       if (settings._differences is null && settings._readErrors != ReadErrorHandling.FailFast)
-        return Deserialize(tType, stream, settings, out ReadDifferences unused); // the errors are skipped and collected (with the differences)
+        return ReadCollecting(tType, stream, settings, into, out ReadDifferences unused); // the errors are skipped and collected (with the differences)
 
       // The names in the data (type ids, the schema) are resolved in the cached assemblies: the ones of the types the root type reaches (the T of List<T>...)
       CacheAssemblyTypes(tType);
       TypeResolver.CacheReachableAssemblies(tType);
 
       if (settings.UseInexedSchema)
-        return DeserializeWithSchema(tType, stream, settings);
+        return DeserializeWithSchema(tType, stream, settings, into);
 
       object value = UnpackBody(stream, settings, out long length);
-      return ConvertDeserializeValue(value, tType, settings, null, length);
+      return ConvertDeserializeValue(value, tType, settings, null, length, into);
     }
 
     /// <summary>
@@ -316,6 +322,11 @@ namespace LsMsgPackDebug
     /// <inheritdoc cref="Deserialize{T}(byte[], MsgPackSettings, out ReadDifferences)"/>
     public static object Deserialize(Type tType, Stream stream, MsgPackSettings settings, out ReadDifferences differences)
     {
+      return ReadCollecting(tType, stream, settings, null, out differences);
+    }
+
+    private static object ReadCollecting(Type tType, Stream stream, MsgPackSettings settings, object into, out ReadDifferences differences)
+    {
       if (settings is null)
         settings = new MsgPackSettings();
 
@@ -323,7 +334,7 @@ namespace LsMsgPackDebug
       MsgPackSettings callSettings = (MsgPackSettings)settings.WithDifferences(found); // settings are shared by threads, the differences belong to this call
       try
       {
-        object result = ReadDifferences.Collect(found, () => Deserialize(tType, stream, callSettings));
+        object result = ReadDifferences.Collect(found, () => Read(tType, stream, callSettings, into));
         differences = found.IsEmpty ? null : found;
         return result;
       }
@@ -333,7 +344,56 @@ namespace LsMsgPackDebug
       }
     }
 
-    private static object DeserializeWithSchema(Type tType, Stream stream, MsgPackSettings settings)
+    /// <summary>
+    /// Reads the data into an existing object instead of creating one (docs/Populate.md): the members the data has get their values (members holding an object or collection
+    /// as <see cref="MsgPackOptions.Populate"/> says), the others keep theirs. A collection is cleared and filled. Nil leaves the target as it is.
+    /// </summary>
+    /// <param name="target">A class with members (not one created by a constructor taking its values, nor one with a converter), or a collection with Add</param>
+    /// <exception cref="ArgumentException">The target cannot be read into</exception>
+    /// <exception cref="MsgPackException">The data holds another class than the target's (or one it derives from), or no object</exception>
+    public static void Populate<T>(byte[] source, T target) where T : class
+    {
+      Populate(source, target, new MsgPackSettings());
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T)"/>
+    public static void Populate<T>(byte[] source, T target, MsgPackSettings settings) where T : class
+    {
+      using (MemoryStream ms = new MemoryStream(source))
+      {
+        Populate(ms, target, settings);
+      }
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T)"/>
+    public static void Populate<T>(Stream stream, T target, MsgPackSettings settings) where T : class
+    {
+      if (settings is null)
+        settings = new MsgPackSettings();
+      Population.ThrowIfNotPopulatable(target, settings);
+      Read(typeof(T), stream, settings, target);
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T)"/>
+    /// <param name="differences">Null when the data matched the classes. See <see cref="ReadDifferences.GenerateReport"/>.</param>
+    public static void Populate<T>(byte[] source, T target, MsgPackSettings settings, out ReadDifferences differences) where T : class
+    {
+      using (MemoryStream ms = new MemoryStream(source))
+      {
+        Populate(ms, target, settings, out differences);
+      }
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T, MsgPackSettings, out ReadDifferences)"/>
+    public static void Populate<T>(Stream stream, T target, MsgPackSettings settings, out ReadDifferences differences) where T : class
+    {
+      if (settings is null)
+        settings = new MsgPackSettings();
+      Population.ThrowIfNotPopulatable(target, settings);
+      ReadCollecting(typeof(T), stream, settings, target, out differences);
+    }
+
+    private static object DeserializeWithSchema(Type tType, Stream stream, MsgPackSettings settings, object into)
     {
 
       int first = stream.ReadByte();
@@ -348,7 +408,7 @@ namespace LsMsgPackDebug
         SchemaId id = ReadSchemaReference(stream, first);
         if (store is null)
           throw new MsgPackException($"The data refers to the cached schema {id}, reading it needs a {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.SchemaStore)} that holds the schema.");
-        return DeserializeWithStoredSchema(tType, stream, settings, store.GetById(id), null);
+        return DeserializeWithStoredSchema(tType, stream, settings, store.GetById(id), null, into);
       }
 
       if (!SchemaBytes.IsMap(first))
@@ -357,7 +417,7 @@ namespace LsMsgPackDebug
       byte[] raw = SchemaBytes.ReadRaw(stream, first, settings);
       SchemaStore.Entry cached = store?.GetInline(raw);
       if (cached != null)
-        return DeserializeWithStoredSchema(tType, stream, settings, cached, settings);
+        return DeserializeWithStoredSchema(tType, stream, settings, cached, settings, into);
 
       IndexedSchemaTypeResolver resolver = IndexedSchemaTypeResolver.FromBytes(raw, settings, settings);
 
@@ -366,7 +426,7 @@ namespace LsMsgPackDebug
       {
         SerializationRules.BindReaderTypes(tType, schemaSettings);
         object value = UnpackBody(stream, schemaSettings, out long length);
-        return ConvertDeserializeValue(value, tType, schemaSettings, null, length);
+        return ConvertDeserializeValue(value, tType, schemaSettings, null, length, into);
       }
       finally
       {
@@ -407,7 +467,7 @@ namespace LsMsgPackDebug
     /// <para>When the conversion needs something the session does not have yet (e.g. a type that was not read before), it is repeated with a grown copy that replaces the session.</para>
     /// </summary>
     /// <param name="lengthSettings">The byte order the schema bytes were read with, null for the one of the specification (see <see cref="IndexedSchemaTypeResolver.FromBytes"/>)</param>
-    private static object DeserializeWithStoredSchema(Type tType, Stream stream, MsgPackSettings settings, SchemaStore.Entry schema, MsgPackSettings lengthSettings)
+    private static object DeserializeWithStoredSchema(Type tType, Stream stream, MsgPackSettings settings, SchemaStore.Entry schema, MsgPackSettings lengthSettings, object into)
     {
       object value = UnpackBody(stream, settings, out long length);
 
@@ -415,7 +475,7 @@ namespace LsMsgPackDebug
       {
         schemaSettings._differences?.Reset(); // the work is repeated when the shared session has to grow
         SerializationRules.BindReaderTypes(tType, schemaSettings);
-        return ConvertDeserializeValue(value, tType, schemaSettings, null, length);
+        return ConvertDeserializeValue(value, tType, schemaSettings, null, length, into);
       });
     }
   }

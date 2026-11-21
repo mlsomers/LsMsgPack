@@ -54,6 +54,117 @@ namespace LsMsgPack.Meta
       return ConvertScalar(val, assignType);
     }
 
+    /// <summary>
+    /// Reads an unpacked value into an existing object (docs/Populate.md): the members the data has are set (or filled, or read into, as for any object), the others keep their values.
+    /// </summary>
+    /// <param name="into">The object, of <paramref name="assignType"/> or a class deriving from it (any class when that is abstract, an interface or object)</param>
+    /// <returns><paramref name="into"/>, or what the data holds instead of an object to read into it (a reference to another one, <see cref="ReferenceHandling.Preserve"/>): the caller decides</returns>
+    /// <exception cref="MsgPackException">The data is no object, or one of another class (marked: follows ReadErrors below the root)</exception>
+    internal static object ConvertInto(object val, Type assignType, object into, MsgPackOptions settings, FullPropertyInfo prop)
+    {
+      if (val is null)
+        return into;
+      if (settings.PreservesReferences && ReferenceResolver.IsContainer(val) && TryGetMade(val, assignType, out object made)) // read before (a value read again)
+        return made;
+      if (val is MsgPackReference reference)
+        return ReferenceResolver.ResolveValue(reference, assignType, prop, settings);
+      if (val is KeyValuePair<object, object>[] map)
+        return ConvertMap(map, assignType, settings, prop, into);
+      if (val is object[] items)
+        return ConvertPositionalInto(items, assignType, into, settings, prop);
+      throw CannotReadInto(settings, into, $"the data has {(val is IMsgPackExtension extension ? "an extension of type " + extension.TypeSpecifier : "a " + val.GetType().Name)}, not an object");
+    }
+
+    /// <summary>
+    /// Reads the root value into an existing object or collection (the Populate methods of the serializers, which checked that it can be: <see cref="Population.CanReadInto"/> or <see cref="GetOnlyCollection.CanFill"/>).
+    /// A collection is cleared and filled, nil leaves the target as it is.
+    /// </summary>
+    internal static void Populate(object val, Type declared, object target, MsgPackOptions settings)
+    {
+      if (val is null)
+        return;
+      if (GetOnlyCollection.IsFillable(target.GetType()))
+      {
+        object items = ConvertDeserializeValue(val, target.GetType(), settings, null);
+        if (items != null && !ReferenceEquals(items, target))
+          GetOnlyCollection.Fill(target, items);
+        return;
+      }
+      object result = ConvertInto(val, declared, target, settings, null);
+      if (!ReferenceEquals(result, target))
+        throw new MsgPackException($"The data cannot be read into the {target.GetType().Name}: its root value is {(result is null ? "null" : "another object (a reference)")}.");
+    }
+
+    /// <summary>
+    /// The type an object read into <paramref name="into"/> has: the one the type id names, otherwise the declared type, or the object's own class when the declared type is abstract, an interface or object.
+    /// </summary>
+    private static Type IntoType(Type declared, object into, MsgPackOptions settings)
+    {
+      Type type = Nullable.GetUnderlyingType(declared) ?? declared;
+      if (!IsObjectType(type) || IsCollection(type))
+        type = into.GetType();
+      if (!type.IsInstanceOfType(into))
+        throw CannotReadInto(settings, into, $"the data has a {type.Name}");
+      return type;
+    }
+
+    private static Exception CannotReadInto(MsgPackOptions settings, object into, string why)
+    {
+      return ReadDifferences.NotConverted(settings, new MsgPackException($"The value cannot be read into the existing {into.GetType().Name}: {why}."));
+    }
+
+    /// <summary>
+    /// The value of a member that is populated or skipped (<see cref="Population"/>): read into the instance it holds, filled, or skipped.
+    /// While collecting the differences an error is reported and the value skipped (as <see cref="ReadProperty"/>).
+    /// </summary>
+    /// <returns>Whether the value was handled; false: it is read as without populating (a settable member gets it, a computed one skips it)</returns>
+    private static bool Populated(FullPropertyInfo prop, object instance, object val, MsgPackOptions settings, ReadDifferences differences)
+    {
+      MemberPopulation population = Population.Of(prop, settings);
+      if (population == MemberPopulation.Replace)
+        return false;
+      if (population == MemberPopulation.Skip)
+        return true;
+      if (differences is null)
+        return PopulateMember(prop, instance, val, settings, population);
+      int depth = differences.Depth;
+      try
+      {
+        return PopulateMember(prop, instance, val, settings, population);
+      }
+      catch (Exception ex) when (differences.SkipInvalidValue(instance, prop, ex))
+      {
+        differences.RestoreDepth(depth);
+        return true;
+      }
+    }
+
+    private static bool PopulateMember(FullPropertyInfo prop, object instance, object val, MsgPackOptions settings, MemberPopulation population)
+    {
+      bool getOnly = Population.IsGetOnly(prop);
+      object existing = prop.GetValue(instance);
+      if (existing is null || val is null) // nothing to read into (a member without a setter is skipped, a settable one gets the value), or nil (left, or set)
+        return getOnly;
+      if (population == MemberPopulation.Fill)
+      {
+        if (!GetOnlyCollection.CanFill(existing)) // an array, a read-only collection: replaced
+          return false;
+        object items = ConvertDeserializeValue(val, prop.DeclaredType, settings, prop);
+        if (items != null && !ReferenceEquals(items, existing))
+          GetOnlyCollection.Fill(existing, items);
+        return true;
+      }
+      if (!Population.CanReadInto(existing, settings))
+        return getOnly;
+      object result = ConvertInto(val, prop.DeclaredType, existing, settings, prop);
+      if (ReferenceEquals(result, existing))
+        return true;
+      if (getOnly)
+        throw ReadDifferences.NotConverted(settings, new MsgPackException($"The {prop.Kind} {prop.Member.DeclaringType.Name}.{prop.Name} has no setter, so it keeps its {existing.GetType().Name}: the data has {(result is null ? "nil" : "another object (a reference)")} for it."));
+      Assign(prop, instance, result);
+      return true;
+    }
+
     private static bool TryGetMade(object val, Type assignType, out object made)
     {
       ReferenceResolver resolver = ReferenceResolver.Current;
@@ -280,7 +391,8 @@ namespace LsMsgPack.Meta
     /// <item>The entries of a dictionary (when serialized without a wrapper).</item>
     /// </list>
     /// </summary>
-    private static object ConvertMap(KeyValuePair<object, object>[] map, Type assignType, MsgPackOptions settings, FullPropertyInfo prop)
+    /// <param name="into">An existing object the values are read into (docs/Populate.md), null to create one</param>
+    private static object ConvertMap(KeyValuePair<object, object>[] map, Type assignType, MsgPackOptions settings, FullPropertyInfo prop, object into = null)
     {
       if (assignType == typeof(KeyValuePair<object, object>[]))
         return map;
@@ -293,7 +405,7 @@ namespace LsMsgPack.Meta
       }
 
       bool hasTypeId = propVals.TryGetValue(MsgPackOptions.TypeIdKey, out object typeId);
-      if (hasTypeId)
+      if (hasTypeId && into is null)
       {
         MsgPackConverter converter = settings.ConverterFor(assignType, prop);
         if (converter != null && TypeResolver.NamesSurrogate(typeId, converter, prop, settings, propVals)) // a surrogate of a class deriving from the surrogate type
@@ -306,13 +418,17 @@ namespace LsMsgPack.Meta
       }
       catch (UnresolvedTypeException ex) when (settings._differences != null && settings._differences.UnresolvedType(ex.TypeName, assignType, ex)) // skipped and reported (the checks of a type that was found still throw, see docs/security.md)
       {
-        return null;
+        return into;
       }
       tType = Nullable.GetUnderlyingType(tType) ?? tType; // a struct assigned to a nullable (as ConvertArray reads it; until October 2026 a struct? in the map layout threw "no settable properties")
+      if (into != null)
+        tType = IntoType(tType, into, settings);
 
       object result;
       if (propVals.TryGetValue(MsgPackOptions.ContentKey, out object content))
       {
+        if (into != null) // { "": typeId, "@": [values] }: an object in the array layout with its type id
+          return ConvertInto(content, tType, into, settings, null);
         result = content is KeyValuePair<object, object>[] pairs && IsDictionary(tType)
           ? ConvertPairs(pairs, tType, settings) // the content of a dictionary is always a map of entries, never an object
           : ConvertDeserializeValue(content, tType, settings, null);
@@ -324,7 +440,7 @@ namespace LsMsgPack.Meta
         return result;
       }
 
-      if (IsDictionary(tType) && !ElementsOmitted(tType, prop))
+      if (into is null && IsDictionary(tType) && !ElementsOmitted(tType, prop))
         return ConvertPairs(map, tType, settings);
 
       if (tType.IsInstanceOfType(map)) // object, IEnumerable, ... there is nothing more specific known, keep the raw map
@@ -337,12 +453,12 @@ namespace LsMsgPack.Meta
       IndexedSchemaTypeResolver schema = SerializationRules.GetIndexedSchema(settings);
       bool byNames = schema != null && HasOnlyNames(map);
       if (!byNames && propVals.Count > (hasTypeId ? 1 : 0) && schema?.SkipIfNoEntry(tType, settings, prop) == true)
-        return null;
+        return into;
       FullPropertyInfo[] props = byNames ? FullPropertyInfo.GetNamedProps(tType, settings) : FullPropertyInfo.GetSerializedProps(tType, settings);
       if (props.Length == 0) // a refused type has no settable properties, before it is created
         SerializationRules.ThrowIfUnsupportedFrameworkType(tType);
       ObjectConstructor constructor = ObjectConstructor.Of(tType);
-      result = Instances.CreateObjectOrArguments(tType, constructor, settings);
+      result = into is null ? Instances.CreateObjectOrArguments(tType, constructor, settings) : Existing(into, tType, constructor, settings);
       bool collected = result is ObjectConstructor.Arguments;
       if (!collected)
         ReferenceResolver.Registered(settings, map, result); // before its values: a cycle back to it resolves
@@ -422,6 +538,7 @@ namespace LsMsgPack.Meta
         kept = UnknownKeys(instance, tType, props, propVals, settings, extension); // before the values (the objects in them), as LsMsgPack finds them
       }
       differences?.Push(instance);
+      bool[] done = settings.PreservesReferences && !(instance is ObjectConstructor.Arguments) ? PopulateFirst(instance, props, propVals, settings, differences) : null;
       int set = 0;
       for (int t = props.Length - 1; t >= 0; t--)
       {
@@ -429,6 +546,10 @@ namespace LsMsgPack.Meta
         if (propVals.TryGetValue(prop.PropertyId, out object propval))
         {
           set++;
+          if (done != null && done[t])
+            continue;
+          if (Population.MayPopulate(prop) && !(instance is ObjectConstructor.Arguments) && Populated(prop, instance, propval, settings, differences)) // read into the instance the member holds
+            continue;
           if (prop.IsComputed) // written only
             continue;
           if (differences is null)
@@ -450,6 +571,25 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: the members read into the instance they hold go first. The values of a map are converted last to first, so a reference to an earlier
+    /// value would make that value first, as a new object, which a member without a setter cannot take (an error) and a settable one would hold instead of its own.
+    /// </summary>
+    /// <returns>The members handled (by position in <paramref name="props"/>), null for none</returns>
+    private static bool[] PopulateFirst(object instance, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings, ReadDifferences differences)
+    {
+      bool[] done = null;
+      for (int t = 0; t < props.Length; t++)
+      {
+        FullPropertyInfo prop = props[t];
+        if (!Population.MayPopulate(prop) || Population.Of(prop, settings) != MemberPopulation.Into || !propVals.TryGetValue(prop.PropertyId, out object propval))
+          continue;
+        if (Populated(prop, instance, propval, settings, differences))
+          (done ?? (done = new bool[props.Length]))[t] = true;
+      }
+      return done;
+    }
+
+    /// <summary>
     /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the keys that are not property ids set the property they equal ignoring case.
     /// </summary>
     private static void SetIgnoringCase(object instance, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings, ReadDifferences differences)
@@ -457,7 +597,11 @@ namespace LsMsgPack.Meta
       foreach (KeyValuePair<object, object> entry in propVals)
       {
         FullPropertyInfo prop = MatchIgnoringCase(entry.Key, props, propVals);
-        if (prop is null || prop.IsComputed)
+        if (prop is null)
+          continue;
+        if (Population.MayPopulate(prop) && !(instance is ObjectConstructor.Arguments) && Populated(prop, instance, entry.Value, settings, differences))
+          continue;
+        if (prop.IsComputed)
           continue;
         if (differences is null)
           Assign(prop, instance, ConvertDeserializeValue(entry.Value, prop.DeclaredType, settings, prop));
@@ -693,11 +837,12 @@ namespace LsMsgPack.Meta
     /// <para>A nil sets the value the writer leaves out (<see cref="FullPropertyInfo.NilValue"/>: null, the default of the type or the value of [DefaultValue]), a missing value (after the end of the array)
     /// leaves the property as the constructor made it (like a property that is not in a map), values after the known properties are skipped.</para>
     /// </summary>
-    private static object ConvertPositional(object[] items, Type type, FullPropertyInfo[] props, MsgPackOptions settings)
+    /// <param name="into">An existing object the values are read into (docs/Populate.md), null to create one</param>
+    private static object ConvertPositional(object[] items, Type type, FullPropertyInfo[] props, MsgPackOptions settings, object into = null)
     {
       FullPropertyInfo[] byPosition = PropertiesByPosition(type, props, settings, out ComplexTypeDef def);
       ObjectConstructor constructor = ObjectConstructor.Of(type);
-      object result = Instances.CreateObjectOrArguments(type, constructor, settings);
+      object result = into is null ? Instances.CreateObjectOrArguments(type, constructor, settings) : Existing(into, type, constructor, settings);
       bool collected = result is ObjectConstructor.Arguments;
       if (!collected)
         ReferenceResolver.Registered(settings, items, result); // before its values: a cycle back to it resolves
@@ -732,6 +877,8 @@ namespace LsMsgPack.Meta
             differences?.UnknownProperty(result, name);
           continue;
         }
+        if (items[t] != null && Population.MayPopulate(prop) && !collected && Populated(prop, result, items[t], settings, differences)) // read into the instance the member holds
+          continue;
         if (prop.IsComputed) // written only
           continue;
         if (items[t] is null)
@@ -767,6 +914,27 @@ namespace LsMsgPack.Meta
         extension.Keep(result, kept, settings);
       callbacks?.OnDeserialized(result);
       return result;
+    }
+
+    /// <summary>
+    /// An object written as an array read into an existing object (<see cref="ConvertInto"/>).
+    /// </summary>
+    private static object ConvertPositionalInto(object[] items, Type assignType, object into, MsgPackOptions settings, FullPropertyInfo prop)
+    {
+      Type type = IntoType(assignType, into, settings);
+      if (Array.Exists(items, i => i != null) && SerializationRules.GetIndexedSchema(settings)?.SkipIfNoEntry(type, settings, prop) == true)
+        return into;
+      return ConvertPositional(items, type, FullPropertyInfo.GetSerializedProps(type, settings), settings, into);
+    }
+
+    /// <summary>
+    /// The existing object values are read into, when its class can be: not one a constructor taking the values creates (it has no instance to read into).
+    /// </summary>
+    private static object Existing(object into, Type type, ObjectConstructor constructor, MsgPackOptions settings)
+    {
+      if (constructor.CreatesWith(settings._objectCreation))
+        throw CannotReadInto(settings, into, $"{type.Name} is created by its constructor taking the values");
+      return into;
     }
 
     /// <summary>

@@ -25,18 +25,22 @@ namespace LsMsgPackDebug
     /// A call of its own: a nested one (e.g. a converter that reads) has its own.</para>
     /// </summary>
     /// <param name="payloadLength">The bytes of the value (from its start to the end of the data, as LsMsgPack counts it for the copies of kept values), -1 when not known</param>
-    private static object ConvertDeserializeValue(object val, Type assignType, MsgPackOptions settings, FullPropertyInfo prop, long payloadLength)
+    /// <param name="into">An existing object or collection the value is read into (Populate), null to create it</param>
+    private static object ConvertDeserializeValue(object val, Type assignType, MsgPackOptions settings, FullPropertyInfo prop, long payloadLength, object into = null)
     {
       ReferenceResolver outer = ReferenceResolver.Current;
       ReferenceResolver.Current = new PlainReferences(val, payloadLength);
       try
       {
-        return ValueConverter.ConvertDeserializeValue(val, assignType, settings, prop);
+        if (into is null)
+          return ValueConverter.ConvertDeserializeValue(val, assignType, settings, prop);
+        ValueConverter.Populate(val, assignType, into, settings);
+        return into;
       }
       catch (ReadAgainPreserving) when (!settings.PreservesReferences)
       {
         settings._differences?.Reset(); // the objects of the first attempt are dropped (they had their OnDeserializing callbacks, as a read repeated after a schema grew)
-        return ConvertDeserializeValue(val, assignType, settings.Preserving(), prop, payloadLength);
+        return ConvertDeserializeValue(val, assignType, settings.Preserving(), prop, payloadLength, into);
       }
       finally
       {

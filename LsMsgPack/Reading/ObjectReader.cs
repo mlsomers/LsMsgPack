@@ -725,7 +725,7 @@ namespace LsMsgPack.Reading
         GeneratedCapabilities positional = GeneratedCapabilities.ReadPositional | GeneratedCapabilities.ReadPositionalNil;
         Positional = (code.Capabilities & positional) == positional;
         for (int t = 0; t < infos.Length; t++)
-          Props[t].GeneratedId = serializer.ReadMember(code, infos[t]);
+          Props[t].GeneratedId = Props[t] is PopulatePropReader ? -1 : serializer.ReadMember(code, infos[t]); // the generated code would assign a new instance
         if (map && serializer.InUnrolledOrder(code, infos)) // also ignoring case: only keys that are the names are read straight-line, the loop matches the others (FindOrMatchIgnoringCase)
           NamesInOrder = Props;
       }
@@ -756,7 +756,7 @@ namespace LsMsgPack.Reading
     /// <param name="start">Where the object's value starts (<see cref="ReferenceHandling.Preserve"/> registers it there before its values: a cycle back to it resolves)</param>
     internal object Create(ReadContext c, int start)
     {
-      if (_untilCompiled > 0) // also with ReferenceHandling.Preserve (Preserving): no test of its own here
+      if (_untilCompiled > 0 || c.IntoAt == start) // also with ReferenceHandling.Preserve (Preserving): no test of its own here; an existing object to read into (Populate)
         return CreateCounting(c, start);
       return _create();
     }
@@ -774,6 +774,8 @@ namespace LsMsgPack.Reading
     [MethodImpl(MethodImplOptions.NoInlining)]
     private object CreateCounting(ReadContext c, int start)
     {
+      if (c.IntoAt == start && c.Into != null)
+        return Existing(c, start);
       if (_untilCompiled > _compiledAt)
         CountRead();
       object created = _create();
@@ -789,6 +791,22 @@ namespace LsMsgPack.Reading
     private readonly int _compiledAt;
 
     private const int Preserving = 1 << 30;
+
+    /// <summary>
+    /// The existing object the value is read into (<see cref="ReadContext.Into"/>, docs/Populate.md) instead of a new one: registered and called back as a new one.
+    /// </summary>
+    /// <exception cref="MsgPackException">The object is not of this plan's type (the data names another class), or the type is created by its constructor taking the values</exception>
+    private object Existing(ReadContext c, int start)
+    {
+      object into = c.Into;
+      if (WithValues != null || !Type.IsInstanceOfType(into))
+        throw ReadDifferences.NotConverted(c.ConversionSettings(), new MsgPackException($"The value cannot be read into the existing {into.GetType().Name}: "
+          + (WithValues != null ? $"{Type.Name} is created by its constructor taking the values." : $"the data has a {Type.Name}.")));
+      if (_compiledAt != 0) // ReferenceHandling.Preserve
+        c.References?.Register(start, into);
+      Callbacks?.OnDeserializing(into);
+      return into;
+    }
 
     private static Func<object> WithDeserializing(Func<object> create, SerializationCallbacks callbacks)
     {
@@ -1246,6 +1264,25 @@ namespace LsMsgPack.Reading
     [UnconditionalSuppressMessage("Trimming", "IL2076", Justification = TrimReasons.Fallback)] // the same, as the .NET 10 tools report it
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
+      if (info.Member != null)
+      {
+        MemberPopulation population = Population.Of(info, serializer.Options); // docs/Populate.md
+        if (population == MemberPopulation.Into || population == MemberPopulation.Fill)
+          return new PopulatePropReader(serializer, info, population, Population.IsGetOnly(info) ? null : SetterOf(serializer, info));
+        if (population == MemberPopulation.Skip)
+          return ComputedReader(serializer, info, info.Member.DeclaringType);
+      }
+      return SetterOf(serializer, info);
+    }
+
+    /// <summary>
+    /// The reader of a member that takes the value read (or skips it, or fills its collection without a setter).
+    /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)]
+    [UnconditionalSuppressMessage("Trimming", "IL2076", Justification = TrimReasons.Fallback)]
+    private static PropReader SetterOf(Serializer serializer, FullPropertyInfo info)
+    {
       PropertyInfo property = info.PropertyInfo;
       if (info.IsComputed) // written only (a collection without a setter is filled by its accessor, see BoxedPropReader)
         return ComputedReader(serializer, info, info.Member.DeclaringType);
@@ -1470,6 +1507,84 @@ namespace LsMsgPack.Reading
     public override void ReadNil(object target)
     {
       Info.SetValue(target, Info.NilValue(_serializer.Options));
+    }
+  }
+
+  /// <summary>
+  /// A member whose value is read into the instance it holds (docs/Populate.md, Core's Population): an object through the reader of the member's type with <see cref="ReadContext.Into"/> set,
+  /// a collection read as usual, then copied into the one the member holds (cleared first). When the member holds nothing that can be read into, a settable member gets the value
+  /// read (<see cref="_setter"/>), one without a setter skips it. Never by the generated or compiled code (their GeneratedId is -1).
+  /// </summary>
+  internal sealed class PopulatePropReader : PropReader
+  {
+    private readonly Serializer _serializer;
+    private readonly bool _fill;
+
+    /// <summary>
+    /// The reader of a settable member as without populating, null for a member without a setter.
+    /// </summary>
+    private readonly PropReader _setter;
+
+    private ValueReader _reader;
+
+    internal PopulatePropReader(Serializer serializer, FullPropertyInfo info, MemberPopulation population, PropReader setter) : base(info)
+    {
+      _serializer = serializer;
+      _fill = population == MemberPopulation.Fill;
+      _setter = setter;
+    }
+
+    public override void Read(ReadContext c, object target)
+    {
+      object existing = Info.GetValue(target);
+      if (existing is null || c.R.Peek() == 0xC0 || !(_fill ? GetOnlyCollection.CanFill(existing) : Population.CanReadInto(existing, _serializer.Options)))
+      {
+        if (_setter != null)
+          _setter.Read(c, target); // a new instance, or nil
+        else
+          c.R.Skip(c.Depth); // nothing to read into: left as it is
+        return;
+      }
+
+      ValueReader reader = _reader ?? (_reader = _serializer.ReaderFor(Info.DeclaredType, Info));
+      if (_fill)
+      {
+        object items = reader.ReadBoxed(c, Info);
+        if (items != null && !ReferenceEquals(items, existing))
+          GetOnlyCollection.Fill(existing, items);
+        return;
+      }
+
+      object into = c.Into;
+      int intoAt = c.IntoAt;
+      c.Into = existing;
+      c.IntoAt = c.R.Pos;
+      object read;
+      try
+      {
+        read = reader.ReadBoxed(c, Info);
+      }
+      finally
+      {
+        c.Into = into;
+        c.IntoAt = intoAt;
+      }
+      if (ReferenceEquals(read, existing))
+        return;
+      if (_setter is null)
+        throw ReadDifferences.NotConverted(c.ConversionSettings(), new MsgPackException($"The {Info.Kind} {Info.Member.DeclaringType.Name}.{Info.Name} has no setter, so it keeps its {existing.GetType().Name}: the data has {(read is null ? "nil" : "another object (a reference)")} for it."));
+      _setter.SetBoxed(target, read);
+    }
+
+    public override void ReadNil(object target)
+    {
+      _setter?.ReadNil(target); // a member without a setter keeps what it holds
+    }
+
+    internal override void SetBoxed(object target, object value)
+    {
+      if (_setter != null)
+        _setter.SetBoxed(target, value);
     }
   }
 
