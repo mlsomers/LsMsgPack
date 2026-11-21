@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPackDebug\LsMsgPackDebug.csproj" />
     <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj" />
+    <ProjectReference Include="..\LsMsgPack.Lz4\LsMsgPack.Lz4.csproj" />
     <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj" />
     <!-- LsMsgPack's source generator, as the package adds it: the code of TestMsgPackContext (GeneratedContext.cs) for the Gen* tests -->
     <ProjectReference Include="..\LsMsgPack.Generator\LsMsgPack.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

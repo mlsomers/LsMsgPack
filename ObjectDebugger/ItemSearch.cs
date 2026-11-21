@@ -115,6 +115,10 @@ namespace ObjectDebugger
       if (IsMatch(current))
         matches.Add(current);
 
+      IMpCompressed compressed = current as IMpCompressed; // the values are in the decompressed body (MsgPackOptions.Compression)
+      if (compressed != null)
+        return SearchItem(compressed.Body, matches, stop, ref visited);
+
       MpRoot root = current as MpRoot;
       if (root != null)
       {

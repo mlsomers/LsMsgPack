@@ -12,6 +12,7 @@ Project-specific notes live in a `CLAUDE.md` next to each project (loaded when y
 | `LsMsgPackDebug/` | `LsMsgPackDebug`: the item-tree serializer (`MsgPackItem`, `Types/`), used by the explorers |
 | `LsMsgPack/` | `LsMsgPack`: the fast serializer, same bytes without the item tree; streaming; `Http/` shared by the web formatters |
 | `LsMsgPack.Data/` | `LsMsgPack.Data`: add-on for ADO.NET data readers (result sets and table dumps as streams, `MsgPackDataReader`, the row mapper); tests in `LsMsgPack.DataTests` |
+| `LsMsgPack.Lz4/` | `LsMsgPack.Lz4`: LZ4 compression of the body (`MsgPackOptions.Compression = Lz4Compression.Block`) over K4os, MessagePack-CSharp's ext 98/99; the format is in Core `Compression/` |
 | `LsMsgPack.SignalR/` | `LsMsgPack.SignalR`: SignalR hub protocol ("lsmsgpack", or "messagepack" with Microsoft's bytes), server and .NET client; tests in `LsMsgPack.SignalRTests`; TS side `clients/typescript/src/signalr.ts` |
 | `LsMsgPackFormatters/`, `LsMsgPackWebApiFormatters/`, `LsMsgPackMvc/` | ASP.NET Core, Web API 2 + HttpClient, MVC 5 formatters (on LsMsgPack) |
 | `LsMsgPack.Generator/` | source generator (contexts, generated readers/writers); its diagnostics are LSMP101-111 |

@@ -72,7 +72,7 @@ namespace LsMsgPackInspector
     public string Text { get; set; }
 
     /// <summary>
-    /// The icon: nil, bool, int, float, bin, str, array, map, ext, error, root, index (of a stream), tail (of its index), sidecar or other.
+    /// The icon: nil, bool, int, float, bin, str, array, map, ext, error, root, index (of a stream), tail (of its index), sidecar, message, prefix, handshake (SignalR), compressed (an LZ4 compressed body) or other.
     /// </summary>
     public string Kind { get; set; }
 

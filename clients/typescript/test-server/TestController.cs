@@ -82,6 +82,29 @@ namespace LsMsgPackTsTestServer
       shared.Animal?.Name,
     });
 
+    /// <summary>
+    /// Invoices with an LZ4 compressed body (MsgPackOptions.Compression, not by the formatters: HTTP has its own compression). <paramref name="layout"/>: block, blocks,
+    /// small-blocks (1 KiB each), hc (a high compression level) or none; <paramref name="schema"/>: the described schema inline (application/x-lsmsgpack) or without a schema
+    /// (application/msgpack, maps by names).
+    /// </summary>
+    [HttpGet("compressed/invoices")]
+    public IActionResult GetCompressed([FromQuery] int count = 10, [FromQuery] string layout = "block", [FromQuery] bool schema = true)
+    {
+      LsMsgPack.Compression.MsgPackCompression compression = layout switch
+      {
+        "block" => LsMsgPack.Compression.Lz4Compression.Block,
+        "blocks" => LsMsgPack.Compression.Lz4Compression.BlockArray,
+        "small-blocks" => new LsMsgPack.Compression.Lz4Compression(LsMsgPack.Compression.MsgPackCompressionLayout.BlockArray, blockSize: 1024),
+        "hc" => new LsMsgPack.Compression.Lz4Compression(LsMsgPack.Compression.MsgPackCompressionLayout.Block, K4os.Compression.LZ4.LZ4Level.L09_HC),
+        _ => null
+      };
+      LsMsgPackOptions options = schema ? LsMsgPackPresets.LsMsgPack() : LsMsgPackPresets.Generic();
+      if (schema)
+        options.SchemaVersion = SchemaVersion.Described;
+      options.Compression = compression;
+      return File(new LsMsgPackSerializer(options).Serialize(Data.Invoices(count)), schema ? "application/x-lsmsgpack" : "application/msgpack");
+    }
+
     [HttpGet("nothing")]
     public Address GetNothing() => null;
 

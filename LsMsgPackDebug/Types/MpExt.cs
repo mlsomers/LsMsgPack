@@ -194,6 +194,10 @@ namespace LsMsgPackDebug {
       if (typeSpecifier == MsgPackOptions.DateTimeExtensionType && value.Length == 8 && _settings._readLsMsgPackExtensions) // DateTimeFormat.Native
         return new MpDateTime(this);
 
+      // A compressed body (MsgPackOptions.Compression) where a payload's body starts, as LsMsgPack reads it (after the custom extensions: a registered one wins)
+      if (typeSpecifier == LsMsgPack.Compression.MsgPackCompression.BlockExtensionType && _depth == 0 && _settings._compression != null)
+        return new MpCompressed(this);
+
       // The types a stream reserves for root values (after the custom extensions: a registered one wins)
       if (_settings._readStreams && _depth == 0) {
         if (typeSpecifier == MsgPackStreamIndex.IndexExtensionType)

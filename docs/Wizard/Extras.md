@@ -8,6 +8,7 @@ These work with any of the setups. Add them when you need them.
 - [Warnings while you type](#warnings-while-you-type): the analyzers
 - [Finding out what didn't match](#finding-out-what-didnt-match): `ReadDifferences`
 - [Reading data you don't trust](#reading-data-you-dont-trust): declared types and the type guard
+- [Smaller files, caches and messages](#smaller-files-caches-and-messages): LZ4 compression
 - [Looking inside the bytes](#looking-inside-the-bytes): MsgPack Explorer, Visual Studio, VS Code, AI agents
 
 ## Trimmed and AOT apps, and more speed
@@ -93,6 +94,10 @@ builder.Services.AddControllers().AddLsMsgPackSerializerFormatters(o =>
 3. **Validate** what your setters accept, or the object after reading it, as you would for JSON: implement `IMsgPackOnDeserialized` and check it there, for example with the DataAnnotations attributes (`Validator.ValidateObject`). More: [Callbacks.md](../Callbacks.md).
 
 Data that only your own code writes and reads (your files, your cache, your internal queue) doesn't need a guard. The whole story: [security.md](../security.md).
+
+## Smaller files, caches and messages
+
+Install `LsMsgPack.Lz4` and set `Compression = Lz4Compression.Block` (namespace `LsMsgPack.Compression`) in the options of the writer *and* the reader. Data with repeated strings and small numbers shrinks to about a third; writing takes about twice as long, reading a little longer. MessagePack-CSharp reads and writes the same format. Over HTTP, use the server's response compression instead. More: [Compression.md](../Compression.md).
 
 ## Looking inside the bytes
 

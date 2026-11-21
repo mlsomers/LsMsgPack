@@ -20,7 +20,7 @@ All three serialize .NET classes to MsgPack. This page compares their features, 
 **[MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp)** when you want:
 
 - **A long track record.** It's widely used in production, and ASP.NET Core SignalR's MessagePack protocol is built on it.
-- **Unity support, LZ4 compression or typeless serialization.**
+- **Unity support or typeless serialization.**
 - **The smallest library on .NET 8 and later, and the smallest payloads with decimal values as text** (see the tables below).
 - **Fast writes of small messages as maps:** 1.1-1.4x as fast as LsMsgPack in the game benchmark, also against its generated code.
 

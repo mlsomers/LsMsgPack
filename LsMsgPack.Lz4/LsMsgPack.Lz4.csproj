@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <Import Project="..\Packaging.props" />
+
+  <PropertyGroup>
+    <!-- The targets of LsMsgPack.Core it builds on; net8.0 for the trim and AOT analyzers -->
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <RootNamespace>LsMsgPack.Compression</RootNamespace>
+    <PackageId>LsMsgPack.Lz4</PackageId>
+    <PackageTags>$(PackageTags);lz4;compression</PackageTags>
+    <Description>LZ4 compression for LsMsgPack and LsMsgPackDebug (MsgPackOptions.Compression = Lz4Compression.Block): the format of MessagePack-CSharp's Lz4Block and Lz4BlockArray, so each reads what the other writes. Brings K4os.Compression.LZ4 along; the serializers themselves depend on no compression package.</Description>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)'=='net8.0'">
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)'=='ReleaseKeepTrack'">
+    <Optimize>True</Optimize>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Only the public MsgPackCompression of Core: works with LsMsgPack and LsMsgPackDebug alike -->
+    <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" />
+    <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
+  </ItemGroup>
+
+</Project>

@@ -133,6 +133,7 @@ namespace LsMsgPack.Http
       target.MaxItems = options.MaxItems;
       target.MaxStringLength = options.MaxStringLength;
       target.MaxBinLength = options.MaxBinLength;
+      target.MaxDecompressedLength = options.MaxDecompressedLength;
     }
 
     /// <summary>

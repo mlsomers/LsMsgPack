@@ -114,6 +114,18 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal Func<int[]> ReferencePrefix;
 
+    /// <summary>
+    /// The decompressed body of the call (<see cref="MsgPackOptions.Compression"/>, rented from the array pool), which the reader reads instead of the data from where the body starts; null otherwise.
+    /// <see cref="Serializer"/> clears and returns it when the call ends.
+    /// </summary>
+    internal byte[] Decompressed;
+    internal int DecompressedLength;
+
+    /// <summary>
+    /// Where the compressed body ends in the caller's data (the position after the payload), while <see cref="Decompressed"/> is set.
+    /// </summary>
+    internal int CompressedEnd;
+
     internal ByteReferences ReferencesOfCall()
     {
       return References ?? (References = new ByteReferences(this, BodyStart, false));

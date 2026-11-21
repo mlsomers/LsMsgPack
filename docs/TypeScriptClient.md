@@ -128,6 +128,20 @@ With `'preserve'` the client also writes request bodies with references: an obje
 
 In a stream each value (`MsgPackStreamWriter.write`, each `readObject`) has its own references: they never point into another value. In the body of a stream head of the server the paths start at the body's root value (the element's position first); the reader takes that into account.
 
+### Compressed bodies
+
+LZ4 compressed bodies ([Compression.md](Compression.md): `Compression = Lz4Compression.Block` or `BlockArray` of LsMsgPack, MessagePack-CSharp's `Lz4Block` and `Lz4BlockArray`) are read with the optional `lz4` of `@lsmsgpack/client/lz4`, a decoder in TypeScript without dependencies. It is a separate entry point, so applications that don't import it don't carry it:
+
+```ts
+import { LsMsgPackClient, Decoder } from '@lsmsgpack/client';
+import { lz4 } from '@lsmsgpack/client/lz4';
+
+const api = new LsMsgPackClient({ baseUrl: 'https://example.com/', compression: lz4 });
+const cached = new Decoder({ indexedSchema: false, compression: lz4 }).decodePlain(bytes);
+```
+
+With the option, the body after the schema (or the whole payload without one) is decompressed when it is a compressed body, in either layout; uncompressed bodies are read as before, and so are the values of a stream (`MsgPackStreamReader` takes the same option). The client only reads LZ4, it doesn't write it. A claimed length is checked before anything is allocated: against what the blocks can produce (LZ4 makes at most about 255 bytes of each byte), and against `maxDecompressedLength` (unlimited by default). Decompressing 168 KB (100 invoices) takes about 0.55 ms in Node 22, about as long as reading them: for responses over HTTP the browser's own decompression (the server's response compression) is faster.
+
 ### Keeping the schemas between page loads
 
 The store lives in memory. To keep it (e.g. in `localStorage` or IndexedDB):

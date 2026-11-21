@@ -111,6 +111,14 @@ namespace LsMsgPack.Meta
       return result;
     }
 
+    /// <summary>
+    /// The bytes written so far.
+    /// </summary>
+    public ReadOnlySpan<byte> Written
+    {
+      get { return new ReadOnlySpan<byte>(_buffer, 0, _length); }
+    }
+
     public void CopyTo(Stream target)
     {
       target.Write(_buffer, 0, _length);

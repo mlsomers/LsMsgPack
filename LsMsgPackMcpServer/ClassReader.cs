@@ -171,7 +171,8 @@ namespace LsMsgPackMcp
         EndianAction = (EndianAction)Enum.Parse(typeof(EndianAction), options["--endian"]),
         ReadErrors = ReadErrorHandling.ReportAndContinue,
         ContinueProcessingOnBreakingError = false,
-        ReadStreams = true // arrays and maps of unknown length (a stream)
+        ReadStreams = true, // arrays and maps of unknown length (a stream)
+        Compression = LsMsgPack.Compression.Lz4Compression.Block // LZ4 compressed bodies (either layout)
       };
       if (options.TryGetValue("--schemas", out string schemas))
       {

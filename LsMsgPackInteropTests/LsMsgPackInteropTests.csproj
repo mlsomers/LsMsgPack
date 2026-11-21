@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPackDebug\LsMsgPackDebug.csproj" />
     <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj" />
+    <ProjectReference Include="..\LsMsgPack.Lz4\LsMsgPack.Lz4.csproj" />
     <!-- LsMsgPack's source generator: TestMsgPackContext (GeneratedContext.cs) for the Gen* tests of the linked SerializerUnderTest.cs -->
     <ProjectReference Include="..\LsMsgPack.Generator\LsMsgPack.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>

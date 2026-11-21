@@ -14,6 +14,10 @@
     "./signalr": {
       "types": "./dist/signalr.d.ts",
       "import": "./dist/signalr.js"
+    },
+    "./lz4": {
+      "types": "./dist/lz4.d.ts",
+      "import": "./dist/lz4.js"
     }
   },
   "files": [
