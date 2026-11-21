@@ -278,7 +278,7 @@ namespace LsMsgPackTypeScript
         case "string":
           if (spec.ByName) // an enum by name (a value type: never null itself)
             return EnumNamesType(spec.Enum);
-          type = "string";
+          type = spec.CaseNames is null ? "string" : CaseNamesType(spec); // an F# union written by its case names (and its cases with fields as objects)
           break;
         case "uri":
           type = "string";
@@ -297,6 +297,8 @@ namespace LsMsgPackTypeScript
           break;
         case "class":
           type = spec.Class.TsName;
+          if (spec.CaseNames != null && spec.CaseNames.Length != 0) // an F# union: its fieldless cases are their names
+            type = string.Concat(type, " | ", CaseNamesType(spec));
           break;
         default:
           if (spec.Interface is null)
@@ -305,6 +307,18 @@ namespace LsMsgPackTypeScript
           break;
       }
       return OrNull(type, nullability, top);
+    }
+
+    /// <summary>
+    /// The case names of an F# union as string literals, then the classes of its cases with fields (<see cref="Spec.CaseClasses"/>).
+    /// </summary>
+    private static string CaseNamesType(Spec spec)
+    {
+      IEnumerable<string> names = spec.CaseNames.Select(n => Defaults.Quote(n));
+      if (spec.CaseClasses != null)
+        names = names.Concat(spec.CaseClasses.Select(c => c.TsName));
+      string joined = string.Join(" | ", names);
+      return joined.Length == 0 ? "string" : joined;
     }
 
     private static NullabilityInfo ElementOf(Spec list, NullabilityInfo nullability)

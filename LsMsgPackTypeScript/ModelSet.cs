@@ -1,4 +1,5 @@
 using LsMsgPack.Converters;
+using LsMsgPack.FSharp;
 using LsMsgPack;
 using LsMsgPack.Meta;
 using System;
@@ -86,7 +87,10 @@ namespace LsMsgPackTypeScript
       if (converter != null) // written as its surrogate (as SchemaTypes walks it)
       {
         if (_visited.Add(type))
+        {
           Visit(converter.SurrogateType, depth + 1);
+          VisitCases(type, depth); // an F# union whose own values are names: its cases with fields are objects of their classes
+        }
         return;
       }
       if (type.IsArray)
@@ -163,9 +167,38 @@ namespace LsMsgPackTypeScript
           Visit(prop.MemberConverter?.SurrogateType ?? prop.DeclaredType, depth + 1); // a member's own converter: its value is written as the surrogate
       }
 
+      VisitCases(type, depth); // the classes of a generic union are closed with its arguments, which the candidates do not have
       if (!type.IsSealed && !type.IsValueType)
         foreach (Type derived in _candidates.Where(c => c != type && type.IsAssignableFrom(c) && !c.IsInterface))
           Visit(derived, depth + 1);
+    }
+
+    /// <summary>
+    /// The classes of the cases with fields of an F# union (Core's FSharpTypes): written as objects with the case name as the type id.
+    /// </summary>
+    private void VisitCases(Type type, int depth)
+    {
+      FSharpUnion union = FSharpTypes.UnionOf(type);
+      if (union is null || union.Type != type)
+        return;
+      foreach (UnionCase unionCase in union.Cases)
+        if (unionCase.Fields.Length != 0 && unionCase.Class != type)
+          Visit(unionCase.Class, depth + 1);
+    }
+
+    /// <summary>
+    /// A value declared as an F# union of several cases: its fieldless cases are their names, the cases with fields objects of their classes (for a union whose own values are names,
+    /// the converter's <c>string</c>, these are not its derived classes in TypeScript).
+    /// </summary>
+    private Spec WithUnionCases(Spec spec, Type type)
+    {
+      FSharpUnion union = FSharpTypes.UnionOf(type);
+      if (union is null || union.Type != type || union.Cases.Length < 2)
+        return spec;
+      spec.CaseNames = union.Cases.Where(c => c.Fields.Length == 0).Select(c => c.Name).ToArray();
+      if (spec.Class is null)
+        spec.CaseClasses = union.Cases.Where(c => c.Fields.Length != 0 && c.Class != type).Select(c => ClassOf(c.Class)).Where(m => m != null).ToArray();
+      return spec;
     }
 
     private static bool IsUsers(Type type)
@@ -264,7 +297,7 @@ namespace LsMsgPackTypeScript
       {
         Spec surrogate = SurrogateSpec(converter);
         surrogate.FromReference = !type.IsValueType;
-        return surrogate;
+        return WithUnionCases(surrogate, type);
       }
       if (type == typeof(decimal))
         return Spec.Kind("decimal", type);
@@ -335,7 +368,7 @@ namespace LsMsgPackTypeScript
 
       ModelClass model = ClassOf(type);
       if (model != null && !type.IsInterface)
-        return new Spec() { Name = type.IsValueType ? "struct" : "class", Type = type, Class = model };
+        return WithUnionCases(new Spec() { Name = type.IsValueType ? "struct" : "class", Type = type, Class = model }, type);
       if (type.IsInterface && _interfaces.Any(i => i.Type == type))
         return new Spec() { Name = "any", Type = type, Interface = _interfaces.First(i => i.Type == type) };
       return Spec.Kind("any", type);
@@ -472,6 +505,16 @@ namespace LsMsgPackTypeScript
     /// The surrogate of a converted reference type: null is written as nil, also when the surrogate is a struct (a class converted to a <c>double</c>).
     /// </summary>
     internal bool FromReference;
+
+    /// <summary>
+    /// An F# union: the names of its fieldless cases (written as strings), null for other types.
+    /// </summary>
+    internal string[] CaseNames;
+
+    /// <summary>
+    /// An F# union whose own values are names (a <c>string</c>): the classes of its cases with fields, which TypeScript does not see as derived from it.
+    /// </summary>
+    internal ModelClass[] CaseClasses;
 
     internal static Spec Kind(string kind, Type type)
     {

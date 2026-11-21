@@ -1159,6 +1159,9 @@ namespace LsMsgPack.Meta
           return guid;
         if (targetType.IsEnum)
           return EnumNames.Of(targetType, settings).Parse(str); // the name (EnumFormat.Name), as the JSON serializers write enums with a string converter: custom names too
+        FSharp.FSharpUnion union = FSharp.FSharpTypes.UnionOf(targetType); // a fieldless case where an abstract union is declared (a concrete one has the converter of its names)
+        if (union != null)
+          return union.FieldlessCaseNamed(str);
       }
 
       if (targetType.IsEnum)

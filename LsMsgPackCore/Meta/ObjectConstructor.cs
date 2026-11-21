@@ -89,6 +89,22 @@ namespace LsMsgPack.Meta
       if (!TakesValues(type))
         return;
 
+      ConstructorInfo caseConstructor = FSharp.FSharpTypes.CaseConstructor(type, out PropertyInfo[] caseFields);
+      if (caseConstructor != null) // an F# union case with fields: its internal constructor takes them in their order (the parameter names are _radius for radius, item for Item)
+      {
+        Dictionary<string, int> byPosition = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int t = 0; t < caseFields.Length; t++)
+          byPosition.Add(caseFields[t].Name, t);
+        WithValues = caseConstructor;
+        Required = true;
+        _parameterOf = byPosition;
+        _defaults = new object[caseFields.Length];
+#if NET8_0_OR_GREATER
+        _invoker = ConstructorInvoker.Create(caseConstructor);
+#endif
+        return;
+      }
+
       ConstructorInfo constructor = Choose(type, out bool marked);
       if (constructor is null)
         return;

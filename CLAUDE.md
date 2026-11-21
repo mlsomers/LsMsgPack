@@ -17,6 +17,7 @@ Project-specific notes live in a `CLAUDE.md` next to each project (loaded when y
 | `LsMsgPackFormatters/`, `LsMsgPackWebApiFormatters/`, `LsMsgPackMvc/` | ASP.NET Core, Web API 2 + HttpClient, MVC 5 formatters (on LsMsgPack) |
 | `LsMsgPack.Generator/` | source generator (contexts, generated readers/writers); its diagnostics are LSMP101-111 |
 | `LsMsgPack.Analyzers/` (+ `.CodeFixes`) | analyzers LSMP001-011, packed into LsMsgPack.Core |
+| `LsMsgPackFSharpTestTypes/` | F# types for the unit tests and the lsmsgpack-ts tests of the F# support (docs/FSharp.md) |
 | `ObjectDebugger/` | rebuilds object trees from payloads without the types; validation; search |
 | `MsgPackExplorer/`, `LsMsgPackFiddlerInspector/`, `LsMsgPackVisualStudioPlugin/` | Windows-only tools (old-style .NET Framework projects) |
 | `LsMsgPackVsCode/` | VS Code extension "MsgPack Explorer" + `Server/` (LsMsgPackInspector) |

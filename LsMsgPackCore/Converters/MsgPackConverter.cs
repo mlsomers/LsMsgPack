@@ -222,14 +222,15 @@ namespace LsMsgPack.Converters
     }
 
     /// <summary>
-    /// The entry of a type: its attribute's converter, of a nullable the one of its underlying type.
+    /// The entry of a type: its attribute's converter, otherwise the built-in one of an F# type (options, unions written as a name or their one field, see FSharp/FSharpTypes.cs);
+    /// of a nullable the one of its underlying type.
     /// </summary>
     private static Entry Create(Type type)
     {
       Type underlying = type.IsValueType ? Nullable.GetUnderlyingType(type) : null;
       if (underlying != null)
         return new Entry(type, CannotHaveAttribute(underlying) ? null : EntryOf(underlying).Converter);
-      return new Entry(type, FromAttribute(type));
+      return new Entry(type, FromAttribute(type) ?? FSharp.FSharpTypes.ConverterFor(type));
     }
 
     /// <summary>

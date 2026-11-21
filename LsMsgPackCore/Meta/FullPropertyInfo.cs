@@ -383,6 +383,9 @@ namespace LsMsgPack.Meta
 
     private static MemberInfo[] FindMembers(Type type, MemberSelection selection)
     {
+      MemberInfo[] unionFields = FSharp.FSharpTypes.MembersOf(type); // an F# union or the class of one of its cases: the fields of the case (not Tag, IsCircle...)
+      if (unionFields != null)
+        return unionFields;
       List<MemberInfo> all = new List<MemberInfo>();
       bool fieldStruct = SerializationRules.IsFieldStruct(type);
       if (!fieldStruct) // the fields are its state, its properties are computed from them (Matrix4x4.Translation)

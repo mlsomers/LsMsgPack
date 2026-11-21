@@ -287,9 +287,10 @@ namespace LsMsgPack.Generator
         return;
       }
 
-      if (HasTypeConverter(named, out ITypeSymbol surrogate)) // written as its surrogate by its converter (the runtime creates it from the attribute): no members of its own, listed so a type id can name it
+      if (HasTypeConverter(named, out ITypeSymbol surrogate) || FSharpSymbols.IsConverted(named, out surrogate)) // written as its surrogate by its converter (the runtime creates it from the attribute, or the F# one of its own): no members of its own, listed so a type id can name it
       {
-        Enqueue(surrogate);
+        if (surrogate != null)
+          Enqueue(surrogate);
         Add(TypeModelKind.Boxed, name);
         return;
       }
@@ -1099,6 +1100,19 @@ namespace LsMsgPack.Generator
     /// </summary>
     private List<MemberModel> GetMembers(INamedTypeSymbol type, bool fieldStruct)
     {
+      List<IPropertySymbol> unionFields = FSharpSymbols.FieldsOf(type); // an F# union case: its fields only (FullPropertyInfo.FindMembers)
+      if (unionFields != null)
+      {
+        List<MemberModel> fields = new List<MemberModel>();
+        foreach (IPropertySymbol field in unionFields)
+        {
+          MemberModel model = PropertyMember(type, field, true);
+          if (model != null)
+            fields.Add(model);
+        }
+        return fields;
+      }
+
       // The candidates in the runtime's order, with the depth of their class (0: the type itself)
       List<(ISymbol Member, INamedTypeSymbol Declaring, int Depth, bool PublicPass)> candidates = new List<(ISymbol, INamedTypeSymbol, int, bool)>();
       for (int pass = 0; pass < 4; pass++)

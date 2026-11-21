@@ -108,7 +108,7 @@ namespace LsMsgPack.Meta
 
       _generatedFactory = GeneratedTypes.Find(ConcreteType)?.FromItems != null; // the factory call of the source generator (registered for the process): no reflection, NativeAOT has it
       if (!_generatedFactory)
-        _factory = FindFactory(ConcreteType, ElementType, out _factoryDefaults);
+        _factory = FindFactory(ConcreteType, ElementType, out _factoryDefaults) ?? FSharp.FSharpCollections.FactoryOf(ConcreteType, out _factoryDefaults);
       if (_factory != null || _generatedFactory)
       {
         FillsPairs = IsDictionary; // the factory takes the pairs

@@ -556,7 +556,8 @@ namespace LsMsgPack.TypeResolving.Types
           return type;
       }
 
-      return TypeResolver.ResolveInternal(typeName, assignedTo, resolvers, false);
+      Type found = TypeResolver.ResolveInternal(typeName, assignedTo, resolvers, false);
+      return found is null || found.ContainsGenericParameters ? null : found; // a class nested in a generic one (an F# case "GA" of Gen<'T>): resolved where the declared type closes it
     }
 
     object IMsgPackPropertyIdResolver.GetId(FullPropertyInfo assignedTo, MsgPackOptions settings)
