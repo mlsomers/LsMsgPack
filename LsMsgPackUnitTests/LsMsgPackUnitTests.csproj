@@ -24,6 +24,8 @@
     <ProjectReference Include="..\LsMsgPack.Lz4\LsMsgPack.Lz4.csproj" />
     <ProjectReference Include="..\ObjectDebugger\ObjectDebugger.csproj" />
     <ProjectReference Include="..\LsMsgPackFSharpTestTypes\LsMsgPackFSharpTestTypes.fsproj" />
+    <!-- Look-alikes of Unity's types in an assembly named UnityEngine.CoreModule (UnityTypesTests) -->
+    <ProjectReference Include="..\LsMsgPackUnityStubs\LsMsgPackUnityStubs.csproj" />
     <!-- LsMsgPack's source generator, as the package adds it: the code of TestMsgPackContext (GeneratedContext.cs) for the Gen* tests -->
     <ProjectReference Include="..\LsMsgPack.Generator\LsMsgPack.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>

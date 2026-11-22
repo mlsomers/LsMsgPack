@@ -21,7 +21,7 @@ All three serialize .NET classes to MsgPack. This page compares their features, 
 **[MessagePack-CSharp](https://github.com/MessagePack-CSharp/MessagePack-CSharp)** when you want:
 
 - **A long track record.** It's widely used in production, and ASP.NET Core SignalR's MessagePack protocol is built on it.
-- **Unity support or typeless serialization.**
+- **Unity on every platform, or typeless serialization.** LsMsgPack is tested with Unity 6 on desktop (Mono and IL2CPP), not yet on Android, iOS or WebGL.
 - **The smallest library, except under NativeAOT, and the smallest payloads with decimal values as text** (see the tables below).
 - **Fast writes of small messages as maps:** 1.1-1.4x as fast as LsMsgPack in the game benchmark, also against its generated code.
 
@@ -36,7 +36,7 @@ All three serialize .NET classes to MsgPack. This page compares their features, 
 - **You need a track record.** It has no known production users, and breaking changes are still allowed. Pin the version and check the release notes before upgrading.
 - **You target NativeAOT, WebAssembly AOT or iOS and don't want a source generator.** Without it, LsMsgPack runs under NativeAOT by reflection only when the app keeps its model classes from the trimmer, and the app has to keep some collections itself (see [Without the generator](SourceGenerator.md#without-the-generator)).
 - **The other side uses another library's polymorphism format.** LsMsgPack can't read or write their unions. See [what settings cannot match](Compatibility.md#what-settings-cannot-match).
-- **You need Unity:** LsMsgPack isn't tested there.
+- **You need Unity on mobile, WebGL or consoles:** LsMsgPack is tested with Unity 6 in the editor and in Mono and IL2CPP players on Linux, not on those platforms yet (see [Unity](Unity.md)).
 
 **Whatever you pick,** LsMsgPack's debugging tools help you track down issues with any of these libraries: the standalone [MsgPack Explorer](../README.md#standalone-debugger-for-windows) for Windows, the [Fiddler inspector](../README.md#fiddler-integration), the [Visual Studio debugger visualizer](../README.md#visual-studio-integration), the [VS Code extension](../LsMsgPackVsCode/README.md) and the [MCP server](Mcp.md) for AI agents.
 

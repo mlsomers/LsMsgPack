@@ -748,7 +748,7 @@ namespace LsMsgPack.Writing
     }
 
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
-    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // StructPropWriter's struct constraint (for Unsafe.Unbox) asks for a parameterless constructor, none is called
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // StructPropWriter's struct constraint (for BoxedValue.Ref) asks for a parameterless constructor, none is called
     [UnconditionalSuppressMessage("Trimming", "IL2076", Justification = TrimReasons.Fallback)] // the same, as the .NET 10 tools report it
     internal static PropWriter Create(Serializer serializer, FullPropertyInfo info)
     {
@@ -1021,7 +1021,7 @@ namespace LsMsgPack.Writing
 
     internal override bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info)
     {
-      return Write(c, ref Unsafe.Unbox<TTarget>(target), key, info); // in the box, without copying the struct
+      return Write(c, ref BoxedValue.Ref<TTarget>(target), key, info); // in the box, without copying the struct
     }
 
     internal override bool Write(WriteContext c, ref TTarget target, byte[] key, FullPropertyInfo info)

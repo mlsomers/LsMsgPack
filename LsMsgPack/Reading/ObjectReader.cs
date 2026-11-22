@@ -1385,7 +1385,7 @@ namespace LsMsgPack.Reading
     }
 
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates), a failure falls back to reflection.")]
-    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // StructPropReader's struct constraint (for Unsafe.Unbox) asks for a parameterless constructor, none is called
+    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = TrimReasons.Fallback)] // StructPropReader's struct constraint (for BoxedValue.Ref) asks for a parameterless constructor, none is called
     [UnconditionalSuppressMessage("Trimming", "IL2076", Justification = TrimReasons.Fallback)] // the same, as the .NET 10 tools report it
     internal static PropReader Create(Serializer serializer, FullPropertyInfo info)
     {
@@ -1585,7 +1585,7 @@ namespace LsMsgPack.Reading
 
     public override void Read(ReadContext c, object target)
     {
-      Read(c, ref Unsafe.Unbox<TTarget>(target));
+      Read(c, ref BoxedValue.Ref<TTarget>(target));
     }
 
     internal override void Read(ReadContext c, ref TTarget target)
@@ -1596,7 +1596,7 @@ namespace LsMsgPack.Reading
 
     public override void ReadNil(object target)
     {
-      _set(ref Unsafe.Unbox<TTarget>(target), _nil);
+      _set(ref BoxedValue.Ref<TTarget>(target), _nil);
     }
 
     internal override void ReadNil(ref TTarget target)
@@ -1606,7 +1606,7 @@ namespace LsMsgPack.Reading
 
     internal override void SetBoxed(object target, object value)
     {
-      _set(ref Unsafe.Unbox<TTarget>(target), value is null ? default(TValue) : (TValue)value);
+      _set(ref BoxedValue.Ref<TTarget>(target), value is null ? default(TValue) : (TValue)value);
     }
   }
 

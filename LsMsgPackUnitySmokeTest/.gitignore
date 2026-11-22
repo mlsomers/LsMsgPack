@@ -1,0 +1,29 @@
+# Unity's .meta files are part of a project (the root .gitignore leaves them out); the rules below leave out the generated ones again
+!*.meta
+# Unity's own folders, the players and the run's output (run.sh)
+Library/
+Logs/
+Temp/
+UserSettings/
+Builds/
+out/
+golden.txt
+Golden/bin/
+Golden/obj/
+Libs/bin/
+Libs/obj/
+# Files Unity's IDE integration writes next to a project
+Project/*.csproj
+Project/*.sln
+Repro/*.csproj
+Repro/*.sln
+# Copied or written by run.sh and the build scripts: the libraries and the generator (only the generator's .meta is kept: its label RoslynAnalyzer), link.xml, the scenes
+Project/Assets/Plugins/LsMsgPack/*.dll
+Project/Assets/Plugins/LsMsgPack/*.dll.meta
+Project/Assets/Plugins/LsMsgPack/Analyzers/*.dll
+Project/Assets/link.xml
+Project/Assets/link.xml.meta
+Project/Assets/Scenes/
+Project/Assets/Scenes.meta
+Repro/Assets/Scenes/
+Repro/Assets/Scenes.meta

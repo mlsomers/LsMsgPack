@@ -247,13 +247,32 @@ namespace LsMsgPack.Meta
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
     private static bool HasFieldState(Type type)
     {
-      if (!TypeResolver.IsFrameworkAssembly(type.Assembly) || type.ContainsGenericParameters || Nullable.GetUnderlyingType(type) != null || FrameworkTypeInfo.IsTuple(type) || FrameworkTypeInfo.IsKeyValuePair(type))
+      if ((!TypeResolver.IsFrameworkAssembly(type.Assembly) && !IsEngineAssembly(type.Assembly)) || type.ContainsGenericParameters || Nullable.GetUnderlyingType(type) != null || FrameworkTypeInfo.IsTuple(type) || FrameworkTypeInfo.IsKeyValuePair(type))
         return false;
       FieldInfo[] fields = type.GetFields(BindingFlags.Instance | BindingFlags.Public);
       for (int t = fields.Length - 1; t >= 0; t--)
         if (!fields[t].IsInitOnly)
           return true; // fields that can be set (a struct with only readonly public fields is not written by them: there is no constructor binding for framework types)
       return false;
+    }
+
+    /// <summary>
+    /// Unity's engine (UnityEngine, UnityEngine.CoreModule...): its structs are written as the framework's are (maintainer's decision 2026-11-22): a struct whose state is public fields
+    /// (<c>Vector3</c>, <c>Quaternion</c>, <c>Color</c>, <c>Matrix4x4</c>) by those fields only (<see cref="IsFieldStruct"/>; <c>Vector3.normalized</c> is another Vector3: written, it never ended),
+    /// the get-only properties and fields it declares left out otherwise (<c>Vector2Int</c> is its x and y). Recognized by name: LsMsgPack does not reference Unity.
+    /// </summary>
+    internal static bool IsEngineAssembly(Assembly assembly)
+    {
+      string name = assembly.GetName().Name;
+      return name == "UnityEngine" || name.StartsWith("UnityEngine.", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The members of the type are the framework's or Unity's (<see cref="IsEngineAssembly"/>): its get-only properties are computed and its fields internal, unless it is a <see cref="IsFieldStruct"/>.
+    /// </summary>
+    internal static bool IsPlatformDeclared(Type declaring)
+    {
+      return TypeResolver.IsFrameworkAssembly(declaring.Assembly) || IsEngineAssembly(declaring.Assembly);
     }
 
     /// <summary>

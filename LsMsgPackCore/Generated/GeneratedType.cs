@@ -1,4 +1,5 @@
-﻿using System;
+﻿using LsMsgPack.Meta;
+using System;
 using System.ComponentModel;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -207,7 +208,7 @@ namespace LsMsgPack.Generated
         StructGetter<TTarget, TValue> get = Get;
         if (get is null)
           return null;
-        return instance => get(ref Unsafe.Unbox<TTarget>(instance)); // in the box, without copying the struct
+        return instance => get(ref BoxedValue.Ref<TTarget>(instance)); // in the box, without copying the struct
       }
     }
 
@@ -220,9 +221,9 @@ namespace LsMsgPack.Generated
       return (instance, value) => // the box is changed, as reflection's SetValue on a boxed struct does
       {
         if (value is TValue typed)
-          set(ref Unsafe.Unbox<TTarget>(instance), typed);
+          set(ref BoxedValue.Ref<TTarget>(instance), typed);
         else if (value is null && (object)default(TValue) is null) // reference types and Nullable<T>
-          set(ref Unsafe.Unbox<TTarget>(instance), default(TValue));
+          set(ref BoxedValue.Ref<TTarget>(instance), default(TValue));
         else
           SetByReflection(reflection, instance, value);
       };

@@ -92,7 +92,7 @@ namespace LsMsgPack.Analyzers
     }
 
     /// <summary>
-    /// An attribute that opts the member in (LsMsgPack.Core's IncludeAttributes): [JsonInclude], Json.NET's [JsonProperty], [DataMember], [Key] (MessagePack-CSharp, Nerdbank.MessagePack),
+    /// An attribute that opts the member in (LsMsgPack.Core's IncludeAttributes): [JsonInclude], Json.NET's [JsonProperty], [DataMember], [Key] (MessagePack-CSharp, Nerdbank.MessagePack), Unity's [SerializeField],
     /// [PropertyShape] (not with Ignore = true), any other attribute with "Include" in its name.
     /// </summary>
     public static bool OptsIn(ISymbol member)
@@ -109,6 +109,7 @@ namespace LsMsgPack.Analyzers
           case "System.Runtime.Serialization.DataMemberAttribute":
           case "MessagePack.KeyAttribute":
           case "Nerdbank.MessagePack.KeyAttribute":
+          case "UnityEngine.SerializeField":
             return true;
           case "PolyType.PropertyShapeAttribute":
             bool ignored = false;

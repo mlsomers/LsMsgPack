@@ -61,6 +61,7 @@ namespace LsMsgPack.TypeResolving.Filters
                     case "System.Runtime.Serialization.DataMemberAttribute":
                     case "MessagePack.KeyAttribute":
                     case "Nerdbank.MessagePack.KeyAttribute":
+                    case "UnityEngine.SerializeField": // Unity's own serializer writes these private fields (and the public ones: SerializedFields.Public)
                         Includes = true;
                         break;
                     case "PolyType.PropertyShapeAttribute":

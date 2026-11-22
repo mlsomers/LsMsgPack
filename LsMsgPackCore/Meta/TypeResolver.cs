@@ -464,6 +464,7 @@ namespace LsMsgPack.Meta
       {
         typeof(List<>).Assembly, // System.Collections.Generic (System.Private.CoreLib on .NET: also Version, Half, Int128, tuples...)
         typeof(SortedDictionary<,>).Assembly, // System.Collections (SortedDictionary, SortedSet, LinkedList, Stack, Queue, BitArray...)
+        typeof(HashSet<>).Assembly, // System.Collections on .NET, but System.Core on .NET Framework and Mono (Unity)
         typeof(ConcurrentBag<>).Assembly, // System.Collections.Concurrent
         typeof(ObservableCollection<>).Assembly, // System.Collections.ObjectModel
         typeof(System.Numerics.BigInteger).Assembly // System.Runtime.Numerics (BigInteger, Complex)
