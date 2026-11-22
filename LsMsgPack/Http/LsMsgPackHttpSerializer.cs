@@ -55,11 +55,13 @@ namespace LsMsgPack.Http
 
     [RequiresUnreferencedCode(LsMsgPackSerializer.RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(LsMsgPackSerializer.RequiresDynamicCodeMessage)]
+    [DynamicDependency(nameof(Serializer.ReflectionInstantiations), typeof(Serializer))] // NativeAOT: the generic code for the classes (see there)
     public LsMsgPackHttpSerializer() : this(new LsMsgPackHttpOptions(), null) { }
 
     /// <param name="options">Read once, later changes do not apply</param>
     [RequiresUnreferencedCode(LsMsgPackSerializer.RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(LsMsgPackSerializer.RequiresDynamicCodeMessage)]
+    [DynamicDependency(nameof(Serializer.ReflectionInstantiations), typeof(Serializer))] // NativeAOT: the generic code for the classes (see there)
     public LsMsgPackHttpSerializer(LsMsgPackHttpOptions options) : this(options, null) { }
 
     /// <summary>

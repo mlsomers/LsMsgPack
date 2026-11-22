@@ -636,6 +636,8 @@ namespace LsMsgPackDebug
     /// </summary>
     private static MsgPackItem SerializeKey(object key, MsgPackSettings settings, FullPropertyInfo keyInfo, int depth, bool byNames, ReferenceTable table)
     {
+      if (key is string name && settings._dictionaryKeyPolicy != null) // DictionaryKeyPolicy: string keys converted
+        key = MsgPackNamingPolicy.ConvertKey(settings._dictionaryKeyPolicy, name);
       if (table is null)
         return SerializeObject(key, settings, keyInfo, depth, byNames);
       table.InKeys++;

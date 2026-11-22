@@ -38,7 +38,7 @@ options.PropertyNameCaseInsensitive = true;            // "createdAt" sets Creat
 LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
 ```
 
-Names in another style (`created_at`) go on the properties, with the attribute names turned on:
+When all their names are in another style (`created_at`, `ticket_id`), set `options.PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower` (or `CamelCase`, `KebabCaseLower`...): `CreatedAt` is then written and read as `created_at` ([NamingPolicies.md](../NamingPolicies.md)). Names that don't follow a style go on the properties, with the attribute names turned on:
 
 ```csharp
 using LsMsgPack.TypeResolving.Interfaces;

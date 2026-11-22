@@ -142,7 +142,7 @@ namespace LsMsgPack.Reading
     }
 
     /// <summary>
-    /// The loop of <see cref="Read"/> by the source generator's code (<see cref="ReadPlan.Map"/>, never a constructor with values: those plans have no code).
+    /// The loop of <see cref="Read"/> by the source generator's code (<see cref="ReadPlan.Map"/>; a constructor with values: only the compiled reader, CompiledReader.CreateWithValues).
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
     private T ReadGeneratedMap(ReadContext c, ReadPlan plan, PropReader[] bound, int count, int start, FullPropertyInfo assignedTo)
@@ -153,7 +153,7 @@ namespace LsMsgPack.Reading
       if (!plan.Code.ReadMapBoxed(c, result, plan, bound, count, plan.GeneratedRead))
         return Restart(c, start, depth, assignedTo);
       c.Depth = depth;
-      if (plan.Finishes) // callbacks
+      if (plan.Finishes) // created by the constructor with values (the compiled reader did, or the runtime's loop it handed over to), or callbacks
         result = plan.Finish(result);
       return Typed(result);
     }
@@ -663,6 +663,16 @@ namespace LsMsgPack.Reading
     internal bool CaseInsensitive { get { return _caseInsensitive; } }
 
     /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNamingPolicy"/> writes another name than the .NET name for some property: keys that are not the written names are looked up by the .NET names too.
+    /// </summary>
+    private readonly bool _otherNames;
+
+    /// <summary>
+    /// <see cref="_caseInsensitive"/> or <see cref="_otherNames"/>: one test in FindByName (extra code there cost 2-3% on reading names without the options).
+    /// </summary>
+    private readonly bool _lookFurther;
+
+    /// <summary>
     /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the properties whose name equals another one's ignoring case (a key matching them sets none), null without the option.
     /// </summary>
     private readonly bool[] _ambiguous;
@@ -679,6 +689,7 @@ namespace LsMsgPack.Reading
       _infos = infos;
       _caseInsensitive = serializer.Options._propertyNameCaseInsensitive;
       SerializationRules.ThrowIfUnsupportedFrameworkType(type);
+      serializer.ThrowIfTrimmed(type);
       Extended = ExtensionDataMember.Of(type) != null;
       Props = new PropReader[infos.Length];
       ObjectConstructor constructor = ObjectConstructor.Of(type);
@@ -692,6 +703,11 @@ namespace LsMsgPack.Reading
           Props[t] = PropReader.Create(serializer, infos[t]);
       }
       Finishes = WithValues != null || Callbacks != null;
+      for (int t = Props.Length - 1; t >= 0; t--)
+        _otherNames |= Props[t].DotNetName != null;
+      _lookFurther = _caseInsensitive || _otherNames;
+      if (_otherNames)
+        _nextDotNetNameFirst = NoDotNetNameIsAnotherName();
       if (_caseInsensitive)
       {
         _ambiguous = new bool[Props.Length];
@@ -705,10 +721,21 @@ namespace LsMsgPack.Reading
             Props[t].SetCamelName(CamelCase(Props[t].Name));
         }
       }
-      if (WithValues != null)
+      if (WithValues != null) // the code of the source generator sets the properties of an object, which is created after them: not used, a reader is compiled (CompiledReader.CreateWithValues)
       {
         _create = WithValues.Collect;
-        return; // the code of the source generator sets the properties of an object, which is created after them
+        for (int t = Props.Length - 1; t >= 0; t--)
+          Props[t].CompiledId = t;
+        _compiledAt = Collecting; // Create takes CreateCounting, which collects into the context's values of the depth (never registered with ReferenceHandling.Preserve: PreservingReader registers the object made)
+        _untilCompiled = _compiledAt;
+        if (!Extended && serializer.CompileReadersAfter >= 0)
+        {
+          if (serializer.CompileReadersAfter == 0)
+            Compile();
+          else
+            _untilCompiled = _compiledAt + serializer.CompileReadersAfter;
+        }
+        return;
       }
       _create = Creator(type, serializer.Options._objectCreation, generated);
 
@@ -778,8 +805,10 @@ namespace LsMsgPack.Reading
         return Existing(c, start);
       if (_untilCompiled > _compiledAt)
         CountRead();
+      if (WithValues != null)
+        return WithValues.Collect(c);
       object created = _create();
-      if (_compiledAt != 0) // ReferenceHandling.Preserve (a plan with WithValues returned before setting it: the object is made after its values, registered then by PreservingReader)
+      if (_compiledAt != 0) // ReferenceHandling.Preserve (a plan with WithValues returned above: the object is made after its values, registered then by PreservingReader)
         c.References?.Register(start, created);
       return created;
     }
@@ -791,6 +820,11 @@ namespace LsMsgPack.Reading
     private readonly int _compiledAt;
 
     private const int Preserving = 1 << 30;
+
+    /// <summary>
+    /// <see cref="_compiledAt"/> of a plan created by the constructor with values (<see cref="WithValues"/>): <see cref="Create(ReadContext, int)"/> always takes <see cref="CreateCounting"/>.
+    /// </summary>
+    private const int Collecting = 1 << 30;
 
     /// <summary>
     /// The existing object the value is read into (<see cref="ReadContext.Into"/>, docs/Populate.md) instead of a new one: registered and called back as a new one.
@@ -826,7 +860,12 @@ namespace LsMsgPack.Reading
     internal object Finish(object result)
     {
       if (WithValues != null)
-        result = WithValues.Create(result);
+      {
+        ConstructorValues values = (ConstructorValues)result;
+        result = values.Created ?? WithValues.Construct(values);
+        values.Created = null; // reused for the next object at this depth (ReadContext.ValuesAtDepth): nothing read is kept alive by the context
+        values.Values = null;
+      }
       Callbacks?.OnDeserialized(result);
       return result;
     }
@@ -865,7 +904,7 @@ namespace LsMsgPack.Reading
 #endif
       try
       {
-        GeneratedObjectCode code = CompiledReader.Create(_serializer, Type, _infos, Props);
+        GeneratedObjectCode code = WithValues != null ? CompiledReader.CreateWithValues(_serializer, Type, _infos, Props, WithValues) : CompiledReader.Create(_serializer, Type, _infos, Props);
         if (code is null)
           return;
         GeneratedRead = _serializer.GeneratedReadPlan;
@@ -885,9 +924,65 @@ namespace LsMsgPack.Reading
       PropReader[] props = Props;
       if (next < props.Length && props[next].NameIs(buffer, offset, length))
         return props[next++];
-      if (_caseInsensitive)
-        return FindOrMatchIgnoringCase(buffer, offset, length, ref next);
+      if (_lookFurther)
+        return _otherNames ? FindOtherName(buffer, offset, length, ref next) : FindOrMatchIgnoringCase(buffer, offset, length, ref next);
       return Search(buffer, offset, length, ref next);
+    }
+
+    /// <summary>
+    /// <see cref="FindOtherName"/> may take the next property's .NET name before the written names: no .NET name is another property's written name (ignoring case with
+    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>, as FindOrMatchIgnoringCase compares), so the searches before it would find the same property or none.
+    /// An invoice with .NET names read by a serializer with camelCase names: 9.9 -> 5.6 us (with the written names 2.5 us: the compiled code leaves the object to the runtime's loop at the first key).
+    /// </summary>
+    private readonly bool _nextDotNetNameFirst;
+
+    private bool NoDotNetNameIsAnotherName()
+    {
+      StringComparison comparison = _caseInsensitive ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+      PropReader[] props = Props;
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        if (props[t].DotNetName is null)
+          continue;
+        for (int u = props.Length - 1; u >= 0; u--)
+          if (u != t && (string.Equals(props[t].DotNetName, props[u].Name, comparison) || string.Equals(props[t].DotNetName, props[u].DotNetName, comparison)))
+            return false;
+      }
+      return true;
+    }
+
+    /// <summary>
+    /// FindByName with <see cref="MsgPackOptions.PropertyNamingPolicy"/> when a property's .NET name is not its written name (apart, so FindByName stays small): the written names,
+    /// then the .NET names (data of writers without the policy), then with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/> ignoring case (written names, then .NET names).
+    /// </summary>
+    private PropReader FindOtherName(byte[] buffer, int offset, int length, ref int next)
+    {
+      if (_nextDotNetNameFirst && next < Props.Length && Props[next].DotNetNameIs(buffer, offset, length))
+        return Props[next++]; // data of a writer without the policy, in the order of the properties
+      PropReader found = _caseInsensitive ? FindOrMatchIgnoringCase(buffer, offset, length, ref next) : Search(buffer, offset, length, ref next);
+      if (found != null)
+        return found;
+      PropReader[] props = Props;
+      for (int t = 0; t < props.Length; t++)
+      {
+        if (props[t].DotNetNameIs(buffer, offset, length))
+        {
+          next = t + 1;
+          return props[t];
+        }
+      }
+      if (!_caseInsensitive)
+        return null;
+      string name = MsgPackOptions.StringEncoding.GetString(buffer, offset, length);
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        if (props[t].DotNetName is null || !string.Equals(props[t].DotNetName, name, StringComparison.OrdinalIgnoreCase))
+          continue;
+        if (found != null)
+          return null; // several (as FindIgnoringCase)
+        found = props[t];
+      }
+      return found;
     }
 
     /// <summary>
@@ -1036,6 +1131,19 @@ namespace LsMsgPack.Reading
     }
 
     /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNamingPolicy"/>: the property whose .NET name this is when the policy writes it otherwise, null for none.
+    /// </summary>
+    internal PropReader FindByDotNetName(string name)
+    {
+      for (int t = 0; t < Props.Length; t++)
+        if (Props[t].DotNetName == name)
+          return Props[t];
+      return null;
+    }
+
+    internal bool OtherNames { get { return _otherNames; } }
+
+    /// <summary>
     /// Creates the instances as <see cref="MsgPackOptions.ObjectCreation"/> says (decided once per type, the options of a serializer do not change).
     /// </summary>
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.Fallback)]
@@ -1165,8 +1273,25 @@ namespace LsMsgPack.Reading
     internal PropReader(FullPropertyInfo info)
     {
       Info = info;
-      Name = info.Name;
+      Name = info.WrittenName ?? info.Name;
       _nameBytes = MsgPackOptions.StringEncoding.GetBytes(Name);
+      if (info.Name != null && !string.Equals(Name, info.Name, StringComparison.Ordinal))
+      {
+        DotNetName = info.Name;
+        _dotNetBytes = MsgPackOptions.StringEncoding.GetBytes(info.Name);
+      }
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNamingPolicy"/>: the .NET name when the policy writes another one (read as a second name, data of writers without the policy), otherwise null.
+    /// </summary>
+    internal readonly string DotNetName;
+    private readonly byte[] _dotNetBytes;
+
+    internal bool DotNetNameIs(byte[] buffer, int offset, int length)
+    {
+      byte[] name = _dotNetBytes;
+      return name != null && name.Length == length && new ReadOnlySpan<byte>(buffer, offset, length).SequenceEqual(name);
     }
 
     /// <summary>
@@ -1650,6 +1775,8 @@ namespace LsMsgPack.Reading
 
     private readonly ObjectConstructor _constructor;
 
+    internal ObjectConstructor Constructor { get { return _constructor; } }
+
     /// <summary>
     /// The values before any is read: a parameter whose property is read gets the value the writer leaves out (FullPropertyInfo.NilValue, as a nil sets it), the others their default value
     /// (see ObjectConstructor.Arguments.Create); the other properties <see cref="NotRead"/>.
@@ -1704,37 +1831,106 @@ namespace LsMsgPack.Reading
     }
 
     /// <summary>
-    /// What the values of an object are read into.
+    /// The value of the parameter at <paramref name="index"/> before its property is read (the value a nil sets, or the parameter's default).
+    /// </summary>
+    internal object InitialOf(int index)
+    {
+      return _initial[index];
+    }
+
+    /// <summary>
+    /// What the values of an object are read into: its array is made when the first value is put there (<see cref="ValuesOf"/>), the compiled reader keeps the parameters in locals
+    /// (CompiledReader.CreateWithValues).
     /// </summary>
     internal object Collect()
     {
-      object[] values = new object[_initial.Length];
-      Array.Copy(_initial, values, values.Length); // a third of Clone's time (52 ns for 5 values on .NET 8)
-      return new ConstructorValues(values, _awaited);
+      return new ConstructorValues(_awaited);
+    }
+
+    /// <summary>
+    /// <see cref="Collect()"/> into the context's values of the object's depth (<see cref="ReadContext.ValuesAtDepth"/>): an object is finished (<see cref="ReadPlan.Finish"/>) before another one
+    /// starts at its depth, so they are reused. What a failed object left there (an exception, a restart) is cleared here.
+    /// </summary>
+    internal ConstructorValues Collect(ReadContext c)
+    {
+      ConstructorValues[] slots = c.ValuesAtDepth;
+      int depth = c.Depth;
+      ConstructorValues values;
+      if (slots is null || depth >= slots.Length || (values = slots[depth]) is null)
+        return NewSlot(c, depth);
+      values.Awaited = _awaited;
+      values.Values = null;
+      values.Created = null;
+      return values;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private ConstructorValues NewSlot(ReadContext c, int depth)
+    {
+      ConstructorValues[] slots = c.ValuesAtDepth;
+      if (slots is null || depth >= slots.Length)
+      {
+        ConstructorValues[] grown = new ConstructorValues[Math.Max(depth + 1, slots is null ? 8 : slots.Length * 2)];
+        if (slots != null)
+          Array.Copy(slots, grown, slots.Length);
+        c.ValuesAtDepth = slots = grown;
+      }
+      return slots[depth] = new ConstructorValues(_awaited);
+    }
+
+    /// <returns>The array of the collected values, made with the initial values when it is not there yet</returns>
+    /// <remarks>Not inlined: the compiled reader calls it where it hands an object over, which made its code too large for the JIT to inline the value reads (TryReadString).</remarks>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    internal object[] ValuesOf(ConstructorValues collected)
+    {
+      object[] values = collected.Values;
+      if (values is null)
+      {
+        values = new object[_initial.Length];
+        Array.Copy(_initial, values, values.Length); // a third of Clone's time (52 ns for 5 values on .NET 8)
+        collected.Values = values;
+      }
+      return values;
+    }
+
+    /// <summary>
+    /// The compiled reader put the values of the parameters in <paramref name="seen"/> into the values (<see cref="ValuesOf"/>) before the runtime's loop goes on: the constructor is called
+    /// when they were the last ones awaited, as <see cref="ArgumentReader"/> calls it when it receives the last one.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)] // see ValuesOf
+    internal void Received(ConstructorValues collected, ulong seen)
+    {
+      if (seen != 0 && (collected.Awaited &= ~seen) == 0)
+        Construct(collected);
     }
 
     /// <summary>
     /// The object, once its values are read: created now when the values of some parameters were not there.
     /// </summary>
     /// <param name="collected">From <see cref="Collect"/>, with the values read</param>
-    internal object Create(object collected)
-    {
-      ConstructorValues values = (ConstructorValues)collected;
-      return values.Created ?? Construct(values);
-    }
 
     /// <summary>
     /// Calls the constructor (an exception of it is passed on as it is), then sets the other properties that were read.
     /// </summary>
     internal object Construct(ConstructorValues collected)
     {
-      object[] values = collected.Values;
-      object result = _constructor.Invoke(values);
+      return Constructed(collected, _constructor.Invoke(ValuesOf(collected)));
+    }
+
+    /// <summary>
+    /// The object is created (by <see cref="Construct"/> or the compiled reader's constructor call): OnDeserializing, then the other properties that were read are set.
+    /// </summary>
+    internal object Constructed(ConstructorValues collected, object result)
+    {
       _constructor.Callbacks?.OnDeserializing(result); // after the constructor, before the other properties (as Core's ObjectConstructor.Arguments)
-      int parameters = values.Length - _setters.Length;
-      for (int t = parameters; t < values.Length; t++)
-        if (!ReferenceEquals(values[t], NotRead))
-          _setters[t - parameters].SetBoxed(result, values[t]);
+      object[] values = collected.Values;
+      if (values != null) // null: nothing was put there (the compiled reader keeps the parameters in locals, no other property was read)
+      {
+        int parameters = values.Length - _setters.Length;
+        for (int t = parameters; t < values.Length; t++)
+          if (!ReferenceEquals(values[t], NotRead))
+            _setters[t - parameters].SetBoxed(result, values[t]);
+      }
       collected.Created = result;
       return result;
     }
@@ -1746,9 +1942,9 @@ namespace LsMsgPack.Reading
   internal sealed class ConstructorValues
   {
     /// <summary>
-    /// The parameters, then the properties no parameter takes (<see cref="ConstructorPlan.NotRead"/> until read).
+    /// The parameters, then the properties no parameter takes (<see cref="ConstructorPlan.NotRead"/> until read); null until a value is put there (<see cref="ConstructorPlan.ValuesOf"/>).
     /// </summary>
-    internal readonly object[] Values;
+    internal object[] Values;
 
     /// <summary>
     /// The bits of the parameters whose values are still to be read.
@@ -1760,9 +1956,8 @@ namespace LsMsgPack.Reading
     /// </summary>
     internal object Created;
 
-    internal ConstructorValues(object[] values, ulong awaited)
+    internal ConstructorValues(ulong awaited)
     {
-      Values = values;
       Awaited = awaited;
     }
   }
@@ -1790,6 +1985,29 @@ namespace LsMsgPack.Reading
 
     private ValueReader _reader;
 
+    /// <summary>
+    /// The position of the value in the collected values (for a parameter: the parameter's position).
+    /// </summary>
+    internal int Index { get { return _index; } }
+
+    /// <summary>
+    /// The value of a nil (FullPropertyInfo.NilValue).
+    /// </summary>
+    internal object Nil { get { return _nil; } }
+
+    /// <summary>
+    /// A parameter of the constructor takes the value (otherwise a property no parameter takes, set after the constructor).
+    /// </summary>
+    internal bool IsParameter { get { return _setter is null; } }
+
+    /// <summary>
+    /// The reader of the value's type (the compiled reader calls it typed).
+    /// </summary>
+    internal ValueReader Reader()
+    {
+      return _reader ?? (_reader = _serializer.ReaderFor(Info.DeclaredType, Info));
+    }
+
     /// <param name="index">The position of the value in the collected values</param>
     /// <param name="nil">The value of a nil (FullPropertyInfo.NilValue)</param>
     /// <param name="setter">The reader setting the property when no parameter takes it, otherwise null</param>
@@ -1816,7 +2034,8 @@ namespace LsMsgPack.Reading
         return;
       }
       ValueReader reader = _reader ?? (_reader = _serializer.ReaderFor(Info.DeclaredType, Info));
-      values.Values[_index] = reader.ReadBoxed(c, Info);
+      object value = reader.ReadBoxed(c, Info);
+      _plan.ValuesOf(values)[_index] = value;
       Received(values);
     }
 
@@ -1828,7 +2047,7 @@ namespace LsMsgPack.Reading
         _setter?.ReadNil(values.Created);
         return;
       }
-      values.Values[_index] = _nil;
+      _plan.ValuesOf(values)[_index] = _nil;
       Received(values);
     }
 
@@ -1924,10 +2143,27 @@ namespace LsMsgPack.Reading
         bound = new PropReader[def.Props.Count];
         for (int t = 0; t < bound.Length; t++)
           bound[t] = def.Props[t] is null ? null : plan.FindByName(def.Props[t]);
+        if (plan.OtherNames)
+          BindDotNetNames(bound, plan, def);
         if (plan.CaseInsensitive)
           BindIgnoringCase(bound, plan, def);
       }
       return _bindings.GetOrAdd(plan, new Cached(this, bound)); // another thread's binding is the same
+    }
+
+    /// <summary>
+    /// <see cref="MsgPackOptions.PropertyNamingPolicy"/>: the properties the entry names by their .NET names (a writer without the policy), where the written name is not in it.
+    /// </summary>
+    private static void BindDotNetNames(PropReader[] bound, ReadPlan plan, ComplexTypeDef def)
+    {
+      for (int t = 0; t < bound.Length; t++)
+      {
+        if (bound[t] != null || def.Props[t] is null)
+          continue;
+        PropReader prop = plan.FindByDotNetName(def.Props[t]);
+        if (prop != null && Array.IndexOf(bound, prop) < 0)
+          bound[t] = prop;
+      }
     }
 
     /// <summary>

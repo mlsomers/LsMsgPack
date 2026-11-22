@@ -36,6 +36,12 @@ namespace LsMsgPack.Reading
     public int Depth;
 
     /// <summary>
+    /// The values collected for an object created by its constructor with values, by the depth of the object (ConstructorPlan.Collect): an object is finished before another one
+    /// at its depth starts, so one per depth is reused (cleared when the object is finished, ReadPlan.Finish). Null until such an object is read.
+    /// </summary>
+    internal ConstructorValues[] ValuesAtDepth;
+
+    /// <summary>
     /// Collects the differences between the data and the classes (null when not asked for). <see cref="ConversionSettings"/> then has them too, for LsMsgPack.Core's conversions.
     /// </summary>
     internal ReadDifferences Differences;
@@ -163,6 +169,23 @@ namespace LsMsgPack.Reading
     /// Reads the root value into the context's <see cref="RootSlot{T}"/> and returns the slot (<see cref="ReadContext.IntoSlot"/>).
     /// </summary>
     internal abstract object ReadIntoSlot(ReadContext c);
+
+    /// <summary>
+    /// <see cref="ReferenceHandling.Preserve"/>: Core registers what it makes by the plain values (their offsets noted by ReadPlain) and finds what a reference read first.
+    /// </summary>
+    protected static object ConvertPreserving(object plain, Type type, ReadContext c, FullPropertyInfo assignedTo, ByteReferences references)
+    {
+      ReferenceResolver outer = ReferenceResolver.Current;
+      ReferenceResolver.Current = references;
+      try
+      {
+        return ValueConverter.ConvertDeserializeValue(plain, type, c.ConversionSettings(), assignedTo);
+      }
+      finally
+      {
+        ReferenceResolver.Current = outer;
+      }
+    }
   }
 
   /// <summary>
@@ -190,23 +213,6 @@ namespace LsMsgPack.Reading
       RootSlot<T> slot = RootSlot<T>.Of(ref c.Slot);
       slot.Value = Read(c, null);
       return slot;
-    }
-
-    /// <summary>
-    /// <see cref="ReferenceHandling.Preserve"/>: Core registers what it makes by the plain values (their offsets noted by ReadPlain) and finds what a reference read first.
-    /// </summary>
-    private static object ConvertPreserving(object plain, Type type, ReadContext c, FullPropertyInfo assignedTo, ByteReferences references)
-    {
-      ReferenceResolver outer = ReferenceResolver.Current;
-      ReferenceResolver.Current = references;
-      try
-      {
-        return ValueConverter.ConvertDeserializeValue(plain, type, c.ConversionSettings(), assignedTo);
-      }
-      finally
-      {
-        ReferenceResolver.Current = outer;
-      }
     }
 
     /// <summary>
@@ -356,6 +362,62 @@ namespace LsMsgPack.Reading
     internal override T Read(ReadContext c, FullPropertyInfo assignedTo)
     {
       return Slow(c, c.R.Pos, assignedTo);
+    }
+  }
+
+  /// <summary>
+  /// <see cref="BoxedReader{T}"/> without a type argument: the reader of a value type NativeAOT has no generic reader of (no dynamic code, a type the application and the
+  /// source generator did not use as a type argument: <see cref="Serializer.Instantiate"/> returned null). Read as LsMsgPack does, the same steps as <see cref="ValueReader{T}.Slow"/>;
+  /// nil is null (a property or argument set by reflection takes it as the default, <see cref="RootSlot{T}.Take"/> too).
+  /// Generic code asking for a <see cref="ValueReader{T}"/> of the type gets a BoxedReader of its own (<see cref="Serializer.Reader{T}"/>): it has that instantiation.
+  /// </summary>
+  internal sealed class ConvertingReader : ValueReader
+  {
+    private readonly Type _type;
+
+    internal ConvertingReader(Type type)
+    {
+      _type = type;
+    }
+
+    internal override object ReadBoxed(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      object plain = c.R.ReadPlain(c.Depth);
+      ByteReferences references = c.References;
+      object value;
+      MsgPackOptions settings = c.ConversionSettings();
+      bool into = c.IntoAt == start && c.Into != null;
+      if (into) // read into an existing object (Populate)
+      {
+        ReferenceResolver outer = ReferenceResolver.Current;
+        if (references != null && references.Preserves)
+          ReferenceResolver.Current = references;
+        try
+        {
+          value = ValueConverter.ConvertInto(plain, _type, c.Into, settings, assignedTo);
+        }
+        finally
+        {
+          ReferenceResolver.Current = outer;
+        }
+      }
+      else
+      {
+        value = references != null && references.Preserves
+          ? ConvertPreserving(plain, _type, c, assignedTo, references)
+          : ValueConverter.ConvertDeserializeValue(plain, _type, settings, assignedTo);
+      }
+      if (value is null || _type.IsInstanceOfType(value))
+        return value;
+      if (!into && c.Depth == 0 && assignedTo is null) // the root: LsMsgPack returns what it could convert, only its generic Deserialize casts
+        throw new RootValue(value);
+      throw ReadDifferences.NotConverted(settings, new ArgumentException($"Object of type '{value.GetType()}' cannot be converted to type '{_type}'."));
+    }
+
+    internal override object ReadIntoSlot(ReadContext c)
+    {
+      return ReadBoxed(c, null); // RootSlot<T>.Take takes a boxed value
     }
   }
 
@@ -706,7 +768,7 @@ namespace LsMsgPack.Reading
     private static TEnum ReadName(ReadContext c, int start, FullPropertyInfo assignedTo)
     {
       int length = c.R.TryReadStringHeader();
-      if (length >= 0 && EnumNameReading<TEnum>.TryMatch(c.R.Buf, c.R.Pos, length, out ulong bits))
+      if (length >= 0 && EnumNameReading<TEnum>.TryMatch(c.R.Buf, c.R.Pos, length, c.Serializer.Options._enumNamingPolicy, out ulong bits))
       {
         c.R.Pos += length;
         return FromBits(bits);
@@ -742,15 +804,26 @@ namespace LsMsgPack.Reading
 
     private static Name[] _names; // null until the first name is read (the same table by any thread)
 
+    /// <summary>
+    /// The table of the last <see cref="MsgPackOptions.EnumNamingPolicy"/> read with (an application has one, usually), replaced by another policy's.
+    /// </summary>
+    private static PolicyNames _ofPolicy;
+
+    private sealed class PolicyNames
+    {
+      internal MsgPackNamingPolicy Policy;
+      internal Name[] Names;
+    }
+
     private static bool IsSigned()
     {
       TypeCode code = Type.GetTypeCode(Enum.GetUnderlyingType(typeof(TEnum)));
       return code == TypeCode.SByte || code == TypeCode.Int16 || code == TypeCode.Int32 || code == TypeCode.Int64;
     }
 
-    internal static bool TryMatch(byte[] buffer, int at, int length, out ulong bits)
+    internal static bool TryMatch(byte[] buffer, int at, int length, MsgPackNamingPolicy policy, out ulong bits)
     {
-      Name[] names = _names;
+      Name[] names = policy is null ? _names : OfPolicy(policy);
       if (names is null)
       {
         if (!MsgPackWriter.IsUtf8(MsgPackOptions.StringEncoding))
@@ -758,7 +831,7 @@ namespace LsMsgPack.Reading
           bits = 0;
           return false;
         }
-        names = Build();
+        names = Build(policy);
       }
       for (int t = 0; t < names.Length; t++)
       {
@@ -773,13 +846,22 @@ namespace LsMsgPack.Reading
       return false;
     }
 
-    private static Name[] Build()
+    private static Name[] OfPolicy(MsgPackNamingPolicy policy)
     {
-      List<KeyValuePair<string, ulong>> all = EnumNames.Of(typeof(TEnum)).AllNames();
+      PolicyNames last = _ofPolicy;
+      return last != null && ReferenceEquals(last.Policy, policy) ? last.Names : null;
+    }
+
+    private static Name[] Build(MsgPackNamingPolicy policy)
+    {
+      List<KeyValuePair<string, ulong>> all = EnumNames.Of(typeof(TEnum), policy).AllNames();
       Name[] names = new Name[all.Count];
       for (int t = 0; t < all.Count; t++)
         names[t] = new Name { Bytes = Encoding.UTF8.GetBytes(all[t].Key), Bits = all[t].Value };
-      _names = names;
+      if (policy is null)
+        _names = names;
+      else
+        _ofPolicy = new PolicyNames { Policy = policy, Names = names };
       return names;
     }
   }
@@ -885,6 +967,61 @@ namespace LsMsgPack.Reading
     bool ICollectionContent.TryReadContent(ReadContext c, out object value)
     {
       value = CollectionRules.IsArray(c.R) ? Read(c, null) : null;
+      return value != null;
+    }
+  }
+
+  /// <summary>
+  /// The other collection types that Core fills from an array of their elements (<see cref="CollectionInfo.Create"/>: immutable and frozen collections by their factory, sorted sets,
+  /// queues, stacks and observable collections by their constructor or Add, F# lists by <c>List.ofSeq</c>...): the elements read typed into an array, then the same call as Core's
+  /// conversion makes. Anything else than an array (nil of a struct, type id wrappers, other formats), reporting and <c>[SerializeEnumerable]</c> members go to <see cref="ValueReader{T}.Slow"/>.
+  /// Not with ReferenceHandling.Preserve (Core registers some of them before their elements).
+  /// </summary>
+  internal sealed class CollectionReader<TCollection, TItem> : ValueReader<TCollection>, ICollectionContent
+  {
+    private readonly Serializer _serializer;
+    private readonly CollectionInfo _info;
+    private ValueReader<TItem> _item;
+
+    internal CollectionReader(Serializer serializer)
+    {
+      _serializer = serializer;
+      _info = CollectionInfo.Get(typeof(TCollection));
+    }
+
+    internal override TCollection Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (!typeof(TCollection).IsValueType && c.R.TryReadNil())
+        return default(TCollection);
+      if (c.Unusual || CollectionRules.HasEnumerableAttribute(assignedTo))
+        return Slow(c, start, assignedTo);
+
+      int count = c.R.TryReadArrayHeader();
+      if (count < 0)
+        return Slow(c, start, assignedTo);
+      return ReadItems(c, count);
+    }
+
+    private TCollection ReadItems(ReadContext c, int count)
+    {
+      ValueReader<TItem> item = _item ?? (_item = _serializer.Reader<TItem>());
+      c.Enter();
+      TItem[] items = new TItem[count];
+      for (int t = 0; t < count; t++)
+        items[t] = item.Read(c, null);
+      c.Depth--;
+      return (TCollection)_info.Create(items, c.ConversionSettings());
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      if (!CollectionRules.IsArray(c.R))
+      {
+        value = null;
+        return false;
+      }
+      value = ReadItems(c, c.R.TryReadArrayHeader());
       return value != null;
     }
   }
@@ -1170,6 +1307,89 @@ namespace LsMsgPack.Reading
       }
       c.Depth = depth;
       result = dictionary;
+      return true;
+    }
+  }
+
+  /// <summary>
+  /// The other dictionary types (sorted, concurrent, immutable and frozen dictionaries, F# maps, lists of KeyValuePairs...), read from a map as Core's conversion fills them
+  /// (ValueConverter.ConvertPairs): the pairs typed into an array for the ones made of them (<see cref="CollectionInfo.FillsPairs"/>: <see cref="CollectionInfo.Create"/>), otherwise created
+  /// empty and their Add called per entry in the order of the data (a key twice throws, as there). The keys and nils <see cref="DictionaryReader{TKey, TValue}"/> leaves to Core go there too.
+  /// Not with ReferenceHandling.Preserve (Core registers the ones filled by Add before their entries).
+  /// </summary>
+  internal sealed class PairsReader<TCollection, TKey, TValue> : ValueReader<TCollection>, ICollectionContent where TCollection : class
+  {
+    private readonly Serializer _serializer;
+    private readonly CollectionInfo _info;
+    private readonly bool _stringKeys = typeof(TKey) == typeof(string);
+    private readonly bool _valueTakesNoNil = typeof(TValue).IsValueType && Nullable.GetUnderlyingType(typeof(TValue)) is null;
+    private ValueReader<TKey> _key;
+    private ValueReader<TValue> _value;
+
+    internal PairsReader(Serializer serializer)
+    {
+      _serializer = serializer;
+      _info = CollectionInfo.Get(typeof(TCollection));
+    }
+
+    internal override TCollection Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadNil())
+        return null;
+
+      if (!c.Unusual && !CollectionRules.HasEnumerableAttribute(assignedTo) && TryRead(c, out TCollection value))
+        return value;
+      return Slow(c, start, assignedTo);
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      bool read = TryRead(c, out TCollection collection);
+      value = collection;
+      return read;
+    }
+
+    private bool TryRead(ReadContext c, out TCollection result)
+    {
+      result = null;
+      MsgPackReader r = c.R;
+      int count = r.TryReadMapHeader();
+      if (count < 0)
+        return false;
+
+      ValueReader<TKey> keys = _key ?? (_key = _serializer.Reader<TKey>());
+      ValueReader<TValue> values = _value ?? (_value = _serializer.Reader<TValue>());
+      int depth = c.Depth;
+      c.Enter();
+      bool fromPairs = _info.FillsPairs;
+      KeyValuePair<TKey, TValue>[] pairs = fromPairs ? new KeyValuePair<TKey, TValue>[count] : null; // the header's count is checked against the data (MsgPackReader.Count)
+      object made = fromPairs ? null : Instances.CreateCollection(typeof(TCollection), c.ConversionSettings());
+      IDictionary<TKey, TValue> typed = made as IDictionary<TKey, TValue>;
+      System.Collections.IDictionary untyped = typed is null ? made as System.Collections.IDictionary : null;
+      for (int t = 0; t < count; t++)
+      {
+        if (!CollectionRules.IsEntryKey(r, _stringKeys))
+        {
+          c.Depth = depth;
+          return false;
+        }
+        TKey key = keys.Read(c, null);
+        if (_valueTakesNoNil && r.Peek() == 0xC0)
+        {
+          c.Depth = depth;
+          return false;
+        }
+        TValue value = values.Read(c, null);
+        if (fromPairs)
+          pairs[t] = new KeyValuePair<TKey, TValue>(key, value);
+        else if (typed != null)
+          typed.Add(key, value); // a key twice throws, as there
+        else
+          untyped.Add(key, value);
+      }
+      c.Depth = depth;
+      result = fromPairs ? (TCollection)_info.Create(pairs, c.ConversionSettings()) : (TCollection)made;
       return true;
     }
   }

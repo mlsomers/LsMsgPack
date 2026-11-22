@@ -12,6 +12,7 @@ namespace LsMsgPackInteropTests
   [GenerateShapeFor<Invoice>]
   [GenerateShapeFor<NerdbankFrameworkProbe>]
   [GenerateShapeFor<NerdbankEnums>]
+  [GenerateShapeFor<NerdbankNames>]
   public partial class NerdbankShapes
   {
   }
@@ -25,6 +26,16 @@ namespace LsMsgPackInteropTests
   {
     public NerdbankSize Size { get; set; }
     public UnitOfMeasure Unit { get; set; }
+  }
+
+  /// <summary>
+  /// Names a naming policy converts (Nerdbank's PropertyNamingPolicy, LsMsgPack's PropertyNamingPolicy).
+  /// </summary>
+  public class NerdbankNames
+  {
+    public string FirstName { get; set; }
+    public int Count { get; set; }
+    public bool IsActive { get; set; }
   }
 
   /// <summary>
@@ -147,6 +158,33 @@ namespace LsMsgPackInteropTests
       Assert.AreEqual(expected.When.Offset, actual.When.Offset);
       Assert.AreEqual(expected.Big, actual.Big);
       Assert.AreEqual(expected.Wide, actual.Wide);
+    }
+
+    /// <summary>
+    /// Nerdbank's camelCase policy and LsMsgPack's: the same bytes, invoices read both ways.
+    /// </summary>
+    [TestMethod]
+    public void SameBytes_CamelCaseNames()
+    {
+      NB.MessagePackSerializer camel = new NB.MessagePackSerializer() { PropertyNamingPolicy = NB.MessagePackNamingPolicy.CamelCase };
+      MsgPackSettings names = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase };
+      NerdbankNames value = new NerdbankNames() { FirstName = "Ann", Count = 3, IsActive = true };
+      byte[] nb = camel.Serialize<NerdbankNames, NerdbankShapes>(value);
+      byte[] ls = Serializer.Serialize(value, names);
+      CollectionAssert.AreEqual(nb, ls, $"LsMsgPack {Convert.ToHexString(ls)}, Nerdbank {Convert.ToHexString(nb)}");
+
+      NB.MessagePackSerializer camelLsMsgPackDecimal = NerdbankLsMsgPackDecimal with { PropertyNamingPolicy = NB.MessagePackNamingPolicy.CamelCase };
+      MsgPackSettings camelNamed = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase };
+      MsgPackSettings camelNerdbankExtensions = new MsgPackSettings()
+      {
+        UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase,
+        CustomExtentionTypes = NamedNerdbankExtensions.CustomExtentionTypes
+      };
+      foreach (Invoice invoice in AllInvoices)
+      {
+        Same.AssertEqual(invoice, camelLsMsgPackDecimal.Deserialize<Invoice, NerdbankShapes>(Serializer.Serialize(invoice, camelNamed)), invoice.InvoiceNumber);
+        Same.AssertEqual(invoice, Serializer.Deserialize<Invoice>(camel.Serialize<Invoice, NerdbankShapes>(invoice), camelNerdbankExtensions), invoice.InvoiceNumber);
+      }
     }
 
     [TestMethod]

@@ -16,6 +16,10 @@ public class WithDefault { [System.ComponentModel.DefaultValue("Woof")] public s
 public struct EqVec { public float X { get; set; } public float Y { get; set; } public float Z { get; set; } public float Sum => X + Y + Z; } // structs: by reference (a computed property), boxed in an object, by their constructor
 public struct EqLine { public EqVec From { get; set; } public EqVec To { get; set; } public string Label { get; set; } public EqVec? Hint { get; set; } }
 public struct EqInit { public EqInit() { N = 5; } public int N { get; set; } }
+// Created by the constructor that takes their values (compiled by CompiledReader.CreateWithValues): parameters, properties set after the constructor, a struct, nested records
+public record EqRec(string Name, int Count, decimal Price, Guid Id, DateTime At, int? Maybe, EqRec Next, List<int> Items) { public string Note { get; init; } public double Extra { get; set; } }
+public readonly struct EqPair { public EqPair(int left, string right) { Left = left; Right = right; } public int Left { get; } public string Right { get; } }
+public class EqRecs { public EqPair First { get; set; } public EqPair? Second { get; set; } public List<EqRec> Recs { get; set; } public List<EqPair> Pairs { get; set; } }
 public class EqMover { public EqVec Position { get; set; } public EqVec Velocity { get; set; } public EqVec? Target { get; set; } public List<EqVec> Path { get; set; } public EqVec[] Points { get; set; } public object Boxed { get; set; } public EqLine Line { get; set; } public EqInit Init { get; set; } }
 public class EqDerivedDict : Dictionary<string, int> { public int Extra { get; set; } }
 public class EqDerivedSet : HashSet<int> { }
@@ -83,6 +87,9 @@ public static class P {
     values.Add(new WithDefault { Sound = null, Zero = 0, Last = null }); values.Add(new WithDefault { Sound = "Woof", Zero = 7, Last = "l" });
     values.Add(new Bench.Invoice[] { }); values.AddRange(Bench.Invoices.Take(3));
     values.Add(new EqMover { Position = new EqVec { X = 1.5f, Y = -0f, Z = float.NaN }, Target = new EqVec(), Path = new List<EqVec> { new EqVec { X = 1 }, new EqVec() }, Points = new[] { new EqVec { Z = -2 } }, Boxed = new EqVec { Y = 7 }, Line = new EqLine { To = new EqVec { X = 3 }, Label = "l", Hint = new EqVec { Z = 1 } }, Init = new EqInit() });
+    var rec = new EqRec("r", 5, 1.25m, Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"), new DateTime(2026, 11, 22, 0, 0, 0, DateTimeKind.Utc), 3, new EqRec("inner", -1, 0m, Guid.Empty, default(DateTime), null, null, new List<int> { 1 }) { Extra = 0.5 }, null) { Note = "n" };
+    values.Add(rec); values.Add(new EqRec(null, 0, 0m, Guid.Empty, default(DateTime), null, null, null));
+    values.Add(new EqRecs { First = new EqPair(1, "one"), Second = new EqPair(0, null), Recs = new List<EqRec> { rec, null, rec.Next }, Pairs = new List<EqPair> { new EqPair(-2, "x"), default(EqPair) } }); values.Add(new EqRecs());
     values.Add(new EqMover()); values.Add(new EqVec { X = 0.5f, Z = -8 }); values.Add(new EqLine { From = new EqVec { Y = 2 } }); values.Add(new List<EqLine> { new EqLine { Label = "a" }, new EqLine() }); values.Add(new EqInit { N = 0 });
     values.AddRange(Collections());
     return values;

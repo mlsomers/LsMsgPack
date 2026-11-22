@@ -6,4 +6,5 @@
 - **Tests that inspect the map format** (keys, `MpMap` casts, expected lengths, resolving types by signature, settings for other libraries) set `ObjectLayout = ObjectLayout.Map`, the default writes arrays.
 - **Give test classes unique names**: type names are short by default, two classes called `Assorted` (nested in different test classes) make deserializing either throw "Type assignment dilamma".
 - The benchmark tests (`TestCategory=Benchmark`, `BenchmarkInvoices`) compare with System.Text.Json (the baseline, default options; also listed: its source generation and Json.NET) and report through `TestContext`: run them with `--logger "console;verbosity=detailed"`. They are Inconclusive under KEEPTRACK.
+- **F# types**: `FSharpTests` (Debug, Ls, Gen) use the F# library `LsMsgPackFSharpTestTypes` (project reference; FSharp.Core comes from the SDK's library packs). Its type names start with `Fs` (short type names must stay unique; FSharp.Core's own names are ranked like the framework's).
 - `ValidationTests` and other KEEPTRACK tests only run in the KeepTrack configurations (the project defines it there).

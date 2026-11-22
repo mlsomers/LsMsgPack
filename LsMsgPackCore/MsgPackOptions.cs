@@ -253,6 +253,9 @@ namespace LsMsgPack
     internal bool _nativeDateTime = Default_DateTimeFormat == DateTimeFormat.Native;
     internal EnumFormat _enumFormat = Default_EnumFormat;
     internal PopulateMembers _populate = Default_Populate;
+    internal MsgPackNamingPolicy _propertyNamingPolicy;
+    internal MsgPackNamingPolicy _dictionaryKeyPolicy;
+    internal MsgPackNamingPolicy _enumNamingPolicy;
 
     /// <summary>
     /// The cache of the serialized properties for <see cref="_staticFilters"/> (see FullPropertyInfo.GetSerializedProps without a session), looked up again when the filters are replaced.
@@ -831,6 +834,42 @@ namespace LsMsgPack
     {
       get { return _populate; }
       set { _populate = value; }
+    }
+
+    /// <summary>
+    /// The names properties and fields are written by (map keys, and the names in the indexed schema), converted from their .NET names: e.g. <see cref="MsgPackNamingPolicy.CamelCase"/>
+    /// for readers in JavaScript or Python that expect <c>firstName</c>; null (the default) for the .NET names. See docs/NamingPolicies.md.
+    /// <para>Names given by a property id resolver (e.g. <c>[JsonPropertyName]</c> with <c>AttributePropertyNameResolver</c>) are written as they are. Readers look a key up by the
+    /// name the policy gives, then by the .NET name (so data of writers without the policy is read too), then ignoring case with <see cref="PropertyNameCaseInsensitive"/>.
+    /// Two properties of a class with the same converted name throw a <see cref="MsgPackException"/>.</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public MsgPackNamingPolicy PropertyNamingPolicy
+    {
+      get { return _propertyNamingPolicy; }
+      set { _propertyNamingPolicy = value; }
+    }
+
+    /// <summary>
+    /// The string keys of dictionaries as they are written, converted by this policy (System.Text.Json's <c>DictionaryKeyPolicy</c>); null (the default) writes them as they are.
+    /// <para>Writing only, as System.Text.Json: keys are read as they were written. Not the keys of extension data (written as they were read) nor keys of other types.</para>
+    /// </summary>
+    [IgnoreDataMember]
+    public MsgPackNamingPolicy DictionaryKeyPolicy
+    {
+      get { return _dictionaryKeyPolicy; }
+      set { _dictionaryKeyPolicy = value; }
+    }
+
+    /// <summary>
+    /// The names of enum values written by name (<see cref="LsMsgPack.EnumFormat.Name"/>), converted from their .NET names by this policy; null (the default) for the .NET names.
+    /// Custom names (<c>[EnumMember(Value = ...)]</c>, <c>[JsonStringEnumMemberName]</c>...) are written as they are. Readers take the converted names, the .NET names and numbers.
+    /// </summary>
+    [IgnoreDataMember]
+    public MsgPackNamingPolicy EnumNamingPolicy
+    {
+      get { return _enumNamingPolicy; }
+      set { _enumNamingPolicy = value; }
     }
 
     /// <summary>

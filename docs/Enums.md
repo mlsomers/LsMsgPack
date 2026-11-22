@@ -44,7 +44,7 @@ Code written for another serializer keeps its choice without changes. These attr
 | MessagePack-CSharp | `[MessagePackFormatter(typeof(EnumAsStringFormatter<T>))]` | `[MessagePackFormatter(typeof(GenericEnumFormatter<T>))]` |
 | MsgPack.Cli | `[MessagePackEnum]` (its default is by name), `SerializationMethod = EnumSerializationMethod.ByName`; on a member `[MessagePackEnumMember(SerializationMethod = EnumMemberSerializationMethod.ByName)]` | `ByUnderlyingValue` |
 
-They work on the enum and on a member, as `[MsgPackEnumFormat]` does. `[MsgPackEnumFormat]` wins when there are several. The arguments of Json.NET's converter (camelCase, naming strategies) aren't followed: names are written as declared, or as their custom names. Options that set this for every enum in another library (System.Text.Json's `JsonSerializerOptions.Converters`, MessagePack-CSharp's `DynamicEnumAsStringResolver`, Nerdbank.MessagePack's `SerializeEnumValuesByName`) are the `EnumFormat` option here.
+They work on the enum and on a member, as `[MsgPackEnumFormat]` does. `[MsgPackEnumFormat]` wins when there are several. The arguments of Json.NET's converter (camelCase, naming strategies) aren't followed: names are written as declared, or as their custom names, or as `EnumNamingPolicy` converts them (below). Options that set this for every enum in another library (System.Text.Json's `JsonSerializerOptions.Converters`, MessagePack-CSharp's `DynamicEnumAsStringResolver`, Nerdbank.MessagePack's `SerializeEnumValuesByName`) are the `EnumFormat` option here.
 
 ## Names
 
@@ -57,6 +57,12 @@ They work on the enum and on a member, as `[MsgPackEnumFormat]` does. `[MsgPackE
 Reading a name takes, in this order: a written name (custom or .NET name), the .NET name, the same ignoring case, names joined by commas (combined), and an integer as text (`"2"`). A name the enum doesn't have is an error that follows `ReadErrors` (see [ReadDifferences.md](ReadDifferences.md)).
 
 LsMsgPack compares a written or .NET name in place as UTF-8 bytes, so reading one allocates no string. A name in another case, a combination or a number in text goes through the slower path, which converts the string.
+
+## Naming policy
+
+`EnumNamingPolicy` in the options converts the .NET names of the values that are written by name, as the policy of System.Text.Json's `JsonStringEnumConverter` does: with `MsgPackNamingPolicy.SnakeCaseLower`, `OrderStatus.InProgress` is written as `"in_progress"`, a combination as `"can_read, is_owner"`. Custom names are written as they are. Two values with the same converted name are an error, as above. It's an option of its own: `PropertyNamingPolicy` doesn't convert enum names (see [NamingPolicies.md](NamingPolicies.md)).
+
+A reader with the policy takes the converted names first, then the .NET names and the rest as above. A reader without it takes the .NET names ignoring case, which covers camelCase (`"inProgress"`) but not snake_case or kebab-case: give it the same policy.
 
 ## Schema and other clients
 

@@ -512,7 +512,7 @@ namespace LsMsgPack.Writing
     internal EnumNameHandler(Serializer serializer)
     {
       _serializer = serializer;
-      _names = EnumNames.Of(typeof(TEnum));
+      _names = EnumNames.Of(typeof(TEnum), serializer.Options);
       ulong[] values = _names.Values;
       _encoded = new byte[values.Length][];
       int dense = 0;
@@ -1193,6 +1193,125 @@ namespace LsMsgPack.Writing
   }
 
   /// <summary>
+  /// The elements of the other collection types (immutable, frozen, sorted, concurrent and observable collections, queues, linked lists, F# lists and sets...), which go through
+  /// <see cref="Serializer.WriteBoxed(WriteContext, object, FullPropertyInfo)"/>: enumerated as <see cref="IEnumerable{T}"/> of their element type and written typed
+  /// instead of boxed one by one (see Serializer.TypedElements). The same count and order as the boxed path, which enumerates them too.
+  /// </summary>
+  internal sealed class EnumerableElements<TItem> : ITypedElements
+  {
+    private readonly Serializer _serializer;
+    private readonly FullPropertyInfo _itemInfo = new FullPropertyInfo(typeof(TItem));
+    private ValueHandler<TItem> _item;
+
+    internal EnumerableElements(Serializer serializer)
+    {
+      _serializer = serializer;
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      ValueHandler<TItem> item = _item ?? (_item = _serializer.Handler<TItem>(null));
+      IEnumerable<TItem> items = (IEnumerable<TItem>)collection;
+      int count = Collections.CountOf(items);
+      if (count < 0) // no count: enumerated once, as the boxed path does
+      {
+        List<TItem> listed = new List<TItem>(items);
+        items = listed;
+        count = listed.Count;
+      }
+      c.EnterContainer();
+      c.W.ArrayHeader(count);
+      foreach (TItem element in items)
+      {
+        if (element == null)
+          c.W.Nil();
+        else
+          item.Write(c, element, _itemInfo);
+      }
+      c.LeaveContainer();
+    }
+  }
+
+  /// <summary>
+  /// The entries of the other dictionary types (sorted, concurrent, immutable, frozen and read-only dictionaries, F# maps...), as <see cref="EnumerableElements{TItem}"/>:
+  /// as <see cref="DictionaryHandler{TKey, TValue}"/> writes them, with <see cref="MsgPackOptions.DictionaryKeyPolicy"/> and keys that are never references.
+  /// </summary>
+  internal sealed class PairElements<TKey, TValue> : ITypedElements
+  {
+    private readonly Serializer _serializer;
+    private readonly FullPropertyInfo _keyInfo = new FullPropertyInfo(typeof(TKey));
+    private readonly FullPropertyInfo _valueInfo = new FullPropertyInfo(typeof(TValue));
+    private ValueHandler<TKey> _key;
+    private ValueHandler<TValue> _value;
+    private readonly MsgPackNamingPolicy _keyPolicy;
+
+    internal PairElements(Serializer serializer)
+    {
+      _serializer = serializer;
+      _keyPolicy = typeof(TKey) == typeof(string) || typeof(TKey) == typeof(object) ? serializer.Options._dictionaryKeyPolicy : null;
+    }
+
+    void ITypedElements.WriteElements(WriteContext c, object collection)
+    {
+      ValueHandler<TKey> keys = _key ?? (_key = _serializer.Handler<TKey>(null));
+      ValueHandler<TValue> values = _value ?? (_value = _serializer.Handler<TValue>(null));
+      IEnumerable<KeyValuePair<TKey, TValue>> entries = (IEnumerable<KeyValuePair<TKey, TValue>>)collection;
+      int count = Collections.CountOf(entries);
+      if (count < 0)
+      {
+        List<KeyValuePair<TKey, TValue>> listed = new List<KeyValuePair<TKey, TValue>>(entries);
+        entries = listed;
+        count = listed.Count;
+      }
+      ReferenceWriting references = _serializer.PreserveReferences ? c.References : null;
+      MsgPackNamingPolicy policy = _keyPolicy;
+      c.EnterContainer();
+      c.W.MapHeader(count);
+      foreach (KeyValuePair<TKey, TValue> entry in entries)
+      {
+        TKey key = policy != null && (object)entry.Key is string name ? (TKey)(object)MsgPackNamingPolicy.ConvertKey(policy, name) : entry.Key;
+        if (key == null)
+          c.W.Nil();
+        else if (references is null)
+          keys.Write(c, key, _keyInfo);
+        else
+        {
+          references.InKeys++;
+          try
+          {
+            keys.Write(c, key, _keyInfo);
+          }
+          finally
+          {
+            references.InKeys--;
+          }
+        }
+        TValue item = entry.Value;
+        if (item == null)
+          c.W.Nil();
+        else
+          values.Write(c, item, _valueInfo);
+      }
+      c.LeaveContainer();
+    }
+  }
+
+  internal static class Collections
+  {
+    /// <returns>The number of elements the collection says it has, -1 when it does not say (it is then enumerated into a list)</returns>
+    internal static int CountOf<T>(IEnumerable<T> items)
+    {
+      if (items is ICollection<T> collection)
+        return collection.Count;
+      if (items is IReadOnlyCollection<T> readOnly)
+        return readOnly.Count;
+      if (items is System.Collections.ICollection untyped)
+        return untyped.Count;
+      return -1;
+    }
+  }
+
+  /// <summary>
   /// Dictionary&lt;TKey, TValue&gt; (not a derived class) as a map, in the order it enumerates.
   /// </summary>
   internal sealed class DictionaryHandler<TKey, TValue> : ValueHandler<Dictionary<TKey, TValue>>, ITypedElements
@@ -1203,9 +1322,15 @@ namespace LsMsgPack.Writing
     private ValueHandler<TKey> _key;
     private ValueHandler<TValue> _value;
 
+    /// <summary>
+    /// <see cref="MsgPackOptions.DictionaryKeyPolicy"/> for string keys (keys declared as string or object), null otherwise.
+    /// </summary>
+    private readonly MsgPackNamingPolicy _keyPolicy;
+
     internal DictionaryHandler(Serializer serializer)
     {
       _serializer = serializer;
+      _keyPolicy = typeof(TKey) == typeof(string) || typeof(TKey) == typeof(object) ? serializer.Options._dictionaryKeyPolicy : null;
     }
 
     internal override void Write(WriteContext c, Dictionary<TKey, TValue> value, FullPropertyInfo assignedTo)
@@ -1220,9 +1345,9 @@ namespace LsMsgPack.Writing
       ValueHandler<TValue> values = _value ?? (_value = _serializer.Handler<TValue>(null));
       c.EnterContainer();
       c.W.MapHeader(value.Count);
-      if (c.References != null && _serializer.PreserveReferences)
+      if (_keyPolicy != null || (c.References != null && _serializer.PreserveReferences))
       {
-        WritePreserving(c, value, keys, values);
+        WriteOther(c, value, keys, values);
         return;
       }
       foreach (KeyValuePair<TKey, TValue> entry in value)
@@ -1238,21 +1363,29 @@ namespace LsMsgPack.Writing
     }
 
     /// <summary>
-    /// <see cref="ReferenceHandling.Preserve"/>: the keys are never references (a path step stands for an entry's value). A loop of its own, so the usual one has no test per entry.
+    /// <see cref="ReferenceHandling.Preserve"/>: the keys are never references (a path step stands for an entry's value); <see cref="MsgPackOptions.DictionaryKeyPolicy"/>: string keys converted.
+    /// A loop of its own, so the usual one has no test per entry.
     /// </summary>
-    private void WritePreserving(WriteContext c, Dictionary<TKey, TValue> value, ValueHandler<TKey> keys, ValueHandler<TValue> values)
+    private void WriteOther(WriteContext c, Dictionary<TKey, TValue> value, ValueHandler<TKey> keys, ValueHandler<TValue> values)
     {
-      ReferenceWriting references = c.References;
+      ReferenceWriting references = _serializer.PreserveReferences ? c.References : null;
+      MsgPackNamingPolicy policy = _keyPolicy;
       foreach (KeyValuePair<TKey, TValue> entry in value)
       {
-        references.InKeys++;
-        try
+        TKey key = policy != null && (object)entry.Key is string name ? (TKey)(object)MsgPackNamingPolicy.ConvertKey(policy, name) : entry.Key;
+        if (references is null)
+          keys.Write(c, key, _keyInfo);
+        else
         {
-          keys.Write(c, entry.Key, _keyInfo);
-        }
-        finally
-        {
-          references.InKeys--;
+          references.InKeys++;
+          try
+          {
+            keys.Write(c, key, _keyInfo);
+          }
+          finally
+          {
+            references.InKeys--;
+          }
         }
         TValue item = entry.Value;
         if (item == null)

@@ -95,6 +95,36 @@ namespace LsMsgPackTypeScriptTests
     }
 
     [TestMethod]
+    public void FSharpTypesAsTheServerWritesThem()
+    {
+      // docs/FSharp.md: options are their values, a union's fieldless cases their names, its cases with fields classes with the case name as the type id
+      string fsharp = Path.Combine(Path.GetDirectoryName(Assembly), "LsMsgPackFSharpTestTypes.dll"); // its build output has FSharp.Core (an F# library's own bin does not: use the app's)
+      string models = Run("--assembly", fsharp, "--root", "LsMsgPackFSharpTestTypes.FsHolder", "--root", "LsMsgPackFSharpTestTypes.FsWithOutcome", "--root", "LsMsgPackFSharpTestTypes.FsPerson").Models;
+      string holder = ClassOf(models, "FsHolder");
+      StringAssert.Contains(holder, "  shapes: (FsShape | 'Empty')[] | null = null;");
+      StringAssert.Contains(holder, "  colour: 'Red' | 'Green' | 'Blue' | null = null;", "a union of fieldless cases: its names");
+      StringAssert.Contains(holder, "  mail: string | null = null;", "one case with one field: the field");
+      StringAssert.Contains(holder, "  maybe: FsShape | 'Empty' | null = null;", "an option: its value");
+      StringAssert.Contains(holder, "  many: ('A' | 'B' | 'C' | 'D' | 'F' | E)[] | null = null;", "the union's own values are names, E has a class");
+      StringAssert.Contains(holder, "  tags: string[] | null = null;");
+      StringAssert.Contains(holder, "  scores: Record<string, number> | null = null;");
+      StringAssert.Contains(ClassOf(models, "FsShape"), "declare readonly $type: 'Circle' | 'Rect';");
+      StringAssert.Contains(ClassOf(models, "Circle"), "  radius: number = 0;");
+      Assert.DoesNotContain("Tag", ClassOf(models, "Rect"), "only the fields");
+      StringAssert.Contains(ClassOf(models, "Value_String"), "declare readonly $type: 'Value';", "a case of a generic union: the case name");
+      StringAssert.Contains(ClassOf(models, "Choice1Of2_Int32_String"), "declare readonly $type: 'Choice1Of2';");
+      string outcome = ClassOf(models, "FsWithOutcome");
+      StringAssert.Contains(outcome, "  answer: FsAnswer | 'Later' | null = null;");
+      StringAssert.Contains(outcome, "  structColour: 'Up' | 'Down' = 'Up';", "a struct union of fieldless cases: never null");
+      StringAssert.Contains(outcome, "  nested: number | null = null;", "an option of an option");
+      string person = ClassOf(models, "FsPerson");
+      StringAssert.Contains(person, "  nick: string | null = null;");
+      StringAssert.Contains(person, "  age: number | null = null;", "a value option");
+      StringAssert.Contains(models, "['Nick', 'string']");
+      StringAssert.Contains(models, "[Circle, 'Circle', [['radius', 'float']]]");
+    }
+
+    [TestMethod]
     public void EnumsByNameAreTheirNames()
     {
       string models = Run("--root", "LsMsgPackTypeScriptTests.TsShirt", "--property-names", "dotnet").Models;
@@ -119,6 +149,24 @@ namespace LsMsgPackTypeScriptTests
       StringAssert.Contains(names, "  Open: 'Open',\n", "the server's options write every enum by name");
       StringAssert.Contains(ClassOf(names, "TsShirt"), "  Plain: TsStatus = TsStatus.Open;");
       StringAssert.Contains(names, "['Plain', 'string']");
+    }
+
+    [TestMethod]
+    public void NamingPoliciesOfTheOptions()
+    {
+      // The models list the names the server writes (PropertyNamingPolicy), the fields are named from them; enums by the names EnumNamingPolicy gives
+      foreach (string fields in new[] { "camelCase", "dotnet" })
+      {
+        string models = Run("--root", "LsMsgPackTypeScriptTests.TsShirt", "--property-names", fields, "--options", "LsMsgPackTypeScriptTests.TsSetup.SnakeCase").Models;
+        string shirt = ClassOf(models, "TsShirt");
+        StringAssert.Contains(models, "['maybe_size', ['?', 'string']]", fields);
+        StringAssert.Contains(models, "['size_number', 'int']", fields);
+        StringAssert.Contains(shirt, "  size_number: number", fields);
+        Assert.IsFalse(models.Contains("SizeNumber", StringComparison.Ordinal), fields);
+        StringAssert.Contains(models, "  Open: 'open',\n", fields);
+        StringAssert.Contains(models, "  Small: 'small',\n", fields);
+        StringAssert.Contains(models, "  Large: 'large',\n", "a custom name: " + fields);
+      }
     }
 
     [TestMethod]

@@ -461,6 +461,8 @@ namespace LsMsgPack
       private readonly bool _complete; // writers only: a complete schema has other entries (in another order) than one made by the values
       private readonly LsMsgPack.Converters.MsgPackConverter[] _converters; // which types are written as their surrogates (entries of the surrogates, none of the converted types)
       private readonly EnumFormat _enumFormat; // version 2 describes an enum written by its name as a string
+      private readonly MsgPackNamingPolicy _propertyNamingPolicy; // the names in the schema
+      private readonly MsgPackNamingPolicy _enumNamingPolicy; // the defaults version 2 describes
 
       internal SessionKey(Type root, MsgPackOptions settings)
       {
@@ -475,6 +477,8 @@ namespace LsMsgPack
         _complete = !(root is null) && settings._completeSchemas;
         _converters = settings._converters;
         _enumFormat = settings._enumFormat;
+        _propertyNamingPolicy = settings._propertyNamingPolicy;
+        _enumNamingPolicy = settings._enumNamingPolicy;
       }
 
       public bool Equals(SessionKey other)
@@ -489,7 +493,9 @@ namespace LsMsgPack
           && _version == other._version
           && _complete == other._complete
           && ReferenceEquals(_converters, other._converters)
-          && _enumFormat == other._enumFormat;
+          && _enumFormat == other._enumFormat
+          && ReferenceEquals(_propertyNamingPolicy, other._propertyNamingPolicy)
+          && ReferenceEquals(_enumNamingPolicy, other._enumNamingPolicy);
       }
 
       public override bool Equals(object obj)
@@ -511,6 +517,8 @@ namespace LsMsgPack
           hash = hash * 31 + (int)_version;
           hash = hash * 31 + RuntimeHelpers.GetHashCode(_converters);
           hash = hash * 31 + (int)_enumFormat;
+          hash = hash * 31 + (_propertyNamingPolicy is null ? 0 : RuntimeHelpers.GetHashCode(_propertyNamingPolicy));
+          hash = hash * 31 + (_enumNamingPolicy is null ? 0 : RuntimeHelpers.GetHashCode(_enumNamingPolicy));
           return _complete ? ~hash : hash;
         }
       }

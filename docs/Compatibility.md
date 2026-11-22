@@ -256,7 +256,9 @@ public class NerdbankGuidExtension : BaseCustomExt<NerdbankGuidExtension, Guid>
 
 Without the Guid extension LsMsgPackDebug throws a `MsgPackException` that names extension type 2.
 
-**Incompatible**: unions (a two element array, or a map with the type as key), `[Key]` members (an array or a map with integer keys), a `PropertyNamingPolicy` that changes the names (e.g. camelCase), `DateTimeKind.Unspecified`, which Nerdbank refuses by default, and big integers beyond 64 bits (Nerdbank's extension types 3, 5 and 6, LsMsgPackDebug's -2).
+Nerdbank's `PropertyNamingPolicy = MessagePackNamingPolicy.CamelCase` writes the same names as `PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase` here (tested, see [NamingPolicies.md](NamingPolicies.md)).
+
+**Incompatible**: unions (a two element array, or a map with the type as key), `[Key]` members (an array or a map with integer keys), `DateTimeKind.Unspecified`, which Nerdbank refuses by default, and big integers beyond 64 bits (Nerdbank's extension types 3, 5 and 6, LsMsgPackDebug's -2).
 
 `DateTimeOffset` (LsMsgPack's default) and big integers that fit in 64 bits are the same bytes (tested).
 

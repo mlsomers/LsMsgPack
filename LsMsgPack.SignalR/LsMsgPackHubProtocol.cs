@@ -52,11 +52,17 @@ namespace LsMsgPack.SignalR
     /// </summary>
     [RequiresUnreferencedCode(LsMsgPackHubProtocol.RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(LsMsgPackHubProtocol.RequiresDynamicCodeMessage)]
+#if NET5_0_OR_GREATER // NativeAOT uses this build (the .NET Standard one has no DynamicDependency to see)
+    [DynamicDependency(nameof(LsMsgPack.Serializer.ReflectionInstantiations), typeof(LsMsgPack.Serializer))] // NativeAOT: the generic code for the classes (see there)
+#endif
     public LsMsgPackHubProtocol() : this(new LsMsgPackHubProtocolOptions(), null) { }
 
     /// <param name="options">Read once, later changes do not apply</param>
     [RequiresUnreferencedCode(LsMsgPackHubProtocol.RequiresUnreferencedCodeMessage)]
     [RequiresDynamicCode(LsMsgPackHubProtocol.RequiresDynamicCodeMessage)]
+#if NET5_0_OR_GREATER // NativeAOT uses this build (the .NET Standard one has no DynamicDependency to see)
+    [DynamicDependency(nameof(LsMsgPack.Serializer.ReflectionInstantiations), typeof(LsMsgPack.Serializer))] // NativeAOT: the generic code for the classes (see there)
+#endif
     public LsMsgPackHubProtocol(LsMsgPackHubProtocolOptions options) : this(options, null) { }
 
     /// <summary>

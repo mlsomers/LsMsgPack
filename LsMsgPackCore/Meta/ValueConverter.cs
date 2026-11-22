@@ -51,7 +51,7 @@ namespace LsMsgPack.Meta
       if (val is IMsgPackExtension extension) // only extensions without a registered type (LsMsgPack: MpExt, see MsgPackItem.UnpackedValue)
         return ConvertExtension(extension, assignType);
 
-      return ConvertScalar(val, assignType);
+      return ConvertScalar(val, assignType, settings);
     }
 
     /// <summary>
@@ -237,7 +237,7 @@ namespace LsMsgPack.Meta
         if (val is IMsgPackExtension extension)
           return ConvertExtension(extension, assignType);
 
-        return ConvertScalar(val, assignType);
+        return ConvertScalar(val, assignType, settings);
       }
       catch (Exception ex) when (ReadDifferences.MarkNotConverted(settings, ex)) // never true
       {
@@ -558,7 +558,7 @@ namespace LsMsgPack.Meta
             ReadProperty(prop, instance, propval, settings, differences);
         }
       }
-      if (settings._propertyNameCaseInsensitive && set < propVals.Count) // keys that are not property ids (or the reserved ones)
+      if ((settings._propertyNameCaseInsensitive || settings._propertyNamingPolicy != null) && set < propVals.Count) // keys that are not property ids (or the reserved ones)
         SetIgnoringCase(instance, props, propVals, settings, differences);
       differences?.Pop();
       if (differences is null && keeps && set < propVals.Count) // keys that are not properties (or the type id): kept by an extension data member
@@ -583,20 +583,25 @@ namespace LsMsgPack.Meta
         FullPropertyInfo prop = props[t];
         if (!Population.MayPopulate(prop) || Population.Of(prop, settings) != MemberPopulation.Into || !propVals.TryGetValue(prop.PropertyId, out object propval))
           continue;
-        if (Populated(prop, instance, propval, settings, differences))
-          (done ?? (done = new bool[props.Length]))[t] = true;
+        if (!Populated(prop, instance, propval, settings, differences))
+          continue;
+        // Not (done ?? (done = new bool[n]))[t] = true: the trim analyzer of the .NET 10 SDK crashes on that element write (AD0001, KeyNotFoundException)
+        if (done is null)
+          done = new bool[props.Length];
+        done[t] = true;
       }
       return done;
     }
 
     /// <summary>
-    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>: the keys that are not property ids set the property they equal ignoring case.
+    /// The keys that are not property ids: with <see cref="MsgPackOptions.PropertyNamingPolicy"/> the .NET name of a property, with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>
+    /// the property they equal ignoring case.
     /// </summary>
     private static void SetIgnoringCase(object instance, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings, ReadDifferences differences)
     {
       foreach (KeyValuePair<object, object> entry in propVals)
       {
-        FullPropertyInfo prop = MatchIgnoringCase(entry.Key, props, propVals);
+        FullPropertyInfo prop = MatchOtherName(entry.Key, props, propVals, settings);
         if (prop is null)
           continue;
         if (Population.MayPopulate(prop) && !(instance is ObjectConstructor.Arguments) && Populated(prop, instance, entry.Value, settings, differences))
@@ -608,6 +613,46 @@ namespace LsMsgPack.Meta
         else
           ReadProperty(prop, instance, entry.Value, settings, differences);
       }
+    }
+
+    /// <returns>The property whose .NET name is the key (<see cref="MsgPackOptions.PropertyNamingPolicy"/>: its id is another name), then with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>
+    /// the one property whose id or .NET name equals the key ignoring case. Null when the key is a property id, none or several properties match, or the property's id is in the map too.</returns>
+    private static FullPropertyInfo MatchOtherName(object key, FullPropertyInfo[] props, Dictionary<object, object> propVals, MsgPackOptions settings)
+    {
+      if (settings._propertyNamingPolicy != null && key is string text)
+      {
+        for (int t = props.Length - 1; t >= 0; t--)
+          if (props[t].PropertyId is string id && string.Equals(id, text, StringComparison.Ordinal))
+            return null; // a property's own name (set already)
+        for (int t = props.Length - 1; t >= 0; t--)
+        {
+          string other = props[t].OtherName;
+          if (other != null && string.Equals(other, text, StringComparison.Ordinal))
+            return propVals.ContainsKey(props[t].PropertyId) ? null : props[t];
+        }
+      }
+      if (!settings._propertyNameCaseInsensitive)
+        return null;
+      FullPropertyInfo found = MatchIgnoringCase(key, props, propVals);
+      if (found is null && settings._propertyNamingPolicy != null && key is string name)
+        found = MatchOtherNameIgnoringCase(name, props, propVals);
+      return found;
+    }
+
+    /// <returns>The one property whose .NET name (another name than its id) equals the key ignoring case, null for none or several, or when its id or .NET name is in the map too</returns>
+    private static FullPropertyInfo MatchOtherNameIgnoringCase(string name, FullPropertyInfo[] props, Dictionary<object, object> propVals)
+    {
+      FullPropertyInfo found = null;
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        string other = props[t].OtherName;
+        if (other is null || !string.Equals(other, name, StringComparison.OrdinalIgnoreCase))
+          continue;
+        if (found != null || string.Equals(other, name, StringComparison.Ordinal))
+          return null;
+        found = props[t];
+      }
+      return found != null && !propVals.ContainsKey(found.PropertyId) && !propVals.ContainsKey(found.Name) ? found : null;
     }
 
     /// <returns>The one property whose name equals the key ignoring case, null when the key is a property id, none or several properties match, or the exact name is in the map too</returns>
@@ -642,7 +687,7 @@ namespace LsMsgPack.Meta
       foreach (object key in propVals.Keys)
       {
         if (MsgPackOptions.TypeIdKey.Equals(key) || MsgPackOptions.ContentKey.Equals(key) || known.Contains(key)
-          || (settings._propertyNameCaseInsensitive && MatchIgnoringCase(key, props, propVals) != null))
+          || ((settings._propertyNameCaseInsensitive || settings._propertyNamingPolicy != null) && MatchOtherName(key, props, propVals, settings) != null))
           continue;
         (unknown ?? (unknown = new List<object>())).Add(key);
       }
@@ -938,13 +983,14 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// Properties named in the schema by a property id resolver (FullPropertyInfo.SchemaName) whose name the entry lacks: data written before October 2026 has their .NET name.
+    /// Properties whose name the entry lacks, by their .NET name: named in the schema by a property id resolver (FullPropertyInfo.SchemaName; data written before October 2026 has their .NET name),
+    /// or by <see cref="MsgPackOptions.PropertyNamingPolicy"/> (data of a writer without the policy).
     /// </summary>
     private static void BindOlderNames(FullPropertyInfo[] byPosition, FullPropertyInfo[] props, ComplexTypeDef def)
     {
       for (int p = 0; p < props.Length; p++)
       {
-        if (props[p].SchemaName is null || !def.IdByName.TryGetValue(props[p].Name, out int position) || byPosition[position] != null || Array.IndexOf(byPosition, props[p]) >= 0)
+        if ((props[p].SchemaName is null && props[p].WrittenName == props[p].Name) || !def.IdByName.TryGetValue(props[p].Name, out int position) || byPosition[position] != null || Array.IndexOf(byPosition, props[p]) >= 0)
           continue;
         byPosition[position] = props[p];
       }
@@ -957,7 +1003,7 @@ namespace LsMsgPack.Meta
     {
       string[] names = new string[props.Length];
       for (int t = 0; t < props.Length; t++)
-        names[t] = props[t].SchemaName ?? props[t].Name;
+        names[t] = props[t].SchemaName ?? props[t].WrittenName;
       Dictionary<string, int> ids = def.IdsIgnoringCase(names);
       if (ids.Count == 0)
         return;
@@ -990,7 +1036,7 @@ namespace LsMsgPack.Meta
         if (name is null)
           continue;
 
-        if (next < props.Length && (props[next].SchemaName ?? props[next].Name) == name)
+        if (next < props.Length && (props[next].SchemaName ?? props[next].WrittenName) == name)
         {
           byPosition[t] = props[next++];
           continue;
@@ -998,7 +1044,7 @@ namespace LsMsgPack.Meta
 
         for (int p = 0; p < props.Length; p++)
         {
-          if ((props[p].SchemaName ?? props[p].Name) == name)
+          if ((props[p].SchemaName ?? props[p].WrittenName) == name)
           {
             byPosition[t] = props[p];
             next = p + 1;
@@ -1077,7 +1123,7 @@ namespace LsMsgPack.Meta
       return ConvertDeserializeValue(key, keyType, settings, null);
     }
 
-    private static object ConvertScalar(object val, Type assignType)
+    private static object ConvertScalar(object val, Type assignType, MsgPackOptions settings)
     {
       Type valType = val.GetType();
       // Fix ArgumentException like "System.Byte cannot be converted to System.Nullable`1[System.Int32]"
@@ -1116,7 +1162,10 @@ namespace LsMsgPack.Meta
         if (targetType == typeof(Guid) && Guid.TryParse(str, out Guid guid)) // as other libraries write Guids (e.g. MessagePack-CSharp)
           return guid;
         if (targetType.IsEnum)
-          return EnumNames.Of(targetType).Parse(str); // the name (EnumFormat.Name), as the JSON serializers write enums with a string converter: custom names too
+          return EnumNames.Of(targetType, settings).Parse(str); // the name (EnumFormat.Name), as the JSON serializers write enums with a string converter: custom names too
+        FSharp.FSharpUnion union = FSharp.FSharpTypes.UnionOf(targetType); // a fieldless case where an abstract union is declared (a concrete one has the converter of its names)
+        if (union != null)
+          return union.FieldlessCaseNamed(str);
       }
 
       if (targetType.IsEnum)

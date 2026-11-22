@@ -44,6 +44,12 @@ namespace LsMsgPack.Meta
 
     private static string BuildTypeName(Type type, bool fullname)
     {
+      if (!fullname)
+      {
+        string caseName = FSharp.FSharpTypes.CaseNameOf(type); // the class of an F# union case: its case name, read among the cases of the declared union (CaseClassNamed)
+        if (caseName != null)
+          return caseName;
+      }
       if (type.IsArray) // "KeyValuePair<Int32, String>[]" instead of "KeyValuePair`2[]", "Int32[,]" for two dimensions
         return $"{GetTypeName(type.GetElementType(), fullname)}[{new string(',', type.GetArrayRank() - 1)}]";
 
@@ -238,6 +244,9 @@ namespace LsMsgPack.Meta
     /// <param name="orAssignedTo">Return <paramref name="assignedTo"/> when the name is not found (it is up to the caller to fail), otherwise null</param>
     internal static Type ResolveInternal(string typeName, Type assignedTo, IMsgPackTypeResolver[] resolvers, bool orAssignedTo = true)
     {
+      Type caseClass = FSharp.FSharpTypes.CaseClassNamed(typeName, Nullable.GetUnderlyingType(assignedTo ?? typeof(object)) ?? assignedTo); // a case of the declared F# union (case names repeat across unions)
+      if (caseClass != null)
+        return caseClass;
       lock (SyncRoot)
       {
         return ResolveInternalLocked(typeName, assignedTo, resolvers, orAssignedTo);
@@ -591,7 +600,7 @@ namespace LsMsgPack.Meta
       Type own = null;
       foreach (Type choice in choices)
       {
-        if (IsFrameworkAssembly(choice.Assembly))
+        if (IsLibraryForNames(choice.Assembly))
           continue;
         if (own != null)
           return null; // several: Pick decides by the declared type
@@ -687,6 +696,15 @@ namespace LsMsgPack.Meta
       ReachableCached.TryAdd(root, true);
     }
 
+    /// <summary>
+    /// An assembly whose types the names of the data find like the framework's (<see cref="IsFrameworkAssembly"/>): only its public types, never as the application's own class
+    /// (<see cref="OwnTypeNamed"/>). Also FSharp.Core, which an F# model reaches: its internal Random, a public nested Other... would otherwise make the short names of the application's classes ambiguous.
+    /// </summary>
+    private static bool IsLibraryForNames(Assembly assembly)
+    {
+      return IsFrameworkAssembly(assembly) || assembly.GetName().Name == "FSharp.Core";
+    }
+
     internal static bool IsFrameworkAssembly(Assembly assembly)
     {
       if (assembly == typeof(object).Assembly)
@@ -774,7 +792,7 @@ namespace LsMsgPack.Meta
       if (string.IsNullOrEmpty(typeName))
         found = typeof(object); // skip the find part, just cache assembly
 
-      bool framework = IsFrameworkAssembly(assembly);
+      bool framework = IsLibraryForNames(assembly);
       // A framework assembly offers only its visible types, which are the exported ones: GetExportedTypes loads only those (System.Private.CoreLib 1287 of 2467 types, cold 24 -> 13 ms,
       // paid by the first type name or schema read in a process: the names are looked up in NativeAssemblies first)
       Type[] types = framework && !assembly.IsDynamic ? assembly.GetExportedTypes() : assembly.GetTypes();

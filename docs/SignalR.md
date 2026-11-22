@@ -99,7 +99,7 @@ public partial class AppMsgPackContext : LsMsgPackContext { }
 builder.Services.AddSignalR().AddLsMsgPackProtocol(AppMsgPackContext.Default);
 ```
 
-The overloads without a context are marked as requiring unreferenced and dynamic code. The NativeAOT smoke test (`LsMsgPackAotSmokeTest/run.sh`) checks both names with the generated code, without trim or AOT warnings.
+The overloads without a context are marked as requiring unreferenced and dynamic code. The NativeAOT smoke test (`LsMsgPackAotSmokeTest/run.sh`) checks both names with the generated code, without trim or AOT warnings, and by reflection without it (the model kept by the app, see [Without the generator](SourceGenerator.md#without-the-generator)).
 
 ## Debugging
 

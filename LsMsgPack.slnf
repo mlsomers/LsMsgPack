@@ -20,6 +20,7 @@
       "LsMsgPackTypeScript/LsMsgPackTypeScript.csproj",
       "LsMsgPackTypeScriptTests/LsMsgPackTypeScriptTests.csproj",
       "clients/typescript/test-server/LsMsgPackTsTestServer.csproj",
+      "LsMsgPackFSharpTestTypes/LsMsgPackFSharpTestTypes.fsproj",
       "LsMsgPackUnitTests/LsMsgPackUnitTests.csproj",
       "LsMsgPackInteropTests/LsMsgPackInteropTests.csproj",
       "LsMsgPack.DataTests/LsMsgPack.DataTests.csproj",

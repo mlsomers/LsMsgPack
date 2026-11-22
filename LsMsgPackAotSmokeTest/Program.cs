@@ -377,11 +377,13 @@ namespace LsMsgPackAotSmokeTest
   /// <summary>
   /// The subclasses are only reached through the type ids, so they are listed.
   /// </summary>
+#if !NO_GENERATOR // LsMsgPackAotReflectionTest compiles this file without the source generator
   [LsMsgPackSerializable(typeof(Invoice))]
   [LsMsgPackSerializable(typeof(Circle))]
   [LsMsgPackSerializable(typeof(Square))]
   [LsMsgPackSerializable(typeof(SetsLimits))]
   public partial class SmokeContext : LsMsgPackContext { }
+#endif
 
   public static class Program
   {
@@ -412,6 +414,11 @@ namespace LsMsgPackAotSmokeTest
       yield return ("reference", () => Converted(new LsMsgPackOptions() { SchemaStore = Store, WriteSchemaReference = true }));
       yield return ("trimmed", () => Converted(new LsMsgPackOptions() { TrimTrailingNulls = true, DynamicallyCompact = false }));
       yield return ("public-fields", () => Converted(new LsMsgPackOptions() { StaticFilters = PublicFields }));
+      yield return ("naming-policies", () => Converted(new LsMsgPackOptions() // the generated code's straight-line names steps aside (its constants are the .NET names), its loop reads the written names
+      {
+        UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name,
+        PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower, DictionaryKeyPolicy = MsgPackNamingPolicy.CamelCase, EnumNamingPolicy = MsgPackNamingPolicy.KebabCaseLower
+      }));
       yield return ("preserve", () => Converted(new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve })); // the generated code, the nested values through PreservingHandler/PreservingReader
     }
 
@@ -424,6 +431,7 @@ namespace LsMsgPackAotSmokeTest
       return new LsMsgPackSerializer(options);
     }
 
+#if !NO_GENERATOR
     private static LsMsgPackSerializer Explicit(LsMsgPackOptions options)
     {
       return new LsMsgPackSerializer(SmokeContext.Default, options); // the warning-free constructor for trimmed and NativeAOT apps (it registers the context: LsMsgPack.Core creates collections with it)
@@ -435,16 +443,25 @@ namespace LsMsgPackAotSmokeTest
     {
       return new LsMsgPackSerializer(options); // the module initializer registered SmokeContext
     }
+#endif
 
     public static int Main(string[] args)
     {
       string mode = args.Length > 0 ? args[0] : "write";
       string path = args.Length > 1 ? args[1] : "golden.txt";
+#if NO_GENERATOR
+      Console.WriteLine($"{System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}, IsDynamicCodeSupported={RuntimeFeature.IsDynamicCodeSupported}, without the source generator");
+      try
+      {
+        return CheckReflection(path);
+      }
+#else
       Console.WriteLine($"{System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}, IsDynamicCodeSupported={RuntimeFeature.IsDynamicCodeSupported}, SmokeContext.IsUsable={SmokeContext.Default.IsUsable}");
       try
       {
         return mode == "check" ? Check(path) : Write(path);
       }
+#endif
       catch (Exception ex)
       {
         Console.WriteLine("FAILED: " + ex);
@@ -452,6 +469,77 @@ namespace LsMsgPackAotSmokeTest
       }
     }
 
+#if NO_GENERATOR
+    /// <summary>
+    /// NativeAOT without the source generator (LsMsgPackAotReflectionTest, its model kept by a descriptor): the runtime plans write and read what the JIT run wrote,
+    /// classes through the shared generic code, value types boxed. A class the application does not keep is refused, not written as an empty object.
+    /// </summary>
+    private static int CheckReflection(string path)
+    {
+      KeepFactories();
+      Invoice sample = Sample();
+      int failures = 0;
+      foreach (string line in File.ReadAllLines(path))
+      {
+        string[] parts = line.Split('|');
+        string name = parts[0];
+        byte[] expected = Convert.FromHexString(parts[1]);
+        string values = parts[2];
+        string problem;
+        if (name.StartsWith("hub-", StringComparison.Ordinal))
+        {
+          bool asMessagePack = HubProtocols().First(h => h.Name == name).AsMessagePack;
+          problem = HubProblem(RuntimeHub(asMessagePack), HubSample(asMessagePack), expected, values);
+        }
+        else
+        {
+          Func<LsMsgPackOptions> options = OptionSets().First(o => o.Name == name).Options;
+          problem = Problem(Runtime(options()), sample, expected, values) ?? (name == "preserve" ? SharingProblem(Runtime(options()), expected) : null);
+        }
+        Console.WriteLine($"{name} without generated code: {problem ?? "OK"}");
+        if (problem != null)
+          failures++;
+      }
+      string trimmed = TrimmedProblem();
+      Console.WriteLine($"a class the application does not keep: {trimmed ?? "OK"}");
+      if (trimmed != null)
+        failures++;
+      Console.WriteLine(failures == 0 ? "PASSED" : $"FAILED: {failures}");
+      return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// What the errors of collections without code ask for (the library does not keep the factories of immutable and frozen collections: 304 KB in every application):
+    /// the factories of the model's collections kept, ImmutableArray&lt;int&gt;'s called once (a value type argument), and a List&lt;long&gt; created once
+    /// for Extras.Totals (IEnumerable&lt;long&gt;) where the data has no type id (the "messagepack" hub protocol).
+    /// </summary>
+    [DynamicDependency("CreateRange``1(System.Collections.Generic.IEnumerable{``0})", typeof(ImmutableArray))]
+    [DynamicDependency("CreateRange``1(System.Collections.Generic.IEnumerable{``0})", typeof(ImmutableList))]
+    [DynamicDependency("CreateRange``1(System.Collections.Generic.IEnumerable{``0})", typeof(ImmutableHashSet))]
+    [DynamicDependency("ToFrozenSet``1(System.Collections.Generic.IEnumerable{``0},System.Collections.Generic.IEqualityComparer{``0})", typeof(FrozenSet))]
+    private static void KeepFactories()
+    {
+      ImmutableArray.CreateRange<int>(Array.Empty<int>());
+      GC.KeepAlive(new List<long>(Array.Empty<long>()));
+    }
+
+    private static string TrimmedProblem()
+    {
+      try
+      {
+        byte[] bytes = Runtime(new LsMsgPackOptions()).Serialize(new Unkept.Note() { Text = "trimmed" });
+        return $"written as {Convert.ToHexString(bytes)}, not refused";
+      }
+      catch (MsgPackException ex) when (ex.Message.Contains("has no properties or fields", StringComparison.Ordinal))
+      {
+        return null;
+      }
+      catch (Exception ex)
+      {
+        return ex.ToString();
+      }
+    }
+#else
     /// <summary>
     /// With a JIT: the bytes and values of the runtime plans, checked against the generated code.
     /// </summary>
@@ -532,6 +620,8 @@ namespace LsMsgPackAotSmokeTest
       return failures == 0 ? 0 : 1;
     }
 
+#endif
+
     #region SignalR: LsMsgPack.SignalR's hub protocol with the context (the types of the hub methods' parameters come from the binder at runtime)
 
     private static IEnumerable<(string Name, bool AsMessagePack)> HubProtocols()
@@ -570,10 +660,12 @@ namespace LsMsgPackAotSmokeTest
       return new LsMsgPackHubProtocol(options);
     }
 
+#if !NO_GENERATOR
     private static LsMsgPackHubProtocol ExplicitHub(bool asMessagePack)
     {
       return new LsMsgPackHubProtocol(SmokeContext.Default, HubOptions(asMessagePack)); // the warning-free constructor (AddLsMsgPackProtocol(context) uses it)
     }
+#endif
 
     private static byte[] HubBytes(IHubProtocol protocol, Invoice sample)
     {
@@ -929,3 +1021,16 @@ namespace LsMsgPackAotSmokeTest
     }
   }
 }
+
+#if NO_GENERATOR
+namespace LsMsgPackAotSmokeTest.Unkept
+{
+  /// <summary>
+  /// Not kept by LsMsgPackAotReflectionTest's descriptor (it keeps the namespace LsMsgPackAotSmokeTest only): trimming removes its properties' metadata.
+  /// </summary>
+  public class Note
+  {
+    public string Text { get; set; }
+  }
+}
+#endif

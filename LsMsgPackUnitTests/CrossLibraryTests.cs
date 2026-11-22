@@ -180,6 +180,63 @@ namespace LsMsgPackUnitTests
 
     [SerializeEnumerable(SerializeProperties = true)]
     public class XlNamedMap : Dictionary<string, int> { public string Name { get; set; } }
+    /// <summary>
+    /// Collection types other than List, arrays, HashSet and Dictionary: LsMsgPack writes their elements through IEnumerable&lt;T&gt; and reads them typed before CollectionInfo.Create.
+    /// </summary>
+    public class XlOtherCollections
+    {
+      public System.Collections.Immutable.ImmutableList<int> ImmutableList { get; set; }
+      public System.Collections.Immutable.ImmutableArray<string> ImmutableArray { get; set; }
+      public System.Collections.Immutable.ImmutableSortedSet<long> ImmutableSortedSet { get; set; }
+      public System.Collections.ObjectModel.ObservableCollection<XlSquare> Observable { get; set; }
+      public System.Collections.ObjectModel.ReadOnlyCollection<double> ReadOnly { get; set; }
+      public Queue<object> Mixed { get; set; }
+      public Stack<string> Stack { get; set; }
+      public LinkedList<int?> Linked { get; set; }
+      public SortedSet<int> Sorted { get; set; }
+      public SortedDictionary<string, XlSquare> SortedMap { get; set; }
+      public SortedList<int, string> SortedList { get; set; }
+      public System.Collections.Concurrent.ConcurrentDictionary<int, string> Concurrent { get; set; }
+      public System.Collections.Immutable.ImmutableDictionary<string, int> ImmutableMap { get; set; }
+      public System.Collections.Frozen.FrozenSet<string> Frozen { get; set; }
+      public Microsoft.FSharp.Collections.FSharpList<XlE16> FsList { get; set; }
+      public Microsoft.FSharp.Collections.FSharpMap<string, int> FsMap { get; set; }
+      public Microsoft.FSharp.Collections.FSharpSet<string> FsSet { get; set; }
+
+      internal static IEnumerable<object> Values()
+      {
+        XlOtherCollections all = new XlOtherCollections
+        {
+          ImmutableList = System.Collections.Immutable.ImmutableList.Create(1, 2, 300),
+          ImmutableArray = System.Collections.Immutable.ImmutableArray.Create("a", null, "c"),
+          ImmutableSortedSet = System.Collections.Immutable.ImmutableSortedSet.Create(5L, -1L),
+          Observable = new System.Collections.ObjectModel.ObservableCollection<XlSquare> { new XlSquare { Side = 2 }, null },
+          ReadOnly = new System.Collections.ObjectModel.ReadOnlyCollection<double>(new[] { 1.5, double.NaN }),
+          Mixed = new Queue<object>(new object[] { 1, "two", new XlSquare(), null, 2.5 }),
+          Stack = new Stack<string>(new[] { "bottom", "top" }),
+          Linked = new LinkedList<int?>(new int?[] { 1, null }),
+          Sorted = new SortedSet<int> { 9, 8, 7 },
+          SortedMap = new SortedDictionary<string, XlSquare>(StringComparer.Ordinal) { { "SquareB", new XlSquare() }, { "SquareA", null } },
+          SortedList = new SortedList<int, string> { { 2, "b" }, { 1, null } },
+          Concurrent = new System.Collections.Concurrent.ConcurrentDictionary<int, string>(new[] { new KeyValuePair<int, string>(1, "one") }),
+          ImmutableMap = System.Collections.Immutable.ImmutableDictionary.CreateRange(new[] { new KeyValuePair<string, int>("FirstKey", 1) }),
+          Frozen = System.Collections.Frozen.FrozenSet.ToFrozenSet(new[] { "x" }),
+          FsList = Microsoft.FSharp.Collections.ListModule.OfSeq(new[] { XlE16.A, XlE16.B }),
+          FsMap = Microsoft.FSharp.Collections.MapModule.OfSeq(new[] { Tuple.Create("KeyOne", 1), Tuple.Create("KeyTwo", 2) }),
+          FsSet = Microsoft.FSharp.Collections.SetModule.OfSeq(new[] { "b", "a" }),
+        };
+        yield return all;
+        yield return new XlOtherCollections { ImmutableList = System.Collections.Immutable.ImmutableList<int>.Empty, ImmutableArray = System.Collections.Immutable.ImmutableArray<string>.Empty, Mixed = new Queue<object>(), FsList = Microsoft.FSharp.Collections.FSharpList<XlE16>.Empty };
+        yield return all.ImmutableList;
+        yield return all.Mixed;
+        yield return all.SortedMap;
+        yield return all.ImmutableMap;
+        yield return all.FsList;
+        yield return all.FsMap;
+        yield return new List<object> { all.Stack, all.Concurrent, all.FsSet };
+      }
+    }
+
     public class XlTypedCollections
     {
       public Dictionary<string, string> Strings { get; set; }
@@ -489,6 +546,34 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
+    /// The other collection types (<see cref="XlOtherCollections"/>), with and without a dictionary key policy: LsMsgPack's typed elements and readers against LsMsgPackDebug's boxed path.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(Settings))]
+    public void SameBytesAndValuesOtherCollections(EndianAction endian, bool compact, SchemaMode mode, ObjectLayout layout)
+    {
+      List<string> differences = new List<string>();
+      foreach (MsgPackNamingPolicy keys in new[] { null, MsgPackNamingPolicy.CamelCase })
+      {
+        MsgPackSettings ls = new MsgPackSettings() { DictionaryKeyPolicy = keys };
+        Configure(ls, endian, compact, mode, layout);
+        LsMsgPackOptions ltOptions = new LsMsgPackOptions() { DictionaryKeyPolicy = keys };
+        Configure(ltOptions, endian, compact, mode, layout);
+        foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(ltOptions))
+        {
+          int n = 0;
+          foreach (object value in XlOtherCollections.Values())
+          {
+            n++;
+            foreach (Type declared in new[] { value.GetType(), typeof(object) })
+              Compare($"{which} keys {keys?.GetType().Name ?? "as they are"} #{n} {value.GetType().Name} as {declared.Name}", value, declared, ls, lt, differences);
+          }
+        }
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences.Take(40)));
+    }
+
+    /// <summary>
     /// ReferenceHandling.Preserve: the corpus and the values of ReferenceTests (shared objects and collections, cycles, converted values, map keys) in all settings, read back with the same sharing.
     /// </summary>
     [TestMethod]
@@ -564,6 +649,39 @@ namespace LsMsgPackUnitTests
       LsMsgPackOptions ltOptions = new LsMsgPackOptions() { SchemaVersion = SchemaVersion.Described };
       Configure(ltOptions, endian, compact, mode, layout);
       CompareCorpus(ls, ltOptions);
+    }
+
+    private static IEnumerable<object[]> NamingPolicySettings()
+    {
+      foreach (string policy in new[] { "CamelCase", "SnakeCaseLower", "KebabCaseUpper" })
+        foreach (SchemaMode mode in Enum.GetValues(typeof(SchemaMode)))
+          foreach (ObjectLayout layout in Enum.GetValues(typeof(ObjectLayout)))
+            yield return new object[] { policy, mode, layout };
+    }
+
+    /// <summary>
+    /// The naming policies (property names, dictionary keys and enum names, each another one), enums by name: the corpus in both schema versions.
+    /// </summary>
+    [TestMethod]
+    [DynamicData(nameof(NamingPolicySettings))]
+    public void SameBytesAndValuesNamingPolicies(string policy, SchemaMode mode, ObjectLayout layout)
+    {
+      MsgPackNamingPolicy[] policies = NamingPolicyTests.Policies;
+      int p = Array.FindIndex(policies, n => n == (MsgPackNamingPolicy)typeof(MsgPackNamingPolicy).GetProperty(policy).GetValue(null));
+      foreach (SchemaVersion version in new[] { SchemaVersion.Names, SchemaVersion.Described })
+      {
+        MsgPackSettings ls = new MsgPackSettings()
+        {
+          SchemaVersion = version, PropertyNamingPolicy = policies[p], DictionaryKeyPolicy = policies[(p + 1) % policies.Length], EnumNamingPolicy = policies[(p + 2) % policies.Length], EnumFormat = EnumFormat.Name
+        };
+        Configure(ls, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
+        LsMsgPackOptions ltOptions = new LsMsgPackOptions()
+        {
+          SchemaVersion = version, PropertyNamingPolicy = ls.PropertyNamingPolicy, DictionaryKeyPolicy = ls.DictionaryKeyPolicy, EnumNamingPolicy = ls.EnumNamingPolicy, EnumFormat = EnumFormat.Name
+        };
+        Configure(ltOptions, EndianAction.SwapIfCurrentSystemIsLittleEndian, true, mode, layout);
+        CompareCorpus(ls, ltOptions);
+      }
     }
 
     private static IEnumerable<object[]> NonPublicSettings()

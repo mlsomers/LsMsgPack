@@ -53,7 +53,9 @@ namespace LsMsgPack.Meta
         return false;
       if ((settings._addTypeIdOptions & AddTypeIdOption.Always) != 0)
         return true;
-      return (settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0 && assignedTo?.AssignedToType != tType;
+      if ((settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0)
+        return assignedTo?.AssignedToType != tType;
+      return assignedTo?.AssignedToType != tType && FSharp.FSharpTypes.IsCaseWithFields(tType);
     }
 
     internal static bool NeedsTypeId(Type tType, FullPropertyInfo assignedTo, MsgPackOptions settings)
@@ -64,7 +66,7 @@ namespace LsMsgPack.Meta
       if ((settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0)
         return assignedTo?.AssignedToType != tType && !IsHiddenFrameworkType(tType) && !HasAnonymousType(tType);
 
-      return false;
+      return assignedTo?.AssignedToType != tType && FSharp.FSharpTypes.IsCaseWithFields(tType); // AddTypeIdOption.Never (plain MsgPack): the case of an F# union is part of its value
     }
 
     private static readonly ConcurrentDictionary<Type, bool> Anonymous = new ConcurrentDictionary<Type, bool>();
@@ -149,6 +151,8 @@ namespace LsMsgPack.Meta
 
     private static bool HasHiddenFrameworkType(Type type)
     {
+      if (FSharp.FSharpTypes.IsFieldlessCaseClass(type)) // written as the case's name, read as a case of the declared union
+        return true;
       while (type.HasElementType)
         type = type.GetElementType();
       Type definition = type.IsGenericType ? type.GetGenericTypeDefinition() : type;
@@ -351,7 +355,10 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal static void BindReaderTypes(Type root, MsgPackOptions schemaSettings)
     {
-      GetIndexedSchema(schemaSettings)?.BindReaderTypes(root, schemaSettings._propertyNameCaseInsensitive, FullPropertyInfo.SelectionOf(schemaSettings), schemaSettings);
+      IndexedSchemaTypeResolver schema = GetIndexedSchema(schemaSettings);
+      if (schema is null || schema.LastBoundRootIs(root)) // per call: the selection is only looked up for a root that is not bound yet (an int root read 4-5 ns faster)
+        return;
+      schema.BindReaderTypes(root, schemaSettings._propertyNameCaseInsensitive, FullPropertyInfo.SelectionOf(schemaSettings), schemaSettings);
     }
 
     internal static bool UsesIndexedSchema(MsgPackOptions settings)

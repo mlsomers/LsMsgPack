@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPackTypeScript\LsMsgPackTypeScript.csproj" />
     <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj" />
+    <ProjectReference Include="..\LsMsgPackFSharpTestTypes\LsMsgPackFSharpTestTypes.fsproj" />
     <ProjectReference Include="..\LsMsgPackCore\LsMsgPack.Core.csproj" />
     <!-- A minimal API among the uses of the solution option -->
     <ProjectReference Include="..\LsMsgPackFormatters\LsMsgPackFormatters.csproj" />

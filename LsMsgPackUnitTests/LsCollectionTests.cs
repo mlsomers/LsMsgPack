@@ -165,5 +165,43 @@ namespace LsMsgPackUnitTests
         Assert.IsTrue(allocated < bytes.Length + 1024, $"{allocated} B for {bytes.Length} B of payload"); // boxed: 24 B per element and a list of them, 43 KB
       CollectionAssert.AreEquivalent(set.ToList(), NoSchema.Deserialize<HashSet<int>>(bytes).ToList());
     }
+
+    /// <summary>
+    /// Other collection types (EnumerableElements, PairElements, CollectionReader, PairsReader): written through IEnumerable&lt;T&gt; and read into a typed array, not boxed per element
+    /// (boxed: 24 B per element and an object[] of them each way).
+    /// </summary>
+    [TestMethod]
+    public void OtherCollections_NoBoxPerElement()
+    {
+      DebuggableAttribute debuggable = typeof(LsMsgPackSerializer).Assembly.GetCustomAttribute<DebuggableAttribute>();
+      bool optimized = debuggable == null || !debuggable.IsJITOptimizerDisabled; // unoptimized code boxes for "element == null"
+      Queue<int> queue = new Queue<int>(Enumerable.Range(0, 1000));
+      System.Collections.Concurrent.ConcurrentDictionary<int, long> map = new System.Collections.Concurrent.ConcurrentDictionary<int, long>(Enumerable.Range(0, 1000).Select(t => new KeyValuePair<int, long>(t, t)));
+      for (int round = 0; round < 2; round++) // the first one creates the handlers and readers
+      {
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        byte[] bytes = NoSchema.Serialize(queue);
+        long written = GC.GetAllocatedBytesForCurrentThread() - before;
+        before = GC.GetAllocatedBytesForCurrentThread();
+        Queue<int> read = NoSchema.Deserialize<Queue<int>>(bytes);
+        long readBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        CollectionAssert.AreEqual(queue.ToList(), read.ToList());
+        if (round == 1 && optimized)
+        {
+          Assert.IsTrue(written < bytes.Length + 1024, $"queue written: {written} B for {bytes.Length} B of payload");
+          Assert.IsTrue(readBytes < 3 * 4000 + 1024, $"queue read: {readBytes} B"); // the typed array and the queue's own
+        }
+
+        before = GC.GetAllocatedBytesForCurrentThread();
+        bytes = NoSchema.Serialize(map);
+        written = GC.GetAllocatedBytesForCurrentThread() - before;
+        before = GC.GetAllocatedBytesForCurrentThread();
+        System.Collections.Concurrent.ConcurrentDictionary<int, long> readMap = NoSchema.Deserialize<System.Collections.Concurrent.ConcurrentDictionary<int, long>>(bytes);
+        readBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        CollectionAssert.AreEquivalent(map.ToList(), readMap.ToList());
+        if (round == 1 && optimized)
+          Assert.IsTrue(written < bytes.Length + 1024, $"map written: {written} B for {bytes.Length} B of payload");
+      }
+    }
   }
 }

@@ -17,6 +17,7 @@ Project-specific notes live in a `CLAUDE.md` next to each project (loaded when y
 | `LsMsgPackFormatters/`, `LsMsgPackWebApiFormatters/`, `LsMsgPackMvc/` | ASP.NET Core, Web API 2 + HttpClient, MVC 5 formatters (on LsMsgPack) |
 | `LsMsgPack.Generator/` | source generator (contexts, generated readers/writers); its diagnostics are LSMP101-111 |
 | `LsMsgPack.Analyzers/` (+ `.CodeFixes`) | analyzers LSMP001-011, packed into LsMsgPack.Core |
+| `LsMsgPackFSharpTestTypes/` | F# types for the unit tests and the lsmsgpack-ts tests of the F# support (docs/FSharp.md) |
 | `ObjectDebugger/` | rebuilds object trees from payloads without the types; validation; search |
 | `MsgPackExplorer/`, `LsMsgPackFiddlerInspector/`, `LsMsgPackVisualStudioPlugin/` | Windows-only tools (old-style .NET Framework projects) |
 | `LsMsgPackVsCode/` | VS Code extension "MsgPack Explorer" + `Server/` (LsMsgPackInspector) |
@@ -40,7 +41,7 @@ dotnet test LsMsgPack.GeneratorTests
 dotnet test LsMsgPack.AnalyzerTests
 dotnet test LsMsgPackTypeScriptTests
 cd clients/typescript && npm install && npm test        # live tests need dotnet build clients/typescript/test-server and LsMsgPackTypeScript
-bash LsMsgPackAotSmokeTest/run.sh                       # NativeAOT with the generated code (clang, or gcc when clang is missing)
+bash LsMsgPackAotSmokeTest/run.sh                       # NativeAOT with the generated code, then without it (LsMsgPackAotReflectionTest); clang, or gcc when clang is missing
 ```
 
 - `-c DEBUG` only for the solution filter (the solution maps it to `Debug`): per project write `-c Debug`, since `-c DEBUG` builds into separate `bin/DEBUG` folders (Linux paths are case-sensitive) and `--no-build` then runs whatever old build is there.

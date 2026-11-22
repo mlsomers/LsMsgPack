@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- F# types for the tests of the F# support (docs/FSharp.md): LsMsgPackUnitTests reads and writes them from C#. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Model.fs" />
+  </ItemGroup>
+
+</Project>

@@ -286,7 +286,23 @@ namespace LsMsgPack
 
     internal ValueReader<T> Reader<T>()
     {
-      return (ValueReader<T>)Reader(typeof(T));
+      return Typed<T>(Reader(typeof(T)));
+    }
+
+    /// <summary>
+    /// The reader as generic code needs it: a <see cref="ConvertingReader"/> (no dynamic code, no instantiation for the type) is replaced by a <see cref="BoxedReader{T}"/>,
+    /// which exists here, since this code was compiled for T.
+    /// </summary>
+    private ValueReader<T> Typed<T>(ValueReader reader)
+    {
+      ValueReader<T> typed = reader as ValueReader<T>;
+      if (typed != null)
+        return typed;
+      if (!(reader is ConvertingReader))
+        return (ValueReader<T>)reader; // the cast's error, as before
+      typed = new BoxedReader<T>();
+      _readers.TryUpdate(typeof(T), typed, reader);
+      return typed;
     }
 
     /// <summary>
@@ -294,7 +310,8 @@ namespace LsMsgPack
     /// </summary>
     internal ValueReader<T> ReaderFor<T>(FullPropertyInfo declared)
     {
-      return (ValueReader<T>)ReaderFor(typeof(T), declared);
+      ValueReader reader = ReaderFor(typeof(T), declared);
+      return reader is ConvertingReader && declared?.MemberConverter != null ? new BoxedReader<T>() : Typed<T>(reader); // a member's own converter: Core applies it (assignedTo)
     }
 
     internal ValueReader ReaderFor(Type type, FullPropertyInfo declared)
@@ -305,7 +322,7 @@ namespace LsMsgPack
       ValueReader exact = _memberReaders.TryGetValue(member, out ValueReader found) ? found : _memberReaders.GetOrAdd(member, m => Preserving(m.ConvertedType, (ValueReader)m.Accept(new ConverterReaders(this))));
       if (type == member.ConvertedType)
         return exact;
-      return (ValueReader)Instantiate(type, typeof(NullableReader<>), member.ConvertedType, exact);
+      return (ValueReader)Instantiate(type, typeof(NullableReader<>), member.ConvertedType, exact) ?? new ConvertingReader(type); // no code for it (NativeAOT): Core applies the converter (assignedTo)
     }
 
     internal ValueReader Reader(Type type)
@@ -334,7 +351,12 @@ namespace LsMsgPack
     {
       Type underlying = Nullable.GetUnderlyingType(type);
       if (underlying != null)
-        return (ValueReader)Instantiate(type, typeof(NullableReader<>), underlying, Reader(underlying));
+      {
+        ValueReader inner = Reader(underlying);
+        if (inner is ConvertingReader) // no dynamic code and no generic reader of the type (NativeAOT): nor of its nullable
+          return new ConvertingReader(type);
+        return (ValueReader)Instantiate(type, typeof(NullableReader<>), underlying, inner) ?? new ConvertingReader(type);
+      }
 
       WriteTypeInfo info = GetTypeInfo(type);
       switch (info.Kind)
@@ -376,15 +398,21 @@ namespace LsMsgPack
           return (ValueReader)info.Converter.Accept(new ConverterReaders(this));
         case TypeKind.Enum:
         case TypeKind.EnumName: // numbers and names, whatever is written
-          return (ValueReader)Instantiate(type, typeof(EnumReader<>), type, null);
+          ValueReader enumReader = (ValueReader)Instantiate(type, typeof(EnumReader<>), type, null);
+          if (enumReader != null)
+            return enumReader;
+          break; // no code for it (NativeAOT): boxed
         case TypeKind.Array:
           ValueReader numbers = NumberReader(type);
           if (numbers != null)
             return numbers;
+          ValueReader list = null; // null without code for it (NativeAOT): boxed
           if (IsVector(type))
-            return (ValueReader)Instantiate(type, typeof(ArrayReader<>), type.GetElementType(), this);
-          if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
-            return (ValueReader)Instantiate(type, typeof(ListReader<>), type.GenericTypeArguments[0], this);
+            list = (ValueReader)Instantiate(type, typeof(ArrayReader<>), type.GetElementType(), this);
+          else if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>) && CollectionInfo.Get(type).Attribute is null)
+            list = (ValueReader)Instantiate(type, typeof(ListReader<>), type.GenericTypeArguments[0], this);
+          if (list != null)
+            return list;
           if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(HashSet<>))
           {
             ValueReader bulk = InBulk(type.GenericTypeArguments[0]) ? (ValueReader)CreateInBulk(type, type.GenericTypeArguments[0], BulkCollection.Set, new BulkReaders(this)) : null;
@@ -394,7 +422,7 @@ namespace LsMsgPack
             if (set != null)
               return set;
           }
-          ValueReader items = InterfaceReader(type);
+          ValueReader items = InterfaceReader(type) ?? OtherCollectionReader(type);
           if (items != null)
             return items;
           break;
@@ -405,7 +433,7 @@ namespace LsMsgPack
             if (dictionary != null)
               return dictionary;
           }
-          ValueReader entries = InterfaceReader(type);
+          ValueReader entries = InterfaceReader(type) ?? OtherDictionaryReader(type);
           if (entries != null)
             return entries;
           break;
@@ -414,10 +442,14 @@ namespace LsMsgPack
           if (type == typeof(object)) // an object with a type id is read by the plan of its type (ObjectReader.Derived), anything else as LsMsgPack does (Slow)
             return new ObjectReader<object>(this);
           if (type.IsValueType ? StructPlans(type) : !type.ContainsGenericParameters)
-            return (ValueReader)Instantiate(type, typeof(ObjectReader<>), type, this);
+          {
+            ValueReader objects = (ValueReader)Instantiate(type, typeof(ObjectReader<>), type, this);
+            if (objects != null)
+              return objects;
+          }
           break;
       }
-      return (ValueReader)Instantiate(type, typeof(BoxedReader<>), type, null);
+      return (ValueReader)Instantiate(type, typeof(BoxedReader<>), type, null) ?? new ConvertingReader(type); // no code for it (NativeAOT, a value type): Core converts it
     }
 
     /// <returns>The reader of an array or list that reads its values in bulk (see <see cref="Bulk"/>); null for other types</returns>
@@ -472,17 +504,52 @@ namespace LsMsgPack
       return (ValueReader)InstantiateCollection(type, typeof(CollectionInterfaceReader<>), new[] { type }, this);
     }
 
+    /// <returns>The reader of another generic collection type that Core fills from an array of its elements (<see cref="CollectionReader{TCollection, TItem}"/>), null for others</returns>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates).")]
+    private ValueReader OtherCollectionReader(Type type)
+    {
+      if (!CanBindDelegates || PreserveReferences || type.IsArray || type.IsInterface || type.IsAbstract || type.ContainsGenericParameters)
+        return null;
+      CollectionInfo info = CollectionInfo.Get(type);
+      if (info.Attribute != null || info.IsDictionary || info.ConcreteType != type || info.ElementType is null
+        || !typeof(IEnumerable<>).MakeGenericType(info.ElementType).IsAssignableFrom(type))
+        return null;
+      return (ValueReader)CreateInstantiation(typeof(CollectionReader<,>), new[] { type, info.ElementType }, new object[] { this });
+    }
+
+    /// <returns>The reader of another dictionary type that Core fills from the entries of a map (<see cref="PairsReader{TCollection, TKey, TValue}"/>), null for others</returns>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates).")]
+    private ValueReader OtherDictionaryReader(Type type)
+    {
+      if (!CanBindDelegates || PreserveReferences || type.IsArray || type.IsInterface || type.IsAbstract || type.IsValueType || type.ContainsGenericParameters)
+        return null;
+      CollectionInfo info = CollectionInfo.Get(type);
+      if (info.Attribute != null || !info.IsDictionary || info.PairKey is null || info.ConcreteType != type
+        || !(info.FillsPairs || info.AddMethod != null || typeof(System.Collections.IDictionary).IsAssignableFrom(type)))
+        return null;
+      return (ValueReader)CreateInstantiation(typeof(PairsReader<,,>), new[] { type, info.KeyType, info.ValueType }, new object[] { this });
+    }
+
     /// <returns>The reader of a custom extension of the type (an LsExtension&lt;T&gt; of the type), null for others</returns>
-    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
     private ValueReader ExtensionReader(Type type, LsExtension extension)
     {
       if (Generated(type) is IGeneratedInstantiations generated)
         return (ValueReader)generated.Instantiate(typeof(ExtensionReader<>), extension);
 
-      Type typedExtension = typeof(LsExtension<>).MakeGenericType(type);
-      if (!typedExtension.IsInstanceOfType(extension))
+      if (!IsTypedExtension(extension, type))
         return null;
-      return (ValueReader)Activator.CreateInstance(typeof(ExtensionReader<>).MakeGenericType(type), BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { extension }, null);
+      return (ValueReader)CreateInstantiation(typeof(ExtensionReader<>), new[] { type }, new object[] { extension }); // null without code for it (NativeAOT): read boxed
+    }
+
+    /// <summary>
+    /// The extension derives from LsExtension&lt;T&gt; of the type: its base classes compared by their definition, no MakeGenericType (NativeAOT may have no LsExtension of a value type).
+    /// </summary>
+    private static bool IsTypedExtension(LsExtension extension, Type type)
+    {
+      for (Type t = extension.GetType(); t != null; t = t.BaseType)
+        if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(LsExtension<>))
+          return t.GenericTypeArguments[0] == type;
+      return false;
     }
 
     /// <summary>
@@ -759,11 +826,7 @@ namespace LsMsgPack
     {
       c.R.Release(); // the data is not kept alive
       if (c.Decompressed != null)
-      {
-        new Span<byte>(c.Decompressed, 0, c.DecompressedLength).Clear(); // a pooled array is shared with other code
-        System.Buffers.ArrayPool<byte>.Shared.Return(c.Decompressed);
-        c.Decompressed = null;
-      }
+        ReturnDecompressed(c);
       if (c.References != null)
       {
         if (ReferenceEquals(c.References, c.PreservingReferences))
@@ -780,6 +843,17 @@ namespace LsMsgPack
         c.IntoAt = -1;
       }
       _threadContext = c; // Bound and SlowSettings are kept: usually the next call has the same
+    }
+
+    /// <summary>
+    /// The decompressed body goes back to the pool (apart, so ReturnContext stays small without compression).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ReturnDecompressed(ReadContext c)
+    {
+      new Span<byte>(c.Decompressed, 0, c.DecompressedLength).Clear(); // a pooled array is shared with other code
+      System.Buffers.ArrayPool<byte>.Shared.Return(c.Decompressed);
+      c.Decompressed = null;
     }
 
     private object DeserializeWithSchema(ReadContext c, Type type)

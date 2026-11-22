@@ -43,6 +43,11 @@
     internal const string ShouldSerializeMethods = "Finds the ShouldSerialize{Name} methods of the members by name: the generated code keeps those of the classes it describes (DynamicDependency); a method that was trimmed is not called.";
 
     /// <summary>
+    /// F# options, unions, lists and maps, recognized by name and read by reflection (FSharp.Core is not referenced).
+    /// </summary>
+    internal const string FSharp = "F# types are written and read by reflection over their compiled members, found by the names of FSharp.Core's types and attributes (as System.Text.Json's F# support): the source generator does not run in F# projects; a trimmed or NativeAOT app keeps them only when it uses them.";
+
+    /// <summary>
     /// A fallback for types without generated code.
     /// </summary>
     internal const string Fallback = "Only used for types without generated code: without a context the serializer's constructor requires unreferenced and dynamic code, with one LSMP110 names the types it does not cover.";

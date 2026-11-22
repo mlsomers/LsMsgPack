@@ -175,6 +175,21 @@ namespace LsMsgPackTypeScriptTests
     }
 
     /// <summary>
+    /// The server's options writing snake_case property names and kebab-case enum names.
+    /// </summary>
+    public static LsMsgPackOptions SnakeCase
+    {
+      get
+      {
+        LsMsgPackOptions xls = LsMsgPackPresets.LsMsgPack();
+        xls.PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower;
+        xls.EnumNamingPolicy = MsgPackNamingPolicy.KebabCaseLower;
+        xls.EnumFormat = EnumFormat.Name;
+        return xls;
+      }
+    }
+
+    /// <summary>
     /// The server's options for --options.
     /// </summary>
     public static LsMsgPackHttpOptions Alphabetical

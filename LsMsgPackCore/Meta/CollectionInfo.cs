@@ -71,6 +71,11 @@ namespace LsMsgPack.Meta
     /// The static factory of an immutable or frozen collection of the framework (e.g. ImmutableArray.CreateRange&lt;T&gt;(IEnumerable&lt;T&gt;), FrozenSet.ToFrozenSet&lt;T&gt;), which have no constructor or Add that fills them.
     /// </summary>
     private readonly MethodInfo _factory;
+
+    /// <summary>
+    /// An interface or abstract class: <see cref="ConcreteType"/> is what is created for it (named in <see cref="NoCode"/>).
+    /// </summary>
+    private readonly bool _declaredAbstract;
     private readonly object[] _factoryDefaults;
 
     /// <summary>
@@ -84,6 +89,7 @@ namespace LsMsgPack.Meta
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Instantiations)]
     private CollectionInfo(Type type)
     {
+      _declaredAbstract = type.IsInterface || type.IsAbstract;
       ElementType = GetElementType(type);
       Attribute = type.GetCustomAttribute<SerializeEnumerableAttribute>(true);
 
@@ -108,7 +114,7 @@ namespace LsMsgPack.Meta
 
       _generatedFactory = GeneratedTypes.Find(ConcreteType)?.FromItems != null; // the factory call of the source generator (registered for the process): no reflection, NativeAOT has it
       if (!_generatedFactory)
-        _factory = FindFactory(ConcreteType, ElementType, out _factoryDefaults);
+        _factory = FindFactory(ConcreteType, ElementType, out _factoryDefaults) ?? FSharp.FSharpCollections.FactoryOf(ConcreteType, out _factoryDefaults);
       if (_factory != null || _generatedFactory)
       {
         FillsPairs = IsDictionary; // the factory takes the pairs
@@ -179,14 +185,16 @@ namespace LsMsgPack.Meta
           Array.Reverse(elements);
         object[] factoryArgs = (object[])_factoryDefaults.Clone();
         factoryArgs[0] = elements;
-        return _factory.Invoke(null, factoryArgs);
+        return Invoke(_factory, factoryArgs);
       }
+      if (IsImmutableOrFrozen(ConcreteType)) // no factory found: NativeAOT trimmed it away (Add would throw NotSupportedException)
+        throw NoFactory();
 
       if (_itemsConstructor != null)
       {
         if (_reverseItems)
           Array.Reverse(elements);
-        return _itemsConstructor.Invoke(new object[] { elements });
+        return Invoke(_itemsConstructor, new object[] { elements });
       }
 
       object result = Instances.CreateCollection(ConcreteType, settings);
@@ -264,6 +272,60 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
+    /// The factory or constructor that creates the collection. NativeAOT may have no code for it: an instantiation the application never uses (a value type argument), e.g. the List&lt;Guid&gt;
+    /// made for a member declared as IList&lt;Guid&gt;. That NotSupportedException comes from Invoke itself (an exception of the method is a TargetInvocationException).
+    /// </summary>
+    private object Invoke(MethodBase method, object[] arguments)
+    {
+#if NETSTANDARD2_1_OR_GREATER || NET5_0_OR_GREATER
+      if (!System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
+      {
+        try
+        {
+          return method is ConstructorInfo invoked ? invoked.Invoke(arguments) : method.Invoke(null, arguments);
+        }
+        catch (NotSupportedException ex)
+        {
+          if (method is ConstructorInfo)
+          {
+            string concrete = Instances.Display(ConcreteType);
+            throw Instances.NoCode(concrete, _declaredAbstract ? "Declare the member as " + concrete + " instead of an interface" : "Create one in the application (e.g. new " + concrete + "(...))", ex);
+          }
+          throw Instances.NoCode(Instances.Display(method.DeclaringType) + "." + method.Name + "<" + string.Join(", ", Array.ConvertAll(method.GetGenericArguments(), Instances.Display)) + ">",
+            "Call it once in the application (with any collection)", ex);
+        }
+      }
+#endif
+      return method is ConstructorInfo constructor ? constructor.Invoke(arguments) : method.Invoke(null, arguments);
+    }
+
+    private static bool IsImmutableOrFrozen(Type concrete)
+    {
+      return concrete.IsGenericType && (concrete.Namespace == "System.Collections.Immutable" || concrete.Namespace == "System.Collections.Frozen") && TypeResolver.IsFrameworkAssembly(concrete.Assembly);
+    }
+
+    /// <summary>
+    /// NativeAOT without the factory <see cref="FindFactory"/> looks for: trimmed away (the library does not keep them: 304 KB in every application without such collections,
+    /// maintainer's decision 2026-11-21), or no code for a value type argument. The generated code calls the factories itself.
+    /// </summary>
+    private MsgPackException NoFactory()
+    {
+      string factoryClass = ConcreteType.Name.Substring(0, ConcreteType.Name.IndexOf('`'));
+      bool frozen = ConcreteType.Namespace == "System.Collections.Frozen";
+      bool pairs = ConcreteType.GenericTypeArguments.Length == 2;
+      string method = !frozen ? "CreateRange" : pairs ? "ToFrozenDictionary" : "ToFrozenSet";
+      string items = pairs ? "System.Collections.Generic.IEnumerable{System.Collections.Generic.KeyValuePair{``0,``1}}" : "System.Collections.Generic.IEnumerable{``0}";
+      string signature = method + (pairs ? "``2(" : "``1(") + items + (frozen ? ",System.Collections.Generic.IEqualityComparer{``0}" : "") + ")";
+      string call = "";
+      Type[] arguments = ConcreteType.GenericTypeArguments;
+      for (int t = 0; t < arguments.Length; t++)
+        if (arguments[t].IsValueType)
+          call = $", and call {factoryClass}.{method}<{string.Join(", ", Array.ConvertAll(arguments, Instances.Display))}>(...) once (NativeAOT has no code for a value type argument the application never uses)";
+      return new MsgPackException($"Unable to create {Instances.Display(ConcreteType)}: without dynamic code (NativeAOT) its factory {factoryClass}.{method} was trimmed away. "
+        + $"Keep it in the application ([DynamicDependency(\"{signature}\", typeof({factoryClass}))]{call}), or create the serializer with the context of LsMsgPack's source generator (it calls the factories itself).");
+    }
+
+    /// <summary>
     /// A static method of the framework's non-generic class with the same name (System.Collections.Immutable, System.Collections.Frozen) that takes IEnumerable&lt;T&gt; (and optional parameters) and returns the collection:
     /// CreateRange when there is one, otherwise e.g. ToFrozenSet.
     /// </summary>
@@ -275,7 +337,7 @@ namespace LsMsgPack.Meta
     private static MethodInfo FindFactory(Type concrete, Type elementType, out object[] defaults)
     {
       defaults = null;
-      if (!concrete.IsGenericType || (concrete.Namespace != "System.Collections.Immutable" && concrete.Namespace != "System.Collections.Frozen") || !TypeResolver.IsFrameworkAssembly(concrete.Assembly))
+      if (!IsImmutableOrFrozen(concrete))
         return null;
 
       Type definition = concrete.GetGenericTypeDefinition();
