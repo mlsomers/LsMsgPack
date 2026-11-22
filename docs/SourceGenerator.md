@@ -189,12 +189,12 @@ The invoice model of the benchmarks (100 invoices × 20 rounds), one machine: on
 
 | .NET 10, JIT | write | read |
 |---|---|---|
-| LsMsgPack, default options (indexed schema, arrays) | 3.61 ms (4.5x) | 4.82 ms (5.9x) |
-| the same with the generated code | 3.31 ms (4.9x) | 5.05 ms (5.6x) |
-| LsMsgPack, arrays without the schema | 2.91 ms (5.6x) | 4.70 ms (6.0x) |
-| the same with the generated code | 2.91 ms (5.6x) | 4.89 ms (5.8x) |
-| LsMsgPack, maps with property names | 4.95 ms (3.3x) | 5.21 ms (5.4x) |
-| the same with the generated code | 4.65 ms (3.5x) | 5.23 ms (5.4x) |
+| LsMsgPack, default options (indexed schema, arrays) | 3.60 ms (4.6x) | 4.83 ms (5.8x) |
+| the same with the generated code | 3.42 ms (4.8x) | 5.09 ms (5.5x) |
+| LsMsgPack, arrays without the schema | 2.96 ms (5.6x) | 4.78 ms (5.9x) |
+| the same with the generated code | 2.92 ms (5.6x) | 4.96 ms (5.7x) |
+| LsMsgPack, maps with property names | 4.91 ms (3.4x) | 5.26 ms (5.3x) |
+| the same with the generated code | 4.62 ms (3.6x) | 5.28 ms (5.3x) |
 
 | .NET 10, WebAssembly (node) | interpreter write | read | AOT write | read |
 |---|---|---|---|---|
