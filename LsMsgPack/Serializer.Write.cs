@@ -357,7 +357,7 @@ namespace LsMsgPack
     private void WriteKey(WriteContext c, object key, FullPropertyInfo keyInfo)
     {
       if (key is string name && Options._dictionaryKeyPolicy != null) // DictionaryKeyPolicy: string keys converted
-        key = MsgPackNamingPolicy.Convert(Options._dictionaryKeyPolicy, name);
+        key = MsgPackNamingPolicy.ConvertKey(Options._dictionaryKeyPolicy, name);
       ReferenceWriting references = c.References;
       if (references is null || !PreserveReferences)
       {
@@ -1426,8 +1426,28 @@ namespace LsMsgPack
           handler = preserving.Inner;
         info.Elements = handler as ITypedElements;
       }
+      else if (CanBindDelegates && !type.IsArray && info.Collection != null)
+        info.Elements = OtherElements(info);
       info.ElementsKnown = true; // another thread that still sees false looks it up again
       return info.Elements;
+    }
+
+    /// <summary>
+    /// The typed elements of another collection type that enumerates its element type (<see cref="EnumerableElements{TItem}"/>), or its KeyValuePairs (<see cref="PairElements{TKey, TValue}"/>);
+    /// null for anything else (non-generic collections, Hashtable): written boxed (100 ints in an ImmutableArray, Queue or ObservableCollection 2.0 -> 0.45-0.49 us, an F# list 2.7 -> 0.69 us).
+    /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates).")]
+    private ITypedElements OtherElements(WriteTypeInfo info)
+    {
+      CollectionInfo collection = info.Collection;
+      Type element = collection.ElementType;
+      if (element is null || !typeof(IEnumerable<>).MakeGenericType(element).IsAssignableFrom(info.Type))
+        return null;
+      if (info.Kind == TypeKind.Array && !collection.IsDictionary)
+        return (ITypedElements)CreateInstantiation(typeof(EnumerableElements<>), new[] { element }, new object[] { this });
+      if (info.Kind == TypeKind.Map && collection.PairKey != null)
+        return (ITypedElements)CreateInstantiation(typeof(PairElements<,>), new[] { collection.KeyType, collection.ValueType }, new object[] { this });
+      return null;
     }
 
     #endregion

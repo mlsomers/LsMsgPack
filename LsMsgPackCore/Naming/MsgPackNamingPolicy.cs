@@ -78,10 +78,53 @@ namespace LsMsgPack
     }
 
     /// <summary>
+    /// The built-in policies' recent dictionary keys and their names (null for other policies, which may not want their names kept): a key is converted per entry per call,
+    /// and dictionaries usually repeat their keys. Slots by length and the outer characters, the entry compared by its content (a key of another instance hits too); one store per miss.
+    /// </summary>
+    private ConvertedKey[] _recentKeys;
+
+    private sealed class ConvertedKey
+    {
+      internal readonly string Key;
+      internal readonly string Name;
+
+      internal ConvertedKey(string key, string name)
+      {
+        Key = key;
+        Name = name;
+      }
+    }
+
+    /// <summary>
+    /// <see cref="Convert"/> for a dictionary key (<see cref="MsgPackOptions.DictionaryKeyPolicy"/>): the same names, the built-in policies' kept for the next call.
+    /// 20 keys written per call (Dictionary&lt;string, int&gt;, .NET 10): camelCase 1246 -> 483-492 ns, snake_case 2258 -> 477-508 ns, 2616 -> 376 B (without the policy 372-385 ns, 376 B).
+    /// </summary>
+    internal static string ConvertKey(MsgPackNamingPolicy policy, string key)
+    {
+      ConvertedKey[] recent = policy._recentKeys;
+      if (recent is null || key.Length == 0)
+        return Convert(policy, key);
+      int slot = (key.Length * 31 + key[0] * 7 + key[key.Length - 1]) & (RecentKeys - 1);
+      ConvertedKey entry = recent[slot];
+      if (entry != null && string.Equals(entry.Key, key, StringComparison.Ordinal))
+        return entry.Name;
+      string name = Convert(policy, key);
+      recent[slot] = new ConvertedKey(key, name);
+      return name;
+    }
+
+    private const int RecentKeys = 256;
+
+    /// <summary>
     /// System.Text.Json's JsonCamelCaseNamingPolicy: the upper case letters at the start in lower case, except the last one of several when a lower case letter follows it.
     /// </summary>
     private sealed class CamelCaseNamingPolicy : MsgPackNamingPolicy
     {
+      internal CamelCaseNamingPolicy()
+      {
+        _recentKeys = new ConvertedKey[RecentKeys];
+      }
+
       internal override string BuiltInName { get { return nameof(CamelCase); } }
 
       public override string ConvertName(string name)
@@ -124,6 +167,7 @@ namespace LsMsgPack
         _lowercase = lowercase;
         _separator = separator;
         _builtInName = builtInName;
+        _recentKeys = new ConvertedKey[RecentKeys];
       }
 
       internal override string BuiltInName { get { return _builtInName; } }

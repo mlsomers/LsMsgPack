@@ -355,7 +355,10 @@ namespace LsMsgPack.Meta
     /// </summary>
     internal static void BindReaderTypes(Type root, MsgPackOptions schemaSettings)
     {
-      GetIndexedSchema(schemaSettings)?.BindReaderTypes(root, schemaSettings._propertyNameCaseInsensitive, FullPropertyInfo.SelectionOf(schemaSettings), schemaSettings);
+      IndexedSchemaTypeResolver schema = GetIndexedSchema(schemaSettings);
+      if (schema is null || schema.LastBoundRootIs(root)) // per call: the selection is only looked up for a root that is not bound yet (an int root read 4-5 ns faster)
+        return;
+      schema.BindReaderTypes(root, schemaSettings._propertyNameCaseInsensitive, FullPropertyInfo.SelectionOf(schemaSettings), schemaSettings);
     }
 
     internal static bool UsesIndexedSchema(MsgPackOptions settings)

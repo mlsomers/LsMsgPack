@@ -706,6 +706,8 @@ namespace LsMsgPack.Reading
       for (int t = Props.Length - 1; t >= 0; t--)
         _otherNames |= Props[t].DotNetName != null;
       _lookFurther = _caseInsensitive || _otherNames;
+      if (_otherNames)
+        _nextDotNetNameFirst = NoDotNetNameIsAnotherName();
       if (_caseInsensitive)
       {
         _ambiguous = new bool[Props.Length];
@@ -905,11 +907,35 @@ namespace LsMsgPack.Reading
     }
 
     /// <summary>
+    /// <see cref="FindOtherName"/> may take the next property's .NET name before the written names: no .NET name is another property's written name (ignoring case with
+    /// <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>, as FindOrMatchIgnoringCase compares), so the searches before it would find the same property or none.
+    /// An invoice with .NET names read by a serializer with camelCase names: 9.9 -> 5.6 us (with the written names 2.5 us: the compiled code leaves the object to the runtime's loop at the first key).
+    /// </summary>
+    private readonly bool _nextDotNetNameFirst;
+
+    private bool NoDotNetNameIsAnotherName()
+    {
+      StringComparison comparison = _caseInsensitive ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+      PropReader[] props = Props;
+      for (int t = props.Length - 1; t >= 0; t--)
+      {
+        if (props[t].DotNetName is null)
+          continue;
+        for (int u = props.Length - 1; u >= 0; u--)
+          if (u != t && (string.Equals(props[t].DotNetName, props[u].Name, comparison) || string.Equals(props[t].DotNetName, props[u].DotNetName, comparison)))
+            return false;
+      }
+      return true;
+    }
+
+    /// <summary>
     /// FindByName with <see cref="MsgPackOptions.PropertyNamingPolicy"/> when a property's .NET name is not its written name (apart, so FindByName stays small): the written names,
     /// then the .NET names (data of writers without the policy), then with <see cref="MsgPackOptions.PropertyNameCaseInsensitive"/> ignoring case (written names, then .NET names).
     /// </summary>
     private PropReader FindOtherName(byte[] buffer, int offset, int length, ref int next)
     {
+      if (_nextDotNetNameFirst && next < Props.Length && Props[next].DotNetNameIs(buffer, offset, length))
+        return Props[next++]; // data of a writer without the policy, in the order of the properties
       PropReader found = _caseInsensitive ? FindOrMatchIgnoringCase(buffer, offset, length, ref next) : Search(buffer, offset, length, ref next);
       if (found != null)
         return found;

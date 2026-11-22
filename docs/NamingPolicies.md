@@ -54,7 +54,7 @@ The cost: the names are converted once per class, so writing and reading with a 
 
 ## Dictionary keys
 
-`DictionaryKeyPolicy` converts the keys of dictionaries that are strings (declared as `string` or `object`). Keys of other types are written as they are, and so are the keys of [extension data](ExtensionData.md) (written as they were read). As in System.Text.Json, it applies to writing only: keys are read as they were written, and a round trip gives the converted keys. A key is converted each time it's written, which allocates a string per key.
+`DictionaryKeyPolicy` converts the keys of dictionaries that are strings (declared as `string` or `object`). Keys of other types are written as they are, and so are the keys of [extension data](ExtensionData.md) (written as they were read). As in System.Text.Json, it applies to writing only: keys are read as they were written, and a round trip gives the converted keys. The built-in policies remember the names of the last 256 keys they converted, so keys that repeat (as the keys of most dictionaries do) are converted once. A custom policy is asked each time a key is written.
 
 ## Enum names
 

@@ -966,6 +966,61 @@ namespace LsMsgPack.Reading
   }
 
   /// <summary>
+  /// The other collection types that Core fills from an array of their elements (<see cref="CollectionInfo.Create"/>: immutable and frozen collections by their factory, sorted sets,
+  /// queues, stacks and observable collections by their constructor or Add, F# lists by <c>List.ofSeq</c>...): the elements read typed into an array, then the same call as Core's
+  /// conversion makes. Anything else than an array (nil of a struct, type id wrappers, other formats), reporting and <c>[SerializeEnumerable]</c> members go to <see cref="ValueReader{T}.Slow"/>.
+  /// Not with ReferenceHandling.Preserve (Core registers some of them before their elements).
+  /// </summary>
+  internal sealed class CollectionReader<TCollection, TItem> : ValueReader<TCollection>, ICollectionContent
+  {
+    private readonly Serializer _serializer;
+    private readonly CollectionInfo _info;
+    private ValueReader<TItem> _item;
+
+    internal CollectionReader(Serializer serializer)
+    {
+      _serializer = serializer;
+      _info = CollectionInfo.Get(typeof(TCollection));
+    }
+
+    internal override TCollection Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (!typeof(TCollection).IsValueType && c.R.TryReadNil())
+        return default(TCollection);
+      if (c.Unusual || CollectionRules.HasEnumerableAttribute(assignedTo))
+        return Slow(c, start, assignedTo);
+
+      int count = c.R.TryReadArrayHeader();
+      if (count < 0)
+        return Slow(c, start, assignedTo);
+      return ReadItems(c, count);
+    }
+
+    private TCollection ReadItems(ReadContext c, int count)
+    {
+      ValueReader<TItem> item = _item ?? (_item = _serializer.Reader<TItem>());
+      c.Enter();
+      TItem[] items = new TItem[count];
+      for (int t = 0; t < count; t++)
+        items[t] = item.Read(c, null);
+      c.Depth--;
+      return (TCollection)_info.Create(items, c.ConversionSettings());
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      if (!CollectionRules.IsArray(c.R))
+      {
+        value = null;
+        return false;
+      }
+      value = ReadItems(c, c.R.TryReadArrayHeader());
+      return value != null;
+    }
+  }
+
+  /// <summary>
   /// An array of a type read in bulk (see <see cref="Writing.Numbers"/>, Serializer.Bulk): the same values and errors as <see cref="ArrayReader{TItem}"/>.
   /// The values in the formats of the type are read in bulk, any other value (nil, another format, an incomplete one) by the reader of the element type
   /// (1000 values: int 8.0 -> 2.4 us, long 7.7 -> 3.9 us, float 3.0 -> 1.4 us, double 4.2 -> 2.3 us, short 8.3-9.6 -> 3.8 us, uint 7.5-8.6 -> 3.1-3.2 us, bool 2.1-2.7 -> 1.3 us,
@@ -1246,6 +1301,89 @@ namespace LsMsgPack.Reading
       }
       c.Depth = depth;
       result = dictionary;
+      return true;
+    }
+  }
+
+  /// <summary>
+  /// The other dictionary types (sorted, concurrent, immutable and frozen dictionaries, F# maps, lists of KeyValuePairs...), read from a map as Core's conversion fills them
+  /// (ValueConverter.ConvertPairs): the pairs typed into an array for the ones made of them (<see cref="CollectionInfo.FillsPairs"/>: <see cref="CollectionInfo.Create"/>), otherwise created
+  /// empty and their Add called per entry in the order of the data (a key twice throws, as there). The keys and nils <see cref="DictionaryReader{TKey, TValue}"/> leaves to Core go there too.
+  /// Not with ReferenceHandling.Preserve (Core registers the ones filled by Add before their entries).
+  /// </summary>
+  internal sealed class PairsReader<TCollection, TKey, TValue> : ValueReader<TCollection>, ICollectionContent where TCollection : class
+  {
+    private readonly Serializer _serializer;
+    private readonly CollectionInfo _info;
+    private readonly bool _stringKeys = typeof(TKey) == typeof(string);
+    private readonly bool _valueTakesNoNil = typeof(TValue).IsValueType && Nullable.GetUnderlyingType(typeof(TValue)) is null;
+    private ValueReader<TKey> _key;
+    private ValueReader<TValue> _value;
+
+    internal PairsReader(Serializer serializer)
+    {
+      _serializer = serializer;
+      _info = CollectionInfo.Get(typeof(TCollection));
+    }
+
+    internal override TCollection Read(ReadContext c, FullPropertyInfo assignedTo)
+    {
+      int start = c.R.Pos;
+      if (c.R.TryReadNil())
+        return null;
+
+      if (!c.Unusual && !CollectionRules.HasEnumerableAttribute(assignedTo) && TryRead(c, out TCollection value))
+        return value;
+      return Slow(c, start, assignedTo);
+    }
+
+    bool ICollectionContent.TryReadContent(ReadContext c, out object value)
+    {
+      bool read = TryRead(c, out TCollection collection);
+      value = collection;
+      return read;
+    }
+
+    private bool TryRead(ReadContext c, out TCollection result)
+    {
+      result = null;
+      MsgPackReader r = c.R;
+      int count = r.TryReadMapHeader();
+      if (count < 0)
+        return false;
+
+      ValueReader<TKey> keys = _key ?? (_key = _serializer.Reader<TKey>());
+      ValueReader<TValue> values = _value ?? (_value = _serializer.Reader<TValue>());
+      int depth = c.Depth;
+      c.Enter();
+      bool fromPairs = _info.FillsPairs;
+      KeyValuePair<TKey, TValue>[] pairs = fromPairs ? new KeyValuePair<TKey, TValue>[count] : null; // the header's count is checked against the data (MsgPackReader.Count)
+      object made = fromPairs ? null : Instances.CreateCollection(typeof(TCollection), c.ConversionSettings());
+      IDictionary<TKey, TValue> typed = made as IDictionary<TKey, TValue>;
+      System.Collections.IDictionary untyped = typed is null ? made as System.Collections.IDictionary : null;
+      for (int t = 0; t < count; t++)
+      {
+        if (!CollectionRules.IsEntryKey(r, _stringKeys))
+        {
+          c.Depth = depth;
+          return false;
+        }
+        TKey key = keys.Read(c, null);
+        if (_valueTakesNoNil && r.Peek() == 0xC0)
+        {
+          c.Depth = depth;
+          return false;
+        }
+        TValue value = values.Read(c, null);
+        if (fromPairs)
+          pairs[t] = new KeyValuePair<TKey, TValue>(key, value);
+        else if (typed != null)
+          typed.Add(key, value); // a key twice throws, as there
+        else
+          untyped.Add(key, value);
+      }
+      c.Depth = depth;
+      result = fromPairs ? (TCollection)_info.Create(pairs, c.ConversionSettings()) : (TCollection)made;
       return true;
     }
   }

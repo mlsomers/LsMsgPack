@@ -422,7 +422,7 @@ namespace LsMsgPack
             if (set != null)
               return set;
           }
-          ValueReader items = InterfaceReader(type);
+          ValueReader items = InterfaceReader(type) ?? OtherCollectionReader(type);
           if (items != null)
             return items;
           break;
@@ -433,7 +433,7 @@ namespace LsMsgPack
             if (dictionary != null)
               return dictionary;
           }
-          ValueReader entries = InterfaceReader(type);
+          ValueReader entries = InterfaceReader(type) ?? OtherDictionaryReader(type);
           if (entries != null)
             return entries;
           break;
@@ -502,6 +502,32 @@ namespace LsMsgPack
           return null;
       }
       return (ValueReader)InstantiateCollection(type, typeof(CollectionInterfaceReader<>), new[] { type }, this);
+    }
+
+    /// <returns>The reader of another generic collection type that Core fills from an array of its elements (<see cref="CollectionReader{TCollection, TItem}"/>), null for others</returns>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates).")]
+    private ValueReader OtherCollectionReader(Type type)
+    {
+      if (!CanBindDelegates || PreserveReferences || type.IsArray || type.IsInterface || type.IsAbstract || type.ContainsGenericParameters)
+        return null;
+      CollectionInfo info = CollectionInfo.Get(type);
+      if (info.Attribute != null || info.IsDictionary || info.ConcreteType != type || info.ElementType is null
+        || !typeof(IEnumerable<>).MakeGenericType(info.ElementType).IsAssignableFrom(type))
+        return null;
+      return (ValueReader)CreateInstantiation(typeof(CollectionReader<,>), new[] { type, info.ElementType }, new object[] { this });
+    }
+
+    /// <returns>The reader of another dictionary type that Core fills from the entries of a map (<see cref="PairsReader{TCollection, TKey, TValue}"/>), null for others</returns>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only when the runtime supports dynamic code (CanBindDelegates).")]
+    private ValueReader OtherDictionaryReader(Type type)
+    {
+      if (!CanBindDelegates || PreserveReferences || type.IsArray || type.IsInterface || type.IsAbstract || type.IsValueType || type.ContainsGenericParameters)
+        return null;
+      CollectionInfo info = CollectionInfo.Get(type);
+      if (info.Attribute != null || !info.IsDictionary || info.PairKey is null || info.ConcreteType != type
+        || !(info.FillsPairs || info.AddMethod != null || typeof(System.Collections.IDictionary).IsAssignableFrom(type)))
+        return null;
+      return (ValueReader)CreateInstantiation(typeof(PairsReader<,,>), new[] { type, info.KeyType, info.ValueType }, new object[] { this });
     }
 
     /// <returns>The reader of a custom extension of the type (an LsExtension&lt;T&gt; of the type), null for others</returns>
@@ -800,11 +826,7 @@ namespace LsMsgPack
     {
       c.R.Release(); // the data is not kept alive
       if (c.Decompressed != null)
-      {
-        new Span<byte>(c.Decompressed, 0, c.DecompressedLength).Clear(); // a pooled array is shared with other code
-        System.Buffers.ArrayPool<byte>.Shared.Return(c.Decompressed);
-        c.Decompressed = null;
-      }
+        ReturnDecompressed(c);
       if (c.References != null)
       {
         if (ReferenceEquals(c.References, c.PreservingReferences))
@@ -821,6 +843,17 @@ namespace LsMsgPack
         c.IntoAt = -1;
       }
       _threadContext = c; // Bound and SlowSettings are kept: usually the next call has the same
+    }
+
+    /// <summary>
+    /// The decompressed body goes back to the pool (apart, so ReturnContext stays small without compression).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void ReturnDecompressed(ReadContext c)
+    {
+      new Span<byte>(c.Decompressed, 0, c.DecompressedLength).Clear(); // a pooled array is shared with other code
+      System.Buffers.ArrayPool<byte>.Shared.Return(c.Decompressed);
+      c.Decompressed = null;
     }
 
     private object DeserializeWithSchema(ReadContext c, Type type)

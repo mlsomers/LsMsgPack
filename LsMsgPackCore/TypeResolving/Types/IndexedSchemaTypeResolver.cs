@@ -228,6 +228,14 @@ namespace LsMsgPack.TypeResolving.Types
     private Dictionary<Type, Type[]> _ambiguous;
 
     /// <summary>
+    /// The root type <see cref="BindReaderTypes"/> bound last (asked per call before its arguments are looked up).
+    /// </summary>
+    internal bool LastBoundRootIs(Type root)
+    {
+      return _lastBoundRoot == root;
+    }
+
+    /// <summary>
     /// Reading into other classes than the writer used (e.g. a DTO into an entity): the values of an object only say which property of the writer's class they are (an index into its entry),
     /// not which class that was. The root of the payload is the first entry of the schema, and the other classes follow from the properties both sides have:
     /// the writer's class of a property is the declared type of the writer's property with the same name (also of collection elements, dictionary values and nullables).

@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JSON to LsMsgPack cloud savings calculator</title>
+  <style>
+    :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; --muted: color-mix(in srgb, CanvasText 68%, Canvas); --line: color-mix(in srgb, CanvasText 20%, Canvas); --tint: color-mix(in srgb, CanvasText 5%, Canvas); --good: #1a7f37; }
+    @media (prefers-color-scheme: dark) { :root { --good: #4ac26b; } }
+    body { margin: 0; padding: 2rem 1rem; background: Canvas; color: CanvasText; }
+    main { max-width: 880px; margin: auto; }
+    h1 { line-height: 1.15; margin-bottom: .5rem; }
+    h2 { font-size: 1.1rem; margin: 0 0 .75rem; }
+    .intro, small, .note, .hint { color: var(--muted); }
+    fieldset, .results { border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.25rem 1.25rem; margin: 1rem 0; min-width: 0; }
+    legend { font-weight: 700; padding: 0 .4rem; }
+    .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem; }
+    [hidden] { display: none !important; }
+    label { display: grid; gap: .3rem; font-weight: 600; align-content: start; }
+    label .hint { font-weight: 400; font-size: .85rem; }
+    input, select { box-sizing: border-box; width: 100%; padding: .55rem; border: 1px solid #888; border-radius: 6px; background: Canvas; color: CanvasText; font: inherit; }
+    .check { display: flex; gap: .5rem; align-items: center; font-weight: 400; }
+    .check input { width: auto; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: .75rem 1rem; }
+    .metric { font-size: .9rem; color: var(--muted); }
+    output { display: block; font-size: 1.35rem; font-weight: 700; color: CanvasText; font-variant-numeric: tabular-nums; }
+    output.good { color: var(--good); }
+    .total { background: var(--tint); }
+    .total output { font-size: 1.8rem; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: .9rem; margin-top: .75rem; }
+    th, td { text-align: right; padding: .3rem .5rem; border-bottom: 1px solid var(--line); }
+    th:first-child, td:first-child { text-align: left; }
+    .note { font-size: .9rem; }
+    .warn { font-size: .9rem; border-left: 3px solid #d29922; padding-left: .6rem; }
+    details { margin-top: .75rem; font-size: .9rem; }
+    summary { cursor: pointer; }
+    .scroll { overflow-x: auto; }
+    a { color: LinkText; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Estimate your cloud savings</h1>
+  <p class="intro">Estimate what replacing JSON (System.Text.Json) with LsMsgPack saves on data transfer, CPU time, instances and latency. The sizes and speeds come from the invoice and game-message benchmarks in <a href="Comparison.md">Comparison.md</a> and the TypeScript client numbers in <a href="TypeScriptClient.md#performance">TypeScriptClient.md</a>.</p>
+
+  <form id="calculator">
+    <fieldset>
+      <legend>Traffic</legend>
+      <div class="fields">
+        <label>Benchmark profile
+          <select id="profile"></select>
+        </label>
+        <label>JSON traffic per month (GB)
+          <input id="volume" type="number" min="0" step="any" value="2000" required>
+          <span class="hint" id="volume-hint">As billed: after compression, if any.</span>
+        </label>
+        <label>Average JSON message size (KB)
+          <input id="msgsize" type="number" min="0.01" step="any" value="3.3" required>
+          <span class="hint">Uncompressed. Sets the message count and the latency per message.</span>
+        </label>
+        <label id="custom-ratio-wrap" hidden>LsMsgPack size as % of JSON
+          <input id="custom-ratio" type="number" min="0" max="100" step="any" value="50">
+        </label>
+        <label id="custom-write-wrap" hidden>Write speed vs System.Text.Json (x)
+          <input id="custom-write" type="number" min="0.1" step="any" value="4">
+        </label>
+        <label id="custom-read-wrap" hidden>Read speed vs System.Text.Json (x)
+          <input id="custom-read" type="number" min="0.1" step="any" value="5">
+        </label>
+      </div>
+      <p class="note" id="profile-note"></p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Cloud pricing</legend>
+      <div class="fields">
+        <label>Cloud provider
+          <select id="provider">
+            <option value="aws">Amazon Web Services</option>
+            <option value="azure">Azure</option>
+            <option value="gcp">Google Cloud</option>
+            <option value="other">Other / my own rates</option>
+          </select>
+        </label>
+        <label>Traffic goes to
+          <select id="destination">
+            <option value="internet">The internet (clients, other clouds)</option>
+            <option value="region">Another region of the same cloud</option>
+            <option value="zone">Another availability zone, same region</option>
+          </select>
+        </label>
+        <label>Own transfer price (USD per GB)
+          <input id="price" type="number" min="0" step="any" placeholder="list price">
+          <span class="hint">Leave empty to use the provider's list price tiers.</span>
+        </label>
+        <label>vCPU price (USD per hour)
+          <input id="vcpu-price" type="number" min="0" step="any" value="0.0504">
+          <span class="hint" id="vcpu-hint"></span>
+        </label>
+      </div>
+      <details>
+        <summary>List prices used</summary>
+        <div id="tiers"></div>
+      </details>
+    </fieldset>
+
+    <fieldset>
+      <legend>Compute and scaling</legend>
+      <div class="fields">
+        <label>Serialization that runs in your cloud
+          <select id="sides">
+            <option value="write">Writing only (responses to clients)</option>
+            <option value="both">Writing and reading (service to service)</option>
+            <option value="read">Reading only (incoming data)</option>
+          </select>
+        </label>
+        <label>vCPU time factor
+          <input id="cpu-factor" type="number" min="0.1" step="any" value="1">
+          <span class="hint">1 = as fast as the benchmark machine (i7-7700K desktop). Cloud vCPUs are often slower: try 1.5-2.</span>
+        </label>
+        <label>Instances serving this traffic
+          <input id="instances" type="number" min="0" step="1" value="4">
+        </label>
+        <label>vCPUs per instance
+          <input id="vcpus" type="number" min="1" step="1" value="2">
+        </label>
+        <label>Average CPU utilization (%)
+          <input id="utilization" type="number" min="1" max="100" step="any" value="50">
+        </label>
+        <label>Measured JSON share of CPU time (%)
+          <input id="measured-share" type="number" min="0" max="100" step="any" placeholder="from the benchmark">
+          <span class="hint">From a profiler: time in System.Text.Json and its UTF-8 work. Empty: estimated from the benchmark timing.</span>
+        </label>
+        <label>Instances are limited by
+          <select id="bottleneck">
+            <option value="cpu">CPU</option>
+            <option value="network">Network bandwidth</option>
+            <option value="other">Memory, I/O or something else</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Latency (one message to the client)</legend>
+      <div class="fields">
+        <label>Client reads with
+          <select id="client">
+            <option value="ts">Browser or Node (@lsmsgpack/client)</option>
+            <option value="dotnet">.NET (LsMsgPack)</option>
+          </select>
+        </label>
+        <label>Client bandwidth (Mbit/s)
+          <input id="bandwidth" type="number" min="0.1" step="any" value="50">
+        </label>
+        <label>Round trip time (ms)
+          <input id="rtt" type="number" min="0" step="any" value="40">
+        </label>
+        <label>Connection
+          <select id="connection">
+            <option value="warm">Warm (congestion window open)</option>
+            <option value="cold">New or idle (TCP slow start)</option>
+          </select>
+        </label>
+      </div>
+    </fieldset>
+  </form>
+
+  <section class="results total" aria-live="polite" aria-label="Estimated total savings">
+    <div class="metrics">
+      <div class="metric">Estimated savings per month<output id="total-month" class="good"></output></div>
+      <div class="metric">Per year<output id="total-year" class="good"></output></div>
+      <div class="metric">Faster per message<output id="latency-head" class="good"></output></div>
+    </div>
+    <p class="note" id="total-note"></p>
+  </section>
+
+  <section class="results" aria-label="Data transfer">
+    <h2>Data transfer</h2>
+    <div class="metrics">
+      <div class="metric">JSON<output id="json-gb"></output></div>
+      <div class="metric">LsMsgPack<output id="ls-gb"></output></div>
+      <div class="metric">Less traffic<output id="saved-gb" class="good"></output></div>
+      <div class="metric">Transfer cost: JSON<output id="json-cost"></output></div>
+      <div class="metric">Transfer cost: LsMsgPack<output id="ls-cost"></output></div>
+      <div class="metric">Transfer cost saved<output id="transfer-saved" class="good"></output></div>
+    </div>
+    <p class="note" id="transfer-note"></p>
+  </section>
+
+  <section class="results" aria-label="Compute">
+    <h2>Compute</h2>
+    <div class="metrics">
+      <div class="metric">Messages per month<output id="messages"></output></div>
+      <div class="metric">CPU in JSON<output id="json-cpu"></output></div>
+      <div class="metric">CPU in LsMsgPack<output id="ls-cpu"></output></div>
+      <div class="metric">vCPU hours freed<output id="cpu-saved" class="good"></output></div>
+      <div class="metric">Worth, at the vCPU price<output id="cpu-value"></output></div>
+      <div class="metric">Serialization speedup<output id="speedup"></output></div>
+    </div>
+  </section>
+
+  <section class="results" aria-label="Scaling">
+    <h2>Scaling</h2>
+    <div class="metrics">
+      <div class="metric">JSON share of CPU<output id="share"></output></div>
+      <div class="metric">Capacity freed<output id="capacity" class="good"></output></div>
+      <div class="metric">Instances needed<output id="instances-out"></output></div>
+      <div class="metric">Instance cost saved per month<output id="fleet-saved" class="good"></output></div>
+    </div>
+    <p class="note" id="scaling-note"></p>
+  </section>
+
+  <section class="results" aria-label="Latency">
+    <h2>Latency per message</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Step</th><th>JSON</th><th>LsMsgPack</th><th>Saved</th></tr></thead>
+        <tbody id="latency-rows"></tbody>
+      </table>
+    </div>
+    <p class="note" id="latency-note"></p>
+  </section>
+
+  <p class="note">This is an estimate, not an invoice forecast. It applies one benchmark's reduction to all the traffic you entered and leaves out request and header overhead, compression CPU, storage, request charges, reserved or committed-use discounts and region differences. The list prices are approximate on-demand prices of US regions and may be out of date: check your provider's pricing calculator or your bill, and enter your own price. The benchmark timings come from a tight loop on one machine; real services spend more time per byte (cache misses, allocations, garbage collection), so profile your own service and benchmark your own data before budgeting.</p>
+</main>
+<script>
+  const $ = id => document.getElementById(id);
+  const KB = 1024, GB = 1e9, HOURS_PER_MONTH = 730;
+
+  // Measured: Comparison.md (System.Text.Json against LsMsgPack, .NET 10, i7-7700K) and TypeScriptClient.md (Node 22).
+  // jsonWriteNs/jsonReadNs: System.Text.Json time per byte of JSON; write/read: how many times as fast LsMsgPack is;
+  // ratio: LsMsgPack bytes on the wire per JSON byte on the wire; wire: JSON bytes on the wire per uncompressed JSON byte.
+  const invoicesBytes = 330.6 * KB, invoicesRounds = 20;
+  const invoices = { jsonWriteNs: 16.28e6 / invoicesRounds / invoicesBytes, jsonReadNs: 28.53e6 / invoicesRounds / invoicesBytes };
+  const snapshot = { jsonWriteNs: 18460 / 2928, jsonReadNs: 21230 / 2928 };
+  const state = { jsonWriteNs: 1302 / 190, jsonReadNs: 1439 / 190 };
+  const profiles = {
+    'invoices-default': { label: 'Invoices, default options (indexed schema)', ...invoices,
+      ratio: 214.7 / 330.6, write: 16.28 / 3.66, read: 28.53 / 4.86, wire: 1, size: 3.3,
+      note: '100 invoices with strings, decimals, dates, a Guid, enums and 3-24 lines each.' },
+    'invoices-arrays': { label: 'Invoices, arrays without schema', ...invoices,
+      ratio: 174.4 / 330.6, write: 16.28 / 3.03, read: 28.53 / 4.79, wire: 1, size: 3.3,
+      note: 'The invoices as arrays: the property order is the contract.' },
+    'http': { label: 'Invoices over HTTP to the TypeScript client (schema reference)', ...invoices,
+      ratio: 166.9 / 316.7, write: 16.28 / 3.03, read: 28.53 / 4.79, wire: 1, size: 3.9,
+      note: 'Sizes as written by the ASP.NET Core formatters. The server timings are those of arrays without schema, the layout a schema reference writes.' },
+    'http-gzip': { label: 'Invoices over HTTP to the TypeScript client, gzip', ...invoices,
+      ratio: 38.0 / 42.1, write: 16.28 / 3.03, read: 28.53 / 4.79, wire: 42.1 / 316.7, size: 3.9,
+      note: 'With gzip both formats shrink a lot and the transfer difference drops to about 10%; the serialization speedup stays. Enter the traffic as billed (compressed), the message size uncompressed. The gzip CPU time is not counted (it is lower for the smaller MsgPack input).' },
+    'snapshot-default': { label: 'Game snapshot, default options (indexed schema)', ...snapshot,
+      ratio: 826 / 2928, write: 18.46 / 1.53, read: 21.23 / 1.69, wire: 1, size: 2.9,
+      note: 'A snapshot of 15 players with 14 numbers each, sent every tick.' },
+    'snapshot-arrays': { label: 'Game snapshot, arrays without schema', ...snapshot,
+      ratio: 690 / 2928, write: 18.46 / 1.21, read: 21.23 / 1.57, wire: 1, size: 2.9,
+      note: 'A snapshot of 15 players with 14 numbers each, sent every tick, as arrays.' },
+    'state-arrays': { label: 'Game player state, arrays without schema', ...state,
+      ratio: 45 / 190, write: 1302 / 106, read: 1439 / 113, wire: 1, size: 0.19,
+      note: 'One player state of 14 numbers, a very small message.' },
+    'custom': { label: 'Custom', ...invoices, ratio: 0.5, write: 4, read: 5, wire: 1, size: 3.3,
+      note: 'Your own measurements. The System.Text.Json time per byte is that of the invoices.' },
+  };
+  // @lsmsgpack/client in Node 22 against JSON.parse/JSON.stringify with UTF-8 decoding (316.7 KB of invoices).
+  const tsClient = { jsonReadNs: 1300e3 / (316.7 * KB), read: 1300 / 675 };
+
+  // Approximate on-demand list prices (USD) of US regions; a tier runs up to that many billed GB per month.
+  const providers = {
+    aws: { name: 'Amazon Web Services', free: 100, vcpu: 0.1008 / 2, vcpuNote: 'm7i.large on demand, Linux, us-east-1, per vCPU.',
+      internet: [[10240, 0.09], [51200, 0.085], [153600, 0.07], [Infinity, 0.05]], region: 0.02, zone: 0.02,
+      zoneNote: '$0.01 per GB out of one zone and $0.01 into the other.' },
+    azure: { name: 'Azure', free: 100, vcpu: 0.096 / 2, vcpuNote: 'D2s v5 pay as you go, Linux, East US, per vCPU.',
+      internet: [[10240, 0.087], [51200, 0.083], [153600, 0.07], [Infinity, 0.05]], region: 0.02, zone: 0,
+      zoneNote: 'Azure does not charge for transfer between availability zones.' },
+    gcp: { name: 'Google Cloud', free: 0, vcpu: 0.0971 / 2, vcpuNote: 'n2-standard-2 on demand, us-central1, per vCPU.',
+      internet: [[1024, 0.12], [10240, 0.11], [Infinity, 0.08]], region: 0.02, zone: 0.01,
+      internetNote: 'premium network tier, without the free tier', zoneNote: '$0.01 per GB between zones of a region.' },
+    other: { name: 'Other', free: 0, vcpu: 0.05, vcpuNote: 'Enter your own rate.', internet: [[Infinity, 0]], region: 0, zone: 0, zoneNote: '' },
+  };
+
+  const profileSelect = $('profile');
+  for (const [key, p] of Object.entries(profiles)) profileSelect.add(new Option(p.label, key));
+
+  const num = (id, fallback = 0) => { const v = Number($(id).value); return $(id).value === '' || !isFinite(v) ? fallback : v; };
+  const fmt = (n, digits = 1) => new Intl.NumberFormat(undefined, { maximumFractionDigits: digits }).format(n);
+  const usd = n => new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: Math.abs(n) < 10 ? 2 : 0 }).format(n);
+  const pct = f => `${fmt(f * 100, f < 0.001 ? 4 : f < 0.1 ? 2 : 1)}%`;
+  const gbText = gb => gb >= 1000 ? `${fmt(gb / 1000, 2)} TB` : `${fmt(gb, gb < 10 ? 2 : 1)} GB`;
+  const countText = n => n >= 1e9 ? `${fmt(n / 1e9, 2)} billion` : n >= 1e6 ? `${fmt(n / 1e6, 1)} million` : fmt(n, 0);
+  const timeText = ms => ms >= 1000 ? `${fmt(ms / 1000, 2)} s` : ms >= 1 ? `${fmt(ms, 2)} ms` : `${fmt(ms * 1000, 1)} µs`;
+  const hoursText = s => s / 3600 >= 1 ? `${fmt(s / 3600, 1)} vCPU h` : `${fmt(s, 1)} vCPU s`;
+
+  // The price of a month of transfer: the free allowance, then the tiers.
+  function transferCost(gb, provider, destination, ownPrice) {
+    if (ownPrice !== null) return gb * ownPrice;
+    if (destination !== 'internet') return gb * provider[destination];
+    let left = Math.max(0, gb - provider.free), cost = 0, from = 0;
+    for (const [upTo, price] of provider.internet) {
+      const inTier = Math.min(left, upTo - from);
+      cost += inTier * price;
+      left -= inTier;
+      from = upTo;
+      if (left <= 0) break;
+    }
+    return cost;
+  }
+
+  // Time from the first byte sent to the last byte received. Cold: TCP slow start from an initial window of
+  // 10 segments, doubling each round trip until the bandwidth is filled; no losses.
+  function transferMs(bytes, mbps, rttMs, cold) {
+    const bytesPerMs = mbps * 1e6 / 8 / 1000;
+    let ms = rttMs / 2, left = bytes;
+    if (cold) {
+      for (let window = 10 * 1460; left > window; window *= 2) {
+        ms += Math.max(rttMs, window / bytesPerMs);
+        left -= window;
+      }
+    }
+    return ms + left / bytesPerMs;
+  }
+
+  function tiersHtml() {
+    let html = '<div class="scroll"><table><thead><tr><th>Provider</th><th>Internet, per GB</th><th>Other region</th><th>Other zone</th><th>vCPU hour</th></tr></thead><tbody>';
+    for (const key of ['aws', 'azure', 'gcp']) {
+      const p = providers[key];
+      const steps = p.free ? [`first ${p.free} GB free`] : [];
+      for (const [upTo, price] of p.internet) steps.push(`$${price} ${upTo === Infinity ? 'above' : `up to ${fmt(upTo / 1024, 0)} TB`}`);
+      html += `<tr><td>${p.name}</td><td>${steps.join(', ')}</td><td>$${p.region}</td><td>$${p.zone}</td><td>$${fmt(p.vcpu, 4)}</td></tr>`;
+    }
+    return html + '</tbody></table></div><p class="note">Approximate on-demand list prices of US regions to the internet in North America and Europe, without discounts. The tier limits count from the first billed GB.</p>';
+  }
+
+  let lastProvider = null, lastProfile = null;
+  function update() {
+    const profileKey = profileSelect.value, providerKey = $('provider').value;
+    const provider = providers[providerKey];
+    if (providerKey !== lastProvider) { $('vcpu-price').value = provider.vcpu.toFixed(4); lastProvider = providerKey; }
+    if (profileKey !== lastProfile) { $('msgsize').value = profiles[profileKey].size; lastProfile = profileKey; }
+    const custom = profileKey === 'custom';
+    for (const id of ['custom-ratio-wrap', 'custom-write-wrap', 'custom-read-wrap']) $(id).hidden = !custom;
+    const p = { ...profiles[profileKey] };
+    if (custom) {
+      p.ratio = Math.min(100, Math.max(0, num('custom-ratio', 50))) / 100;
+      p.write = Math.max(0.1, num('custom-write', 4));
+      p.read = Math.max(0.1, num('custom-read', 5));
+    }
+    $('profile-note').textContent = `${p.note} LsMsgPack: ${pct(1 - p.ratio)} less traffic, writes ${fmt(p.write)}x and reads ${fmt(p.read)}x as fast as System.Text.Json.`;
+    $('volume-hint').textContent = p.wire < 1 ? 'As billed: gzip compressed.' : 'As billed. This profile assumes no HTTP compression.';
+
+    // Transfer
+    const volume = Math.max(0, num('volume'));
+    const lsVolume = volume * p.ratio;
+    const destination = $('destination').value;
+    const ownPrice = $('price').value === '' ? null : Math.max(0, num('price'));
+    const jsonCost = transferCost(volume, provider, destination, ownPrice);
+    const lsCost = transferCost(lsVolume, provider, destination, ownPrice);
+    const transferSaved = jsonCost - lsCost;
+    $('json-gb').textContent = gbText(volume);
+    $('ls-gb').textContent = gbText(lsVolume);
+    $('saved-gb').textContent = `${gbText(volume - lsVolume)} (${pct(1 - p.ratio)})`;
+    $('json-cost').textContent = usd(jsonCost);
+    $('ls-cost').textContent = usd(lsCost);
+    $('transfer-saved').textContent = usd(transferSaved);
+    let transferNote;
+    if (providerKey === 'other' && ownPrice === null) transferNote = 'Enter your own transfer price to see the cost.';
+    else if (ownPrice !== null) transferNote = `At your own price of ${usd(ownPrice)} per GB.`;
+    else if (destination === 'internet') {
+      const rate = volume > lsVolume ? transferSaved / (volume - lsVolume) : 0;
+      transferNote = `${provider.name} internet egress${provider.internetNote ? ` (${provider.internetNote})` : ''}: ${provider.free ? `the first ${provider.free} GB per month are free, ` : ''}the saved traffic would have cost $${fmt(rate, 3)} per GB on average, with the free allowance and the tiers your traffic reaches.`;
+      if (volume <= provider.free) transferNote += ' All of this traffic fits in the free allowance.';
+    } else if (destination === 'zone') transferNote = `${provider.name}: ${provider.zoneNote || `$${provider.zone} per GB`}`;
+    else transferNote = `${provider.name}: $${provider.region} per GB between regions on the same continent.`;
+    $('transfer-note').textContent = transferNote;
+
+    // Compute: System.Text.Json time per uncompressed JSON byte, from the benchmark, scaled by the vCPU factor.
+    const sides = $('sides').value;
+    const factor = Math.max(0.1, num('cpu-factor', 1));
+    const writes = sides !== 'read', reads = sides !== 'write';
+    const jsonNsPerByte = (writes ? p.jsonWriteNs : 0) + (reads ? p.jsonReadNs : 0);
+    const lsNsPerByte = (writes ? p.jsonWriteNs / p.write : 0) + (reads ? p.jsonReadNs / p.read : 0);
+    const rawBytes = volume * GB / p.wire;
+    const msgBytes = Math.max(0.01, num('msgsize', p.size)) * KB;
+    const messages = rawBytes / msgBytes;
+    const jsonCpuS = rawBytes * jsonNsPerByte * factor / 1e9;
+    const lsCpuS = rawBytes * lsNsPerByte * factor / 1e9;
+    const vcpuPrice = Math.max(0, num('vcpu-price'));
+    const speedup = jsonNsPerByte / lsNsPerByte;
+    $('messages').textContent = countText(messages);
+    $('json-cpu').textContent = hoursText(jsonCpuS);
+    $('ls-cpu').textContent = hoursText(lsCpuS);
+    $('cpu-saved').textContent = hoursText(jsonCpuS - lsCpuS);
+    $('cpu-value').textContent = usd((jsonCpuS - lsCpuS) / 3600 * vcpuPrice);
+    $('speedup').textContent = `${fmt(speedup)}x`;
+
+    // Scaling: the CPU share of JSON shrinks by the speedup; network-bound instances shrink with the traffic.
+    const instances = Math.max(0, Math.round(num('instances')));
+    const vcpus = Math.max(1, Math.round(num('vcpus', 1)));
+    const utilization = Math.min(100, Math.max(1, num('utilization', 50))) / 100;
+    const busyS = instances * vcpus * HOURS_PER_MONTH * 3600 * utilization;
+    const measured = $('measured-share').value !== '';
+    const share = measured ? Math.min(100, Math.max(0, num('measured-share'))) / 100 : (busyS > 0 ? Math.min(1, jsonCpuS / busyS) : 0);
+    const cpuFreed = share * (1 - 1 / speedup);
+    const bottleneck = $('bottleneck').value;
+    const capacityFreed = bottleneck === 'cpu' ? cpuFreed : bottleneck === 'network' ? 1 - p.ratio : 0;
+    const needed = instances * (1 - capacityFreed);
+    const neededWhole = instances ? Math.max(1, Math.ceil(needed - 1e-9)) : 0;
+    const fleetCost = instances * vcpus * HOURS_PER_MONTH * vcpuPrice;
+    const fleetSaved = fleetCost * capacityFreed;
+    $('share').textContent = `${pct(share)}${measured ? ' (measured)' : ''}`;
+    $('capacity').textContent = pct(capacityFreed);
+    $('instances-out').textContent = instances ? `${instances} → ${fmt(needed, 2)}` : '–';
+    $('fleet-saved').textContent = usd(fleetSaved);
+    let scalingNote;
+    if (bottleneck === 'cpu') {
+      scalingNote = `CPU-bound: ${pct(share)} of the busy CPU time goes to JSON; LsMsgPack does that work ${fmt(speedup)}x as fast, which frees ${pct(cpuFreed)} of the capacity.`;
+      if (!measured) scalingNote += ' This share comes from the tight-loop benchmark and is a lower bound: a profiler usually shows a larger share in real services. Enter it above.';
+    } else if (bottleneck === 'network') scalingNote = `Network-bound: each instance sends ${pct(1 - p.ratio)} fewer bytes for the same messages.`;
+    else scalingNote = 'Not limited by CPU or network: the instance count stays the same, the freed CPU and bandwidth become headroom.';
+    if (instances) scalingNote += ` Whole instances: ${instances} → ${neededWhole}. The saving per month assumes autoscaling or right-sizing turns the freed capacity into fewer or smaller instances; the instance price is the vCPU price × vCPUs.`;
+    $('scaling-note').textContent = scalingNote;
+
+    // Latency of one message: the server writes, the network carries, the client reads.
+    const client = $('client').value;
+    const serverWrite = [msgBytes * p.jsonWriteNs * factor / 1e6, msgBytes * p.jsonWriteNs * factor / p.write / 1e6];
+    const clientRead = client === 'ts'
+      ? [msgBytes * tsClient.jsonReadNs / 1e6, msgBytes * tsClient.jsonReadNs / tsClient.read / 1e6]
+      : [msgBytes * p.jsonReadNs / 1e6, msgBytes * p.jsonReadNs / p.read / 1e6];
+    const mbps = Math.max(0.1, num('bandwidth', 50)), rtt = Math.max(0, num('rtt', 40)), cold = $('connection').value === 'cold';
+    const jsonWire = msgBytes * p.wire, lsWire = jsonWire * p.ratio;
+    const network = [transferMs(jsonWire, mbps, rtt, cold), transferMs(lsWire, mbps, rtt, cold)];
+    const rows = [
+      ['Server writes', serverWrite],
+      [`Network (${fmt(jsonWire / KB, 2)} KB / ${fmt(lsWire / KB, 2)} KB)`, network],
+      [client === 'ts' ? 'Client reads (Node 22)' : 'Client reads (.NET)', clientRead],
+    ];
+    const totals = [0, 1].map(i => rows.reduce((s, r) => s + r[1][i], 0));
+    rows.push(['Total', totals]);
+    $('latency-rows').innerHTML = rows.map(([name, [j, l]], i) =>
+      `<tr${i === rows.length - 1 ? ' style="font-weight:700"' : ''}><td>${name}</td><td>${timeText(j)}</td><td>${timeText(l)}</td><td>${timeText(j - l)} (${pct((j - l) / j)})</td></tr>`).join('');
+    const rttsSaved = cold ? Math.round((network[0] - network[1] - (jsonWire - lsWire) / (mbps * 125)) / Math.max(rtt, 1e-9)) : 0;
+    $('latency-note').textContent = `The network time includes half a round trip of propagation, which both formats pay. ${cold
+      ? (rttsSaved > 0 ? `On a new connection the smaller message needs ${rttsSaved} fewer slow-start round trip${rttsSaved === 1 ? '' : 's'}. ` : 'Both messages fit in the same number of slow-start rounds, so only the bandwidth time differs. ')
+      : 'A warm connection sends at full bandwidth: the saving is the smaller payload at that speed. '}${client === 'ts'
+      ? 'The client times come from @lsmsgpack/client against JSON.parse with UTF-8 decoding in Node 22 (invoices), on the benchmark machine; phones are several times slower.'
+      : 'The client times are the .NET benchmark timings, without the vCPU factor.'}`;
+    $('latency-head').textContent = `${timeText(totals[0] - totals[1])} (${pct((totals[0] - totals[1]) / totals[0])})`;
+
+    // Total: transfer plus instances; the freed vCPU time is part of the instance saving, not added on top.
+    const totalMonth = transferSaved + fleetSaved;
+    $('total-month').textContent = usd(totalMonth);
+    $('total-year').textContent = usd(totalMonth * 12);
+    $('total-note').textContent = `Transfer ${usd(transferSaved)} + instances ${usd(fleetSaved)} per month (${provider.name}${ownPrice !== null ? ', own transfer price' : ''}). The freed CPU time only becomes money when the fleet shrinks, so it is counted in the instances, not on top.`;
+    document.title = `${provider.name}: LsMsgPack savings estimate`;
+  }
+
+  $('tiers').innerHTML = tiersHtml();
+  $('calculator').addEventListener('input', update);
+  $('calculator').addEventListener('change', update);
+  update();
+</script>
+</body>
+</html>
