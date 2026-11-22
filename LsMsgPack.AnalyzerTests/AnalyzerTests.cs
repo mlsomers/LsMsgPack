@@ -195,6 +195,17 @@ public static class Use { public static void Run(IStore store) => store.SaveTwic
       AssertDiagnostics(Run(compilation, new Dictionary<string, string>() { { "LsMsgPackAnalyze", "AllTypes" } }), "LSMP001 Level");
     }
 
+    [TestMethod]
+    public void OnlyCoreReferenced_TheAssemblyAttributeChecksAllTypes()
+    {
+      // Without MSBuild (Unity's assembly definitions) the project writes the attribute the property would write
+      string source = "[assembly: System.Reflection.AssemblyMetadata(\"LsMsgPackAnalyze\", \"AllTypes\")]\npublic class Model { public int Level { get; set; } = 2; }\n";
+      CSharpCompilation compilation = CSharpCompilation.Create("Models", new[] { CSharpSyntaxTree.ParseText(source, path: "Model.cs") },
+        new MetadataReference[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location), MetadataReference.CreateFromFile(typeof(MsgPackOptions).Assembly.Location) },
+        new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+      AssertDiagnostics(Run(compilation, new Dictionary<string, string>()), "LSMP001 Level");
+    }
+
     #endregion
 
     #region LSMP002, LSMP003: [DefaultValue] that does not match
@@ -679,6 +690,19 @@ public class CustomersController : ControllerBase
       if (packageRoot != null)
         msbuild.Add("NuGetPackageRoot", packageRoot + "/");
       AssertDiagnostics(Analyze(UsesOtherProject, formatters: true, msbuild: msbuild, other: Compile("Dtos", OtherProject, path)));
+    }
+
+    [TestMethod]
+    [DataRow("UnityEngine.CoreModule")]
+    [DataRow("UnityEngine")]
+    public void UncheckedModels_NotOfUnitysEngine(string assemblyName)
+    {
+      // Unity references its engine assemblies from its own folder, not as packages; their structs are written as the framework's
+      string engine = "namespace UnityEngine { public struct Vector2Int { public int x { get; set; } public int y { get; set; } } public struct Rect { public float x { get; set; } } }";
+      string uses = Usings + "public class GameState { public UnityEngine.Vector2Int Cell { get; set; } public UnityEngine.Rect Area { get; set; } }\n"
+        + "public static class Saves { public static byte[] Write(GameState state) => new LsMsgPack.LsMsgPackSerializer().Serialize(state); }";
+      AssertDiagnostics(Analyze(uses, other: Compile(assemblyName, engine, "/opt/Unity/Editor/Data/Managed/UnityEngine/" + assemblyName + ".dll")));
+      AssertDiagnostics(Analyze(uses, other: Compile("UnityLookAlike", engine, "/src/UnityLookAlike/obj/Debug/net8.0/UnityLookAlike.dll")), "LSMP008 Cell", "LSMP008 Area");
     }
 
     #endregion

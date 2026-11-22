@@ -8,8 +8,8 @@ using UnityEngine;
 namespace LsMsgPackUnitySmoke.Editor
 {
   /// <summary>
-  /// Called headless with -executeMethod (run.sh): builds Linux players, or runs the checks in the editor (Mono JIT).
-  /// Arguments: -backend Mono|IL2CPP, -stripping Disabled|Minimal|Low|Medium|High, -player path, -golden path, -out path.
+  /// Called headless with -executeMethod (run.sh): builds Linux or WebGL players, or runs the checks in the editor (Mono JIT).
+  /// Arguments: -target Linux|WebGL, -backend Mono|IL2CPP (WebGL: always IL2CPP), -stripping Disabled|Minimal|Low|Medium|High, -keep, -player path (WebGL: a folder), -golden path, -out path.
   /// </summary>
   public static class SmokeBuild
   {
@@ -17,7 +17,8 @@ namespace LsMsgPackUnitySmoke.Editor
 
     public static void Build()
     {
-      ScriptingImplementation backend = Argument("-backend") == "IL2CPP" ? ScriptingImplementation.IL2CPP : ScriptingImplementation.Mono2x;
+      bool webGL = Argument("-target") == "WebGL";
+      ScriptingImplementation backend = webGL || Argument("-backend") == "IL2CPP" ? ScriptingImplementation.IL2CPP : ScriptingImplementation.Mono2x;
       ManagedStrippingLevel stripping = (ManagedStrippingLevel)Enum.Parse(typeof(ManagedStrippingLevel), Argument("-stripping") ?? "Minimal");
       if (AssetDatabase.LoadAssetAtPath<SceneAsset>(ScenePath) == null)
       {
@@ -29,21 +30,29 @@ namespace LsMsgPackUnitySmoke.Editor
       if (Array.IndexOf(Environment.GetCommandLineArgs(), "-keep") >= 0)
         System.IO.File.WriteAllText(linkXml, "<linker>\n  <assembly fullname=\"Assembly-CSharp\">\n    <namespace fullname=\"LsMsgPackUnitySmoke\" preserve=\"all\" />\n  </assembly>\n"
           // Unity's engine assemblies are stripped at every level: its structs read by reflection that are not structs of public fields (no attribute types: LsMsgPack.Core names the ones it reads by name)
-          + "  <assembly fullname=\"UnityEngine.CoreModule\">\n    <type fullname=\"UnityEngine.Vector2Int\" preserve=\"all\" />\n  </assembly>\n</linker>\n");
+          + "  <assembly fullname=\"UnityEngine.CoreModule\">\n    <type fullname=\"UnityEngine.Vector2Int\" preserve=\"all\" />\n    <type fullname=\"UnityEngine.Rect\" preserve=\"all\" />\n"
+          + "    <type fullname=\"UnityEngine.Bounds\" preserve=\"all\" />\n  </assembly>\n</linker>\n");
       else
         AssetDatabase.DeleteAsset(linkXml);
       AssetDatabase.Refresh();
-      PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, backend);
-      PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.Standalone, stripping);
+      NamedBuildTarget named = webGL ? NamedBuildTarget.WebGL : NamedBuildTarget.Standalone;
+      PlayerSettings.SetScriptingBackend(named, backend);
+      PlayerSettings.SetManagedStrippingLevel(named, stripping);
+      if (webGL)
+      {
+        // Uncompressed: served by webgl-serve.py, which sets no Content-Encoding. The exceptions are Unity's default (explicitly thrown ones only), as a game ships
+        PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
+        Debug.Log($"[smoke] WebGL exception support {PlayerSettings.WebGL.exceptionSupport}");
+      }
       BuildPlayerOptions options = new BuildPlayerOptions()
       {
         scenes = new[] { ScenePath },
         locationPathName = Argument("-player"),
-        target = BuildTarget.StandaloneLinux64,
+        target = webGL ? BuildTarget.WebGL : BuildTarget.StandaloneLinux64,
         options = BuildOptions.None
       };
       BuildReport report = BuildPipeline.BuildPlayer(options);
-      Debug.Log($"[smoke] build {backend} stripping {stripping}{(System.IO.File.Exists(linkXml) ? " + link.xml" : "")}: {report.summary.result}, {report.summary.totalSize} bytes, {report.summary.totalTime}");
+      Debug.Log($"[smoke] build {options.target} {backend} stripping {stripping}{(System.IO.File.Exists(linkXml) ? " + link.xml" : "")}: {report.summary.result}, {report.summary.totalSize} bytes, {report.summary.totalTime}");
       EditorApplication.Exit(report.summary.result == BuildResult.Succeeded ? 0 : 1);
     }
 

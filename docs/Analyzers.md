@@ -36,7 +36,7 @@ Classes declared in another project are checked in that project. A project of mo
 </ItemGroup>
 ```
 
-This also marks the assembly as checked (`[assembly: AssemblyMetadata("LsMsgPackAnalyze", "AllTypes")]`, written by the SDK's assembly info), so the projects using its classes don't report them (LSMP008). With `GenerateAssemblyInfo` set to `false`, add that attribute yourself.
+This also marks the assembly as checked (`[assembly: AssemblyMetadata("LsMsgPackAnalyze", "AllTypes")]`, written by the SDK's assembly info), so the projects using its classes don't report them (LSMP008). With `GenerateAssemblyInfo` set to `false`, or without MSBuild (Unity's assembly definitions, see [Unity](Unity.md)), add that attribute yourself: it also asks for the classes to be checked, as the property does.
 
 Only the properties and fields the serializers write are checked: properties that are public, not static, with a public getter and setter, and fields the serializers select (see [Which fields are written](#which-fields-are-written)), neither of them ignored (`[IgnoreDataMember]`, `[JsonIgnore]`, `[XmlIgnore]`, MessagePack's `[IgnoreMember]`, `[NonSerialized]` on a field...). A property without a setter and a readonly field are written but never set from the data, so only LSMP009 applies to them.
 

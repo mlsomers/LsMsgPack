@@ -96,14 +96,26 @@ namespace LsMsgPack.Analyzers
         case "LsMsgPackMvc":
           return false;
       }
+      // Unity's engine: its structs are written as the framework's (Core's SerializationRules.IsEngineAssembly, the generator's TypeWalker.IsEngine), not as models of another project
+      if (assembly.Name == "UnityEngine" || assembly.Name.StartsWith("UnityEngine.", StringComparison.Ordinal))
+        return false;
+      return !IsMarked(assembly) && !IsPackage(_compilation.GetMetadataReference(assembly) as PortableExecutableReference);
+    }
+
+    /// <summary>
+    /// The assembly says its classes are checked: <c>[assembly: AssemblyMetadata("LsMsgPackAnalyze", "AllTypes")]</c>, which the SDK writes for <c>LsMsgPackAnalyze</c> = <c>AllTypes</c>
+    /// (or the project itself, without MSBuild: Unity's assembly definitions).
+    /// </summary>
+    internal static bool IsMarked(IAssemblySymbol assembly)
+    {
       foreach (AttributeData attribute in assembly.GetAttributes())
       {
         if (attribute.AttributeClass?.ToDisplayString() == "System.Reflection.AssemblyMetadataAttribute" && attribute.ConstructorArguments.Length == 2
           && attribute.ConstructorArguments[0].Value as string == MarkerKey
           && string.Equals((attribute.ConstructorArguments[1].Value as string)?.Trim(), "AllTypes", StringComparison.OrdinalIgnoreCase))
-          return false;
+          return true;
       }
-      return !IsPackage(_compilation.GetMetadataReference(assembly) as PortableExecutableReference);
+      return false;
     }
 
     /// <summary>

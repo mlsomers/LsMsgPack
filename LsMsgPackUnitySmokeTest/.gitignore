@@ -17,11 +17,13 @@ Project/*.csproj
 Project/*.sln
 Repro/*.csproj
 Repro/*.sln
-# Copied or written by run.sh and the build scripts: the libraries and the generator (only the generator's .meta is kept: its label RoslynAnalyzer), link.xml, the scenes
+# Copied or written by run.sh and the build scripts: the libraries, the generator and the analyzers (only their .meta files are kept: the label RoslynAnalyzer), link.xml, the analyzer samples' stamp, the scenes
 Project/Assets/Plugins/LsMsgPack/*.dll
 Project/Assets/Plugins/LsMsgPack/*.dll.meta
 Project/Assets/Plugins/LsMsgPack/Analyzers/*.dll
 Project/Assets/link.xml
+Project/Assets/AnalyzerSamples/Stamp.cs
+Project/Assets/AnalyzerSamples/Stamp.cs.meta
 Project/Assets/link.xml.meta
 Project/Assets/Scenes/
 Project/Assets/Scenes.meta

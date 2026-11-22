@@ -60,7 +60,7 @@ namespace LsMsgPack.Analyzers
       types.CollectSourceTypes(compilation.Assembly.GlobalNamespace, cancellation);
       types.CollectOptionsConverters(compilation, cancellation);
 
-      if (AllTypes(options))
+      if (AllTypes(compilation, options))
         for (int t = 0; t < types._sourceTypes.Count; t++)
         {
           INamedTypeSymbol type = types._sourceTypes[t];
@@ -77,12 +77,13 @@ namespace LsMsgPack.Analyzers
     }
 
     /// <summary>
-    /// The MSBuild property <c>LsMsgPackAnalyze</c> = <c>AllTypes</c>: every public class and struct of the project is checked, also when it references only LsMsgPack.Core.
+    /// The MSBuild property <c>LsMsgPackAnalyze</c> = <c>AllTypes</c>, or the attribute it writes into the assembly (<see cref="OtherAssemblies.IsMarked"/>: projects without MSBuild, Unity's
+    /// assembly definitions): every public class and struct of the project is checked, also when it references only LsMsgPack.Core.
     /// </summary>
-    public static bool AllTypes(AnalyzerOptions options)
+    public static bool AllTypes(Compilation compilation, AnalyzerOptions options)
     {
-      return options.AnalyzerConfigOptionsProvider.GlobalOptions.TryGetValue("build_property.LsMsgPackAnalyze", out string analyze)
-        && string.Equals(analyze?.Trim(), "AllTypes", StringComparison.OrdinalIgnoreCase);
+      return (options.AnalyzerConfigOptionsProvider.GlobalOptions.TryGetValue("build_property.LsMsgPackAnalyze", out string analyze)
+        && string.Equals(analyze?.Trim(), "AllTypes", StringComparison.OrdinalIgnoreCase)) || OtherAssemblies.IsMarked(compilation.Assembly);
     }
 
     /// <summary>
