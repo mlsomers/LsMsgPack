@@ -50,6 +50,15 @@ namespace LsMsgPackUnitTests
     public float Speed { get { return _speed; } }
   }
 
+  /// <summary>
+  /// System.Numerics' Vector3 next to Unity's: both are written as "Vector3" with short type names.
+  /// </summary>
+  public class UnityNumericsHolder
+  {
+    public string Name { get; set; }
+    public System.Numerics.Vector3 Point { get; set; }
+  }
+
   #endregion
 
   /// <summary>
@@ -62,16 +71,14 @@ namespace LsMsgPackUnitTests
 
     private static readonly MsgPackSettings Untyped = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
 
-    // Full type names in the schema: this process reads System.Numerics.Vector3 too (other tests), and a short name ("Vector3") resolves to one type per process (docs/Unity.md)
-    private const AddTypeIdOption FullNames = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName;
-
     private static IEnumerable<MsgPackSettings> AllSettings()
     {
-      yield return new MsgPackSettings() { AddTypeIdOptions = FullNames };
-      yield return new MsgPackSettings() { AddTypeIdOptions = FullNames, ObjectLayout = ObjectLayout.Map };
+      yield return new MsgPackSettings();
+      yield return new MsgPackSettings() { ObjectLayout = ObjectLayout.Map };
+      yield return new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName };
       yield return new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
       yield return new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array };
-      yield return new MsgPackSettings() { AddTypeIdOptions = FullNames, ReferenceHandling = ReferenceHandling.Preserve };
+      yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve };
     }
 
     private static UnityGameState GameState()
@@ -100,6 +107,26 @@ namespace LsMsgPackUnitTests
       {
         UnityGameState state = GameState();
         Assert.AreEqual(state, Serializer.Deserialize<UnityGameState>(Serializer.Serialize(state, settings), settings));
+      }
+    }
+
+    [TestMethod]
+    public void ShortTypeNames_BothVector3s_EitherOrder()
+    {
+      // "Vector3" resolves to one type per process (whichever was asked first, also by other tests): the reader pairs the entry with the Vector3 its property declares
+      foreach (MsgPackSettings settings in new[] { new MsgPackSettings(), new MsgPackSettings() { ObjectLayout = ObjectLayout.Map }, new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve } })
+      {
+        for (int round = 0; round < 2; round++)
+        {
+          UnityNumericsHolder numerics = new UnityNumericsHolder() { Name = "n", Point = new System.Numerics.Vector3(1.5f, -2, 3) };
+          UnityGameState state = GameState();
+          if (round == 0)
+            Assert.AreEqual(state, Serializer.Deserialize<UnityGameState>(Serializer.Serialize(state, settings), settings));
+          UnityNumericsHolder read = Serializer.Deserialize<UnityNumericsHolder>(Serializer.Serialize(numerics, settings), settings);
+          Assert.AreEqual(numerics.Point, read.Point);
+          Assert.AreEqual("n", read.Name);
+          Assert.AreEqual(state, Serializer.Deserialize<UnityGameState>(Serializer.Serialize(state, settings), settings));
+        }
       }
     }
 

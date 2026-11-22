@@ -124,7 +124,8 @@ namespace LsMsgPackUnitySmoke
         log("game: Vector2Int's properties were stripped, the runtime plans write it as an empty object (keep it with a link.xml, or use the generator)");
       foreach ((string name, Func<LsMsgPackOptions> options) in new (string, Func<LsMsgPackOptions>)[]
       {
-        // Full type names: the invoice's System.Numerics.Vector3 is read in this process too, and a short name ("Vector3") resolves to one type per process
+        // Short type names: the invoice's System.Numerics.Vector3 was read in this process first, so "Vector3" resolves to it; the reader pairs the entry with the declared UnityEngine.Vector3
+        ("game-default", () => new LsMsgPackOptions()),
         ("game-full-names", () => new LsMsgPackOptions() { AddTypeIdOptions = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName }),
         ("game-names-map", () => new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }),
       })

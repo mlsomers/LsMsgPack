@@ -35,7 +35,10 @@ Write your own data classes, not `MonoBehaviour`s or `ScriptableObject`s: Unity 
 
 ### Short type names
 
-Type names in the schema and type ids are short by default (`Vector3`, not `UnityEngine.Vector3`), and a process resolves a short name to one type. A process that also reads `System.Numerics.Vector3` (or a class of its own named `Vector3`) can then read only one of them. Write full names with `AddTypeIdOptions = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName`, or use one `Vector3`.
+Type names in the schema and type ids are short by default (`Vector3`, not `UnityEngine.Vector3`), and a process resolves a short name to one type. A reader that declares `UnityEngine.Vector3` where the schema says `Vector3` reads it as such, also in a process that resolved `Vector3` to `System.Numerics.Vector3` (see [type names](schema.md#polymorphic-class-hierarchy-support)). Two cases still need full names (`AddTypeIdOptions = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName`), or one `Vector3`:
+
+- one payload with both `Vector3`s: its schema has two entries with the same name;
+- a type id of a `Vector3` in a member declared as `object` or an interface: the reader has no declared `Vector3` to pair it with.
 
 ## Fields
 
