@@ -583,8 +583,12 @@ namespace LsMsgPack.Meta
         FullPropertyInfo prop = props[t];
         if (!Population.MayPopulate(prop) || Population.Of(prop, settings) != MemberPopulation.Into || !propVals.TryGetValue(prop.PropertyId, out object propval))
           continue;
-        if (Populated(prop, instance, propval, settings, differences))
-          (done ?? (done = new bool[props.Length]))[t] = true;
+        if (!Populated(prop, instance, propval, settings, differences))
+          continue;
+        // Not (done ?? (done = new bool[n]))[t] = true: the trim analyzer of the .NET 10 SDK crashes on that element write (AD0001, KeyNotFoundException)
+        if (done is null)
+          done = new bool[props.Length];
+        done[t] = true;
       }
       return done;
     }
