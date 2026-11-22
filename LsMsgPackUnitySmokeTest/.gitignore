@@ -5,6 +5,8 @@ Library/
 Logs/
 Temp/
 UserSettings/
+# The Android build's CMake/Gradle temp folder
+.utmp/
 Builds/
 out/
 golden.txt

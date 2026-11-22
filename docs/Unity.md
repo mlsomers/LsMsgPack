@@ -1,6 +1,6 @@
 ﻿# Unity
 
-LsMsgPack runs in Unity 6, in the editor and in players built with either scripting backend (Mono or IL2CPP), with the same bytes and values as on .NET. It is tested with Unity 6000.6 on Linux: in the editor, a Mono player, IL2CPP players and WebGL players (in Firefox), at the Minimal and High managed stripping levels (`LsMsgPackUnitySmokeTest` in the repository). Android, iOS and consoles aren't tested yet.
+LsMsgPack runs in Unity 6, in the editor and in players built with either scripting backend (Mono or IL2CPP), with the same bytes and values as on .NET. It is tested with Unity 6000.6 on Linux: in the editor, a Mono player, IL2CPP players, WebGL players (in Firefox) and Android players (IL2CPP, ARM64, on a phone with Android 17), at the Minimal and High managed stripping levels (`LsMsgPackUnitySmokeTest` in the repository). iOS and consoles aren't tested yet.
 
 ## Setup
 
@@ -85,7 +85,7 @@ LsMsgPackOptions options = new LsMsgPackOptions()
 
 ## IL2CPP
 
-IL2CPP compiles ahead of time, so LsMsgPack can't compile its accessors and plans at runtime and uses reflection, about 2.8x slower than with the generated code. Per invoice of the smoke test (2 KB, Unity 6000.6, Linux x64; WebGL in Firefox on the same machine):
+IL2CPP compiles ahead of time, so LsMsgPack can't compile its accessors and plans at runtime and uses reflection, about 2.8x slower than with the generated code. Per invoice of the smoke test (2 KB, Unity 6000.6, Linux x64; WebGL in Firefox on the same machine; Android on a Samsung Galaxy A17):
 
 | | Write | Read |
 |---|---:|---:|
@@ -94,6 +94,8 @@ IL2CPP compiles ahead of time, so LsMsgPack can't compile its accessors and plan
 | IL2CPP, with the generator | 45 µs | 89 µs |
 | WebGL, without the generator | 128 µs | 272 µs |
 | WebGL, with the generator | 59 µs | 109 µs |
+| Android, without the generator | 264 µs | 564 µs |
+| Android, with the generator | 98 µs | 201 µs |
 
 WebGL has no threads: LsMsgPack works on the page's thread without changes.
 

@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# Unity smoke test of LsMsgPack: .NET 10 writes golden.txt, Unity checks it in the editor (Mono JIT), in Linux players (Mono, IL2CPP per stripping level) and in WebGL players (headless Firefox).
-# Usage: run.sh [editor|mono|il2cpp-<level>|webgl-<level>...]   (default: editor mono il2cpp-Minimal il2cpp-High il2cpp-High+keep webgl-Minimal; +keep: with a link.xml keeping the model)
+# Unity smoke test of LsMsgPack: .NET 10 writes golden.txt, Unity checks it in the editor (Mono JIT), in Linux players (Mono, IL2CPP per stripping level), in WebGL players (headless Firefox)
+# and in Android players (a phone or emulator on adb).
+# Usage: run.sh [editor|mono|il2cpp-<level>|webgl-<level>|android-<level>...]   (default: editor mono il2cpp-Minimal il2cpp-High il2cpp-High+keep webgl-Minimal, and android-Minimal when adb has a device; +keep: with a link.xml keeping the model)
 set -uo pipefail
 cd "$(dirname "$0")"
 here=$(pwd)
 unity=${UNITY:-$HOME/Unity/Hub/Editor/6000.6.10f1/Editor/Unity}
 out="$here/out"
 mkdir -p "$out"
+adb=${ADB:-$HOME/Android/Sdk/platform-tools/adb}
+[ -x "$adb" ] || adb=$(dirname "$unity")/Data/PlaybackEngines/AndroidPlayer/SDK/platform-tools/adb
 steps=("$@")
-[ ${#steps[@]} -eq 0 ] && steps=(editor mono il2cpp-Minimal il2cpp-High il2cpp-High+keep webgl-Minimal)
+if [ ${#steps[@]} -eq 0 ]; then
+  steps=(editor mono il2cpp-Minimal il2cpp-High il2cpp-High+keep webgl-Minimal)
+  [ "$("$adb" get-state 2>/dev/null)" = device ] && steps+=(android-Minimal) || echo "no Android device on adb: android steps left out"
+fi
 
 # The libraries' netstandard2.1 builds into Assets/Plugins (what a Unity project takes from NuGet)
 dotnet build Libs/Libs.csproj -c Release -v q -nologo > "$out/libs.log" || { cat "$out/libs.log"; exit 1; }
@@ -53,10 +59,10 @@ for step in "${steps[@]}"; do
         echo "$step: build failed ($out/build-$step.log)"; grep -E "error CS|Error|\[smoke\]" "$out/build-$step.log" | head -20
       else
         grep "\[smoke\] build" "$out/build-$step.log"
-        # The page fetches golden.txt and posts its report to webgl-serve.py; Firefox writes the page's console to its output (a profile under out/: snap's Firefox has its own /tmp)
+        # The page fetches golden.txt and posts its report to serve.py; Firefox writes the page's console to its output (a profile under out/: snap's Firefox has its own /tmp)
         rm -f "$out/port" && profile="$out/firefox-$step" && rm -rf "$profile" && mkdir -p "$profile"
         printf 'user_pref("devtools.console.stdout.content", true);\nuser_pref("browser.shell.checkDefaultBrowser", false);\nuser_pref("datareporting.policy.dataSubmissionEnabled", false);\n' > "$profile/user.js"
-        python3 webgl-serve.py "$player" "$here/golden.txt" "$out/$step.txt" "$out/port" 600 2> "$out/serve-$step.log" &
+        python3 serve.py "$player" "$here/golden.txt" "$out/$step.txt" "$out/port" 600 2> "$out/serve-$step.log" &
         serve=$!
         for i in $(seq 50); do [ -s "$out/port" ] && break; sleep 0.1; done
         firefox --headless --no-remote --profile "$profile" "http://127.0.0.1:$(cat "$out/port")/index.html" > "$out/$step.log" 2>&1 &
@@ -65,6 +71,44 @@ for step in "${steps[@]}"; do
         code=$?
         kill $browser 2>/dev/null; wait $browser 2>/dev/null
         [ $code -eq 3 ] && { echo "$step: no report within 10 minutes ($out/$step.log)"; grep -iE "error|exception|abort|\[smoke\]" "$out/$step.log" | head -20; }
+      fi;;
+    android-*)
+      keep=()
+      stripping=${step#android-}
+      if [[ "$stripping" == *+keep ]]; then stripping=${stripping%+keep}; keep=(-keep); fi
+      player="$here/Builds/$step.apk"
+      "$unity" -batchmode -nographics -projectPath Project -executeMethod LsMsgPackUnitySmoke.Editor.SmokeBuild.Build -target Android -stripping $stripping "${keep[@]}" -player "$player" -logFile "$out/build-$step.log"
+      code=$?
+      if [ $code -ne 0 ]; then
+        echo "$step: build failed ($out/build-$step.log)"; grep -E "error CS|Error|\[smoke\]" "$out/build-$step.log" | head -20
+      elif ! "$adb" install -r "$player" > "$out/install-$step.log" 2>&1; then
+        echo "$step: adb install failed"; cat "$out/install-$step.log"; code=1
+      else
+        grep "\[smoke\] build" "$out/build-$step.log"
+        # The app fetches golden.txt and posts its report to 127.0.0.1:8765 on the phone (WebRunner.AndroidPort), forwarded to serve.py with adb reverse; Unity's log comes from logcat
+        rm -f "$out/port"
+        python3 serve.py "$out" "$here/golden.txt" "$out/$step.txt" "$out/port" 600 2> "$out/serve-$step.log" &
+        serve=$!
+        for i in $(seq 50); do [ -s "$out/port" ] && break; sleep 0.1; done
+        "$adb" reverse tcp:8765 tcp:$(cat "$out/port") > /dev/null
+        "$adb" logcat -c
+        "$adb" logcat -s Unity:V CRASH:V AndroidRuntime:E DEBUG:V > "$out/$step.log" 2>&1 &
+        logcat=$!
+        "$adb" shell am force-stop com.lsmsgpack.smoke
+        # Behind the lock screen Android pauses the app at once: wake the screen, and wait for someone to unlock it
+        "$adb" shell input keyevent KEYCODE_WAKEUP
+        for i in $(seq 120); do
+          "$adb" shell dumpsys window | grep -q "isKeyguardShowing=true" || break
+          [ $i -eq 1 ] && echo "$step: unlock the phone (waiting 2 minutes)"
+          sleep 1
+        done
+        "$adb" shell monkey -p com.lsmsgpack.smoke -c android.intent.category.LAUNCHER 1 > /dev/null 2>&1
+        wait $serve
+        code=$?
+        "$adb" shell am force-stop com.lsmsgpack.smoke
+        "$adb" reverse --remove tcp:8765 > /dev/null 2>&1
+        kill $logcat 2>/dev/null; wait $logcat 2>/dev/null
+        [ $code -eq 3 ] && { echo "$step: no report within 10 minutes (phone locked? $out/$step.log)"; grep -iE "error|exception|abort|crash|\[smoke\]" "$out/$step.log" | head -20; }
       fi;;
     mono|il2cpp-*)
       keep=()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Serves a WebGL build of the smoke test for one run (run.sh): GET /golden.txt is the golden file, POST /result (the player's report, WebRunner.cs)
+"""Serves a WebGL build of the smoke test, or only golden.txt for an Android player (through adb reverse), for one run (run.sh): GET /golden.txt is the golden file, POST /result (the player's report, WebRunner.cs)
 is written to the output file and stops the server; the exit code is the player's (1: failures, 3: no report before the timeout).
-Usage: webgl-serve.py <build folder> <golden.txt> <output.txt> <port file> [timeout seconds]"""
+Usage: serve.py <build folder> <golden.txt> <output.txt> <port file> [timeout seconds]"""
 import functools, http.server, sys, threading, urllib.parse
 
 build, golden, output, port_file = sys.argv[1:5]

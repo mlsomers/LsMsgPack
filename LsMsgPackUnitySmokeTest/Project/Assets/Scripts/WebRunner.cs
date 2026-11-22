@@ -6,10 +6,13 @@ using UnityEngine.Networking;
 namespace LsMsgPackUnitySmoke
 {
   /// <summary>
-  /// The checks in a WebGL player, which has no command line or files: fetches golden.txt from the page's server (webgl-serve.py) and posts the report to its /result.
+  /// The checks in a WebGL or Android player, which get no command line or files: fetches golden.txt from run.sh's server (serve.py) and posts the report to its /result.
+  /// WebGL: the page's own server; Android: port <see cref="AndroidPort"/> on the phone, which run.sh forwards to the server with adb reverse.
   /// </summary>
   public class WebRunner : MonoBehaviour
   {
+    public const int AndroidPort = 8765;
+
     private IEnumerator Start()
     {
       string golden = null;
@@ -34,11 +37,18 @@ namespace LsMsgPackUnitySmoke
         if (post.result != UnityWebRequest.Result.Success)
           Debug.Log("[smoke] posting the report failed: " + post.error);
       }
+#if UNITY_ANDROID
+      Application.Quit(failures == 0 ? 0 : 1);
+#endif
     }
 
     private static string Url(string path)
     {
+#if UNITY_ANDROID
+      return $"http://127.0.0.1:{AndroidPort}/{path}";
+#else
       return new System.Uri(new System.Uri(Application.absoluteURL), path).ToString();
+#endif
     }
   }
 }

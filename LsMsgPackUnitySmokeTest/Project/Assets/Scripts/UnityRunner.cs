@@ -62,8 +62,8 @@ namespace LsMsgPackUnitySmoke
     {
       if (Application.isEditor)
         return;
-#if UNITY_WEBGL
-      // No command line or files in a browser: WebRunner fetches golden.txt and posts the report to the page's server (webgl-serve.py)
+#if UNITY_WEBGL || UNITY_ANDROID
+      // No command line or files in a browser or on a phone: WebRunner fetches golden.txt and posts the report to run.sh's server (serve.py)
       new GameObject("smoke").AddComponent<WebRunner>();
 #else
       string golden = Argument("-golden");
@@ -105,6 +105,8 @@ namespace LsMsgPackUnitySmoke
       {
 #if UNITY_WEBGL && !UNITY_EDITOR
         string backend = "IL2CPP WebGL";
+#elif UNITY_ANDROID && !UNITY_EDITOR
+        string backend = "IL2CPP Android " + SystemInfo.operatingSystem + ", " + SystemInfo.deviceModel + ", " + SystemInfo.processorType;
 #elif ENABLE_IL2CPP
         string backend = "IL2CPP";
 #else
