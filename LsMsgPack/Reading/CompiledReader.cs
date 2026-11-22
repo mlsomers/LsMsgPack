@@ -23,6 +23,9 @@ namespace LsMsgPack.Reading
 
   internal delegate bool CompiledRefReadMap<T>(ReadContext c, ref T o, ReadPlan plan, PropReader[] bound, int count, GeneratedReadPlan p);
 
+  /// <param name="finish">The array ends after <paramref name="items"/>: the object is created, otherwise the values go to <paramref name="o"/> for the runtime's loop</param>
+  internal delegate void CompiledReadArguments(ReadContext c, ConstructorValues o, PropReader[] props, int items, bool finish, GeneratedReadPlan p);
+
   /// <summary>
   /// The reader of one <see cref="ReadPlan"/> compiled at runtime (see <see cref="CompiledReader"/>).
   /// </summary>
@@ -336,6 +339,82 @@ namespace LsMsgPack.Reading
   }
 
   /// <summary>
+  /// The reader of a type created by the constructor that takes its values (<see cref="ReadPlan.WithValues"/>: C# positional records, F# records and union cases), compiled at runtime
+  /// (<see cref="CompiledReader.CreateWithValues"/>). The target is the plan's <see cref="ConstructorValues"/>: the values of the parameters are read into typed locals and the constructor
+  /// is called by the compiled code, so nothing is boxed and no array is made for them; the runtime's loop (<see cref="ArgumentReader"/>s) gets them when this code hands an object over.
+  /// </summary>
+  internal sealed class CompiledValuesReader : GeneratedObjectCode, ICompiledReader
+  {
+    private readonly CompiledReads _reads;
+    private readonly ConstructorPlan _plan;
+    private CompiledReadArguments _positional;
+    private CompiledReadMap<ConstructorValues> _map;
+
+    public CompiledValuesReader(CompiledReads reads, ConstructorPlan plan) : base(null, null, GeneratedCapabilities.ReadPositional | GeneratedCapabilities.ReadPositionalNil | GeneratedCapabilities.ReadMap | GeneratedCapabilities.ReadFormats)
+    {
+      _reads = reads;
+      _plan = plan;
+      reads.SetOwner(this);
+    }
+
+    public void Compile(bool map)
+    {
+      if (map)
+        _map = _reads.Keys is null ? CompiledReader.Map<CompiledReadMap<ConstructorValues>>(_reads.Type, false, _reads.Members, _plan) : CompiledReader.Names<CompiledReadMap<ConstructorValues>>(_reads.Type, false, _reads.Members, _reads.Keys, _plan);
+      else
+        _positional = CompiledReader.Positional<CompiledReadArguments>(_reads.Type, false, _reads.Members, _plan);
+      _reads.Compiled(map);
+    }
+
+    public bool IsCompiled(bool map)
+    {
+      return map ? _map != null : _positional != null;
+    }
+
+    internal override void ReadPositionalBoxed(ReadContext c, object target, PropReader[] props, int items, GeneratedReadPlan p)
+    {
+      CompiledReadArguments positional = _positional;
+      int direct = 0;
+      if (positional is null)
+        _reads.Ask(false);
+      else
+      {
+        int limit = _reads.Limit(props, c);
+        direct = items < limit ? items : limit;
+        positional(c, Unsafe.As<ConstructorValues>(target), props, direct, direct == items, p); // the plan's ConstructorPlan.Collect
+      }
+      if (direct < items)
+        CompiledReader.Rest(c, target, props, direct, items);
+    }
+
+    internal override bool ReadMapBoxed(ReadContext c, object target, ReadPlan plan, PropReader[] bound, int count, GeneratedReadPlan p)
+    {
+      CompiledReadMap<ConstructorValues> map = _map;
+      if (map is null)
+      {
+        _reads.Ask(true);
+        return CompiledReader.Entries(c, target, plan, bound, count);
+      }
+      return map(c, Unsafe.As<ConstructorValues>(target), plan, bound, count, p);
+    }
+
+    internal override bool ReadValueBoxed(ReadContext c, object target, int id, GeneratedReadPlan p)
+    {
+      return false;
+    }
+
+    internal override int WriteBoxed(WriteContext c, object value, byte[][] keys, FullPropertyInfo[] infos, GeneratedWritePlan p, out int end)
+    {
+      throw new NotSupportedException();
+    }
+
+    internal override void WriteUnrolledBoxed(WriteContext c, object value, FullPropertyInfo[] infos, GeneratedWritePlan p)
+    {
+      throw new NotSupportedException();
+    }
+  }
+
+  /// <summary>
   /// Readers compiled per <see cref="ReadPlan"/> at runtime (<see cref="LsMsgPackOptions.CompileReadersAfter"/>): the code of the source generator's readers as expression trees, so the per property
   /// costs of the runtime's plans go for the values of simple types (a virtual call and a setter delegate per property: <see cref="PropReader{TTarget, TValue}"/>). The counterpart of the compiled writers (CompiledWriter).
   /// <para>Per plan. Arrays are read straight-line: position t is the plan's property t (see <see cref="CompiledReads.Limit"/>). Maps with the indexed schema by a loop over the keys with a switch over
@@ -378,6 +457,48 @@ namespace LsMsgPack.Reading
         Kind = kind;
         HasDefaultValue = hasDefaultValue;
       }
+
+      /// <summary>
+      /// A constructor with values (<see cref="CreateWithValues"/>): the local holding the value of the parameter that takes this property, null for a property set after the constructor
+      /// (read by its <see cref="ArgumentReader"/> into the collected values).
+      /// </summary>
+      internal ParameterExpression Argument;
+
+      /// <summary>
+      /// The position of that parameter.
+      /// </summary>
+      internal int ArgumentIndex;
+
+      /// <summary>
+      /// A constructor with values: the local holding the value of a property no parameter takes, set after the constructor when its <see cref="Bit"/> is seen (a class; null for the
+      /// properties their ArgumentReader reads, and for parameters).
+      /// </summary>
+      internal ParameterExpression After;
+
+      /// <summary>
+      /// The position of the value of <see cref="After"/> in the collected values (<see cref="ArgumentReader.Index"/>).
+      /// </summary>
+      internal int AfterIndex;
+
+      /// <summary>
+      /// The parameter's bit in <see cref="ConstructorValues.Awaited"/> (<see cref="ArgumentReader.Bit"/>).
+      /// </summary>
+      internal ulong Bit;
+
+      /// <summary>
+      /// The reader of the parameter's type (a <see cref="ValueReader{T}"/>, <see cref="ArgumentReader.Reader"/>): a value this code does not read itself.
+      /// </summary>
+      internal ValueReader Reader;
+
+      /// <summary>
+      /// The property, passed to <see cref="Reader"/> as ArgumentReader does.
+      /// </summary>
+      internal FullPropertyInfo Property;
+
+      /// <summary>
+      /// The value a nil of the array layout sets (<see cref="ArgumentReader.Nil"/>).
+      /// </summary>
+      internal object Nil;
     }
 
     /// <returns>The code for the plan's properties, with the reader of the options' layout compiled; null when this type is not compiled (nothing to gain: no property this code reads itself)</returns>
@@ -417,6 +538,76 @@ namespace LsMsgPack.Reading
     }
 
     /// <summary>
+    /// The reader of a type created by the constructor that takes its values (<see cref="CompiledValuesReader"/>): the properties the parameters take are read into typed locals (the values of the
+    /// types this code reads itself as <see cref="Create"/>'s code, the others by the typed reader of their type), the constructor is called by a `new` expression, the other properties are left to
+    /// their <see cref="ArgumentReader"/>s (set after the constructor, as the runtime's loop sets the ones read before it).
+    /// </summary>
+    /// <returns>Null when this type is not compiled: more than 63 parameters (they share a bit, ArgumentReader.Bit), a parameter whose type is not its property's, a reader that is not typed</returns>
+    /// <exception cref="Exception">The reader could not be compiled</exception>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
+    internal static GeneratedObjectCode CreateWithValues(Serializer serializer, Type type, FullPropertyInfo[] infos, PropReader[] props, ConstructorPlan plan)
+    {
+      ConstructorInfo constructor = plan.Constructor.WithValues;
+      ParameterInfo[] parameters = constructor.GetParameters();
+      if (type.ContainsGenericParameters || parameters.Length > 63)
+        return null;
+      for (int t = parameters.Length - 1; t >= 0; t--)
+        if (parameters[t].ParameterType.IsByRef || parameters[t].ParameterType.IsPointer)
+          return null;
+
+      Member[] members = new Member[infos.Length];
+      bool any = false;
+      int afterBit = parameters.Length; // the bits of the properties set after the constructor follow the parameters' (ConstructorValues.Awaited has the parameters' only)
+      for (int t = 0; t < infos.Length; t++)
+      {
+        FullPropertyInfo info = infos[t];
+        ArgumentReader argument = props[t] as ArgumentReader;
+        if (argument is null) // computed (ComputedPropReader)
+        {
+          members[t] = new Member(info.Member, info.DeclaredType, GeneratedKind.None, false);
+          continue;
+        }
+        if (!argument.IsParameter) // set after the constructor: by this code when it reads the value itself (a class; a struct would be set in a copy), otherwise by its ArgumentReader
+        {
+          GeneratedKind afterKind = GeneratedKind.None;
+          if (!type.IsValueType && afterBit < 64 && CanSet(info.Member) && info.Member.DeclaringType.IsAssignableFrom(type) && info.MemberConverter is null)
+            afterKind = serializer.ReadKind(info.DeclaredType);
+          Member after = new Member(info.Member, info.DeclaredType, afterKind, info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)));
+          if (afterKind != GeneratedKind.None)
+          {
+            after.After = Expression.Variable(info.DeclaredType, "s" + argument.Index);
+            after.AfterIndex = argument.Index;
+            after.Bit = 1UL << afterBit++;
+          }
+          members[t] = after;
+          continue;
+        }
+        Type parameterType = parameters[argument.Index].ParameterType;
+        ValueReader reader = argument.Reader();
+        if (parameterType != info.DeclaredType || !typeof(ValueReader<>).MakeGenericType(parameterType).IsInstanceOfType(reader))
+          return null;
+        GeneratedKind kind = info.MemberConverter is null ? serializer.ReadKind(parameterType) : GeneratedKind.None; // a member's own converter: its reader
+        Member member = new Member(info.Member, parameterType, kind, info.CustomAttributes.ContainsKey(nameof(DefaultValueAttribute)));
+        member.Argument = Expression.Variable(parameterType, "a" + argument.Index);
+        member.ArgumentIndex = argument.Index;
+        member.Bit = argument.Bit;
+        member.Reader = reader;
+        member.Property = info;
+        member.Nil = argument.Nil;
+        members[t] = member;
+        any = true;
+      }
+      if (!any)
+        return null;
+
+      bool names = !serializer.Options._useInexedSchema;
+      CompiledReads reads = new CompiledReads(type, members, props, serializer.CompileReadersAfter == 0, names);
+      CompiledValuesReader code = new CompiledValuesReader(reads, plan);
+      code.Compile(serializer.Options._objectLayout != ObjectLayout.Array);
+      return code;
+    }
+
+    /// <summary>
     /// An instance property with a setter or a field that is not readonly: what an expression assigns (whatever its visibility; init-only setters too).
     /// </summary>
     private static bool CanSet(MemberInfo member)
@@ -431,6 +622,9 @@ namespace LsMsgPack.Reading
     }
 
     #region The runtime's loops (what the compiled code does not read)
+
+    private static readonly MethodInfo EntriesMethod = typeof(CompiledReader).GetMethod(nameof(Entries), BindingFlags.Static | BindingFlags.NonPublic, null,
+      new[] { typeof(ReadContext), typeof(object), typeof(ReadPlan), typeof(PropReader[]), typeof(int), typeof(int) }, null);
 
     /// <summary>
     /// The values of an array from position <paramref name="from"/> on, as ObjectReader.ReadPositional's loop reads them.
@@ -519,15 +713,19 @@ namespace LsMsgPack.Reading
     /// </summary>
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
-    internal static TDelegate Positional<TDelegate>(Type type, bool byRef, Member[] members) where TDelegate : Delegate
+    /// <param name="withValues">The type is created by this constructor with values (<see cref="CreateWithValues"/>, a <see cref="CompiledReadArguments"/>: at the end the object is created
+    /// when the array ends, otherwise the values go to the runtime's loop), null otherwise</param>
+    internal static TDelegate Positional<TDelegate>(Type type, bool byRef, Member[] members, ConstructorPlan withValues = null) where TDelegate : Delegate
     {
-      Builder b = new Builder(type, byRef, members);
+      Builder b = new Builder(type, byRef, members, withValues);
       ParameterExpression props = Expression.Parameter(typeof(PropReader[]), "props");
       ParameterExpression items = Expression.Parameter(typeof(int), "items");
       LabelTarget done = Expression.Label("done");
 
       List<Expression> body = new List<Expression>();
       body.Add(Expression.Assign(b.R, Expression.Field(b.C, nameof(ReadContext.R))));
+      if (b.Arguments)
+        body.Add(b.InitArguments());
       for (int t = 0; t < members.Length; t++)
       {
         body.Add(Expression.IfThen(Expression.LessThanOrEqual(items, Expression.Constant(t)), Expression.Return(done)));
@@ -535,7 +733,11 @@ namespace LsMsgPack.Reading
         body.Add(Expression.IfThenElse(b.TryReadNil(), b.Nil(t, prop), b.Value(t, prop, null)));
       }
       body.Add(Expression.Label(done));
-      return Expression.Lambda<TDelegate>(Expression.Block(typeof(void), b.Variables(), body), b.C, b.O, props, items, b.P).Compile();
+      if (!b.Arguments)
+        return Expression.Lambda<TDelegate>(Expression.Block(typeof(void), b.Variables(), body), b.C, b.O, props, items, b.P).Compile();
+      ParameterExpression finish = Expression.Parameter(typeof(bool), "finish");
+      body.Add(Expression.IfThenElse(finish, b.Construct(), b.Spill()));
+      return Expression.Lambda<TDelegate>(Expression.Block(typeof(void), b.Variables(), body), b.C, b.O, props, items, finish, b.P).Compile();
     }
 
     /// <summary>
@@ -545,9 +747,11 @@ namespace LsMsgPack.Reading
     /// </summary>
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
-    internal static TDelegate Map<TDelegate>(Type type, bool byRef, Member[] members) where TDelegate : Delegate
+    /// <param name="withValues">The type is created by this constructor with values (<see cref="CreateWithValues"/>): every parameter has a case; a parameter's key seen before (a duplicate) hands
+    /// the object to the runtime's loop, which calls the constructor when the last parameter is read and skips a parameter after that. Null otherwise</param>
+    internal static TDelegate Map<TDelegate>(Type type, bool byRef, Member[] members, ConstructorPlan withValues = null) where TDelegate : Delegate
     {
-      Builder b = new Builder(type, byRef, members);
+      Builder b = new Builder(type, byRef, members, withValues);
       ParameterExpression plan = Expression.Parameter(typeof(ReadPlan), "plan");
       ParameterExpression bound = Expression.Parameter(typeof(PropReader[]), "bound");
       ParameterExpression count = Expression.Parameter(typeof(int), "count"); // counted down: the entries left
@@ -558,6 +762,7 @@ namespace LsMsgPack.Reading
       ParameterExpression other = Expression.Variable(typeof(PropReader), "other");
       LabelTarget end = Expression.Label(typeof(bool), "end");
       LabelTarget again = Expression.Label("again");
+      LabelTarget finish = Expression.Label("finish");
       Expression position = Expression.Field(b.R, nameof(MsgPackReader.Pos));
       MethodInfo tryReadKey = typeof(GeneratedIO).GetMethod(nameof(GeneratedIO.TryReadKey));
       MethodInfo skip = typeof(MsgPackReader).GetMethod(nameof(MsgPackReader.Skip));
@@ -577,11 +782,18 @@ namespace LsMsgPack.Reading
 
       List<SwitchCase> cases = new List<SwitchCase>();
       for (int t = 0; t < members.Length; t++)
-        if (members[t].Kind != GeneratedKind.None)
+      {
+        Member member = members[t];
+        if (member.Argument != null) // a duplicate: the runtime's loop from here (the value of this key, then the entries left)
+          cases.Add(Expression.SwitchCase(Expression.IfThenElse(Expression.NotEqual(Expression.And(b.Seen, Expression.Constant(member.Bit)), Expression.Constant(0UL)),
+            Expression.Return(end, Expression.Block(b.Spill(), b.Runtime(prop), Expression.Call(EntriesMethod, b.C, b.O, plan, bound, count, Expression.Constant(0)))),
+            Expression.Block(typeof(void), b.Entry(t, prop))), Expression.Constant(t)));
+        else if (member.Kind != GeneratedKind.None)
           cases.Add(Expression.SwitchCase(Expression.Block(typeof(void), b.Entry(t, prop)), Expression.Constant(t)));
+      }
 
       List<Expression> loop = new List<Expression>();
-      loop.Add(Expression.IfThen(Expression.Equal(count, Expression.Constant(0)), Expression.Return(end, Expression.Constant(true))));
+      loop.Add(Expression.IfThen(Expression.Equal(count, Expression.Constant(0)), b.Arguments ? (Expression)Expression.Goto(finish) : Expression.Return(end, Expression.Constant(true))));
       loop.Add(Expression.PreDecrementAssign(count));
       loop.Add(key);
       loop.Add(Expression.IfThen(Expression.Equal(prop, Expression.Constant(null, typeof(PropReader))),
@@ -590,8 +802,15 @@ namespace LsMsgPack.Reading
 
       List<Expression> body = new List<Expression>();
       body.Add(Expression.Assign(b.R, Expression.Field(b.C, nameof(ReadContext.R))));
+      if (b.Arguments)
+        body.Add(b.InitArguments());
       body.Add(Expression.Assign(next, Expression.Constant(0)));
       body.Add(Expression.Loop(Expression.Block(typeof(void), loop), null, again));
+      if (b.Arguments)
+      {
+        body.Add(Expression.Label(finish));
+        body.Add(b.Construct());
+      }
       body.Add(Expression.Label(end, Expression.Constant(true)));
 
       List<ParameterExpression> variables = b.Variables();
@@ -612,40 +831,54 @@ namespace LsMsgPack.Reading
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
     [UnconditionalSuppressMessage("Trimming", "IL2060", Justification = Reason)]
-    internal static TDelegate Names<TDelegate>(Type type, bool byRef, Member[] members, byte[][] keys) where TDelegate : Delegate
+    /// <param name="withValues">The type is created by this constructor with values (<see cref="CreateWithValues"/>): created when the last entry is read here, otherwise the values go to the
+    /// runtime's loop with the entries left. Null otherwise</param>
+    internal static TDelegate Names<TDelegate>(Type type, bool byRef, Member[] members, byte[][] keys, ConstructorPlan withValues = null) where TDelegate : Delegate
     {
-      Builder b = new Builder(type, byRef, members);
+      Builder b = new Builder(type, byRef, members, withValues);
       ParameterExpression plan = Expression.Parameter(typeof(ReadPlan), "plan");
       ParameterExpression bound = Expression.Parameter(typeof(PropReader[]), "bound");
       ParameterExpression count = Expression.Parameter(typeof(int), "count"); // counted down: the entries left
       ParameterExpression next = Expression.Variable(typeof(int), "next");
       LabelTarget end = Expression.Label(typeof(bool), "end");
+      LabelTarget finish = Expression.Label("finish");
       Expression position = Expression.Field(b.R, nameof(MsgPackReader.Pos));
       Expression props = Expression.Field(plan, nameof(ReadPlan.Props));
       MethodInfo entries = byRef
         ? typeof(CompiledReader).GetMethods(BindingFlags.Static | BindingFlags.NonPublic).First(m => m.Name == nameof(Entries) && m.IsGenericMethodDefinition && m.GetParameters().Length == 6).MakeGenericMethod(type)
-        : typeof(CompiledReader).GetMethod(nameof(Entries), BindingFlags.Static | BindingFlags.NonPublic, null, new[] { typeof(ReadContext), typeof(object), typeof(ReadPlan), typeof(PropReader[]), typeof(int), typeof(int) }, null);
+        : EntriesMethod;
+      Expression allRead = b.Arguments ? (Expression)Expression.Goto(finish) : Expression.Return(end, Expression.Constant(true));
       MethodInfo keyIs = typeof(GeneratedIO).GetMethod(nameof(GeneratedIO.KeyIs));
       MethodInfo longKeyIs = typeof(GeneratedIO).GetMethod(nameof(GeneratedIO.LongKeyIs));
 
       List<Expression> body = new List<Expression>();
       body.Add(Expression.Assign(b.R, Expression.Field(b.C, nameof(ReadContext.R))));
+      if (b.Arguments)
+        body.Add(b.InitArguments());
       body.Add(Expression.Assign(next, Expression.Constant(0)));
-      body.Add(Expression.IfThen(Expression.Field(b.C, nameof(ReadContext.Schema)), Expression.Return(end, Expression.Call(entries, b.C, b.O, plan, bound, count, next)))); // not data this code is compiled for
+      body.Add(Expression.IfThen(Expression.Field(b.C, nameof(ReadContext.Schema)), Expression.Return(end, Expression.Call(entries, b.C, b.O, plan, bound, count, next)))); // not data this code is compiled for (nothing read: no values to hand over)
       for (int t = 0; t < members.Length; t++)
       {
         byte[] key = keys[t];
         Expression matches = key.Length <= 32
           ? Expression.Call(keyIs, b.R, Expression.Constant(key.Length), Expression.Constant(Word(key, 0)), Expression.Constant(Word(key, 8)), Expression.Constant(Word(key, 16)), Expression.Constant(Word(key, key.Length - Math.Min(8, WordSize(key.Length)))))
           : Expression.Call(longKeyIs, b.R, Expression.Constant(key));
-        body.Add(Expression.IfThen(Expression.Equal(count, Expression.Constant(0)), Expression.Return(end, Expression.Constant(true))));
+        body.Add(Expression.IfThen(Expression.Equal(count, Expression.Constant(0)), allRead));
         body.Add(Expression.IfThen(matches, Expression.Block(typeof(void),
           Expression.AddAssign(position, Expression.Constant(key.Length)),
           Expression.PreDecrementAssign(count),
           Expression.Assign(next, Expression.Constant(t + 1)),
           Expression.Block(typeof(void), b.Entry(t, Expression.ArrayIndex(props, Expression.Constant(t)))))));
       }
-      body.Add(Expression.Label(end, Expression.OrElse(Expression.Equal(count, Expression.Constant(0)), Expression.Call(entries, b.C, b.O, plan, bound, count, next))));
+      if (b.Arguments)
+      {
+        body.Add(Expression.IfThen(Expression.NotEqual(count, Expression.Constant(0)), Expression.Return(end, Expression.Block(b.Spill(), Expression.Call(entries, b.C, b.O, plan, bound, count, next)))));
+        body.Add(Expression.Label(finish));
+        body.Add(b.Construct());
+        body.Add(Expression.Label(end, Expression.Constant(true)));
+      }
+      else
+        body.Add(Expression.Label(end, Expression.OrElse(Expression.Equal(count, Expression.Constant(0)), Expression.Call(entries, b.C, b.O, plan, bound, count, next))));
 
       List<ParameterExpression> variables = b.Variables();
       variables.Add(next);
@@ -733,13 +966,60 @@ namespace LsMsgPack.Reading
       /// </summary>
       private readonly Dictionary<Type, ParameterExpression> _values = new Dictionary<Type, ParameterExpression>();
 
-      internal Builder(Type type, bool byRef, Member[] members)
+      /// <summary>
+      /// A constructor with values (<see cref="CreateWithValues"/>), null otherwise: <see cref="O"/> is its <see cref="ConstructorValues"/>.
+      /// </summary>
+      private readonly ConstructorPlan _plan;
+
+      /// <summary>
+      /// With <see cref="_plan"/>: the bits of the parameters read (<see cref="ConstructorPlan.Received"/>).
+      /// </summary>
+      internal readonly ParameterExpression Seen = Expression.Variable(typeof(ulong), "seen");
+
+      /// <summary>
+      /// With <see cref="_plan"/>: the local of each parameter whose property is read, by its position (null for the others: their initial value is a constant).
+      /// </summary>
+      private readonly ParameterExpression[] _arguments;
+
+      internal Builder(Type type, bool byRef, Member[] members, ConstructorPlan withValues = null)
       {
         _type = type;
         _byRef = byRef;
         _members = members;
-        O = Expression.Parameter(byRef ? type.MakeByRefType() : type, "o");
+        _plan = withValues;
+        if (withValues is null)
+        {
+          O = Expression.Parameter(byRef ? type.MakeByRefType() : type, "o");
+          return;
+        }
+        O = Expression.Parameter(typeof(ConstructorValues), "o");
+        _arguments = new ParameterExpression[withValues.Constructor.ParameterCount];
+        for (int t = 0; t < members.Length; t++)
+        {
+          if (members[t].Argument != null)
+          {
+            _arguments[members[t].ArgumentIndex] = members[t].Argument;
+            _parameterBits |= members[t].Bit;
+          }
+          else if (members[t].After != null)
+            _after.Add(members[t]);
+        }
       }
+
+      /// <summary>
+      /// With <see cref="_plan"/>: the properties set after the constructor by this code (<see cref="Member.After"/>).
+      /// </summary>
+      private readonly List<Member> _after = new List<Member>();
+
+      /// <summary>
+      /// The bits of the parameters in <see cref="Seen"/> (the others are properties set after the constructor).
+      /// </summary>
+      private readonly ulong _parameterBits;
+
+      /// <summary>
+      /// A reader for a constructor with values.
+      /// </summary>
+      internal bool Arguments { get { return _plan != null; } }
 
       internal List<ParameterExpression> Variables()
       {
@@ -747,7 +1027,131 @@ namespace LsMsgPack.Reading
         variables.Add(R);
         if (_usesStart)
           variables.Add(_start);
+        if (_plan != null)
+        {
+          variables.Add(Seen);
+          for (int t = 0; t < _arguments.Length; t++)
+            if (_arguments[t] != null)
+              variables.Add(_arguments[t]);
+          for (int t = 0; t < _after.Count; t++)
+            variables.Add(_after[t].After);
+        }
         return variables;
+      }
+
+      /// <returns>A constant of the type (null is its default)</returns>
+      private static Expression Typed(object value, Type type)
+      {
+        if (value is null || IsDefault(value))
+          return Expression.Default(type);
+        return Expression.Constant(value, type); // a struct other than a primitive or decimal is unboxed from the closure on every use
+      }
+
+      /// <summary>
+      /// The default of a struct the expressions would load from the closure (the value a nil sets is usually that default): compared by its bits.
+      /// </summary>
+      private static bool IsDefault(object value)
+      {
+        if (value is DateTime date)
+          return date.ToBinary() == 0; // Equals ignores the Kind
+        if (value is Guid guid)
+          return guid == Guid.Empty;
+        if (value is TimeSpan span)
+          return span.Ticks == 0;
+        return false;
+      }
+
+      /// <summary>
+      /// The locals of the parameters get their initial values (<see cref="ConstructorPlan.InitialOf"/>: the value a nil sets), none is seen.
+      /// </summary>
+      internal Expression InitArguments()
+      {
+        List<Expression> init = new List<Expression>();
+        init.Add(Expression.Assign(Seen, Expression.Constant(0UL)));
+        for (int t = 0; t < _arguments.Length; t++)
+          if (_arguments[t] != null)
+            init.Add(Expression.Assign(_arguments[t], Typed(_plan.InitialOf(t), _arguments[t].Type)));
+        return Expression.Block(typeof(void), init);
+      }
+
+      /// <summary>
+      /// The constructor called with the locals (an exception of it passes as it is), then the plan sets the other properties read (<see cref="ConstructorPlan.Constructed"/>).
+      /// </summary>
+      [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
+      internal Expression Construct()
+      {
+        ConstructorInfo constructor = _plan.Constructor.WithValues;
+        ParameterInfo[] parameters = constructor.GetParameters();
+        Expression[] arguments = new Expression[parameters.Length];
+        for (int t = 0; t < arguments.Length; t++)
+          arguments[t] = _arguments[t] ?? Typed(_plan.InitialOf(t), parameters[t].ParameterType);
+        MethodInfo constructed = typeof(ConstructorPlan).GetMethod(nameof(ConstructorPlan.Constructed), BindingFlags.Instance | BindingFlags.NonPublic);
+        if (_after.Count == 0) // Constructed sets ConstructorValues.Created
+          return Expression.Call(Expression.Constant(_plan), constructed, O, Expression.Convert(Expression.New(constructor, arguments), typeof(object))); // a struct: its box
+
+        // A class: the properties read here are set after the ones the runtime's readers put in the collected values (Constructed: after OnDeserializing)
+        ParameterExpression result = Expression.Variable(_type, "result");
+        List<Expression> body = new List<Expression>();
+        body.Add(Expression.Assign(result, Expression.New(constructor, arguments)));
+        body.Add(Expression.Call(Expression.Constant(_plan), constructed, O, result));
+        for (int t = 0; t < _after.Count; t++)
+        {
+          Member member = _after[t];
+          body.Add(Expression.IfThen(Expression.NotEqual(Expression.And(Seen, Expression.Constant(member.Bit)), Expression.Constant(0UL)),
+            Expression.Assign(Expression.MakeMemberAccess(result, member.Info), member.After)));
+        }
+        return Expression.Block(typeof(void), new[] { result }, body);
+      }
+
+      /// <summary>
+      /// The values of the parameters go to the collected values, for the runtime's loop that goes on (<see cref="ArgumentReader"/>s): the constructor is called there when the ones seen here
+      /// were the last awaited.
+      /// </summary>
+      [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
+      internal Expression Spill()
+      {
+        ParameterExpression values = Expression.Variable(typeof(object[]), "values");
+        List<Expression> spill = new List<Expression>();
+        spill.Add(Expression.Assign(values, Expression.Call(Expression.Constant(_plan), typeof(ConstructorPlan).GetMethod(nameof(ConstructorPlan.ValuesOf), BindingFlags.Instance | BindingFlags.NonPublic), O)));
+        for (int t = 0; t < _arguments.Length; t++)
+          if (_arguments[t] != null)
+            spill.Add(Expression.Assign(Expression.ArrayAccess(values, Expression.Constant(t)), Expression.Convert(_arguments[t], typeof(object))));
+        for (int t = 0; t < _after.Count; t++)
+        {
+          Member member = _after[t];
+          spill.Add(Expression.IfThen(Expression.NotEqual(Expression.And(Seen, Expression.Constant(member.Bit)), Expression.Constant(0UL)),
+            Expression.Assign(Expression.ArrayAccess(values, Expression.Constant(member.AfterIndex)), Expression.Convert(member.After, typeof(object)))));
+        }
+        spill.Add(Expression.Call(Expression.Constant(_plan), typeof(ConstructorPlan).GetMethod(nameof(ConstructorPlan.Received), BindingFlags.Instance | BindingFlags.NonPublic), O,
+          Expression.And(Seen, Expression.Constant(_parameterBits)))); // the constructor is called when the last parameter awaited is among them
+        return Expression.Block(typeof(void), new[] { values }, spill);
+      }
+
+      /// <summary>
+      /// A parameter's value this code does not read itself: by the typed reader of its type, as ArgumentReader reads it (boxed).
+      /// </summary>
+      [UnconditionalSuppressMessage("AOT", "IL3050", Justification = Reason)]
+      [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = Reason)]
+      [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = Reason)]
+      private Expression ReadArgument(Member member)
+      {
+        Type readerType = typeof(ValueReader<>).MakeGenericType(member.Type);
+        MethodInfo read = readerType.GetMethod(nameof(ValueReader<int>.Read), BindingFlags.Instance | BindingFlags.NonPublic, null, new[] { typeof(ReadContext), typeof(FullPropertyInfo) }, null);
+        return Expression.Block(typeof(void),
+          Expression.Assign(member.Argument, Expression.Call(Expression.Constant(member.Reader, readerType), read, C, Expression.Constant(member.Property, typeof(FullPropertyInfo)))),
+          Expression.OrAssign(Seen, Expression.Constant(member.Bit)));
+      }
+
+      /// <summary>
+      /// What reads a value this code does not read itself: the parameter's typed reader, otherwise the property's reader.
+      /// </summary>
+      private Expression Fallback(Member member, Expression prop)
+      {
+        if (member.Argument != null)
+          return ReadArgument(member);
+        if (member.After != null) // the ArgumentReader puts it in the collected values: a value read here before it (a duplicate key) is not set after it
+          return Expression.Block(typeof(void), Expression.AndAssign(Seen, Expression.Constant(~member.Bit)), Runtime(prop));
+        return Runtime(prop);
       }
 
       private ParameterExpression Local(Type type)
@@ -790,6 +1194,10 @@ namespace LsMsgPack.Reading
       {
         if (value.Type != member.Type)
           value = Expression.Convert(value, member.Type); // into a nullable
+        if (member.Argument != null) // the parameter's local
+          return Expression.Block(typeof(void), Expression.Assign(member.Argument, value), Expression.OrAssign(Seen, Expression.Constant(member.Bit)));
+        if (member.After != null) // set after the constructor
+          return Expression.Block(typeof(void), Expression.Assign(member.After, value), Expression.OrAssign(Seen, Expression.Constant(member.Bit)));
         return Expression.Assign(Expression.MakeMemberAccess(O, member.Info), value); // a property or field; a struct by reference
       }
 
@@ -799,6 +1207,8 @@ namespace LsMsgPack.Reading
       internal Expression Nil(int position, Expression prop)
       {
         Member member = _members[position];
+        if (member.Argument != null) // the value of a nil (FullPropertyInfo.NilValue, also a [DefaultValue])
+          return Expression.Block(typeof(void), Expression.Assign(member.Argument, Typed(member.Nil, member.Type)), Expression.OrAssign(Seen, Expression.Constant(member.Bit)));
         if (member.Kind == GeneratedKind.None || member.HasDefaultValue)
           return RuntimeNil(prop);
         return Set(member, Expression.Default(member.Type));
@@ -811,11 +1221,11 @@ namespace LsMsgPack.Reading
       {
         Member member = _members[position];
         if (member.Kind == GeneratedKind.None)
-          return Runtime(prop);
+          return Fallback(member, prop);
         Expression nil = Set(member, Expression.Default(member.Type));
         if (Nullable.GetUnderlyingType(member.Type) != null)
           return Expression.IfThenElse(TryReadNil(), nil, Value(position, prop, null)); // usually null: before the value
-        return Value(position, prop, Expression.IfThenElse(TryReadNil(), nil, Runtime(prop)));
+        return Value(position, prop, Expression.IfThenElse(TryReadNil(), nil, Fallback(member, prop)));
       }
 
       /// <summary>
@@ -828,9 +1238,9 @@ namespace LsMsgPack.Reading
       {
         Member member = _members[position];
         if (member.Kind == GeneratedKind.None)
-          return Runtime(prop);
+          return Fallback(member, prop);
         if (otherwise is null)
-          otherwise = Runtime(prop);
+          otherwise = Fallback(member, prop);
 
         Type type = Nullable.GetUnderlyingType(member.Type) ?? member.Type;
         switch (member.Kind)

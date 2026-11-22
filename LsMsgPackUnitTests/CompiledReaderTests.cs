@@ -590,12 +590,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void NotCompiled_WhereThePlansDoNotReadTheValues()
     {
-      // A constructor that takes the values: they are collected first
       LsMsgPackSerializer compiled = Create(new LsMsgPackOptions { UseInexedSchema = false }, 0);
-      CrImmutable read = compiled.Deserialize<CrImmutable>(compiled.Serialize(new CrImmutable(5, "five")));
-      Assert.AreEqual(5, read.Number);
-      Assert.AreEqual("five", read.Text);
-      Assert.IsNull(ReaderOf(compiled, typeof(CrImmutable)));
 
       // No property of a type the compiled code reads itself
       compiled.Deserialize<LsStructTests.LtsMover>(compiled.Serialize(new LsStructTests.LtsMover { Position = new LsStructTests.LtsVec { X = 1 } }));
@@ -661,5 +656,285 @@ namespace LsMsgPackUnitTests
         return $"{Number} {Text} {Visible} {Counter} {InitOnly}";
       }
     }
+
+    #region Constructors with values (CompiledValuesReader)
+
+    public record CrRecord(string Name, int Count, decimal Price, Guid Id, DateTime At, int? Maybe, [property: DefaultValue(3)] int Three, CrRecord Next, List<int> Items)
+    {
+      public string Note { get; init; }
+      public double Extra { get; set; }
+      [DefaultValue(5)] public int Five { get; init; } = 5;
+      public int Twice => Count * 2;
+    }
+
+    /// <summary>
+    /// The members of <see cref="CrRecord"/> declared as object (any value in their place), and one more at the end.
+    /// </summary>
+    public class CrRecordLoose
+    {
+      public object Name { get; set; }
+      public object Count { get; set; }
+      public object Price { get; set; }
+      public object Id { get; set; }
+      public object At { get; set; }
+      public object Maybe { get; set; }
+      public object Three { get; set; }
+      public object Next { get; set; }
+      public object Items { get; set; }
+      public object Note { get; set; }
+      public object Extra { get; set; }
+      public object Five { get; set; }
+      public object Twice { get; set; }
+      public object Zz { get; set; }
+    }
+
+    /// <summary>
+    /// Some members of <see cref="CrRecord"/> in another order, with one it does not have before them.
+    /// </summary>
+    public class CrRecordHead
+    {
+      public object A0 { get; set; }
+      public object Note { get; set; }
+      public object Count { get; set; }
+      public object Extra { get; set; }
+      public object Name { get; set; }
+      public object Maybe { get; set; }
+    }
+
+    /// <summary>
+    /// A struct created by its constructor (get-only properties).
+    /// </summary>
+    public readonly struct CrPair
+    {
+      public CrPair(int left, string right)
+      {
+        Left = left;
+        Right = right;
+      }
+
+      public int Left { get; }
+      public string Right { get; }
+    }
+
+    public class CrPairs
+    {
+      public CrPair First { get; set; }
+      public CrPair? Second { get; set; }
+      public List<CrPair> More { get; set; }
+    }
+
+    private static CrRecord Record(int depth)
+    {
+      return new CrRecord("name " + depth, 40 + depth, 12.5m, Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e"), new DateTime(2026, 11, 22, 10, 0, 0, DateTimeKind.Utc), depth % 2 == 0 ? null : depth,
+        depth, depth > 0 ? Record(depth - 1) : null, new List<int> { depth }) { Note = depth % 2 == 0 ? "note" : null, Extra = depth * 0.5, Five = depth };
+    }
+
+    private static IEnumerable<object> RecordValues()
+    {
+      yield return Record(3); // nested records (each depth its own collected values)
+      yield return new CrRecord(null, 0, 0m, Guid.Empty, default(DateTime), null, 0, null, null); // the defaults: left out by FilterDefaultValues, nils in the array layout
+      yield return new CrRecord("x", 1, 1m, Guid.Empty, default(DateTime), 0, 3, null, null) { Five = 5 }; // the [DefaultValue]s
+      yield return new List<CrRecord> { Record(1), Record(0), null, Record(2) };
+      yield return new CrPairs { First = new CrPair(1, "one"), Second = new CrPair(-2, null), More = new List<CrPair> { new CrPair(3, "three"), default(CrPair) } };
+      yield return new CrPairs();
+    }
+
+    [TestMethod]
+    public void ConstructorWithValues_ReadAsTheRuntimesPlans()
+    {
+      List<string> differences = new List<string>();
+      int same = 0;
+      foreach (LsMsgPackOptions options in AllOptions())
+      {
+        LsMsgPackSerializer runtime = Create(options, -1);
+        LsMsgPackSerializer compiled = Create(options, 0);
+        foreach (object value in RecordValues())
+        {
+          byte[] data = runtime.Serialize(value, value.GetType());
+          string expected = Read(runtime, value.GetType(), data);
+          string actual = Read(compiled, value.GetType(), data);
+          if (expected != actual)
+            differences.Add($"{Describe(options)}, {value.GetType().Name}:\n  {expected}\n  {actual}");
+          else
+            same++;
+        }
+        Assert.AreEqual("CompiledValuesReader", ReaderOf(compiled, typeof(CrRecord)), Describe(options));
+        Assert.AreEqual("CompiledValuesReader", ReaderOf(compiled, typeof(CrPair)), Describe(options));
+        bool map = options.ObjectLayout == ObjectLayout.Map;
+        Assert.AreEqual(!map, IsCompiled(compiled, typeof(CrRecord), false), Describe(options) + ": arrays");
+        Assert.AreEqual(map, IsCompiled(compiled, typeof(CrRecord), true), Describe(options) + ": maps");
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences));
+      Assert.IsGreaterThan(70, same);
+      CrRecord read = Create(new LsMsgPackOptions(), 0).Deserialize<CrRecord>(Create(new LsMsgPackOptions(), -1).Serialize(Record(2)));
+      Assert.AreEqual(Record(2).ToString(), read.ToString()); // the record's own comparison of every member
+    }
+
+    /// <summary>
+    /// Values in other formats, members in another order, members the record does not have, more values than it has: the compiled code hands the values it read to the runtime's loop
+    /// (the constructor called there when the last parameter is read), the readers of the types convert or throw.
+    /// </summary>
+    [TestMethod]
+    public void ConstructorWithValues_HandedOverAsTheRuntimesPlans()
+    {
+      List<object> data = new List<object>
+      {
+        new CrRecordLoose { Name = "n", Count = 5, Price = 1.5m, Id = Guid.NewGuid(), At = DateTime.UtcNow, Maybe = 3, Three = 4, Next = null, Items = new[] { 1 }, Note = "x", Extra = 0.5, Five = 6, Twice = 1, Zz = "more" },
+        new CrRecordLoose(), // every value nil (or left out)
+        new CrRecordLoose { Name = 5, Count = "5", Price = "1.5", Id = "0f8fad5b-d9cb-469f-a165-70867728950e", At = "2026-11-10T12:00:00Z", Maybe = "3", Three = 4.0, Note = 7, Extra = "0.5", Five = 6L },
+        new CrRecordLoose { Count = long.MaxValue },
+        new CrRecordLoose { Price = "x" },
+        new CrRecordLoose { Id = "not a guid" },
+        new CrRecordLoose { Five = "x" },
+        new CrRecordLoose { Extra = new[] { 1 } },
+        new CrRecordLoose { Next = new CrRecordLoose { Name = "inner", Count = 2, Zz = 1 }, Count = 1 },
+        new CrRecordLoose { Next = 5 },
+        new CrRecordHead { A0 = "first", Note = "n", Count = 5, Extra = 1.5, Name = "s", Maybe = 2 },
+        new CrRecordHead { A0 = new[] { 1, 2 }, Count = "5", Maybe = null },
+        new CrRecordHead(),
+        Record(2),
+      };
+      List<string> differences = new List<string>();
+      int same = 0;
+      foreach (LsMsgPackOptions options in AllOptions())
+      {
+        LsMsgPackSerializer runtime = Create(options, -1);
+        LsMsgPackSerializer compiled = Create(options, 0);
+        for (int t = 0; t < data.Count; t++)
+        {
+          byte[] bytes = runtime.Serialize(data[t], data[t].GetType());
+          string expected = Read(runtime, typeof(CrRecord), bytes);
+          string actual = Read(compiled, typeof(CrRecord), bytes);
+          if (expected != actual)
+            differences.Add($"{Describe(options)}, #{t} {data[t].GetType().Name}:\n  {expected}\n  {actual}");
+          else
+            same++;
+        }
+        Assert.AreEqual("CompiledValuesReader", ReaderOf(compiled, typeof(CrRecord)), Describe(options));
+      }
+      Assert.IsEmpty(differences, string.Join("\n", differences));
+      Assert.IsGreaterThan(200, same);
+    }
+
+    /// <summary>
+    /// A parameter's key twice: before the last parameter the last value is taken, after it the object is created and the first one is kept (ArgumentReader); a property set after the constructor:
+    /// the last value.
+    /// </summary>
+    [TestMethod]
+    public void ConstructorWithValues_DuplicateKeys_AsTheRuntimesPlans()
+    {
+      // Keys by name, written by hand: { Left: 1, Left: 2, Right: "a" }, { Left: 1, Right: "a", Left: 2 }, and the record with Count twice before and after its last parameter, Note twice
+      List<byte[]> names = new List<byte[]>
+      {
+        Map("Left", 1, "Left", 2, "Right", "a"),
+        Map("Left", 1, "Right", "a", "Left", 2),
+        Map("Right", "a", "Right", "b", "Left", 1, "Left", 2),
+        Map("Name", "a", "Count", 1, "Count", 2, "Note", "x", "Note", "y"),
+        Map("Name", "a", "Count", 1, "Price", 2, "Id", null, "At", null, "Maybe", 3, "Three", 4, "Next", null, "Items", null, "Count", 9, "Note", "x", "Note", 1, "Note", "z"),
+        Map("Note", "x", "Name", "a", "Count", 1, "Price", 2, "Id", null, "At", null, "Maybe", 3, "Three", 4, "Next", null, "Items", null, "Extra", 1, "Note", "y"),
+      };
+      LsMsgPackOptions byNames = new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      foreach (byte[] bytes in names)
+        foreach (Type type in new[] { typeof(CrPair), typeof(CrRecord) })
+          Assert.AreEqual(Read(Create(byNames, -1), type, bytes), Read(Create(byNames, 0), type, bytes), BitConverter.ToString(bytes) + " as " + type.Name);
+
+      // The indexed schema: the body of { Left: 1, Right: "a" } with an index twice (the schema written inline before it)
+      LsMsgPackOptions indexed = new LsMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map };
+      byte[] payload = Create(indexed, -1).Serialize(new CrPair(1, "a"));
+      byte[] body = { 0x82, 0x00, 0x01, 0x01, 0xA1, (byte)'a' };
+      CollectionAssert.AreEqual(body, new ArraySegment<byte>(payload, payload.Length - body.Length, body.Length).ToArray(), "the body is at the end");
+      foreach (byte[] other in new[] { new byte[] { 0x83, 0x00, 0x01, 0x00, 0x02, 0x01, 0xA1, (byte)'a' }, new byte[] { 0x83, 0x00, 0x01, 0x01, 0xA1, (byte)'a', 0x00, 0x02 }, new byte[] { 0x84, 0x01, 0xA1, (byte)'b', 0x00, 0x01, 0x01, 0xA1, (byte)'a', 0x00, 0x02 } })
+      {
+        byte[] bytes = new byte[payload.Length - body.Length + other.Length];
+        Array.Copy(payload, bytes, payload.Length - body.Length);
+        Array.Copy(other, 0, bytes, payload.Length - body.Length, other.Length);
+        string expected = Read(Create(indexed, -1), typeof(CrPair), bytes);
+        Assert.AreEqual(expected, Read(Create(indexed, 0), typeof(CrPair), bytes), BitConverter.ToString(other));
+        StringAssert.StartsWith(expected, "CrPair ");
+      }
+    }
+
+    /// <summary>
+    /// A map of strings, small positive integers and nils (keys and values in the order given).
+    /// </summary>
+    private static byte[] Map(params object[] entries)
+    {
+      List<byte> bytes = new List<byte> { (byte)(0x80 | (entries.Length / 2)) };
+      foreach (object item in entries)
+      {
+        if (item is null)
+          bytes.Add(0xC0);
+        else if (item is int number)
+          bytes.Add((byte)number);
+        else
+        {
+          byte[] text = System.Text.Encoding.UTF8.GetBytes((string)item);
+          bytes.Add((byte)(0xA0 | text.Length));
+          bytes.AddRange(text);
+        }
+      }
+      return bytes.ToArray();
+    }
+
+    [TestMethod]
+    public void ConstructorWithValues_DataThatEndsEarly_SameErrorAsTheRuntimesPlans()
+    {
+      foreach (LsMsgPackOptions options in AllOptions())
+      {
+        LsMsgPackSerializer runtime = Create(options, -1);
+        LsMsgPackSerializer compiled = Create(options, 0);
+        byte[] whole = runtime.Serialize(Record(2));
+        for (int length = 0; length < whole.Length; length++)
+        {
+          byte[] cut = new byte[length];
+          Array.Copy(whole, cut, length);
+          Assert.AreEqual(Read(runtime, typeof(CrRecord), cut), Read(compiled, typeof(CrRecord), cut), $"{Describe(options)}, {length} of {whole.Length} bytes");
+        }
+      }
+    }
+
+    [TestMethod]
+    public void ConstructorWithValues_ReferencesPreserved()
+    {
+      CrRecord shared = Record(1);
+      List<CrRecord> list = new List<CrRecord> { shared, shared, Record(0), shared };
+      foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
+        foreach (bool schema in new[] { false, true })
+        {
+          LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = schema, ObjectLayout = layout, ReferenceHandling = ReferenceHandling.Preserve };
+          LsMsgPackSerializer compiled = Create(options, 0);
+          byte[] data = Create(options, -1).Serialize(list);
+          List<CrRecord> read = compiled.Deserialize<List<CrRecord>>(data);
+          Assert.AreEqual(Read(Create(options, -1), typeof(List<CrRecord>), data), Read(compiled, typeof(List<CrRecord>), data));
+          Assert.AreSame(read[0], read[1], $"{layout}, schema {schema}");
+          Assert.AreSame(read[0], read[3]);
+          Assert.AreNotSame(read[0], read[2]);
+          Assert.AreEqual("CompiledValuesReader", ReaderOf(compiled, typeof(CrRecord)));
+        }
+    }
+
+    [TestMethod]
+    public void ConstructorWithValues_CompiledAfterTheNumberOfObjects()
+    {
+      LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = false };
+      LsMsgPackSerializer runtime = Create(options, -1);
+      LsMsgPackSerializer compiled = Create(options, 3);
+      byte[] data = runtime.Serialize(Record(0));
+      string expected = Read(runtime, typeof(CrRecord), data);
+      for (int t = 1; t <= 2; t++)
+      {
+        Assert.AreEqual(expected, Read(compiled, typeof(CrRecord), data), "object " + t);
+        Assert.IsNull(ReaderOf(compiled, typeof(CrRecord)), "after object " + t);
+      }
+      Assert.AreEqual(expected, Read(compiled, typeof(CrRecord), data), "object 3: compiles in the background");
+      Assert.AreEqual("CompiledValuesReader", WaitForReader(compiled, typeof(CrRecord)));
+      Assert.AreEqual(expected, Read(compiled, typeof(CrRecord), data), "object 4");
+      CrImmutable immutable = compiled.Deserialize<CrImmutable>(compiled.Serialize(new CrImmutable(5, "five")));
+      Assert.AreEqual(5, immutable.Number);
+      Assert.AreEqual("five", immutable.Text);
+      Assert.IsNull(ReaderOf(runtime, typeof(CrRecord)), "-1: never");
+    }
+
+    #endregion
   }
 }

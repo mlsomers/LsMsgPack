@@ -36,6 +36,12 @@ namespace LsMsgPack.Reading
     public int Depth;
 
     /// <summary>
+    /// The values collected for an object created by its constructor with values, by the depth of the object (ConstructorPlan.Collect): an object is finished before another one
+    /// at its depth starts, so one per depth is reused (cleared when the object is finished, ReadPlan.Finish). Null until such an object is read.
+    /// </summary>
+    internal ConstructorValues[] ValuesAtDepth;
+
+    /// <summary>
     /// Collects the differences between the data and the classes (null when not asked for). <see cref="ConversionSettings"/> then has them too, for LsMsgPack.Core's conversions.
     /// </summary>
     internal ReadDifferences Differences;
