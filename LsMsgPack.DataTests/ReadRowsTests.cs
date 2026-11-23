@@ -62,6 +62,59 @@ namespace LsMsgPack.DataTests
       Assert.AreEqual(-1L, read[1].Total);
     }
 
+    /// <summary>
+    /// A naming policy (docs/NamingPolicies.md): columns named as the policy names the properties, or by the .NET name, then ignoring case; <c>[Column]</c> names as they are.
+    /// </summary>
+    [TestMethod]
+    public void NamingPolicy_PolicyNameThenDotNetName()
+    {
+      string[] names = { "id", "customer_name", "first-name", "COUNT", "Comment", "status", "Total" };
+      ColumnarReader.Column[] columns =
+      {
+        new ColumnarReader.Column<int>(new[] { 7 }),
+        new ColumnarReader.Column<string>(new[] { "Ann" }),
+        new ColumnarReader.Column<string>(new[] { "A" }),
+        new ColumnarReader.Column<int>(new[] { 3 }),
+        new ColumnarReader.Column<string>(new[] { "set" }),
+        new ColumnarReader.Column<int>(new[] { 2 }),
+        new ColumnarReader.Column<long>(new[] { 100L }),
+      };
+      LsMsgPackSerializer kebab = new LsMsgPackSerializer(new LsMsgPackOptions() { PropertyNamingPolicy = MsgPackNamingPolicy.KebabCaseLower });
+      MappedRow row = kebab.ReadRows<MappedRow>(new ColumnarReader(names, columns, 1))[0];
+      Assert.AreEqual(7, row.Id, "the policy's name");
+      Assert.AreEqual("Ann", row.Customer, "[Column] as it is");
+      Assert.AreEqual("A", row.FirstName, "the policy's name");
+      Assert.AreEqual(3, row.Count, "ignoring case");
+      Assert.AreEqual("set", row.Comment, "the .NET name");
+      Assert.AreEqual(Status.Paid, row.Status, "the policy's name");
+      Assert.AreEqual(100L, row.Total, "the .NET name");
+      names[2] = "FirstName";
+      Assert.AreEqual("A", kebab.ReadRows<MappedRow>(new ColumnarReader(names, columns, 1))[0].FirstName, "the .NET name, not like first-name in any case");
+
+      names = new[] { "ID", "Customer", "FIRST_NAME", "count", "comment", "Status", "total" };
+      LsMsgPackSerializer snake = new LsMsgPackSerializer(new LsMsgPackOptions() { PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseUpper });
+      row = snake.ReadRows<MappedRow>(new ColumnarReader(names, columns, 1))[0];
+      Assert.AreEqual(7, row.Id);
+      Assert.IsNull(row.Customer, "the .NET name of a [Column] property is not its column");
+      Assert.AreEqual("A", row.FirstName);
+      Assert.AreEqual(3, row.Count);
+      Assert.AreEqual("set", row.Comment);
+      Assert.AreEqual(Status.Paid, row.Status);
+      Assert.AreEqual(100L, row.Total);
+
+      names = new[] { "id", "name", "score" };
+      columns = new ColumnarReader.Column[]
+      {
+        new ColumnarReader.Column<int>(new[] { 7 }),
+        new ColumnarReader.Column<string>(new[] { "Ann" }),
+        new ColumnarReader.Column<double>(new[] { 1.5 }),
+      };
+      ImmutableRow immutable = kebab.ReadRows<ImmutableRow>(new ColumnarReader(names, columns, 1))[0];
+      Assert.AreEqual(7, immutable.Id, "created by its constructor");
+      Assert.AreEqual("Ann", immutable.Name);
+      Assert.AreEqual(1.5, immutable.Score);
+    }
+
     [TestMethod]
     public void ImmutableClass_CreatedByItsConstructor()
     {
@@ -159,6 +212,27 @@ namespace LsMsgPack.DataTests
         for (int t = 0; t < read.Count; t++)
           read[t].Reference = Guid.Empty;
         AssertEqual(dapper, read);
+      }
+    }
+
+    /// <summary>
+    /// A class created by its constructor gets the provider's conversions too (SQLite's TEXT into DateTime, decimal and Guid, INTEGER into bool), the boxed values otherwise.
+    /// </summary>
+    [TestMethod]
+    public void Sqlite_ImmutableRecord()
+    {
+      List<InvoiceRow> rows = Data.Invoices(100);
+      using (SqliteConnection connection = SqliteInvoices.Create(rows))
+      using (SqliteCommand command = new SqliteCommand(SqliteInvoices.Select, connection))
+      using (SqliteDataReader reader = command.ExecuteReader())
+      {
+        List<InvoiceRecord> read = new LsMsgPackSerializer().ReadRows<InvoiceRecord>(reader);
+        Assert.AreEqual(rows.Count, read.Count);
+        for (int t = 0; t < rows.Count; t++)
+        {
+          InvoiceRow r = rows[t];
+          Assert.AreEqual(new InvoiceRecord(r.Id, r.Number, r.Customer, r.Date, r.Amount, r.Vat, r.Paid, r.Reference, r.Lines, r.Note), read[t], "row " + t);
+        }
       }
     }
 

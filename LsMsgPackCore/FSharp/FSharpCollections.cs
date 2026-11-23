@@ -36,6 +36,16 @@ namespace LsMsgPack.FSharp
       if (FSharpTypes.IsDefinition(concrete, FSharpTypes.MapDefinition))
       {
         Type[] arguments = concrete.GenericTypeArguments;
+        if (!PropertyAccessor.CanCompile) // no code for MapOf of value types (NativeAOT): F#'s Map.ofSeq, which the application has when it calls it with these types
+        {
+          MethodInfo ofSeq = concrete.Assembly.GetType("Microsoft.FSharp.Collections.MapModule")?.GetMethod("OfSeq", BindingFlags.Public | BindingFlags.Static);
+          Type tupleType = typeof(Tuple<,>).MakeGenericType(arguments);
+          ConstructorInfo tuple = tupleType.GetConstructor(arguments);
+          if (ofSeq is null || tuple is null)
+            return null;
+          defaults = new object[] { null, ofSeq.MakeGenericMethod(arguments), tuple };
+          return typeof(FSharpCollections).GetMethod(nameof(MapOfBoxed), BindingFlags.NonPublic | BindingFlags.Static);
+        }
         Type tuples = typeof(IEnumerable<>).MakeGenericType(typeof(Tuple<,>).MakeGenericType(arguments));
         ConstructorInfo constructor = concrete.GetConstructor(new[] { tuples });
         if (constructor is null)
@@ -44,6 +54,35 @@ namespace LsMsgPack.FSharp
         return typeof(FSharpCollections).GetMethod(nameof(MapOf), BindingFlags.NonPublic | BindingFlags.Static).MakeGenericMethod(arguments);
       }
       return null;
+    }
+
+    /// <summary>
+    /// A map of the pairs without generic code of its own (no dynamic code): the tuples made by their constructor, the map by <c>Map.ofSeq</c>, all by reflection.
+    /// </summary>
+    /// <param name="pairs">The KeyValuePairs of the map's types</param>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.FSharp)]
+    private static object MapOfBoxed(Array pairs, MethodInfo ofSeq, ConstructorInfo tuple)
+    {
+      Array tuples = Array.CreateInstance(tuple.DeclaringType, pairs.Length); // an array of a reference type
+      FrameworkTypeInfo.PairInfo pair = FrameworkTypeInfo.GetPair(pairs.GetType().GetElementType());
+      object[] arguments = new object[2];
+      try
+      {
+        for (int t = 0; t < pairs.Length; t++)
+        {
+          object entry = pairs.GetValue(t);
+          arguments[0] = pair.Key.GetValue(entry);
+          arguments[1] = pair.Value.GetValue(entry);
+          tuples.SetValue(tuple.Invoke(arguments), t);
+        }
+        return FSharpAccess.Invoke(ofSeq, null, tuples);
+      }
+      catch (NotSupportedException ex) // NativeAOT has no code for Map.ofSeq or the tuples of these types: the application never makes such a map
+      {
+        Type[] types = ofSeq.GetGenericArguments();
+        string names = Instances.Display(types[0]) + ", " + Instances.Display(types[1]);
+        throw Instances.NoCode("an F# Map<" + names + ">", "Call Map.ofSeq<" + names + "> once in the application (e.g. Map.ofSeq [ (key, value) ])", ex);
+      }
     }
 
     /// <summary>

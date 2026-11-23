@@ -15,4 +15,13 @@
   <ItemGroup Condition="'$(LsMsgPackAnalyze)' == 'AllTypes'">
     <AssemblyMetadata Include="LsMsgPackAnalyze" Value="AllTypes" />
   </ItemGroup>
+  <!-- F# types in trimmed and NativeAOT applications (docs/FSharp.md): LsMsgPack.Core finds FSharp.Core's members by reflection (options, the attribute marking unions and records,
+       FSharp.Core's unions, the factories of lists and maps), which the trimmer removes. LsMsgPack.FSharp.xml keeps them, added only when the application references FSharp.Core
+       (a descriptor naming an assembly the application does not have is a warning). Runs after the targets that list the assemblies of ILLink and of NativeAOT's compiler. -->
+  <Target Name="LsMsgPackKeepFSharpCore" BeforeTargets="PrepareForILLink;WriteIlcRspFileForCompilation" Condition="'$(PublishTrimmed)' == 'true' or '$(PublishAot)' == 'true'">
+    <ItemGroup>
+      <_LsMsgPackFSharpCore Include="@(ReferencePath);@(ResolvedFileToPublish)" Condition="'%(Filename)' == 'FSharp.Core' and '%(Extension)' == '.dll'" />
+      <TrimmerRootDescriptor Include="$(MSBuildThisFileDirectory)LsMsgPack.FSharp.xml" Condition="'@(_LsMsgPackFSharpCore)' != '' and '@(TrimmerRootDescriptor->AnyHaveMetadataValue('Filename', 'LsMsgPack.FSharp'))' != 'true'" />
+    </ItemGroup>
+  </Target>
 </Project>

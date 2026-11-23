@@ -105,5 +105,32 @@ type FsWithStructUnion = { Shape: FsStructShape }
 
 type FsWithObject = { Value: obj }
 
+/// A row of LsMsgPack.Data's row mapper (LsMsgPack.DataTests.FSharpRowsTests): created by its constructor, options where a column can be NULL, unions from columns
+type FsInvoiceRow =
+  { Id: int
+    Customer: string
+    Note: string option
+    Discount: decimal option
+    Paid: bool voption
+    Total: float
+    Colour: FsColour
+    Mail: FsEmail
+    OrderId: FsOrderId
+    Created: DateTime }
+
+/// The same with a parameterless constructor and setters: set per column
+[<CLIMutable>]
+type FsMutableRow =
+  { Id: int
+    Customer: string
+    Note: string option
+    Discount: decimal option
+    Paid: bool voption
+    Total: float
+    Colour: FsColour
+    Mail: FsEmail
+    OrderId: FsOrderId
+    Created: DateTime }
+
 module FsValues =
   let shapes = [ Circle 2.0; Rect(1.0, 3.5); Empty ]

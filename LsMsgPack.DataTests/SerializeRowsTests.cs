@@ -1,6 +1,7 @@
 ﻿using LsMsgPack;
 using LsMsgPackDebug;
 using LsMsgPack.Data;
+using LsMsgPack.Streaming;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
@@ -25,6 +26,88 @@ namespace LsMsgPack.DataTests
 
       AssertEqual(rows, serializer.Deserialize<List<AllTypesRow>>(actual));
       AssertEqual(rows, MsgPackSerializer.Deserialize<List<AllTypesRow>>(actual, variant.Debug()));
+    }
+
+    /// <summary>
+    /// A naming policy converts the column names as it converts the names of the properties (docs/NamingPolicies.md): the bytes of the list written with the same policy,
+    /// in the map layout without the schema (the keys), with the indexed schema (its names) and schema version 2.
+    /// </summary>
+    [TestMethod]
+    public void NamingPolicy_ColumnNamesAsPropertyNames()
+    {
+      MsgPackNamingPolicy[] policies = { MsgPackNamingPolicy.CamelCase, MsgPackNamingPolicy.SnakeCaseLower, MsgPackNamingPolicy.KebabCaseUpper };
+      List<AllTypesRow> rows = Data.AllTypesRows();
+      foreach (MsgPackNamingPolicy policy in policies)
+      {
+        foreach (Variant variant in new[]
+        {
+          new Variant() { Layout = ObjectLayout.Map, Version = SchemaVersion.Names, Filters = true },
+          new Variant() { Layout = ObjectLayout.Array, Indexed = true, Version = SchemaVersion.Names, Filters = true },
+          new Variant() { Layout = ObjectLayout.Map, Indexed = true, Version = SchemaVersion.Described, Filters = true },
+        })
+        {
+          string message = policy.GetType().Name + " " + policy.ConvertName("FirstName") + ", " + variant;
+          LsMsgPackOptions options = variant.Ls();
+          options.PropertyNamingPolicy = policy;
+          MsgPackSettings debug = variant.Debug();
+          debug.PropertyNamingPolicy = policy;
+          LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
+          byte[] actual = serializer.SerializeRows<AllTypesRow>(Data.AllTypes(rows));
+          CollectionAssert.AreEqual(serializer.Serialize(rows), actual, message);
+          CollectionAssert.AreEqual(MsgPackSerializer.Serialize(rows, debug), actual, message);
+          AssertEqual(rows, serializer.Deserialize<List<AllTypesRow>>(actual));
+        }
+      }
+    }
+
+    /// <summary>
+    /// A table dump has the converted names in its schema and its index entry: the data reader gives them (with the exact types of the entry's metadata, which it matches by name),
+    /// the row mapper with the policy reads them back into the class.
+    /// </summary>
+    [TestMethod]
+    public void NamingPolicy_TableDump()
+    {
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower });
+      List<AllTypesRow> rows = Data.AllTypesRows();
+      using (MemoryStream stream = new MemoryStream())
+      {
+        using (MsgPackStreamWriter writer = new MsgPackStreamWriter(stream, serializer, leaveOpen: true, index: new MsgPackStreamIndexOptions()))
+          writer.WriteTable(Data.AllTypes(rows), "rows");
+        stream.Position = 0;
+        using (MsgPackStreamReader reader = new MsgPackStreamReader(stream, serializer))
+        {
+          MsgPackStreamEntry entry = reader.ReadIndexes()[0].Entries[0];
+          using (MsgPackDataReader dump = new MsgPackDataReader(reader, entry, leaveOpen: true))
+          {
+            IDataRecordNames(dump, Data.AllTypes(rows));
+            AssertEqual(rows, serializer.ReadRows<AllTypesRow>(dump));
+          }
+        }
+      }
+    }
+
+    private static void IDataRecordNames(System.Data.IDataRecord dump, System.Data.IDataRecord source)
+    {
+      Assert.AreEqual(source.FieldCount, dump.FieldCount);
+      for (int t = 0; t < source.FieldCount; t++)
+      {
+        Assert.AreEqual(MsgPackNamingPolicy.SnakeCaseLower.ConvertName(source.GetName(t)), dump.GetName(t));
+        Assert.AreEqual(source.GetFieldType(t), dump.GetFieldType(t), source.GetName(t) + " / " + dump.GetName(t));
+      }
+    }
+
+    [TestMethod]
+    public void NamingPolicy_TwoColumnsOneName_Refused()
+    {
+      ColumnarReader reader = new ColumnarReader(new[] { "FirstName", "first_name" }, new ColumnarReader.Column[]
+      {
+        new ColumnarReader.Column<string>(new[] { "a" }),
+        new ColumnarReader.Column<string>(new[] { "b" }),
+      }, 1);
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower });
+      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => serializer.SerializeRows(reader));
+      StringAssert.Contains(ex.Message, "\"FirstName\"");
+      StringAssert.Contains(ex.Message, "both written as \"first_name\"");
     }
 
     [TestMethod]

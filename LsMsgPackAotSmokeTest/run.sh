@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NativeAOT smoke test of LsMsgPack's source generator (and, at the end, of the serializer without it): the JIT run writes golden.txt with the runtime plans (and checks the generated code against them),
+# NativeAOT smoke test of LsMsgPack's source generator (and, at the end, of the serializer without it and of F# types): the JIT run writes golden.txt with the runtime plans (and checks the generated code against them),
 # the NativeAOT binary checks the generated code against golden.txt. The publish must not report trim or AOT warnings. NativeAOT needs clang (or gcc, used when clang is missing) on Linux.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -40,3 +40,18 @@ if grep -E "warning IL[0-9]{4}" "$out/reflection.log"; then
   exit 1
 fi
 "$out/reflection/LsMsgPackAotReflectionTest" check "$out/golden.txt"
+
+# F# types (LsMsgPackAotFSharpTest: F# projects can't run the source generator, so always by reflection): a JIT build with dynamic code writes the expected bytes (the generic converters),
+# the NativeAOT binary writes and reads the same (the boxed converters, FSharp.Core's members kept by LsMsgPack.FSharp.xml) and maps rows of a data reader into F# records
+dotnet build-server shutdown > /dev/null
+dotnet build ../LsMsgPackAotFSharpTest/LsMsgPackAotFSharpTest.csproj -c Release -p:PublishAot=false -o "$out/fsharp-jit"
+"$out/fsharp-jit/LsMsgPackAotFSharpTest" write "$out/fsharp.txt"
+dotnet build-server shutdown > /dev/null
+rm -rf ../LsMsgPackAotFSharpTest/obj/Release/net10.0/linux-x64
+dotnet publish ../LsMsgPackAotFSharpTest/LsMsgPackAotFSharpTest.csproj -c Release -r linux-x64 -o "$out/fsharp" -p:TrimmerSingleWarn=false "${linker[@]}" | tee "$out/fsharp.log"
+# FSharp.Core reports trim and AOT warnings of its own (its reflection and printf, in every F# NativeAOT application): only the others count
+if grep -E "warning IL[0-9]{4}" "$out/fsharp.log" | grep -vE "warning IL[0-9]{4}: Microsoft\.FSharp\."; then
+  echo "FAILED: trim or AOT warnings of the F# test outside FSharp.Core (above)"
+  exit 1
+fi
+"$out/fsharp/LsMsgPackAotFSharpTest" check "$out/fsharp.txt"

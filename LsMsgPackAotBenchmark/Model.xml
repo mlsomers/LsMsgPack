@@ -1,0 +1,5 @@
+<linker>
+  <assembly fullname="LsMsgPackAotBenchmark">
+    <namespace fullname="LsMsgPackAotBenchmark" />
+  </assembly>
+</linker>

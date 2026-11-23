@@ -448,7 +448,8 @@ namespace LsMsgPack
             return InstantiateCollection(type, typeof(DictionaryHandler<,>), type.GenericTypeArguments, this) ?? Boxed(type);
           return Boxed(type);
         case TypeKind.Converted:
-          return info.Converter.Accept(new ConverterHandlers(this));
+          object converted = info.Converter.Accept(new ConverterHandlers(this));
+          return converted is BoxedConverterHandler ? Boxed(type) : converted; // a converter without type arguments: WriteBoxed writes it (WriteConverted)
         case TypeKind.Extended: // the properties and then the kept values (ObjectPlan.WriteExtended); ObjectHandler stays as it is for the other classes
           if (type.IsValueType ? StructPlans(type) : !type.IsAbstract && !type.ContainsGenericParameters)
           {
@@ -1041,6 +1042,11 @@ namespace LsMsgPack
       public object Binary<T>(MsgPackBinaryConverter<T> converter)
       {
         return new BinaryConverterHandler<T>(_serializer, converter);
+      }
+
+      public object Boxed(BoxedConverter converter)
+      {
+        return new BoxedConverterHandler(_serializer, converter);
       }
     }
 

@@ -125,7 +125,7 @@ namespace LsMsgPack.FSharp
       }
       if (union.ValuesAreNames)
         return FSharpCaseNameConverters.Create(type, union);
-      return type.IsValueType ? FSharpAccess.Create(typeof(FSharpUnsupportedConverter<>), new[] { type }) : null;
+      return type.IsValueType ? FSharpUnsupported.Create(type) : null;
     }
 
     /// <summary>
@@ -415,13 +415,44 @@ namespace LsMsgPack.FSharp
         Type caseClass;
         if (!nested.TryGetValue(unionCase.Name, out caseClass) && !nested.TryGetValue("_" + unionCase.Name, out caseClass))
           caseClass = type;
-        unionCase.SetClass(caseClass, FieldsOf(caseClass, unionCase.Tag, Instances), caseClass != type || byTag.Count == 1);
+        PropertyInfo[] fields = FieldsOf(caseClass, unionCase.Tag, Instances);
+        if (fields.Length == 0 && unionCase.Factory != null)
+          fields = FieldsOfFactory(caseClass, unionCase.Factory);
+        unionCase.SetClass(caseClass, fields, caseClass != type || byTag.Count == 1);
         cases[count++] = unionCase;
       }
       MethodInfo tagGetter = type.GetProperty("Tag", BindingFlags.Public | BindingFlags.Instance)?.GetGetMethod();
       if (tagGetter is null || tagGetter.ReturnType != typeof(int))
         return NotAUnion;
       return new FSharpUnion(type, cases, tagGetter);
+    }
+
+    /// <summary>
+    /// The fields of a case whose properties have no [CompilationMapping] (NativeAOT drops the attributes of union case properties, the factories keep theirs): the properties named as the
+    /// parameters of the case's factory <c>NewX</c> (F# names them after the fields with an underscore: <c>_width</c>, <c>_item</c>), in the factory's order. None unless every parameter has one.
+    /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.FSharp)]
+    internal static PropertyInfo[] FieldsOfFactory(Type caseClass, MethodInfo factory)
+    {
+      ParameterInfo[] parameters = factory.GetParameters();
+      PropertyInfo[] properties = caseClass.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+      PropertyInfo[] fields = new PropertyInfo[parameters.Length];
+      for (int p = 0; p < parameters.Length; p++)
+      {
+        string name = parameters[p].Name;
+        if (string.IsNullOrEmpty(name))
+          return new PropertyInfo[0];
+        if (name[0] == '_')
+          name = name.Substring(1);
+        for (int t = 0; t < properties.Length && fields[p] is null; t++)
+        {
+          if (string.Equals(properties[t].Name, name, StringComparison.OrdinalIgnoreCase) && properties[t].PropertyType == parameters[p].ParameterType && properties[t].GetIndexParameters().Length == 0)
+            fields[p] = properties[t];
+        }
+        if (fields[p] is null)
+          return new PropertyInfo[0];
+      }
+      return fields;
     }
 
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.FSharp)]

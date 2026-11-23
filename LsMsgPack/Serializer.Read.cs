@@ -342,7 +342,7 @@ namespace LsMsgPack
     /// </summary>
     private ValueReader Preserving(Type type, ValueReader reader)
     {
-      if (!PreserveReferences || type.IsValueType || type == typeof(string) || type == typeof(byte[]))
+      if (!PreserveReferences || type.IsValueType || type == typeof(string) || type == typeof(byte[]) || reader is ConvertingReader) // Core's conversion resolves and registers references itself (a boxed converter's class)
         return reader;
       return ((IPreservableReader)reader).Preserving();
     }
@@ -572,6 +572,11 @@ namespace LsMsgPack
       public object Binary<T>(MsgPackBinaryConverter<T> converter)
       {
         return new BinaryConverterReader<T>(_serializer, converter);
+      }
+
+      public object Boxed(BoxedConverter converter)
+      {
+        return new ConvertingReader(converter.ConvertedType); // Core converts the surrogate and applies the converter
       }
     }
 

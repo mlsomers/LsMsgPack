@@ -292,7 +292,11 @@ namespace LsMsgPack.Meta
             throw Instances.NoCode(concrete, _declaredAbstract ? "Declare the member as " + concrete + " instead of an interface" : "Create one in the application (e.g. new " + concrete + "(...))", ex);
           }
           throw Instances.NoCode(Instances.Display(method.DeclaringType) + "." + method.Name + "<" + string.Join(", ", Array.ConvertAll(method.GetGenericArguments(), Instances.Display)) + ">",
-            "Call it once in the application (with any collection)", ex);
+            "Call it once in the application (with any collection; ListModule.OfSeq is F#'s List.ofSeq)", ex);
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is MsgPackException inner && method.DeclaringType == typeof(FSharp.FSharpCollections)) // its own message (F# maps)
+        {
+          System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(inner).Throw();
         }
       }
 #endif

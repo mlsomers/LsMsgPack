@@ -95,6 +95,37 @@ namespace LsMsgPack.Writing
   }
 
   /// <summary>
+  /// The values of a type whose converter has no type arguments (Core's <see cref="BoxedConverter"/>: the F# converters without dynamic code): the surrogate written boxed as a value declared
+  /// as the surrogate type, as <see cref="ConverterHandler{T, TSurrogate}"/> writes it. Not a typed handler: the type gets a boxed one, which comes here through <c>WriteConverted</c>.
+  /// </summary>
+  internal sealed class BoxedConverterHandler : IConvertedWriter
+  {
+    private readonly Serializer _serializer;
+    private readonly BoxedConverter _converter;
+    private readonly FullPropertyInfo _surrogateInfo;
+
+    internal BoxedConverterHandler(Serializer serializer, BoxedConverter converter)
+    {
+      _serializer = serializer;
+      _converter = converter;
+      _surrogateInfo = converter.SurrogateInfo;
+    }
+
+    public void WriteBoxed(WriteContext c, object value)
+    {
+      object surrogate = _converter.ToSurrogateBoxed(value);
+      if (surrogate == null)
+      {
+        c.W.Nil();
+        return;
+      }
+      if (!surrogate.GetType().IsValueType && c.References != null && _serializer.PreserveReferences) // the converted value keeps the identity, not its surrogate
+        c.References.Surrogate = surrogate;
+      _serializer.WriteBoxed(c, surrogate, _surrogateInfo);
+    }
+  }
+
+  /// <summary>
   /// The values of a type with a binary converter (<see cref="MsgPackBinaryConverter{T}"/>, the blit converters): the converter writes its bytes straight into the buffer after the header of bin
   /// (or of its extension), no array in between (LsMsgPackDebug: SerializeConverted, the same bytes). A value of a class deriving from <typeparamref name="T"/> is written as an object of its own type.
   /// </summary>

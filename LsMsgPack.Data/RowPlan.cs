@@ -15,7 +15,17 @@ namespace LsMsgPack.Data
   internal sealed class RowPlan
   {
     internal readonly string TypeName;
+
+    /// <summary>
+    /// The names of the columns as the reader gives them (the plan is kept for the same columns).
+    /// </summary>
     internal readonly string[] Names;
+
+    /// <summary>
+    /// The names as they are written: converted by <see cref="MsgPackOptions.PropertyNamingPolicy"/> as the names of properties are (<see cref="Names"/> without a policy).
+    /// </summary>
+    internal readonly string[] WrittenNames;
+
     internal readonly Type[] Types;
 
     /// <summary>
@@ -51,13 +61,14 @@ namespace LsMsgPack.Data
         DataTypeNames[t] = DataTypeName(record, t);
         _columns[t] = ColumnWriter.Create(serializer, Types[t], t, dbReader);
       }
-      ThrowIfNamesNotUnique(Names);
+      WrittenNames = WrittenNamesOf(Names, options);
+      ThrowIfNamesNotUnique(Names, WrittenNames);
 
       if (options._objectLayout == ObjectLayout.Map)
       {
         _keys = new byte[count][];
         for (int t = 0; t < count; t++)
-          _keys[t] = options._useIndexedSchema ? serializer.EncodeKey(t) : serializer.EncodeKey(Names[t]);
+          _keys[t] = options._useIndexedSchema ? serializer.EncodeKey(t) : serializer.EncodeKey(WrittenNames[t]);
       }
       _trim = options._trimTrailingNulls;
     }
@@ -117,7 +128,7 @@ namespace LsMsgPack.Data
     /// </summary>
     internal byte[] PayloadSchema
     {
-      get { return _payloadSchema ?? (_payloadSchema = SchemaOf(_options, TypeName, Names, Types, _options)); }
+      get { return _payloadSchema ?? (_payloadSchema = SchemaOf(_options, TypeName, WrittenNames, Types, _options)); }
     }
 
     /// <summary>
@@ -125,7 +136,7 @@ namespace LsMsgPack.Data
     /// </summary>
     internal byte[] CanonicalSchema
     {
-      get { return _canonicalSchema ?? (_canonicalSchema = SchemaOf(_options, TypeName, Names, Types, SchemaBytes.Canonical)); }
+      get { return _canonicalSchema ?? (_canonicalSchema = SchemaOf(_options, TypeName, WrittenNames, Types, SchemaBytes.Canonical)); }
     }
 
     /// <summary>
@@ -155,15 +166,35 @@ namespace LsMsgPack.Data
       return bytes.ToArray();
     }
 
-    private static void ThrowIfNamesNotUnique(string[] names)
+    /// <summary>
+    /// The column names converted by the options' naming policy (a column named in the query is written as a property of that name would be), the same array without one.
+    /// </summary>
+    private static string[] WrittenNamesOf(string[] names, MsgPackOptions options)
     {
+      if (options._propertyNamingPolicy is null)
+        return names;
+      string[] written = new string[names.Length];
       for (int t = 0; t < names.Length; t++)
+        written[t] = string.IsNullOrEmpty(names[t]) ? names[t] : FullPropertyInfo.WrittenNameOf(names[t], options); // an empty name is refused below, not by the policy
+      return written;
+    }
+
+    /// <param name="names">The names of the reader, for the messages</param>
+    /// <param name="written">The names as they are written</param>
+    private static void ThrowIfNamesNotUnique(string[] names, string[] written)
+    {
+      for (int t = 0; t < written.Length; t++)
       {
-        if (string.IsNullOrEmpty(names[t]) || names[t] == MsgPackOptions.ContentKey)
+        if (string.IsNullOrEmpty(written[t]) || written[t] == MsgPackOptions.ContentKey)
           throw new MsgPackException($"Column {t} has the name \"{names[t]}\", which cannot be a property id: give it a name (an alias in the query).");
-        for (int u = t + 1; u < names.Length; u++)
-          if (string.Equals(names[t], names[u], StringComparison.Ordinal))
+        for (int u = t + 1; u < written.Length; u++)
+        {
+          if (!string.Equals(written[t], written[u], StringComparison.Ordinal))
+            continue;
+          if (ReferenceEquals(names, written))
             throw new MsgPackException($"Columns {t} and {u} are both called \"{names[t]}\": property ids must be unique, give one of them an alias in the query.");
+          throw new MsgPackException($"Columns {t} (\"{names[t]}\") and {u} (\"{names[u]}\") are both written as \"{written[t]}\" by the naming policy: property ids must be unique, give one of them an alias in the query.");
+        }
       }
     }
 

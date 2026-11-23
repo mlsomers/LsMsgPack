@@ -29,18 +29,50 @@ namespace LsMsgPack.FSharp
       return (Func<TArgument, TResult>)Delegate.CreateDelegate(typeof(Func<TArgument, TResult>), factory);
     }
 
-    [UnconditionalSuppressMessage("Trimming", "IL2090", Justification = TrimReasons.FSharp)]
     internal static MethodInfo PropertyGetter<TOwner>(string name)
     {
-      return typeof(TOwner).GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetGetMethod()
-        ?? throw new MsgPackException($"{typeof(TOwner).FullName} has no property {name}: not an F# type as FSharp.Core compiles it.");
+      return PropertyGetter(typeof(TOwner), name);
     }
 
-    [UnconditionalSuppressMessage("Trimming", "IL2090", Justification = TrimReasons.FSharp)]
     internal static MethodInfo StaticMethod<TOwner>(string name, Type parameter)
     {
-      return typeof(TOwner).GetMethod(name, BindingFlags.Public | BindingFlags.Static, null, new[] { parameter }, null)
-        ?? throw new MsgPackException($"{typeof(TOwner).FullName} has no static method {name}({parameter.Name}): not an F# type as FSharp.Core compiles it.");
+      return StaticMethod(typeof(TOwner), name, parameter);
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.FSharp)]
+    internal static MethodInfo PropertyGetter(Type owner, string name)
+    {
+      return owner.GetProperty(name, BindingFlags.Public | BindingFlags.Instance)?.GetGetMethod() ?? throw Missing(owner, $"property {name}");
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.FSharp)]
+    internal static MethodInfo StaticMethod(Type owner, string name, Type parameter)
+    {
+      return owner.GetMethod(name, BindingFlags.Public | BindingFlags.Static, null, new[] { parameter }, null) ?? throw Missing(owner, $"static method {name}({parameter.Name})");
+    }
+
+    /// <summary>
+    /// A member of FSharp.Core's types that is not there: another FSharp.Core, or a trimmed application without the descriptor LsMsgPack.Core's build adds for FSharp.Core (docs/FSharp.md).
+    /// </summary>
+    private static MsgPackException Missing(Type owner, string member)
+    {
+      return new MsgPackException($"{owner.FullName} has no {member}: not an F# type as FSharp.Core compiles it, or trimmed (a trimmed or NativeAOT application keeps it with the descriptor LsMsgPack.Core's build adds when the application references FSharp.Core, see docs/FSharp.md).");
+    }
+
+    /// <summary>
+    /// Calls a compiled member of an F# type by reflection (the converters without dynamic code), its exceptions as they are.
+    /// </summary>
+    internal static object Invoke(MethodInfo method, object target, params object[] arguments)
+    {
+      try
+      {
+        return method.Invoke(target, arguments);
+      }
+      catch (TargetInvocationException ex) when (ex.InnerException != null)
+      {
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+        throw; // not reached
+      }
     }
 
     /// <summary>
@@ -75,7 +107,22 @@ namespace LsMsgPack.FSharp
     {
       Type value = optionType.GenericTypeArguments[0];
       bool nullable = value.IsValueType && Nullable.GetUnderlyingType(value) is null;
+      if (!PropertyAccessor.CanCompile)
+        return Boxed(optionType, value, nullable, valueOption);
       return FSharpAccess.Create(nullable ? typeof(FSharpNullableOptionConverter<,>) : typeof(FSharpOptionConverter<,>), new[] { optionType, value }, valueOption);
+    }
+
+    /// <summary>
+    /// Without dynamic code: the same surrogates by reflection (<c>Some 0</c> is 0, None nil).
+    /// </summary>
+    private static MsgPackConverter Boxed(Type optionType, Type value, bool nullable, bool valueOption)
+    {
+      MethodInfo tag = valueOption ? FSharpAccess.PropertyGetter(optionType, "Tag") : null;
+      MethodInfo get = FSharpAccess.PropertyGetter(optionType, "Value");
+      MethodInfo some = FSharpAccess.StaticMethod(optionType, valueOption ? "NewValueSome" : "Some", value);
+      return new FSharpBoxedConverter(optionType, nullable ? FSharpBoxedConverter.NullableOf(value) : value,
+        option => tag != null && (int)FSharpAccess.Invoke(tag, option) == 0 ? null : FSharpAccess.Invoke(get, option),
+        surrogate => FSharpAccess.Invoke(some, null, surrogate));
     }
   }
 
@@ -146,7 +193,31 @@ namespace LsMsgPack.FSharp
     /// </summary>
     internal static MsgPackConverter Create(Type type, FSharpUnion union)
     {
+      if (!PropertyAccessor.CanCompile)
+        return Boxed(type, union);
       return FSharpAccess.Create(typeof(FSharpCaseNameConverter<>), new[] { type }, union);
+    }
+
+    /// <summary>
+    /// Without dynamic code: the same names by reflection.
+    /// </summary>
+    private static MsgPackConverter Boxed(Type type, FSharpUnion union)
+    {
+      string name = type == union.Type ? null : union.CaseOfClass(type).Name;
+      return new FSharpBoxedConverter(type, typeof(string),
+        value => name ?? union.Cases[(int)FSharpAccess.Invoke(union.TagGetter, value)].Name,
+        surrogate => Named(union, type, (string)surrogate));
+    }
+
+    /// <summary>
+    /// The value of the fieldless case of that name, of exactly the converted type.
+    /// </summary>
+    internal static object Named(FSharpUnion union, Type type, string name)
+    {
+      object value = union.FieldlessCaseNamed(name);
+      if (!type.IsInstanceOfType(value))
+        throw new MsgPackException($"The case \"{name}\" of the F# union {union.Type.FullName} cannot be read into a {type.Name}.");
+      return value;
     }
   }
 
@@ -175,10 +246,7 @@ namespace LsMsgPack.FSharp
 
     public override T FromSurrogate(string surrogate)
     {
-      object value = _union.FieldlessCaseNamed(surrogate);
-      if (!(value is T found))
-        throw new MsgPackException($"The case \"{surrogate}\" of the F# union {_union.Type.FullName} cannot be read into a {typeof(T).Name}.");
-      return found;
+      return (T)FSharpCaseNameConverters.Named(_union, typeof(T), surrogate);
     }
   }
 
@@ -200,7 +268,25 @@ namespace LsMsgPack.FSharp
 
     private static MsgPackException Unsupported()
     {
-      return new MsgPackException($"{TypeResolver.GetTypeName(typeof(T), false)} is an F# struct union with fields in several cases, which LsMsgPack does not write or read (yet): make it a reference union (without [<Struct>]), or register a converter for it in MsgPackOptions.Converters (docs/FSharp.md).");
+      return FSharpUnsupported.Exception(typeof(T));
+    }
+  }
+
+  internal static class FSharpUnsupported
+  {
+    /// <summary>
+    /// The converter of a struct union with fields in several cases (<see cref="FSharpUnsupportedConverter{T}"/>; boxed without dynamic code).
+    /// </summary>
+    internal static MsgPackConverter Create(Type type)
+    {
+      if (!PropertyAccessor.CanCompile)
+        return new FSharpBoxedConverter(type, typeof(object), value => throw Exception(type), surrogate => throw Exception(type));
+      return FSharpAccess.Create(typeof(FSharpUnsupportedConverter<>), new[] { type });
+    }
+
+    internal static MsgPackException Exception(Type type)
+    {
+      return new MsgPackException($"{TypeResolver.GetTypeName(type, false)} is an F# struct union with fields in several cases, which LsMsgPack does not write or read (yet): make it a reference union (without [<Struct>]), or register a converter for it in MsgPackOptions.Converters (docs/FSharp.md).");
     }
   }
 
@@ -211,6 +297,11 @@ namespace LsMsgPack.FSharp
     /// </summary>
     internal static MsgPackConverter Create(Type type, UnionCase single)
     {
+      if (!PropertyAccessor.CanCompile)
+      {
+        MethodInfo field = single.Fields[0].GetGetMethod(true);
+        return new FSharpBoxedConverter(type, single.Fields[0].PropertyType, value => FSharpAccess.Invoke(field, value), surrogate => FSharpAccess.Invoke(single.Factory, null, surrogate));
+      }
       return FSharpAccess.Create(typeof(FSharpSingleCaseConverter<,>), new[] { type, single.Fields[0].PropertyType }, single);
     }
   }
@@ -237,6 +328,48 @@ namespace LsMsgPack.FSharp
     public override TUnion FromSurrogate(TField surrogate)
     {
       return _create(surrogate);
+    }
+  }
+
+  /// <summary>
+  /// The F# converters without dynamic code (NativeAOT, where no code exists for the converters' type arguments of value types): the same surrogates as the generic converters,
+  /// by reflection on boxed values. The serializers write and read them boxed.
+  /// </summary>
+  internal sealed class FSharpBoxedConverter : BoxedConverter
+  {
+    private readonly Func<object, object> _toSurrogate;
+    private readonly Func<object, object> _fromSurrogate;
+
+    internal FSharpBoxedConverter(Type converted, Type surrogate, Func<object, object> toSurrogate, Func<object, object> fromSurrogate) : base(converted, surrogate)
+    {
+      _toSurrogate = toSurrogate;
+      _fromSurrogate = fromSurrogate;
+    }
+
+    internal override object ToSurrogateBoxed(object value)
+    {
+      return _toSurrogate(value);
+    }
+
+    internal override object FromSurrogateBoxed(object surrogate)
+    {
+      return _fromSurrogate(surrogate);
+    }
+
+    /// <summary>
+    /// <c>T?</c>, the surrogate of an option of a value type: written and read as the generic converter's (schema v2 describes it as a nullable).
+    /// </summary>
+    [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.FSharp)]
+    internal static Type NullableOf(Type value)
+    {
+      try
+      {
+        return typeof(Nullable<>).MakeGenericType(value);
+      }
+      catch (NotSupportedException) // no such instantiation in a NativeAOT application: the value type itself (the same values; schema v2 describes it as not nullable)
+      {
+        return value;
+      }
     }
   }
 }

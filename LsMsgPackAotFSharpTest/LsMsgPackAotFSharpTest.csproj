@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- F# types under NativeAOT (run by ../LsMsgPackAotSmokeTest/run.sh): F# projects can't run the C# source generator, so their types are written and read by reflection.
+       A JIT run writes the expected bytes (fsharp.txt), the NativeAOT build writes and reads the same, and maps rows of a data reader into F# records (LsMsgPack.Data).
+       The F# model (LsMsgPackFSharpTestTypes) is kept by TrimmerRootAssembly, as an application keeps its model for a serializer without a context. Not in LsMsgPack.slnf. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <Nullable>disable</Nullable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The F# model, kept as docs/SourceGenerator.md "Without the generator" says -->
+    <TrimmerRootAssembly Include="LsMsgPackFSharpTestTypes" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LsMsgPack\LsMsgPack.csproj" />
+    <ProjectReference Include="..\LsMsgPack.Data\LsMsgPack.Data.csproj" />
+    <ProjectReference Include="..\LsMsgPackFSharpTestTypes\LsMsgPackFSharpTestTypes.fsproj" />
+  </ItemGroup>
+
+  <!-- As the package does: adds the descriptor of FSharp.Core's members (LsMsgPack.FSharp.xml) -->
+  <Import Project="..\LsMsgPackCore\buildTransitive\LsMsgPack.Core.props" />
+
+</Project>

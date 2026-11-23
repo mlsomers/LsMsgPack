@@ -44,6 +44,7 @@ dotnet test LsMsgPack.AnalyzerTests
 dotnet test LsMsgPackTypeScriptTests
 cd clients/typescript && npm install && npm test        # live tests need dotnet build clients/typescript/test-server and LsMsgPackTypeScript
 bash LsMsgPackAotSmokeTest/run.sh                       # NativeAOT with the generated code, then without it (LsMsgPackAotReflectionTest); clang, or gcc when clang is missing
+bash LsMsgPackAotBenchmark/run.sh                       # speed under NativeAOT and the JIT, with and without the generated code (medians of 3 runs, ~5 minutes)
 bash LsMsgPackUnitySmokeTest/run.sh                     # Unity 6 (~/Unity/Hub/Editor/<version>, UNITY=path to override): editor, Mono and IL2CPP players, ~7 minutes
 ```
 

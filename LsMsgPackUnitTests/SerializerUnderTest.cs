@@ -158,7 +158,7 @@ namespace LsMsgPackUnitTests
       LsExtension[] extensions = Extensions(settings.CustomExtensionTypes);
       object key = (settings.UseIndexedSchema, settings.DynamicallyCompact, settings.EndianAction, settings.AddTypeIdOptions,
         settings.TypeResolvers, settings.StaticFilters, settings.DynamicFilters, settings.PropertyNameResolvers,
-        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtensionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.ReferenceHandling, settings.DateTimeFormat, settings.EnumFormat), (settings.Populate, settings.MaxObjects, settings.MaxItems, settings.MaxStringLength, settings.MaxBinLength, settings.Compression, settings.MaxDecompressedLength), (settings.PropertyNamingPolicy, settings.DictionaryKeyPolicy, settings.EnumNamingPolicy));
+        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtensionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.ReferenceHandling, settings.DateTimeFormat, settings.EnumFormat), (settings.Populate, settings.MaxObjects, settings.MaxItems, settings.MaxStringLength, settings.MaxBinLength, settings.Compression, settings.MaxDecompressedLength), (settings.PropertyNamingPolicy, settings.DictionaryKeyPolicy, settings.EnumNamingPolicy, new ElementsKey(settings.Converters)));
       return _serializers.GetOrAdd(key, k => new LsMsgPackSerializer(new LsMsgPackOptions()
       {
         UseIndexedSchema = settings.UseIndexedSchema,
@@ -198,9 +198,41 @@ namespace LsMsgPackUnitTests
         ReferenceHandling = settings.ReferenceHandling,
         ReadErrors = settings.ReadErrors,
         Extensions = extensions,
+        Converters = settings.Converters,
         Contexts = _contexts,
         UseRegisteredContexts = false
       }));
+    }
+
+    /// <summary>
+    /// An array in a cache key, compared by its elements (the options return a copy of their converters).
+    /// </summary>
+    private sealed class ElementsKey
+    {
+      private readonly object[] _elements;
+
+      internal ElementsKey(object[] elements)
+      {
+        _elements = elements ?? new object[0];
+      }
+
+      public override bool Equals(object obj)
+      {
+        if (!(obj is ElementsKey other) || other._elements.Length != _elements.Length)
+          return false;
+        for (int t = 0; t < _elements.Length; t++)
+          if (!ReferenceEquals(_elements[t], other._elements[t]))
+            return false;
+        return true;
+      }
+
+      public override int GetHashCode()
+      {
+        int hash = _elements.Length;
+        for (int t = 0; t < _elements.Length; t++)
+          hash = hash * 31 + System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(_elements[t]);
+        return hash;
+      }
     }
 
     /// <summary>

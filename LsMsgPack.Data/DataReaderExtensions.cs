@@ -13,7 +13,7 @@ namespace LsMsgPack.Data
   {
     /// <summary>
     /// Writes the rows of the reader (from its position to the end of the current result set) as a list of objects with a property per column: the same bytes as
-    /// <c>Serialize(List&lt;T&gt;)</c> of a class <paramref name="typeName"/> with those properties (the column names, the field types, Nullable for value types, in the column order),
+    /// <c>Serialize(List&lt;T&gt;)</c> of a class <paramref name="typeName"/> with those properties (the column names, converted by a naming policy as property names are; the field types, Nullable for value types, in the column order),
     /// so <c>Deserialize&lt;List&lt;T&gt;&gt;</c> reads them. The rows are buffered (the array header needs their number). DBNull is nil, a 0 stays a 0.
     /// </summary>
     /// <param name="typeName">The name of the rows' entry in the indexed schema (readers pair the root's class with it whatever its name)</param>
@@ -56,7 +56,7 @@ namespace LsMsgPack.Data
 
     /// <summary>
     /// Reads the rows of the reader (from its position to the end of the current result set) into objects of <typeparamref name="T"/>: the properties the serializer reads,
-    /// matched to the columns by <c>[Column(Name = ...)]</c> or the property id, then by name ignoring case, then ignoring case and underscores; not the ones with <c>[NotMapped]</c>.
+    /// matched to the columns by <c>[Column(Name = ...)]</c> or the property id (the name a naming policy gives), then the .NET name, then by name ignoring case, then ignoring case and underscores; not the ones with <c>[NotMapped]</c>.
     /// Columns without a property are not read, DBNull leaves the property as the constructor made it, a column of another type is converted as the serializer converts values.
     /// </summary>
     public static List<T> ReadRows<T>(this LsMsgPackSerializer serializer, IDataReader reader) where T : class

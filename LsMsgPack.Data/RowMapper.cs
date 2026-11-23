@@ -1,4 +1,5 @@
 ﻿using LsMsgPack;
+using LsMsgPack.FSharp;
 using LsMsgPack.Generated;
 using LsMsgPack.Meta;
 using LsMsgPack.Reading;
@@ -13,7 +14,7 @@ namespace LsMsgPack.Data
 {
   /// <summary>
   /// Creates an object of <typeparamref name="T"/> per row and sets the properties the columns match: the properties the serializer reads (its static filters and creation),
-  /// matched by <c>[Column(Name = ...)]</c> or the property id, then by name ignoring case, then ignoring case and underscores (<c>first_name</c>: FirstName); not the ones with <c>[NotMapped]</c>.
+  /// matched by <c>[Column(Name = ...)]</c> or the property id (the name a naming policy gives), then the .NET name, then by name ignoring case, then ignoring case and underscores (<c>first_name</c>: FirstName); not the ones with <c>[NotMapped]</c>.
   /// One per serializer, type and columns (names and field types). A class created by the constructor that takes its values (<see cref="ObjectConstructor"/>, immutable classes) gets the values boxed.
   /// </summary>
   internal sealed class RowMapper<T> where T : class
@@ -62,7 +63,7 @@ namespace LsMsgPack.Data
         if (found < 0)
           continue; // a column without a property: not read (Dapper does the same)
         taken[found] = true;
-        setters.Add(_constructor != null ? new BoxedColumnSetter<T>(serializer, props[found].Info, t) : ColumnSetter<T>.Create(serializer, props[found].Info, record, _types[t], t));
+        setters.Add(_constructor != null ? new BoxedColumnSetter<T>(serializer, props[found].Info, record, _types[t], t) : ColumnSetter<T>.Create(serializer, props[found].Info, record, _types[t], t));
       }
       _setters = setters.ToArray();
       if (_constructor != null)
@@ -121,21 +122,30 @@ namespace LsMsgPack.Data
       return (T)result;
     }
 
+    /// <summary>
+    /// The column name, then the .NET name when a naming policy changed it (as the serializer's readers take keys), then both ignoring case, then both ignoring case and underscores.
+    /// </summary>
     /// <returns>The index of the property the column sets, -1 for none (none, or several match equally)</returns>
     private static int Match(PropReader[] props, bool[] taken, string column)
     {
       for (int t = 0; t < props.Length; t++)
         if (!taken[t] && string.Equals(ColumnName(props[t].Info), column, StringComparison.Ordinal))
           return t;
-      int found = Unique(props, taken, column, StringComparison.OrdinalIgnoreCase, false);
+      for (int t = 0; t < props.Length; t++)
+        if (!taken[t] && string.Equals(DotNetName(props[t].Info), column, StringComparison.Ordinal))
+          return t;
+      int found = Unique(props, taken, column, false);
       if (found != -2)
         return found;
-      found = Unique(props, taken, column, StringComparison.OrdinalIgnoreCase, true);
+      found = Unique(props, taken, column, true);
       return found < 0 ? -1 : found;
     }
 
+    /// <summary>
+    /// Ignoring case, the column name or the .NET name.
+    /// </summary>
     /// <returns>The one property matching, -1 when several do, -2 when none does</returns>
-    private static int Unique(PropReader[] props, bool[] taken, string column, StringComparison comparison, bool withoutUnderscores)
+    private static int Unique(PropReader[] props, bool[] taken, string column, bool withoutUnderscores)
     {
       string key = withoutUnderscores ? column.Replace("_", string.Empty) : column;
       int found = -2;
@@ -143,16 +153,32 @@ namespace LsMsgPack.Data
       {
         if (taken[t])
           continue;
-        string name = ColumnName(props[t].Info);
-        if (withoutUnderscores)
-          name = name.Replace("_", string.Empty);
-        if (!string.Equals(name, key, comparison))
+        FullPropertyInfo info = props[t].Info;
+        if (!SameIgnoringCase(ColumnName(info), key, withoutUnderscores) && !SameIgnoringCase(DotNetName(info), key, withoutUnderscores))
           continue;
         if (found >= 0)
           return -1;
         found = t;
       }
       return found;
+    }
+
+    private static bool SameIgnoringCase(string name, string key, bool withoutUnderscores)
+    {
+      if (name is null)
+        return false;
+      if (withoutUnderscores)
+        name = name.Replace("_", string.Empty);
+      return string.Equals(name, key, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The .NET name when the property id is the name a naming policy gave (<see cref="MsgPackOptions.PropertyNamingPolicy"/>), null otherwise (no policy, a <c>[Column]</c> or attribute name: those are taken as they are).
+    /// </summary>
+    private static string DotNetName(FullPropertyInfo info)
+    {
+      string other = info.OtherName;
+      return other != null && string.Equals(ColumnName(info), info.PropertyId as string, StringComparison.Ordinal) ? other : null;
     }
 
     /// <summary>
@@ -210,13 +236,13 @@ namespace LsMsgPack.Data
         if (typed != null)
           return typed;
       }
-      return new BoxedColumnSetter<T>(serializer, info, ordinal);
+      return new BoxedColumnSetter<T>(serializer, info, record, column, ordinal);
     }
 
     /// <summary>
     /// The type has a typed getter of IDataRecord and it reads the value of the current row (decided once, on the first row; a DBNull there: the value is converted boxed).
     /// </summary>
-    private static bool ProviderConverts(IDataRecord record, int ordinal, Type type)
+    internal static bool ProviderConverts(IDataRecord record, int ordinal, Type type)
     {
       if (record.IsDBNull(ordinal))
         return false;
@@ -441,11 +467,51 @@ namespace LsMsgPack.Data
     private readonly Type _type;
     private readonly MsgPackOptions _options;
 
-    internal BoxedColumnSetter(Serializer serializer, FullPropertyInfo info, int ordinal) : base(ordinal)
+    /// <summary>
+    /// The typed getter (boxed) of the value's type when the column has another type and the provider converts it (SQLite's TEXT into DateTime), null: GetValue.
+    /// </summary>
+    private readonly Func<IDataRecord, int, object> _get;
+
+    /// <param name="record">On the first row: the provider's conversion is tried as for a property that is set (<see cref="ColumnSetter{T}.ProviderConverts"/>)</param>
+    internal BoxedColumnSetter(Serializer serializer, FullPropertyInfo info, IDataRecord record, Type column, int ordinal) : base(ordinal)
     {
       Info = info;
       _type = info.DeclaredType;
       _options = serializer.Options;
+      Type value = ValueType(_type);
+      if (value != column && ProviderConverts(record, ordinal, value))
+        _get = BoxedGetter(value);
+    }
+
+    /// <summary>
+    /// The type of the value a column gives: the type, the type of a Nullable or of an F# option (the converter wraps it).
+    /// </summary>
+    private static Type ValueType(Type type)
+    {
+      Type underlying = Nullable.GetUnderlyingType(type);
+      if (underlying != null)
+        return underlying;
+      return FSharpTypes.IsOption(type, out _) ? type.GetGenericArguments()[0] : type;
+    }
+
+    /// <summary>
+    /// The getters <see cref="ColumnSetter{T}.ProviderConverts"/> tries.
+    /// </summary>
+    private static Func<IDataRecord, int, object> BoxedGetter(Type type)
+    {
+      if (type == typeof(int)) return (r, i) => r.GetInt32(i);
+      if (type == typeof(long)) return (r, i) => r.GetInt64(i);
+      if (type == typeof(string)) return (r, i) => r.GetString(i);
+      if (type == typeof(short)) return (r, i) => r.GetInt16(i);
+      if (type == typeof(byte)) return (r, i) => r.GetByte(i);
+      if (type == typeof(bool)) return (r, i) => r.GetBoolean(i);
+      if (type == typeof(double)) return (r, i) => r.GetDouble(i);
+      if (type == typeof(float)) return (r, i) => r.GetFloat(i);
+      if (type == typeof(decimal)) return (r, i) => r.GetDecimal(i);
+      if (type == typeof(DateTime)) return (r, i) => r.GetDateTime(i);
+      if (type == typeof(Guid)) return (r, i) => r.GetGuid(i);
+      if (type == typeof(char)) return (r, i) => r.GetChar(i);
+      return null;
     }
 
     internal override void Set(IDataRecord record, T target, bool check)
@@ -457,9 +523,21 @@ namespace LsMsgPack.Data
     /// <returns>false for DBNull</returns>
     internal bool TryRead(IDataRecord record, out object value)
     {
-      value = record.GetValue(Ordinal);
-      if (value is DBNull || value is null)
-        return false;
+      if (_get != null)
+      {
+        if (record.IsDBNull(Ordinal))
+        {
+          value = null;
+          return false;
+        }
+        value = _get(record, Ordinal);
+      }
+      else
+      {
+        value = record.GetValue(Ordinal);
+        if (value is DBNull || value is null)
+          return false;
+      }
       value = ValueConverter.ConvertDeserializeValue(value, _type, _options, Info);
       return true;
     }

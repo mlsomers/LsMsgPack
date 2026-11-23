@@ -47,6 +47,11 @@ namespace LsMsgPack.DataTests
     public double? Score { get; set; }
   }
 
+  /// <summary>
+  /// <see cref="InvoiceRow"/> created by its constructor.
+  /// </summary>
+  public sealed record InvoiceRecord(int Id, string Number, string Customer, DateTime Date, decimal Amount, decimal Vat, bool Paid, Guid Reference, int Lines, string Note);
+
   public enum Status { None = 0, Open = 1, Paid = 2 }
 
   public class InvoiceRow
