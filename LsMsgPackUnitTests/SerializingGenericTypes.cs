@@ -30,7 +30,7 @@ namespace LsMsgPackUnitTests
       addMethod.Invoke(collection, new object[] { instance });
       System.Reflection.PropertyInfo countProp = generic.GetProperty("Count");
 
-      MsgPackSettings settings = new MsgPackSettings(){ UseInexedSchema=false};
+      MsgPackSettings settings = new MsgPackSettings(){ UseIndexedSchema=false};
 
       byte[] buffer = Serializer.Serialize(collection, settings);
 

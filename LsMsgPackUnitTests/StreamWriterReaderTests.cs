@@ -35,7 +35,7 @@ namespace LsMsgPackUnitTests
 
     private static LsMsgPackSerializer Plain()
     {
-      return new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
     }
 
     private static LsMsgPackSerializer WithReferences(SchemaStore store)
@@ -265,7 +265,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ValuesWithTypeIdsAlways()
     {
-      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Always });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Always });
       Guid guid = Guid.NewGuid();
       DateTime date = new DateTime(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
       CollectionAssert.AreEqual(serializer.Serialize(guid), Write(w => w.Write(guid), serializer));
@@ -314,7 +314,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void OtherByteOrder()
     {
-      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EndianAction = EndianAction.NeverSwap });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, EndianAction = EndianAction.NeverSwap });
       string text = new string('x', 300);
       byte[] bytes = Write(w =>
       {
@@ -841,7 +841,7 @@ namespace LsMsgPackUnitTests
     {
       foreach (EndianAction endian in new[] { EndianAction.SwapIfCurrentSystemIsLittleEndian, EndianAction.NeverSwap })
       {
-        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EndianAction = endian });
+        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, EndianAction = endian });
         SwOrder expected = Order(20);
         expected.Customer = new string('c', 100);
         byte[] bytes = Write(w =>
@@ -1359,7 +1359,7 @@ namespace LsMsgPackUnitTests
 
     private static void Invalid(string hex, int maxDepth = 256)
     {
-      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, MaxDepth = maxDepth });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, MaxDepth = maxDepth });
       using (MsgPackStreamReader reader = Reader(Hex(hex), serializer))
         Assert.ThrowsExactly<MsgPackException>(() => { while (reader.Read()) { } }, hex);
       using (MsgPackStreamReader reader = Reader(Hex(hex), serializer))

@@ -32,7 +32,7 @@ namespace LsMsgPackDebug
     /// Should inherit from BaseCustomExt, BaseCustomExtNonCached or AbstractCustomExt
     /// </summary>
     [IgnoreDataMember]
-    public static ICustomExt[] Default_CustomExtentionTypes = new ICustomExt[]
+    public static ICustomExt[] Default_CustomExtensionTypes = new ICustomExt[]
     {
       new MpDecimal((MsgPackSettings)null)
     };
@@ -44,7 +44,7 @@ namespace LsMsgPackDebug
     private readonly List<SkippedRange> _skippedRanges = new List<SkippedRange>();
 #endif
 
-    internal ICustomExt[] _customExtentionTypes = Default_CustomExtentionTypes;
+    internal ICustomExt[] _customExtensionTypes = Default_CustomExtensionTypes;
 
     internal bool _readStreams;
 
@@ -165,7 +165,7 @@ namespace LsMsgPackDebug
     /// <summary>
     /// Should inherit from BaseCustomExt, BaseCustomExtNonCached or AbstractCustomExt
     /// </summary>
-    public ICustomExt[] CustomExtentionTypes { get { return _customExtentionTypes; } set { _customExtentionTypes = value; } }
+    public ICustomExt[] CustomExtensionTypes { get { return _customExtensionTypes; } set { _customExtensionTypes = value; } }
 
     /// <summary>
     /// A copy of the settings (the session caches of the indexed schema are not copied).
@@ -177,7 +177,7 @@ namespace LsMsgPackDebug
 
     internal override bool HasCustomExtension(Type type)
     {
-      ICustomExt[] extensions = _customExtentionTypes;
+      ICustomExt[] extensions = _customExtensionTypes;
       for (int t = 0; t < extensions.Length; t++)
         if (extensions[t] != null && extensions[t].SupportsType(type))
           return true;
@@ -186,7 +186,7 @@ namespace LsMsgPackDebug
 
     internal override bool HasCustomExtensionCode(sbyte code)
     {
-      ICustomExt[] extensions = _customExtentionTypes;
+      ICustomExt[] extensions = _customExtensionTypes;
       for (int t = 0; extensions != null && t < extensions.Length; t++)
         if (extensions[t] != null && extensions[t].TypeSpecifier == code)
           return true;

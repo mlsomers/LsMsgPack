@@ -53,7 +53,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void MinusThirtyTwoIsANegativeFixint()
     {
-      MsgPackSettings compact = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings compact = new MsgPackSettings() { UseIndexedSchema = false };
       foreach (object value in new object[] { (sbyte)-32, (short)-32, -32, -32L })
       {
         CollectionAssert.AreEqual(new byte[] { 0xE0 }, MsgPackItem.Pack(value).ToBytes(), value.GetType().Name);
@@ -73,7 +73,7 @@ namespace LsMsgPackUnitTests
     [DataRow((sbyte)-33, new byte[] { 0xD0, 0xDF })]
     public void SByteWithoutCompacting(sbyte value, byte[] expected)
     {
-      MsgPackSettings settings = new MsgPackSettings() { DynamicallyCompact = false, UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { DynamicallyCompact = false, UseIndexedSchema = false };
       MsgPackItem item = MsgPackItem.Pack(value, settings);
       CollectionAssert.AreEqual(expected, item.ToBytes());
       Assert.AreEqual(value, item.Value); // still the original type

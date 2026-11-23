@@ -95,7 +95,7 @@ namespace LsMsgPack.Http
       ls.CompileWritersAfter = options.CompileWritersAfter;
       ls.CompileReadersAfter = options.CompileReadersAfter;
       Limit(ls, options);
-      _negotiate = options.NegotiateSchemas && ls.UseInexedSchema;
+      _negotiate = options.NegotiateSchemas && ls.UseIndexedSchema;
       if (_negotiate)
       {
         if (ls.SchemaStore is null)
@@ -106,7 +106,7 @@ namespace LsMsgPack.Http
       _lsOptions = ls;
       _store = ls.SchemaStore;
       _lsMsgPack = new LsMsgPackSerializer(ls, context);
-      if (options.DescribeSchemas && ls.UseInexedSchema)
+      if (options.DescribeSchemas && ls.UseIndexedSchema)
       {
         LsMsgPackOptions described = ls.Clone(); // the same store: the writer sessions are kept per version
         described.SchemaVersion = SchemaVersion.Described;
@@ -273,7 +273,7 @@ namespace LsMsgPack.Http
         return new MsgPackStreamHead(_plain, rootType, null, MsgPackStreamSchemas.PerObject, null, false);
 
       LsMsgPackSerializer serializer = describedSchema && !(_described is null) ? _described : _lsMsgPack;
-      if (!serializer.Implementation.Options._useInexedSchema)
+      if (!serializer.Implementation.Options._useIndexedSchema)
         return new MsgPackStreamHead(serializer, rootType, null, MsgPackStreamSchemas.PerObject, null, false);
 
       Serializer.WriterHead head = serializer.Implementation.PrepareHead(rootType); // the id written is the one named in the header
@@ -297,7 +297,7 @@ namespace LsMsgPack.Http
     {
       LsMsgPackSerializer serializer = For(mediaType);
       LsMsgPackOptions options = serializer.Implementation.Options;
-      bool references = options._useInexedSchema && options._writeSchemaReference && !(options._schemaStore is null);
+      bool references = options._useIndexedSchema && options._writeSchemaReference && !(options._schemaStore is null);
       return new MsgPackStreamWriter(body, serializer, references ? MsgPackStreamSchemas.PerStream : MsgPackStreamSchemas.PerObject, true, index, asynchronous);
     }
 

@@ -188,7 +188,7 @@ namespace LsMsgPackUnitTests
         {
           foreach (bool trim in new[] { false, true })
           {
-            LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false,
+            LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false,
               Contexts = generated ? new LsMsgPack.LsMsgPackContext[] { TestMsgPackContext.Default } : null });
             string setting = $"schema {schema}, {layout}, trim {trim}, generated {generated}";
 
@@ -254,7 +254,7 @@ namespace LsMsgPackUnitTests
       {
         foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
         {
-          LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
+          LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
             Contexts = generated ? new LsMsgPack.LsMsgPackContext[] { TestMsgPackContext.Default } : null,
             StaticFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeStatically[] { new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All,
               LsMsgPack.TypeResolving.Filters.NonPublicProperties.None, LsMsgPack.TypeResolving.Filters.SerializedFields.Public), new LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute(), new LsMsgPack.TypeResolving.Filters.FilterStatic() } });
@@ -348,7 +348,7 @@ namespace LsMsgPackUnitTests
       float nan = float.NaN;
       System.Numerics.Vector3[] vectors = { default(System.Numerics.Vector3), new System.Numerics.Vector3(-0f, 0f, -0f), new System.Numerics.Vector3(nan, 0, 0), new System.Numerics.Vector3(0, 0, 1e-45f), System.Numerics.Vector3.One };
       System.Numerics.Quaternion[] quaternions = { default(System.Numerics.Quaternion), new System.Numerics.Quaternion(-0f, 0, 0, 0), new System.Numerics.Quaternion(0, nan, 0, 0), System.Numerics.Quaternion.Identity };
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       for (int v = 0; v < vectors.Length; v++)
       {
         for (int q = 0; q < quaternions.Length; q++)
@@ -374,7 +374,7 @@ namespace LsMsgPackUnitTests
       {
         foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
         {
-          LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
+          LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
             Contexts = generated ? new LsMsgPack.LsMsgPackContext[] { TestMsgPackContext.Default } : null });
           string setting = $"schema {schema}, {layout}, generated {generated}";
 
@@ -427,7 +427,7 @@ namespace LsMsgPackUnitTests
       {
         foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
         {
-          LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
+          LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
             Contexts = generated ? new LsMsgPack.LsMsgPackContext[] { TestMsgPackContext.Default } : null });
           string setting = $"schema {schema}, {layout}, generated {generated}";
           byte[] data = lt.Serialize(vec);
@@ -477,7 +477,7 @@ namespace LsMsgPackUnitTests
       {
         foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
         {
-          LsMsgPackOptions options = new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
+          LsMsgPackOptions options = new LsMsgPackOptions() { UseIndexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false,
             Contexts = generated ? new LsMsgPack.LsMsgPackContext[] { TestMsgPackContext.Default } : null };
           LsMsgPackSerializer lt = new LsMsgPackSerializer(options);
           string setting = $"schema {schema}, {layout}, generated {generated}";
@@ -576,7 +576,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Structs_ReportDifferences()
     {
-      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false });
       byte[] data = lt.Serialize(new LtsWriterShape { P = new LtsWriterPoint { X = 4, Extra = 5 } });
 
       LtsReaderShape read = lt.Deserialize<LtsReaderShape>(data, out ReadDifferences differences);

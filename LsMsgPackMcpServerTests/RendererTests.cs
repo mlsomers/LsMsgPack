@@ -239,12 +239,12 @@ namespace LsMsgPackMcpServerTests
     {
       McpInvoice invoice = Payloads.Invoice();
       invoice.Date = new DateTime(2026, 10, 5, 12, 30, 0, DateTimeKind.Unspecified);
-      byte[] bytes = MsgPackSerializer.Serialize(invoice, new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseInexedSchema = false });
+      byte[] bytes = MsgPackSerializer.Serialize(invoice, new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseIndexedSchema = false });
       AssertContains(Render(bytes), "\"Date\": \"2026-10-05T12:30:00\", // DateTime of Kind Unspecified (ext type 6)");
       AssertContains(Render(bytes, new RenderOptions() { View = DecodeView.Items }), "fixext 8, type 6 (DateTime, Kind Unspecified): 2026-10-05T12:30:00 // Date");
 
       invoice.Date = Payloads.InvoiceDate;
-      bytes = MsgPackSerializer.Serialize(invoice, new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseInexedSchema = false });
+      bytes = MsgPackSerializer.Serialize(invoice, new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseIndexedSchema = false });
       AssertContains(Render(bytes, new RenderOptions() { View = DecodeView.Items }), "fixext 8, type 6 (DateTime, Kind Utc): 2026-10-05T12:30:00Z // Date");
     }
 
@@ -289,7 +289,7 @@ namespace LsMsgPackMcpServerTests
     [TestMethod]
     public void LongStringsAndBinAreCut()
     {
-      byte[] bytes = MsgPackSerializer.Serialize(new object[] { new string('x', 1000), new byte[100] }, new MsgPackSettings() { UseInexedSchema = false });
+      byte[] bytes = MsgPackSerializer.Serialize(new object[] { new string('x', 1000), new byte[100] }, new MsgPackSettings() { UseIndexedSchema = false });
       string text = Render(bytes, new RenderOptions() { MaxString = 10 });
       AssertContains(text, "\"xxxxxxxxxx...\"");
       AssertContains(text, "string of 1000 chars, the first 10 shown");
@@ -300,7 +300,7 @@ namespace LsMsgPackMcpServerTests
     public void Dictionaries_KeysKeepTheirKind()
     {
       System.Collections.Generic.Dictionary<int, string> byNumber = new System.Collections.Generic.Dictionary<int, string>() { { 1, "one" }, { 2, "two" } };
-      string text = Render(MsgPackSerializer.Serialize(byNumber, new MsgPackSettings() { UseInexedSchema = false }));
+      string text = Render(MsgPackSerializer.Serialize(byNumber, new MsgPackSettings() { UseIndexedSchema = false }));
       AssertContains(text, "1: \"one\"");
     }
 

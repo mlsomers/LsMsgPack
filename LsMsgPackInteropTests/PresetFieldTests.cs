@@ -120,7 +120,7 @@ namespace LsMsgPackInteropTests
     public void Newtonsoft_NonSerialized()
     {
       IopNonSerialized value = new IopNonSerialized() { Name = "n", Kept = 1, Skipped = 2 };
-      LsMsgPackDebug.MsgPackSettings settings = new LsMsgPackDebug.MsgPackSettings() { UseInexedSchema = false, ObjectLayout = LsMsgPack.ObjectLayout.Map,
+      LsMsgPackDebug.MsgPackSettings settings = new LsMsgPackDebug.MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = LsMsgPack.ObjectLayout.Map,
         StaticFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeStatically[] { new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All,
           LsMsgPack.TypeResolving.Filters.NonPublicProperties.None, LsMsgPack.TypeResolving.Filters.SerializedFields.Public), LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute.LikeNewtonsoft, new LsMsgPack.TypeResolving.Filters.FilterStatic() } };
       CollectionAssert.AreEquivalent(new[] { "Kept", "Name" }, Keys(Newtonsoft.Json.JsonConvert.SerializeObject(value)), "Json.NET (its order differs: fields first)");
@@ -159,7 +159,7 @@ namespace LsMsgPackInteropTests
 
     private static LsMsgPackDebug.MsgPackSettings MapSettings(LsMsgPack.TypeResolving.Filters.SerializedFields fields)
     {
-      return new LsMsgPackDebug.MsgPackSettings() { UseInexedSchema = false, ObjectLayout = LsMsgPack.ObjectLayout.Map,
+      return new LsMsgPackDebug.MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = LsMsgPack.ObjectLayout.Map,
         StaticFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeStatically[] { new LsMsgPack.TypeResolving.Filters.FilterNonSettable(LsMsgPack.TypeResolving.Filters.GetOnlyProperties.All,
           LsMsgPack.TypeResolving.Filters.NonPublicProperties.None, fields), new LsMsgPack.TypeResolving.Filters.FilterIgnoredAttribute(), new LsMsgPack.TypeResolving.Filters.FilterStatic() } };
     }

@@ -155,7 +155,7 @@ namespace LsMsgPackFormattersTests
     internal static readonly Guid ReceiptId = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
     internal static readonly DateTimeOffset ReceiptIssued = new DateTimeOffset(2026, 11, 3, 14, 30, 0, TimeSpan.FromHours(2));
 
-    private static MsgPackSettings Plain => new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never, ObjectLayout = ObjectLayout.Map };
+    private static MsgPackSettings Plain => new MsgPackSettings { UseIndexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never, ObjectLayout = ObjectLayout.Map };
 
     private static async Task<(IHost host, HttpClient client)> StartAsync(Action<IMvcBuilder> addFormatters)
     {
@@ -308,14 +308,14 @@ namespace LsMsgPackFormattersTests
     [Test]
     public async Task SetupActionIsApplied()
     {
-      (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(settings => settings.XLsMsgPack.UseInexedSchema = false));
+      (IHost host, HttpClient client) = await StartAsync(mvc => mvc.AddLsMsgPackSerializerFormatters(settings => settings.XLsMsgPack.UseIndexedSchema = false));
       using (host)
       {
         HttpResponseMessage response = await client.SendAsync(Post(MsgPackSerializer.Serialize(SampleOrder, Plain), MsgPackMediaTypes.XLsMsgPack, MsgPackMediaTypes.XLsMsgPack));
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.OK), await response.Content.ReadAsStringAsync());
         byte[] body = await response.Content.ReadAsByteArrayAsync();
-        Assert.That(MsgPackItem.UnpackMultiple(body).Count, Is.EqualTo(1), "UseInexedSchema = false from the setup action should be used");
+        Assert.That(MsgPackItem.UnpackMultiple(body).Count, Is.EqualTo(1), "UseIndexedSchema = false from the setup action should be used");
       }
     }
 

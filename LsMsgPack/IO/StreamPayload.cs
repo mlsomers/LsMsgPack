@@ -38,7 +38,7 @@ namespace LsMsgPack.IO
     internal StreamPayload(LsMsgPackOptions options)
     {
       _littleEndian = BitConverter.IsLittleEndian != MsgPackOptions.SwapEndianChoice(options, 2);
-      _indexed = options._useInexedSchema;
+      _indexed = options._useIndexedSchema;
       _maxDepth = options._maxDepth;
       Buffer = ArrayPool<byte>.Shared.Rent(256);
       _counts = new long[8];

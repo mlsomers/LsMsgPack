@@ -1,7 +1,7 @@
 ﻿namespace LsMsgPack.Streaming
 {
   /// <summary>
-  /// Where the schemas of the objects of a stream go (<see cref="MsgPackStreamWriter.WriteObject{T}(T)"/>), with the indexed schema (<see cref="LsMsgPack.MsgPackOptions.UseInexedSchema"/>).
+  /// Where the schemas of the objects of a stream go (<see cref="MsgPackStreamWriter.WriteObject{T}(T)"/>), with the indexed schema (<see cref="LsMsgPack.MsgPackOptions.UseIndexedSchema"/>).
   /// Without it there is no schema: every mode writes the same.
   /// </summary>
   public enum MsgPackStreamSchemas

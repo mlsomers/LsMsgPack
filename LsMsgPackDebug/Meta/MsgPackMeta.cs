@@ -58,22 +58,22 @@ namespace LsMsgPackDebug
        new PackDef(MsgPackTypeId.MpFloat,    "float 32", "floating point number in IEEE 754 single precision floating point number format (float)"),
        new PackDef(MsgPackTypeId.MpDouble,   "float 64", "floating point number in IEEE 754 double precision floating point number format (double)"),
 
-       new PackDef(MsgPackTypeId.MpStr5,     "fixstr", "byte array whose length is upto 31 bytes (string)"),
-       new PackDef(MsgPackTypeId.MpStr8,     "str 8", "byte array whose length is upto (2^8)-1 (=255) bytes (string)"),
-       new PackDef(MsgPackTypeId.MpStr16,    "str 16", "byte array whose length is upto (2^16)-1 bytes (string)"),
-       new PackDef(MsgPackTypeId.MpStr32,    "str 32", "byte array whose length is upto (2^32)-1 bytes (string)"),
+       new PackDef(MsgPackTypeId.MpStr5,     "fixstr", "byte array whose length is up to 31 bytes (string)"),
+       new PackDef(MsgPackTypeId.MpStr8,     "str 8", "byte array whose length is up to (2^8)-1 (=255) bytes (string)"),
+       new PackDef(MsgPackTypeId.MpStr16,    "str 16", "byte array whose length is up to (2^16)-1 bytes (string)"),
+       new PackDef(MsgPackTypeId.MpStr32,    "str 32", "byte array whose length is up to (2^32)-1 bytes (string)"),
 
-       new PackDef(MsgPackTypeId.MpBin8,     "bin 8", "byte array whose length is upto (2^8)-1 (=255) bytes (byte[])"),
-       new PackDef(MsgPackTypeId.MpBin16,    "bin 16", "byte array whose length is upto (2^16)-1 bytes (byte[])"),
-       new PackDef(MsgPackTypeId.MpBin32,    "bin 32", "byte array whose length is upto (2^32)-1 bytes (byte[])"),
+       new PackDef(MsgPackTypeId.MpBin8,     "bin 8", "byte array whose length is up to (2^8)-1 (=255) bytes (byte[])"),
+       new PackDef(MsgPackTypeId.MpBin16,    "bin 16", "byte array whose length is up to (2^16)-1 bytes (byte[])"),
+       new PackDef(MsgPackTypeId.MpBin32,    "bin 32", "byte array whose length is up to (2^32)-1 bytes (byte[])"),
 
-       new PackDef(MsgPackTypeId.MpArray4,   "fixarray", "array whose length is upto 15 elements (obect[])"),
-       new PackDef(MsgPackTypeId.MpArray16,  "array 16", "array whose length is upto (2^16)-1 elements (obect[])"),
-       new PackDef(MsgPackTypeId.MpArray32,  "array 32", "array whose length is upto (2^32)-1 elements (obect[])"),
+       new PackDef(MsgPackTypeId.MpArray4,   "fixarray", "array whose length is up to 15 elements (object[])"),
+       new PackDef(MsgPackTypeId.MpArray16,  "array 16", "array whose length is up to (2^16)-1 elements (object[])"),
+       new PackDef(MsgPackTypeId.MpArray32,  "array 32", "array whose length is up to (2^32)-1 elements (object[])"),
 
-       new PackDef(MsgPackTypeId.MpMap4,     "fixmap", "map whose length is upto 15 elements (KeyValuePair<,>[])"),
-       new PackDef(MsgPackTypeId.MpMap16,    "map 16", "map whose length is upto (2^16)-1 elements (KeyValuePair<,>[])"),
-       new PackDef(MsgPackTypeId.MpMap32,    "map 32", "map whose length is upto (2^32)-1 elements (KeyValuePair<,>[])"),
+       new PackDef(MsgPackTypeId.MpMap4,     "fixmap", "map whose length is up to 15 elements (KeyValuePair<,>[])"),
+       new PackDef(MsgPackTypeId.MpMap16,    "map 16", "map whose length is up to (2^16)-1 elements (KeyValuePair<,>[])"),
+       new PackDef(MsgPackTypeId.MpMap32,    "map 32", "map whose length is up to (2^32)-1 elements (KeyValuePair<,>[])"),
 
        new PackDef(MsgPackTypeId.MpFExt1,    "fixext 1", "integer and a byte array whose length is 1 byte"),
        new PackDef(MsgPackTypeId.MpFExt2,    "fixext 2", "integer and a byte array whose length is 2 bytes"),
@@ -81,11 +81,11 @@ namespace LsMsgPackDebug
        new PackDef(MsgPackTypeId.MpFExt8,    "fixext 8", "integer and a byte array whose length is 8 bytes"),
        new PackDef(MsgPackTypeId.MpFExt16,   "fixext 16", "integer and a byte array whose length is 16 bytes"),
 
-       new PackDef(MsgPackTypeId.MpExt8,     "ext 8", "integer and a byte array whose length is upto (2^8)-1 (=255) bytes"),
-       new PackDef(MsgPackTypeId.MpExt16,    "ext 16", "integer and a byte array whose length is upto (2^16)-1 bytes"),
-       new PackDef(MsgPackTypeId.MpExt32,    "ext 32", "integer and a byte array whose length is upto (2^32)-1 bytes"),
+       new PackDef(MsgPackTypeId.MpExt8,     "ext 8", "integer and a byte array whose length is up to (2^8)-1 (=255) bytes"),
+       new PackDef(MsgPackTypeId.MpExt16,    "ext 16", "integer and a byte array whose length is up to (2^16)-1 bytes"),
+       new PackDef(MsgPackTypeId.MpExt32,    "ext 32", "integer and a byte array whose length is up to (2^32)-1 bytes"),
 
-       new PackDef(MsgPackTypeId.NeverUsed,  "(never used)", "a specific value that is explicitally not allowed to be used according to the specifications")
+       new PackDef(MsgPackTypeId.NeverUsed,  "(never used)", "a specific value that is explicitly not allowed to be used according to the specifications")
       };
 
       FromTypeId = new Dictionary<MsgPackTypeId, PackDef>(AllPacks.Length);
@@ -145,7 +145,7 @@ namespace LsMsgPackDebug
           MsgPackTypeId.MpExt32
         };
 
-      MsgPackTypeId[][] typeFamilys = new MsgPackTypeId[][] {
+      MsgPackTypeId[][] typeFamilies = new MsgPackTypeId[][] {
         BoolTypeFamily,
         IntTypeFamily,
         FloatTypeFamily,
@@ -158,9 +158,9 @@ namespace LsMsgPackDebug
 
       for (int t = FamilyOf.Length - 1; t >= 0; t--)
         FamilyOf[t] = -1;
-      for (int t = typeFamilys.Length - 1; t >= 0; t--)
+      for (int t = typeFamilies.Length - 1; t >= 0; t--)
       {
-        MsgPackTypeId[] family = typeFamilys[t];
+        MsgPackTypeId[] family = typeFamilies[t];
         for (int f = family.Length - 1; f >= 0; f--)
           FamilyOf[(byte)family[f]] = (sbyte)t;
       }

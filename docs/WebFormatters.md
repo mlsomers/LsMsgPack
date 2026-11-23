@@ -286,7 +286,7 @@ Notes:
 - Without the helpers, set the `Accept` header, or the server will probably answer with JSON.
 - `HttpClientHandler` doesn't ask for [compressed responses](#response-compression) by default, and the handler `CreateHandler()` makes doesn't either. Pass one that does: `formatter.CreateHandler(new HttpClientHandler { AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate })` (`DecompressionMethods.All` on .NET Core 3.0 and up, which adds Brotli). With `IHttpClientFactory`, set it in `ConfigurePrimaryHttpMessageHandler`.
 - On the client side, a response that can't be deserialized throws from `ReadFromMsgPackAsync` or `ReadAsAsync` instead of being logged.
-- Use the same `XLsMsgPack` options on the client and the server for `application/x-lsmsgpack` (at least the same `UseInexedSchema`).
+- Use the same `XLsMsgPack` options on the client and the server for `application/x-lsmsgpack` (at least the same `UseIndexedSchema`).
 
 ### Error responses
 
@@ -523,7 +523,7 @@ Without the handler (or from any other client), nothing changes: the responses c
 - A schema grows when a new type is written (e.g. another implementation of an interface). It then gets a new id, and the client learns it from the next inline response.
 - The server keeps the schemas it writes. Schemas received from clients are limited by `SchemaStore.MaxSchemas`. A client whose store is full keeps working, it just stops listing new schemas.
 - ASP.NET Web API 2 as a server: a formatter can't set response headers, so `MsgPack-Schema` is a content header. Instead of `Vary`, a response with a reference has `Expires` in the past, so shared caches don't keep a body only this client can read.
-- `NegotiateSchemas = false` turns it off (the schema is always inline). It's also off when `XLsMsgPack.UseInexedSchema` is false.
+- `NegotiateSchemas = false` turns it off (the schema is always inline). It's also off when `XLsMsgPack.UseIndexedSchema` is false.
 
 Measured on the invoices of `BenchmarkInvoices` (100 invoices, LsMsgPack with the default options, one serializer, in process, one run): with the schema inline, 214.7 KB, write ~310 µs, read ~425 µs. With references, 176.2 KB (-18%), write ~255 µs, read ~415 µs.
 
@@ -550,5 +550,5 @@ Accept: application/x-lsmsgpack; schema=described, application/x-lsmsgpack; q=0.
 - List the plain media type as well: ASP.NET Core's content negotiation only matches a parameter it knows, and a server that doesn't offer version 2 then answers with version 1.
 - The .NET readers read both versions, so a response that a cache serves to another client can be read by it either way. ASP.NET Core and MVC 5 add `Accept` to `Vary`. Web API 2 can't set `Vary`, which is harmless here.
 - The .NET client asks for it with `formatter.CreateHandler(true)` (`LsMsgPackSchemaHandler.RequestDescribedSchemas`): it adds `application/x-lsmsgpack; schema=described` next to an `application/x-lsmsgpack` the request accepts, or sets the header above when the request has none.
-- `DescribeSchemas = false` turns it off: the server always writes version 1. It also needs `XLsMsgPack.UseInexedSchema`, and works with or without `NegotiateSchemas`.
+- `DescribeSchemas = false` turns it off: the server always writes version 1. It also needs `XLsMsgPack.UseIndexedSchema`, and works with or without `NegotiateSchemas`.
 - With `XLsMsgPack.SchemaVersion = SchemaVersion.Described`, every response has version 2.

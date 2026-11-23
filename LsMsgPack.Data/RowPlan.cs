@@ -57,7 +57,7 @@ namespace LsMsgPack.Data
       {
         _keys = new byte[count][];
         for (int t = 0; t < count; t++)
-          _keys[t] = options._useInexedSchema ? serializer.EncodeKey(t) : serializer.EncodeKey(Names[t]);
+          _keys[t] = options._useIndexedSchema ? serializer.EncodeKey(t) : serializer.EncodeKey(Names[t]);
       }
       _trim = options._trimTrailingNulls;
     }

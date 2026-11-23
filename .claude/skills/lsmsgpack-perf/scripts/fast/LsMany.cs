@@ -23,7 +23,7 @@ static class Program
   {
     switch (setup)
     {
-      case "names": return new LsMsgPackOptions { UseInexedSchema = false };
+      case "names": return new LsMsgPackOptions { UseIndexedSchema = false };
       case "inline": return new LsMsgPackOptions();
       case "reference": return new LsMsgPackOptions { SchemaStore = new SchemaStore(), WriteSchemaReference = true };
       default: throw new ArgumentException("setup: names, inline or reference");

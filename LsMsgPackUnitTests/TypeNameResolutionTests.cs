@@ -169,7 +169,7 @@ namespace LsMsgPackUnitTests
     [DataRow(ObjectLayout.Array, true, true)]
     public void ClassesNestedInGenericClasses(ObjectLayout layout, bool fullNames, bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = layout, UseIndexedSchema = useSchema };
       if (fullNames)
         settings.AddTypeIdOptions |= AddTypeIdOption.FullName;
 
@@ -202,7 +202,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void ShortNameOfSeveralTypes(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
       TwinHolder value = new TwinHolder()
       {
         First = new TwinsA.ResolutionTwin() { Tag = "a", A = 1 },
@@ -218,14 +218,14 @@ namespace LsMsgPackUnitTests
 
     /// <summary>
     /// Your own class before the framework's: a short name that one class outside the framework has is that class, also where the framework's class of the name fits too
-    /// (System.Random in an object property: "Type assignment dilamma" when both counted).
+    /// (System.Random in an object property: "Type assignment dilemma" when both counted).
     /// </summary>
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public void ShortNameOfOwnAndFrameworkClass(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
       TwinHolder value = new TwinHolder() { Anything = new Shadowing.Random() { Seed = 7 } };
 
       TwinHolder read = Serializer.Deserialize<TwinHolder>(Serializer.Serialize(value, settings), settings);
@@ -238,7 +238,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ShortNameThatFitsSeveralTypes()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       object[] values = { new TwinsA.ResolutionTwin() { A = 1 } };
       byte[] bytes = Serializer.Serialize(values, settings);
       Exception ex = Assert.Throws<Exception>(() => Serializer.Deserialize<object[]>(bytes, settings));

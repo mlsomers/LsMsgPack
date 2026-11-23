@@ -21,7 +21,7 @@ namespace LsMsgPackUnitTests
   {
     private static LsMsgPackSerializer Plain()
     {
-      return new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
     }
 
     private static byte[] Write(Action<MsgPackStreamWriter> write, LsMsgPackSerializer serializer = null, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, MsgPackStreamIndexOptions index = null)
@@ -414,7 +414,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public async Task PopulateObject_WhereReadObjectReads()
     {
-      foreach (LsMsgPackSerializer serializer in new[] { new LsMsgPackSerializer(), Plain(), new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false }) })
+      foreach (LsMsgPackSerializer serializer in new[] { new LsMsgPackSerializer(), Plain(), new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false }) })
       {
         byte[] bytes = Write(w =>
         {
@@ -430,7 +430,7 @@ namespace LsMsgPackUnitTests
 
         for (int mode = 0; mode < 3; mode++)
         {
-          string setting = (serializer.Options.UseInexedSchema ? "indexed" : serializer.Options.ObjectLayout.ToString()) + ", " + (mode == 0 ? "sync" : mode == 1 ? "async, whole reads" : "async");
+          string setting = (serializer.Options.UseIndexedSchema ? "indexed" : serializer.Options.ObjectLayout.ToString()) + ", " + (mode == 0 ? "sync" : mode == 1 ? "async, whole reads" : "async");
           using (MsgPackStreamReader reader = mode == 0 ? SyncReader(bytes, serializer) : AsyncReader(bytes, serializer, mode == 1))
           {
             Func<object, Task> populate = mode == 0 ? (Func<object, Task>)(t => { reader.PopulateObject(t); return Task.CompletedTask; }) : (t => reader.PopulateObjectAsync(t));
@@ -598,7 +598,7 @@ namespace LsMsgPackUnitTests
       foreach (string hex in new[] { "c1 91", "c1 ff", "c1 90 01 c1", "c1 c0", "92 01 c1 c0", "c1 80 a1 61 c1 c0", "c1 a0 01 c1 c0", "c1 c4 a1 61 c1 c0", "c1 a0 c1 90 c1 c0 c1 c0",
         "c1 90 c1 90 c1 90 c1 c0 c1 c0 c1 c0", "c1 90 01", "db ff ff ff f0 61 62 63", "dd ff ff ff ff 01", "c1 90 dd ff ff ff ff 01 02 c6 10 00 00 00 01 02 03", "c7 05 03 01", "d8 01 02", "c7 05 05 01", "c1", "92 d4 01", "91 91 91 01", "92 01", "82 a1 61 91 91 01" })
       {
-        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, MaxDepth = 2 });
+        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, MaxDepth = 2 });
 
         foreach (bool wholeReads in new[] { false, true })
         {

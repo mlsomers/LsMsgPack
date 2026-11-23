@@ -62,7 +62,7 @@ namespace LsMsgPackUnitTests
       return new MsgPackSettings()
       {
         Compression = compression,
-        UseInexedSchema = mode != 0,
+        UseIndexedSchema = mode != 0,
         WriteSchemaReference = mode == 2,
         SchemaStore = mode == 2 ? store ?? new SchemaStore() : null,
         EndianAction = endian,
@@ -360,7 +360,7 @@ namespace LsMsgPackUnitTests
 
     private static LsMsgPackSerializer Ls(MsgPackCompression compression, bool schema = true, bool references = false)
     {
-      return new LsMsgPackSerializer(new LsMsgPackOptions() { Compression = compression, UseInexedSchema = schema, WriteSchemaReference = references, SchemaStore = references ? new SchemaStore() : null });
+      return new LsMsgPackSerializer(new LsMsgPackOptions() { Compression = compression, UseIndexedSchema = schema, WriteSchemaReference = references, SchemaStore = references ? new SchemaStore() : null });
     }
 
     /// <summary>

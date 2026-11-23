@@ -24,7 +24,7 @@ namespace LsMsgPackUnitTests
   {
     private static LsMsgPackSerializer Plain()
     {
-      return new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
     }
 
     private static SwOrder Order(int n)
@@ -731,7 +731,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void TheIndexIgnoresTheByteOrderOfTheStream()
     {
-      LsMsgPackSerializer swapped = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, EndianAction = EndianAction.NeverSwap });
+      LsMsgPackSerializer swapped = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, EndianAction = EndianAction.NeverSwap });
       Action<MsgPackStreamWriter> write = w =>
       {
         w.BeginEntry(300);

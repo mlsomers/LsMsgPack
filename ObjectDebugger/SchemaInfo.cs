@@ -6,7 +6,7 @@ namespace ObjectDebugger
 {
   public enum SchemaSource
   {
-    /// <summary>The schema precedes the body (<c>UseInexedSchema</c>)</summary>
+    /// <summary>The schema precedes the body (<c>UseIndexedSchema</c>)</summary>
     Inline,
     /// <summary>The body refers to a schema by its id (<c>WriteSchemaReference</c>), the schema is only known when a <c>SchemaStore</c> holding it was given</summary>
     Reference

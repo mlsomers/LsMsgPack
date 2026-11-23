@@ -502,8 +502,8 @@ namespace LsMsgPackUnitTests
     [DataRow(false, ObjectLayout.Map)]
     public void Blit_RoundTrip(bool schema, ObjectLayout layout)
     {
-      MsgPackSettings debug = new MsgPackSettings { Converters = BlitConverters(), UseInexedSchema = schema, ObjectLayout = layout };
-      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BlitConverters(), UseInexedSchema = schema, ObjectLayout = layout });
+      MsgPackSettings debug = new MsgPackSettings { Converters = BlitConverters(), UseIndexedSchema = schema, ObjectLayout = layout };
+      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BlitConverters(), UseIndexedSchema = schema, ObjectLayout = layout });
       foreach (object value in BlitCorpus())
       {
         Type type = value.GetType();
@@ -518,14 +518,14 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Blit_TheBytesOfTheMemory()
     {
-      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BlitConverters(), UseInexedSchema = false });
-      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BlitConverters(), UseIndexedSchema = false });
+      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
       CvVec[] vectors = Vectors(3);
       byte[] memory = System.Runtime.InteropServices.MemoryMarshal.AsBytes(new ReadOnlySpan<CvVec>(vectors)).ToArray();
       CollectionAssert.AreEqual(plain.Serialize(memory), ls.Serialize(vectors), "bin of the array's memory");
       CollectionAssert.AreEqual(plain.Serialize(memory), ls.Serialize(new List<CvVec>(vectors)));
 
-      byte[] samples = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array }).Serialize(new CvBlits { Samples = new[] { new CvSample { At = 1 } } });
+      byte[] samples = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array }).Serialize(new CvBlits { Samples = new[] { new CvSample { At = 1 } } });
       int size = System.Runtime.CompilerServices.Unsafe.SizeOf<CvSample>();
       Assert.AreEqual(1, Enumerable.Range(0, samples.Length - 2).Count(i => samples[i] == 0xC7 && samples[i + 1] == size && samples[i + 2] == 42), "ext 8 of type 42 with the sample's bytes");
     }
@@ -533,10 +533,10 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Blit_ALengthOfAnotherLayoutThrows()
     {
-      byte[] data = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false }).Serialize(new byte[13]);
-      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BlitConverters(), UseInexedSchema = false });
+      byte[] data = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false }).Serialize(new byte[13]);
+      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BlitConverters(), UseIndexedSchema = false });
       Assert.Throws<MsgPackException>(() => ls.Deserialize<CvVec[]>(data));
-      Assert.Throws<MsgPackException>(() => MsgPackSerializer.Deserialize<CvVec[]>(data, new MsgPackSettings { Converters = BlitConverters(), UseInexedSchema = false }));
+      Assert.Throws<MsgPackException>(() => MsgPackSerializer.Deserialize<CvVec[]>(data, new MsgPackSettings { Converters = BlitConverters(), UseIndexedSchema = false }));
       Assert.Throws<ArgumentOutOfRangeException>(() => new BlitArrayConverter<CvVec>(-1));
     }
 
@@ -546,12 +546,12 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings DebugSettings(bool schema = true, ObjectLayout layout = ObjectLayout.Array)
     {
-      return new MsgPackSettings { Converters = OptionConverters(), UseInexedSchema = schema, ObjectLayout = layout };
+      return new MsgPackSettings { Converters = OptionConverters(), UseIndexedSchema = schema, ObjectLayout = layout };
     }
 
     private static LsMsgPackSerializer Ls(bool schema = true, ObjectLayout layout = ObjectLayout.Array)
     {
-      return new LsMsgPackSerializer(new LsMsgPackOptions { Converters = OptionConverters(), UseInexedSchema = schema, ObjectLayout = layout });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { Converters = OptionConverters(), UseIndexedSchema = schema, ObjectLayout = layout });
     }
 
     [TestMethod]
@@ -579,8 +579,8 @@ namespace LsMsgPackUnitTests
     [DataRow(false, ObjectLayout.Map)]
     public void BuiltInTypes_RoundTrip(bool schema, ObjectLayout layout)
     {
-      MsgPackSettings debug = new MsgPackSettings { Converters = BuiltInConverters(), UseInexedSchema = schema, ObjectLayout = layout };
-      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BuiltInConverters(), UseInexedSchema = schema, ObjectLayout = layout });
+      MsgPackSettings debug = new MsgPackSettings { Converters = BuiltInConverters(), UseIndexedSchema = schema, ObjectLayout = layout };
+      LsMsgPackSerializer ls = new LsMsgPackSerializer(new LsMsgPackOptions { Converters = BuiltInConverters(), UseIndexedSchema = schema, ObjectLayout = layout });
       foreach (object value in BuiltInCorpus())
       {
         string expected = CrossLibraryTests.Dump(value);
@@ -588,7 +588,7 @@ namespace LsMsgPackUnitTests
         Assert.AreEqual(expected, CrossLibraryTests.Dump(MsgPackSerializer.Deserialize(type, MsgPackSerializer.Serialize(value, type, debug), debug)), "Debug " + type.Name);
         Assert.AreEqual(expected, CrossLibraryTests.Dump(ls.Deserialize(type, ls.Serialize(value, type))), "Ls " + type.Name);
       }
-      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = schema, ObjectLayout = layout });
+      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = schema, ObjectLayout = layout });
       CollectionAssert.AreEqual(plain.Serialize(new List<string> { "#1", "#2" }), ls.Serialize(new List<int> { 1, 2 }));
       CollectionAssert.AreEqual(plain.Serialize(0.5), ls.Serialize(0.5m));
     }
@@ -597,7 +597,7 @@ namespace LsMsgPackUnitTests
     public void WrittenAsTheSurrogate()
     {
       LsMsgPackSerializer ls = Ls(false);
-      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
       CollectionAssert.AreEqual(plain.Serialize("12.5 EUR"), ls.Serialize(new CvMoney(12.5m, "EUR")));
       CollectionAssert.AreEqual(plain.Serialize(21.5), ls.Serialize(new CvTemperature(21.5)));
       CollectionAssert.AreEqual(plain.Serialize(new CvThirdPartyDto { X = 3, Y = -4 }), ls.Serialize(CvThirdParty.Create(3, -4)));
@@ -695,7 +695,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ConverterExceptionsArePassedOn()
     {
-      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
       byte[] data = plain.Serialize("no-space");
       Assert.Throws<FormatException>(() => Ls(false).Deserialize<CvMoney>(data));
       Assert.Throws<FormatException>(() => MsgPackSerializer.Deserialize<CvMoney>(data, DebugSettings(false)));

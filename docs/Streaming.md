@@ -152,10 +152,10 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(response, serializer
 
 ## Objects and their schema
 
-With the indexed schema (`UseInexedSchema`, the default) an object is written as its schema, then the object. That's two MsgPack values, so on their own `WriteObject` and `ReadObject` only take root values of the stream (`Depth` 0). For objects in an array or map, write their schema once before it: see [one schema for a root value](#one-schema-for-a-root-value). Without the indexed schema an object is one value: it can also be an element of an array, e.g. of an array of unknown length:
+With the indexed schema (`UseIndexedSchema`, the default) an object is written as its schema, then the object. That's two MsgPack values, so on their own `WriteObject` and `ReadObject` only take root values of the stream (`Depth` 0). For objects in an array or map, write their schema once before it: see [one schema for a root value](#one-schema-for-a-root-value). Without the indexed schema an object is one value: it can also be an element of an array, e.g. of an array of unknown length:
 
 ```csharp
-LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
 // writer: WriteArrayStart(), WriteObject(row) per row, WriteEnd()
 // reader: Read(), then while (!reader.AtEnd) rows.Add(reader.ReadObject<Row>())
 ```
@@ -287,7 +287,7 @@ for await (const row of reader.elements()) process(row);
 
 - **Write the described schema** for JavaScript readers: `SchemaVersion = SchemaVersion.Described` in the options of the writer's serializer. The reader then knows the type of every place in a body (the rows of a `List<Row>` are objects), and the defaults of the values the writer left out. With the plain schema it needs the type of the rows from the code (`elements(Row)` with the generated models, or `elements('Row')`).
 - **Range requests** for the index: serve the file as it is (a static file), or with `File(bytes or stream, contentType, enableRangeProcessing: true)`.
-- **The other way around**, the TypeScript writer writes plain MsgPack (objects as maps of their names, without a schema): read its streams with a serializer without the indexed schema (`UseInexedSchema = false`, and `PropertyNameCaseInsensitive = true` for camelCase names). Its index is read by `ReadIndexes` as any other.
+- **The other way around**, the TypeScript writer writes plain MsgPack (objects as maps of their names, without a schema): read its streams with a serializer without the indexed schema (`UseIndexedSchema = false`, and `PropertyNameCaseInsensitive = true` for camelCase names). Its index is read by `ReadIndexes` as any other.
 
 ## The format
 

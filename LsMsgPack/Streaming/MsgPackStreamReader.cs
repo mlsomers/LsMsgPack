@@ -763,7 +763,7 @@ namespace LsMsgPack.Streaming
     {
       ThrowIfDisposed();
       PassPayload();
-      bool withSchema = _options._useInexedSchema;
+      bool withSchema = _options._useIndexedSchema;
       bool body = _depth == 0 ? _headState == HeadState.AwaitingBody : _headState == HeadState.InBody;
       Serializer.SchemaHead head = body ? _head : null;
       Type root = _headRoot;
@@ -876,7 +876,7 @@ namespace LsMsgPack.Streaming
 
       _head = null;
       _headRoot = root;
-      if (_options._useInexedSchema)
+      if (_options._useIndexedSchema)
       {
         SkipStreamValues();
         if (!TryEnsure(1))

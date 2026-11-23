@@ -37,7 +37,7 @@ An older service that reads such an order, changes `Customer` and writes it back
 
   ```csharp
   if (order.Extra != null && order.Extra.TryGetRaw("Discount", out byte[] raw))
-    discount = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false }).Deserialize<decimal>(raw);
+    discount = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false }).Deserialize<decimal>(raw);
   ```
 
   The raw values are in the byte order of the MsgPack specification and never use the indexed schema: objects in them are maps keyed by their names, type ids are type names. So any reader can read them, also one without the schema. `Names`, `Positions`, `Count`, `SetRaw`, `Remove` and `Clear` do the rest. `SetRaw` takes exactly one MsgPack value.
@@ -62,7 +62,7 @@ A value is kept by its name (the key of a map, or the name in the indexed schema
 | How the data was written | Kept |
 |---|---|
 | Maps with names (`ObjectLayout.Map`, no indexed schema) | Every key the class doesn't have, by name. |
-| Arrays without the indexed schema (`ObjectLayout.Array`, `UseInexedSchema = false`) | The values after the class's last property, by position (`Positions`). A dictionary keeps no positions: they are reported as `ExtraValue`. |
+| Arrays without the indexed schema (`ObjectLayout.Array`, `UseIndexedSchema = false`) | The values after the class's last property, by position (`Positions`). A dictionary keeps no positions: they are reported as `ExtraValue`. |
 | Indexed schema, version 2 (`SchemaVersion.Described`), any layout | Every name the class doesn't have. The objects in the values are made maps of their names, the type ids type names: the schema says which class each object is. |
 | Indexed schema, version 1 (`SchemaVersion.Names`, the default) | Only values without arrays or maps (numbers, strings, binary data, extensions, timestamps, booleans). |
 

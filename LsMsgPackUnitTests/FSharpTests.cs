@@ -144,16 +144,16 @@ namespace LsMsgPackUnitTests
     {
       yield return new MsgPackSettings();
       yield return new MsgPackSettings() { ObjectLayout = ObjectLayout.Map };
-      yield return new MsgPackSettings() { UseInexedSchema = false };
+      yield return new MsgPackSettings() { UseIndexedSchema = false };
       yield return MsgPackMediaTypes.ToPlain(new MsgPackSettings());
       yield return new MsgPackSettings() { SchemaVersion = SchemaVersion.Described };
-      yield return new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName };
+      yield return new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName };
       yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve };
     }
 
     internal static string Describe(MsgPackSettings settings)
     {
-      return $"schema {settings.UseInexedSchema} v{(int)settings.SchemaVersion}, {settings.ObjectLayout}, type ids {settings.AddTypeIdOptions}, references {settings.ReferenceHandling}";
+      return $"schema {settings.UseIndexedSchema} v{(int)settings.SchemaVersion}, {settings.ObjectLayout}, type ids {settings.AddTypeIdOptions}, references {settings.ReferenceHandling}";
     }
 
     #endregion
@@ -250,7 +250,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Unions_TheTypeIdIsTheCaseName()
     {
-      MsgPackSettings byNames = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings byNames = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       FsGeneric<int>[] values = { FsGeneric<int>.NewValue(5) };
       Dictionary<string, object>[] expected = { new Dictionary<string, object>() { { "", "Value" }, { "Item", 5 } } };
       CollectionAssert.AreEqual(MsgPackSerializer.Serialize(expected, byNames), Serializer.Serialize(values, byNames));
@@ -329,11 +329,11 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(list, Serializer.Deserialize<FSharpList<FsAddress>>(Serializer.Serialize(list)));
       Assert.AreEqual(FSharpList<int>.Empty, Serializer.Deserialize<FSharpList<int>>(Serializer.Serialize(FSharpList<int>.Empty)));
       FSharpMap<int, string> map = MapModule.OfSeq(new[] { Tuple.Create(2, "two"), Tuple.Create(1, "one") });
-      Assert.AreEqual(map, Serializer.Deserialize<FSharpMap<int, string>>(Serializer.Serialize(map, new MsgPackSettings() { UseInexedSchema = false }), new MsgPackSettings() { UseInexedSchema = false }));
+      Assert.AreEqual(map, Serializer.Deserialize<FSharpMap<int, string>>(Serializer.Serialize(map, new MsgPackSettings() { UseIndexedSchema = false }), new MsgPackSettings() { UseIndexedSchema = false }));
       FSharpSet<FsColour> set = SetModule.OfSeq(new[] { FsColour.Green, FsColour.Red });
       Assert.AreEqual(set, Serializer.Deserialize<FSharpSet<FsColour>>(Serializer.Serialize(set)));
       FSharpMap<FsColour, FSharpOption<int>> byColour = MapModule.OfSeq(new[] { Tuple.Create(FsColour.Red, Some(1)), Tuple.Create(FsColour.Blue, (FSharpOption<int>)null) });
-      foreach (MsgPackSettings settings in new[] { new MsgPackSettings(), new MsgPackSettings() { UseInexedSchema = false } })
+      foreach (MsgPackSettings settings in new[] { new MsgPackSettings(), new MsgPackSettings() { UseIndexedSchema = false } })
         Assert.AreEqual(byColour, Serializer.Deserialize<FSharpMap<FsColour, FSharpOption<int>>>(Serializer.Serialize(byColour, settings), settings), "union keys by name, options as values");
     }
   }

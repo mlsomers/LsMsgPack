@@ -237,7 +237,7 @@ namespace MsgPackExplorer
                 ContinueProcessingOnBreakingError = _continueOnError,
                 EndianAction = _endianHandling,
                 // The extensions of LsMsgPack: decimals (type 1), references (5), DateTimes (6), and values of unknown length and the index of a stream, as its MsgPackStreamWriter writes them
-                CustomExtentionTypes = _lsMsgPackExtensions ? MsgPackSettings.Default_CustomExtentionTypes : new ICustomExt[0],
+                CustomExtensionTypes = _lsMsgPackExtensions ? MsgPackSettings.Default_CustomExtensionTypes : new ICustomExt[0],
                 ReadLsMsgPackExtensions = _lsMsgPackExtensions,
                 ReadStreams = _lsMsgPackExtensions,
                 ReadHubMessages = true, // a capture of a SignalR connection (only when the whole data is one): its handshake, length prefixes and messages
@@ -999,7 +999,7 @@ namespace MsgPackExplorer
                 if (issues.Length - t > DisplayLimit)
                     return;
 
-                AddValidationItem(issues[t].WaistedBytes, meta, issues[t].Severity, issues[t].Message);
+                AddValidationItem(issues[t].WastedBytes, meta, issues[t].Severity, issues[t].Message);
             }
         }
 
@@ -1024,14 +1024,14 @@ namespace MsgPackExplorer
                 EditorMetaData meta = ReferenceEquals(issues[t].Item, null) ? null : issues[t].Item.Tag as EditorMetaData;
                 if (meta is null || meta.Node is null || meta.Node.TreeView is null) // not displayed (the tag of an earlier tree)
                     meta = rootMeta;
-                AddValidationItem(issues[t].WaistedBytes, meta, issues[t].Severity, issues[t].Message);
+                AddValidationItem(issues[t].WastedBytes, meta, issues[t].Severity, issues[t].Message);
             }
         }
 
-        private void AddValidationItem(int waistedBytes, EditorMetaData meta, MsgPackValidation.ValidationSeverity sev, string message)
+        private void AddValidationItem(int wastedBytes, EditorMetaData meta, MsgPackValidation.ValidationSeverity sev, string message)
         {
             int iconId = (meta.Item.TypeId == MsgPackTypeId.NeverUsed) ? -1 : GetIconFor(meta.Item);
-            ListViewItem lvi = new ListViewItem(waistedBytes.ToString(), iconId);
+            ListViewItem lvi = new ListViewItem(wastedBytes.ToString(), iconId);
             lvi.StateImageIndex = (int)sev;
 
             lvi.SubItems.Add(message);

@@ -140,7 +140,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(ObjectLayout layout, bool schema)
     {
-      return new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = schema };
+      return new MsgPackSettings() { ObjectLayout = layout, UseIndexedSchema = schema };
     }
 
     /// <summary>
@@ -449,9 +449,9 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void DateTimes_NativeAndTimestamp()
     {
-      RootObject native = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }));
+      RootObject native = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }));
       Assert.AreEqual("DateTime", Member(native, "Date").TypeText);
-      RootObject timestamp = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DateTimeFormat = DateTimeFormat.Timestamp }));
+      RootObject timestamp = Reconstruct(MsgPackSerializer.Serialize(CreateInvoice(), new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, DateTimeFormat = DateTimeFormat.Timestamp }));
       Assert.AreEqual("timestamp", Member(timestamp, "Date").TypeText);
     }
 

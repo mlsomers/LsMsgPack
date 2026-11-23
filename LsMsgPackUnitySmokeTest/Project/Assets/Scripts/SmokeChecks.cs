@@ -45,15 +45,15 @@ namespace LsMsgPackUnitySmoke
     public static IEnumerable<(string Name, Func<LsMsgPackOptions> Options)> OptionSets()
     {
       yield return ("default", () => Converted(new LsMsgPackOptions()));
-      yield return ("names-map", () => Converted(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }));
-      yield return ("names-array", () => Converted(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array }));
+      yield return ("names-map", () => Converted(new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }));
+      yield return ("names-array", () => Converted(new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array }));
       yield return ("inline-map", () => Converted(new LsMsgPackOptions() { ObjectLayout = ObjectLayout.Map }));
       yield return ("reference", () => Converted(new LsMsgPackOptions() { SchemaStore = Store, WriteSchemaReference = true }));
       yield return ("trimmed", () => Converted(new LsMsgPackOptions() { TrimTrailingNulls = true, DynamicallyCompact = false }));
       yield return ("public-fields", () => Converted(new LsMsgPackOptions() { StaticFilters = PublicFields }));
       yield return ("naming-policies", () => Converted(new LsMsgPackOptions()
       {
-        UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name,
+        UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name,
         PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower, DictionaryKeyPolicy = MsgPackNamingPolicy.CamelCase, EnumNamingPolicy = MsgPackNamingPolicy.KebabCaseLower
       }));
       yield return ("preserve", () => Converted(new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve }));
@@ -65,7 +65,7 @@ namespace LsMsgPackUnitySmoke
     public static IEnumerable<(string Name, Func<MsgPackSettings> Settings)> DebugSets()
     {
       yield return ("debug-default", () => Converted(new MsgPackSettings()));
-      yield return ("debug-names-map", () => Converted(new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }));
+      yield return ("debug-names-map", () => Converted(new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }));
     }
 
     private static byte[] Write(string name, Invoice sample)

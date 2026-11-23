@@ -54,7 +54,7 @@ namespace LsMsgPackDebug
     }
 
     /// <summary>
-    /// Provided for generic flexibility, use the strongly typed Serialize&lt;T&gt; to benifit from compile-time type safety.
+    /// Provided for generic flexibility, use the strongly typed Serialize&lt;T&gt; to benefit from compile-time type safety.
     /// </summary>
     /// <param name="item">The object to serialize</param>
     /// <param name="assignedTo">The declared type the item is assigned to, a type id is only added when the item's actual type differs (depending on <see cref="MsgPackSettings.AddTypeIdOptions"/>)</param>
@@ -68,7 +68,7 @@ namespace LsMsgPackDebug
     }
 
     /// <summary>
-    /// Provided for generic flexibility, use the strongly typed Serialize&lt;T&gt; to benifit from compile-time type safety.
+    /// Provided for generic flexibility, use the strongly typed Serialize&lt;T&gt; to benefit from compile-time type safety.
     /// </summary>
     /// <param name="item">The object to serialize</param>
     /// <param name="assignedTo">The declared type the item is assigned to, a type id is only added when the item's actual type differs (depending on <see cref="MsgPackSettings.AddTypeIdOptions"/>)</param>
@@ -82,7 +82,7 @@ namespace LsMsgPackDebug
       if (assignedTo is null)
         assignedTo = item?.GetType() ?? typeof(object);
 
-      if (settings.UseInexedSchema && !ReferenceEquals(item, null)) // null is serialized without a schema
+      if (settings.UseIndexedSchema && !ReferenceEquals(item, null)) // null is serialized without a schema
       {
         if (settings._writeSchemaReference)
           SerializeWithSchemaReference(item, assignedTo, target, settings);
@@ -221,7 +221,7 @@ namespace LsMsgPackDebug
     }
 
     /// <summary>
-    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benifit from compile-time type safety.
+    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benefit from compile-time type safety.
     /// </summary>
     /// <param name="tType">Type of the object to be deserialized</param>
     /// <param name="source">Bytes containing MsgPack formatted data</param>
@@ -232,7 +232,7 @@ namespace LsMsgPackDebug
     }
 
     /// <summary>
-    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benifit from compile-time type safety.
+    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benefit from compile-time type safety.
     /// </summary>
     /// <param name="tType">Type of the object to be deserialized</param>
     /// <param name="source">Bytes containing MsgPack formatted data</param>
@@ -247,7 +247,7 @@ namespace LsMsgPackDebug
     }
 
     /// <summary>
-    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benifit from compile-time type safety.
+    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benefit from compile-time type safety.
     /// </summary>
     /// <param name="tType">Type of the object to be deserialized</param>
     /// <param name="stream">Stream of bytes containing MsgPack formatted data</param>
@@ -258,7 +258,7 @@ namespace LsMsgPackDebug
     }
 
     /// <summary>
-    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benifit from compile-time type safety.
+    /// Provided for generic flexibility, use the strongly typed Deserialize&lt;T&gt; to benefit from compile-time type safety.
     /// </summary>
     /// <param name="tType">Type of the object to be deserialized</param>
     /// <param name="stream">Stream of bytes containing MsgPack formatted data</param>
@@ -281,7 +281,7 @@ namespace LsMsgPackDebug
       CacheAssemblyTypes(tType);
       TypeResolver.CacheReachableAssemblies(tType);
 
-      if (settings.UseInexedSchema)
+      if (settings.UseIndexedSchema)
         return DeserializeWithSchema(tType, stream, settings, into);
 
       object value = UnpackBody(stream, settings, out long length);
@@ -457,7 +457,7 @@ namespace LsMsgPackDebug
       }
 
       if (unchecked((sbyte)reference[1]) != SchemaStore.ReferenceExtensionType)
-        throw new MsgPackException($"Expected the data to start with an indexed schema (a map) or a reference to one (extension type {SchemaStore.ReferenceExtensionType}) but found extension type {unchecked((sbyte)reference[1])}. Was it serialized with {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.UseInexedSchema)} = false?", 0, MsgPackTypeId.MpFExt16);
+        throw new MsgPackException($"Expected the data to start with an indexed schema (a map) or a reference to one (extension type {SchemaStore.ReferenceExtensionType}) but found extension type {unchecked((sbyte)reference[1])}. Was it serialized with {nameof(MsgPackSettings)}.{nameof(MsgPackSettings.UseIndexedSchema)} = false?", 0, MsgPackTypeId.MpFExt16);
 
       return new SchemaId(reference, 2);
     }

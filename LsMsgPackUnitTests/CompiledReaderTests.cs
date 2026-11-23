@@ -155,7 +155,7 @@ namespace LsMsgPackUnitTests
               foreach (bool reference in schema ? new[] { false, true } : new[] { false })
                 yield return new LsMsgPackOptions
                 {
-                  UseInexedSchema = schema, WriteSchemaReference = reference, SchemaStore = reference ? new SchemaStore() : null, ObjectLayout = layout, TrimTrailingNulls = trim,
+                  UseIndexedSchema = schema, WriteSchemaReference = reference, SchemaStore = reference ? new SchemaStore() : null, ObjectLayout = layout, TrimTrailingNulls = trim,
                   DynamicFilters = filter ? new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() } : new IMsgPackPropertyIncludeDynamically[0],
                   ReadDateTimeKind = trim ? DateTimeKind.Local : DateTimeKind.Utc, PropertyOrder = filter ? PropertyOrder.Declaration : PropertyOrder.Alphabetical
                 };
@@ -163,14 +163,14 @@ namespace LsMsgPackUnitTests
         foreach (bool schema in new[] { false, true })
           yield return new LsMsgPackOptions
           {
-            UseInexedSchema = schema, ObjectLayout = layout, GuidFormat = GuidFormat.String, DecimalFormat = DecimalFormat.String,
+            UseIndexedSchema = schema, ObjectLayout = layout, GuidFormat = GuidFormat.String, DecimalFormat = DecimalFormat.String,
             DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() }
           };
     }
 
     private static string Describe(LsMsgPackOptions o)
     {
-      return $"schema {o.UseInexedSchema}, reference {o.WriteSchemaReference}, {o.ObjectLayout}, filters {o.DynamicFilters.Length}, trim {o.TrimTrailingNulls}, {o.GuidFormat}/{o.DecimalFormat}, {o.PropertyOrder}";
+      return $"schema {o.UseIndexedSchema}, reference {o.WriteSchemaReference}, {o.ObjectLayout}, filters {o.DynamicFilters.Length}, trim {o.TrimTrailingNulls}, {o.GuidFormat}/{o.DecimalFormat}, {o.PropertyOrder}";
     }
 
     /// <summary>
@@ -178,7 +178,7 @@ namespace LsMsgPackUnitTests
     /// </summary>
     private static readonly LsMsgPackSerializer Dump = new LsMsgPackSerializer(new LsMsgPackOptions
     {
-      UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseRegisteredContexts = false, CompileWritersAfter = -1,
+      UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseRegisteredContexts = false, CompileWritersAfter = -1,
       UnspecifiedDateTimeKind = DateTimeKind.Utc
     });
 
@@ -229,7 +229,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void TheCompiledReader_TakesOverAfterTheNumberOfObjects()
     {
-      LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = false };
+      LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = false };
       LsMsgPackSerializer runtime = Create(options, -1);
       LsMsgPackSerializer compiled = Create(options, 3);
       byte[] data = runtime.Serialize(Simple());
@@ -250,7 +250,7 @@ namespace LsMsgPackUnitTests
     public void Default_CompilesAfterAThousandObjects()
     {
       Assert.AreEqual(1000, new LsMsgPackOptions().CompileReadersAfter);
-      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, UseRegisteredContexts = false });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, UseRegisteredContexts = false });
       List<CompiledWriterTests.CwPoint> points = new List<CompiledWriterTests.CwPoint>();
       for (int t = 0; t < 999; t++)
         points.Add(new CompiledWriterTests.CwPoint { X = t });
@@ -453,7 +453,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void MapsWithNames_ReadAsTheRuntimesPlans()
     {
-      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseRegisteredContexts = false });
+      LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseRegisteredContexts = false });
       string[] names = new string[] { "N", "Na", "Nab", "Nabc", "Nabcde", "Nabcdef", "Nabcdefg", "Nabcdefghijklmn", "Nabcdefghijklmno", "Nabcdefghijklmnop", "Nabcdefghijklmnopqrstuv", "Nabcdefghijklmnopqrstuvw", "Nabcdefghijklmnopqrstuvwx", "Nabcdefghijklmnopqrstuvwxyzabc", "Nabcdefghijklmnopqrstuvwxyzabcd", "Nabcdefghijklmnopqrstuvwxyzabcde", "Nabcdefghijklmnopqrstuvwxyzabcdefghijklm", "Größe" };
       List<byte[]> data = new List<byte[]>();
       Dictionary<string, object> inOrder = new Dictionary<string, object>();
@@ -493,7 +493,7 @@ namespace LsMsgPackUnitTests
       data.Add(plain.Serialize(new Dictionary<string, object> { { "nabcdefghijklmnopqrstuvwxyzabcdefghijklm", 1 }, { "TWINSABCDAEFGHIJKLMN", 2 }, { "triplesabcdefghijbklmnopqrst", 3 } }));
       foreach (bool filter in new[] { false, true })
       {
-        LsMsgPackSerializer writer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false,
+        LsMsgPackSerializer writer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, UseRegisteredContexts = false,
           DynamicFilters = filter ? new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() } : new IMsgPackPropertyIncludeDynamically[0] });
         byte[] whole = writer.Serialize(Names());
         data.Add(whole);
@@ -504,7 +504,7 @@ namespace LsMsgPackUnitTests
 
       foreach (bool ignoreCase in new[] { false, true })
       {
-        LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = ignoreCase };
+        LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = ignoreCase };
         LsMsgPackSerializer runtime = Create(options, -1);
         LsMsgPackSerializer compiled = Create(options, 0);
         LsMsgPackOptions withContext = options.Clone(); // the source generator's straight-line code (GeneratedIO.NamesInOrder: in parts, the class has more than 16 members)
@@ -538,8 +538,8 @@ namespace LsMsgPackUnitTests
     {
       foreach (bool schema in new[] { false, true })
       {
-        LsMsgPackOptions maps = new LsMsgPackOptions { UseInexedSchema = schema, ObjectLayout = ObjectLayout.Map };
-        LsMsgPackOptions arrays = new LsMsgPackOptions { UseInexedSchema = schema, ObjectLayout = ObjectLayout.Array };
+        LsMsgPackOptions maps = new LsMsgPackOptions { UseIndexedSchema = schema, ObjectLayout = ObjectLayout.Map };
+        LsMsgPackOptions arrays = new LsMsgPackOptions { UseIndexedSchema = schema, ObjectLayout = ObjectLayout.Array };
         byte[] asMap = Create(maps, -1).Serialize(Simple());
         byte[] asArray = Create(arrays, -1).Serialize(Simple());
         string expected = Read(Create(maps, -1), typeof(CrSimple), asMap);
@@ -565,7 +565,7 @@ namespace LsMsgPackUnitTests
     {
       foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
       {
-        LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = true, ObjectLayout = layout };
+        LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = true, ObjectLayout = layout };
         LsMsgPackSerializer runtime = Create(options, -1);
         byte[] data = runtime.Serialize(Simple());
         byte[] list = runtime.Serialize(new List<CrSimple> { Simple(), new CrSimple(), Simple() });
@@ -590,7 +590,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void NotCompiled_WhereThePlansDoNotReadTheValues()
     {
-      LsMsgPackSerializer compiled = Create(new LsMsgPackOptions { UseInexedSchema = false }, 0);
+      LsMsgPackSerializer compiled = Create(new LsMsgPackOptions { UseIndexedSchema = false }, 0);
 
       // No property of a type the compiled code reads itself
       compiled.Deserialize<LsStructTests.LtsMover>(compiled.Serialize(new LsStructTests.LtsMover { Position = new LsStructTests.LtsVec { X = 1 } }));
@@ -610,7 +610,7 @@ namespace LsMsgPackUnitTests
     {
       LsMsgPackSerializer generated = new LsMsgPackSerializer(new LsMsgPackOptions
       {
-        UseInexedSchema = false, Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, CompileReadersAfter = 0
+        UseIndexedSchema = false, Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, CompileReadersAfter = 0
       });
       CrSimple read = generated.Deserialize<CrSimple>(generated.Serialize(Simple()));
       Assert.AreEqual(-70000, read.I);
@@ -624,7 +624,7 @@ namespace LsMsgPackUnitTests
     {
       LsMsgPackOptions options = new LsMsgPackOptions
       {
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.All, SerializedFields.Public), new FilterIgnoredAttribute(), new FilterStatic() }
       };
       LsMsgPackSerializer runtime = Create(options, -1);
@@ -833,13 +833,13 @@ namespace LsMsgPackUnitTests
         Map("Name", "a", "Count", 1, "Price", 2, "Id", null, "At", null, "Maybe", 3, "Three", 4, "Next", null, "Items", null, "Count", 9, "Note", "x", "Note", 1, "Note", "z"),
         Map("Note", "x", "Name", "a", "Count", 1, "Price", 2, "Id", null, "At", null, "Maybe", 3, "Three", 4, "Next", null, "Items", null, "Extra", 1, "Note", "y"),
       };
-      LsMsgPackOptions byNames = new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      LsMsgPackOptions byNames = new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       foreach (byte[] bytes in names)
         foreach (Type type in new[] { typeof(CrPair), typeof(CrRecord) })
           Assert.AreEqual(Read(Create(byNames, -1), type, bytes), Read(Create(byNames, 0), type, bytes), BitConverter.ToString(bytes) + " as " + type.Name);
 
       // The indexed schema: the body of { Left: 1, Right: "a" } with an index twice (the schema written inline before it)
-      LsMsgPackOptions indexed = new LsMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map };
+      LsMsgPackOptions indexed = new LsMsgPackOptions { UseIndexedSchema = true, ObjectLayout = ObjectLayout.Map };
       byte[] payload = Create(indexed, -1).Serialize(new CrPair(1, "a"));
       byte[] body = { 0x82, 0x00, 0x01, 0x01, 0xA1, (byte)'a' };
       CollectionAssert.AreEqual(body, new ArraySegment<byte>(payload, payload.Length - body.Length, body.Length).ToArray(), "the body is at the end");
@@ -901,7 +901,7 @@ namespace LsMsgPackUnitTests
       foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
         foreach (bool schema in new[] { false, true })
         {
-          LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = schema, ObjectLayout = layout, ReferenceHandling = ReferenceHandling.Preserve };
+          LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = schema, ObjectLayout = layout, ReferenceHandling = ReferenceHandling.Preserve };
           LsMsgPackSerializer compiled = Create(options, 0);
           byte[] data = Create(options, -1).Serialize(list);
           List<CrRecord> read = compiled.Deserialize<List<CrRecord>>(data);
@@ -916,7 +916,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ConstructorWithValues_CompiledAfterTheNumberOfObjects()
     {
-      LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = false };
+      LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = false };
       LsMsgPackSerializer runtime = Create(options, -1);
       LsMsgPackSerializer compiled = Create(options, 3);
       byte[] data = runtime.Serialize(Record(0));

@@ -204,7 +204,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = layout };
       if (schema == "names")
-        settings.UseInexedSchema = false;
+        settings.UseIndexedSchema = false;
       else if (schema != "inline")
         settings.SchemaStore = new SchemaStore();
       if (schema == "reference")

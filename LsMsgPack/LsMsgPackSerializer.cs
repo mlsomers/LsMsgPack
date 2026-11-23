@@ -131,8 +131,8 @@ namespace LsMsgPack
       if (root is null)
         throw new ArgumentNullException(nameof(root));
       LsMsgPackOptions options = _serializer.Options;
-      if (!options._useInexedSchema || !options._writeSchemaReference || options._schemaStore is null)
-        throw new InvalidOperationException($"Only schemas that are referred to are kept: set {nameof(MsgPackOptions.UseInexedSchema)}, {nameof(MsgPackOptions.WriteSchemaReference)} and a {nameof(MsgPackOptions.SchemaStore)}.");
+      if (!options._useIndexedSchema || !options._writeSchemaReference || options._schemaStore is null)
+        throw new InvalidOperationException($"Only schemas that are referred to are kept: set {nameof(MsgPackOptions.UseIndexedSchema)}, {nameof(MsgPackOptions.WriteSchemaReference)} and a {nameof(MsgPackOptions.SchemaStore)}.");
       return options._schemaStore.PrepareWriter(root, options);
     }
 

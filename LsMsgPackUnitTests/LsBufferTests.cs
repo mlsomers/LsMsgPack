@@ -92,8 +92,8 @@ namespace LsMsgPackUnitTests
     /// </summary>
     private static IEnumerable<(string Name, LsMsgPackSerializer Serializer)> Serializers()
     {
-      yield return ("names", new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false }));
-      yield return ("names, map", new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }));
+      yield return ("names", new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false }));
+      yield return ("names, map", new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }));
       yield return ("inline", new LsMsgPackSerializer(new LsMsgPackOptions()));
       yield return ("reference", new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = new SchemaStore(), WriteSchemaReference = true }));
     }
@@ -264,7 +264,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Errors_AsTheByteArrayOverloads()
     {
-      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
       byte[] truncated = new byte[] { 0x82, 0xA4, (byte)'N', (byte)'a' };
       Assert.ThrowsExactly<MsgPackException>(() => lt.Deserialize<BufNode>(truncated));
       Assert.ThrowsExactly<MsgPackException>(() => lt.Deserialize<BufNode>(new ReadOnlyMemory<byte>(truncated)));

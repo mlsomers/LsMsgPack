@@ -124,7 +124,7 @@ namespace LsMsgPackMcpServerTests
     [DataRow(false)]
     public async Task ReadAsClass_ReportsWhatDoesNotMatch(bool indexed)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = indexed, ObjectLayout = indexed ? ObjectLayout.Array : ObjectLayout.Map };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = indexed, ObjectLayout = indexed ? ObjectLayout.Array : ObjectLayout.Map };
       byte[] bytes = MsgPackSerializer.Serialize(Order(), settings);
       Session session = new Session();
       string text = await session.Call("msgpack_read_as_class", new JsonObject()

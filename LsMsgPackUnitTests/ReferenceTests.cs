@@ -107,7 +107,7 @@ namespace LsMsgPackUnitTests
 
     protected static MsgPackSettings Settings(ObjectLayout layout, bool useSchema, ReferenceHandling handling = ReferenceHandling.Preserve)
     {
-      return new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema, ReferenceHandling = handling };
+      return new MsgPackSettings() { ObjectLayout = layout, UseIndexedSchema = useSchema, ReferenceHandling = handling };
     }
 
     protected static IEnumerable<MsgPackSettings> AllSettings()
@@ -117,7 +117,7 @@ namespace LsMsgPackUnitTests
           yield return Settings(layout, useSchema);
       yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = ObjectLayout.Array, TrimTrailingNulls = true };
       yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = ObjectLayout.Map, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
-      yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = ObjectLayout.Map, UseInexedSchema = true, SchemaVersion = SchemaVersion.Described };
+      yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = ObjectLayout.Map, UseIndexedSchema = true, SchemaVersion = SchemaVersion.Described };
     }
 
     protected static List<RfOrder> Orders()
@@ -196,7 +196,7 @@ namespace LsMsgPackUnitTests
       {
         List<RfOrder> read = Serializer.Deserialize<List<RfOrder>>(Serializer.Serialize(Orders(), settings), settings);
         Assert.AreEqual(4, read.Count, settings.ToString());
-        Assert.AreSame(read[0].Customer, read[3].Customer, settings.ObjectLayout + " " + settings.UseInexedSchema);
+        Assert.AreSame(read[0].Customer, read[3].Customer, settings.ObjectLayout + " " + settings.UseIndexedSchema);
         Assert.AreNotSame(read[0].Customer, read[1].Customer);
         Assert.AreEqual("shared", read[3].Customer.Name);
         Assert.AreSame(read[0].Customer.Tags, read[3].Extra, "a list declared as object: the same list");
@@ -213,7 +213,7 @@ namespace LsMsgPackUnitTests
       foreach (MsgPackSettings settings in AllSettings())
       {
         List<RfOrder> read = (List<RfOrder>)Serializer.Deserialize(typeof(object), Serializer.Serialize(Orders(), typeof(object), settings), settings);
-        string message = settings.ObjectLayout + " schema=" + settings.UseInexedSchema;
+        string message = settings.ObjectLayout + " schema=" + settings.UseIndexedSchema;
         Assert.AreSame(read[0].Customer, read[3].Customer, message);
         Assert.AreSame(read[0].Customer.Tags, read[3].Extra, message);
       }
@@ -225,7 +225,7 @@ namespace LsMsgPackUnitTests
       foreach (MsgPackSettings settings in AllSettings())
       {
         RfNode read = Serializer.Deserialize<RfNode>(Serializer.Serialize(Tree(), settings), settings);
-        Assert.AreSame(read, read.Self, settings.ObjectLayout + " " + settings.UseInexedSchema);
+        Assert.AreSame(read, read.Self, settings.ObjectLayout + " " + settings.UseIndexedSchema);
         Assert.AreEqual(3, read.Children.Count);
         for (int t = 0; t < 3; t++)
         {
@@ -257,7 +257,7 @@ namespace LsMsgPackUnitTests
     {
       foreach (MsgPackSettings settings in AllSettings())
       {
-        string message = settings.ObjectLayout + " schema=" + settings.UseInexedSchema;
+        string message = settings.ObjectLayout + " schema=" + settings.UseIndexedSchema;
         object[] array = new object[2];
         array[0] = "a";
         array[1] = array;
@@ -355,7 +355,7 @@ namespace LsMsgPackUnitTests
         MsgPackSettings without = settings.Clone();
         without.ReferenceHandling = ReferenceHandling.None;
         List<RfOrder> again = Serializer.Deserialize<List<RfOrder>>(Serializer.Serialize(orders, settings), without);
-        Assert.AreSame(again[0].Customer, again[1].Customer, settings.ObjectLayout + " " + settings.UseInexedSchema);
+        Assert.AreSame(again[0].Customer, again[1].Customer, settings.ObjectLayout + " " + settings.UseIndexedSchema);
         Assert.AreSame(again[2].Customer.Tags, again[3].Customer.Tags);
         CollectionAssert.AreEqual(tags, again[3].Customer.Tags);
       }
@@ -411,7 +411,7 @@ namespace LsMsgPackUnitTests
           object[] level = read.Chain;
           for (int t = 0; t < 40; t++)
           {
-            Assert.AreSame(level[0], level[1], handling + " " + settings.ObjectLayout + " " + settings.UseInexedSchema + " level " + t);
+            Assert.AreSame(level[0], level[1], handling + " " + settings.ObjectLayout + " " + settings.UseIndexedSchema + " level " + t);
             level = (object[])level[0];
           }
           Assert.AreEqual(100, level.Length);
@@ -484,7 +484,7 @@ namespace LsMsgPackUnitTests
         byte[] bytes = Serializer.Serialize(prices, settings);
         RfPrices read = Serializer.Deserialize<RfPrices>(bytes, settings);
         Assert.AreEqual(12.5m, read.Price.Amount);
-        Assert.AreSame(read.Price, read.Same, settings.ObjectLayout + " " + settings.UseInexedSchema);
+        Assert.AreSame(read.Price, read.Same, settings.ObjectLayout + " " + settings.UseIndexedSchema);
       }
     }
 
@@ -528,7 +528,7 @@ namespace LsMsgPackUnitTests
       RfMemberConverted value = new RfMemberConverted() { First = tag, Second = tag, Samples = samples, SameSamples = samples };
       foreach (MsgPackSettings settings in AllSettings())
       {
-        string message = settings.ObjectLayout + " schema=" + settings.UseInexedSchema;
+        string message = settings.ObjectLayout + " schema=" + settings.UseIndexedSchema;
         RfMemberConverted read = Serializer.Deserialize<RfMemberConverted>(Serializer.Serialize(value, settings), settings);
         Assert.AreEqual("t", read.First.Name, message);
         Assert.AreSame(read.First, read.Second, message);
@@ -561,8 +561,8 @@ namespace LsMsgPackUnitTests
     private static IEnumerable<MsgPackSettings> ByNameSettings()
     {
       yield return Settings(ObjectLayout.Map, false); // version 1 of the schema refuses kept arrays and maps
-      yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = ObjectLayout.Map, UseInexedSchema = true, SchemaVersion = SchemaVersion.Described };
-      yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = ObjectLayout.Array, UseInexedSchema = true, SchemaVersion = SchemaVersion.Described };
+      yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = ObjectLayout.Map, UseIndexedSchema = true, SchemaVersion = SchemaVersion.Described };
+      yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = ObjectLayout.Array, UseIndexedSchema = true, SchemaVersion = SchemaVersion.Described };
     }
 
     /// <summary>
@@ -579,8 +579,8 @@ namespace LsMsgPackUnitTests
         Assert.AreEqual("m", older.Main.Name);
         byte[] written = Serializer.Serialize(older, settings);
         RfNewer back = Serializer.Deserialize<RfNewer>(written, settings);
-        Assert.AreEqual("m", back.Main.Name, settings.ObjectLayout + " " + settings.UseInexedSchema);
-        Assert.IsNotNull(back.Backup, settings.ObjectLayout + " " + settings.UseInexedSchema + " " + BitConverter.ToString(written));
+        Assert.AreEqual("m", back.Main.Name, settings.ObjectLayout + " " + settings.UseIndexedSchema);
+        Assert.IsNotNull(back.Backup, settings.ObjectLayout + " " + settings.UseIndexedSchema + " " + BitConverter.ToString(written));
         Assert.AreEqual("m", back.Backup.Name);
         CollectionAssert.AreEqual(new List<string>() { "t" }, back.Backup.Tags);
       }
@@ -597,7 +597,7 @@ namespace LsMsgPackUnitTests
       {
         byte[] newer = Serializer.Serialize(new RfNewerFirst() { Name = "n", Main = main, Backup = main }, settings);
         RfOlder older = Serializer.Deserialize<RfOlder>(newer, settings);
-        Assert.AreEqual("m", older.Main?.Name, settings.ObjectLayout + " " + settings.UseInexedSchema + " " + BitConverter.ToString(newer));
+        Assert.AreEqual("m", older.Main?.Name, settings.ObjectLayout + " " + settings.UseIndexedSchema + " " + BitConverter.ToString(newer));
         RfNewerFirst back = Serializer.Deserialize<RfNewerFirst>(Serializer.Serialize(older, settings), settings);
         Assert.AreEqual("m", back.Main.Name);
         Assert.AreEqual("m", back.Backup.Name);
@@ -624,7 +624,7 @@ namespace LsMsgPackUnitTests
         object[] level = back.Chain;
         for (int t = 0; t < 3; t++)
         {
-          Assert.AreEqual(2, level.Length, settings.ObjectLayout + " " + settings.UseInexedSchema);
+          Assert.AreEqual(2, level.Length, settings.ObjectLayout + " " + settings.UseIndexedSchema);
           level = (object[])level[1]; // the copy
         }
         Assert.AreEqual(1099L, Convert.ToInt64(level[99]));
@@ -650,7 +650,7 @@ namespace LsMsgPackUnitTests
           reader.ReadErrors = ReadErrorHandling.ReportAndContinue;
           RfChainedOld older = Serializer.Deserialize<RfChainedOld>(newer, reader);
           Assert.AreEqual("c", older.Name);
-          Assert.IsFalse(older.Extra != null && older.Extra.TryGetRaw("Chain", out _), handling + " " + settings.ObjectLayout + " " + settings.UseInexedSchema);
+          Assert.IsFalse(older.Extra != null && older.Extra.TryGetRaw("Chain", out _), handling + " " + settings.ObjectLayout + " " + settings.UseIndexedSchema);
         }
       }
     }
@@ -737,7 +737,7 @@ namespace LsMsgPackUnitTests
     {
       foreach (MsgPackSettings settings in AllSettings())
       {
-        string message = settings.ObjectLayout + " schema=" + settings.UseInexedSchema + " trim=" + settings.TrimTrailingNulls;
+        string message = settings.ObjectLayout + " schema=" + settings.UseIndexedSchema + " trim=" + settings.TrimTrailingNulls;
         LsMsgPackSerializer serializer = ((LsSerializer)Serializers.Ls).For(settings);
         RfCustomer shared = new RfCustomer() { Name = "s" };
         RfOrder first = new RfOrder() { Id = 1, Customer = shared, Extra = shared };
@@ -819,7 +819,7 @@ namespace LsMsgPackUnitTests
           byte[] debug = Serializers.Debug.Serialize(value[0], (Type)value[1], settings);
           byte[] ls = Serializers.Ls.Serialize(value[0], (Type)value[1], settings);
           if (!System.Linq.Enumerable.SequenceEqual(debug, ls))
-            different.Add($"{((Type)value[1]).Name} {settings.ObjectLayout} schema={settings.UseInexedSchema} trim={settings.TrimTrailingNulls}:\n  debug {BitConverter.ToString(debug)}\n  ls    {BitConverter.ToString(ls)}");
+            different.Add($"{((Type)value[1]).Name} {settings.ObjectLayout} schema={settings.UseIndexedSchema} trim={settings.TrimTrailingNulls}:\n  debug {BitConverter.ToString(debug)}\n  ls    {BitConverter.ToString(ls)}");
         }
       }
       Assert.AreEqual(0, different.Count, string.Join("\n", different));
@@ -837,7 +837,7 @@ namespace LsMsgPackUnitTests
           foreach (string which in new[] { "compiled", "counted", "generated" })
           {
             string message = which + " " + layout + " schema=" + useSchema;
-            LsMsgPackOptions options = new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = layout, UseInexedSchema = useSchema, UseRegisteredContexts = false };
+            LsMsgPackOptions options = new LsMsgPackOptions() { ReferenceHandling = ReferenceHandling.Preserve, ObjectLayout = layout, UseIndexedSchema = useSchema, UseRegisteredContexts = false };
             if (which == "generated")
               options.Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default };
             else

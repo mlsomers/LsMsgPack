@@ -62,7 +62,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void DeserializeByTypeRespectsUseIndexedSchema(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       Cat org = new Cat() { Name = "Mia", ClawLengthMilimeters = 2 };
 
       byte[] buffer = Serializer.Serialize(org, settings);
@@ -99,7 +99,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void NullIsSerializedTheSameToBytesAndStream(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       MemoryStream ms = new MemoryStream();
       Serializer.Serialize<Cat>(null, ms, settings);
 
@@ -110,8 +110,8 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ClonePreservesUseIndexedSchema()
     {
-      Assert.IsFalse(new MsgPackSettings() { UseInexedSchema = false }.Clone().UseInexedSchema);
-      Assert.IsTrue(new MsgPackSettings() { UseInexedSchema = true }.Clone().UseInexedSchema);
+      Assert.IsFalse(new MsgPackSettings() { UseIndexedSchema = false }.Clone().UseIndexedSchema);
+      Assert.IsTrue(new MsgPackSettings() { UseIndexedSchema = true }.Clone().UseIndexedSchema);
     }
 
     [TestMethod]
@@ -119,7 +119,7 @@ namespace LsMsgPackUnitTests
     {
       IMsgPackTypeResolver[] resolvers = new IMsgPackTypeResolver[0];
       IMsgPackPropertyIdResolver[] propResolvers = new IMsgPackPropertyIdResolver[0];
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = true, TypeResolvers = resolvers, PropertyNameResolvers = propResolvers };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = true, TypeResolvers = resolvers, PropertyNameResolvers = propResolvers };
 
       byte[] buffer = Serializer.Serialize(new Cat() { Name = "Mia" }, settings);
       Serializer.Deserialize<Cat>(buffer, settings);
@@ -133,7 +133,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void SettingsCanBeSharedBetweenThreads(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       Parallel.For(0, 1000, i =>
       {
         HierarchyContainer org = new HierarchyContainer()
@@ -152,7 +152,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void SchemaPrimitiveRoots()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = true };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = true };
       Assert.AreEqual(70000, Serializer.Deserialize<int>(Serializer.Serialize(70000, settings), settings));
       Assert.AreEqual("x", Serializer.Deserialize<string>(Serializer.Serialize("x", settings), settings));
     }
@@ -160,8 +160,8 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ReadingDataWithoutSchemaUsingSchemaSettingsThrows()
     {
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
-      MsgPackSettings withSchema = new MsgPackSettings() { UseInexedSchema = true };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseIndexedSchema = false };
+      MsgPackSettings withSchema = new MsgPackSettings() { UseIndexedSchema = true };
 
       byte[] array = Serializer.Serialize(new[] { 1, 2 }, withoutSchema); // { "@": [1, 2] }
       Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<int[]>(array, withSchema));
@@ -176,7 +176,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void SchemaTypeIdsDoNotCollideWithCustomResolverIds()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = true, TypeResolvers = new IMsgPackTypeResolver[] { new NumberedPets() } };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = true, TypeResolvers = new IMsgPackTypeResolver[] { new NumberedPets() } };
 
       byte[] buffer = Serializer.Serialize(new PetBox() { Pet = new Cat() { Name = "Mia" }, Thing = new Other() { X = "x" } }, settings);
       PetBox ret = Serializer.Deserialize<PetBox>(buffer, settings);
@@ -187,15 +187,15 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(false, AddTypeIdOption.IfAmbiguious)]
+    [DataRow(false, AddTypeIdOption.IfAmbiguous)]
     [DataRow(false, AddTypeIdOption.Always)]
-    [DataRow(true, AddTypeIdOption.IfAmbiguious)]
+    [DataRow(true, AddTypeIdOption.IfAmbiguous)]
     [DataRow(true, AddTypeIdOption.Always)]
     public void XmlRootAttributeTypeResolver(bool useSchema, AddTypeIdOption option)
     {
       MsgPackSettings settings = new MsgPackSettings()
       {
-        UseInexedSchema = useSchema,
+        UseIndexedSchema = useSchema,
         AddTypeIdOptions = option,
         TypeResolvers = new IMsgPackTypeResolver[] { new XmlRootAttributeTypeResolver() }
       };
@@ -209,7 +209,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void FullNameOfTypeOutsideCoreLibrary()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, AddTypeIdOptions = AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName };
       byte[] buffer = Serializer.Serialize(new WithSorted() { Sorted = new SortedDictionary<string, long>() { { "a", 1 } } }, settings);
 
       WithSorted ret = Serializer.Deserialize<WithSorted>(buffer, settings);
@@ -221,7 +221,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void CollectionsWithoutGenericArguments(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
 
       byte[] buffer = Serializer.Serialize(new WithArrayList() { Items = new ArrayList() { 1, "a" } }, settings);
       CollectionAssert.AreEqual(new object[] { (byte)1, "a" }, Serializer.Deserialize<WithArrayList>(buffer, settings).Items);
@@ -235,7 +235,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void HiddenPropertyUsesTheMostDerivedOne(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       byte[] buffer = Serializer.Serialize(new HidesX() { X = "a" }, settings);
       Assert.AreEqual("a", Serializer.Deserialize<HidesX>(buffer, settings).X);
     }
@@ -245,7 +245,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void IndexersAreIgnored(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       byte[] buffer = Serializer.Serialize(new WithIndexer() { Name = "a" }, settings);
       Assert.AreEqual("a", Serializer.Deserialize<WithIndexer>(buffer, settings).Name);
     }
@@ -302,12 +302,12 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings()
       {
-        UseInexedSchema = useSchema,
+        UseIndexedSchema = useSchema,
         ObjectLayout = ObjectLayout.Map, // omitted values are only visible in a map (an array has nil in their place)
         DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() }
       };
 
-      byte[] withoutSchema = Serializer.Serialize(new AllZero(), new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = settings.DynamicFilters });
+      byte[] withoutSchema = Serializer.Serialize(new AllZero(), new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, DynamicFilters = settings.DynamicFilters });
       Assert.AreEqual(1, ((MpMap)MsgPackItem.Unpack(withoutSchema)).Count, "Only Name should be serialized");
 
       AllZero org = new AllZero() { L = 1, F = 2, D = 3, B = 4, SB = -5, S = 6, US = 7, UI = 8, UL = 9, M = 10 };
@@ -355,7 +355,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void ReadsFromStreamsThatReturnPartialData(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       Assorted org = new Assorted()
       {
         Name = new string('n', 300), // str16
@@ -408,7 +408,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void DuplicatePropertyIdsThrow(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new FixedPropertyId("same") } };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new FixedPropertyId("same") } };
 
       // Even when one of them would be skipped (default value), the ids are checked once per type
       MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Serialize(new TwoNames() { First = "a" }, settings));
@@ -422,7 +422,7 @@ namespace LsMsgPackUnitTests
     [DataRow("@", true)]
     public void ReservedPropertyIdsThrow(string id, bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new FixedPropertyId(id) } };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new FixedPropertyId(id) } };
 
       MsgPackException ex = Assert.Throws<MsgPackException>(() => Serializer.Serialize(new TwoNames() { First = "a", Second = "b" }, settings));
       StringAssert.Contains(ex.Message, "reserved");
@@ -506,7 +506,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings JsonNamedSettings(bool schema, ObjectLayout layout, bool resolver)
     {
-      MsgPackSettings settings = new MsgPackSettings { UseInexedSchema = schema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings { UseIndexedSchema = schema, ObjectLayout = layout };
       if (resolver)
         settings.PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new AttributePropertyNameResolver() };
       return settings;
@@ -571,7 +571,7 @@ namespace LsMsgPackUnitTests
     [DataRow(ObjectLayout.Array)]
     public void AttributeNamesReadSchemaWithDotNetNames(ObjectLayout layout)
     {
-      MsgPackSettings plain = new MsgPackSettings { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings plain = new MsgPackSettings { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       byte[] schema = Serializer.Serialize(new Dictionary<string, string[]> { { nameof(RenamedOnce), new[] { "LongName", "Other" } } }, plain);
       byte[] old = schema.Concat(Body(layout, "short", plain)).ToArray();
 

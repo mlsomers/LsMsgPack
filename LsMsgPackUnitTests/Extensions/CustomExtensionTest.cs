@@ -13,7 +13,7 @@ namespace LsMsgPackUnitTests.Extensions
     [TestMethod]
     public void RoundTripMpGuid()
     {
-      MsgPackSettings.Default_CustomExtentionTypes = new ICustomExt[]
+      MsgPackSettings.Default_CustomExtensionTypes = new ICustomExt[]
       {
         new MpDecimal((MsgPackSettings)null),
         new MyGuidExtension((MsgPackSettings)null)
@@ -22,7 +22,7 @@ namespace LsMsgPackUnitTests.Extensions
       KeyValuePair<Guid, Guid> tst = new KeyValuePair<Guid, Guid>(Guid.NewGuid(), Guid.NewGuid());
       MsgPackTests.RoundTripTest<MyGuidExtension, KeyValuePair<Guid, Guid>>(tst, 35, MsgPackTypeId.MpExt8, true, 2);
 
-      MsgPackSettings.Default_CustomExtentionTypes = new ICustomExt[]
+      MsgPackSettings.Default_CustomExtensionTypes = new ICustomExt[]
       {
         new MpDecimal((MsgPackSettings)null)
       };
@@ -31,7 +31,7 @@ namespace LsMsgPackUnitTests.Extensions
     [TestMethod]
     public void RoundTripMpGuidNonCached()
     {
-      MsgPackSettings.Default_CustomExtentionTypes = new ICustomExt[]
+      MsgPackSettings.Default_CustomExtensionTypes = new ICustomExt[]
       {
         new MpDecimal((MsgPackSettings)null),
         new MyGuidExtensionNonCached((MsgPackSettings)null)
@@ -40,7 +40,7 @@ namespace LsMsgPackUnitTests.Extensions
       KeyValuePair<Guid, Guid> tst = new KeyValuePair<Guid, Guid>(Guid.NewGuid(), Guid.NewGuid());
       MsgPackTests.RoundTripTest<MyGuidExtensionNonCached, KeyValuePair<Guid, Guid>>(tst, 35, MsgPackTypeId.MpExt8, true, 2);
 
-      MsgPackSettings.Default_CustomExtentionTypes = new ICustomExt[]
+      MsgPackSettings.Default_CustomExtensionTypes = new ICustomExt[]
       {
         new MpDecimal((MsgPackSettings)null)
       };

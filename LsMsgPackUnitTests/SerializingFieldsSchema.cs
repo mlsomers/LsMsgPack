@@ -346,7 +346,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Security_StaticFieldsWithTheDefaultMode()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       byte[] bytes = Serializer.Serialize(new Dictionary<string, object>() { { "Shared", 99 }, { "Normal", 2 } }, settings);
       FldStatics read = Serializer.Deserialize<FldStatics>(bytes, settings);
       Assert.AreEqual(0, read.Normal, "not attributed");
@@ -364,7 +364,7 @@ namespace LsMsgPackUnitTests
       FldPrivateSecret publicOnly = Serializer.Deserialize<FldPrivateSecret>(bytes, Settings(false, ObjectLayout.Map, SerializedFields.Public));
       Assert.AreEqual(0, publicOnly.GetSecret(), "not with the public fields");
       Assert.AreEqual(2, publicOnly.Normal);
-      FldPrivateSecret defaultMode = Serializer.Deserialize<FldPrivateSecret>(bytes, new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      FldPrivateSecret defaultMode = Serializer.Deserialize<FldPrivateSecret>(bytes, new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
       Assert.AreEqual(0, defaultMode.GetSecret(), "not by default");
     }
 

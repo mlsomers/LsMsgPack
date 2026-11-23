@@ -55,7 +55,7 @@ namespace LsMsgPackUnitTests
     {
       LsNode node = new LsNode { Name = "loop" };
       node.Next = node;
-      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = schema });
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = schema });
       Assert.ThrowsExactly<MsgPackException>(() => lt.Serialize(node));
     }
 
@@ -65,14 +65,14 @@ namespace LsMsgPackUnitTests
       byte[] data = new byte[1000];
       for (int t = 0; t < data.Length; t++)
         data[t] = 0x91; // an array holding an array holding ...
-      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
       Assert.ThrowsExactly<MsgPackException>(() => lt.Deserialize<object>(data));
     }
 
     [TestMethod]
     public void ClaimedLengthsAreChecked()
     {
-      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
       Assert.ThrowsExactly<MsgPackException>(() => lt.Deserialize<object>(new byte[] { 0xDD, 0x7F, 0xFF, 0xFF, 0xFF })); // an array of 2^31 items in 5 bytes
       Assert.ThrowsExactly<MsgPackException>(() => lt.Deserialize<List<int>>(new byte[] { 0xDD, 0x7F, 0xFF, 0xFF, 0xFF }));
       Assert.ThrowsExactly<MsgPackException>(() => lt.Deserialize<string>(new byte[] { 0xDB, 0x7F, 0xFF, 0xFF, 0xFF, 0x41 }));
@@ -84,7 +84,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void CustomExtension(bool schema)
     {
-      LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = schema };
+      LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = schema };
       options.Extensions = new LsExtension[] { new DecimalExtension(), new PointExtension() };
       LsMsgPackSerializer lt = new LsMsgPackSerializer(options);
 
@@ -96,7 +96,7 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(6, ((LsPoint)back.Anything).Y); // the extension is read back as the point, also into object
 
       // Without the extension it cannot be read as the point (as in LsMsgPack)
-      LsMsgPackSerializer without = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = schema });
+      LsMsgPackSerializer without = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = schema });
       Assert.ThrowsExactly<MsgPackException>(() => without.Deserialize<LsWithPoint>(bytes));
     }
 
@@ -105,7 +105,7 @@ namespace LsMsgPackUnitTests
     {
       // As another library writes it: an extension without a type id
       byte[] data = new MpMap(new[] { new KeyValuePair<object, object>("Anything", new MpExt { TypeSpecifier = 42, Value = new byte[] { 1, 2, 3 } }) }, new MsgPackSettings()).ToBytes();
-      LsWithPoint read = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false }).Deserialize<LsWithPoint>(data);
+      LsWithPoint read = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false }).Deserialize<LsWithPoint>(data);
       MsgPackExtension extension = (MsgPackExtension)read.Anything;
       Assert.AreEqual((sbyte)42, extension.TypeCode);
       CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, extension.Data);
@@ -114,10 +114,10 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void OptionsAreCopied()
     {
-      LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = false };
+      LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = false };
       LsMsgPackSerializer lt = new LsMsgPackSerializer(options);
-      options.UseInexedSchema = true; // too late for this serializer
-      Assert.IsFalse(lt.Options.UseInexedSchema);
+      options.UseIndexedSchema = true; // too late for this serializer
+      Assert.IsFalse(lt.Options.UseIndexedSchema);
       Assert.AreEqual((byte)0x92, lt.Serialize(new LsNode { Name = "x" })[0]); // the object as an array (Name, Next), no schema
     }
 
@@ -135,7 +135,7 @@ namespace LsMsgPackUnitTests
       });
       Assert.AreEqual(0, failures);
     }
-    private static readonly LsMsgPackSerializer Names = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+    private static readonly LsMsgPackSerializer Names = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
 
     public class LsFormats
     {
@@ -148,7 +148,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void GuidAsString()
     {
-      LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = false, GuidFormat = GuidFormat.String };
+      LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = false, GuidFormat = GuidFormat.String };
       LsMsgPackSerializer lt = new LsMsgPackSerializer(options);
       Guid id = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
 
@@ -167,8 +167,8 @@ namespace LsMsgPackUnitTests
     {
       decimal[] values = { 12.50m, -1m, 0m, decimal.MaxValue, decimal.MinValue, 0.0000000000000000000000000001m };
       LsExtension[] extensions = { new DecimalExtension(typeCode) };
-      LsMsgPackSerializer writer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, Extensions = extensions });
-      LsMsgPackSerializer reader = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, Extensions = extensions, DecimalFormat = DecimalFormat.String });
+      LsMsgPackSerializer writer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, Extensions = extensions });
+      LsMsgPackSerializer reader = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, Extensions = extensions, DecimalFormat = DecimalFormat.String });
       for (int t = values.Length - 1; t >= 0; t--)
       {
         decimal back = reader.Deserialize<decimal>(writer.Serialize(values[t]));
@@ -181,7 +181,7 @@ namespace LsMsgPackUnitTests
     public void GenericReadsDecimalsAndGuidsAsDeclared()
     {
       Guid id = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
-      LsMsgPackSerializer asDeclared = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      LsMsgPackSerializer asDeclared = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
       LsMsgPackSerializer generic = new LsMsgPackSerializer(LsMsgPackPresets.Generic());
       Assert.AreEqual(12.50m, generic.Deserialize<decimal>(asDeclared.Serialize(12.50m)));
       Assert.AreEqual(id, generic.Deserialize<Guid>(asDeclared.Serialize(id)));
@@ -190,7 +190,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void DecimalAsString()
     {
-      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, DecimalFormat = DecimalFormat.String });
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, DecimalFormat = DecimalFormat.String });
       foreach (decimal value in new[] { 0m, 1234.50m, -0.0000001m, decimal.MaxValue })
       {
         byte[] bytes = lt.Serialize(value);
@@ -203,7 +203,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void DateTimeOffsetWithOffset()
     {
-      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, DateTimeOffsetFormat = DateTimeOffsetFormat.ClockTimeAndOffset });
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, DateTimeOffsetFormat = DateTimeOffsetFormat.ClockTimeAndOffset });
       DateTimeOffset when = new DateTimeOffset(2026, 9, 29, 14, 30, 15, 250, TimeSpan.FromMinutes(-150));
 
       byte[] bytes = lt.Serialize(when);
@@ -211,7 +211,7 @@ namespace LsMsgPackUnitTests
       DateTimeOffset back = lt.Deserialize<DateTimeOffset>(bytes);
       Assert.AreEqual(when, back);
       Assert.AreEqual(when.Offset, back.Offset);
-      LsMsgPackSerializer timestamp = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, DateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp });
+      LsMsgPackSerializer timestamp = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, DateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp });
       Assert.AreEqual(when, lt.Deserialize<DateTimeOffset>(timestamp.Serialize(when)), "a timestamp is read as well");
 
       LsFormats formats = lt.Deserialize<LsFormats>(lt.Serialize(new LsFormats { When = when }));
@@ -222,8 +222,8 @@ namespace LsMsgPackUnitTests
     public void UnspecifiedAsUtc()
     {
       DateTime unspecified = new DateTime(2026, 9, 29, 12, 0, 0, DateTimeKind.Unspecified);
-      LsMsgPackSerializer timestamps = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp });
-      LsMsgPackSerializer local = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, UnspecifiedDateTimeKind = DateTimeKind.Local });
+      LsMsgPackSerializer timestamps = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp });
+      LsMsgPackSerializer local = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, UnspecifiedDateTimeKind = DateTimeKind.Local });
       CollectionAssert.AreEqual(timestamps.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Utc)), timestamps.Serialize(unspecified), "the default: the clock time in UTC, as LsMsgPackDebug");
       CollectionAssert.AreEqual(timestamps.Serialize(DateTime.SpecifyKind(unspecified, DateTimeKind.Local)), local.Serialize(unspecified));
     }
@@ -238,7 +238,7 @@ namespace LsMsgPackUnitTests
       InvalidOperationException refused = Assert.ThrowsExactly<InvalidOperationException>(() => new LsMsgPackSerializer(native));
       StringAssert.Contains(refused.Message, "DateTimeFormat");
 
-      LsMsgPackSerializer timestamps = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, Extensions = new LsExtension[] { new DecimalExtension(6) } });
+      LsMsgPackSerializer timestamps = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, Extensions = new LsExtension[] { new DecimalExtension(6) } });
       byte[] bytes = timestamps.Serialize(12.5m);
       Assert.AreEqual((byte)6, bytes[1]);
       Assert.AreEqual(12.5m, timestamps.Deserialize<object>(bytes), "the registered extension wins");

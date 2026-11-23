@@ -64,9 +64,9 @@ namespace LsMsgPack.Analyzers
       DocsUrl + "lsmp006-null-is-read-back-as-the-initial-value");
 
     public static readonly DiagnosticDescriptor UntypedRead = new DiagnosticDescriptor("LSMP007", "Objects are read without their property names",
-      "{0} reads {1}: an object written from a class arrives without its property names, {2} (by default, and for application/x-lsmsgpack, it is an array of its values with the indexed schema). Read into a class (with nullable properties for a partial update), or write maps without the schema (ObjectLayout.Map and UseInexedSchema = false, as for application/msgpack).",
+      "{0} reads {1}: an object written from a class arrives without its property names, {2} (by default, and for application/x-lsmsgpack, it is an array of its values with the indexed schema). Read into a class (with nullable properties for a partial update), or write maps without the schema (ObjectLayout.Map and UseIndexedSchema = false, as for application/msgpack).",
       ReadingCategory, DiagnosticSeverity.Warning, true,
-      "The names of an object's properties are in the schema, or nowhere in the array layout: only the class they are read into gives them back. Only maps without the indexed schema (ObjectLayout.Map, UseInexedSchema = false, as application/msgpack writes them) carry the names.",
+      "The names of an object's properties are in the schema, or nowhere in the array layout: only the class they are read into gives them back. Only maps without the indexed schema (ObjectLayout.Map, UseIndexedSchema = false, as application/msgpack writes them) carry the names.",
       DocsUrl + "lsmp007-objects-are-read-without-their-property-names");
 
     public static readonly DiagnosticDescriptor UncheckedModel = new DiagnosticDescriptor("LSMP008", "Serialized class of another project is not checked",

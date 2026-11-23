@@ -47,7 +47,7 @@
     /// </summary>
     MpShort = 0xd1,
     /// <summary>
-    /// Signd Int (int32)
+    /// Signed Int (int32)
     /// </summary>
     MpInt = 0xd2,
     /// <summary>
@@ -137,15 +137,15 @@
     MpFExt16 = 0xd8,
 
     /// <summary>
-    /// ext 8 stores an integer and a byte array whose length is upto (2^8)-1 bytes
+    /// ext 8 stores an integer and a byte array whose length is up to (2^8)-1 bytes
     /// </summary>
     MpExt8 = 0xc7,
     /// <summary>
-    /// ext 16 stores an integer and a byte array whose length is upto (2^16)-1 bytes
+    /// ext 16 stores an integer and a byte array whose length is up to (2^16)-1 bytes
     /// </summary>
     MpExt16 = 0xc8,
     /// <summary>
-    /// ext 32 stores an integer and a byte array whose length is upto (2^32)-1 bytes
+    /// ext 32 stores an integer and a byte array whose length is up to (2^32)-1 bytes
     /// </summary>
     MpExt32 = 0xc9,
 

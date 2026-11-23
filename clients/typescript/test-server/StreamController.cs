@@ -123,7 +123,7 @@ namespace LsMsgPackTsTestServer
       MemoryStream stream = new MemoryStream();
       await Request.Body.CopyToAsync(stream);
       stream.Position = 0;
-      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, PropertyNameCaseInsensitive = true, ReferenceHandling = ReferenceHandling.Preserve });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, PropertyNameCaseInsensitive = true, ReferenceHandling = ReferenceHandling.Preserve });
       using (MsgPackStreamReader reader = new MsgPackStreamReader(stream, serializer))
       {
         List<bool> same = new List<bool>();
@@ -144,7 +144,7 @@ namespace LsMsgPackTsTestServer
       MemoryStream stream = new MemoryStream();
       await Request.Body.CopyToAsync(stream);
       stream.Position = 0;
-      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, PropertyNameCaseInsensitive = true, ReferenceHandling = ReferenceHandling.Preserve });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, PropertyNameCaseInsensitive = true, ReferenceHandling = ReferenceHandling.Preserve });
       using (MsgPackStreamReader reader = new MsgPackStreamReader(stream, serializer))
       {
         IReadOnlyList<MsgPackStreamIndex> indexes = reader.ReadIndexes();

@@ -388,7 +388,7 @@ namespace LsMsgPackDebug {
           return (long)BitConverter.ToUInt64(buffer, 0);
       }
       throw new MsgPackException(
-        $"Only 1, 2, 4 or 8 byte lenths are allowed. {bytes.ToString(CultureInfo.InvariantCulture)} is not implemented.", data.Position, TypeId);
+        $"Only 1, 2, 4 or 8 byte lengths are allowed. {bytes.ToString(CultureInfo.InvariantCulture)} is not implemented.", data.Position, TypeId);
     }
 
     /// <summary>

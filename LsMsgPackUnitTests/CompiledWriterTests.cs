@@ -154,28 +154,28 @@ namespace LsMsgPackUnitTests
               foreach (bool reference in schema ? new[] { false, true } : new[] { false })
                 yield return new LsMsgPackOptions
                 {
-                  UseInexedSchema = schema, WriteSchemaReference = reference, SchemaStore = reference ? new SchemaStore() : null, ObjectLayout = layout, TrimTrailingNulls = trim,
+                  UseIndexedSchema = schema, WriteSchemaReference = reference, SchemaStore = reference ? new SchemaStore() : null, ObjectLayout = layout, TrimTrailingNulls = trim,
                   DynamicFilters = filter ? new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() } : new IMsgPackPropertyIncludeDynamically[0],
                   UnspecifiedDateTimeKind = trim ? DateTimeKind.Utc : DateTimeKind.Local
                 };
       foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map }) // the formats of the Generic() preset, written by the compiled code (GeneratedCapabilities.WriteFormats)
         yield return new LsMsgPackOptions
         {
-          UseInexedSchema = false, ObjectLayout = layout, TrimTrailingNulls = layout == ObjectLayout.Array, GuidFormat = GuidFormat.String, DecimalFormat = DecimalFormat.String,
+          UseIndexedSchema = false, ObjectLayout = layout, TrimTrailingNulls = layout == ObjectLayout.Array, GuidFormat = GuidFormat.String, DecimalFormat = DecimalFormat.String,
           DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() }
         };
     }
 
     private static string Describe(LsMsgPackOptions o)
     {
-      return $"schema {o.UseInexedSchema}, reference {o.WriteSchemaReference}, {o.ObjectLayout}, filters {o.DynamicFilters.Length}, trim {o.TrimTrailingNulls}, {o.GuidFormat}/{o.DecimalFormat}";
+      return $"schema {o.UseIndexedSchema}, reference {o.WriteSchemaReference}, {o.ObjectLayout}, filters {o.DynamicFilters.Length}, trim {o.TrimTrailingNulls}, {o.GuidFormat}/{o.DecimalFormat}";
     }
 
     [TestMethod]
     public void TheCompiledWriter_TakesOverAfterTheNumberOfObjects()
     {
-      LsMsgPackSerializer runtime = Create(new LsMsgPackOptions { UseInexedSchema = false }, -1);
-      LsMsgPackSerializer compiled = Create(new LsMsgPackOptions { UseInexedSchema = false }, 3);
+      LsMsgPackSerializer runtime = Create(new LsMsgPackOptions { UseIndexedSchema = false }, -1);
+      LsMsgPackSerializer compiled = Create(new LsMsgPackOptions { UseIndexedSchema = false }, 3);
       CwAllKinds value = new CwAllKinds { I32 = 4, S = "s" };
       byte[] expected = runtime.Serialize(value);
       for (int t = 1; t <= 2; t++)
@@ -193,7 +193,7 @@ namespace LsMsgPackUnitTests
     public void Default_CompilesAfterAThousandObjects()
     {
       Assert.AreEqual(1000, new LsMsgPackOptions().CompileWritersAfter);
-      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, UseRegisteredContexts = false });
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, UseRegisteredContexts = false });
       List<CwPoint> points = new List<CwPoint>();
       for (int t = 0; t < 999; t++)
         points.Add(new CwPoint { X = t });
@@ -240,7 +240,7 @@ namespace LsMsgPackUnitTests
               differences.Add($"{Describe(options)}, as {declared.Name}: {BitConverter.ToString(expected)} != {BitConverter.ToString(actual)}");
           }
         }
-        bool names = !options.UseInexedSchema;
+        bool names = !options.UseIndexedSchema;
         Assert.AreEqual("CompiledObjectCode", WriterOf(compiled, typeof(CwAllKinds), names), Describe(options));
         Assert.AreEqual("CompiledStructCode", WriterOf(compiled, typeof(CwPoint), names), Describe(options));
       }
@@ -288,7 +288,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void NonPublicProperties_AreRead()
     {
-      LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = false, StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.All), new FilterIgnoredAttribute(), new FilterStatic() } };
+      LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = false, StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.All), new FilterIgnoredAttribute(), new FilterStatic() } };
       CwHidden hidden = CwHidden.Create(5, "secret");
       byte[] expected = Create(options, -1).Serialize(hidden);
       LsMsgPackSerializer compiled = Create(options, 0);
@@ -324,7 +324,7 @@ namespace LsMsgPackUnitTests
         LsMsgPackSerializer compiled = Create(options, 0);
         byte[] expected = Create(options, -1).Serialize(moving);
         CollectionAssert.AreEqual(expected, compiled.Serialize(moving), Describe(options));
-        Assert.AreEqual("CompiledStructCode", WriterOf(compiled, typeof(LsStructTests.LtsVec), !options.UseInexedSchema), Describe(options));
+        Assert.AreEqual("CompiledStructCode", WriterOf(compiled, typeof(LsStructTests.LtsVec), !options.UseIndexedSchema), Describe(options));
         for (int t = 0; t < 3; t++)
         {
           stream.SetLength(0);
@@ -342,7 +342,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void SeveralThreads_WhileTheWriterIsCompiled()
     {
-      LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = true, DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() } };
+      LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = true, DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues() } };
       CwAllKinds value = Full();
       CwWide wide = new CwWide { P05 = "w", P23 = new CwWide { P00 = 1 } };
       byte[] expected = Create(options, -1).Serialize(value);
@@ -379,8 +379,8 @@ namespace LsMsgPackUnitTests
       // Custom dynamic filters (asked per value with the value boxed) and a type id on every value
       foreach (LsMsgPackOptions options in new[]
       {
-        new LsMsgPackOptions { UseInexedSchema = false, DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new CwCustomFilter() } },
-        new LsMsgPackOptions { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Always | AddTypeIdOption.FullName }
+        new LsMsgPackOptions { UseIndexedSchema = false, DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new CwCustomFilter() } },
+        new LsMsgPackOptions { UseIndexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Always | AddTypeIdOption.FullName }
       })
       {
         LsMsgPackSerializer compiled = Create(options, 0);
@@ -400,7 +400,7 @@ namespace LsMsgPackUnitTests
         {
           LsMsgPackOptions options = new LsMsgPackOptions
           {
-            UseInexedSchema = false, ObjectLayout = layout, TrimTrailingNulls = trim, PropertyOrder = PropertyOrder.Alphabetical, Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }
+            UseIndexedSchema = false, ObjectLayout = layout, TrimTrailingNulls = trim, PropertyOrder = PropertyOrder.Alphabetical, Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }
           };
           string name = layout + (trim ? " trimmed" : "");
           LsMsgPackOptions withoutCode = options.Clone();
@@ -440,7 +440,7 @@ namespace LsMsgPackUnitTests
     {
       LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions
       {
-        UseInexedSchema = false, Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, CompileWritersAfter = 0
+        UseIndexedSchema = false, Contexts = new LsMsgPackContext[] { TestMsgPackContext.Default }, UseRegisteredContexts = false, CompileWritersAfter = 0
       });
       serializer.Serialize(Full());
       Assert.AreNotEqual("CompiledObjectCode", WriterOf(serializer, typeof(CwAllKinds), true));

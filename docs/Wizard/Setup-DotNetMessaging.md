@@ -82,7 +82,7 @@ Messages wait in queues, and services are deployed one at a time, so old and new
 
 - **Messages that can't be read** (a corrupt body, an incompatible change) throw a `MsgPackException`. Catch it and move the message to a dead-letter queue rather than retrying it forever.
 - **Who can write to the queue?** If only your services can, the messages are trusted. If other parties or clients can publish (a public WebSocket, a shared broker), treat them as untrusted: see [Add-ons](Extras.md#reading-data-you-dont-trust).
-- **Very small, very frequent messages**: the schema is a fixed cost per message. For a message that is one small object, `new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }` (the property names in the object, no schema) is about as small and just as tolerant to changes; set the same on both sides.
+- **Very small, very frequent messages**: the schema is a fixed cost per message. For a message that is one small object, `new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }` (the property names in the object, no schema) is about as small and just as tolerant to changes; set the same on both sides.
 - **Dates arrive in UTC** (`Kind = Utc`).
 - Consumers in other languages on the same queue? Then use the [plain format](Setup-FilesPlain.md) (`LsMsgPackPresets.Generic()`); the settings there apply to messages just as well.
 

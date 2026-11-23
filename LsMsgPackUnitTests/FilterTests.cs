@@ -98,7 +98,7 @@ namespace LsMsgPackUnitTests
     {
       return new MsgPackSettings()
       {
-        UseInexedSchema = useSchema,
+        UseIndexedSchema = useSchema,
         ObjectLayout = ObjectLayout.Map, // keys show what was written
         StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(), ignoreFilter, new FilterStatic() }
       };
@@ -118,7 +118,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void DefaultSettingsIgnoreAllKnownAttributes()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       CollectionAssert.AreEqual(Sorted("Plain", "StjNever", "StjWhenNull", "Skip"), Keys(Serializer.Serialize(IgnoreProbe.Filled(), settings)));
     }
 
@@ -217,7 +217,7 @@ namespace LsMsgPackUnitTests
       MsgPackSettings newtonsoft = Settings(FilterIgnoredAttribute.LikeNewtonsoft, useSchema);
       MsgPackSettings xml = Settings(FilterIgnoredAttribute.LikeXmlSerializer, useSchema);
       MsgPackSettings all = Settings(new FilterIgnoredAttribute(IgnoreAttributes.None), useSchema);
-      MsgPackSettings defaults = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings defaults = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
       FilterCacheProbe value = new FilterCacheProbe() { Plain = "p", Xml = "x", Newtonsoft = "n" };
 
       for (int round = 0; round < 2; round++)
@@ -256,7 +256,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true, ObjectLayout.Array)]
     public void EmptyStringsAreWritten(bool useSchema, ObjectLayout layout)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = layout };
       TextProbe value = new TextProbe() { Text = "", Initialized = "", Boxed = "" };
 
       byte[] bytes = Serializer.Serialize(value, settings);
@@ -279,7 +279,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings()
       {
-        UseInexedSchema = useSchema,
+        UseIndexedSchema = useSchema,
         ObjectLayout = layout,
         DynamicFilters = new IMsgPackPropertyIncludeDynamically[] { new FilterDefaultValues(omitEmptyStrings: true) }
       };

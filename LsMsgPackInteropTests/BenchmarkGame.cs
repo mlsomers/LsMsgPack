@@ -491,8 +491,8 @@ namespace LsMsgPackInteropTests
         MessagePackCSharp<PlayerStateK, WorldSnapshotK>("MessagePack-CSharp [Key(n)], generated", mpGenerated),
         Nerdbank("Nerdbank PerfOverSchemaStability, shapes", new NB.MessagePackSerializer() { PerfOverSchemaStability = true }),
         Ls("LsMsgPack MessagePackCSharp preset, arrays", mpArrays, false), // the bytes of MessagePack-CSharp's row
-        Ls("LsMsgPack arrays, no schema", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, false),
-        Ls("LsMsgPack arrays, no schema, generated", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, true),
+        Ls("LsMsgPack arrays, no schema", new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, false),
+        Ls("LsMsgPack arrays, no schema, generated", new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, true),
         Ls("LsMsgPack schema reference (arrays)", new LsMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true }, false),
         Ls("LsMsgPack schema reference, generated", new LsMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true }, true),
         Ls("LsMsgPack default (arrays, schema)", new LsMsgPackOptions(), false),
@@ -500,8 +500,8 @@ namespace LsMsgPackInteropTests
 
         // LsMsgPack with Vec3 as a class
         Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack MessagePackCSharp preset, Vec3 class", mpArrays.Clone(), false), // still MessagePack-CSharp's bytes
-        Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack arrays, no schema, Vec3 class", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, false),
-        Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack arrays, no schema, gen., Vec3 class", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, true),
+        Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack arrays, no schema, Vec3 class", new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, false),
+        Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack arrays, no schema, gen., Vec3 class", new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }, true),
         Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack schema ref., gen., Vec3 class", new LsMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true }, true),
         Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack default, Vec3 class", new LsMsgPackOptions(), false),
         Ls<PlayerStateC, WorldSnapshotC>("LsMsgPack default, generated, Vec3 class", new LsMsgPackOptions(), true),
@@ -511,13 +511,13 @@ namespace LsMsgPackInteropTests
         Ls<PlayerStateV, WorldSnapshotV>("LsMsgPack default, generated, Vector3", new LsMsgPackOptions(), true),
         Ls<PlayerStateF, WorldSnapshotF>("LsMsgPack default, fields", new LsMsgPackOptions(), false),
         Ls<PlayerStateF, WorldSnapshotF>("LsMsgPack default, generated, fields", new LsMsgPackOptions(), true),
-        Ls<PlayerStateF, WorldSnapshotF>("LsMsgPack names, fields", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, false),
+        Ls<PlayerStateF, WorldSnapshotF>("LsMsgPack names, fields", new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }, false),
 
         // Objects as maps keyed by property names
         MessagePackCSharp<PlayerStateN, WorldSnapshotN>("MessagePack-CSharp names, generated", mpGenerated),
         Nerdbank("Nerdbank names, shapes", new NB.MessagePackSerializer()),
-        Ls("LsMsgPack names", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, false),
-        Ls("LsMsgPack names, generated", new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, true),
+        Ls("LsMsgPack names", new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }, false),
+        Ls("LsMsgPack names, generated", new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }, true),
       };
     }
 

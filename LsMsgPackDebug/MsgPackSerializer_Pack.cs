@@ -116,7 +116,7 @@ namespace LsMsgPackDebug
     private static void ThrowIfReservedCodesUsed(MsgPackSettings settings)
     {
       ReservedCodes.ThrowIfUsed(settings);
-      ICustomExt[] custom = settings._customExtentionTypes;
+      ICustomExt[] custom = settings._customExtensionTypes;
       for (int t = 0; custom != null && t < custom.Length; t++)
         if (custom[t] != null)
           ReservedCodes.ThrowIfUsed(custom[t].TypeSpecifier, custom[t].GetType().Name, settings);

@@ -69,15 +69,15 @@ namespace LsMsgPackUnitTests
   {
     protected abstract ISerializerUnderTest Serializer { get; }
 
-    private static readonly MsgPackSettings Untyped = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+    private static readonly MsgPackSettings Untyped = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
 
     private static IEnumerable<MsgPackSettings> AllSettings()
     {
       yield return new MsgPackSettings();
       yield return new MsgPackSettings() { ObjectLayout = ObjectLayout.Map };
-      yield return new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName };
-      yield return new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
-      yield return new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array };
+      yield return new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName };
+      yield return new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      yield return new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array };
       yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve };
     }
 
@@ -143,7 +143,7 @@ namespace LsMsgPackUnitTests
     public void Structs_SameBytesAsSystemNumerics()
     {
       // In the array layout without names: the bytes of System.Numerics' structs (and of MessagePack-CSharp's Unity resolver for Vector3, Quaternion, Color)
-      MsgPackSettings array = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array };
+      MsgPackSettings array = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array };
       CollectionAssert.AreEqual(Serializer.Serialize(new System.Numerics.Vector3(1.5f, -2, 30), array), Serializer.Serialize(new UnityEngine.Vector3(1.5f, -2, 30), array));
       CollectionAssert.AreEqual(Serializer.Serialize(new System.Numerics.Quaternion(1, 2, 3, 4), array), Serializer.Serialize(new UnityEngine.Quaternion(1, 2, 3, 4), array));
       CollectionAssert.AreEqual(Serializer.Serialize(new System.Numerics.Vector4(0.25f, 0.5f, 1, 0.75f), array), Serializer.Serialize(new Color(0.25f, 0.5f, 1, 0.75f), array));
@@ -163,7 +163,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings()
       {
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         ObjectLayout = ObjectLayout.Map,
         StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.None, NonPublicProperties.None, SerializedFields.Public), new FilterIgnoredAttribute(), new FilterStatic() }
       };

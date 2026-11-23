@@ -92,7 +92,7 @@ namespace LsMsgPackUnitTests
 
     protected static MsgPackSettings Settings(ObjectLayout layout, bool useSchema, bool ignoreCycles = true)
     {
-      return new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema, ReferenceHandling = ignoreCycles ? ReferenceHandling.IgnoreCycles : ReferenceHandling.None };
+      return new MsgPackSettings() { ObjectLayout = layout, UseIndexedSchema = useSchema, ReferenceHandling = ignoreCycles ? ReferenceHandling.IgnoreCycles : ReferenceHandling.None };
     }
 
     private static IEnumerable<MsgPackSettings> AllSettings()
@@ -205,7 +205,7 @@ namespace LsMsgPackUnitTests
       foreach (MsgPackSettings settings in AllSettings())
       {
         byte[] bytes = Serializer.Serialize(holder, settings);
-        CollectionAssert.AreEqual(Serializers.Debug.Serialize(holder, settings), bytes, $"{settings.ObjectLayout}, trimmed {settings.TrimTrailingNulls}, schema {settings.UseInexedSchema}");
+        CollectionAssert.AreEqual(Serializers.Debug.Serialize(holder, settings), bytes, $"{settings.ObjectLayout}, trimmed {settings.TrimTrailingNulls}, schema {settings.UseIndexedSchema}");
         CyPlainHolder read = Serializer.Deserialize<CyPlainHolder>(bytes, settings);
         Assert.AreEqual(1, read.Item.X);
         Assert.IsNull(((CyPlainBack)read.Item).Back);
@@ -256,7 +256,7 @@ namespace LsMsgPackUnitTests
       values.Add(person);
       foreach (MsgPackSettings settings in AllSettings())
         foreach (object value in values)
-          CollectionAssert.AreEqual(Serializers.Debug.Serialize(value, value.GetType(), settings), Serializer.Serialize(value, value.GetType(), settings), $"{value.GetType().Name}, {settings.ObjectLayout}, trimmed {settings.TrimTrailingNulls}, schema {settings.UseInexedSchema}");
+          CollectionAssert.AreEqual(Serializers.Debug.Serialize(value, value.GetType(), settings), Serializer.Serialize(value, value.GetType(), settings), $"{value.GetType().Name}, {settings.ObjectLayout}, trimmed {settings.TrimTrailingNulls}, schema {settings.UseIndexedSchema}");
     }
 
     [TestMethod]

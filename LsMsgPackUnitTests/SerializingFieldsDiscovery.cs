@@ -49,7 +49,7 @@ namespace LsMsgPackUnitTests
     protected static MsgPackSettings Settings(bool schema, ObjectLayout layout, SerializedFields fields, PropertyOrder order = PropertyOrder.Reflection,
       GetOnlyProperties getOnly = GetOnlyProperties.All, IgnoreAttributes ignore = IgnoreAttributes.All)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout, PropertyOrder = order };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout, PropertyOrder = order };
       settings.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(getOnly, NonPublicProperties.None, fields), new FilterIgnoredAttribute(ignore), new FilterStatic() };
       return settings;
     }
@@ -78,7 +78,7 @@ namespace LsMsgPackUnitTests
     protected string WrittenNames<T>(T value, MsgPackSettings settings)
     {
       MsgPackSettings written = (MsgPackSettings)settings.Clone();
-      written.UseInexedSchema = false;
+      written.UseIndexedSchema = false;
       written.ObjectLayout = ObjectLayout.Map;
       byte[] bytes = Serializer.Serialize(value, written);
       Dictionary<string, object> map = Serializer.Deserialize<Dictionary<string, object>>(bytes, Settings(false, ObjectLayout.Map, SerializedFields.None));

@@ -116,7 +116,7 @@ namespace LsMsgPackDebug
         }
       }
       set
-      { // preseve original type in typeId
+      { // preserve original type in typeId
         if (value is sbyte)
         {
           typeId = ((sbyte)value >= -0x20) && ((sbyte)value <= 0x1F) ? MsgPackTypeId.MpSBytePart : MsgPackTypeId.MpSByte; // a fixint (see TypeId for the positive ones)

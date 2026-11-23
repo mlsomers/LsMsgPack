@@ -34,15 +34,15 @@ The options at a glance
 
 | Settings | Output for `owner` | Size | Polymorphism | Readable by other MsgPack implementations |
 |---|---|---|---|---|
-| `UseInexedSchema = false`, `AddTypeIdOptions = Never` | [Plain maps](#plain-maps) | 52 bytes | No (only via a [signature resolver](#resolving-by-signature)) | Yes, it is plain MsgPack |
-| `UseInexedSchema = false`, `AddTypeIdOptions = IfAmbiguious` | [Maps with type names](#type-ids) | 62 bytes | Yes | Yes, the type name is just an extra `""` key |
-| `UseInexedSchema = false`, `AddTypeIdOptions = Always` | Maps with type names on every object | 84 bytes | Yes | Yes |
-| `UseInexedSchema = true`, `AddTypeIdOptions = IfAmbiguious` (**default**) | [Schema followed by the body](#the-indexed-schema) | 80 bytes | Yes | Not really, they would need to understand the schema |
-| `UseInexedSchema = true`, `AddTypeIdOptions = Always` | Schema followed by the body | 108 bytes | Yes | Not really |
+| `UseIndexedSchema = false`, `AddTypeIdOptions = Never` | [Plain maps](#plain-maps) | 52 bytes | No (only via a [signature resolver](#resolving-by-signature)) | Yes, it is plain MsgPack |
+| `UseIndexedSchema = false`, `AddTypeIdOptions = IfAmbiguous` | [Maps with type names](#type-ids) | 62 bytes | Yes | Yes, the type name is just an extra `""` key |
+| `UseIndexedSchema = false`, `AddTypeIdOptions = Always` | Maps with type names on every object | 84 bytes | Yes | Yes |
+| `UseIndexedSchema = true`, `AddTypeIdOptions = IfAmbiguous` (**default**) | [Schema followed by the body](#the-indexed-schema) | 80 bytes | Yes | Not really, they would need to understand the schema |
+| `UseIndexedSchema = true`, `AddTypeIdOptions = Always` | Schema followed by the body | 108 bytes | Yes | Not really |
 
 For a single small object the schema is overhead. It pays off once objects repeat: the same owner with 100 pets is **2508 bytes** as plain maps with type names and **1252 bytes** with the indexed schema.
 
-Both sides must use the same `UseInexedSchema` setting. Data written with the schema starts with the schema map, and data written without it does not. Reading data with the wrong setting throws a `MsgPackException`.
+Both sides must use the same `UseIndexedSchema` setting. Data written with the schema starts with the schema map, and data written without it does not. Reading data with the wrong setting throws a `MsgPackException`.
 
 ### Why not just use `List<object>`?
 
@@ -56,7 +56,7 @@ Plain maps
 ----------
 
 ```csharp
-var settings = new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never };
+var settings = new MsgPackSettings { UseIndexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never };
 ```
 
 ```
@@ -77,7 +77,7 @@ Type ids
 --------
 
 ```csharp
-var settings = new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.IfAmbiguious };
+var settings = new MsgPackSettings { UseIndexedSchema = false, AddTypeIdOptions = AddTypeIdOption.IfAmbiguous };
 ```
 
 ```
@@ -91,7 +91,7 @@ When the runtime type of a value differs from the declared type of the property 
 | Flag | Meaning |
 |---|---|
 | `Never` | Never add a type id. Only safe when there are no interfaces, abstract classes or base classes with derived instances in your model, or when a [signature resolver](#resolving-by-signature) is used. |
-| `IfAmbiguious` | Add a type id only when the runtime type differs from the declared type (default). This is usually the best choice. |
+| `IfAmbiguous` | Add a type id only when the runtime type differs from the declared type (default). This is usually the best choice. |
 | `Always` | Add a type id to every object, even when the declared type already says what it is. It rarely adds information but makes the data self-describing. |
 | `FullName` | Combine with one of the above to use `Namespace.TypeName` instead of `TypeName`. Only needed when the same class name exists in more than one namespace. The payload gets larger (except with the schema, where each name is stored once). |
 | `NoDefaultFallBack` | Combine with one of the above to use only the ids returned by your own [type resolvers](#custom-type-resolvers). If none of them returns an id, nothing is written instead of the type name. |
@@ -110,7 +110,7 @@ The indexed schema
 ------------------
 
 ```csharp
-var settings = new MsgPackSettings(); // UseInexedSchema = true and AddTypeIdOptions = IfAmbiguious are the defaults
+var settings = new MsgPackSettings(); // UseIndexedSchema = true and AddTypeIdOptions = IfAmbiguous are the defaults
 ```
 
 ```
@@ -121,7 +121,7 @@ var settings = new MsgPackSettings(); // UseInexedSchema = true and AddTypeIdOpt
 The output is two MsgPack items. First comes a small schema, which maps each type name to its property names. Then comes the body. In the body, property names are replaced by their index in the type's property list, and type ids are replaced by the type's index in the schema. Every name is written only once per message, no matter how many objects use it.
 
 Pros:
-- Much smaller for anything with repeating objects (about half the size in the 100-pet example). Type ids cost about 1 byte, so `IfAmbiguious` is almost free.
+- Much smaller for anything with repeating objects (about half the size in the 100-pet example). Type ids cost about 1 byte, so `IfAmbiguous` is almost free.
 - Still tolerant to versioning. The schema carries the property names, so properties are matched by name when reading even though the body uses indexes. Each message carries its own schema, so the writer and reader don't need to share a schema file.
 - `FullName` costs little because each full name appears once.
 
@@ -198,7 +198,7 @@ MsgPackTypes.CacheAssemblyTypes(typeof(IPet));  // LsMsgPack.Core, for both seri
 
 The same applies when implementations of `IPet` live in other assemblies than `IPet` itself (e.g. plugins), and nothing you deserialize reaches them: register each of them. `Deserialize<List<Cat>>()` finds `Cat` (it's reachable from the root type).
 
-- **Short names should be unique** among the cached assemblies. When several cached classes have the name, the one that fits where the value goes is used: a type id names the type of an instance, so abstract classes and interfaces don't count (your own `Attribute` class is found, not `System.Attribute`), nor do classes that can't be assigned to the declared type. When more than one fits (e.g. two classes called `Cat` in a property of type `object`), reading throws "Type assignment dilamma". Use `AddTypeIdOptions = AddTypeIdOption.FullName` (bigger payloads) or your own `IMsgPackTypeResolver` in `TypeResolvers`.
+- **Short names should be unique** among the cached assemblies. When several cached classes have the name, the one that fits where the value goes is used: a type id names the type of an instance, so abstract classes and interfaces don't count (your own `Attribute` class is found, not `System.Attribute`), nor do classes that can't be assigned to the declared type. When more than one fits (e.g. two classes called `Cat` in a property of type `object`), reading throws "Type assignment dilemma". Use `AddTypeIdOptions = AddTypeIdOption.FullName` (bigger payloads) or your own `IMsgPackTypeResolver` in `TypeResolvers`.
 - **Names in the schema** are resolved the same way, and a process resolves a name to one type. A reader that declares another type with that name gets the entry anyway: `System.Numerics.Vector3` and `UnityEngine.Vector3` are both `Vector3`, so whichever was resolved first, a property declared as the other one reads its values by the entry's names (the type is the declared one, never one the data picks). Not when the schema has two entries with the name (both types in one payload), nor for a type id in a member declared as `object` or an interface: use full names there.
 - **Let it search**: the included [`WildGooseChaseResolver`](#wildgoosechaseresolver) searches all assemblies loaded in the AppDomain for a name it can't find otherwise (and caches the assemblies it searched). Convenient, but slower the first time, and it keeps more names in memory.
 - **Your own mapping**: implement `IMsgPackTypeResolver` to choose the ids and the types (e.g. a fixed table of names, or [`XmlRootAttributeTypeResolver`](#xmlrootattributetyperesolver) to use the names of `[XmlRoot]`).
@@ -288,9 +288,9 @@ public Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToP
 }
 ```
 
-Use this with `UseInexedSchema = false` and `AddTypeIdOptions = AddTypeIdOption.Never` to read polymorphic data written by other implementations that don't add type ids.
+Use this with `UseIndexedSchema = false` and `AddTypeIdOptions = AddTypeIdOption.Never` to read polymorphic data written by other implementations that don't add type ids.
 
-This is the way typical serialization libraries often solve polymorphism (ISerializationBinder). The extra code needed and trouble of maintaining this code is the reason for our [indexed schemas](#the-indexed-schema) and `AddTypeIdOption.IfAmbiguious` features. However the freedom to write custom resolvers is fully supported.
+This is the way typical serialization libraries often solve polymorphism (ISerializationBinder). The extra code needed and trouble of maintaining this code is the reason for our [indexed schemas](#the-indexed-schema) and `AddTypeIdOption.IfAmbiguous` features. However the freedom to write custom resolvers is fully supported.
 
 Property names and filters
 --------------------------
@@ -491,8 +491,8 @@ Readers need the same setting. A reader without it skips these fields with the i
 Choosing your settings
 ----------------------
 
-- **Only LsMsgPack (or LsMsgPackDebug) on both sides** (your own client and server, files, caches, queues): keep the defaults. The indexed schema with `IfAmbiguious` type ids gives the smallest data and full polymorphism.
-- **Other MsgPack implementations need to read the data**: set `UseInexedSchema = false`. Keep `IfAmbiguious` if you have polymorphic properties (the others can ignore the `""` key), or use `Never` for fully plain maps.
-- **Reading data from other implementations**: `UseInexedSchema = false`. If the data contains polymorphic values without type ids, add a [signature resolver](#resolving-by-signature).
+- **Only LsMsgPack (or LsMsgPackDebug) on both sides** (your own client and server, files, caches, queues): keep the defaults. The indexed schema with `IfAmbiguous` type ids gives the smallest data and full polymorphism.
+- **Other MsgPack implementations need to read the data**: set `UseIndexedSchema = false`. Keep `IfAmbiguous` if you have polymorphic properties (the others can ignore the `""` key), or use `Never` for fully plain maps.
+- **Reading data from other implementations**: `UseIndexedSchema = false`. If the data contains polymorphic values without type ids, add a [signature resolver](#resolving-by-signature).
 - **Class names may change, or you want shorter ids without a schema**: use `XmlRootAttributeTypeResolver` or a [custom type resolver](#custom-type-resolvers).
 - **Web APIs**: the [web formatters](WebFormatters.md) handle this per request. `application/msgpack` is plain MsgPack for everyone (or a preset for another library), and `application/x-lsmsgpack` uses the schema between LsMsgPack or LsMsgPackDebug endpoints.

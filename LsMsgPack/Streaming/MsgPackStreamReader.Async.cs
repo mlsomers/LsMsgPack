@@ -362,7 +362,7 @@ namespace LsMsgPack.Streaming
     private bool SchemaFollows()
     {
       bool body = _depth == 0 ? _headState == HeadState.AwaitingBody : _headState == HeadState.InBody;
-      return _options._useInexedSchema && (body ? _head : null) is null && _buf[_pos] != 0xC0;
+      return _options._useIndexedSchema && (body ? _head : null) is null && _buf[_pos] != 0xC0;
     }
 
     private async Task PrepareObjectSlowAsync(CancellationToken cancellationToken)
@@ -399,7 +399,7 @@ namespace LsMsgPack.Streaming
         throw new ArgumentNullException(nameof(root));
       ThrowIfDisposed();
       await PassPayloadAsync(cancellationToken).ConfigureAwait(false);
-      if (_depth == 0 && _headState != HeadState.AwaitingBody && _options._useInexedSchema) // otherwise ReadHead refuses it or reads nothing
+      if (_depth == 0 && _headState != HeadState.AwaitingBody && _options._useIndexedSchema) // otherwise ReadHead refuses it or reads nothing
       {
         await SkipStreamValuesAsync(cancellationToken).ConfigureAwait(false);
         if (await TryEnsureAsync(1, cancellationToken).ConfigureAwait(false) && _buf[_pos] != 0xC0)

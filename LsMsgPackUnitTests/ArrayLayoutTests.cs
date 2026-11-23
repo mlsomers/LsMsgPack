@@ -116,7 +116,7 @@ namespace LsMsgPackUnitTests
       {
         ObjectLayout = ObjectLayout.Array,
         PropertyOrder = order,
-        UseInexedSchema = mode != SchemaMode.Names,
+        UseIndexedSchema = mode != SchemaMode.Names,
         WriteSchemaReference = mode == SchemaMode.Reference,
         SchemaStore = mode == SchemaMode.Reference ? new SchemaStore() : null
       };
@@ -307,7 +307,7 @@ namespace LsMsgPackUnitTests
     {
       Assert.AreEqual(ObjectLayout.Array, new MsgPackSettings().ObjectLayout);
       Assert.IsFalse(new MsgPackSettings().TrimTrailingNulls);
-      CollectionAssert.AreEqual(new byte[] { 0x92, 0xA1, (byte)'a', 0x05 }, Serializer.Serialize(new AlAddress() { Street = "a", Number = 5 }, new MsgPackSettings() { UseInexedSchema = false, PropertyOrder = PropertyOrder.Declaration }));
+      CollectionAssert.AreEqual(new byte[] { 0x92, 0xA1, (byte)'a', 0x05 }, Serializer.Serialize(new AlAddress() { Street = "a", Number = 5 }, new MsgPackSettings() { UseIndexedSchema = false, PropertyOrder = PropertyOrder.Declaration }));
     }
 
     [TestMethod]

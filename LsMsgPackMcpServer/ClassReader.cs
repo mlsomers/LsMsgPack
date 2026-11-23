@@ -167,7 +167,7 @@ namespace LsMsgPackMcp
       bool indexed = options["--indexed"] == "true";
       MsgPackSettings settings = new MsgPackSettings()
       {
-        UseInexedSchema = indexed,
+        UseIndexedSchema = indexed,
         EndianAction = (EndianAction)Enum.Parse(typeof(EndianAction), options["--endian"]),
         ReadErrors = ReadErrorHandling.ReportAndContinue,
         ContinueProcessingOnBreakingError = false,
@@ -190,7 +190,7 @@ namespace LsMsgPackMcp
     {
       StringBuilder sb = new StringBuilder();
       sb.Append("Read ").Append(payload.Length.ToString(CultureInfo.InvariantCulture)).Append(" bytes into ").Append(TypeName(type)).Append(" (").Append(assemblyName).Append(") with LsMsgPack: ")
-        .Append(settings.UseInexedSchema ? "the indexed schema of the data" : "property names or positions (no schema)")
+        .Append(settings.UseIndexedSchema ? "the indexed schema of the data" : "property names or positions (no schema)")
         .Append(", ReadErrors = ReportAndContinue, other settings default.").Append('\n');
 
       MsgPackTypes.CacheAssemblyTypes(type.IsArray ? type.GetElementType() : type);

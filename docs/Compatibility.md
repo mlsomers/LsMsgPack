@@ -11,7 +11,7 @@ MsgPack standardizes the value types (integers, strings, binary data, arrays, ma
 | [Python, JavaScript](#python-and-javascript) | decode Guids and decimals (snippets below) | Guids as bytes in .NET order, decimals as strings |
 | [Other libraries](#other-libraries-not-tested) | maps keyed by property names | maps keyed by property names |
 
-LsMsgPackDebug always needs `UseInexedSchema = false`, and for writing `ObjectLayout = ObjectLayout.Map` (objects are arrays by default) and `DateTimeFormat = DateTimeFormat.Timestamp` (DateTimes are LsMsgPack's extension type 6 by default), see below.
+LsMsgPackDebug always needs `UseIndexedSchema = false`, and for writing `ObjectLayout = ObjectLayout.Map` (objects are arrays by default) and `DateTimeFormat = DateTimeFormat.Timestamp` (DateTimes are LsMsgPack's extension type 6 by default), see below.
 
 LsMsgPack (`LsMsgPackSerializer`) writes the same bytes as LsMsgPackDebug with the same settings and reads the same data, so everything here applies to it too (the interop tests run against both) (custom extensions are `LsExtension<T>` there, with the same bytes as LsMsgPackDebug's `ICustomExt` for the same type code).
 
@@ -54,7 +54,7 @@ using LsMsgPack.TypeResolving.Interfaces;
 
 MsgPackSettings compatible = new MsgPackSettings()
 {
-  UseInexedSchema = false, // required: the indexed schema is LsMsgPack's own format
+  UseIndexedSchema = false, // required: the indexed schema is LsMsgPack's own format
   ObjectLayout = ObjectLayout.Map, // required for writing: objects as maps keyed by property names
   DateTimeFormat = DateTimeFormat.Timestamp, // required for writing: DateTimes as timestamps, which other libraries read as dates
   DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], // optional: also write null, "", 0 and false
@@ -65,9 +65,9 @@ byte[] bytes = MsgPackSerializer.Serialize(invoice, compatible);
 Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, compatible);
 ```
 
-`MsgPackSettings.Default_UseInexedSchema = false`, `MsgPackSettings.Default_ObjectLayout = ObjectLayout.Map` and `MsgPackSettings.Default_DateTimeFormat = DateTimeFormat.Timestamp` change the defaults of all new settings. `MsgPackMediaTypes.ToPlain(settings)` makes a copy with the indexed schema off, objects as maps, no type ids and DateTimes as timestamps.
+`MsgPackSettings.Default_UseIndexedSchema = false`, `MsgPackSettings.Default_ObjectLayout = ObjectLayout.Map` and `MsgPackSettings.Default_DateTimeFormat = DateTimeFormat.Timestamp` change the defaults of all new settings. `MsgPackMediaTypes.ToPlain(settings)` makes a copy with the indexed schema off, objects as maps, no type ids and DateTimes as timestamps.
 
-- **`UseInexedSchema = false`** (required, for reading and writing). With the indexed schema (the default) LsMsgPackDebug writes two objects: a map of type names with their property names, then the object, with the positions of those names as keys. Other libraries read one object, the schema: MessagePack-CSharp fails to read it as a class but reads it as `object` without an error (the rest is ignored), Python's `unpackb` and JavaScript's `decode` fail with "extra data". Without the schema an object is a map keyed by its property names, the most common layout. LsMsgPackDebug with the schema also expects the schema when reading, so data from other libraries needs this setting too.
+- **`UseIndexedSchema = false`** (required, for reading and writing). With the indexed schema (the default) LsMsgPackDebug writes two objects: a map of type names with their property names, then the object, with the positions of those names as keys. Other libraries read one object, the schema: MessagePack-CSharp fails to read it as a class but reads it as `object` without an error (the rest is ignored), Python's `unpackb` and JavaScript's `decode` fail with "extra data". Without the schema an object is a map keyed by its property names, the most common layout. LsMsgPackDebug with the schema also expects the schema when reading, so data from other libraries needs this setting too.
 - **`ObjectLayout = ObjectLayout.Map`** (required for writing). By default LsMsgPackDebug writes an object as an array of its values (`ObjectLayout.Array`), which a reader can only map onto properties when it knows their order. Other libraries read objects from maps keyed by property names, except MessagePack-CSharp's integer keys (see below). Reading does not need it: LsMsgPackDebug reads objects from maps and arrays.
 - **Schema references** (`WriteSchemaReference` with a `SchemaStore`). Instead of the schema, the data then starts with a reference to it: an extension (fixext16, type 2) holding the first 16 bytes of the SHA-256 hash of the schema. Only LsMsgPackDebug readers that hold the schema in their `SchemaStore` can read it, other libraries read the extension and stop. Not tested with other libraries, it needs the indexed schema anyway.
 - **Default values** (`DynamicFilters`). By default LsMsgPackDebug leaves out values that equal the default of their type (`FilterDefaultValues`): null, 0, `false`, `Guid.Empty` and so on. An empty string is written, like the JSON serializers do (the default of a string is null; `new FilterDefaultValues(omitEmptyStrings: true)` leaves it out too). A reader keeps what the constructor set for a missing value, so a class with other initial values does not round trip: `public int Retries { get; set; } = 3;` written as 0 is read as 3 (by LsMsgPackDebug too). The other libraries write every value. Without the filter LsMsgPackDebug writes them all, and then writes the same bytes as MessagePack-CSharp for a class of strings, numbers and booleans (tested). Leaving them out is safe when the classes of all readers start with the default values of the types.
@@ -162,7 +162,7 @@ With these options MessagePack-CSharp also writes what LsMsgPackDebug reads.
 
 ```csharp
 byte[] bytes = MessagePackSerializer.Serialize(invoice, ContractlessStandardResolver.Options);
-Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, new MsgPackSettings() { UseInexedSchema = false });
+Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, new MsgPackSettings() { UseIndexedSchema = false });
 ```
 
 **Integer keys** (`[Key(0)]`, `[Key(1)]`... arrays): LsMsgPackDebug writes and reads the same bytes with `ObjectLayout.Array` when its `PropertyOrder` puts the properties in the order of the keys. With keys that follow the declaration order (0, 1, 2... without gaps, base class first) that is `PropertyOrder.Declaration`. LsMsgPackDebug does not read the `Key` attributes themselves, and does not write gaps (nil for missing keys).
@@ -170,7 +170,7 @@ Invoice read = MsgPackSerializer.Deserialize<Invoice>(bytes, new MsgPackSettings
 ```csharp
 MsgPackSettings positional = new MsgPackSettings()
 {
-  UseInexedSchema = false,
+  UseIndexedSchema = false,
   DateTimeFormat = DateTimeFormat.Timestamp,
   ObjectLayout = ObjectLayout.Array,
   PropertyOrder = PropertyOrder.Declaration,
@@ -218,10 +218,10 @@ using LsMsgPackDebug.Types.Extensions;
 
 MsgPackSettings fromNerdbank = new MsgPackSettings()
 {
-  UseInexedSchema = false,
+  UseIndexedSchema = false,
   ObjectLayout = ObjectLayout.Map,
   DateTimeFormat = DateTimeFormat.Timestamp, // also allows a custom extension of type 6 (Nerdbank's big integers)
-  CustomExtentionTypes = new ICustomExt[]
+  CustomExtensionTypes = new ICustomExt[]
   {
     new MpDecimal((MsgPackSettings)null), // extension type 1, used for writing
     new MpDecimal((MsgPackSettings)null) { TypeSpecifier = 4 }, // reads Nerdbank's decimal
@@ -264,7 +264,7 @@ Nerdbank's `PropertyNamingPolicy = MessagePackNamingPolicy.CamelCase` writes the
 
 ## Python and JavaScript
 
-Tested by hand with msgpack 1.2.2 (Python) and @msgpack/msgpack 3.1.3 (JavaScript), and LsMsgPackDebug with `UseInexedSchema = false`, `ObjectLayout = ObjectLayout.Map` and `DateTimeFormat = DateTimeFormat.Timestamp`. These libraries have no classes: an object is a dict or a plain object keyed by property names.
+Tested by hand with msgpack 1.2.2 (Python) and @msgpack/msgpack 3.1.3 (JavaScript), and LsMsgPackDebug with `UseIndexedSchema = false`, `ObjectLayout = ObjectLayout.Map` and `DateTimeFormat = DateTimeFormat.Timestamp`. These libraries have no classes: an object is a dict or a plain object keyed by property names.
 
 **Reading LsMsgPackDebug's output:**
 

@@ -70,7 +70,7 @@ These always throw, in every mode:
 - Data that can't be parsed: truncated, nested deeper than `MaxDepth`, a length that claims more than there is. Reading can't go on after those.
 - The security checks: a type that doesn't fit where it goes, one the `TypeGuard` refuses, a type name that names an assembly (see [security.md](security.md)).
 - Exceptions of your classes: constructors and property setters (e.g. a setter that validates its value). They're passed on as they are.
-- A value at the root that can't be converted (there is no property to skip), a type name that fits two classes ("Type assignment dilamma", a setup problem), a missing schema (`MissingSchemaException`).
+- A value at the root that can't be converted (there is no property to skip), a type name that fits two classes ("Type assignment dilemma", a setup problem), a missing schema (`MissingSchemaException`).
 
 ```csharp
 MsgPackSettings settings = new MsgPackSettings { ReadErrors = ReadErrorHandling.FailDeferred };

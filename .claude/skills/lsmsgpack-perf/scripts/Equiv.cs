@@ -1,6 +1,6 @@
 // Byte and round trip equivalence check: run the same program against two builds of LsMsgPack and diff the output.
 // Covers integer sizes and boundaries, strings, bin, floats, decimals, DateTimes, enums, collections, dictionaries,
-// nested objects and a custom property id resolver, for all EndianAction, DynamicallyCompact and UseInexedSchema settings.
+// nested objects and a custom property id resolver, for all EndianAction, DynamicallyCompact and UseIndexedSchema settings.
 // Per value: serialized bytes (as item, via the serializer and as root), the typed round trip and the raw MsgPackItem tree.
 // Large payloads are compared by hash (SHA-256 prefix, deterministic), small ones are printed.
 // A warm-up first uses every property more than PropertyAccessor.CompileAfterCalls times, so the bound delegates are compared as well.
@@ -63,7 +63,7 @@ public static class P {
         foreach (bool compact in new[] { true, false })
           foreach (bool schema in new[] { false, true })
           {
-            var s = new MsgPackSettings { EndianAction = endian, DynamicallyCompact = compact, UseInexedSchema = schema };
+            var s = new MsgPackSettings { EndianAction = endian, DynamicallyCompact = compact, UseIndexedSchema = schema };
             foreach (object v in values)
             {
               if (v is Array a && a.Length > 1000 || v is System.Collections.IDictionary d && d.Count > 1000 || v is string str && str.Length > 1000)
@@ -76,7 +76,7 @@ public static class P {
     foreach (bool compact in new[] { true, false })
     foreach (bool schema in new[] { false, true })
     {
-      var s = new MsgPackSettings { EndianAction = endian, DynamicallyCompact = compact, UseInexedSchema = schema };
+      var s = new MsgPackSettings { EndianAction = endian, DynamicallyCompact = compact, UseIndexedSchema = schema };
       sb.AppendLine($"### {endian} compact={compact} schema={schema}");
       int n = 0;
       foreach (object v in values) {
@@ -97,7 +97,7 @@ public static class P {
       }
     }
     foreach (bool schema in new[] { false, true }) {
-      var s2 = new MsgPackSettings { UseInexedSchema = schema, PropertyNameResolvers = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIdResolver[] { new LsMsgPack.TypeResolving.Names.AttributePropertyNameResolver() } };
+      var s2 = new MsgPackSettings { UseIndexedSchema = schema, PropertyNameResolvers = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIdResolver[] { new LsMsgPack.TypeResolving.Names.AttributePropertyNameResolver() } };
       var a = new Attributed { A = "a", Ignored = "x", B = 3, Child = new Attributed { A = "c", B = 4 }, Kids = new List<Attributed> { new Attributed { B = 9 }, new Attributed { A = "k" } } };
       byte[] ab = MsgPackSerializer.Serialize(a, s2);
       sb.AppendLine($"### attributes schema={schema}: {Hex(ab)}");
@@ -109,7 +109,7 @@ public static class P {
       var ext = new MpExt { TypeSpecifier = 2, Value = guidBigEndian };
       byte[] extMap = new MpMap(new[] { new KeyValuePair<object, object>(member, ext) }, new MsgPackSettings()).ToBytes();
       string res;
-      try { res = Dump(MsgPackSerializer.Deserialize<WithGuid>(extMap, new MsgPackSettings { UseInexedSchema = false })); } catch (Exception ex) { res = "EX " + ex.GetType().Name; }
+      try { res = Dump(MsgPackSerializer.Deserialize<WithGuid>(extMap, new MsgPackSettings { UseIndexedSchema = false })); } catch (Exception ex) { res = "EX " + ex.GetType().Name; }
       sb.AppendLine($"### unknown extension in {member}: {Hex(extMap)}");
       sb.AppendLine("   " + res);
     }

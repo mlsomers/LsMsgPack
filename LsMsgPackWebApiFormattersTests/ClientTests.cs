@@ -44,7 +44,7 @@ namespace LsMsgPackWebApiFormattersTests
       Assert.That(order.Customer, Is.EqualTo("new"));
       Assert.That(order.Amounts, Is.Null, "written as nil");
 
-      byte[] onlyId = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Id", 9 } }, new MsgPackSettings() { UseInexedSchema = false });
+      byte[] onlyId = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Id", 9 } }, new MsgPackSettings() { UseIndexedSchema = false });
       await Bytes(onlyId, MsgPackMediaTypes.MsgPack).PopulateFromMsgPackAsync(order, Formatter);
       Assert.That(order.Id, Is.EqualTo(9));
       Assert.That(order.Customer, Is.EqualTo("new"), "not in the body: kept");
@@ -71,7 +71,7 @@ namespace LsMsgPackWebApiFormattersTests
       await matching.PopulateFromMsgPackAsync(order, reporting);
       Assert.That(matching.GetReadDifferences(), Is.Null);
 
-      byte[] body = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Extra", "x" }, { "Id", 300 } }, new MsgPackSettings() { UseInexedSchema = false });
+      byte[] body = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Extra", "x" }, { "Id", 300 } }, new MsgPackSettings() { UseIndexedSchema = false });
       HttpContent cut = Bytes(body.Take(body.Length - 1).ToArray(), MsgPackMediaTypes.MsgPack);
       await Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => cut.PopulateFromMsgPackAsync(new Order(), reporting)));
       Assert.That(cut.GetReadDifferences().Differences.Single().Name, Is.EqualTo("Extra"), "the differences until the error");
@@ -106,7 +106,7 @@ namespace LsMsgPackWebApiFormattersTests
     public async Task DifferencesUntilTheError()
     {
       LsMsgPackMediaTypeFormatter reporting = new LsMsgPackMediaTypeFormatter(new LsMsgPack.Http.LsMsgPackHttpOptions() { ReportDifferences = true });
-      byte[] body = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Extra", "x" }, { "Id", 300 } }, new MsgPackSettings() { UseInexedSchema = false });
+      byte[] body = MsgPackSerializer.Serialize(new System.Collections.Generic.Dictionary<string, object>() { { "Extra", "x" }, { "Id", 300 } }, new MsgPackSettings() { UseIndexedSchema = false });
       HttpContent content = Bytes(body.Take(body.Length - 1).ToArray(), MsgPackMediaTypes.MsgPack); // the Id is cut off
 
       await Assert.ThrowsAsync<MsgPackException>(new Func<Task>(() => content.ReadAsAsync<Order>(new MediaTypeFormatter[] { reporting })));

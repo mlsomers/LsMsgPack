@@ -110,7 +110,7 @@ namespace LsMsgPackUnitTests
 
     private static IEnumerable<(string Name, Func<LsMsgPackOptions> Options)> Settings()
     {
-      yield return ("names", () => new LsMsgPackOptions { UseInexedSchema = false });
+      yield return ("names", () => new LsMsgPackOptions { UseIndexedSchema = false });
       yield return ("inline", () => new LsMsgPackOptions());
       yield return ("inline, map", () => new LsMsgPackOptions { ObjectLayout = ObjectLayout.Map });
       SchemaStore store = new SchemaStore(); // the writer's and the readers' (references need the schemas)

@@ -4,7 +4,7 @@ The parts shared by the [LsMsgPack](https://www.nuget.org/packages/LsMsgPack) an
 
 Its types are in the `LsMsgPack.*` namespaces, so they work the same with either serializer:
 
-- `MsgPackOptions`: the format settings (`UseInexedSchema`, `SchemaVersion`, `ObjectLayout`, `AddTypeIdOptions`, `PropertyOrder`, `TypeGuard`...), the base class of `LsMsgPackOptions` and `MsgPackSettings`.
+- `MsgPackOptions`: the format settings (`UseIndexedSchema`, `SchemaVersion`, `ObjectLayout`, `AddTypeIdOptions`, `PropertyOrder`, `TypeGuard`...), the base class of `LsMsgPackOptions` and `MsgPackSettings`.
 - Type resolvers (`IMsgPackTypeResolver`, `XmlRootAttributeTypeResolver`) and property id resolvers (`IMsgPackPropertyIdResolver`, `AttributePropertyNameResolver`): choose the ids written for types and properties.
 - Naming policies (`MsgPackNamingPolicy.CamelCase`, `SnakeCaseLower`..., for `PropertyNamingPolicy`, `DictionaryKeyPolicy` and `EnumNamingPolicy`): convert the .NET names of properties, dictionary keys and enum values, as System.Text.Json's `JsonNamingPolicy` ([naming policies](https://github.com/mlsomers/LsMsgPack/blob/master/docs/NamingPolicies.md)).
 - Filters (`FilterDefaultValues`, `FilterNullValues`, `FilterIgnoredAttribute`, `FilterShouldSerialize`...): decide which properties are written (`FilterShouldSerialize` calls the `ShouldSerialize{Name}()` methods as Json.NET does). `FilterIgnoredAttribute.LikeNewtonsoft`, `LikeSystemTextJson` and the other presets leave out the same properties as those serializers ([property names and filters](https://github.com/mlsomers/LsMsgPack/blob/master/docs/schema.md#property-names-and-filters)).

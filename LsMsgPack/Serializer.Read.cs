@@ -740,7 +740,7 @@ namespace LsMsgPack
         if (into != null)
           c.Into = into;
         object result;
-        if (!Options._useInexedSchema)
+        if (!Options._useIndexedSchema)
         {
           if (!ReferenceEquals(c.SlowSettings, Options))
             c.SlowSettings = Options;
@@ -930,7 +930,7 @@ namespace LsMsgPack
           throw MsgPackReader.EndOfData();
         sbyte extType = unchecked((sbyte)r.Buf[r.Pos + 1]);
         if (extType != SchemaStore.ReferenceExtensionType)
-          throw new MsgPackException($"Expected the data to start with an indexed schema (a map) or a reference to one (extension type {SchemaStore.ReferenceExtensionType}) but found extension type {extType}. Was it serialized with MsgPackSettings.UseInexedSchema = false?", 0, MsgPackTypeId.MpFExt16);
+          throw new MsgPackException($"Expected the data to start with an indexed schema (a map) or a reference to one (extension type {SchemaStore.ReferenceExtensionType}) but found extension type {extType}. Was it serialized with MsgPackSettings.UseIndexedSchema = false?", 0, MsgPackTypeId.MpFExt16);
 
         SchemaHit known = KnownSchema(r.Buf, r.Pos, SchemaStore.ReferenceLength);
         if (known != null)
@@ -1245,7 +1245,7 @@ namespace LsMsgPack
       else if (first <= 0x9F) typeId = MsgPackTypeId.MpArray4;
       else if (first <= 0xBF) typeId = MsgPackTypeId.MpStr5;
       else typeId = (MsgPackTypeId)first;
-      return new MsgPackException($"Expected the data to start with an indexed schema (a map) but found {typeId}. Was it serialized with MsgPackSettings.UseInexedSchema = false?", 0, typeId);
+      return new MsgPackException($"Expected the data to start with an indexed schema (a map) but found {typeId}. Was it serialized with MsgPackSettings.UseIndexedSchema = false?", 0, typeId);
     }
 
     private static byte[] Slice(byte[] buffer, int offset, int count)

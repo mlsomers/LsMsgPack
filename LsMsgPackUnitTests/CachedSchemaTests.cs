@@ -322,10 +322,10 @@ namespace LsMsgPackUnitTests
     public void WithoutIndexedSchemaTheReferenceIsNotUsed()
     {
       SchemaStore store = new SchemaStore();
-      MsgPackSettings names = new MsgPackSettings() { UseInexedSchema = false, SchemaStore = store, WriteSchemaReference = true };
+      MsgPackSettings names = new MsgPackSettings() { UseIndexedSchema = false, SchemaStore = store, WriteSchemaReference = true };
       CsOrder order = CreateOrder(7, null);
       byte[] payload = Serializer.Serialize(order, names);
-      CollectionAssert.AreEqual(Serializer.Serialize(order, new MsgPackSettings() { UseInexedSchema = false }), payload);
+      CollectionAssert.AreEqual(Serializer.Serialize(order, new MsgPackSettings() { UseIndexedSchema = false }), payload);
       AssertSame(order, Serializer.Deserialize<CsOrder>(payload, names));
       Assert.AreEqual(0, store.Count);
     }

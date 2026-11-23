@@ -456,7 +456,7 @@ namespace D
         foreach (LsMsgPack.ObjectLayout layout in new[] { LsMsgPack.ObjectLayout.Array, LsMsgPack.ObjectLayout.Map })
           foreach (bool trim in new[] { false, true })
           {
-            LsMsgPackOptions options = new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false };
+            LsMsgPackOptions options = new LsMsgPackOptions() { UseIndexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false };
             LsMsgPackSerializer runtime = new LsMsgPackSerializer(options);
             options.Contexts = new[] { context };
             LsMsgPackSerializer generated = new LsMsgPackSerializer(options);
@@ -627,7 +627,7 @@ namespace S
         foreach (LsMsgPack.ObjectLayout layout in new[] { LsMsgPack.ObjectLayout.Array, LsMsgPack.ObjectLayout.Map })
           foreach (bool trim in new[] { false, true })
           {
-            LsMsgPackOptions options = new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false };
+            LsMsgPackOptions options = new LsMsgPackOptions() { UseIndexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim, UseRegisteredContexts = false };
             LsMsgPackSerializer runtime = new LsMsgPackSerializer(options);
             options.Contexts = new[] { context };
             LsMsgPackSerializer generated = new LsMsgPackSerializer(options);

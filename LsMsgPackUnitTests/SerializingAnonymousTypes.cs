@@ -58,7 +58,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(bool schema, ObjectLayout layout)
     {
-      return new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout };
+      return new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout };
     }
 
     private static IEnumerable<object[]> AllSettings()
@@ -179,7 +179,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void TypeIdsAlways_NoneForAnonymousTypes()
     {
-      MsgPackSettings settings = new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.Always | AddTypeIdOption.IfAmbiguious };
+      MsgPackSettings settings = new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.Always | AddTypeIdOption.IfAmbiguous };
       byte[] bytes = Serializer.Serialize(new { Id = 1, Name = "x" }, settings);
       Assert.AreEqual("1 x", Text(Serializer.Deserialize<AnonDto>(bytes, settings)));
       byte[] wrapped = Serializer.Serialize(new AnonWrapper() { Data = new { Id = 1, Name = "x" } }, settings);

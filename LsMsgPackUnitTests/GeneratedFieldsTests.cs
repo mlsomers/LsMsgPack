@@ -130,7 +130,7 @@ namespace LsMsgPackUnitTests
       {
         Contexts = generated ? new LsMsgPackContext[] { TestMsgPackContext.Default } : null,
         UseRegisteredContexts = false,
-        UseInexedSchema = schema,
+        UseIndexedSchema = schema,
         ObjectLayout = layout,
         StaticFilters = Filters(fields)
       });

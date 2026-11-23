@@ -10,11 +10,11 @@ namespace LsMsgPack.TypeResolving.Interfaces
   public interface IMsgPackTypeResolver
   {
     /// <summary>
-    /// Generate an object (string / integer or anything else) by wich the type can be identified later
+    /// Generate an object (string / integer or anything else) by which the type can be identified later
     /// </summary>
     /// <param name="type">Type of the object</param>
     /// <param name="assignedTo">The property information (if any, may be null) of the type it will be assigned to</param>
-    /// <returns>An identifier by wich the type can be resolved when deserializing, returning null will leave it to the next resolver or ultimately the default resolver</returns>
+    /// <returns>An identifier by which the type can be resolved when deserializing, returning null will leave it to the next resolver or ultimately the default resolver</returns>
     object IdForType(Type type, FullPropertyInfo assignedTo, MsgPackOptions settings);
 
     /// <summary>
@@ -22,11 +22,11 @@ namespace LsMsgPack.TypeResolving.Interfaces
     /// </summary>
     /// <param name="typeId">The name (or ID) of the class or struct to be resolved</param>
     /// <param name="assignedTo">The type of the property that will be set with an instance of the resolved type</param>
-    /// <param name="assignedToProp">The property information (if any, may be null) of tyhe type it will be assigned to</param>
+    /// <param name="assignedToProp">The property information (if any, may be null) of the type it will be assigned to</param>
     /// <param name="properties">Names and values of properties that are going to be populated on an instance of the resolved type (may be null when looking for generic types).
-    /// <para>With <see cref="MsgPackSettings.UseInexedSchema"/> the keys are indexes into the schema of the serialized type instead of names, so resolving by signature is not possible.
+    /// <para>With <see cref="MsgPackSettings.UseIndexedSchema"/> the keys are indexes into the schema of the serialized type instead of names, so resolving by signature is not possible.
     /// Serializing an ambiguous object without a type id (e.g. <see cref="AddTypeIdOption.Never"/>) then throws a <see cref="MsgPackException"/>.</para></param>
-    /// <returns>The resolved type or null if no suiteble type is found.</returns>
+    /// <returns>The resolved type or null if no suitable type is found.</returns>
     Type Resolve(object typeId, Type assignedTo, FullPropertyInfo assignedToProp, Dictionary<object, object> properties, MsgPackOptions settings);
   }
 }

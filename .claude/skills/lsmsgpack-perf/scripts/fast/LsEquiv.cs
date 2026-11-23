@@ -206,15 +206,15 @@ public static class P {
     foreach (bool trim in layout == ObjectLayout.Array ? new[] { false, true } : new[] { false }) {
       EndianAction e = endian; bool c = compact; ObjectLayout l = layout; string i = ids; bool tr = trim;
       configs.Add(($"{e} compact={c} {l} {i} trim={tr}", () => new LsMsgPackOptions { EndianAction = e, DynamicallyCompact = c, ObjectLayout = l, TrimTrailingNulls = tr,
-        UseInexedSchema = i != "names", SchemaStore = i == "reference" ? new SchemaStore() : null, WriteSchemaReference = i == "reference" }));
+        UseIndexedSchema = i != "names", SchemaStore = i == "reference" ? new SchemaStore() : null, WriteSchemaReference = i == "reference" }));
     }
     configs.Add(("mpcsharp", () => LsMsgPackPresets.MessagePackCSharp()));
     configs.Add(("nerdbank", () => LsMsgPackPresets.Nerdbank()));
     configs.Add(("generic", () => LsMsgPackPresets.Generic()));
-    configs.Add(("declaration-noschema", () => new LsMsgPackOptions { UseInexedSchema = false, PropertyOrder = PropertyOrder.Declaration }));
+    configs.Add(("declaration-noschema", () => new LsMsgPackOptions { UseIndexedSchema = false, PropertyOrder = PropertyOrder.Declaration }));
     configs.Add(("always-typeid", () => new LsMsgPackOptions { AddTypeIdOptions = AddTypeIdOption.Always | AddTypeIdOption.FullName }));
     configs.Add(("attr-resolver", () => new LsMsgPackOptions { ObjectLayout = ObjectLayout.Map, PropertyNameResolvers = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIdResolver[] { new LsMsgPack.TypeResolving.Names.AttributePropertyNameResolver() } }));
-    configs.Add(("attr-resolver-names", () => new LsMsgPackOptions { ObjectLayout = ObjectLayout.Map, UseInexedSchema = false, PropertyNameResolvers = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIdResolver[] { new LsMsgPack.TypeResolving.Names.AttributePropertyNameResolver() } }));
+    configs.Add(("attr-resolver-names", () => new LsMsgPackOptions { ObjectLayout = ObjectLayout.Map, UseIndexedSchema = false, PropertyNameResolvers = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIdResolver[] { new LsMsgPack.TypeResolving.Names.AttributePropertyNameResolver() } }));
     foreach (var (name, make) in configs) {
       LsMsgPackSerializer s = new LsMsgPackSerializer(make());
       sb.AppendLine("### " + name);
@@ -233,12 +233,12 @@ public static class P {
       sb.AppendLine($"stream {H(stream)}/{stream.Length}");
     }
     foreach (var (name, make, prefix) in new (string, Func<LsMsgPackOptions>, byte[])[] {
-      ("names", () => new LsMsgPackOptions { UseInexedSchema = false }, new byte[0]),
-      ("names map", () => new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }, new byte[0]),
+      ("names", () => new LsMsgPackOptions { UseIndexedSchema = false }, new byte[0]),
+      ("names map", () => new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }, new byte[0]),
       ("schema", () => new LsMsgPackOptions(), new byte[] { 0x80 }),
-      ("depth 1", () => new LsMsgPackOptions { UseInexedSchema = false, MaxDepth = 1 }, new byte[0]),
-      ("guard", () => new LsMsgPackOptions { UseInexedSchema = false, TypeGuard = new EqNoGuard() }, new byte[0]),
-      ("collect", () => new LsMsgPackOptions { UseInexedSchema = false, ReadErrors = ReadErrorHandling.FailDeferred }, new byte[0]),
+      ("depth 1", () => new LsMsgPackOptions { UseIndexedSchema = false, MaxDepth = 1 }, new byte[0]),
+      ("guard", () => new LsMsgPackOptions { UseIndexedSchema = false, TypeGuard = new EqNoGuard() }, new byte[0]),
+      ("collect", () => new LsMsgPackOptions { UseIndexedSchema = false, ReadErrors = ReadErrorHandling.FailDeferred }, new byte[0]),
     }) {
       sb.AppendLine("### odd data " + name);
       Odd(sb, new LsMsgPackSerializer(make()), prefix);

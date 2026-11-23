@@ -85,7 +85,7 @@ namespace LsMsgPackMcpServerTests
 
     public static byte[] Serialize<T>(T value, ObjectLayout layout, bool schema)
     {
-      return MsgPackSerializer.Serialize(value, new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = schema, DateTimeFormat = DateTimeFormat.Timestamp });
+      return MsgPackSerializer.Serialize(value, new MsgPackSettings() { ObjectLayout = layout, UseIndexedSchema = schema, DateTimeFormat = DateTimeFormat.Timestamp });
     }
 
     /// <summary>
@@ -93,7 +93,7 @@ namespace LsMsgPackMcpServerTests
     /// </summary>
     public static byte[] SerializeWithReference<T>(T value, SchemaStore store)
     {
-      MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = ObjectLayout.Array, UseInexedSchema = true, SchemaStore = store, WriteSchemaReference = true, DateTimeFormat = DateTimeFormat.Timestamp };
+      MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = ObjectLayout.Array, UseIndexedSchema = true, SchemaStore = store, WriteSchemaReference = true, DateTimeFormat = DateTimeFormat.Timestamp };
       return MsgPackSerializer.Serialize(value, settings);
     }
 

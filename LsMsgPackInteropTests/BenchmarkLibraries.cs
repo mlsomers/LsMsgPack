@@ -287,11 +287,11 @@ namespace LsMsgPackInteropTests
       LsMsgPackContext[] generated = new LsMsgPackContext[] { TestMsgPackContext.Default };
       LsMsgPackSerializer ltDefault = new LsMsgPackSerializer(new LsMsgPackOptions());
       LsMsgPackSerializer ltDefaultGen = new LsMsgPackSerializer(new LsMsgPackOptions() { Contexts = generated, UseRegisteredContexts = false });
-      LsMsgPackSerializer ltArrays = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration });
-      LsMsgPackSerializer ltArraysGen = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration, Contexts = generated, UseRegisteredContexts = false });
-      LsMsgPackSerializer ltNames = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
-      LsMsgPackSerializer ltNamesGen = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, Contexts = generated, UseRegisteredContexts = false });
-      LsMsgPackSerializer ltIndexedMap = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map });
+      LsMsgPackSerializer ltArrays = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration });
+      LsMsgPackSerializer ltArraysGen = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration, Contexts = generated, UseRegisteredContexts = false });
+      LsMsgPackSerializer ltNames = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      LsMsgPackSerializer ltNamesGen = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, Contexts = generated, UseRegisteredContexts = false });
+      LsMsgPackSerializer ltIndexedMap = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = true, ObjectLayout = ObjectLayout.Map });
 
       // The presets write what the other libraries write (asserted in Prepare)
       LsMsgPackOptions mpArrays = LsMsgPackPresets.MessagePackCSharp();

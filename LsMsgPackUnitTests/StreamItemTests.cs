@@ -200,7 +200,7 @@ namespace LsMsgPackUnitTests
 
     private static LsMsgPackSerializer Plain()
     {
-      return new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
     }
 
     private static SwOrder Order(int n)
@@ -234,7 +234,7 @@ namespace LsMsgPackUnitTests
       }, null);
       Assert.AreEqual(0xC1, bytes[0]);
 
-      MsgPackSettings settings = new MsgPackSettings { UseInexedSchema = false, ReadStreams = true };
+      MsgPackSettings settings = new MsgPackSettings { UseIndexedSchema = false, ReadStreams = true };
       List<SwOrder> orders = MsgPackSerializer.Deserialize<List<SwOrder>>(bytes, settings);
       Assert.HasCount(3, orders);
       for (int n = 1; n <= 3; n++)

@@ -13,7 +13,7 @@ There are three options in `MsgPackOptions` (both serializers), all null (off) b
 ```csharp
 LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions
 {
-  UseInexedSchema = false,                          // maps keyed by names, readable by any MsgPack library
+  UseIndexedSchema = false,                          // maps keyed by names, readable by any MsgPack library
   ObjectLayout = ObjectLayout.Map,
   PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower,
 });

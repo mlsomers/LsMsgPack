@@ -155,13 +155,13 @@ namespace LsMsgPackUnitTests
       if (settings is null)
         settings = new MsgPackSettings();
 
-      LsExtension[] extensions = Extensions(settings.CustomExtentionTypes);
-      object key = (settings.UseInexedSchema, settings.DynamicallyCompact, settings.EndianAction, settings.AddTypeIdOptions,
+      LsExtension[] extensions = Extensions(settings.CustomExtensionTypes);
+      object key = (settings.UseIndexedSchema, settings.DynamicallyCompact, settings.EndianAction, settings.AddTypeIdOptions,
         settings.TypeResolvers, settings.StaticFilters, settings.DynamicFilters, settings.PropertyNameResolvers,
-        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtentionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.ReferenceHandling, settings.DateTimeFormat, settings.EnumFormat), (settings.Populate, settings.MaxObjects, settings.MaxItems, settings.MaxStringLength, settings.MaxBinLength, settings.Compression, settings.MaxDecompressedLength), (settings.PropertyNamingPolicy, settings.DictionaryKeyPolicy, settings.EnumNamingPolicy));
+        (settings.SchemaStore, settings.WriteSchemaReference, settings.CustomExtensionTypes, settings.PropertyOrder, settings.ObjectLayout, settings.TrimTrailingNulls, settings.TypeGuard, settings.MaxDepth, settings.ObjectCreation), (settings.UnspecifiedDateTimeKind, settings.ReadDateTimeKind, settings.ReadErrors, settings.DateTimeOffsetFormat, settings.SchemaVersion, settings.CompleteSchemas, settings.PropertyNameCaseInsensitive, settings.ReferenceHandling, settings.DateTimeFormat, settings.EnumFormat), (settings.Populate, settings.MaxObjects, settings.MaxItems, settings.MaxStringLength, settings.MaxBinLength, settings.Compression, settings.MaxDecompressedLength), (settings.PropertyNamingPolicy, settings.DictionaryKeyPolicy, settings.EnumNamingPolicy));
       return _serializers.GetOrAdd(key, k => new LsMsgPackSerializer(new LsMsgPackOptions()
       {
-        UseInexedSchema = settings.UseInexedSchema,
+        UseIndexedSchema = settings.UseIndexedSchema,
         DynamicallyCompact = settings.DynamicallyCompact,
         EndianAction = settings.EndianAction,
         AddTypeIdOptions = settings.AddTypeIdOptions,

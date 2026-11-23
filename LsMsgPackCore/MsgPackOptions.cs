@@ -11,7 +11,7 @@ using LsMsgPack.Converters;
 namespace LsMsgPack
 {
   /// <summary>
-  /// The settings that decide the format (shared by the serializers): <see cref="UseInexedSchema"/>, <see cref="DynamicallyCompact"/>, <see cref="EndianAction"/>, type ids, resolvers, filters and the <see cref="SchemaStore"/>.
+  /// The settings that decide the format (shared by the serializers): <see cref="UseIndexedSchema"/>, <see cref="DynamicallyCompact"/>, <see cref="EndianAction"/>, type ids, resolvers, filters and the <see cref="SchemaStore"/>.
   /// <para>Each serializer derives its own settings from it (LsMsgPack: MsgPackSettings). The resolvers and filters get these options, so they work with any of them.</para>
   /// </summary>
   public abstract class MsgPackOptions
@@ -23,7 +23,7 @@ namespace LsMsgPack
     /// Use the <see cref="TypeResolving.Types.IndexedSchemaTypeResolver"/> to compact repetitive type and property names
     /// </summary>
     [IgnoreDataMember]
-    public static bool Default_UseInexedSchema { get; set; } = true;
+    public static bool Default_UseIndexedSchema { get; set; } = true;
 
     /// <summary>
     /// When true (default) will dynamically use the smallest possible datatype that the value fits in. When false, will always use the predefined type of integer.
@@ -48,12 +48,12 @@ namespace LsMsgPack
     /// <para>Defining a property with the type "Object" will probably take significantly longer to deserialize and may pose a false match when FullName is not true.</para>
     /// </summary>
     [IgnoreDataMember]
-    public static AddTypeIdOption Default_AddTypeIdOptions { get; set; } = AddTypeIdOption.IfAmbiguious;
+    public static AddTypeIdOption Default_AddTypeIdOptions { get; set; } = AddTypeIdOption.IfAmbiguous;
 
     /// <summary>
     /// Custom type resolvers can be added, only needed if using object-models with polymorphic properties (base types or interfaces that have multiple implementations).
     /// <para>
-    /// There is a <see cref="TypeResolving.Types.WildGooseChaseResolver">WildGooseChaseResolver</see> that can be used while developing, but it is not recomended for production!
+    /// There is a <see cref="TypeResolving.Types.WildGooseChaseResolver">WildGooseChaseResolver</see> that can be used while developing, but it is not recommended for production!
     /// <code>
     /// MsgPackSerializer.TypeResolvers.Add(new TypeResolving.WildGooseChaseResolver());
     /// </code>
@@ -219,7 +219,7 @@ namespace LsMsgPack
     public static bool CompilePropertyAccessors { get; set; } = true;
 
     internal bool FileContainsErrors = false;
-    internal bool _useInexedSchema = Default_UseInexedSchema;
+    internal bool _useIndexedSchema = Default_UseIndexedSchema;
     internal bool _dynamicallyCompact = Default_DynamicallyCompact;
     internal EndianAction _endianAction = Default_EndianAction;
     internal AddTypeIdOption _addTypeIdOptions = Default_AddTypeIdOptions;
@@ -298,10 +298,10 @@ namespace LsMsgPack
     [DisplayName("Use Indexed Schema")]
     [Description("Uses a micro schema (dictionary with type-name as key and an array of the types property names as value. The index of the name will be referenced from the serialized body (instead of the full name)")]
     [DefaultValue(true)]
-    public bool UseInexedSchema
+    public bool UseIndexedSchema
     {
-      get { return _useInexedSchema; }
-      set { _useInexedSchema = value; }
+      get { return _useIndexedSchema; }
+      set { _useIndexedSchema = value; }
     }
 
     /// <summary>
@@ -354,7 +354,7 @@ namespace LsMsgPack
     /// <summary>
     /// Custom type resolvers can be added, only needed if using object-models with polymorphic properties (base types or interfaces that have multiple implementations).
     /// <para>
-    /// There is a <see cref="TypeResolving.Types.WildGooseChaseResolver">WildGooseChaseResolver</see> that can be used while developing, but it is not recomended for production!
+    /// There is a <see cref="TypeResolving.Types.WildGooseChaseResolver">WildGooseChaseResolver</see> that can be used while developing, but it is not recommended for production!
     /// <code>
     /// MsgPackSerializer.TypeResolvers.Add(new TypeResolving.WildGooseChaseResolver());
     /// </code>
@@ -500,7 +500,7 @@ namespace LsMsgPack
     public SchemaStore SchemaStore { get { return _schemaStore; } set { _schemaStore = value; } }
 
     /// <summary>
-    /// Write a reference to the schema (18 bytes, see <see cref="SchemaStore"/>) instead of the schema itself, false by default. Needs <see cref="UseInexedSchema"/> and a <see cref="SchemaStore"/>.
+    /// Write a reference to the schema (18 bytes, see <see cref="SchemaStore"/>) instead of the schema itself, false by default. Needs <see cref="UseIndexedSchema"/> and a <see cref="SchemaStore"/>.
     /// <para>The reader needs the schema in its <see cref="SchemaStore"/>, other MsgPack libraries cannot read such data.</para>
     /// </summary>
     [Category("Control")]
@@ -1096,7 +1096,7 @@ namespace LsMsgPack
     /// </summary>
     internal void WithoutSchema(EndianAction endianAction, bool byNames)
     {
-      _useInexedSchema = false;
+      _useIndexedSchema = false;
       _writeSchemaReference = false;
       _endianAction = endianAction;
       _differences = null;
@@ -1412,7 +1412,7 @@ namespace LsMsgPack
   }
 
   [Flags]
-  [DefaultValue(AddTypeIdOption.IfAmbiguious)]
+  [DefaultValue(AddTypeIdOption.IfAmbiguous)]
   public enum AddTypeIdOption
   {
     /// <summary>
@@ -1425,7 +1425,7 @@ namespace LsMsgPack
     /// Only add type name if the property is of a different type than the value it contains (interfaces or base types)
     /// </summary>
     [Description("Only add type name if the property is of a different type than the value it contains (interfaces or base types)")]
-    IfAmbiguious = 1,
+    IfAmbiguous = 1,
 
     /// <summary>
     /// Always add the type id
@@ -1440,9 +1440,9 @@ namespace LsMsgPack
     FullName = 16,
 
     /// <summary>
-    /// By default the custom <see cref="IMsgPackTypeResolver">type resolvers</see> will be tried and if they all retuen null the built-in name/fullname resolver will be used. Setting this flag will prevent the default implementation to bloat the output (and the resolver should be able to handle null as input).
+    /// By default the custom <see cref="IMsgPackTypeResolver">type resolvers</see> will be tried and if they all return null the built-in name/fullname resolver will be used. Setting this flag will prevent the default implementation to bloat the output (and the resolver should be able to handle null as input).
     /// </summary>
-    [Description("By default the custom type resolvers will be tried and if they all retuen null the built-in name/fullname resolver will be used. Setting this flag will prevent the default implementation to bloat the output (and the resolver should be able to handle null as input).")]
+    [Description("By default the custom type resolvers will be tried and if they all return null the built-in name/fullname resolver will be used. Setting this flag will prevent the default implementation to bloat the output (and the resolver should be able to handle null as input).")]
     NoDefaultFallBack = 64
   }
 

@@ -510,7 +510,7 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = Settings(mode, layout);
       CbOlder read = Serializer.Deserialize<CbOlder>(Serializer.Serialize(new CbNewer { Id = 3, Note = "n" }, settings), settings);
       Assert.AreEqual(3, read.Id);
-      if (!settings.UseInexedSchema && layout == ObjectLayout.Array)
+      if (!settings.UseIndexedSchema && layout == ObjectLayout.Array)
         Assert.IsTrue(read.Extra.TryGetRaw(1, out byte[] _), "without the schema by position (OnDeserialized looks for the name)");
       else
         Assert.IsTrue(read.KeptWhenDeserialized());
@@ -587,7 +587,7 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = Settings(mode, layout);
       LsMsgPackOptions options = new LsMsgPackOptions
       {
-        ObjectLayout = layout, UseInexedSchema = settings.UseInexedSchema, SchemaVersion = settings.SchemaVersion, SchemaStore = settings.SchemaStore, WriteSchemaReference = settings.WriteSchemaReference,
+        ObjectLayout = layout, UseIndexedSchema = settings.UseIndexedSchema, SchemaVersion = settings.SchemaVersion, SchemaStore = settings.SchemaStore, WriteSchemaReference = settings.WriteSchemaReference,
         UseRegisteredContexts = false, CompileWritersAfter = 0, CompileReadersAfter = 0
       };
       LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);

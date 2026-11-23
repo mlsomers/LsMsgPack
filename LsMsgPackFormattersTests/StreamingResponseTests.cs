@@ -270,7 +270,7 @@ namespace LsMsgPackFormattersTests
       {
         HttpResponseMessage response = await client.SendAsync(Get("/streaming/pairs-async", PlainStream));
         Assert.That(response.Content.Headers.ContentType.ToString(), Is.EqualTo(MsgPackMediaTypes.MsgPack));
-        Assert.That(MsgPackSerializer.Deserialize<Dictionary<string, int>>(await response.Content.ReadAsByteArrayAsync(), new MsgPackSettings { UseInexedSchema = false }), Is.EqualTo(new Dictionary<string, int> { { "a", 1 } }));
+        Assert.That(MsgPackSerializer.Deserialize<Dictionary<string, int>>(await response.Content.ReadAsByteArrayAsync(), new MsgPackSettings { UseIndexedSchema = false }), Is.EqualTo(new Dictionary<string, int> { { "a", 1 } }));
       }
     }
 
@@ -323,7 +323,7 @@ namespace LsMsgPackFormattersTests
       using (host)
       {
         byte[] body = await BodyAsync(client, Get("/streaming/orders-async", DescribedStream));
-        Dictionary<string, object> schema = MsgPackSerializer.Deserialize<Dictionary<string, object>>(body, new MsgPackSettings { UseInexedSchema = false }); // the first value
+        Dictionary<string, object> schema = MsgPackSerializer.Deserialize<Dictionary<string, object>>(body, new MsgPackSettings { UseIndexedSchema = false }); // the first value
         Assert.That(schema, Does.ContainKey(string.Empty), "Version 2: the root entry");
         Assert.That(ReadOrders(body, LsReader), Has.Count.EqualTo(3));
       }

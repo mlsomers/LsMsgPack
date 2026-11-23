@@ -173,8 +173,8 @@ namespace LsMsgPackUnitySmoke
       {
         // Short type names: the invoice's System.Numerics.Vector3 was read in this process first, so "Vector3" resolves to it; the reader pairs the entry with the declared UnityEngine.Vector3
         ("game-default", () => new LsMsgPackOptions()),
-        ("game-full-names", () => new LsMsgPackOptions() { AddTypeIdOptions = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName }),
-        ("game-names-map", () => new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }),
+        ("game-full-names", () => new LsMsgPackOptions() { AddTypeIdOptions = AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName }),
+        ("game-names-map", () => new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }),
       })
       foreach ((string which, Func<LsMsgPackOptions, LsMsgPackSerializer> create) in new (string, Func<LsMsgPackOptions, LsMsgPackSerializer>)[] { ("", SmokeChecks.Runtime), (" generated", Generated) })
       {
@@ -217,7 +217,7 @@ namespace LsMsgPackUnitySmoke
       // Unity's serializer conventions: [SerializeField] opts a private field in (the public fields with SerializedFields.Public, as the unit tests check)
       try
       {
-        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
         byte[] bytes = serializer.Serialize(new PlayerData("Kim", 80, 4.5f));
         PlayerData read = serializer.Deserialize<PlayerData>(bytes);
         bool ok = read.Speed == 4.5f;

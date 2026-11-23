@@ -16,7 +16,7 @@ namespace LsMsgPack.TypeResolving.Filters
             {
                 DefaultValueAttribute def = attribute as DefaultValueAttribute;
                 if (def?.Value != null && value == null)
-                    return true; // In this case, null sould be serialized any way!
+                    return true; // In this case, null should be serialized any way!
             }
 
             return value != null;

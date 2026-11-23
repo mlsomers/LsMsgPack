@@ -160,7 +160,7 @@ namespace LsMsgPackUnitTests
   {
     protected abstract ISerializerUnderTest Serializer { get; }
 
-    private static readonly MsgPackSettings Untyped = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+    private static readonly MsgPackSettings Untyped = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
 
     protected static EnHolder Sample()
     {
@@ -190,8 +190,8 @@ namespace LsMsgPackUnitTests
       {
         foreach (ObjectLayout layout in new ObjectLayout[] { ObjectLayout.Array, ObjectLayout.Map })
         {
-          yield return new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout, EnumFormat = format };
-          yield return new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout, EnumFormat = format, SchemaVersion = SchemaVersion.Described };
+          yield return new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout, EnumFormat = format };
+          yield return new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout, EnumFormat = format, SchemaVersion = SchemaVersion.Described };
         }
       }
     }
@@ -223,7 +223,7 @@ namespace LsMsgPackUnitTests
       EnHolder value = Sample();
       foreach (MsgPackSettings settings in AllSettings(format))
       {
-        string message = $"{format}, schema {settings.UseInexedSchema}, {settings.ObjectLayout}, {settings.SchemaVersion}";
+        string message = $"{format}, schema {settings.UseIndexedSchema}, {settings.ObjectLayout}, {settings.SchemaVersion}";
         AssertSame(value, Serializer.Deserialize<EnHolder>(Serializer.Serialize(value, settings), settings), message);
       }
     }
@@ -249,7 +249,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void NameOption_NamesCustomNamesFlagsAndNumbers()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name };
       EnHolder value = Sample();
       EnWritten written = Serializer.Deserialize<EnWritten>(Serializer.Serialize(value, settings), Untyped);
       Assert.AreEqual("Green", written.Colour);
@@ -283,19 +283,19 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void CustomNames_SwappedAndClashing()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, EnumFormat = EnumFormat.Name };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, EnumFormat = EnumFormat.Name };
       Assert.AreEqual("Y", Serializer.Deserialize<string>(Serializer.Serialize(EnSwapped.X, settings), settings));
       Assert.AreEqual(EnSwapped.X, Serializer.Deserialize<EnSwapped>(Serializer.Serialize(EnSwapped.X, settings), settings));
       Assert.AreEqual(EnSwapped.Y, Serializer.Deserialize<EnSwapped>(Serializer.Serialize("X", settings), settings), "the written name, not the .NET name");
       MsgPackException clash = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(EnClash.B, settings));
       StringAssert.Contains(clash.Message, "\"A\"");
-      Assert.AreEqual(EnClash.B, Serializer.Deserialize<EnClash>(Serializer.Serialize(EnClash.B, new MsgPackSettings() { UseInexedSchema = false }), settings), "numbers still read");
+      Assert.AreEqual(EnClash.B, Serializer.Deserialize<EnClash>(Serializer.Serialize(EnClash.B, new MsgPackSettings() { UseIndexedSchema = false }), settings), "numbers still read");
     }
 
     [TestMethod]
     public void Aliases_TheFirstDeclaredName()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, EnumFormat = EnumFormat.Name };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, EnumFormat = EnumFormat.Name };
       Assert.AreEqual("One", Serializer.Deserialize<string>(Serializer.Serialize(EnAliased.Uno, settings), settings));
       Assert.AreEqual(EnAliased.One, Serializer.Deserialize<EnAliased>(Serializer.Serialize("Uno", settings), settings));
     }
@@ -305,7 +305,7 @@ namespace LsMsgPackUnitTests
     [DataRow(EnumFormat.Name)]
     public void Reading_NumbersAndNamesWhateverTheOptions(EnumFormat format)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = format };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = format };
       EnStrings[] texts = new EnStrings[]
       {
         new EnStrings() { Colour = "Blue", Named = "Third", Flags = "A, B", Custom = "second-one", Signed = "Minus" },
@@ -322,21 +322,21 @@ namespace LsMsgPackUnitTests
         Assert.AreEqual(EnSigned.Minus, read.Signed, "row " + t);
       }
 
-      EnHolder numbers = Serializer.Deserialize<EnHolder>(Serializer.Serialize(Sample(), new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Number }), settings);
+      EnHolder numbers = Serializer.Deserialize<EnHolder>(Serializer.Serialize(Sample(), new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Number }), settings);
       AssertSame(Sample(), numbers, "numbers read");
-      EnHolder names = Serializer.Deserialize<EnHolder>(Serializer.Serialize(Sample(), new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name }), settings);
+      EnHolder names = Serializer.Deserialize<EnHolder>(Serializer.Serialize(Sample(), new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name }), settings);
       AssertSame(Sample(), names, "names read");
     }
 
     [TestMethod]
     public void UnknownName_IsAnError()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       byte[] data = Serializer.Serialize(new EnStrings() { Colour = "Purple", Named = "Second" }, settings);
       Exception error = Assert.ThrowsExactly<ArgumentException>(() => Serializer.Deserialize<EnRead>(data, settings));
       StringAssert.Contains(error.Message, "Purple");
 
-      MsgPackSettings reporting = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, ReadErrors = ReadErrorHandling.ReportAndContinue };
+      MsgPackSettings reporting = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, ReadErrors = ReadErrorHandling.ReportAndContinue };
       EnRead read = Serializer.Deserialize<EnRead>(data, reporting, out ReadDifferences differences);
       Assert.AreEqual(EnColour.Red, read.Colour, "skipped");
       Assert.AreEqual(EnNamed.Second, read.Named);
@@ -351,7 +351,7 @@ namespace LsMsgPackUnitTests
         Stj = EnStj.Right, StjGeneric = EnStjGeneric.Down, Newtonsoft = EnNewtonsoft.South, NewtonsoftDerived = EnNewtonsoftDerived.West, Cli = EnCli.Beta, CliNumbers = EnCliNumbers.Beta,
         StjMember = EnColour.Blue, NewtonsoftMember = EnColour.Green, StjAsNumber = EnStj.Right, CliMember = EnColour.Blue, CliMemberDefault = EnCli.Beta
       };
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Number };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Number };
       byte[] data = Serializer.Serialize(value, settings);
       Dictionary<string, object> written = Serializer.Deserialize<Dictionary<string, object>>(data, Untyped);
       Assert.AreEqual("Right", written[nameof(EnForeign.Stj)]);
@@ -376,7 +376,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void DefaultValues_LeftOutAndReadBack()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array, DynamicFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeDynamically[] { new LsMsgPack.TypeResolving.Filters.FilterDefaultValues() }, SchemaVersion = SchemaVersion.Described };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = true, ObjectLayout = ObjectLayout.Array, DynamicFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeDynamically[] { new LsMsgPack.TypeResolving.Filters.FilterDefaultValues() }, SchemaVersion = SchemaVersion.Described };
       EnWithDefault read = Serializer.Deserialize<EnWithDefault>(Serializer.Serialize(new EnWithDefault(), settings), settings);
       Assert.AreEqual(EnNamed.Second, read.Named);
       Assert.AreEqual(EnColour.Blue, read.Colour);
@@ -388,7 +388,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void StructsAndFields_TheMembersFormat()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       Dictionary<string, object> written = Serializer.Deserialize<Dictionary<string, object>>(Serializer.Serialize(new EnStruct() { Plain = EnColour.Blue, ByName = EnColour.Blue, Named = EnNamed.Third }, settings), Untyped);
       Assert.AreEqual(2L, Convert.ToInt64(written["Plain"]));
       Assert.AreEqual("Blue", written["ByName"]);
@@ -406,9 +406,9 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void RootAndBoxedValues()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, EnumFormat = EnumFormat.Name };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, EnumFormat = EnumFormat.Name };
       Assert.AreEqual("Green", Serializer.Deserialize<string>(Serializer.Serialize(EnColour.Green, settings), settings));
-      Assert.AreEqual("Second", Serializer.Deserialize<string>(Serializer.Serialize(EnNamed.Second, new MsgPackSettings() { UseInexedSchema = false }), settings));
+      Assert.AreEqual("Second", Serializer.Deserialize<string>(Serializer.Serialize(EnNamed.Second, new MsgPackSettings() { UseIndexedSchema = false }), settings));
       Assert.AreEqual(EnColour.Green, Serializer.Deserialize<EnColour>(Serializer.Serialize("green", settings), settings));
       Assert.AreEqual(EnColour.Blue, Serializer.Deserialize<EnColour?>(Serializer.Serialize(EnColour.Blue, settings), settings));
       List<object> boxed = new List<object>() { EnColour.Blue, EnNamed.Third };
@@ -452,7 +452,7 @@ namespace LsMsgPackUnitTests
           for (int t = 0; t < values.Length; t++)
           {
             object value = values[t];
-            string message = $"{format}, schema {settings.UseInexedSchema}, {settings.ObjectLayout}, {settings.SchemaVersion}, filter {filter}, {value.GetType().Name}";
+            string message = $"{format}, schema {settings.UseIndexedSchema}, {settings.ObjectLayout}, {settings.SchemaVersion}, filter {filter}, {value.GetType().Name}";
             byte[] expected = MsgPackSerializer.Serialize(value, value.GetType(), settings);
             CollectionAssert.AreEqual(expected, Serializers.Ls.Serialize(value, value.GetType(), settings), "runtime: " + message);
             CollectionAssert.AreEqual(expected, Serializers.Gen.Serialize(value, value.GetType(), settings), "generated: " + message);
@@ -460,7 +460,7 @@ namespace LsMsgPackUnitTests
             {
               LsMsgPackOptions compiled = new LsMsgPackOptions()
               {
-                UseInexedSchema = settings.UseInexedSchema, ObjectLayout = settings.ObjectLayout, EnumFormat = format, SchemaVersion = settings.SchemaVersion, DynamicFilters = settings.DynamicFilters,
+                UseIndexedSchema = settings.UseIndexedSchema, ObjectLayout = settings.ObjectLayout, EnumFormat = format, SchemaVersion = settings.SchemaVersion, DynamicFilters = settings.DynamicFilters,
                 CompileWritersAfter = 0, CompileReadersAfter = 0, UseRegisteredContexts = false
               };
               if (generated)

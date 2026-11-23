@@ -36,7 +36,7 @@ using LsMsgPack;
 
 LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions
 {
-  UseInexedSchema = false,
+  UseIndexedSchema = false,
   ObjectLayout = ObjectLayout.Map
 });
 ```

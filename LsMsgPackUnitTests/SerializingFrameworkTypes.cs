@@ -64,7 +64,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void PropertiesRoundTrip(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       FrameworkTypesHolder holder = CreateHolder();
 
       FrameworkTypesHolder ret = Serializer.Deserialize<FrameworkTypesHolder>(Serializer.Serialize(holder, settings), settings);
@@ -88,7 +88,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void DefaultValuesAreOmitted(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       FrameworkTypesHolder empty = new FrameworkTypesHolder();
 
       FrameworkTypesHolder ret = Serializer.Deserialize<FrameworkTypesHolder>(Serializer.Serialize(empty, settings), settings);
@@ -107,7 +107,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Encodings()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false };
 
       CollectionAssert.AreEqual(new byte[] { 0x41 }, Serializer.Serialize('A', settings));
       CollectionAssert.AreEqual(new byte[] { 0xCD, 0x20, 0xAC }, Serializer.Serialize('€', settings));
@@ -123,7 +123,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void RootValues(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
 
       Assert.AreEqual('x', Serializer.Deserialize<char>(Serializer.Serialize('x', settings), settings));
       Assert.AreEqual(TimeSpan.FromSeconds(-1.5), Serializer.Deserialize<TimeSpan>(Serializer.Serialize(TimeSpan.FromSeconds(-1.5), settings), settings));
@@ -146,7 +146,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void BoxedValues(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       FrameworkTypesBoxed boxed = new FrameworkTypesBoxed()
       {
         Duration = TimeSpan.FromHours(1),
@@ -232,7 +232,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true, ObjectLayout.Map)]
     public void MoreFrameworkValuesRoundTrip(bool useSchema, ObjectLayout layout)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = layout };
       FrameworkValuesHolder holder = CreateValues();
 
       FrameworkValuesHolder ret = Serializer.Deserialize<FrameworkValuesHolder>(Serializer.Serialize(holder, settings), settings);
@@ -246,7 +246,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void MoreEncodings()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false };
 
       CollectionAssert.AreEqual(new byte[] { 0xCA, 0x3F, 0xC0, 0x00, 0x00 }, Serializer.Serialize((Half)1.5, settings));
       CollectionAssert.AreEqual(new byte[] { 0xA5, (byte)'1', (byte)'.', (byte)'2', (byte)'.', (byte)'3' }, Serializer.Serialize(new Version(1, 2, 3), settings));
@@ -278,7 +278,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void MoreBoxedValues(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       FrameworkValuesBoxed boxed = new FrameworkValuesBoxed()
       {
         Values = new List<object>() { (Half)2.5, new Version(1, 0), new Complex(0, 1), (1, "a"), Tuple.Create("b", 2.5), new Rune('x'), CultureInfo.InvariantCulture }
@@ -300,7 +300,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ArraySegmentFromAnArray()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false };
       byte[] array = Serializer.Serialize(new List<byte>() { 1, 2, 3 }, settings);
       CollectionAssert.AreEqual(new byte[] { 1, 2, 3 }, Serializer.Deserialize<ArraySegment<byte>>(array, settings).ToArray());
     }
@@ -311,7 +311,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void TuplesOfOtherLengths()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false };
       Assert.AreEqual((1, "a", 0), Serializer.Deserialize<(int, string, int)>(Serializer.Serialize((1, "a"), settings), settings));
       Assert.AreEqual(Tuple.Create(1), Serializer.Deserialize<Tuple<int>>(Serializer.Serialize((1, "a"), settings), settings));
     }
@@ -392,7 +392,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true, ObjectLayout.Map)]
     public void FrameworkCollectionsRoundTrip(bool useSchema, ObjectLayout layout)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = layout };
       FrameworkCollectionsHolder holder = CreateCollections();
 
       FrameworkCollectionsHolder ret = Serializer.Deserialize<FrameworkCollectionsHolder>(Serializer.Serialize(holder, settings), settings);
@@ -408,7 +408,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void FrameworkCollectionsBoxed(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       FrameworkValuesBoxed boxed = new FrameworkValuesBoxed()
       {
         Values = new List<object>() { new int[,] { { 1 }, { 2 } }, ImmutableArray.Create("a"), ImmutableDictionary.CreateRange(new[] { new KeyValuePair<string, int>("b", 2) }), new BitArray(new[] { true }), new List<int[,]>() { new int[0, 3] } }
@@ -429,7 +429,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void MultidimensionalEncoding()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false };
       CollectionAssert.AreEqual(new byte[] { 0x93, 0x02, 0x02, 0x94, 1, 2, 3, 4 }, Serializer.Serialize(new int[,] { { 1, 2 }, { 3, 4 } }, settings));
       CollectionAssert.AreEqual(new byte[] { 0x94, 0x01, 0x02, 0x00, 0x90 }, Serializer.Serialize(new int[1, 2, 0], settings));
 
@@ -451,7 +451,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void HiddenFrameworkTypesGetNoTypeId(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
       FrameworkHiddenHolder holder = new FrameworkHiddenHolder() { Numbers = new[] { 1, 2, 3 }.Select(n => n * 2), Set = new[] { 7 }.ToFrozenSet() };
 
       byte[] bytes = Serializer.Serialize(holder, settings);
@@ -483,7 +483,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true, ObjectLayout.Map)]
     public void BigIntegersRoundTrip(bool useSchema, ObjectLayout layout)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = layout };
       FrameworkBigIntegers numbers = new FrameworkBigIntegers()
       {
         Big = BigInteger.Pow(-3, 201), // 319 bits
@@ -514,7 +514,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void BigIntegerEncodings()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false };
 
       CollectionAssert.AreEqual(new byte[] { 0x05 }, Serializer.Serialize(new BigInteger(5), settings));
       CollectionAssert.AreEqual(new byte[] { 0xFF }, Serializer.Serialize(new BigInteger(-1), settings));
@@ -528,7 +528,7 @@ namespace LsMsgPackUnitTests
       CollectionAssert.AreEqual(new byte[] { 0xC7, 0x11, 0xFE, 0x00, 0xFF }, max.Take(5).ToArray()); // 17 bytes: a 0 for the sign
       Assert.AreEqual(UInt128.MaxValue, Serializer.Deserialize<UInt128>(max, settings));
 
-      MsgPackSettings uncompact = new MsgPackSettings() { UseInexedSchema = false, DynamicallyCompact = false };
+      MsgPackSettings uncompact = new MsgPackSettings() { UseIndexedSchema = false, DynamicallyCompact = false };
       CollectionAssert.AreEqual(new byte[] { 0xD3, 0, 0, 0, 0, 0, 0, 0, 5 }, Serializer.Serialize(new BigInteger(5), uncompact));
       CollectionAssert.AreEqual(new byte[] { 0xCF, 0, 0, 0, 0, 0, 0, 0, 5 }, Serializer.Serialize((UInt128)5, uncompact));
     }
@@ -539,7 +539,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void BigIntegersFromOtherValues()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false };
 
       Assert.AreEqual((Int128)300, Serializer.Deserialize<Int128>(Serializer.Serialize((short)300, settings), settings));
       Assert.AreEqual((BigInteger)ulong.MaxValue, Serializer.Deserialize<BigInteger>(Serializer.Serialize(ulong.MaxValue, settings), settings));
@@ -567,7 +567,7 @@ namespace LsMsgPackUnitTests
     [DataRow(false, ObjectLayout.Array, DateTimeOffsetFormat.ClockTimeAndOffset)]
     public void DateTimeOffsetsKeepTheirOffset(bool useSchema, ObjectLayout layout, DateTimeOffsetFormat format)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout, DateTimeOffsetFormat = format };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = layout, DateTimeOffsetFormat = format };
       FrameworkOffsets offsets = new FrameworkOffsets()
       {
         When = new DateTimeOffset(2026, 10, 10, 12, 0, 0, 125, TimeSpan.FromMinutes(330)),
@@ -598,14 +598,14 @@ namespace LsMsgPackUnitTests
       byte[] moment = { 0xD6, 0xFF, 0x6A, 0x1D, 0x58, 0x20 }; // 2026-06-01 10:00:00 UTC
       byte[] clock = { 0xD6, 0xFF, 0x6A, 0x1D, 0x74, 0x40 }; // 2026-06-01 12:00:00 "UTC"
 
-      CollectionAssert.AreEqual(new byte[] { 0x92 }.Concat(moment).Concat(new byte[] { 0x78 }).ToArray(), Serializer.Serialize(when, new MsgPackSettings() { UseInexedSchema = false }));
-      CollectionAssert.AreEqual(moment, Serializer.Serialize(when, new MsgPackSettings() { UseInexedSchema = false, DateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp }));
-      CollectionAssert.AreEqual(new byte[] { 0x92 }.Concat(clock).Concat(new byte[] { 0x78 }).ToArray(), Serializer.Serialize(when, new MsgPackSettings() { UseInexedSchema = false, DateTimeOffsetFormat = DateTimeOffsetFormat.ClockTimeAndOffset }));
-      byte[] uncompact = Serializer.Serialize(when.ToOffset(TimeSpan.FromMinutes(-300)), new MsgPackSettings() { UseInexedSchema = false, DynamicallyCompact = false });
+      CollectionAssert.AreEqual(new byte[] { 0x92 }.Concat(moment).Concat(new byte[] { 0x78 }).ToArray(), Serializer.Serialize(when, new MsgPackSettings() { UseIndexedSchema = false }));
+      CollectionAssert.AreEqual(moment, Serializer.Serialize(when, new MsgPackSettings() { UseIndexedSchema = false, DateTimeOffsetFormat = DateTimeOffsetFormat.Timestamp }));
+      CollectionAssert.AreEqual(new byte[] { 0x92 }.Concat(clock).Concat(new byte[] { 0x78 }).ToArray(), Serializer.Serialize(when, new MsgPackSettings() { UseIndexedSchema = false, DateTimeOffsetFormat = DateTimeOffsetFormat.ClockTimeAndOffset }));
+      byte[] uncompact = Serializer.Serialize(when.ToOffset(TimeSpan.FromMinutes(-300)), new MsgPackSettings() { UseIndexedSchema = false, DynamicallyCompact = false });
       CollectionAssert.AreEqual(new byte[] { 0xD1, 0xFE, 0xD4 }, uncompact.Skip(uncompact.Length - 3).ToArray()); // the minutes are a short (int16)
 
       // A timestamp (as DateTimeOffset values used to be written) is read in any format
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ReadDateTimeKind = DateTimeKind.Utc };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ReadDateTimeKind = DateTimeKind.Utc };
       Assert.AreEqual(when, Serializer.Deserialize<DateTimeOffset>(moment, settings));
       Assert.AreEqual(TimeSpan.Zero, Serializer.Deserialize<DateTimeOffset>(moment, settings).Offset);
     }
@@ -648,7 +648,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void UnsupportedFrameworkTypesAreRefused(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
 
       MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new FrameworkLazyHolder() { Later = new Lazy<int>(() => 7) }, settings));
       StringAssert.Contains(ex.Message, "no settable properties");
@@ -656,7 +656,7 @@ namespace LsMsgPackUnitTests
       Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new Lazy<int>(() => 7), settings));
       Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new List<object>() { Index.FromEnd(1) }, settings));
 
-      MsgPackSettings map = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings map = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       byte[] bytes = Serializer.Serialize(new FrameworkLazyWriter() { Later = new Dictionary<string, int>() }, map);
       ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Deserialize<FrameworkLazyHolder>(bytes, map));
       StringAssert.Contains(ex.Message, "no settable properties");
@@ -668,7 +668,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void TypesAreRefused()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false };
       MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new FrameworkTypeHolder() { Kind = typeof(string) }, settings));
       StringAssert.Contains(ex.Message, "the data would pick the type");
     }
@@ -681,7 +681,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void JsonDocumentTypesAreRefusedWithWhatToDoInstead(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       using (JsonDocument document = JsonDocument.Parse("{\"a\":1}"))
       {
         JsonElement element = document.RootElement;
@@ -695,7 +695,7 @@ namespace LsMsgPackUnitTests
         AssertRefused(() => Serializer.Serialize(new JsonNodeListHolder() { Items = new List<JsonNode>() { JsonValue.Create(1) } }, settings));
       }
 
-      MsgPackSettings map = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings map = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       byte[] bytes = Serializer.Serialize(new Dictionary<string, int>() { { "a", 1 } }, map);
       AssertRefused(() => Serializer.Deserialize<JsonElement>(bytes, map));
     }

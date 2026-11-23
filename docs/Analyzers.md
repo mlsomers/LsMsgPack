@@ -156,7 +156,7 @@ public IActionResult Patch([FromBody] Dictionary<string, object> changes) => ...
 
 By default (and for `application/x-lsmsgpack`) an object is written as an array of its values with the indexed schema: the property names are in the schema, or nowhere, and only the class it is read into gives them back. Read into `object`, such an object becomes an `object[]` of its values. Read into a dictionary with string keys and values of any type (`Dictionary<string, object>`, `IDictionary<string, object>`, `ExpandoObject`), it throws a `MsgPackException`, and a web formatter answers 400.
 
-Read into a class instead. For a partial update, give the class nullable properties, so that a property the client didn't send stays null. Only maps without the schema carry the names (`ObjectLayout.Map` and `UseInexedSchema = false`, as for `application/msgpack`). If all the writers do that, suppress the warning.
+Read into a class instead. For a partial update, give the class nullable properties, so that a property the client didn't send stays null. Only maps without the schema carry the names (`ObjectLayout.Map` and `UseIndexedSchema = false`, as for `application/msgpack`). If all the writers do that, suppress the warning.
 
 A dictionary that the client also writes as a dictionary (not from a class) arrives as a map with its keys, so it works.
 

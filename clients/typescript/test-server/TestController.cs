@@ -60,7 +60,7 @@ namespace LsMsgPackTsTestServer
     }
 
     /// <summary>A plain request body (application/msgpack) read with ReferenceHandling.Preserve, the names ignoring case, as the formatters read plain bodies.</summary>
-    private static readonly LsMsgPackSerializer PreservingPlain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, PropertyNameCaseInsensitive = true, ReferenceHandling = ReferenceHandling.Preserve });
+    private static readonly LsMsgPackSerializer PreservingPlain = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, PropertyNameCaseInsensitive = true, ReferenceHandling = ReferenceHandling.Preserve });
 
     /// <summary>Reads a Shared the client wrote (with ReferenceHandling.Preserve) and answers which values came back as one instance.</summary>
     [HttpPost("echo/shared")]

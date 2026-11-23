@@ -85,8 +85,8 @@ namespace LsMsgPackUnitTests
     /// </summary>
     private static IEnumerable<(string Name, LsMsgPackSerializer Serializer)> Serializers()
     {
-      yield return ("names", new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false }));
-      yield return ("names, map", new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }));
+      yield return ("names", new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false }));
+      yield return ("names, map", new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }));
       yield return ("inline", new LsMsgPackSerializer(new LsMsgPackOptions()));
       yield return ("inline, map", new LsMsgPackSerializer(new LsMsgPackOptions { ObjectLayout = ObjectLayout.Map }));
       yield return ("reference", new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = new SchemaStore(), WriteSchemaReference = true }));
@@ -255,7 +255,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public async Task Errors_AsTheSynchronousRead()
     {
-      LsMsgPackSerializer names = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      LsMsgPackSerializer names = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
       LsMsgPackSerializer inline = new LsMsgPackSerializer(new LsMsgPackOptions());
       byte[] order = names.Serialize(NewOrder());
       byte[] withSchema = inline.Serialize(NewOrder());
@@ -267,7 +267,7 @@ namespace LsMsgPackUnitTests
       string escape = await AssertSameError<object>(names, new byte[] { 0x92, 0x01, 0xC1, 0x00 }, "0xC1");
       StringAssert.Contains(escape, "0xC1");
 
-      LsMsgPackSerializer shallow = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, MaxDepth = 3 });
+      LsMsgPackSerializer shallow = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, MaxDepth = 3 });
       Assert.IsNotNull(shallow.Deserialize<object>(new NonSeekableStream(new byte[] { 0x91, 0x91, 0x91, 0x01 }))); // 3 levels: fine
       Assert.IsNotNull(await shallow.DeserializeAsync<object>(new AsyncOnlyStream(new byte[] { 0x91, 0x91, 0x91, 0x01 })));
       string deep = await AssertSameError<object>(shallow, new byte[] { 0x91, 0x91, 0x91, 0x91, 0x01 }, "depth");
@@ -361,7 +361,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public async Task DeserializeAsync_Differences_NotCalledWhenReadingFails()
     {
-      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
       // an unknown property, then a value that is no number (ReadErrors.FailFast)
       byte[] data = lt.Serialize(new List<Dictionary<string, object>> { new Dictionary<string, object> { { "Product", "p" }, { "Note", "n" } }, new Dictionary<string, object> { { "Quantity", "many" } } });
       Exception sync = null;
@@ -447,7 +447,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public async Task PopulateAsync_KeepsMissingMembers_RefusesBeforeReading()
     {
-      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
       AsLine line = new AsLine { Product = "old", Quantity = 5 };
       await lt.PopulateAsync(new AsyncOnlyStream(lt.Serialize(new Dictionary<string, object> { { "Product", "new" } })), line);
       Assert.AreEqual("new5", line.Product + line.Quantity);

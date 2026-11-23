@@ -56,8 +56,8 @@ namespace LsMsgPack.GeneratorTests
         foreach (bool schema in new[] { false, true })
           foreach (ObjectLayout layout in new[] { ObjectLayout.Array, ObjectLayout.Map })
           {
-            LsMsgPackSerializer runtime = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false });
-            LsMsgPackSerializer generated = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false, Contexts = new[] { context } });
+            LsMsgPackSerializer runtime = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false });
+            LsMsgPackSerializer generated = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = schema, ObjectLayout = layout, UseRegisteredContexts = false, Contexts = new[] { context } });
             byte[] expected = runtime.Serialize(invoice, type);
             CollectionAssert.AreEqual(expected, generated.Serialize(invoice, type), $"v{version} schema={schema} {layout}: bytes");
             CollectionAssert.AreEqual(expected, runtime.Serialize(generated.Deserialize(type, expected), type), $"v{version} schema={schema} {layout}: values");

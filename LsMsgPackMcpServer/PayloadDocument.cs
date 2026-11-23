@@ -552,7 +552,7 @@ namespace LsMsgPackMcp
         issues = new MsgPackValidation.ValidationItem[] { new MsgPackValidation.ValidationItem(node.Item, MsgPackValidation.ValidationSeverity.Error, 0, "Validation failed: ", ex.Message) };
       }
       foreach (MsgPackValidation.ValidationItem issue in issues)
-        Issues.Add(new Issue() { Node = node, Severity = issue.Severity, WastedBytes = issue.WaistedBytes, Message = issue.Message });
+        Issues.Add(new Issue() { Node = node, Severity = issue.Severity, WastedBytes = issue.WastedBytes, Message = issue.Message });
     }
 
     /// <summary>
@@ -570,7 +570,7 @@ namespace LsMsgPackMcp
         issues = new List<MsgPackValidation.ValidationItem>() { new MsgPackValidation.ValidationItem(Root?.Item, MsgPackValidation.ValidationSeverity.Error, 0, "Validation failed: ", ex.Message) };
       }
       foreach (MsgPackValidation.ValidationItem issue in issues)
-        Issues.Add(new Issue() { Node = GetNode(issue.Item) ?? Root, Severity = issue.Severity, WastedBytes = issue.WaistedBytes, Message = issue.Message });
+        Issues.Add(new Issue() { Node = GetNode(issue.Item) ?? Root, Severity = issue.Severity, WastedBytes = issue.WastedBytes, Message = issue.Message });
     }
   }
 }

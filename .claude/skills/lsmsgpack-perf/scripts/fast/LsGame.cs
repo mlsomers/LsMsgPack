@@ -259,7 +259,7 @@ public static class LsGame
     };
   }
 
-  private static LsMsgPackOptions NoSchema() => new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration };
+  private static LsMsgPackOptions NoSchema() => new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration };
 
   private static LsMsgPackOptions Preset()
   {
@@ -271,7 +271,7 @@ public static class LsGame
 
   private static LsMsgPackOptions Reference() => new LsMsgPackOptions() { SchemaStore = new SchemaStore(), WriteSchemaReference = true };
 
-  private static LsMsgPackOptions Names() => new LsMsgPackOptions() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+  private static LsMsgPackOptions Names() => new LsMsgPackOptions() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
 
   private static List<Candidate> Candidates(string filter)
   {

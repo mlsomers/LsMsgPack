@@ -33,7 +33,7 @@ Every entry carries a small schema with the property names of its classes, so a 
 ```csharp
 LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions
 {
-  UseInexedSchema = false // objects are only their values, in the order of their properties
+  UseIndexedSchema = false // objects are only their values, in the order of their properties
 });
 ```
 
@@ -88,7 +88,7 @@ LsMsgPack contains a source generator that writes the serialization code of your
 [LsMsgPackSerializable(typeof(UserProfile))]
 public partial class CacheMsgPackContext : LsMsgPackContext { }
 
-LsMsgPackSerializer serializer = new LsMsgPackSerializer(CacheMsgPackContext.Default, new LsMsgPackOptions { UseInexedSchema = false });
+LsMsgPackSerializer serializer = new LsMsgPackSerializer(CacheMsgPackContext.Default, new LsMsgPackOptions { UseIndexedSchema = false });
 ```
 
 The bytes are the same with or without it. See [Add-ons](Extras.md#trimmed-and-aot-apps-and-more-speed).
