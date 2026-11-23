@@ -120,7 +120,7 @@ namespace MsgPackExplorer
 
       byte[] arr = new byte[hex.Length >> 1];
 
-      for (int i = arr.Length; i >= 0; i--)
+      for (int i = arr.Length - 1; i >= 0; i--)
       {
         int idx = i << 1;
         arr[i] = (byte)((GetHexVal(hex[idx]) << 4) | GetHexVal(hex[idx + 1]));
