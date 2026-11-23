@@ -225,9 +225,10 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// The target of the serializers' Populate methods: an object <see cref="CanReadInto"/>, or a collection with Add that is not read-only.
     /// </summary>
+    /// <returns>true for a collection (read as a new one, then filled), false for an object (read into)</returns>
     /// <exception cref="ArgumentNullException">No target</exception>
     /// <exception cref="ArgumentException">Anything else</exception>
-    internal static void ThrowIfNotPopulatable(object target, MsgPackOptions settings)
+    internal static bool ThrowIfNotPopulatable(object target, MsgPackOptions settings)
     {
       if (target is null)
         throw new ArgumentNullException(nameof(target));
@@ -236,10 +237,10 @@ namespace LsMsgPack.Meta
       {
         if (!GetOnlyCollection.CanFill(target))
           throw new ArgumentException($"The {type.Name} cannot be filled: it is read-only or has a fixed size.", nameof(target));
-        return;
+        return true;
       }
       if (CanReadInto(target, settings))
-        return;
+        return false;
       string why = settings.ConverterFor(type) != null ? "it has a converter (its values are written as their surrogate)"
         : ObjectConstructor.Of(type).CreatesWith(settings._objectCreation) ? "it is created by its constructor taking the values"
         : "it is not a class with members of its own (a string, an array, object, a framework type)";

@@ -250,6 +250,70 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
+    /// A MemoryStream whose array is not exposed (<c>new MemoryStream(byte[])</c>) cannot be read in place: read ahead while more than 4 KB is left, the rest copied whole after that
+    /// (StreamPayload.ReadAhead, CopyRest). The values and positions of a stream read without seeking, Populate too, and the same errors for data that ends anywhere.
+    /// </summary>
+    [TestMethod]
+    public async Task HiddenMemoryStream_AsAStreamWithoutSeeking()
+    {
+      foreach ((string name, LsMsgPackSerializer lt) in Serializers())
+      {
+        AsOrder order = NewOrder();
+        AsOrder large = NewOrder(3000);
+        List<byte[]> payloads = new List<byte[]>
+        {
+          lt.Serialize(order), lt.Serialize(new AsPoint { X = 3, Y = -4 }), lt.Serialize(large), lt.Serialize("text"), lt.Serialize(order), lt.Serialize(order), lt.Serialize(-70000)
+        };
+        byte[] data = payloads.SelectMany(p => p).Concat(new byte[] { 0x2A }).ToArray();
+        Assert.IsGreaterThan(4096, payloads[2].Length, name + ": the large order is read ahead");
+        Assert.IsLessThan(4096, payloads[4].Length + payloads[5].Length + payloads[6].Length, name + ": the last orders are copied whole");
+        long[] ends = payloads.Select(p => (long)p.Length).ToArray();
+        for (int t = 1; t < ends.Length; t++)
+          ends[t] += ends[t - 1];
+
+        MemoryStream hidden = new MemoryStream(data);
+        Assert.IsFalse(hidden.TryGetBuffer(out ArraySegment<byte> none), "the array is not exposed");
+        string expected = Dump(order);
+        Assert.AreEqual(expected, Dump(lt.Deserialize<AsOrder>(hidden)), name);
+        Assert.AreEqual(ends[0], hidden.Position, name + ": after the order");
+        Assert.AreEqual(-4, (await lt.DeserializeAsync<AsPoint>(hidden)).Y, name);
+        Assert.AreEqual(ends[1], hidden.Position, name + ": after the struct");
+        Assert.AreEqual(Dump(large), Dump((AsOrder)lt.Deserialize(typeof(AsOrder), hidden)), name + ", large");
+        Assert.AreEqual(ends[2], hidden.Position, name + ": after the large order");
+        Assert.AreEqual("text", lt.Deserialize<string>(hidden), name);
+        Assert.AreEqual(ends[3], hidden.Position, name + ": after the string");
+        AsOrder target = new AsOrder();
+        lt.Populate(hidden, target);
+        Assert.AreEqual(expected, Dump(target), name + ", populated");
+        Assert.AreEqual(ends[4], hidden.Position, name + ": after the populated order");
+        Assert.AreEqual(expected, Dump(lt.Deserialize<AsOrder>(hidden, out ReadDifferences differences)), name + ", reporting");
+        Assert.IsNull(differences, name);
+        Assert.AreEqual(ends[5], hidden.Position, name + ": after the last order");
+        Assert.AreEqual(-70000, lt.Deserialize<int>(hidden), name);
+        Assert.AreEqual(ends[6], hidden.Position, name + ": after the int");
+        Assert.AreEqual(0x2A, hidden.ReadByte(), name);
+
+        hidden.Position = ends[1]; // the large order, populated: read ahead
+        AsOrder populated = new AsOrder();
+        await lt.PopulateAsync(hidden, populated);
+        Assert.AreEqual(Dump(large), Dump(populated), name + ", large populated");
+        Assert.AreEqual(ends[2], hidden.Position, name + ": after the large order populated");
+      }
+
+      LsMsgPackSerializer inline = new LsMsgPackSerializer(new LsMsgPackOptions());
+      byte[] one = inline.Serialize(NewOrder(3000));
+      for (int cut = 0; cut < one.Length; cut += cut < 40 ? 1 : 997) // data that ends anywhere: copied whole, the errors of the data in memory; read ahead, those of the scan
+      {
+        byte[] data = one.Take(cut).ToArray();
+        MsgPackException expected = cut <= 4096
+          ? Assert.ThrowsExactly<MsgPackException>(() => inline.Deserialize<AsOrder>(new MemoryStream(data, 0, data.Length, false, true)), "cut at " + cut)
+          : Assert.ThrowsExactly<MsgPackException>(() => inline.Deserialize<AsOrder>(new NonSeekableStream(data)), "cut at " + cut);
+        MsgPackException hidden = Assert.ThrowsExactly<MsgPackException>(() => inline.Deserialize<AsOrder>(new MemoryStream(data)), "cut at " + cut);
+        Assert.AreEqual(expected.Message, hidden.Message, "cut at " + cut);
+      }
+    }
+
+    /// <summary>
     /// Data that ends anywhere, data that is not valid, nesting too deep, a claimed length that never arrives: the errors of the synchronous Deserialize of a stream.
     /// </summary>
     [TestMethod]

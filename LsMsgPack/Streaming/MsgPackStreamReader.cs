@@ -1,7 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Streaming;
 using LsMsgPack.IO;
-using LsMsgPack.Meta;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
@@ -743,18 +742,16 @@ namespace LsMsgPack.Streaming
     /// <exception cref="MsgPackException">The data holds another class than the target's (or one it derives from), or no object; the stream ends</exception>
     public void PopulateObject<T>(T target) where T : class
     {
-      Population.ThrowIfNotPopulatable(target, _options);
       PopulateChecked(target);
     }
 
     /// <summary>
-    /// <see cref="PopulateObject{T}"/> of a target <see cref="Population.ThrowIfNotPopulatable"/> accepted.
+    /// <see cref="PopulateObject{T}"/>: the target is checked before anything is read (the async methods check it before they read ahead too, the second check is the remembered class).
     /// </summary>
     private void PopulateChecked(object target)
     {
-      Type type = target.GetType();
-      bool fill = GetOnlyCollection.IsFillable(type);
-      LsMsgPackSerializer.PopulatedRoot(target, ReadObject(type, false, fill ? null : target), fill);
+      bool fill = _serializer.PopulateTarget(target);
+      LsMsgPackSerializer.PopulatedRoot(target, ReadObject(target.GetType(), false, fill ? null : target), fill);
     }
 
     /// <param name="intoSlot">A struct value is returned in a slot (see <see cref="RootSlot{T}.Take"/>)</param>

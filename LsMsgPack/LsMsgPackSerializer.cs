@@ -422,7 +422,7 @@ namespace LsMsgPack
     /// Reads one value (with its schema) from the stream asynchronously: <see cref="Deserialize{T}(Stream)"/> for a stream that must not be read synchronously
     /// (an ASP.NET Core request body, a network stream, a file opened for asynchronous I/O).
     /// <para>It reads no further than the value, so the stream is left after it: the values that follow one another on a connection are read one call at a time.
-    /// The bytes are read with <c>ReadAsync</c> into an array of the shared pool, then the value is read from memory. A <see cref="MemoryStream"/> is read in place, without awaiting.</para>
+    /// The bytes are read with <c>ReadAsync</c> into an array of the shared pool, then the value is read from memory. A <see cref="MemoryStream"/> is read without awaiting (in place when its array is exposed, otherwise from a copy).</para>
     /// <para>The stream must hold one payload as <see cref="Serialize{T}(T)"/> writes it. Values of unknown length (the escapes of a stream) are read by <see cref="Streaming.MsgPackStreamReader"/>.</para>
     /// </summary>
     public Task<T> DeserializeAsync<T>(Stream source, CancellationToken cancellationToken = default(CancellationToken))
@@ -728,12 +728,30 @@ namespace LsMsgPack
       if (source is null)
         throw new ArgumentNullException(nameof(source));
 
-      if (source is MemoryStream memory && memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
+      if (source is MemoryStream memory)
       {
-        int offset = segment.Offset + (int)memory.Position;
-        object result = _serializer.Deserialize(type, segment.Array, offset, segment.Offset + (int)memory.Length, out int consumed, differences, intoSlot);
-        memory.Position += consumed - offset;
-        return result;
+        if (memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
+        {
+          int offset = segment.Offset + (int)memory.Position;
+          object result = _serializer.Deserialize(type, segment.Array, offset, segment.Offset + (int)memory.Length, out int consumed, differences, intoSlot);
+          memory.Position += consumed - offset;
+          return result;
+        }
+        if (memory.CanSeek && memory.Length - memory.Position <= StreamPayload.CopiedWhole) // its array is not exposed (new MemoryStream(byte[])): the rest copied without scanning
+        {
+          long start = memory.Position;
+          byte[] copy = StreamPayload.CopyRest(memory, out int length);
+          try
+          {
+            object result = _serializer.Deserialize(type, copy, 0, length, out int consumed, differences, intoSlot);
+            memory.Position = start + consumed;
+            return result;
+          }
+          finally
+          {
+            StreamPayload.Return(copy, length);
+          }
+        }
       }
 
       StreamPayload payload = new StreamPayload(_serializer.Options);
@@ -830,7 +848,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// <see cref="Populate{T}(Stream, T)"/>, reading the stream asynchronously as <see cref="DeserializeAsync{T}(Stream, CancellationToken)"/> does: the payload is read with <c>ReadAsync</c>
-    /// into an array of the shared pool, then into the target from memory (a <see cref="MemoryStream"/> is read in place, without awaiting). The stream is left after the value.
+    /// into an array of the shared pool, then into the target from memory (a <see cref="MemoryStream"/> without awaiting, in place when its array is exposed). The stream is left after the value.
     /// </summary>
     /// <exception cref="ArgumentException">The target cannot be read into (thrown before the stream is read)</exception>
     public Task PopulateAsync<T>(Stream source, T target, CancellationToken cancellationToken = default(CancellationToken)) where T : class
@@ -847,7 +865,7 @@ namespace LsMsgPack
     {
       if (source is null)
         throw new ArgumentNullException(nameof(source));
-      Population.ThrowIfNotPopulatable(target, _serializer.Options); // before the stream is read: the payload would be lost
+      _serializer.PopulateTarget(target); // before the stream is read: the payload would be lost
       if (cancellationToken.IsCancellationRequested)
         return Task.FromCanceled(cancellationToken);
       if (source.GetType() != typeof(MemoryStream)) // as DeserializeAsync
@@ -925,12 +943,30 @@ namespace LsMsgPack
     {
       if (source is null)
         throw new ArgumentNullException(nameof(source));
-      if (source is MemoryStream memory && memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
+      if (source is MemoryStream memory)
       {
-        int offset = segment.Offset + (int)memory.Position;
-        PopulateArray(segment.Array, offset, segment.Offset + (int)memory.Length, target, differences, out int consumed);
-        memory.Position += consumed - offset;
-        return;
+        if (memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
+        {
+          int offset = segment.Offset + (int)memory.Position;
+          PopulateArray(segment.Array, offset, segment.Offset + (int)memory.Length, target, differences, out int consumed);
+          memory.Position += consumed - offset;
+          return;
+        }
+        if (memory.CanSeek && memory.Length - memory.Position <= StreamPayload.CopiedWhole) // as Deserialize(Type, Stream, ...)
+        {
+          long start = memory.Position;
+          byte[] copy = StreamPayload.CopyRest(memory, out int length);
+          try
+          {
+            PopulateArray(copy, 0, length, target, differences, out int consumed);
+            memory.Position = start + consumed;
+            return;
+          }
+          finally
+          {
+            StreamPayload.Return(copy, length);
+          }
+        }
       }
       StreamPayload payload = new StreamPayload(_serializer.Options);
       try
@@ -949,10 +985,8 @@ namespace LsMsgPack
     /// </summary>
     private void PopulateArray(byte[] buffer, int offset, int end, object target, ReadDifferences differences, out int consumed)
     {
-      Population.ThrowIfNotPopulatable(target, _serializer.Options);
-      Type type = target.GetType();
-      bool fill = GetOnlyCollection.IsFillable(type);
-      object result = _serializer.Deserialize(type, buffer, offset, end, out consumed, differences, false, null, fill ? null : target);
+      bool fill = _serializer.PopulateTarget(target);
+      object result = _serializer.Deserialize(target.GetType(), buffer, offset, end, out consumed, differences, false, null, fill ? null : target);
       PopulatedRoot(target, result, fill);
     }
 

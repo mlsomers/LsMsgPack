@@ -1430,6 +1430,12 @@ namespace LsMsgPack.Reading
         {
         }
       }
+      else if (set != null && !set.IsStatic && Writing.PropWriter.SharesCode(property.DeclaringType, property.PropertyType)) // NativeAOT: classes share the code (see there)
+      {
+        PropReader shared = Writing.PropWriter.Shared(serializer, typeof(PropReader<,>), new[] { property.DeclaringType, property.PropertyType }, info, set) as PropReader;
+        if (shared != null)
+          return shared;
+      }
       return new BoxedPropReader(serializer, info);
     }
 

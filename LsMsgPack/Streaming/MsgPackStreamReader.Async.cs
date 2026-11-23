@@ -295,7 +295,7 @@ namespace LsMsgPack.Streaming
     /// <exception cref="ArgumentException">The target cannot be read into (thrown at once, nothing is read)</exception>
     public Task PopulateObjectAsync<T>(T target, CancellationToken cancellationToken = default(CancellationToken)) where T : class
     {
-      Population.ThrowIfNotPopulatable(target, _options);
+      _serializer.PopulateTarget(target);
       try
       {
         if (TryReadObjectBuffered(null, target, out object read))

@@ -771,7 +771,42 @@ namespace LsMsgPack.Writing
         {
         }
       }
+      else if (get != null && !get.IsStatic && SharesCode(property.DeclaringType, property.PropertyType))
+      {
+        PropWriter shared = Shared(serializer, typeof(PropWriter<,,>), new[] { property.DeclaringType, property.PropertyType, FilterType(serializer, info, property.DeclaringType) }, info, get) as PropWriter;
+        if (shared != null)
+          return shared;
+      }
       return new BoxedPropWriter(serializer, info);
+    }
+
+    /// <summary>
+    /// Without dynamic code (NativeAOT): a property of a class whose type is a class too (strings, nested objects, collections) gets the typed writer or reader all the same,
+    /// since instantiations over reference types run one shared code that <see cref="Serializer.ReflectionInstantiations"/> keeps (bound to the property's method by
+    /// <c>Delegate.CreateDelegate</c>, no dynamic code). Value types have no code the application did not compile: those properties stay boxed (by reflection).
+    /// <para>Only the net8.0 build (NativeAOT) and with <see cref="MsgPackOptions.CompilePropertyAccessors"/>: the .NET Standard builds run on Unity's IL2CPP and Mono's AOT,
+    /// where a generic type made at runtime may fail only when its code runs (not where it is made, which falls back), so they keep reflection.</para>
+    /// </summary>
+    internal static bool SharesCode(Type declaring, Type type)
+    {
+#if NET8_0_OR_GREATER
+      return MsgPackOptions.CompilePropertyAccessors && !declaring.IsValueType && !declaring.ContainsGenericParameters && !type.IsValueType && !type.IsByRef && !type.IsPointer && !type.ContainsGenericParameters;
+#else
+      return false;
+#endif
+    }
+
+    /// <returns>null when the runtime has no code for it (then by reflection)</returns>
+    internal static object Shared(Serializer serializer, Type definition, Type[] arguments, FullPropertyInfo info, MethodInfo method)
+    {
+      try
+      {
+        return serializer.CreateInstantiation(definition, arguments, new object[] { serializer, info, method });
+      }
+      catch (Exception) // e.g. a method that cannot be bound (trimmed): reflection, as before
+      {
+        return null;
+      }
     }
 
     /// <summary>
@@ -1057,9 +1092,19 @@ namespace LsMsgPack.Writing
   {
     private readonly FullPropertyInfo _declared;
 
+    /// <summary>
+    /// The property's type when it is a value type (not nullable) without a member converter or enum format of its own: every value has that type, so its
+    /// <see cref="WriteTypeInfo"/> is kept here (<see cref="_typeInfo"/>) instead of a lookup by the value's type (NativeAOT writes such properties boxed). Null otherwise.
+    /// </summary>
+    private readonly Type _valueType;
+    private WriteTypeInfo _typeInfo;
+
     public BoxedPropWriter(Serializer serializer, FullPropertyInfo info) : base(serializer, info)
     {
       _declared = info;
+      Type type = info.DeclaredType;
+      if (type != null && type.IsValueType && Nullable.GetUnderlyingType(type) is null && info.MemberConverter is null && info.Attributes?.EnumFormat is null)
+        _valueType = type;
     }
 
     internal override bool Write(WriteContext c, object target, byte[] key, FullPropertyInfo info)
@@ -1070,7 +1115,10 @@ namespace LsMsgPack.Writing
 
       if (key != null)
         c.W.Raw(key);
-      Serializer.WriteMemberValue(c, value, info);
+      if (_valueType != null && value != null) // WriteMemberValue's WriteBoxed without the lookup
+        Serializer.WriteBoxedAs(c, value, _valueType, _typeInfo ?? (_typeInfo = Serializer.GetTypeInfo(_valueType)), info);
+      else
+        Serializer.WriteMemberValue(c, value, info);
       return true;
     }
   }

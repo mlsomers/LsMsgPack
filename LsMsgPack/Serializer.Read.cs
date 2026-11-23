@@ -1156,6 +1156,23 @@ namespace LsMsgPack
       return read;
     }
 
+    private Type _populatedClass; // the class of the last object target PopulateTarget accepted
+
+    /// <summary>
+    /// Checks the target of a root Populate (<see cref="Population.ThrowIfNotPopulatable"/>) before anything is read. Whether an object can be read into depends on its class and the options only,
+    /// so the last class accepted is remembered (the checks are a few lookups, ~15% of populating a small object); a collection is checked every time (read-only or not is the instance's).
+    /// </summary>
+    /// <returns>true for a collection (read as a new one, then filled), false for an object (read into)</returns>
+    internal bool PopulateTarget(object target)
+    {
+      if (target != null && target.GetType() == _populatedClass)
+        return false;
+      bool fill = Population.ThrowIfNotPopulatable(target, Options);
+      if (!fill)
+        _populatedClass = target.GetType();
+      return fill;
+    }
+
     #endregion
 
     #region Helpers
