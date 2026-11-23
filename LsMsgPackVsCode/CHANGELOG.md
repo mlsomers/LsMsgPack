@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The toolbar has a **File** menu (Open from clipboard, Open from file, Save, Copy hex, Copy base64) and a **View** menu (Ignore errors, LsMsgPack extensions, Objects, Display limit, Endian) instead of a button or list for each.
+- **MsgPack: Explore Bytes from Clipboard** is also in the **...** menu of the editor title bar.
+
 ## 2026.11.18
 
 - **LsMsgPack extensions** toggle (on by default): extension type 1 as a decimal, 5 as a reference, 6 as a DateTime, and the streams LsMsgPack writes. Off: plain MsgPack, for data of other writers that use these extension types for something else.

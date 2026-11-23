@@ -8,7 +8,7 @@
   const vscode = acquireVsCodeApi();
 
   const ENDIAN_CHOICES = [
-    ['SwapIfCurrentSystemIsLittleEndian', 'Reorder if system is little endian (default).'],
+    ['SwapIfCurrentSystemIsLittleEndian', 'Reorder if system is little endian (default)'],
     ['NeverSwap', 'Never reorder'],
     ['AlwaysSwap', 'Always reorder']
   ];
@@ -50,6 +50,9 @@
     loadSeq: 0,
     searchSeq: 0,
     loading: false,
+    /** Whether the objects pane is shown, and why the data looks like objects (the tooltip of Objects in the View menu) */
+    objectsShown: false,
+    objectReason: '',
     /** @type {{ text: string, matchCase: boolean, result: any, position: number } | null} */
     search: null,
     sizes: Object.assign({ right: 0.45, props: 0.4, issues: 120, objects: 0.35, objProps: 0.4, issueDetails: 0.4 }, saved.sizes || {})
@@ -534,6 +537,162 @@
     }
   }
 
+  // ---------------------------------------------------------------- Drop-down menus of the toolbar
+
+  /**
+   * @typedef {{ text?: string, title?: string, header?: string, separator?: boolean, checked?: boolean, radio?: boolean, run?: () => void }} MenuItem
+   * @typedef {{ button: HTMLElement, open: (focusFirst: boolean) => void, close: (focusButton: boolean) => void }} DropDown
+   */
+
+  /** @type {DropDown[]} In toolbar order, for Left and Right */
+  const dropDowns = [];
+  /** @type {DropDown | null} One at a time, like a menu bar */
+  let openDropDown = null;
+
+  document.addEventListener('mousedown', (e) => {
+    if (openDropDown && !openDropDown.button.parentElement.contains(/** @type {Node} */ (e.target))) {
+      openDropDown.close(false);
+    }
+  });
+  window.addEventListener('blur', () => {
+    if (openDropDown) {
+      openDropDown.close(false);
+    }
+  });
+
+  /**
+   * A toolbar button with a menu, like the menus of VS Code: Enter, Space or Down opens it, Up and Down move, Left and Right go to the next menu.
+   * @param {string} label
+   * @param {string} title
+   * @param {() => MenuItem[]} getItems Built each time the menu opens, so the checks show the current settings
+   * @returns {HTMLElement} The button and its menu
+   */
+  function dropDown(label, title, getItems) {
+    const button = el('button', { className: 'menu-button', title, 'aria-haspopup': 'menu', 'aria-expanded': 'false' },
+      label, el('span', { className: 'chevron', 'aria-hidden': 'true' }, '\u25BE'));
+    const popup = el('div', { className: 'menu', role: 'menu', tabindex: '-1', 'aria-label': label, hidden: true });
+    /** @type {DropDown} */
+    const self = { button, open, close };
+    dropDowns.push(self);
+
+    function menuItems() {
+      return /** @type {HTMLElement[]} */ (Array.from(popup.querySelectorAll('.menu-item')));
+    }
+
+    function open(focusFirst) {
+      if (openDropDown && openDropDown !== self) {
+        openDropDown.close(false);
+      }
+      popup.replaceChildren(...getItems().map(renderItem));
+      popup.hidden = false;
+      button.setAttribute('aria-expanded', 'true');
+      openDropDown = self;
+      const first = menuItems()[0];
+      if (focusFirst && first) {
+        first.focus();
+      } else {
+        popup.focus();
+      }
+    }
+
+    function close(focusButton) {
+      popup.hidden = true;
+      button.setAttribute('aria-expanded', 'false');
+      if (openDropDown === self) {
+        openDropDown = null;
+      }
+      if (focusButton) {
+        button.focus();
+      }
+    }
+
+    /** @param {MenuItem} item */
+    function renderItem(item) {
+      if (item.separator) {
+        return el('div', { className: 'menu-sep', role: 'separator' });
+      }
+      if (item.header) {
+        return el('div', { className: 'menu-header', role: 'presentation' }, item.header);
+      }
+      const role = item.checked === undefined ? 'menuitem' : item.radio ? 'menuitemradio' : 'menuitemcheckbox';
+      const row = el('div', {
+        className: 'menu-item', role, tabindex: '-1', title: item.title,
+        'aria-checked': item.checked === undefined ? undefined : String(item.checked)
+      }, el('span', { className: 'check', 'aria-hidden': 'true' }, item.checked ? '\u2713' : ''), el('span', {}, item.text || ''));
+      row.addEventListener('click', () => {
+        close(true);
+        if (item.run) {
+          item.run();
+        }
+      });
+      row.addEventListener('mousemove', () => {
+        if (document.activeElement !== row) {
+          row.focus();
+        }
+      });
+      return row;
+    }
+
+    /** @param {number} step -1 or 1 */
+    function moveFocus(step) {
+      const items = menuItems();
+      if (items.length === 0) {
+        return;
+      }
+      const index = items.indexOf(/** @type {HTMLElement} */ (document.activeElement));
+      const next = index < 0 ? (step > 0 ? 0 : items.length - 1) : (index + step + items.length) % items.length;
+      items[next].focus();
+    }
+
+    /** @param {number} step -1 or 1 */
+    function openNeighbour(step) {
+      const index = dropDowns.indexOf(self);
+      dropDowns[(index + step + dropDowns.length) % dropDowns.length].open(true);
+    }
+
+    button.addEventListener('click', (/** @type {MouseEvent} */ e) => {
+      if (openDropDown === self) {
+        close(false);
+      } else {
+        open(e.detail === 0); // detail 0: Enter or Space, so the keyboard continues in the menu
+      }
+    });
+    button.addEventListener('mouseenter', () => {
+      if (openDropDown && openDropDown !== self) {
+        open(false);
+      }
+    });
+    button.addEventListener('keydown', (/** @type {KeyboardEvent} */ e) => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        open(true);
+      }
+    });
+    popup.addEventListener('keydown', (/** @type {KeyboardEvent} */ e) => {
+      switch (e.key) {
+        case 'ArrowDown': moveFocus(1); break;
+        case 'ArrowUp': moveFocus(-1); break;
+        case 'Home': menuItems()[0].focus(); break;
+        case 'End': menuItems()[menuItems().length - 1].focus(); break;
+        case 'ArrowRight': openNeighbour(1); break;
+        case 'ArrowLeft': openNeighbour(-1); break;
+        case 'Escape': close(true); break;
+        case 'Enter':
+        case ' ':
+          if (document.activeElement && document.activeElement.classList.contains('menu-item')) {
+            /** @type {HTMLElement} */ (document.activeElement).click();
+          }
+          break;
+        case 'Tab': close(false); return; // the focus moves on as usual
+        default: return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    return el('span', { className: 'menu-wrap' }, button, popup);
+  }
+
   // ---------------------------------------------------------------- The page
 
   const ui = {};
@@ -542,51 +701,55 @@
     const app = /** @type {HTMLElement} */ (document.getElementById('app'));
 
     ui.refresh = el('button', { title: 'Read the bytes again (from the debugger while the program is paused, or from the file)', onclick: () => post({ type: 'refresh' }) }, 'Refresh');
-    ui.save = el('button', { title: 'Save the bytes as a file', onclick: () => post({ type: 'save' }) }, 'Save...');
-    ui.copyHex = el('button', { title: 'Copy the bytes to the clipboard as hex', onclick: () => post({ type: 'copy', format: 'hex' }) }, 'Copy hex');
-    ui.copyBase64 = el('button', { title: 'Copy the bytes to the clipboard as base64', onclick: () => post({ type: 'copy', format: 'base64' }) }, 'Copy base64');
-    ui.ignoreErrors = el('button', {
-      className: 'toggle', 'aria-pressed': 'false',
-      title: 'Enable this to get a "best effort" view of contents after an error. Note that the items after an error are not reliable (shown in gray).',
-      onclick: () => {
-        state.settings.continueOnError = !state.settings.continueOnError;
-        saveState();
-        load();
-      }
-    }, 'Ignore errors');
-    ui.lsMsgPackExtensions = el('button', {
-      className: 'toggle', 'aria-pressed': 'true',
-      title: 'Read extension type 1 as a decimal, 5 as a reference, 6 as a DateTime and the streams LsMsgPack writes (values of unknown length, their index). Off: plain MsgPack, for data of other writers that use these extension types for something else.',
-      onclick: () => {
-        state.settings.lsMsgPackExtensions = !state.settings.lsMsgPackExtensions;
-        saveState();
-        load();
-      }
-    }, 'LsMsgPack extensions');
-    ui.objects = el('button', {
-      className: 'toggle', 'aria-pressed': 'false',
-      title: objectsTitle(''),
-      onclick: () => {
-        state.settings.objects = ui.objects.getAttribute('aria-pressed') === 'true' ? 'hide' : 'show';
-        load();
-      }
-    }, 'Objects');
-
-    ui.limit = el('select', { title: 'More items take longer to process and it may seem like the application freezes for a while' });
-    ui.limit.addEventListener('change', () => {
-      state.settings.displayLimit = Number(/** @type {HTMLSelectElement} */ (ui.limit).value);
-      saveState();
-      load();
-    });
-    ui.endian = el('select', { title: 'Override specification (for debugging purposes). MsgPack is big-endian: on little-endian systems the bytes of numbers are reordered.' });
-    for (const [value, text] of ENDIAN_CHOICES) {
-      ui.endian.append(el('option', { value }, text));
-    }
-    ui.endian.addEventListener('change', () => {
-      state.settings.endian = /** @type {HTMLSelectElement} */ (ui.endian).value;
-      saveState();
-      load();
-    });
+    ui.fileMenu = dropDown('File', 'Open other bytes, save or copy these', () => [
+      { text: 'Open from clipboard', title: 'Explore bytes written as text on the clipboard (hex, base64, decimal values) in another tab', run: () => post({ type: 'openClipboard' }) },
+      { text: 'Open from file...', title: 'Explore a file in another tab', run: () => post({ type: 'openFile' }) },
+      { separator: true },
+      { text: 'Save...', title: 'Save the bytes as a file', run: () => post({ type: 'save' }) },
+      { text: 'Copy hex', title: 'Copy the bytes to the clipboard as hex', run: () => post({ type: 'copy', format: 'hex' }) },
+      { text: 'Copy base64', title: 'Copy the bytes to the clipboard as base64', run: () => post({ type: 'copy', format: 'base64' }) }
+    ]);
+    ui.viewMenu = dropDown('View', 'How the bytes are read and what is shown', () => [
+      {
+        text: 'Ignore errors', checked: state.settings.continueOnError,
+        title: 'Enable this to get a "best effort" view of contents after an error. Note that the items after an error are not reliable (shown in gray).',
+        run: () => {
+          state.settings.continueOnError = !state.settings.continueOnError;
+          saveState();
+          load();
+        }
+      },
+      {
+        text: 'LsMsgPack extensions', checked: state.settings.lsMsgPackExtensions,
+        title: 'Read extension type 1 as a decimal, 5 as a reference, 6 as a DateTime and the streams LsMsgPack writes (values of unknown length, their index). Off: plain MsgPack, for data of other writers that use these extension types for something else.',
+        run: () => {
+          state.settings.lsMsgPackExtensions = !state.settings.lsMsgPackExtensions;
+          saveState();
+          load();
+        }
+      },
+      {
+        text: 'Objects', checked: state.objectsShown, title: objectsTitle(state.objectReason),
+        run: () => {
+          state.settings.objects = state.objectsShown ? 'hide' : 'show';
+          load();
+        }
+      },
+      { separator: true },
+      { header: 'Display limit' },
+      ...limitItems(),
+      { separator: true },
+      { header: 'Endian' },
+      ...ENDIAN_CHOICES.map(([value, text]) => ({
+        text, radio: true, checked: value === state.settings.endian,
+        title: 'Override specification (for debugging purposes). MsgPack is big-endian: on little-endian systems the bytes of numbers are reordered.',
+        run: () => {
+          state.settings.endian = value;
+          saveState();
+          load();
+        }
+      }))
+    ]);
 
     ui.searchText = el('input', {
       type: 'search', placeholder: 'Search',
@@ -620,12 +783,7 @@
     ui.searchCount = el('span', { className: 'search-count' }, '0/0');
 
     const toolbar = el('div', { className: 'toolbar', role: 'toolbar' },
-      ui.refresh, ui.save, ui.copyHex, ui.copyBase64,
-      el('span', { className: 'sep' }),
-      ui.ignoreErrors, ui.lsMsgPackExtensions, ui.objects,
-      el('span', { className: 'sep' }),
-      el('label', {}, 'Limit: '), ui.limit,
-      el('label', {}, 'Endian: '), ui.endian,
+      ui.fileMenu, ui.viewMenu, ui.refresh,
       el('span', { className: 'sep' }),
       ui.searchText, ui.matchCase, ui.searchPrev, ui.searchNext, ui.searchCount,
       el('span', { className: 'spacer' }),
@@ -690,14 +848,23 @@
     ui.objectPropsPane.style.width = `${Math.round(s.objProps * 100)}%`;
   }
 
-  function fillLimits() {
-    const select = /** @type {HTMLSelectElement} */ (ui.limit);
+  /** The display limits as radio items of the View menu (with the current one when it is not one of the usual ones, e.g. from the setting) */
+  function limitItems() {
     const limits = LIMITS.slice();
     if (!limits.includes(state.settings.displayLimit)) {
       limits.splice(limits.length - 1, 0, state.settings.displayLimit);
     }
-    select.replaceChildren(...limits.map((limit) => el('option', { value: String(limit) }, limit === 0 ? 'All (no limit)' : String(limit))));
-    select.value = String(state.settings.displayLimit);
+    return limits.map((limit) => ({
+      text: limit === 0 ? 'All (no limit)' : String(limit),
+      title: 'More items take longer to process and it may seem like the application freezes for a while',
+      checked: limit === state.settings.displayLimit,
+      radio: true,
+      run: () => {
+        state.settings.displayLimit = limit;
+        saveState();
+        load();
+      }
+    }));
   }
 
   /** @param {string} reason Why the data looks like objects (empty when it does not) */
@@ -740,10 +907,6 @@
     state.loading = false;
     const items = model.items || [];
 
-    ui.ignoreErrors.setAttribute('aria-pressed', String(state.settings.continueOnError));
-    ui.lsMsgPackExtensions.setAttribute('aria-pressed', String(state.settings.lsMsgPackExtensions));
-    /** @type {HTMLSelectElement} */ (ui.endian).value = state.settings.endian;
-    fillLimits();
 
     // The MsgPack tree
     const nodes = items.map((item) => ({
@@ -758,7 +921,7 @@
     if (model.truncated && nodes.length > 0) {
       nodes.push({ id: nodes.length, parent: 0, kind: 'limit', text: `Limit of ${model.displayLimit} displayed items reached...`, classes: 'limit' });
     }
-    ui.tree.setNodes(nodes, model.error ? `The data could not be read:\n${model.error}\n\nSwitch on "Ignore errors" to see what could be read.` : state.length === 0 ? 'No data.' : '');
+    ui.tree.setNodes(nodes, model.error ? `The data could not be read:\n${model.error}\n\nSwitch on "Ignore errors" (View menu) to see what could be read.` : state.length === 0 ? 'No data.' : '');
     if (model.error) {
       showBanner(`The data could not be read: ${model.error}`, true);
     } else {
@@ -770,8 +933,8 @@
 
     // The objects: shown when asked, or when the data was likely written from objects (then the button can still hide them)
     const objects = model.objects;
-    ui.objects.setAttribute('aria-pressed', String(!!objects));
-    ui.objects.title = objectsTitle(model.objectReason || '');
+    state.objectsShown = !!objects;
+    state.objectReason = model.objectReason || '';
     ui.objectsPane.hidden = !objects;
     ui.objectsSplitter.hidden = !objects;
     if (objects) {
@@ -1038,7 +1201,6 @@
   });
 
   build();
-  fillLimits();
   resetSearch();
   post({ type: 'ready' });
 })();

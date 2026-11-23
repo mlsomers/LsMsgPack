@@ -74,7 +74,7 @@ input {
 button {
   color: var(--vscode-button-secondaryForeground, var(--vscode-foreground));
   background: var(--vscode-button-secondaryBackground, transparent);
-  padding: 0 8px;
+  padding: 0 6px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -111,6 +111,75 @@ button:focus-visible,
 .issues:focus {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;
+}
+
+/* Drop-down menus of the toolbar (Edit, View), styled like the menus of VS Code */
+
+.menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu-button[aria-expanded="true"] {
+  background: var(--vscode-button-secondaryHoverBackground, var(--hover));
+}
+
+.menu-button .chevron {
+  margin-left: 4px;
+  font-size: 0.8em;
+  opacity: 0.8;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 100;
+  min-width: 180px;
+  padding: 4px 0;
+  color: var(--vscode-menu-foreground, var(--vscode-foreground));
+  background: var(--vscode-menu-background, var(--vscode-editorWidget-background, var(--vscode-editor-background)));
+  border: 1px solid var(--vscode-menu-border, var(--border));
+  border-radius: 4px;
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.36));
+  outline: none;
+}
+
+.menu[hidden] {
+  display: none;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 16px 0 0;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+.menu-item:focus {
+  color: var(--vscode-menu-selectionForeground, var(--selection-foreground));
+  background: var(--vscode-menu-selectionBackground, var(--selection));
+}
+
+.menu-item .check {
+  flex: none;
+  width: 24px;
+  text-align: center;
+}
+
+.menu-header {
+  padding: 2px 16px 2px 24px;
+  font-size: 0.9em;
+  color: var(--vscode-descriptionForeground);
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--vscode-menu-separatorBackground, var(--border));
 }
 
 .search-count {
