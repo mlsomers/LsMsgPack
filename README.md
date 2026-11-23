@@ -124,6 +124,8 @@ Types that shouldn't be written as their own properties (value objects, types of
 
 Enums are written as their numbers by default, or as their names (`EnumFormat.Name`, or `[MsgPackEnumFormat]` on an enum or property). The string enum attributes of System.Text.Json, Json.NET, MessagePack-CSharp and MsgPack.Cli are recognized too, and readers take both forms: see [docs/Enums.md](docs/Enums.md).
 
+Unity 6 (editor, Mono and IL2CPP players) is supported: its structs such as `Vector3` are written by their fields, `[SerializeField]` opts a field in, and the source generator runs in Unity: see [docs/Unity.md](docs/Unity.md).
+
 F# records, options, unions and lists are written and read without setup: an option as its value, a union case as an object with its case name as the type id or, without fields, as its name: see [docs/FSharp.md](docs/FSharp.md).
 
 Properties are written by their .NET names, or converted for readers in other languages (`invoiceDate`, `invoice_date`) by a naming policy: `PropertyNamingPolicy`, `DictionaryKeyPolicy` and `EnumNamingPolicy` take the same policies as System.Text.Json (`MsgPackNamingPolicy.CamelCase`, `SnakeCaseLower`...), and readers take the converted and the .NET names: see [docs/NamingPolicies.md](docs/NamingPolicies.md).

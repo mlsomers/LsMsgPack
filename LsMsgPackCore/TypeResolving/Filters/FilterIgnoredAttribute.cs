@@ -27,6 +27,12 @@ namespace LsMsgPack.TypeResolving.Filters
     public class FilterIgnoredAttribute : IMsgPackPropertyIncludeStatically
     {
         /// <summary>
+        /// The .NET Standard attributes this filter recognizes by name (the others' libraries are not referenced), named here so trimmers that keep only the attributes whose type
+        /// the code uses (Unity's High stripping) keep them: an ignored member would otherwise be written.
+        /// </summary>
+        internal static readonly Type[] ReadByName = { typeof(System.Xml.Serialization.XmlIgnoreAttribute), typeof(System.Runtime.Serialization.IgnoreDataMemberAttribute) };
+
+        /// <summary>
         /// What each attribute type is (its <see cref="IgnoreAttributes"/> flag), decided once per type.
         /// </summary>
         private static readonly ConcurrentDictionary<Type, AttributeKind> Kinds = new ConcurrentDictionary<Type, AttributeKind>();

@@ -121,7 +121,7 @@ namespace LsMsgPack.TypeResolving.Filters
         /// </summary>
         private bool KeepsGetOnly(MemberInfo member, Type type)
         {
-            if (_getOnly == GetOnlyProperties.None || (TypeResolver.IsFrameworkAssembly(member.DeclaringType.Assembly) && !SerializationRules.IsFieldStruct(member.DeclaringType)))
+            if (_getOnly == GetOnlyProperties.None || (SerializationRules.IsPlatformDeclared(member.DeclaringType) && !SerializationRules.IsFieldStruct(member.DeclaringType)))
                 return false;
             GetOnlyProperties kind = GetOnlyCollection.IsFillable(type) ? GetOnlyProperties.Collections : GetOnlyProperties.Computed;
             return (_getOnly & kind) != 0 && (kind == GetOnlyProperties.Collections || !SerializationRules.IsNeverWritten(type));

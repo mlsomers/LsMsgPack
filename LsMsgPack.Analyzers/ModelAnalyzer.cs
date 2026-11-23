@@ -32,7 +32,7 @@ namespace LsMsgPack.Analyzers
       context.RegisterCompilationStartAction(start =>
       {
         KnownSymbols known = new KnownSymbols(start.Compilation);
-        if (known.IsEmpty && !ModelTypes.AllTypes(start.Options))
+        if (known.IsEmpty && !ModelTypes.AllTypes(start.Compilation, start.Options))
           return; // neither serializer is referenced, and the project of models does not ask for its classes to be checked
         int fields = Fields.ModeOf(start.Compilation, start.Options);
         Models models = new Models(start.Compilation, known, start.Options, fields);

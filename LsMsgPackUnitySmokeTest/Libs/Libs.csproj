@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Collects the netstandard2.1 builds of LsMsgPack and their dependencies (as a Unity project would take them from NuGet) -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <Configuration>Release</Configuration>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../LsMsgPack/LsMsgPack.csproj" />
+    <ProjectReference Include="../../LsMsgPackDebug/LsMsgPackDebug.csproj" />
+  </ItemGroup>
+</Project>

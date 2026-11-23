@@ -170,26 +170,72 @@ namespace LsMsgPack.TypeResolving.Types
 
     /// <summary>
     /// The entry of the schema of a type that is read: the one its name was resolved to when the schema was read, otherwise an entry with its name (short or full) whose name was not resolved,
-    /// e.g. a type of an assembly that was not known yet.
+    /// e.g. a type of an assembly that was not known yet. In a schema read from data, otherwise the one entry with its name that was resolved to another type (see <see cref="EntryNamed"/>).
     /// </summary>
     /// <exception cref="SchemaGrowthException">When the entry is found by name in a frozen schema (a copy remembers it)</exception>
     internal bool TryGetDef(Type type, out ComplexTypeDef def)
     {
       if (ByType.TryGetValue(type, out def))
         return true;
-      if (_unresolved == 0)
+      if (_unresolved > 0)
+      {
+        def = FindUnresolved(TypeResolver.GetTypeName(type, true)) ?? FindUnresolved(TypeResolver.GetTypeName(type, false));
+        if (def != null)
+        {
+          if (IsFrozen)
+            throw SchemaGrowthException.Instance;
+          def.Type = type;
+          ByType[type] = def;
+          _unresolved--;
+          return true;
+        }
+      }
+      if (!_fromData)
         return false;
 
-      def = FindUnresolved(TypeResolver.GetTypeName(type, true)) ?? FindUnresolved(TypeResolver.GetTypeName(type, false));
+      def = EntryNamed(type);
       if (def is null)
         return false;
-
       if (IsFrozen)
         throw SchemaGrowthException.Instance;
-      def.Type = type;
-      ByType[type] = def;
-      _unresolved--;
+      ByType[type] = def; // the entry keeps its own type, the reader's type shares it
       return true;
+    }
+
+    /// <summary>
+    /// The schema was read from data (<see cref="FromBytes"/>): its entries may be paired by name with the reader's types (<see cref="EntryNamed"/>). Not a writer's schema, whose entries are its own.
+    /// </summary>
+    private bool _fromData;
+
+    /// <summary>
+    /// The entries by name, built at the first type without an entry (<see cref="EntryNamed"/>), with the number of entries it was built for; null as the value: two entries with that name.
+    /// </summary>
+    private KeyValuePair<int, Dictionary<string, ComplexTypeDef>> _byName;
+
+    /// <summary>
+    /// The one entry whose name is the name (short or full) of the type the reader needs, when that name was resolved to another type: type names are short by default and a process resolves
+    /// a short name to one type, so "Vector3" may have become System.Numerics.Vector3 while this reader declares UnityEngine.Vector3 (docs/schema.md, "short type names").
+    /// The type is the reader's (the declared type of a value, or the class a plan reads), never one the data picks: the entry only gives the names of its values.
+    /// Null when no entry, or more than one, has the name.
+    /// </summary>
+    private ComplexTypeDef EntryNamed(Type type)
+    {
+      KeyValuePair<int, Dictionary<string, ComplexTypeDef>> byName = _byName;
+      if (byName.Value is null || byName.Key != ByTypeId.Count)
+      {
+        Dictionary<string, ComplexTypeDef> names = new Dictionary<string, ComplexTypeDef>(ByTypeId.Count, StringComparer.Ordinal);
+        for (int t = 0; t < ByTypeId.Count; t++)
+        {
+          ComplexTypeDef def = ByTypeId[t];
+          if (def.TypeName != null)
+            names[def.TypeName] = names.ContainsKey(def.TypeName) ? null : def;
+        }
+        _byName = byName = new KeyValuePair<int, Dictionary<string, ComplexTypeDef>>(ByTypeId.Count, names); // read by several threads when frozen: each builds the same
+      }
+      ComplexTypeDef found;
+      if (!byName.Value.TryGetValue(TypeResolver.GetTypeName(type, false), out found) && !byName.Value.TryGetValue(TypeResolver.GetTypeName(type, true), out found))
+        return null;
+      return found != null && found.Type != null && found.Type != type && !found.IsCollection ? found : null;
     }
 
     private ComplexTypeDef FindUnresolved(string name)
@@ -760,7 +806,7 @@ namespace LsMsgPack.TypeResolving.Types
     internal static IndexedSchemaTypeResolver FromBytes(byte[] raw, MsgPackOptions lengthSettings, MsgPackOptions settings)
     {
       List<ComplexTypeDef> defs = SchemaBytes.Parse(raw, lengthSettings, out SchemaVersion _, out int rootEntry);
-      IndexedSchemaTypeResolver ret = new IndexedSchemaTypeResolver() { ByTypeId = defs, ByType = new Dictionary<Type, ComplexTypeDef>(defs.Count), RootEntry = rootEntry };
+      IndexedSchemaTypeResolver ret = new IndexedSchemaTypeResolver() { ByTypeId = defs, ByType = new Dictionary<Type, ComplexTypeDef>(defs.Count), RootEntry = rootEntry, _fromData = true };
       ret.ResolveDeserializedTypes(settings);
       return ret;
     }
@@ -776,7 +822,8 @@ namespace LsMsgPack.TypeResolving.Types
         ByType = new Dictionary<Type, ComplexTypeDef>(ByType.Count),
         _unresolved = _unresolved,
         _ambiguous = _ambiguous is null ? null : new Dictionary<Type, Type[]>(_ambiguous),
-        RootEntry = RootEntry
+        RootEntry = RootEntry,
+        _fromData = _fromData
       };
 
       Dictionary<ComplexTypeDef, ComplexTypeDef> copies = new Dictionary<ComplexTypeDef, ComplexTypeDef>(ByTypeId.Count);

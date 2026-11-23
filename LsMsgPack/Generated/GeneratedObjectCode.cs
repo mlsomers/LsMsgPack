@@ -381,7 +381,7 @@ namespace LsMsgPack.Generated
   }
 
   /// <summary>
-  /// The value in a box by reference, for code that is generic over any T (Unsafe.Unbox needs the struct constraint).
+  /// The value in a box by reference, for code that is generic over any T (BoxedValue.Ref needs the struct constraint).
   /// </summary>
   internal abstract class StructUnboxer<T>
   {
@@ -392,7 +392,7 @@ namespace LsMsgPack.Generated
   {
     internal override ref TSame Unbox(object box)
     {
-      return ref Unsafe.As<TStruct, TSame>(ref Unsafe.Unbox<TStruct>(box)); // TSame is TStruct (GeneratedValues.Struct)
+      return ref Unsafe.As<TStruct, TSame>(ref BoxedValue.Ref<TStruct>(box)); // TSame is TStruct (GeneratedValues.Struct)
     }
   }
 

@@ -441,7 +441,7 @@ namespace LsMsgPack.Meta
         return found;
       for (Type declaring = type; declaring != null && declaring != typeof(object); declaring = declaring.BaseType) // private properties of base classes are not returned for the derived class
       {
-        if (TypeResolver.IsFrameworkAssembly(declaring.Assembly))
+        if (SerializationRules.IsPlatformDeclared(declaring))
           continue;
         PropertyInfo[] declared = declaring.GetProperties(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly);
         for (int t = 0; t < declared.Length; t++)
@@ -474,7 +474,7 @@ namespace LsMsgPack.Meta
         bool publicPass = pass == 0;
         for (Type declaring = type; declaring != null && declaring != typeof(object) && declaring != typeof(ValueType); declaring = declaring.BaseType) // private fields of base classes are not returned for the derived class
         {
-          if (!fieldStruct && TypeResolver.IsFrameworkAssembly(declaring.Assembly))
+          if (!fieldStruct && SerializationRules.IsPlatformDeclared(declaring)) // also Unity's (Vector2Int's m_X)
             continue;
           FieldInfo[] declared = declaring.GetFields(BindingFlags.Instance | (publicPass ? BindingFlags.Public : BindingFlags.NonPublic) | BindingFlags.DeclaredOnly);
           for (int t = 0; t < declared.Length; t++)

@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Look-alikes of a few of Unity's types for the unit tests of the Unity rules (docs/Unity.md): the assembly has the name of Unity's engine (UnityEngine.CoreModule), which LsMsgPack
+       recognizes by name; Unity itself is not a dependency. The Unity smoke test (LsMsgPackUnitySmokeTest) checks the real ones. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <AssemblyName>UnityEngine.CoreModule</AssemblyName>
+    <RootNamespace>UnityEngine</RootNamespace>
+    <Configurations>Debug;Release;DebugKeepTrack;ReleaseKeepTrack</Configurations>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+</Project>

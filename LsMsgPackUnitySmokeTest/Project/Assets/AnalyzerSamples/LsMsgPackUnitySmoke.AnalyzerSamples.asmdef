@@ -1,0 +1,7 @@
+{
+    "name": "LsMsgPackUnitySmoke.AnalyzerSamples",
+    "includePlatforms": [
+        "Editor"
+    ],
+    "autoReferenced": false
+}

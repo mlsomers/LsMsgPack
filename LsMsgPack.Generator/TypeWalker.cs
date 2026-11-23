@@ -557,8 +557,8 @@ namespace LsMsgPack.Generator
         if (constructor.Parameters.Length == 0 && !constructor.IsImplicitlyDeclared) // Core's default is what it makes
           return null;
       string name = type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format);
-      if (OwnEquals(type)) // a record's Equals(object) calls its Equals(T), so do the framework's structs (Vector3...), which StructDefault compares typed too
-        return type.IsRecord || (IsFramework(type) && Implements(type, "System.IEquatable<T>")) ? "default(" + name + ").Equals(v)" : null;
+      if (OwnEquals(type)) // a record's Equals(object) calls its Equals(T), so do the framework's and Unity's structs (Vector3...), which StructDefault compares typed too
+        return type.IsRecord || (IsPlatform(type) && Implements(type, "System.IEquatable<T>")) ? "default(" + name + ").Equals(v)" : null;
       return FieldsAreDefault(type, "v", 0);
     }
 
@@ -663,7 +663,7 @@ namespace LsMsgPack.Generator
         if (named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T) // a Nullable without a value is boxed as null
           return "!" + value + ".HasValue";
         if (OwnEquals(named))
-          return named.IsRecord || (IsFramework(named) && Implements(named, "System.IEquatable<T>")) ? "default(" + name + ").Equals(" + value + ")" : null; // their Equals(T) is their Equals(object)
+          return named.IsRecord || (IsPlatform(named) && Implements(named, "System.IEquatable<T>")) ? "default(" + name + ").Equals(" + value + ")" : null; // their Equals(T) compares as their Equals(object) (StructDefault.PlatformEquals)
         return FieldsAreDefault(named, value, depth + 1);
       }
       return null;
@@ -803,6 +803,21 @@ namespace LsMsgPack.Generator
       return name == "mscorlib" || name == "netstandard" || name == "System" || name.StartsWith("System.", System.StringComparison.Ordinal) || name.StartsWith("Microsoft.", System.StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The framework's or Unity's (SerializationRules.IsPlatformDeclared: UnityEngine*): their structs whose state is public fields are written by them, their get-only properties and other fields
+    /// are left out. Unity's types are not framework types otherwise (<see cref="IsFramework"/>): they get generated code.
+    /// </summary>
+    private bool IsPlatform(INamedTypeSymbol type)
+    {
+      return IsFramework(type) || IsEngine(type.ContainingAssembly);
+    }
+
+    private static bool IsEngine(IAssemblySymbol assembly)
+    {
+      string name = assembly?.Name;
+      return name != null && (name == "UnityEngine" || name.StartsWith("UnityEngine.", System.StringComparison.Ordinal));
+    }
+
     private static bool IsCollection(INamedTypeSymbol type)
     {
       if (type.SpecialType == SpecialType.System_String)
@@ -860,9 +875,9 @@ namespace LsMsgPack.Generator
       {
         if (member is IFieldSymbol field)
         {
-          if (field.DeclaredAccessibility == Accessibility.Public && (fieldStruct || !IsFramework(type)) && IsFieldOfState(field))
+          if (field.DeclaredAccessibility == Accessibility.Public && (fieldStruct || !IsPlatform(type)) && IsFieldOfState(field))
             kept |= Kept.PublicFields; // as public properties: kept whatever the mode, so a runtime serializing them (SerializedFields.Public) still finds them when trimmed
-          if (!(fieldStruct ? IsFieldStructMember(field) : !IsFramework(type) && IsFieldCandidate(field, _fields)))
+          if (!(fieldStruct ? IsFieldStructMember(field) : !IsPlatform(type) && IsFieldCandidate(field, _fields)))
             continue;
           if (field.DeclaredAccessibility != Accessibility.Public)
             kept |= Kept.NonPublicFields;
@@ -1033,12 +1048,12 @@ namespace LsMsgPack.Generator
     }
 
     /// <summary>
-    /// A framework struct whose state is its public fields (SerializationRules.IsFieldStruct: System.Numerics.Vector3, Quaternion, Matrix4x4...): a value type of the framework with a public instance field that is not readonly,
+    /// A framework struct whose state is its public fields (SerializationRules.IsFieldStruct: System.Numerics.Vector3, Quaternion, Matrix4x4..., also Unity's UnityEngine.Vector3, Color...): a value type of the framework or Unity with a public instance field that is not readonly,
     /// not a tuple, KeyValuePair or Nullable. The runtime writes it by its public fields only, whatever the fields mode.
     /// </summary>
     private bool IsFieldStruct(INamedTypeSymbol type)
     {
-      if (type.TypeKind != TypeKind.Struct || !IsFramework(type) || type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T || type.IsTupleType)
+      if (type.TypeKind != TypeKind.Struct || !IsPlatform(type) || type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T || type.IsTupleType)
         return false;
       string ns = type.ContainingNamespace?.ToDisplayString();
       if ((ns == "System" && (type.Name == "ValueTuple" || type.Name == "Tuple")) || (ns == "System.Collections.Generic" && type.Name == "KeyValuePair"))
@@ -1058,7 +1073,7 @@ namespace LsMsgPack.Generator
     }
 
     /// <summary>
-    /// An attribute that opts the property or field in (as LsMsgPack.Core's IncludeAttributes decides): [JsonInclude], Json.NET's [JsonProperty], [DataMember], [Key] (MessagePack-CSharp, Nerdbank.MessagePack),
+    /// An attribute that opts the property or field in (as LsMsgPack.Core's IncludeAttributes decides): [JsonInclude], Json.NET's [JsonProperty], [DataMember], [Key] (MessagePack-CSharp, Nerdbank.MessagePack), Unity's [SerializeField],
     /// [PropertyShape] (not with Ignore = true), any other attribute with "Include" in its name.
     /// </summary>
     internal static bool OptsIn(ISymbol property)
@@ -1075,6 +1090,7 @@ namespace LsMsgPack.Generator
           case "System.Runtime.Serialization.DataMemberAttribute":
           case "MessagePack.KeyAttribute":
           case "Nerdbank.MessagePack.KeyAttribute":
+          case "UnityEngine.SerializeField":
             return true;
           case "PolyType.PropertyShapeAttribute":
             bool ignored = false;
@@ -1124,7 +1140,7 @@ namespace LsMsgPack.Generator
         int depth = 0;
         for (INamedTypeSymbol t = type; t != null && t.SpecialType != SpecialType.System_Object && t.SpecialType != SpecialType.System_ValueType; t = t.BaseType, depth++)
         {
-          if ((!publicPass || fieldPass) && IsFramework(t) && !fieldStruct) // the runtime leaves out the framework's non-public properties and its fields
+          if ((!publicPass || fieldPass) && IsPlatform(t) && !fieldStruct) // the runtime leaves out the framework's (and Unity's) non-public properties and its fields
             continue;
           foreach (ISymbol member in t.GetMembers())
           {
@@ -1269,6 +1285,8 @@ namespace LsMsgPack.Generator
         return property.SetMethod.DeclaredAccessibility == Accessibility.Public;
       if (property.GetMethod is null || property.GetMethod.DeclaredAccessibility != Accessibility.Public || IsNeverWritten(property.Type))
         return false;
+      if (IsEngine(declaring.ContainingAssembly))
+        return false; // Unity's get-only properties are computed (Vector3.normalized), as the framework's
       string assembly = declaring.ContainingAssembly?.Name ?? string.Empty;
       return !(assembly == "mscorlib" || assembly == "netstandard" || assembly == "System" || assembly == "System.Private.CoreLib"
         || assembly.StartsWith("System.", System.StringComparison.Ordinal) || assembly.StartsWith("Microsoft.", System.StringComparison.Ordinal));

@@ -17,6 +17,11 @@ namespace LsMsgPack.Meta
   {
     private static readonly ConcurrentDictionary<Type, EnumNames> Cache = new ConcurrentDictionary<Type, EnumNames>();
 
+    /// <summary>
+    /// The .NET Standard attribute this class reads by name, named here so trimmers that keep only the attributes whose type the code uses (Unity's High stripping) keep it.
+    /// </summary>
+    internal static readonly Type[] ReadByName = { typeof(System.Runtime.Serialization.EnumMemberAttribute) };
+
     internal readonly Type Type;
     internal readonly bool IsFlags;
     private readonly bool _signed;
