@@ -189,16 +189,16 @@ The invoice model of the benchmarks (100 invoices × 20 rounds), one machine: on
 
 | .NET 10, JIT | write | read |
 |---|---|---|
-| LsMsgPack, default options (indexed schema, arrays) | 3.60 ms (4.6x) | 4.83 ms (5.8x) |
-| the same with the generated code | 3.42 ms (4.8x) | 5.09 ms (5.5x) |
-| LsMsgPack, arrays without the schema | 2.96 ms (5.6x) | 4.78 ms (5.9x) |
-| the same with the generated code | 2.92 ms (5.6x) | 4.96 ms (5.7x) |
-| LsMsgPack, maps with property names | 4.91 ms (3.4x) | 5.26 ms (5.3x) |
-| the same with the generated code | 4.62 ms (3.6x) | 5.28 ms (5.3x) |
+| LsMsgPack, default options (indexed schema, arrays) | 3.58 ms (4.6x) | 5.10 ms (5.5x) |
+| the same with the generated code | 3.59 ms (4.6x) | 5.32 ms (5.3x) |
+| LsMsgPack, arrays without the schema | 2.90 ms (5.6x) | 5.02 ms (5.6x) |
+| the same with the generated code | 2.91 ms (5.6x) | 5.21 ms (5.4x) |
+| LsMsgPack, maps with property names | 4.93 ms (3.3x) | 5.48 ms (5.1x) |
+| the same with the generated code | 4.65 ms (3.5x) | 5.59 ms (5.0x) |
 
 | .NET 10, WebAssembly (node) | interpreter write | read | AOT write | read |
 |---|---|---|---|---|
 | LsMsgPack, default options | 183 ms (3.0x) | 235 ms (3.5x) | 78 ms (2.8x) | 69 ms (3.1x) |
 | the same with the generated code | 92 ms (5.8x) | 196 ms (4.2x) | 10.5 ms (20x) | 24 ms (8.7x) |
 
-With a JIT, LsMsgPack compiles its writers and readers at runtime (after 1000 objects of a class, as in these rows). Writing is about as fast without the generated code (within 10% either way), and so is reading arrays: in this table, where all setups share one process and its JIT profile, the generated code read them 4-5% slower, measured one setup per process equally fast. Maps keyed by property names are read by the same code with and without the generated code: each key compared with the next property's name as constants. Measured one setup per process, the generated code read them as fast as the readers compiled at runtime (invoices 4.6 against 4.7 ms on .NET 8), and under NativeAOT, where nothing is compiled at runtime, 1.7x as fast as before it did so (a class of 120 properties: 4.7 -> 2.7 µs per object). It costs JIT time when a class is first read by names: about 75 µs per property on the machine of these tables. Decoding strings takes most of the time of reading, with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).
+With a JIT, LsMsgPack compiles its writers and readers at runtime (after 1000 objects of a class, as in these rows). Writing is about as fast without the generated code (within 10% either way), and so is reading arrays: in this table, where all setups share one process and its JIT profile, the generated code read them about 4% slower, measured one setup per process equally fast. Maps keyed by property names are read by the same code with and without the generated code: each key compared with the next property's name as constants. Measured one setup per process, the generated code read them as fast as the readers compiled at runtime (invoices 4.6 against 4.7 ms on .NET 8), and under NativeAOT, where nothing is compiled at runtime, 1.7x as fast as before it did so (a class of 120 properties: 4.7 -> 2.7 µs per object). It costs JIT time when a class is first read by names: about 75 µs per property on the machine of these tables. Decoding strings takes most of the time of reading, with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).
