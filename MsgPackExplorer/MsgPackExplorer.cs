@@ -1128,6 +1128,62 @@ namespace MsgPackExplorer
                 MessageBox.Show("Clipboard did not contain anything recognised as a byte array, memory stream or an encoded string.", "Unrecognised format", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
+        private void toolFileMenu_DropDownOpening(object sender, EventArgs e)
+        {
+            bool hasData = !ReferenceEquals(data, null) && data.Length > 0;
+            saveMenuItem.Enabled = hasData || !ReferenceEquals(_file, null);
+            // A large file is not in memory (OpenFile), and would be too much text for the clipboard anyway
+            copyHexMenuItem.Enabled = hasData;
+            copyBase64MenuItem.Enabled = hasData;
+        }
+
+        private void saveMenuItem_Click(object sender, EventArgs e)
+        {
+            using (SaveFileDialog dialog = new SaveFileDialog())
+            {
+                dialog.Title = "Save the bytes as a file";
+                dialog.DefaultExt = "MsgPack";
+                dialog.Filter = "MsgPack (*.MsgPack)|*.MsgPack|Bin (*.bin)|*.bin|All (*.*)|*.*";
+                if (!ReferenceEquals(_file, null))
+                    dialog.FileName = Path.GetFileName(_file);
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                    return;
+                try
+                {
+                    if (ReferenceEquals(_file, null))
+                        File.WriteAllBytes(dialog.FileName, data);
+                    else if (!string.Equals(Path.GetFullPath(_file), Path.GetFullPath(dialog.FileName), StringComparison.OrdinalIgnoreCase))
+                        File.Copy(_file, dialog.FileName, true);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("The bytes could not be saved:\r\n" + ex.Message, "Save", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void copyHexMenuItem_Click(object sender, EventArgs e)
+        {
+            CopyText(ClipboardSupport.ToHex(data));
+        }
+
+        private void copyBase64MenuItem_Click(object sender, EventArgs e)
+        {
+            CopyText(Convert.ToBase64String(data));
+        }
+
+        private void CopyText(string text)
+        {
+            try
+            {
+                Clipboard.SetText(text);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("The bytes could not be copied to the clipboard:\r\n" + ex.Message, "Copy", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
         private void btnGenerateTestFiles_Click(object sender, EventArgs e)
         {
             if (saveTestSuiteDialog.ShowDialog(this) == DialogResult.OK)

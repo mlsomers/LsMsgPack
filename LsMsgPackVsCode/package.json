@@ -87,6 +87,12 @@
           "group": "navigation@100"
         }
       ],
+      "editor/title": [
+        {
+          "command": "lsmsgpack.fromClipboard",
+          "group": "z_lsmsgpack@1"
+        }
+      ],
       "editor/context": [
         {
           "command": "lsmsgpack.viewAtCursor",

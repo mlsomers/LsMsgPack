@@ -105,6 +105,12 @@ export class ExplorerView implements vscode.Disposable {
         case 'copy':
           await this.copy(message.format as string);
           break;
+        case 'openClipboard':
+          await vscode.commands.executeCommand('lsmsgpack.fromClipboard');
+          break;
+        case 'openFile':
+          await vscode.commands.executeCommand('lsmsgpack.openFile');
+          break;
         case 'about':
           await this.about();
           break;
