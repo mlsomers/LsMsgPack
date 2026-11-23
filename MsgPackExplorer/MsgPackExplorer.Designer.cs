@@ -56,6 +56,10 @@
       this.toolFileMenu = new System.Windows.Forms.ToolStripDropDownButton();
       this.btnOpen = new System.Windows.Forms.ToolStripMenuItem();
       this.fromClipboardToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+      this.fileMenuSeparator = new System.Windows.Forms.ToolStripSeparator();
+      this.saveMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+      this.copyHexMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+      this.copyBase64MenuItem = new System.Windows.Forms.ToolStripMenuItem();
       this.toolToolsMenu = new System.Windows.Forms.ToolStripDropDownButton();
       this.btnGenerateTestFiles = new System.Windows.Forms.ToolStripMenuItem();
       this.btnProcessAfterError = new System.Windows.Forms.ToolStripMenuItem();
@@ -390,12 +394,17 @@
       //
       this.toolFileMenu.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
             this.btnOpen,
-            this.fromClipboardToolStripMenuItem});
+            this.fromClipboardToolStripMenuItem,
+            this.fileMenuSeparator,
+            this.saveMenuItem,
+            this.copyHexMenuItem,
+            this.copyBase64MenuItem});
       this.toolFileMenu.Image = global::MsgPackExplorer.Properties.Resources.Open;
       this.toolFileMenu.ImageTransparentColor = System.Drawing.Color.Magenta;
       this.toolFileMenu.Name = "toolFileMenu";
       this.toolFileMenu.Size = new System.Drawing.Size(54, 22);
       this.toolFileMenu.Text = "File";
+      this.toolFileMenu.DropDownOpening += new System.EventHandler(this.toolFileMenu_DropDownOpening);
       //
       // btnOpen
       //
@@ -412,6 +421,35 @@
       this.fromClipboardToolStripMenuItem.Size = new System.Drawing.Size(157, 22);
       this.fromClipboardToolStripMenuItem.Text = "From Clipboard";
       this.fromClipboardToolStripMenuItem.Click += new System.EventHandler(this.fromClipboardToolStripMenuItem_Click);
+      //
+      // fileMenuSeparator
+      //
+      this.fileMenuSeparator.Name = "fileMenuSeparator";
+      this.fileMenuSeparator.Size = new System.Drawing.Size(154, 6);
+      //
+      // saveMenuItem
+      //
+      this.saveMenuItem.Name = "saveMenuItem";
+      this.saveMenuItem.Size = new System.Drawing.Size(157, 22);
+      this.saveMenuItem.Text = "Save...";
+      this.saveMenuItem.ToolTipText = "Save the bytes as a file";
+      this.saveMenuItem.Click += new System.EventHandler(this.saveMenuItem_Click);
+      //
+      // copyHexMenuItem
+      //
+      this.copyHexMenuItem.Name = "copyHexMenuItem";
+      this.copyHexMenuItem.Size = new System.Drawing.Size(157, 22);
+      this.copyHexMenuItem.Text = "Copy hex";
+      this.copyHexMenuItem.ToolTipText = "Copy the bytes to the clipboard as hex";
+      this.copyHexMenuItem.Click += new System.EventHandler(this.copyHexMenuItem_Click);
+      //
+      // copyBase64MenuItem
+      //
+      this.copyBase64MenuItem.Name = "copyBase64MenuItem";
+      this.copyBase64MenuItem.Size = new System.Drawing.Size(157, 22);
+      this.copyBase64MenuItem.Text = "Copy base64";
+      this.copyBase64MenuItem.ToolTipText = "Copy the bytes to the clipboard as base64";
+      this.copyBase64MenuItem.Click += new System.EventHandler(this.copyBase64MenuItem_Click);
       //
       // toolToolsMenu
       //
@@ -725,6 +763,10 @@
     private System.Windows.Forms.ToolStripDropDownButton toolFileMenu;
     private System.Windows.Forms.ToolStripMenuItem btnOpen;
     private System.Windows.Forms.ToolStripMenuItem fromClipboardToolStripMenuItem;
+    private System.Windows.Forms.ToolStripSeparator fileMenuSeparator;
+    private System.Windows.Forms.ToolStripMenuItem saveMenuItem;
+    private System.Windows.Forms.ToolStripMenuItem copyHexMenuItem;
+    private System.Windows.Forms.ToolStripMenuItem copyBase64MenuItem;
     private System.Windows.Forms.ToolStripDropDownButton toolToolsMenu;
     private System.Windows.Forms.ToolStripMenuItem btnGenerateTestFiles;
     private System.Windows.Forms.ToolStripMenuItem btnProcessAfterError;

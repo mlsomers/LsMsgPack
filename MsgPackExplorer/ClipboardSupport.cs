@@ -110,6 +110,27 @@ namespace MsgPackExplorer
       throw new Exception("The string on the clipboard does not seem to represent a byte array.\r\nSupported formats are:\r\n  - hex strings (0x1a4f...)\r\n  - base64 encoded\r\n  - delimited hexadecimal velues\r\n  - delimited decimal values (between 0 and 255 inclusive each)");
     }
 
+    /// <summary>
+    /// The bytes as hex in pairs separated by spaces ("81 A5 6D ..."), as the VS Code explorer copies them; <see cref="GetBytes"/> reads it back.
+    /// </summary>
+    public static string ToHex(byte[] bytes)
+    {
+      if (bytes.Length == 0)
+        return string.Empty;
+      const string digits = "0123456789ABCDEF";
+      char[] chars = new char[bytes.Length * 3 - 1];
+      for (int t = bytes.Length - 1; t >= 0; t--)
+      {
+        int b = bytes[t];
+        int i = t * 3;
+        chars[i] = digits[b >> 4];
+        chars[i + 1] = digits[b & 0xF];
+        if (i + 2 < chars.Length)
+          chars[i + 2] = ' ';
+      }
+      return new string(chars);
+    }
+
     // adapted from https://stackoverflow.com/a/9995303/659778, changed to loop backwards
     public static byte[] StringToByteArray(string hex)
     {
