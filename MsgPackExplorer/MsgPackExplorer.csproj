@@ -149,6 +149,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Explore.ico" />
+    <None Include="Resources\Save.png" />
     <None Include="Resources\Clipboard.png" />
     <None Include="Resources\Explore.png" />
     <None Include="Resources\Explore.ico" />
