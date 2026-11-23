@@ -300,6 +300,45 @@ namespace LsMsgPackUnitTests
 
     public class LtsVectorHolder { public System.Numerics.Vector3 V { get; set; } public System.Numerics.Quaternion Q { get; set; } public int N { get; set; } = 1; }
 
+    /// <summary>A struct of the game holding Unity's structs (LsMsgPackUnityStubs): compared field by field, Unity's by their typed Equals</summary>
+    public struct LtsUnityBody { public UnityEngine.Vector3 Position; public UnityEngine.Quaternion Rotation; public float Mass; }
+
+    /// <summary>
+    /// Unity's structs with IEquatable&lt;T&gt; (StructDefault.PlatformEquals) are compared typed, as the framework's, also as fields of another struct: the same decision as Core's boxed Equals,
+    /// without the box per value (Unity's Mono has no escape analysis: 32 B per Vector3 written). The generated code compares them typed as well.
+    /// </summary>
+    [TestMethod]
+    public void DefaultCheck_UnityStructs_TypedAndSameAsCore()
+    {
+      float nan = float.NaN;
+      UnityEngine.Vector3[] vectors = { default(UnityEngine.Vector3), new UnityEngine.Vector3(-0f, 0, -0f), new UnityEngine.Vector3(nan, 0, 0), new UnityEngine.Vector3(0, 0, 1e-45f), UnityEngine.Vector3.one };
+      UnityEngine.Quaternion[] quaternions = { default(UnityEngine.Quaternion), new UnityEngine.Quaternion(-0f, 0, 0, 0), new UnityEngine.Quaternion(0, nan, 0, 0), new UnityEngine.Quaternion(0, 0, 0, 1) };
+      UnityEngine.Color[] colors = { default(UnityEngine.Color), new UnityEngine.Color(-0f, 0, 0, 0), new UnityEngine.Color(0, 0, 0, nan), new UnityEngine.Color(1, 1, 1, 1) };
+      UnityEngine.Vector2Int[] cells = { default(UnityEngine.Vector2Int), new UnityEngine.Vector2Int(0, 1) };
+      List<LtsUnityBody> bodies = new List<LtsUnityBody>();
+      for (int v = 0; v < vectors.Length; v++)
+        for (int q = 0; q < quaternions.Length; q++)
+          bodies.Add(new LtsUnityBody { Position = vectors[v], Rotation = quaternions[q] });
+      bodies.Add(new LtsUnityBody { Mass = -0f });
+
+      SameAsCore(vectors);
+      SameAsCore(quaternions);
+      SameAsCore(colors);
+      SameAsCore(cells);
+      SameAsCore(bodies.ToArray());
+      Assert.IsTrue(IsCompiled<UnityEngine.Vector3>());
+      Assert.IsTrue(IsCompiled<UnityEngine.Quaternion>());
+      Assert.IsTrue(IsCompiled<UnityEngine.Color>());
+      Assert.IsTrue(IsCompiled<UnityEngine.Vector2Int>());
+      Assert.IsTrue(IsCompiled<LtsUnityBody>());
+
+      GeneratedSameAsCore(true, vectors);
+      GeneratedSameAsCore(true, quaternions);
+      GeneratedSameAsCore(true, colors);
+      GeneratedSameAsCore(true, cells);
+      GeneratedSameAsCore(true, bodies.ToArray());
+    }
+
     /// <summary>
     /// The default check of a framework struct with its own typed Equals (StructDefault.TypedEquals) decides as Core's boxed Equals: the same values left out.
     /// </summary>

@@ -13,8 +13,8 @@ namespace LsMsgPack.Writing
   /// Whether a struct value is the default value FilterDefaultValues leaves out: LsMsgPack.Core compares it with <c>Activator.CreateInstance(type).Equals(value)</c>,
   /// which for a struct without its own Equals is ValueType.Equals. That compares the fields by reflection, boxing each of them, whenever the struct has float or double fields,
   /// references or padding (otherwise it compares the bytes). This is the same comparison compiled once per type: each field with the Equals of its type against its default.
-  /// <para>A framework struct with its own Equals that implements IEquatable&lt;T&gt; (System.Numerics.Vector3, Quaternion, the matrices: written by their fields) is compared by its typed Equals with the default,
-  /// what its Equals(object) does, without the box (as the source generator's IsDefault).
+  /// <para>A framework or Unity struct with its own Equals that implements IEquatable&lt;T&gt; (System.Numerics.Vector3, Quaternion, the matrices, UnityEngine.Vector3, Color...: written by their fields),
+  /// itself or as a field of another struct, is compared by its typed Equals with the default, what its Equals(object) does, without the box (as the source generator's IsDefault).
   /// Any other struct with its own Equals or a declared parameterless constructor (its "default" is what the constructor makes), or one the expression cannot describe, is compared as Core does.</para>
   /// </summary>
   internal static class StructDefault<T>
@@ -118,6 +118,9 @@ namespace LsMsgPack.Writing
         return Expression.Call(Expression.Default(type), type.GetMethod(nameof(Equals), new Type[] { type }), value);
       if (OwnEquals(type)) // compared boxed, as ValueType.Equals does
       {
+        MethodInfo typed = PlatformEquals(type);
+        if (typed != null) // the same, without the box (a field of the default instance is zero: no parameterless constructor involved)
+          return Expression.Call(Expression.Default(type), typed, value);
         object defaultField = Expression.Lambda<Func<object>>(Expression.Convert(Expression.Default(type), typeof(object))).Compile()(); // zero, not what a parameterless constructor makes
         return Expression.Call(Expression.Constant(defaultField), typeof(object).GetMethod(nameof(Equals), new Type[] { typeof(object) }), Expression.Convert(value, typeof(object)));
       }
@@ -125,16 +128,15 @@ namespace LsMsgPack.Writing
     }
 
     /// <summary>
-    /// <c>default(T).Equals(value)</c> through IEquatable&lt;T&gt; for a framework struct (whose Equals(object) calls it), null for other structs: their Equals(object) may differ from Equals(T).
+    /// <c>default(T).Equals(value)</c> through IEquatable&lt;T&gt; for a framework or Unity struct (<see cref="PlatformEquals"/>), null for other structs: their Equals(object) may differ from Equals(T).
     /// </summary>
     [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = "Only compiled where the runtime supports dynamic code (PropertyAccessor.CanCompile), a failure compares boxed.")]
     private static RefPredicate<T> TypedEquals(Type type)
     {
-      if (!TypeResolver.IsFrameworkAssembly(type.Assembly) || !typeof(IEquatable<T>).IsAssignableFrom(type)
-        || type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null)
+      if (type.GetConstructor(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null) != null) // Core's default is what that constructor makes
         return null;
-      MethodInfo equals = type.GetMethod(nameof(Equals), BindingFlags.Instance | BindingFlags.Public, null, new Type[] { type }, null);
+      MethodInfo equals = PlatformEquals(type);
       if (equals is null)
         return null;
       try
@@ -146,6 +148,22 @@ namespace LsMsgPack.Writing
       {
         return null;
       }
+    }
+
+    /// <summary>
+    /// The Equals(T) of a struct of the framework or of Unity's engine (<see cref="SerializationRules.IsPlatformDeclared"/>) that implements IEquatable&lt;T&gt;: their Equals(object) compares as it does
+    /// (System.Numerics calls it; Unity 6000.6's Vector2/3/4, Quaternion, Color, Color32, Matrix4x4, Vector2Int/3Int, Rect, Bounds, Plane... call an Equals(in T) with the same body). Null otherwise.
+    /// </summary>
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
+    private static MethodInfo PlatformEquals(Type type)
+    {
+      if (!SerializationRules.IsPlatformDeclared(type))
+        return null;
+      Type[] interfaces = type.GetInterfaces();
+      for (int t = 0; t < interfaces.Length; t++)
+        if (interfaces[t].IsGenericType && interfaces[t].GetGenericTypeDefinition() == typeof(IEquatable<>) && interfaces[t].GetGenericArguments()[0] == type)
+          return type.GetMethod(nameof(Equals), BindingFlags.Instance | BindingFlags.Public, null, new Type[] { type }, null);
+      return null;
     }
 
     /// <summary>

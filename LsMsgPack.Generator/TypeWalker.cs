@@ -557,8 +557,8 @@ namespace LsMsgPack.Generator
         if (constructor.Parameters.Length == 0 && !constructor.IsImplicitlyDeclared) // Core's default is what it makes
           return null;
       string name = type.WithNullableAnnotation(NullableAnnotation.None).ToDisplayString(Format);
-      if (OwnEquals(type)) // a record's Equals(object) calls its Equals(T), so do the framework's structs (Vector3...), which StructDefault compares typed too
-        return type.IsRecord || (IsFramework(type) && Implements(type, "System.IEquatable<T>")) ? "default(" + name + ").Equals(v)" : null;
+      if (OwnEquals(type)) // a record's Equals(object) calls its Equals(T), so do the framework's and Unity's structs (Vector3...), which StructDefault compares typed too
+        return type.IsRecord || (IsPlatform(type) && Implements(type, "System.IEquatable<T>")) ? "default(" + name + ").Equals(v)" : null;
       return FieldsAreDefault(type, "v", 0);
     }
 
@@ -663,7 +663,7 @@ namespace LsMsgPack.Generator
         if (named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T) // a Nullable without a value is boxed as null
           return "!" + value + ".HasValue";
         if (OwnEquals(named))
-          return named.IsRecord || (IsFramework(named) && Implements(named, "System.IEquatable<T>")) ? "default(" + name + ").Equals(" + value + ")" : null; // their Equals(T) is their Equals(object)
+          return named.IsRecord || (IsPlatform(named) && Implements(named, "System.IEquatable<T>")) ? "default(" + name + ").Equals(" + value + ")" : null; // their Equals(T) compares as their Equals(object) (StructDefault.PlatformEquals)
         return FieldsAreDefault(named, value, depth + 1);
       }
       return null;
