@@ -118,7 +118,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 - At a `StringStart`, `BinaryStart`, `ArrayStart` or `MapStart`, `GetString()`, `GetBytes()` and `GetValue()` read the whole value. The reader is then at its end.
 - `Skip()` passes the current array, map, str or bin without buffering it.
 
-**Objects.** `ReadObject<T>()` reads the next value as `LsMsgPackSerializer.Deserialize<T>` does, with its schema. Values of unknown length inside it are read too: the reader replaces them by ones of known length before the serializer reads them. `ReadHead<TRoot>()` reads a schema written by `WriteHead<TRoot>()` (see [one schema for a root value](#one-schema-for-a-root-value)).
+**Objects.** `ReadObject<T>()` reads the next value as `LsMsgPackSerializer.Deserialize<T>` does, with its schema. Values of unknown length inside it are read too: the reader replaces them by ones of known length before the serializer reads them. `ReadHead<TRoot>()` reads a schema written by `WriteHead<TRoot>()` (see [one schema for a root value](#one-schema-for-a-root-value)). `PopulateObject(target)` reads the next value into an object you have instead, where `ReadObject` would read it (see [Populate.md](Populate.md#streams-of-values)).
 
 **The buffer.** The reader reads the stream in blocks into a buffer, so the stream doesn't have to seek (network streams work). Values that are read whole are buffered whole: objects, `GetValue`, `GetString`... The buffer only grows as far as the data that arrives, so a header that claims more than the stream holds costs no more memory than the stream holds.
 
@@ -143,7 +143,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(response, serializer
 }
 ```
 
-- `ReadAsync()`, `AtEndAsync()`, `SkipAsync()`, `GetValueAsync()`, `GetStringAsync()`, `GetBytesAsync()`, `ReadObjectAsync<T>()` and `ReadHeadAsync<TRoot>()` do what the methods without `Async` do. They read ahead until the buffer holds what the step needs (a token, or a value that is read whole), then read it from the buffer, with the same checks and errors.
+- `ReadAsync()`, `AtEndAsync()`, `SkipAsync()`, `GetValueAsync()`, `GetStringAsync()`, `GetBytesAsync()`, `ReadObjectAsync<T>()`, `PopulateObjectAsync(target)` and `ReadHeadAsync<TRoot>()` do what the methods without `Async` do. They read ahead until the buffer holds what the step needs (a token, or a value that is read whole), then read it from the buffer, with the same checks and errors.
 - `ReadElementsAsync<T>()` (.NET Standard 2.1 and .NET 8) returns the elements of an array as an `IAsyncEnumerable<T>`, each read as `ReadObjectAsync<T>` reads it: at its `ArrayStart`, or before it (then it reads that first). The reader is at the `ArrayEnd` afterwards.
 - The values of a token (`GetInt64()`, `GetBoolean()`, `GetDouble()`...) need no reading. The data of a str, bin or extension isn't buffered by `ReadAsync` (it may be large): read it with `GetStringAsync()`, `GetBytesAsync()` or `GetValueAsync()` (an extension, a timestamp). `GetDateTime()` and `GetExtension()` would read it synchronously.
 - `AtEndAsync()` in an array of unknown length needs one byte when the next value doesn't start with `0xC1`, so a source that waits after a small element doesn't keep it waiting.

@@ -37,6 +37,7 @@ Order order = await client.GetFromMsgPackAsync<Order>("api/orders/42", formatter
 HttpResponseMessage response = await client.PostAsMsgPackAsync("api/orders", order, formatter); // also PutAsMsgPackAsync, PatchAsMsgPackAsync
 await response.EnsureSuccessStatusCodeAsync();
 Order saved = await response.Content.ReadFromMsgPackAsync<Order>(formatter);
+await response.Content.PopulateFromMsgPackAsync(current, formatter); // or into an object you have
 ```
 
 The helpers ask for MsgPack (`Accept: application/x-lsmsgpack, application/msgpack; q=0.9`) unless the request or the client has an `Accept` header, and send the body as `application/x-lsmsgpack`. For another media type, use `new ObjectContent<Order>(order, formatter, MsgPackMediaTypes.MsgPack)` and `response.Content.ReadAsAsync<Order>(new MediaTypeFormatter[] { formatter })` ([details](https://github.com/mlsomers/LsMsgPack/blob/master/docs/WebFormatters.md#httpclient)).

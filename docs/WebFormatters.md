@@ -262,6 +262,7 @@ The helpers (`MsgPackHttpClientExtensions`) work like `GetFromJsonAsync`, `PostA
 - `PostAsMsgPackAsync` (and `Put`, `Patch`) send the value as `application/x-lsmsgpack`, with the declared type `T`, and return the response without checking its status code: `await response.EnsureSuccessStatusCodeAsync()` does.
 - `GetFromMsgPackAsync` and `EnsureSuccessStatusCodeAsync` throw a [`MsgPackHttpException`](#error-responses) for a status code outside 200-299. `GetFromMsgPackAsync` and `ReadFromMsgPackAsync` throw a `NotSupportedException` for a body that isn't MsgPack (JSON, with the start of its text in the message) or is a [stream](#streams-with-httpclient), and a `MsgPackException` for a body that can't be read as `T`. An empty body (`204 No Content`) gives `default(T)`.
 - With [`ReportDifferences`](#reporting-differences), read the response with `ReadFromMsgPackAsync` and then call `response.GetReadDifferences()`: `GetFromMsgPackAsync` disposes the response.
+- `response.Content.PopulateFromMsgPackAsync(current, formatter)` reads the body into an object you have instead of a new one, as `ReadFromMsgPackAsync` reads it: the members the body lacks keep their values, an empty body leaves the object as it is (see [Populate.md](Populate.md#http)).
 
 For another media type or your own request, use the formatter directly:
 
@@ -431,7 +432,7 @@ builder.Services.AddControllers()
 |---|---|---|
 | ASP.NET Core | `HttpContext.GetReadDifferences()` (in `HttpContext.Features`) | Through `ILogger` (category `LsMsgPackFormatters.LsMsgPackInputFormatter`), with the report: at the `Debug` level, or as a warning with `LogDifferencesAsWarning` |
 | Web API 2 | `Request.GetReadDifferences()` in the controller | No |
-| HttpClient | `response.GetReadDifferences()` (or `content.GetReadDifferences()`) after `ReadFromMsgPackAsync` or `ReadAsAsync` | No |
+| HttpClient | `response.GetReadDifferences()` (or `content.GetReadDifferences()`) after `ReadFromMsgPackAsync`, `PopulateFromMsgPackAsync` or `ReadAsAsync` | No |
 | MVC 5 | `HttpContext.GetReadDifferences()` in the controller | No |
 
 Values that can't be read (a string where an `int` is declared...) fail the request by default. Set `ReadErrors` on the options of the media type to skip them instead (`o.XLsMsgPack.ReadErrors = ReadErrorHandling.ReportAndContinue`, they're then reported with the other differences), or to fail with all of them at once (`FailDeferred`, the message in the `ModelState` has the complete report), see [ReadDifferences.md](ReadDifferences.md#values-that-cant-be-read-readerrors).

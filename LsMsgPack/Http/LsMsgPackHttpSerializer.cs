@@ -484,6 +484,24 @@ namespace LsMsgPack.Http
     }
 
     /// <summary>
+    /// Reads a body into an existing object instead of creating one (<see cref="LsMsgPackSerializer.Populate{T}(byte[], int, int, T, out ReadDifferences)"/>, docs/Populate.md),
+    /// with the differences as <see cref="DeserializeBody(Type, byte[], int, int, string, out ReadDifferences)"/>: when <see cref="ReportsDifferences"/>, otherwise <paramref name="differences"/> is null.
+    /// </summary>
+    /// <param name="mediaType">The Content-Type of the body</param>
+    /// <exception cref="MissingSchemaException">The body refers to a schema this side does not hold</exception>
+    public void PopulateBody<T>(byte[] data, int offset, int count, T target, string mediaType, out ReadDifferences differences) where T : class
+    {
+      LsMsgPackSerializer serializer = For(mediaType);
+      if (_reportDifferences)
+      {
+        serializer.Populate(data, offset, count, target, out differences);
+        return;
+      }
+      differences = null;
+      serializer.Populate(data, offset, count, target);
+    }
+
+    /// <summary>
     /// The differences an exception of <see cref="DeserializeBody"/> carries (null when there are none).
     /// </summary>
     public static ReadDifferences DifferencesOf(Exception ex)

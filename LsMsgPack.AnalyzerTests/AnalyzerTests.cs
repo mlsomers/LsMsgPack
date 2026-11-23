@@ -307,6 +307,81 @@ public static class Use
 
     #endregion
 
+    #region LSMP012: [MsgPackEnumFormat] on a member that is no enum
+
+    /// <summary>
+    /// The member's own value only (Core's PropertyAttributeSet.EnumType): an enum or a nullable enum, and a type parameter (it may be closed with an enum).
+    /// Reported on any member, serialized or not, also with only Core referenced (the attribute is there).
+    /// </summary>
+    [TestMethod]
+    public void EnumFormat_OnlyOnEnums()
+    {
+      string types = @"
+public enum Color { Red, Green }
+[MsgPackEnumFormat(EnumFormat.Name)] public enum Size { Small, Large }
+public class Paint<T> where T : struct
+{
+  [MsgPackEnumFormat(EnumFormat.Name)] public Color Shade { get; set; }
+  [MsgPackEnumFormat(EnumFormat.Number)] public Color? Optional { get; set; }
+  [MsgPackEnumFormat(EnumFormat.Name)] public T Generic { get; set; }
+  [MsgPackEnumFormat(EnumFormat.Name)] public Color Field;
+  [MsgPackEnumFormat(EnumFormat.Name)] public List<Color> Shades { get; set; }
+  [MsgPackEnumFormat(EnumFormat.Name)] public Dictionary<string, Color> ByName;
+  [MsgPackEnumFormat(EnumFormat.Name)] public int Count { get; set; }
+  [MsgPackEnumFormat(EnumFormat.Name)] public Enum Boxed { get; set; }
+  [field: MsgPackEnumFormat(EnumFormat.Name)] public int Backed { get; set; }
+}
+";
+      ImmutableArray<Diagnostic> diagnostics = Analyze(Usings + types);
+      AssertDiagnostics(diagnostics, "LSMP012 MsgPackEnumFormat(EnumFormat.Name)", "LSMP012 MsgPackEnumFormat(EnumFormat.Name)", "LSMP012 MsgPackEnumFormat(EnumFormat.Name)",
+        "LSMP012 MsgPackEnumFormat(EnumFormat.Name)");
+      string[] messages = diagnostics.Select(d => d.GetMessage()).ToArray();
+      StringAssert.StartsWith(messages[0], "'Paint.Shades' is a List<Color>, not an enum: its [MsgPackEnumFormat] has no effect.");
+      StringAssert.StartsWith(messages[1], "'Paint.ByName' is a Dictionary<string, Color>, not an enum");
+      StringAssert.StartsWith(messages[2], "'Paint.Count' is a int, not an enum");
+      StringAssert.StartsWith(messages[3], "'Paint.Boxed' is a Enum, not an enum");
+
+      // a project of models that references only Core, without LsMsgPackAnalyze=AllTypes
+      CSharpCompilation coreOnly = CSharpCompilation.Create("Models", new[] { CSharpSyntaxTree.ParseText("using System; using System.Collections.Generic; using LsMsgPack;\n" + types) },
+        AnalyzerHarness.References(false).Where(r => System.IO.Path.GetFileName(r.Display) != "LsMsgPackDebug.dll" && System.IO.Path.GetFileName(r.Display) != "LsMsgPack.dll"), new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+      Assert.AreEqual(4, Run(coreOnly, null).Count(d => d.Id == "LSMP012"));
+    }
+
+    #endregion
+
+    #region Populate
+
+    /// <summary>
+    /// Populate reads into the target's class: the type argument is a read root (LSMP001 on its members), unless it is object (the target's class is unknown, no LSMP005 either).
+    /// </summary>
+    [TestMethod]
+    public void Populate_TheTargetsClassIsRead()
+    {
+      string source = Usings + @"
+using System.IO;
+using System.Net.Http;
+using System.Threading.Tasks;
+using LsMsgPackWebApiFormatters;
+public class Settings { public int Retries { get; set; } = 3; }
+public class Profile { public int Level { get; set; } = 1; }
+public class Remote { public int Version { get; set; } = 2; }
+public class Hidden { public int Secret { get; set; } = 4; }
+public static class Use
+{
+  public static async Task Calls(byte[] b, Stream s, HttpContent content, LsMsgPackMediaTypeFormatter formatter, Hidden hidden)
+  {
+    new LsMsgPackSerializer().Populate(b, new Settings());
+    await new LsMsgPackSerializer().PopulateAsync(s, new Profile());
+    await content.PopulateFromMsgPackAsync(new Remote(), formatter);
+    new LsMsgPackSerializer().Populate<object>(b, hidden);
+  }
+}
+";
+      AssertDiagnostics(Analyze(source, formatters: true), "LSMP001 Retries", "LSMP001 Level", "LSMP001 Version");
+    }
+
+    #endregion
+
     #region LSMP006: null read back as the initial value
 
     private const string NullableDefaults = Usings + @"

@@ -124,20 +124,53 @@ namespace LsMsgPackWebApiFormatters
         throw new ArgumentNullException(nameof(content));
       if (formatter is null)
         throw new ArgumentNullException(nameof(formatter));
-      if (content.Headers.ContentLength == 0)
+      if (!await HasMsgPackBodyAsync(content, cancellationToken).ConfigureAwait(false))
         return default(T);
-
-      string mediaType = content.Headers.ContentType?.MediaType;
-      if (mediaType is null && (await content.ReadAsByteArrayAsync().ConfigureAwait(false)).Length == 0)
-        return default(T); // 204 No Content has no Content-Type, and may have no Content-Length either
-      if (!MsgPackMediaTypes.IsSupported(mediaType))
-        throw await NotMsgPackAsync(content, mediaType, cancellationToken).ConfigureAwait(false);
-      if (MsgPackMediaTypes.IsStream(content.Headers.ContentType.ToString()))
-        throw new NotSupportedException("The response is a stream (" + MsgPackMediaTypes.StreamParameter + "), read it with ReadAsMsgPackStreamAsync or ReadFromMsgPackAsAsyncEnumerable.");
 
       Stream body = await content.ReadAsStreamAsync().ConfigureAwait(false);
       object value = await formatter.ReadFromStreamAsync(typeof(T), body, content, null, cancellationToken).ConfigureAwait(false);
       return value is T typed ? typed : default(T); // the formatter throws for a value of another type, this is null
+    }
+
+    /// <summary>
+    /// Reads the body into an existing object instead of creating one, as <see cref="LsMsgPackSerializer.Populate{T}(byte[], T)"/> does (docs/Populate.md): the members the body has get their values,
+    /// the others keep theirs; a collection target is cleared and filled. An empty body (204 No Content) or nil leaves the target as it is. Otherwise as <see cref="ReadFromMsgPackAsync{T}"/>
+    /// (the media types, <see cref="LsMsgPack.Http.LsMsgPackHttpOptions.ReportDifferences"/>).
+    /// </summary>
+    /// <param name="target">A class with members (not one created by a constructor taking its values, nor one with a converter), or a collection with Add</param>
+    /// <param name="formatter">Its serializer reads the body (the one the client's <see cref="LsMsgPackSchemaHandler"/> was created with)</param>
+    /// <exception cref="NotSupportedException">The body is not MsgPack, or a stream (see <see cref="ReadFromMsgPackAsync{T}"/>)</exception>
+    /// <exception cref="ArgumentException">The target cannot be read into</exception>
+    /// <exception cref="MsgPackException">The body is not valid, or holds another class than the target's</exception>
+    public static async Task PopulateFromMsgPackAsync<T>(this HttpContent content, T target, LsMsgPackMediaTypeFormatter formatter, CancellationToken cancellationToken = default(CancellationToken)) where T : class
+    {
+      if (content is null)
+        throw new ArgumentNullException(nameof(content));
+      if (target is null)
+        throw new ArgumentNullException(nameof(target));
+      if (formatter is null)
+        throw new ArgumentNullException(nameof(formatter));
+      if (!await HasMsgPackBodyAsync(content, cancellationToken).ConfigureAwait(false))
+        return;
+
+      Stream body = await content.ReadAsStreamAsync().ConfigureAwait(false);
+      await formatter.PopulateFromStreamAsync(target, body, content, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <returns>False for an empty body</returns>
+    /// <exception cref="NotSupportedException">The body is not MsgPack, or a stream</exception>
+    private static async Task<bool> HasMsgPackBodyAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+      if (content.Headers.ContentLength == 0)
+        return false;
+      string mediaType = content.Headers.ContentType?.MediaType;
+      if (mediaType is null && (await content.ReadAsByteArrayAsync().ConfigureAwait(false)).Length == 0)
+        return false; // 204 No Content has no Content-Type, and may have no Content-Length either
+      if (!MsgPackMediaTypes.IsSupported(mediaType))
+        throw await NotMsgPackAsync(content, mediaType, cancellationToken).ConfigureAwait(false);
+      if (MsgPackMediaTypes.IsStream(content.Headers.ContentType.ToString()))
+        throw new NotSupportedException("The response is a stream (" + MsgPackMediaTypes.StreamParameter + "), read it with ReadAsMsgPackStreamAsync or ReadFromMsgPackAsAsyncEnumerable.");
+      return true;
     }
 
     private static async Task<T> GetAsync<T>(HttpClient client, HttpRequestMessage request, LsMsgPackMediaTypeFormatter formatter, CancellationToken cancellationToken)

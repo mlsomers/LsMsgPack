@@ -107,7 +107,7 @@ namespace LsMsgPack.AnalyzerTests
       }
     }
 
-    private static MetadataReference[] References(bool formatters)
+    public static MetadataReference[] References(bool formatters)
     {
       string[] platform = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")).Split(Path.PathSeparator);
       List<MetadataReference> references = new List<MetadataReference>();

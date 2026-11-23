@@ -408,6 +408,73 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
+    /// PopulateObject and PopulateObjectAsync read where ReadObject reads: a root value with its schema, the elements of a head's body (nil leaves the target, one longer than the buffer),
+    /// a collection root (cleared and filled). A target that cannot be read into throws before anything is read. Synchronous, async from the buffer and async in pieces of 1-3 bytes.
+    /// </summary>
+    [TestMethod]
+    public async Task PopulateObject_WhereReadObjectReads()
+    {
+      foreach (LsMsgPackSerializer serializer in new[] { new LsMsgPackSerializer(), Plain(), new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false }) })
+      {
+        byte[] bytes = Write(w =>
+        {
+          w.WriteObject(Order(2));
+          w.WriteHead<List<SwOrder>>();
+          w.WriteArrayStart();
+          w.WriteObject(Order(3));
+          w.WriteObject<SwOrder>(null);
+          w.WriteObject(Order(1500)); // longer than the buffer
+          w.WriteEnd();
+          w.WriteObject(Order(4).Lines);
+        }, serializer);
+
+        for (int mode = 0; mode < 3; mode++)
+        {
+          string setting = (serializer.Options.UseInexedSchema ? "indexed" : serializer.Options.ObjectLayout.ToString()) + ", " + (mode == 0 ? "sync" : mode == 1 ? "async, whole reads" : "async");
+          using (MsgPackStreamReader reader = mode == 0 ? SyncReader(bytes, serializer) : AsyncReader(bytes, serializer, mode == 1))
+          {
+            Func<object, Task> populate = mode == 0 ? (Func<object, Task>)(t => { reader.PopulateObject(t); return Task.CompletedTask; }) : (t => reader.PopulateObjectAsync(t));
+            Assert.ThrowsExactly<ArgumentException>(() => reader.PopulateObject("a string"), setting);
+            Assert.ThrowsExactly<ArgumentException>(() => reader.PopulateObjectAsync(new int[3]), setting);
+            Assert.AreEqual(0, reader.Position, setting + ": nothing read");
+
+            SwOrder root = new SwOrder { Customer = "old" };
+            await populate(root);
+            AreEqual(Order(2), root);
+
+            if (mode == 0)
+            {
+              reader.ReadHead<List<SwOrder>>();
+              reader.Read();
+            }
+            else
+            {
+              await reader.ReadHeadAsync<List<SwOrder>>();
+              await reader.ReadAsync();
+            }
+            SwOrder first = new SwOrder();
+            await populate(first);
+            AreEqual(Order(3), first);
+            SwOrder kept = new SwOrder { Customer = "kept" };
+            await populate(kept);
+            Assert.AreEqual("kept", kept.Customer, setting + ": nil leaves the target");
+            SwOrder large = new SwOrder();
+            await populate(large);
+            AreEqual(Order(1500), large);
+            Assert.IsTrue(mode == 0 ? reader.AtEnd : await reader.AtEndAsync(), setting);
+            Assert.IsTrue(mode == 0 ? reader.Read() : await reader.ReadAsync(), setting);
+            Assert.AreEqual(MsgPackTokenType.ArrayEnd, reader.TokenType, setting);
+
+            List<SwLine> lines = new List<SwLine> { new SwLine { Product = "old" } };
+            await populate(lines);
+            Assert.AreEqual("P0,P1,P2,P3", string.Join(",", lines.Select(l => l.Product)), setting + ": cleared and filled");
+            Assert.IsFalse(mode == 0 ? reader.Read() : await reader.ReadAsync(), setting);
+          }
+        }
+      }
+    }
+
+    /// <summary>
     /// The payload of a null list is nil without a schema: ReadHead leaves it as the body.
     /// </summary>
     [TestMethod]

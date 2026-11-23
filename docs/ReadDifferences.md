@@ -13,7 +13,16 @@ if (differences != null)
   logger.LogWarning(differences.GenerateReport());
 ```
 
-LsMsgPack has the same overloads on the serializer: `serializer.Deserialize<Order>(data, out ReadDifferences differences)`. The web formatters collect them with `LsMsgPackHttpOptions.ReportDifferences` (see [WebFormatters.md](WebFormatters.md#reporting-differences)).
+LsMsgPack has the same overloads on the serializer: `serializer.Deserialize<Order>(data, out ReadDifferences differences)`. Its async methods can't have an `out` parameter, so they take a callback, called after the value is read when something didn't match:
+
+```csharp
+Order order = await serializer.DeserializeAsync<Order>(stream, differences => logger.LogWarning(differences.GenerateReport()));
+await serializer.PopulateAsync(stream, current, differences => logger.LogWarning(differences.GenerateReport()));
+```
+
+When the read fails the callback isn't called: the exception carries the differences found until then, as with the `out` overloads (see [`ReadErrors`](#values-that-cant-be-read-readerrors)).
+
+The web formatters collect them with `LsMsgPackHttpOptions.ReportDifferences` (see [WebFormatters.md](WebFormatters.md#reporting-differences)).
 
 `differences` is `null` when the data matched the classes. Otherwise it counts each difference per class and name, over the whole payload:
 

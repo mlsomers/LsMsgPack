@@ -3,7 +3,7 @@
 namespace LsMsgPack.Analyzers
 {
   /// <summary>
-  /// The diagnostics of the analyzers (docs/Analyzers.md). They are reported for the properties and fields of serialized types only (see <see cref="ModelTypes"/>).
+  /// The diagnostics of the analyzers (docs/Analyzers.md). They are reported for the properties and fields of serialized types only (see <see cref="ModelTypes"/>), LSMP012 for any property or field.
   /// </summary>
   internal static class Rules
   {
@@ -98,5 +98,13 @@ namespace LsMsgPack.Analyzers
       + "(IDictionary<string, object>, Dictionary<string, object>, or a class implementing it with a public parameterless constructor). The serializers refuse a class with two such members "
       + "(also one in a base class) and a marked member of another type, such as System.Text.Json's Dictionary<string, JsonElement> or JsonObject.",
       DocsUrl + "lsmp011-invalid-extension-data-member");
+
+    public static readonly DiagnosticDescriptor EnumFormatWithoutEnum = new DiagnosticDescriptor("LSMP012", "[MsgPackEnumFormat] on a member that is no enum",
+      "'{0}' is a {1}, not an enum: its [MsgPackEnumFormat] has no effect. On a member it applies to the member's own value only (an enum or a nullable enum), not to the elements of a collection. "
+      + "Put it on the enum type, or set MsgPackOptions.EnumFormat for all enums.",
+      SupportCategory, DiagnosticSeverity.Warning, true,
+      "[MsgPackEnumFormat] on a property or field decides how the member's own value is written, so its type has to be an enum or a nullable of one. On a member of another type "
+      + "(a collection or dictionary of enums, object, System.Enum, a number) the serializers ignore it and write the enums by the enum type's attribute or the options.",
+      DocsUrl + "lsmp012-msgpackenumformat-on-a-member-that-is-no-enum");
   }
 }

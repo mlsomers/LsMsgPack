@@ -479,6 +479,7 @@ namespace LsMsgPack.Analyzers
       {
         string name = MethodName(invocation.Expression);
         return name == "Serialize" || name == "Deserialize" || name == "DeserializeBody" || name == "SerializeObject" || name == "ReadAsAsync" || name == "PostAsync" || name == "PutAsync"
+          || name == "Populate" || name == "PopulateAsync" || name == "PopulateBody"
           || (name != null && (name.IndexOf("MsgPack", StringComparison.Ordinal) >= 0 || ResultMethods.Contains(name)));
       }
       if (node is GenericNameSyntax generic)
@@ -560,10 +561,16 @@ namespace LsMsgPack.Analyzers
 
       if (Same(container, known.DebugSerializer) || Same(container, known.LsSerializer) || Same(container, known.HttpSerializer))
       {
-        bool reads = method.Name.StartsWith("Deserialize", StringComparison.Ordinal);
+        bool populates = method.Name.StartsWith("Populate", StringComparison.Ordinal);
+        bool reads = populates || method.Name.StartsWith("Deserialize", StringComparison.Ordinal);
         if (!reads && method.Name != "Serialize" && method.Name != "SerializeObject")
           return;
         string what = string.Concat(container.Name, ".", method.Name);
+        if (populates) // Populate<T>(data, target): read as the target's own class, T is only its static type
+        {
+          AddPopulated(method, invocation, what, uses);
+          return;
+        }
         if (method.IsGenericMethod)
         {
           uses.Add(new SerializedUse(method.TypeArguments[0], reads, TypeArgumentLocation(invocation.Syntax) ?? invocation.Syntax.GetLocation(), what));
@@ -609,10 +616,29 @@ namespace LsMsgPack.Analyzers
       // The helpers of the Web API package: Get/ReadFromMsgPackAsync and the stream enumerables read, Post/Put/PatchAsMsgPackAsync write
       if (method.IsGenericMethod && (Same(container, known.MsgPackClientExtensions) || Same(container, known.MsgPackStreamExtensions)))
       {
+        if (method.Name.StartsWith("PopulateFrom", StringComparison.Ordinal))
+        {
+          AddPopulated(method, invocation, string.Concat(container.Name, ".", method.Name), uses);
+          return;
+        }
         bool reads = method.Name.StartsWith("GetFrom", StringComparison.Ordinal) || method.Name.StartsWith("ReadFrom", StringComparison.Ordinal);
         if (reads || method.Name.EndsWith("AsMsgPackAsync", StringComparison.Ordinal))
           uses.Add(new SerializedUse(method.TypeArguments[0], reads, TypeArgumentLocation(invocation.Syntax) ?? invocation.Syntax.GetLocation(), string.Concat(container.Name, ".", method.Name)));
       }
+    }
+
+    /// <summary>
+    /// A Populate call reads the data as the target's runtime class: its static type argument is a root only when it is a class of its own
+    /// (not object, an interface or a type parameter, which would make LSMP005 report a read the call does not do).
+    /// </summary>
+    private static void AddPopulated(IMethodSymbol method, IInvocationOperation invocation, string what, List<SerializedUse> uses)
+    {
+      if (!method.IsGenericMethod)
+        return;
+      ITypeSymbol type = method.TypeArguments[0];
+      if (type.TypeKind != TypeKind.Class || type.SpecialType == SpecialType.System_Object)
+        return;
+      uses.Add(new SerializedUse(type, true, TypeArgumentLocation(invocation.Syntax) ?? invocation.Syntax.GetLocation(), what));
     }
 
     private static void FromCreation(IObjectCreationOperation creation, KnownSymbols known, List<SerializedUse> uses)

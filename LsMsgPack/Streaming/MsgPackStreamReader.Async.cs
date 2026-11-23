@@ -1,5 +1,6 @@
 ﻿using LsMsgPack;
 using LsMsgPack.Streaming;
+using LsMsgPack.Meta;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -223,7 +224,7 @@ namespace LsMsgPack.Streaming
     {
       try
       {
-        if (TryReadObjectBuffered(typeof(T), out object read))
+        if (TryReadObjectBuffered(typeof(T), null, out object read))
           return Task.FromResult(read is null ? default(T) : (T)read);
       }
       catch (Exception ex) // as an async method
@@ -246,7 +247,7 @@ namespace LsMsgPack.Streaming
     {
       try
       {
-        if (type != null && TryReadObjectBuffered(type, out object read))
+        if (type != null && TryReadObjectBuffered(type, null, out object read))
           return Task.FromResult(read);
       }
       catch (Exception ex) // as an async method
@@ -260,8 +261,9 @@ namespace LsMsgPack.Streaming
     /// <see cref="ReadObject(Type)"/> of an element of an array or map that is all in the buffer without escape sequences (one value, no schema before it), without the async steps:
     /// its end is found once (<see cref="BufferedEnd"/>) and passed on to ReadObject (<see cref="_passAt"/>), not found again after a <see cref="Scan"/> pass.
     /// </summary>
+    /// <param name="populate">The target of <see cref="PopulateObjectAsync{T}"/> (checked), null for <see cref="ReadObject(Type)"/></param>
     /// <returns>false: nothing was read, the async steps buffer it</returns>
-    private bool TryReadObjectBuffered(Type type, out object result)
+    private bool TryReadObjectBuffered(Type type, object populate, out object result)
     {
       result = null;
       if (_disposed || _payloadPending || _depth == 0 || AtEndBuffered() != 0 || SchemaFollows())
@@ -274,13 +276,50 @@ namespace LsMsgPack.Streaming
       _noIo = true;
       try
       {
-        result = ReadObject(type);
+        if (populate is null)
+          result = ReadObject(type);
+        else
+          PopulateChecked(populate);
         return true;
       }
       finally
       {
         _noIo = false;
         _passAt = -1;
+      }
+    }
+
+    /// <summary>
+    /// <see cref="PopulateObject{T}"/>, reading the stream asynchronously: the value is buffered whole before it is read into the target (as <see cref="ReadObjectAsync{T}"/>).
+    /// </summary>
+    /// <exception cref="ArgumentException">The target cannot be read into (thrown at once, nothing is read)</exception>
+    public Task PopulateObjectAsync<T>(T target, CancellationToken cancellationToken = default(CancellationToken)) where T : class
+    {
+      Population.ThrowIfNotPopulatable(target, _options);
+      try
+      {
+        if (TryReadObjectBuffered(null, target, out object read))
+          return Task.CompletedTask;
+      }
+      catch (Exception ex) // as an async method
+      {
+        return Task.FromException(ex);
+      }
+      return PopulateObjectSlowAsync(target, cancellationToken);
+    }
+
+    private async Task PopulateObjectSlowAsync(object target, CancellationToken cancellationToken)
+    {
+      ThrowIfDisposed();
+      await PrepareObjectAsync(cancellationToken).ConfigureAwait(false);
+      _noIo = true;
+      try
+      {
+        PopulateChecked(target);
+      }
+      finally
+      {
+        _noIo = false;
       }
     }
 
@@ -396,7 +435,7 @@ namespace LsMsgPack.Streaming
       }
       while (!await AtEndAsync(cancellationToken).ConfigureAwait(false))
       {
-        if (!TryReadObjectBuffered(typeof(T), out object element))
+        if (!TryReadObjectBuffered(typeof(T), null, out object element))
         {
           await PrepareObjectAsync(cancellationToken).ConfigureAwait(false);
           _noIo = true;

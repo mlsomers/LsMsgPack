@@ -1103,10 +1103,11 @@ namespace LsMsgPack
     /// <param name="type">The declared type of the value</param>
     /// <param name="intoSlot">As in <see cref="Deserialize"/></param>
     /// <param name="referencePrefix">Where the value is in the root value of the body (the start of its reference paths, <see cref="ReadContext.ReferencePrefix"/>), null at the root</param>
-    internal object DeserializeBody(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false, Func<int[]> referencePrefix = null)
+    /// <param name="into">As in <see cref="Deserialize"/> (the stream reader's PopulateObject)</param>
+    internal object DeserializeBody(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false, Func<int[]> referencePrefix = null, object into = null)
     {
       if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
-        return DeserializeBodyCollecting(head, root, type, buffer, offset, end, out consumed, referencePrefix);
+        return DeserializeBodyCollecting(head, root, type, buffer, offset, end, out consumed, referencePrefix, into);
 
       if (root != _cachedRoot)
         CacheRoot(root);
@@ -1124,6 +1125,8 @@ namespace LsMsgPack
         c.IntoSlot = intoSlot;
         c.Unusual = SlowObjects || differences != null;
         c.ReferencePrefix = referencePrefix;
+        if (into != null)
+          c.Into = into;
         object result = ReadWithSchema(c, root, type, offset, head.Schema, head.LengthSettings, head.State, head.Raw, null);
         consumed = c.R.Pos;
         return result;
@@ -1136,14 +1139,14 @@ namespace LsMsgPack
         ReturnContext(c);
       }
       differences?.Reset();
-      return PreservingReader().DeserializeBody(head, root, type, buffer, offset, end, out consumed, differences, intoSlot, referencePrefix);
+      return PreservingReader().DeserializeBody(head, root, type, buffer, offset, end, out consumed, differences, intoSlot, referencePrefix, into);
     }
 
-    private object DeserializeBodyCollecting(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, Func<int[]> referencePrefix)
+    private object DeserializeBodyCollecting(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, Func<int[]> referencePrefix, object into)
     {
       ReadDifferences found = new ReadDifferences(Options);
       int used = 0;
-      object read = ReadDifferences.Collect(found, () => DeserializeBody(head, root, type, buffer, offset, end, out used, found, false, referencePrefix));
+      object read = ReadDifferences.Collect(found, () => DeserializeBody(head, root, type, buffer, offset, end, out used, found, false, referencePrefix, into));
       consumed = used;
       return read;
     }
