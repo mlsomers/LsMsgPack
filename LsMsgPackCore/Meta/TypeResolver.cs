@@ -21,7 +21,7 @@ namespace LsMsgPack.Meta
 
     // 2nd tier cache
     private static readonly Dictionary<Type, Assembly> AssemblyCache = new Dictionary<Type, Assembly>(); // assembly previously found for this "assign-to" type
-    internal static readonly HashSet<Assembly> CachedAssembies = new HashSet<Assembly>(); // keep track of what has been cached
+    internal static readonly HashSet<Assembly> CachedAssemblies = new HashSet<Assembly>(); // keep track of what has been cached
     private static readonly ConcurrentDictionary<Assembly, bool> CachedAssembliesLockFree = new ConcurrentDictionary<Assembly, bool>(); // the same, read without the lock (both serializers cache the assembly of the root type on every call)
 
     // 3rd tier cache
@@ -525,7 +525,7 @@ namespace LsMsgPack.Meta
         for (int t = 0; t < NativeAssemblies.Length; t++)
         {
           Assembly assm = NativeAssemblies[t];
-          if (!CachedAssembies.Contains(assm))
+          if (!CachedAssemblies.Contains(assm))
           {
             result = CacheAssembly(assm, typeName);
             if (result != null)
@@ -563,9 +563,9 @@ namespace LsMsgPack.Meta
         result = Visible(assembly.GetType(typeName, false, true));
         if (result is null)
         {
-          if (!CachedAssembies.Contains(assembly))
+          if (!CachedAssemblies.Contains(assembly))
             result = CacheAssembly(assembly, typeName); // At this point we search all types in the assembly
-          else // retreive from NameCache
+          else // retrieve from NameCache
           {
             // The assembly has previously been cached, but the type was not found by full name...
             if (NameCache.TryGetValue(typeName, out choices))
@@ -632,7 +632,7 @@ namespace LsMsgPack.Meta
       if (count == 1)
         return fitting;
 
-      StringBuilder message = new StringBuilder("Type assignment dilamma for \"").Append(typeName).Append("\" with the following choices:");
+      StringBuilder message = new StringBuilder("Type assignment dilemma for \"").Append(typeName).Append("\" with the following choices:");
       foreach (Type choice in choices)
         message.Append("\r\n  ").Append(choice.FullName);
       message.Append("\r\nFix this by either serializing with full name or implementing a IMsgPackTypeResolver and add it to MsgPackSettings._typeResolvers.");
@@ -786,7 +786,7 @@ namespace LsMsgPack.Meta
     [UnconditionalSuppressMessage("Trimming", "IL2026", Justification = TrimReasons.TypeNames)]
     private static Type CacheAssemblyLocked(Assembly assembly, string typeName)
     {
-      if (CachedAssembies.Contains(assembly))
+      if (CachedAssemblies.Contains(assembly))
         return null;
 
       Type found = null;
@@ -809,11 +809,11 @@ namespace LsMsgPack.Meta
           NameCache.Add(name, sameName = new HashSet<Type>());
         sameName.Add(type);
 
-        // check if found but don't bail out when found, once we start cahcing an assembly we'll finish the job!
+        // check if found but don't bail out when found, once we start caching an assembly we'll finish the job!
         if (found == null && fullName == typeName)
           found = type; // already added to FullNameCache above
       }
-      CachedAssembies.Add(assembly);
+      CachedAssemblies.Add(assembly);
       CachedAssembliesLockFree.TryAdd(assembly, true);
 
       // A short name only when it is the name of one type (of all cached assemblies), otherwise the callers pick one that fits (Pick)

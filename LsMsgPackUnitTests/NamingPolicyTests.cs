@@ -82,7 +82,7 @@ namespace LsMsgPackUnitTests
     /// </summary>
     protected virtual bool LastKeyWins { get { return true; } }
 
-    private static readonly MsgPackSettings Untyped = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+    private static readonly MsgPackSettings Untyped = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
 
     internal static readonly MsgPackNamingPolicy[] Policies = new MsgPackNamingPolicy[]
     {
@@ -117,8 +117,8 @@ namespace LsMsgPackUnitTests
       {
         foreach (ObjectLayout layout in new ObjectLayout[] { ObjectLayout.Array, ObjectLayout.Map })
         {
-          yield return new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout, PropertyNamingPolicy = policy };
-          yield return new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout, PropertyNamingPolicy = policy, SchemaVersion = SchemaVersion.Described };
+          yield return new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout, PropertyNamingPolicy = policy };
+          yield return new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout, PropertyNamingPolicy = policy, SchemaVersion = SchemaVersion.Described };
         }
       }
     }
@@ -179,14 +179,14 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void PropertyNames_WrittenByThePolicy()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
       Dictionary<string, object> written = Serializer.Deserialize<Dictionary<string, object>>(Serializer.Serialize(Sample(), settings), Untyped);
       CollectionAssert.AreEqual(new string[] { "boxed", "counts_by_name", "customer_name", "lines", "names_by_id", "order_id", "rights", "ship_to", "status", "url_value" }, Keys(written));
       CollectionAssert.AreEqual(new string[] { "city", "street_name" }, Keys(written["ship_to"]));
       object line = ((object[])written["lines"])[0];
       CollectionAssert.AreEqual(new string[] { "product_code", "quantity", "unit_price" }, Keys(line));
 
-      written = Serializer.Deserialize<Dictionary<string, object>>(Serializer.Serialize(Sample(), new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase }), Untyped);
+      written = Serializer.Deserialize<Dictionary<string, object>>(Serializer.Serialize(Sample(), new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase }), Untyped);
       CollectionAssert.AreEqual(new string[] { "boxed", "countsByName", "customerName", "lines", "namesById", "orderId", "rights", "shipTo", "status", "urlValue" }, Keys(written));
     }
 
@@ -198,7 +198,7 @@ namespace LsMsgPackUnitTests
       {
         foreach (MsgPackSettings settings in AllSettings(Policies[p]))
         {
-          string message = $"policy {p}, schema {settings.UseInexedSchema}, {settings.ObjectLayout}, {settings.SchemaVersion}";
+          string message = $"policy {p}, schema {settings.UseIndexedSchema}, {settings.ObjectLayout}, {settings.SchemaVersion}";
           AssertSame(value, Serializer.Deserialize<NpOrder>(Serializer.Serialize(value, settings), settings), message);
         }
       }
@@ -212,8 +212,8 @@ namespace LsMsgPackUnitTests
       {
         foreach (MsgPackSettings reader in AllSettings(Policies[p]))
         {
-          MsgPackSettings writer = new MsgPackSettings() { UseInexedSchema = reader.UseInexedSchema, ObjectLayout = reader.ObjectLayout, SchemaVersion = reader.SchemaVersion };
-          string message = $"policy {p}, schema {reader.UseInexedSchema}, {reader.ObjectLayout}, {reader.SchemaVersion}";
+          MsgPackSettings writer = new MsgPackSettings() { UseIndexedSchema = reader.UseIndexedSchema, ObjectLayout = reader.ObjectLayout, SchemaVersion = reader.SchemaVersion };
+          string message = $"policy {p}, schema {reader.UseIndexedSchema}, {reader.ObjectLayout}, {reader.SchemaVersion}";
           AssertSame(value, Serializer.Deserialize<NpOrder>(Serializer.Serialize(value, writer), reader), "written without the policy: " + message);
         }
       }
@@ -226,18 +226,18 @@ namespace LsMsgPackUnitTests
       // A camelCase writer read by a reader without the policy (PropertyNameCaseInsensitive, as the web formatters)
       foreach (MsgPackSettings writer in AllSettings(MsgPackNamingPolicy.CamelCase))
       {
-        MsgPackSettings reader = new MsgPackSettings() { UseInexedSchema = writer.UseInexedSchema, ObjectLayout = writer.ObjectLayout, PropertyNameCaseInsensitive = true };
-        AssertSame(value, Serializer.Deserialize<NpOrder>(Serializer.Serialize(value, writer), reader), $"schema {writer.UseInexedSchema}, {writer.ObjectLayout}, {writer.SchemaVersion}");
+        MsgPackSettings reader = new MsgPackSettings() { UseIndexedSchema = writer.UseIndexedSchema, ObjectLayout = writer.ObjectLayout, PropertyNameCaseInsensitive = true };
+        AssertSame(value, Serializer.Deserialize<NpOrder>(Serializer.Serialize(value, writer), reader), $"schema {writer.UseIndexedSchema}, {writer.ObjectLayout}, {writer.SchemaVersion}");
       }
       // Upper case snake names read by a snake_case reader ignoring case, and .NET names in another case
-      MsgPackSettings upper = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseUpper };
-      MsgPackSettings lower = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower, PropertyNameCaseInsensitive = true };
+      MsgPackSettings upper = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseUpper };
+      MsgPackSettings lower = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower, PropertyNameCaseInsensitive = true };
       AssertSame(value, Serializer.Deserialize<NpOrder>(Serializer.Serialize(value, upper), lower), "SNAKE_CASE");
       Dictionary<string, object> map = new Dictionary<string, object>() { { "customername", "Bob" }, { "ORDERID", 7 } };
       NpOrder read = Serializer.Deserialize<NpOrder>(Serializer.Serialize(map, Untyped), lower);
       Assert.AreEqual("Bob", read.CustomerName);
       Assert.AreEqual(7, read.OrderId);
-      MsgPackSettings exact = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
+      MsgPackSettings exact = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
       read = Serializer.Deserialize<NpOrder>(Serializer.Serialize(map, Untyped), exact);
       Assert.IsNull(read.CustomerName, "not ignoring case without the option");
     }
@@ -246,7 +246,7 @@ namespace LsMsgPackUnitTests
     public void Reading_BothNames()
     {
       // A map with both the snake_case name and the .NET name: LsMsgPackDebug sets the written name, LsMsgPack the last key (as for duplicate keys)
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
       foreach (bool first in new bool[] { false, true })
       {
         Dictionary<string, object> map = first
@@ -265,7 +265,7 @@ namespace LsMsgPackUnitTests
       {
         MsgPackSettings settings = new MsgPackSettings()
         {
-          UseInexedSchema = schema, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase,
+          UseIndexedSchema = schema, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase,
           PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new AttributePropertyNameResolver() }
         };
         byte[] data = Serializer.Serialize(value, settings);
@@ -280,7 +280,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void SameConvertedName_Refused()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase };
       MsgPackException error = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(new NpClash(), settings));
       StringAssert.Contains(error.Message, "\"id\"");
       settings.PropertyNamingPolicy = null;
@@ -290,7 +290,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void CustomPolicy()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = new PrefixPolicy() };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = new PrefixPolicy() };
       NpAddress value = new NpAddress() { StreetName = "Main", City = "Utrecht" };
       byte[] data = Serializer.Serialize(value, settings);
       CollectionAssert.AreEqual(new string[] { "p_City", "p_StreetName" }, Keys(Serializer.Deserialize<Dictionary<string, object>>(data, Untyped)));
@@ -320,7 +320,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void AnonymousTypes_ByThePolicy()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.KebabCaseLower };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.KebabCaseLower };
       object value = new { Outer = 1, Inner = new { FirstValue = "a" } };
       Dictionary<string, object> written = Serializer.Deserialize<Dictionary<string, object>>(Serializer.Serialize(value, typeof(object), settings), Untyped);
       CollectionAssert.AreEqual(new string[] { "inner", "outer" }, Keys(written));
@@ -330,7 +330,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void DictionaryKeys_ByTheirOwnPolicy()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, DictionaryKeyPolicy = MsgPackNamingPolicy.CamelCase };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, DictionaryKeyPolicy = MsgPackNamingPolicy.CamelCase };
       NpOrder value = Sample();
       Dictionary<string, object> written = Serializer.Deserialize<Dictionary<string, object>>(Serializer.Serialize(value, settings), Untyped);
       Assert.IsTrue(written.ContainsKey("CountsByName"), "the property names stay");
@@ -357,8 +357,8 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ExtensionData_KeptAsRead()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase, DictionaryKeyPolicy = MsgPackNamingPolicy.SnakeCaseUpper };
-      byte[] newer = Serializer.Serialize(new NpKeptNewer() { KnownValue = "k", NewerValue = "n" }, new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase, DictionaryKeyPolicy = MsgPackNamingPolicy.SnakeCaseUpper };
+      byte[] newer = Serializer.Serialize(new NpKeptNewer() { KnownValue = "k", NewerValue = "n" }, new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
       NpKept kept = Serializer.Deserialize<NpKept>(newer, settings);
       Assert.AreEqual("k", kept.KnownValue, "by the .NET name");
       Assert.AreEqual("n", kept.Rest["NewerValue"]);
@@ -371,7 +371,7 @@ namespace LsMsgPackUnitTests
     {
       foreach (bool schema in new bool[] { false, true })
       {
-        MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name, EnumNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
+        MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name, EnumNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
         Assert.AreEqual("in_progress", Serializer.Deserialize<string>(Serializer.Serialize(NpStatus.InProgress, settings), settings));
         Assert.AreEqual("Custom-Name", Serializer.Deserialize<string>(Serializer.Serialize(NpStatus.Custom, settings), settings), "custom names as they are");
         Assert.AreEqual("can_read, is_owner", Serializer.Deserialize<string>(Serializer.Serialize(NpRights.CanRead | NpRights.IsOwner, settings), settings));
@@ -384,7 +384,7 @@ namespace LsMsgPackUnitTests
         NpOrder back = Serializer.Deserialize<NpOrder>(Serializer.Serialize(value, settings), settings);
         AssertSame(value, back, $"schema {schema}");
 
-        MsgPackSettings without = new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = ObjectLayout.Map };
+        MsgPackSettings without = new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = ObjectLayout.Map };
         Assert.AreEqual(NpStatus.InProgress, Serializer.Deserialize<NpStatus>(Serializer.Serialize("InProgress", settings), without));
         Assert.ThrowsExactly<ArgumentException>(() => Serializer.Deserialize<NpStatus>(Serializer.Serialize("in_progress", settings), without), "a reader without the policy knows the .NET names only");
 
@@ -392,14 +392,14 @@ namespace LsMsgPackUnitTests
         Assert.AreEqual("inProgress", Serializer.Deserialize<string>(Serializer.Serialize(NpStatus.InProgress, settings), settings));
         Assert.AreEqual(NpStatus.InProgress, Serializer.Deserialize<NpStatus>(Serializer.Serialize("inProgress", settings), without), "camelCase: .NET names ignoring case");
       }
-      MsgPackSettings properties = new MsgPackSettings() { UseInexedSchema = false, EnumFormat = EnumFormat.Name, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
+      MsgPackSettings properties = new MsgPackSettings() { UseIndexedSchema = false, EnumFormat = EnumFormat.Name, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
       Assert.AreEqual("InProgress", Serializer.Deserialize<string>(Serializer.Serialize(NpStatus.InProgress, properties), properties), "the property names' policy is not the enums'");
     }
 
     [TestMethod]
     public void EnumNames_SameConvertedName_Refused()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, EnumFormat = EnumFormat.Name, EnumNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, EnumFormat = EnumFormat.Name, EnumNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
       Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(NpEnumClash.FooBar, settings));
     }
 
@@ -407,7 +407,7 @@ namespace LsMsgPackUnitTests
     public void Schema_HasTheWrittenNames()
     {
       // The reader's class is another one with the same names: paired through the schema's names
-      MsgPackSettings writer = new MsgPackSettings() { UseInexedSchema = true, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower, SchemaVersion = SchemaVersion.Described };
+      MsgPackSettings writer = new MsgPackSettings() { UseIndexedSchema = true, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower, SchemaVersion = SchemaVersion.Described };
       byte[] data = Serializer.Serialize(Sample(), writer);
       string text = System.Text.Encoding.UTF8.GetString(data);
       StringAssert.Contains(text, "street_name");
@@ -420,7 +420,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Differences_ReportTheWrittenNames()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower };
       Dictionary<string, object> map = new Dictionary<string, object>() { { "street_name", "Main" }, { "post_code", "1234" } };
       NpAddress read = Serializer.Deserialize<NpAddress>(Serializer.Serialize(map, Untyped), settings, out ReadDifferences differences);
       Assert.AreEqual("Main", read.StreetName);
@@ -481,7 +481,7 @@ namespace LsMsgPackUnitTests
             for (int t = 0; t < values.Length; t++)
             {
               object value = values[t];
-              string message = $"policy {p}, schema {settings.UseInexedSchema}, {settings.ObjectLayout}, {settings.SchemaVersion}, filter {filter}, {value.GetType().Name}";
+              string message = $"policy {p}, schema {settings.UseIndexedSchema}, {settings.ObjectLayout}, {settings.SchemaVersion}, filter {filter}, {value.GetType().Name}";
               byte[] expected = MsgPackSerializer.Serialize(value, value.GetType(), settings);
               CollectionAssert.AreEqual(expected, Serializers.Ls.Serialize(value, value.GetType(), settings), "runtime: " + message);
               CollectionAssert.AreEqual(expected, Serializers.Gen.Serialize(value, value.GetType(), settings), "generated: " + message);
@@ -490,7 +490,7 @@ namespace LsMsgPackUnitTests
               {
                 LsMsgPackOptions compiled = new LsMsgPackOptions()
                 {
-                  UseInexedSchema = settings.UseInexedSchema, ObjectLayout = settings.ObjectLayout, SchemaVersion = settings.SchemaVersion, DynamicFilters = settings.DynamicFilters,
+                  UseIndexedSchema = settings.UseIndexedSchema, ObjectLayout = settings.ObjectLayout, SchemaVersion = settings.SchemaVersion, DynamicFilters = settings.DynamicFilters,
                   PropertyNamingPolicy = settings.PropertyNamingPolicy, DictionaryKeyPolicy = settings.DictionaryKeyPolicy, EnumNamingPolicy = settings.EnumNamingPolicy, EnumFormat = EnumFormat.Name,
                   CompileWritersAfter = 0, CompileReadersAfter = 0, UseRegisteredContexts = false
                 };
@@ -523,7 +523,7 @@ namespace LsMsgPackUnitTests
         {
           LsMsgPackOptions options = new LsMsgPackOptions()
           {
-            UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower, PropertyNameCaseInsensitive = ignoreCase,
+            UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.SnakeCaseLower, PropertyNameCaseInsensitive = ignoreCase,
             CompileWritersAfter = 0, CompileReadersAfter = 0, UseRegisteredContexts = false
           };
           if (generated)
@@ -534,7 +534,7 @@ namespace LsMsgPackUnitTests
           {
             foreach (MsgPackNamingPolicy writerPolicy in new MsgPackNamingPolicy[] { null, MsgPackNamingPolicy.SnakeCaseLower, MsgPackNamingPolicy.CamelCase })
             {
-              byte[] data = MsgPackSerializer.Serialize(line, new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = writerPolicy });
+              byte[] data = MsgPackSerializer.Serialize(line, new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = writerPolicy });
               NpLine back = serializer.Deserialize<NpLine>(data);
               string message = $"generated {generated}, ignoring case {ignoreCase}, round {round}, writer {writerPolicy?.GetType().Name ?? "none"}";
               if (writerPolicy == MsgPackNamingPolicy.CamelCase && !ignoreCase)

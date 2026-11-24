@@ -105,13 +105,13 @@ namespace LsMsgPack.Data
     }
 
     /// <summary>
-    /// The columns as a dump records them in its index entry: <c>[[name, type, dataTypeName], ...]</c>.
+    /// The columns as a dump records them in its index entry: <c>[[name, type, dataTypeName], ...]</c>, the names as the schema has them (converted by a naming policy).
     /// </summary>
     internal static List<object> Describe(RowPlan plan)
     {
-      List<object> columns = new List<object>(plan.Names.Length);
-      for (int t = 0; t < plan.Names.Length; t++)
-        columns.Add(new List<object> { plan.Names[t], NameOf(plan.Types[t]), plan.DataTypeNames[t] });
+      List<object> columns = new List<object>(plan.WrittenNames.Length);
+      for (int t = 0; t < plan.WrittenNames.Length; t++)
+        columns.Add(new List<object> { plan.WrittenNames[t], NameOf(plan.Types[t]), plan.DataTypeNames[t] });
       return columns;
     }
   }

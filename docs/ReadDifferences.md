@@ -13,7 +13,16 @@ if (differences != null)
   logger.LogWarning(differences.GenerateReport());
 ```
 
-LsMsgPack has the same overloads on the serializer: `serializer.Deserialize<Order>(data, out ReadDifferences differences)`. The web formatters collect them with `LsMsgPackHttpOptions.ReportDifferences` (see [WebFormatters.md](WebFormatters.md#reporting-differences)).
+LsMsgPack has the same overloads on the serializer: `serializer.Deserialize<Order>(data, out ReadDifferences differences)`. Its async methods can't have an `out` parameter, so they take a callback, called after the value is read when something didn't match:
+
+```csharp
+Order order = await serializer.DeserializeAsync<Order>(stream, differences => logger.LogWarning(differences.GenerateReport()));
+await serializer.PopulateAsync(stream, current, differences => logger.LogWarning(differences.GenerateReport()));
+```
+
+When the read fails the callback isn't called: the exception carries the differences found until then, as with the `out` overloads (see [`ReadErrors`](#values-that-cant-be-read-readerrors)).
+
+The web formatters collect them with `LsMsgPackHttpOptions.ReportDifferences` (see [WebFormatters.md](WebFormatters.md#reporting-differences)).
 
 `differences` is `null` when the data matched the classes. Otherwise it counts each difference per class and name, over the whole payload:
 
@@ -61,7 +70,7 @@ These always throw, in every mode:
 - Data that can't be parsed: truncated, nested deeper than `MaxDepth`, a length that claims more than there is. Reading can't go on after those.
 - The security checks: a type that doesn't fit where it goes, one the `TypeGuard` refuses, a type name that names an assembly (see [security.md](security.md)).
 - Exceptions of your classes: constructors and property setters (e.g. a setter that validates its value). They're passed on as they are.
-- A value at the root that can't be converted (there is no property to skip), a type name that fits two classes ("Type assignment dilamma", a setup problem), a missing schema (`MissingSchemaException`).
+- A value at the root that can't be converted (there is no property to skip), a type name that fits two classes ("Type assignment dilemma", a setup problem), a missing schema (`MissingSchemaException`).
 
 ```csharp
 MsgPackSettings settings = new MsgPackSettings { ReadErrors = ReadErrorHandling.FailDeferred };

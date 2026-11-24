@@ -205,7 +205,7 @@ namespace LsMsgPack
           entry = EntryOf(c, assignedTo);
         FullPropertyInfo root = entry.Info;
 
-        if (!Options._useInexedSchema || isNull) // null is serialized without a schema
+        if (!Options._useIndexedSchema || isNull) // null is serialized without a schema
         {
           c.Mode = IdMode.Names;
           if (!ReferenceEquals(c.IdSettings, Options))

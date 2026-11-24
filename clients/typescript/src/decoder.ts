@@ -29,7 +29,7 @@ export interface DecodeOptions extends ReaderOptions {
    * The models give theirs (the names of their fields) when it is left out.
    */
   propertyNames?: PropertyNames;
-  /** The data starts with the indexed schema (default true, as the formatters write application/x-lsmsgpack). False: the body only (UseInexedSchema off). */
+  /** The data starts with the indexed schema (default true, as the formatters write application/x-lsmsgpack). False: the body only (UseIndexedSchema off). */
   indexedSchema?: boolean;
   /**
    * Generate the code that creates and fills the objects of each schema entry (new Function, the property names as string literals), default true: about a third faster,

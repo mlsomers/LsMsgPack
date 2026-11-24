@@ -112,7 +112,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(bool schema, ObjectLayout layout, NonPublicProperties nonPublic)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout };
       if (nonPublic != NonPublicProperties.None)
         settings.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, nonPublic), new FilterIgnoredAttribute(), new FilterStatic() };
       return settings;

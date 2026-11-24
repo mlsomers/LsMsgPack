@@ -174,31 +174,41 @@ A serializer without a context also works under NativeAOT, by reflection, when t
 </ItemGroup>
 ```
 
-- The bytes are the same as with the generated code. Classes are written and read by the runtime's plans; structs, enums, nullables and collections of value types go through reflection, boxed. Nothing is compiled at runtime there, so it is slower than the generated code (not measured).
+- The bytes are the same as with the generated code. Classes are written and read by the runtime's plans: a property of a class whose type is a class too (strings, nested objects, collections) through a delegate bound to its get or set method; properties of value types (numbers, dates, enums, structs) by reflection, boxed. Nothing is compiled at runtime there, so it is much slower than the generated code: on the invoices of the benchmarks, writing took 4x as long and allocated 3.7x as much, reading 2x as long (see [Measurements](#measurements)). Writing was then a little slower than System.Text.Json with its source generator.
 - A class or struct the trimmer stripped of every property and field is refused with a `MsgPackException` that names it and the fix, instead of being written as an empty object. A class without any property or field is refused the same way: under NativeAOT it can't be told apart from a trimmed one (the generated code covers it).
 - NativeAOT only has code for the generic types the app uses with value types. A member declared as a collection interface of a value type (`IList<Guid>`, or `IEnumerable<long>` read without a type id) gets the class LsMsgPack creates for it (`List<Guid>`): if the app never uses that class, reading it throws a `MsgPackException` that names it. Declare the member as the class, or use the class once in the app.
 - Immutable and frozen collections are filled by their factory (`ImmutableList.CreateRange`, `FrozenSet.ToFrozenSet`...), which the trimmer removes. LsMsgPack doesn't keep them (that would add 300 KB to every app): reading one throws a `MsgPackException` naming the attribute that keeps it, e.g. `[DynamicDependency("CreateRange``1(System.Collections.Generic.IEnumerable{``0})", typeof(ImmutableList))]` on a method of your app. For a value type element, also call the factory once (`ImmutableArray.CreateRange<int>(...)`).
 - The constructor still reports IL2026 and IL3050: suppress them where you create the serializer.
 - An app with one small class (.NET 10, linux-x64) was 47 KB larger than the same app with the generated code.
+- F# types always take this way (F# projects can't run the generator): see [FSharp.md](FSharp.md#source-generator-trimming-and-nativeaot).
 
 The NativeAOT smoke test (`LsMsgPackAotSmokeTest/run.sh`, CI job `aot-smoke`) publishes with every warning reported separately (`TrimmerSingleWarn=false`) and fails on any trim or AOT warning. It checks an invoice model with polymorphic properties, framework types (`DateOnly`, `Half`, `Int128`, `BigInteger`, `Complex`, `Rune`, tuples, `KeyValuePair`) and collections (`IList<int>`, `IReadOnlyList<T>`, `ImmutableArray<int>`, `IImmutableSet<string>`, `FrozenSet<string>`, `List<KeyValuePair<string, double>>`, collections in bulk) in nine option sets, with the context registered by the module initializer and only passed to the constructor. `LsMsgPackAotReflectionTest` then publishes the same program without the generator (its model kept by a descriptor) and checks the same bytes and values by reflection, and that a class it doesn't keep is refused.
 
 ## Measurements
 
-The invoice model of the benchmarks (100 invoices × 20 rounds), one machine: on a JIT in November 2026 (the medians of three runs, see [Comparison.md](Comparison.md#how-it-was-measured)), on WebAssembly in October 2026 (the fastest round). Speed is relative to System.Text.Json with its default options.
+The invoice model of the benchmarks (100 invoices × 20 rounds), one machine: on a JIT in November 2026 (the medians of three runs, see [Comparison.md](Comparison.md#how-it-was-measured)), on WebAssembly in October 2026 (the fastest round). Speed is relative to System.Text.Json with its default options; under NativeAOT, where its reflection is off, to System.Text.Json with its source generator (16.2 ms writing, 39.0 ms reading there; on the JIT 12.7 and 29.8 ms). The NativeAOT rows are the medians of three runs of `LsMsgPackAotBenchmark/run.sh` (November 2026, i7-7700K, linux-x64), which runs the same program on the JIT too: there both setups were within 10% of each other, as in the first table.
 
 | .NET 10, JIT | write | read |
 |---|---|---|
-| LsMsgPack, default options (indexed schema, arrays) | 3.58 ms (4.6x) | 5.10 ms (5.5x) |
-| the same with the generated code | 3.59 ms (4.6x) | 5.32 ms (5.3x) |
-| LsMsgPack, arrays without the schema | 2.90 ms (5.6x) | 5.02 ms (5.6x) |
-| the same with the generated code | 2.91 ms (5.6x) | 5.21 ms (5.4x) |
-| LsMsgPack, maps with property names | 4.93 ms (3.3x) | 5.48 ms (5.1x) |
-| the same with the generated code | 4.65 ms (3.5x) | 5.59 ms (5.0x) |
+| LsMsgPack, default options (indexed schema, arrays) | 3.85 ms (4.5x) | 5.18 ms (5.7x) |
+| the same with the generated code | 3.65 ms (4.8x) | 5.35 ms (5.5x) |
+| LsMsgPack, arrays without the schema | 3.03 ms (5.7x) | 5.03 ms (5.8x) |
+| the same with the generated code | 3.09 ms (5.6x) | 5.20 ms (5.6x) |
+| LsMsgPack, maps with property names | 5.35 ms (3.3x) | 5.56 ms (5.3x) |
+| the same with the generated code | 4.97 ms (3.5x) | 5.54 ms (5.3x) |
+
+| .NET 10, NativeAOT | write | read |
+|---|---|---|
+| LsMsgPack, default options, without the generator (reflection) | 18.5 ms (0.88x) | 12.6 ms (3.1x) |
+| the same with the generated code | 4.52 ms (3.6x) | 6.17 ms (6.3x) |
+| LsMsgPack, arrays without the schema, without the generator | 17.7 ms (0.92x) | 12.3 ms (3.2x) |
+| the same with the generated code | 4.06 ms (4.0x) | 5.93 ms (6.6x) |
+| LsMsgPack, maps with property names, without the generator | 19.4 ms (0.84x) | 16.0 ms (2.4x) |
+| the same with the generated code | 5.53 ms (2.9x) | 5.82 ms (6.7x) |
 
 | .NET 10, WebAssembly (node) | interpreter write | read | AOT write | read |
 |---|---|---|---|---|
 | LsMsgPack, default options | 183 ms (3.0x) | 235 ms (3.5x) | 78 ms (2.8x) | 69 ms (3.1x) |
 | the same with the generated code | 92 ms (5.8x) | 196 ms (4.2x) | 10.5 ms (20x) | 24 ms (8.7x) |
 
-With a JIT, LsMsgPack compiles its writers and readers at runtime (after 1000 objects of a class, as in these rows). Writing is about as fast without the generated code (within 10% either way), and so is reading arrays: in this table, where all setups share one process and its JIT profile, the generated code read them about 4% slower, measured one setup per process equally fast. Maps keyed by property names are read by the same code with and without the generated code: each key compared with the next property's name as constants. Measured one setup per process, the generated code read them as fast as the readers compiled at runtime (invoices 4.6 against 4.7 ms on .NET 8), and under NativeAOT, where nothing is compiled at runtime, 1.7x as fast as before it did so (a class of 120 properties: 4.7 -> 2.7 µs per object). It costs JIT time when a class is first read by names: about 75 µs per property on the machine of these tables. Decoding strings takes most of the time of reading, with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).
+With a JIT, LsMsgPack compiles its writers and readers at runtime (after 1000 objects of a class, as in these rows). Writing is about as fast without the generated code (within 10% either way), and so is reading arrays: in this table, where all setups share one process and its JIT profile, the generated code read them about 3% slower, measured one setup per process equally fast. Maps keyed by property names are read by the same code with and without the generated code: each key compared with the next property's name as constants. Measured one setup per process, the generated code read them as fast as the readers compiled at runtime (invoices 4.6 against 4.7 ms on .NET 8), and under NativeAOT, where nothing is compiled at runtime, 1.7x as fast as before it did so (a class of 120 properties: 4.7 -> 2.7 µs per object). Under NativeAOT without the generated code, the properties of value types are read and set through reflection, boxed (the others through delegates bound to their methods): writing takes about 4x and reading about 2x as long as with it. The benchmark's process has generated code, whose accessors the rows without it use too where reflection would be asked: an app without any generated code took 19.8 ms writing and 17.4 ms reading the default options (a scratch benchmark of the same invoices, one setup per process). It costs JIT time when a class is first read by names: about 75 µs per property on the machine of these tables. Decoding strings takes most of the time of reading, with or without generated code. On WebAssembly so did converting timestamps to local time (the default `ReadDateTimeKind` when that was measured, now UTC).

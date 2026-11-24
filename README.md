@@ -109,10 +109,10 @@ While using dictionaries diminishes the small size of a MsgPack message, it does
 Polymorphic class-hierarchy support
 -----------------------------------
 
-- **Indexed schema** (`UseInexedSchema`, on by default): each message starts with a small schema listing every type and its property names once. The body then refers to them by index. This roughly halves the size of messages with repeating objects, and it stays tolerant to adding or removing properties. Other MsgPack implementations don't understand it, so turn it off when they need to read your data.
-- **Type ids** (`AddTypeIdOptions`, `IfAmbiguious` by default): adds the type name (or a custom id) when a property holds a derived type. This gives polymorphic class hierarchies (a `List<IPet>` holding cats and dogs) out of the box, without `XmlInclude`-style attributes. The types are found again by their short name, in the assembly of the declared type. When they live elsewhere (e.g. a property declared as `object`, or plugins), register their assembly once with `CacheAssemblyTypes`.
+- **Indexed schema** (`UseIndexedSchema`, on by default): each message starts with a small schema listing every type and its property names once. The body then refers to them by index. This roughly halves the size of messages with repeating objects, and it stays tolerant to adding or removing properties. Other MsgPack implementations don't understand it, so turn it off when they need to read your data.
+- **Type ids** (`AddTypeIdOptions`, `IfAmbiguous` by default): adds the type name (or a custom id) when a property holds a derived type. This gives polymorphic class hierarchies (a `List<IPet>` holding cats and dogs) out of the box, without `XmlInclude`-style attributes. The types are found again by their short name, in the assembly of the declared type. When they live elsewhere (e.g. a property declared as `object`, or plugins), register their assembly once with `CacheAssemblyTypes`.
 - **Type resolvers** (`TypeResolvers`): control how type ids are written and resolved, for example with short `[XmlRoot]` names, numeric ids, or by recognizing a type from its properties.
-- **Plain MsgPack** (`UseInexedSchema = false`, `AddTypeIdOptions = Never`): plain maps of property names and values that any MsgPack implementation can read.
+- **Plain MsgPack** (`UseIndexedSchema = false`, `AddTypeIdOptions = Never`): plain maps of property names and values that any MsgPack implementation can read.
 
 See [docs/schema.md](docs/schema.md) for examples of each wire format, their pros and cons, how polymorphic class-hierarchy support works, and how type ids are resolved.
 

@@ -21,7 +21,7 @@ namespace LsMsgPackUnitTests
   {
     private static LsMsgPackSerializer Plain()
     {
-      return new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      return new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
     }
 
     private static byte[] Write(Action<MsgPackStreamWriter> write, LsMsgPackSerializer serializer = null, MsgPackStreamSchemas schemas = MsgPackStreamSchemas.PerObject, MsgPackStreamIndexOptions index = null)
@@ -408,6 +408,73 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
+    /// PopulateObject and PopulateObjectAsync read where ReadObject reads: a root value with its schema, the elements of a head's body (nil leaves the target, one longer than the buffer),
+    /// a collection root (cleared and filled). A target that cannot be read into throws before anything is read. Synchronous, async from the buffer and async in pieces of 1-3 bytes.
+    /// </summary>
+    [TestMethod]
+    public async Task PopulateObject_WhereReadObjectReads()
+    {
+      foreach (LsMsgPackSerializer serializer in new[] { new LsMsgPackSerializer(), Plain(), new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false }) })
+      {
+        byte[] bytes = Write(w =>
+        {
+          w.WriteObject(Order(2));
+          w.WriteHead<List<SwOrder>>();
+          w.WriteArrayStart();
+          w.WriteObject(Order(3));
+          w.WriteObject<SwOrder>(null);
+          w.WriteObject(Order(1500)); // longer than the buffer
+          w.WriteEnd();
+          w.WriteObject(Order(4).Lines);
+        }, serializer);
+
+        for (int mode = 0; mode < 3; mode++)
+        {
+          string setting = (serializer.Options.UseIndexedSchema ? "indexed" : serializer.Options.ObjectLayout.ToString()) + ", " + (mode == 0 ? "sync" : mode == 1 ? "async, whole reads" : "async");
+          using (MsgPackStreamReader reader = mode == 0 ? SyncReader(bytes, serializer) : AsyncReader(bytes, serializer, mode == 1))
+          {
+            Func<object, Task> populate = mode == 0 ? (Func<object, Task>)(t => { reader.PopulateObject(t); return Task.CompletedTask; }) : (t => reader.PopulateObjectAsync(t));
+            Assert.ThrowsExactly<ArgumentException>(() => reader.PopulateObject("a string"), setting);
+            Assert.ThrowsExactly<ArgumentException>(() => reader.PopulateObjectAsync(new int[3]), setting);
+            Assert.AreEqual(0, reader.Position, setting + ": nothing read");
+
+            SwOrder root = new SwOrder { Customer = "old" };
+            await populate(root);
+            AreEqual(Order(2), root);
+
+            if (mode == 0)
+            {
+              reader.ReadHead<List<SwOrder>>();
+              reader.Read();
+            }
+            else
+            {
+              await reader.ReadHeadAsync<List<SwOrder>>();
+              await reader.ReadAsync();
+            }
+            SwOrder first = new SwOrder();
+            await populate(first);
+            AreEqual(Order(3), first);
+            SwOrder kept = new SwOrder { Customer = "kept" };
+            await populate(kept);
+            Assert.AreEqual("kept", kept.Customer, setting + ": nil leaves the target");
+            SwOrder large = new SwOrder();
+            await populate(large);
+            AreEqual(Order(1500), large);
+            Assert.IsTrue(mode == 0 ? reader.AtEnd : await reader.AtEndAsync(), setting);
+            Assert.IsTrue(mode == 0 ? reader.Read() : await reader.ReadAsync(), setting);
+            Assert.AreEqual(MsgPackTokenType.ArrayEnd, reader.TokenType, setting);
+
+            List<SwLine> lines = new List<SwLine> { new SwLine { Product = "old" } };
+            await populate(lines);
+            Assert.AreEqual("P0,P1,P2,P3", string.Join(",", lines.Select(l => l.Product)), setting + ": cleared and filled");
+            Assert.IsFalse(mode == 0 ? reader.Read() : await reader.ReadAsync(), setting);
+          }
+        }
+      }
+    }
+
+    /// <summary>
     /// The payload of a null list is nil without a schema: ReadHead leaves it as the body.
     /// </summary>
     [TestMethod]
@@ -531,7 +598,7 @@ namespace LsMsgPackUnitTests
       foreach (string hex in new[] { "c1 91", "c1 ff", "c1 90 01 c1", "c1 c0", "92 01 c1 c0", "c1 80 a1 61 c1 c0", "c1 a0 01 c1 c0", "c1 c4 a1 61 c1 c0", "c1 a0 c1 90 c1 c0 c1 c0",
         "c1 90 c1 90 c1 90 c1 c0 c1 c0 c1 c0", "c1 90 01", "db ff ff ff f0 61 62 63", "dd ff ff ff ff 01", "c1 90 dd ff ff ff ff 01 02 c6 10 00 00 00 01 02 03", "c7 05 03 01", "d8 01 02", "c7 05 05 01", "c1", "92 d4 01", "91 91 91 01", "92 01", "82 a1 61 91 91 01" })
       {
-        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, MaxDepth = 2 });
+        LsMsgPackSerializer serializer = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, MaxDepth = 2 });
 
         foreach (bool wholeReads in new[] { false, true })
         {

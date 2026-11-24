@@ -234,7 +234,7 @@ namespace LsMsgPack
     [UnconditionalSuppressMessage("Trimming", "IL2055", Justification = TrimReasons.Fallback)]
     [UnconditionalSuppressMessage("Trimming", "IL2067", Justification = TrimReasons.Fallback)]
     [UnconditionalSuppressMessage("AOT", "IL3050", Justification = TrimReasons.Fallback)]
-    private object CreateInstantiation(Type definition, Type[] arguments, object[] constructorArguments)
+    internal object CreateInstantiation(Type definition, Type[] arguments, object[] constructorArguments)
     {
       if (CanBindDelegates)
         return Activator.CreateInstance(definition.MakeGenericType(arguments), BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public, null, constructorArguments, null);
@@ -274,8 +274,17 @@ namespace LsMsgPack
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(System.Collections.Generic.List<>))] // created by Core: the concrete types of the collection interfaces, the collections read boxed
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(System.Collections.Generic.Dictionary<,>))]
     [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(System.Collections.Generic.HashSet<>))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(PropWriter<,,>))] // the properties of classes whose type is a class (PropWriter.SharesCode)
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicConstructors, typeof(PropReader<,>))]
     internal static void ReflectionInstantiations()
     {
+#if NET8_0_OR_GREATER
+      // Never run (kept by the DynamicDependency of the constructors without a context): the filter modes of PropWriter are structs, so NativeAOT makes its shared code
+      // only for the instantiations named in the code. Without dynamic code the typed ShouldSerialize modes are not used (no typed delegate), BoxedFilter is.
+      GC.KeepAlive(new PropWriter<object, object, NoFilter>(null, null, (MethodInfo)null));
+      GC.KeepAlive(new PropWriter<object, object, DefaultValuesFilter>(null, null, (MethodInfo)null));
+      GC.KeepAlive(new PropWriter<object, object, BoxedFilter>(null, null, (MethodInfo)null));
+#endif
     }
 
     /// <summary>

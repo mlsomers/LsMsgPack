@@ -93,8 +93,8 @@ namespace LsMsgPack.Streaming
           break;
         case MsgPackStreamSchemas.PerStream:
         case MsgPackStreamSchemas.External:
-          if (!_options._useInexedSchema || !_options._writeSchemaReference || _options._schemaStore is null)
-            throw new ArgumentException($"{nameof(MsgPackStreamSchemas)}.{schemas} needs a serializer that refers to the schemas: set {nameof(MsgPackOptions.UseInexedSchema)}, {nameof(MsgPackOptions.WriteSchemaReference)} and a {nameof(MsgPackOptions.SchemaStore)} in its options.", nameof(schemas));
+          if (!_options._useIndexedSchema || !_options._writeSchemaReference || _options._schemaStore is null)
+            throw new ArgumentException($"{nameof(MsgPackStreamSchemas)}.{schemas} needs a serializer that refers to the schemas: set {nameof(MsgPackOptions.UseIndexedSchema)}, {nameof(MsgPackOptions.WriteSchemaReference)} and a {nameof(MsgPackOptions.SchemaStore)} in its options.", nameof(schemas));
           break;
         default:
           throw new ArgumentOutOfRangeException(nameof(schemas));
@@ -714,7 +714,7 @@ namespace LsMsgPack.Streaming
       if (body && _schemaHead)
         throw new InvalidOperationException("The body of this head has no classes (rows of a data reader): its values are written as values, not as objects.");
       head = body ? _head : null;
-      if (!body && _depth > 0 && _options._useInexedSchema)
+      if (!body && _depth > 0 && _options._useIndexedSchema)
         throw new InvalidOperationException($"With the indexed schema an object is two values (its schema or a reference to it, then the object): {nameof(WriteObject)} writes it as a root value of the stream ({nameof(Depth)} 0). To write objects in an array or map, write the schema once before it with {nameof(WriteHead)}, or use a serializer without the indexed schema.");
       Value();
       return body;
@@ -810,7 +810,7 @@ namespace LsMsgPack.Streaming
 
       _head = null;
       _schemaHead = false;
-      if (_options._useInexedSchema)
+      if (_options._useIndexedSchema)
       {
         Serializer.WriterHead head = prepared ?? _serializer.PrepareHead(root);
         if (_ix != null && _ix.Entry == null)
@@ -840,7 +840,7 @@ namespace LsMsgPack.Streaming
       _head = null;
       if (_ix != null && _ix.Entry == null)
         StartEntry(); // the head and its body are one entry
-      if (_options._useInexedSchema)
+      if (_options._useIndexedSchema)
       {
         SchemaStore store = _serializer.HeadStore();
         SchemaId id = store.AddWritten(schema, version);

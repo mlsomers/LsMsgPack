@@ -243,7 +243,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings { ObjectLayout = layout };
       if (mode == "names" || mode == "none")
-        settings.UseInexedSchema = false;
+        settings.UseIndexedSchema = false;
       else
       {
         settings.SchemaVersion = mode.StartsWith("v1", StringComparison.Ordinal) ? SchemaVersion.Names : SchemaVersion.Described;
@@ -496,7 +496,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = Settings(mode, layout);
       settings.TrimTrailingNulls = trim;
-      LsMsgPackOptions options = new LsMsgPackOptions { ObjectLayout = layout, UseInexedSchema = settings.UseInexedSchema, SchemaVersion = settings.SchemaVersion, TrimTrailingNulls = trim, UseRegisteredContexts = false, CompileWritersAfter = 3 };
+      LsMsgPackOptions options = new LsMsgPackOptions { ObjectLayout = layout, UseIndexedSchema = settings.UseIndexedSchema, SchemaVersion = settings.SchemaVersion, TrimTrailingNulls = trim, UseRegisteredContexts = false, CompileWritersAfter = 3 };
       LsMsgPackSerializer serializer = new LsMsgPackSerializer(options);
       XdFlat flat = new XdFlat { Id = 1, Customer = "Ann", Discount = 1.25m, Weight = 2.5, Due = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc), Note = "n" };
       XdFlatOld old = serializer.Deserialize<XdFlatOld>(serializer.Serialize(flat));
@@ -505,7 +505,7 @@ namespace LsMsgPackUnitTests
 
       byte[] runtime = serializer.Serialize(old);
       byte[] runtimePoint = serializer.Serialize(point);
-      bool names = !settings.UseInexedSchema;
+      bool names = !settings.UseIndexedSchema;
       for (int t = 0; t < 5 && (CompiledWriterTests.WriterOf(serializer, typeof(XdFlatOld), names) is null || CompiledWriterTests.WriterOf(serializer, typeof(XdPoint), names) is null); t++)
       {
         serializer.Serialize(old);

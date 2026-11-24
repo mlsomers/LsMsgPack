@@ -212,7 +212,7 @@ await writer.close();    // writes the index and closes the sink
 - The writer refuses what the format does not allow, with the same checks as the .NET writer.
 - The buffer goes to the sink at `flushThreshold` bytes (64 KiB). Await `ready` now and then so the chunks do not pile up while the sink is slow.
 - With `index` it writes the index (entries, `pointInterval`, `checkpointInterval`, `metadata`, a `hasher`, an `observer`, `beginEntry`, `addPoint`), as the .NET writer does.
-- Objects are written as plain MsgPack, like request bodies: maps of names, without a schema or a head. A .NET reader reads them with a serializer without the indexed schema (`UseInexedSchema = false`, `PropertyNameCaseInsensitive = true` for camelCase names).
+- Objects are written as plain MsgPack, like request bodies: maps of names, without a schema or a head. A .NET reader reads them with a serializer without the indexed schema (`UseIndexedSchema = false`, `PropertyNameCaseInsensitive = true` for camelCase names).
 
 Not supported: writing heads or the indexed schema, a byte order other than the specification's (`EndianAction`), and appending to a stream.
 

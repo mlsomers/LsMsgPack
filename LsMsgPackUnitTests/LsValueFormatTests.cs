@@ -13,8 +13,8 @@ namespace LsMsgPackUnitTests
   [TestClass]
   public class LsValueFormatTests
   {
-    private static readonly LsMsgPackSerializer AsText = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, DecimalFormat = DecimalFormat.String, UseRegisteredContexts = false });
-    private static readonly LsMsgPackSerializer Plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, UseRegisteredContexts = false });
+    private static readonly LsMsgPackSerializer AsText = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, DecimalFormat = DecimalFormat.String, UseRegisteredContexts = false });
+    private static readonly LsMsgPackSerializer Plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, UseRegisteredContexts = false });
 
     private static IEnumerable<decimal> Decimals()
     {
@@ -168,8 +168,8 @@ namespace LsMsgPackUnitTests
       {
         foreach (DateTimeKind kind in new[] { DateTimeKind.Utc, DateTimeKind.Local, DateTimeKind.Unspecified })
         {
-          MsgPackSettings ls = new MsgPackSettings { UseInexedSchema = false, EndianAction = endian, ReadDateTimeKind = kind };
-          LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, EndianAction = endian, ReadDateTimeKind = kind, UseRegisteredContexts = false });
+          MsgPackSettings ls = new MsgPackSettings { UseIndexedSchema = false, EndianAction = endian, ReadDateTimeKind = kind };
+          LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, EndianAction = endian, ReadDateTimeKind = kind, UseRegisteredContexts = false });
           foreach (DateTime moment in Moments())
           {
             byte[] expected = MsgPackSerializer.Serialize(moment, typeof(DateTime), ls);

@@ -44,6 +44,16 @@ namespace LsMsgPackUnitTests
       public int Y { get; set; }
     }
 
+    /// <summary>
+    /// A newer <see cref="AsLine"/>: read as AsLine, Note is an unknown property (a difference).
+    /// </summary>
+    public class AsLineNoted
+    {
+      public string Product { get; set; }
+      public int Quantity { get; set; }
+      public string Note { get; set; }
+    }
+
     public class AsNode
     {
       public string Name { get; set; }
@@ -75,8 +85,8 @@ namespace LsMsgPackUnitTests
     /// </summary>
     private static IEnumerable<(string Name, LsMsgPackSerializer Serializer)> Serializers()
     {
-      yield return ("names", new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false }));
-      yield return ("names, map", new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }));
+      yield return ("names", new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false }));
+      yield return ("names, map", new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }));
       yield return ("inline", new LsMsgPackSerializer(new LsMsgPackOptions()));
       yield return ("inline, map", new LsMsgPackSerializer(new LsMsgPackOptions { ObjectLayout = ObjectLayout.Map }));
       yield return ("reference", new LsMsgPackSerializer(new LsMsgPackOptions { SchemaStore = new SchemaStore(), WriteSchemaReference = true }));
@@ -240,12 +250,76 @@ namespace LsMsgPackUnitTests
     }
 
     /// <summary>
+    /// A MemoryStream whose array is not exposed (<c>new MemoryStream(byte[])</c>) cannot be read in place: read ahead while more than 4 KB is left, the rest copied whole after that
+    /// (StreamPayload.ReadAhead, CopyRest). The values and positions of a stream read without seeking, Populate too, and the same errors for data that ends anywhere.
+    /// </summary>
+    [TestMethod]
+    public async Task HiddenMemoryStream_AsAStreamWithoutSeeking()
+    {
+      foreach ((string name, LsMsgPackSerializer lt) in Serializers())
+      {
+        AsOrder order = NewOrder();
+        AsOrder large = NewOrder(3000);
+        List<byte[]> payloads = new List<byte[]>
+        {
+          lt.Serialize(order), lt.Serialize(new AsPoint { X = 3, Y = -4 }), lt.Serialize(large), lt.Serialize("text"), lt.Serialize(order), lt.Serialize(order), lt.Serialize(-70000)
+        };
+        byte[] data = payloads.SelectMany(p => p).Concat(new byte[] { 0x2A }).ToArray();
+        Assert.IsGreaterThan(4096, payloads[2].Length, name + ": the large order is read ahead");
+        Assert.IsLessThan(4096, payloads[4].Length + payloads[5].Length + payloads[6].Length, name + ": the last orders are copied whole");
+        long[] ends = payloads.Select(p => (long)p.Length).ToArray();
+        for (int t = 1; t < ends.Length; t++)
+          ends[t] += ends[t - 1];
+
+        MemoryStream hidden = new MemoryStream(data);
+        Assert.IsFalse(hidden.TryGetBuffer(out ArraySegment<byte> none), "the array is not exposed");
+        string expected = Dump(order);
+        Assert.AreEqual(expected, Dump(lt.Deserialize<AsOrder>(hidden)), name);
+        Assert.AreEqual(ends[0], hidden.Position, name + ": after the order");
+        Assert.AreEqual(-4, (await lt.DeserializeAsync<AsPoint>(hidden)).Y, name);
+        Assert.AreEqual(ends[1], hidden.Position, name + ": after the struct");
+        Assert.AreEqual(Dump(large), Dump((AsOrder)lt.Deserialize(typeof(AsOrder), hidden)), name + ", large");
+        Assert.AreEqual(ends[2], hidden.Position, name + ": after the large order");
+        Assert.AreEqual("text", lt.Deserialize<string>(hidden), name);
+        Assert.AreEqual(ends[3], hidden.Position, name + ": after the string");
+        AsOrder target = new AsOrder();
+        lt.Populate(hidden, target);
+        Assert.AreEqual(expected, Dump(target), name + ", populated");
+        Assert.AreEqual(ends[4], hidden.Position, name + ": after the populated order");
+        Assert.AreEqual(expected, Dump(lt.Deserialize<AsOrder>(hidden, out ReadDifferences differences)), name + ", reporting");
+        Assert.IsNull(differences, name);
+        Assert.AreEqual(ends[5], hidden.Position, name + ": after the last order");
+        Assert.AreEqual(-70000, lt.Deserialize<int>(hidden), name);
+        Assert.AreEqual(ends[6], hidden.Position, name + ": after the int");
+        Assert.AreEqual(0x2A, hidden.ReadByte(), name);
+
+        hidden.Position = ends[1]; // the large order, populated: read ahead
+        AsOrder populated = new AsOrder();
+        await lt.PopulateAsync(hidden, populated);
+        Assert.AreEqual(Dump(large), Dump(populated), name + ", large populated");
+        Assert.AreEqual(ends[2], hidden.Position, name + ": after the large order populated");
+      }
+
+      LsMsgPackSerializer inline = new LsMsgPackSerializer(new LsMsgPackOptions());
+      byte[] one = inline.Serialize(NewOrder(3000));
+      for (int cut = 0; cut < one.Length; cut += cut < 40 ? 1 : 997) // data that ends anywhere: copied whole, the errors of the data in memory; read ahead, those of the scan
+      {
+        byte[] data = one.Take(cut).ToArray();
+        MsgPackException expected = cut <= 4096
+          ? Assert.ThrowsExactly<MsgPackException>(() => inline.Deserialize<AsOrder>(new MemoryStream(data, 0, data.Length, false, true)), "cut at " + cut)
+          : Assert.ThrowsExactly<MsgPackException>(() => inline.Deserialize<AsOrder>(new NonSeekableStream(data)), "cut at " + cut);
+        MsgPackException hidden = Assert.ThrowsExactly<MsgPackException>(() => inline.Deserialize<AsOrder>(new MemoryStream(data)), "cut at " + cut);
+        Assert.AreEqual(expected.Message, hidden.Message, "cut at " + cut);
+      }
+    }
+
+    /// <summary>
     /// Data that ends anywhere, data that is not valid, nesting too deep, a claimed length that never arrives: the errors of the synchronous Deserialize of a stream.
     /// </summary>
     [TestMethod]
     public async Task Errors_AsTheSynchronousRead()
     {
-      LsMsgPackSerializer names = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+      LsMsgPackSerializer names = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
       LsMsgPackSerializer inline = new LsMsgPackSerializer(new LsMsgPackOptions());
       byte[] order = names.Serialize(NewOrder());
       byte[] withSchema = inline.Serialize(NewOrder());
@@ -257,7 +331,7 @@ namespace LsMsgPackUnitTests
       string escape = await AssertSameError<object>(names, new byte[] { 0x92, 0x01, 0xC1, 0x00 }, "0xC1");
       StringAssert.Contains(escape, "0xC1");
 
-      LsMsgPackSerializer shallow = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, MaxDepth = 3 });
+      LsMsgPackSerializer shallow = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, MaxDepth = 3 });
       Assert.IsNotNull(shallow.Deserialize<object>(new NonSeekableStream(new byte[] { 0x91, 0x91, 0x91, 0x01 }))); // 3 levels: fine
       Assert.IsNotNull(await shallow.DeserializeAsync<object>(new AsyncOnlyStream(new byte[] { 0x91, 0x91, 0x91, 0x01 })));
       string deep = await AssertSameError<object>(shallow, new byte[] { 0x91, 0x91, 0x91, 0x91, 0x01 }, "depth");
@@ -294,6 +368,175 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(sync.Message, untyped.Message, setting);
       return sync.Message;
     }
+
+    #region Differences and Populate
+
+    /// <summary>
+    /// DeserializeAsync with a callback: called once with what the synchronous out overload reports, not called for data that matches; from a stream that refuses synchronous reads and from a MemoryStream (without awaiting).
+    /// </summary>
+    [TestMethod]
+    public async Task DeserializeAsync_Differences_AsTheSynchronousRead()
+    {
+      foreach ((string name, LsMsgPackSerializer lt) in Serializers())
+      {
+        byte[] data = lt.Serialize(new AsLineNoted { Product = "p", Quantity = 3, Note = "newer" }).Concat(new byte[] { 0x2A }).ToArray();
+        AsLine expected = lt.Deserialize<AsLine>(data, out ReadDifferences sync);
+        Assert.IsNotNull(sync, name + ": the premise, a difference");
+        string report = sync.GenerateReport();
+
+        List<ReadDifferences> reported = new List<ReadDifferences>();
+        AsyncOnlyStream stream = new AsyncOnlyStream(data);
+        AsLine read = await lt.DeserializeAsync<AsLine>(stream, reported.Add);
+        Assert.AreEqual(expected.Product + expected.Quantity, read.Product + read.Quantity, name);
+        Assert.AreEqual(data.Length - 1, stream.Consumed, name + ": left after the value");
+        Assert.HasCount(1, reported, name);
+        Assert.AreEqual(report, reported[0].GenerateReport(), name);
+        Assert.AreSame(read, reported[0].Root, name);
+
+        object untyped = await lt.DeserializeAsync(typeof(AsLine), new AsyncOnlyStream(data, true), reported.Add);
+        Assert.AreEqual("p3", ((AsLine)untyped).Product + ((AsLine)untyped).Quantity, name);
+        Assert.HasCount(2, reported, name);
+        Assert.AreEqual(report, reported[1].GenerateReport(), name);
+
+        MemoryStream memory = new MemoryStream(data);
+        Task<AsLine> inMemory = lt.DeserializeAsync<AsLine>(memory, reported.Add);
+        Assert.IsTrue(inMemory.IsCompleted, name + ": a MemoryStream needs no await");
+        Assert.AreEqual("p", (await inMemory).Product, name);
+        Assert.AreEqual(data.Length - 1, memory.Position, name);
+        Task<object> untypedInMemory = lt.DeserializeAsync(typeof(AsLine), new MemoryStream(data), reported.Add);
+        Assert.IsTrue(untypedInMemory.IsCompleted, name);
+        await untypedInMemory;
+        Assert.HasCount(4, reported, name);
+        Assert.AreEqual(report, reported[3].GenerateReport(), name);
+
+        // matching data: not called; null: read without reporting
+        AsOrder order = NewOrder();
+        byte[] matching = lt.Serialize(order);
+        Assert.AreEqual(Dump(order), Dump(await lt.DeserializeAsync<AsOrder>(new AsyncOnlyStream(matching), d => Assert.Fail(name + ": called for matching data"))));
+        Assert.AreEqual(Dump(order), Dump(await lt.DeserializeAsync<AsOrder>(new MemoryStream(matching), d => Assert.Fail(name + ": called for matching data"))));
+        Assert.AreEqual(Dump(order), Dump((AsOrder)await lt.DeserializeAsync(typeof(AsOrder), new AsyncOnlyStream(matching), null)));
+        Assert.AreEqual(Dump(order), Dump(await lt.DeserializeAsync<AsOrder>(new AsyncOnlyStream(matching), null, CancellationToken.None)));
+      }
+    }
+
+    /// <summary>
+    /// A failed read does not call back: the exception is the synchronous read's, with the differences found until then in its Data when the synchronous one has them.
+    /// </summary>
+    [TestMethod]
+    public async Task DeserializeAsync_Differences_NotCalledWhenReadingFails()
+    {
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      // an unknown property, then a value that is no number (ReadErrors.FailFast)
+      byte[] data = lt.Serialize(new List<Dictionary<string, object>> { new Dictionary<string, object> { { "Product", "p" }, { "Note", "n" } }, new Dictionary<string, object> { { "Quantity", "many" } } });
+      Exception sync = null;
+      try
+      {
+        lt.Deserialize<List<AsLine>>(new NonSeekableStream(data), out ReadDifferences unused);
+      }
+      catch (Exception ex)
+      {
+        sync = ex;
+      }
+      Assert.IsNotNull(sync, "the premise: the read fails");
+      Assert.IsTrue(sync.Data.Contains(ReadDifferences.ExceptionDataKey), "the premise: differences before the error");
+      foreach (Stream source in new Stream[] { new AsyncOnlyStream(data), new MemoryStream(data) })
+      {
+        Exception async = null;
+        try
+        {
+          await lt.DeserializeAsync<List<AsLine>>(source, d => Assert.Fail("called after a failure"));
+        }
+        catch (Exception ex)
+        {
+          async = ex;
+        }
+        Assert.IsNotNull(async, source.GetType().Name);
+        Assert.AreEqual(sync.GetType(), async.GetType());
+        Assert.AreEqual(sync.Message, async.Message);
+        Assert.AreEqual(((ReadDifferences)sync.Data[ReadDifferences.ExceptionDataKey]).GenerateReport(), ((ReadDifferences)async.Data[ReadDifferences.ExceptionDataKey]).GenerateReport());
+      }
+    }
+
+    /// <summary>
+    /// PopulateAsync: the target gets the values (the same as the synchronous Populate), the stream is left after the value, a MemoryStream is read without awaiting,
+    /// a collection target is cleared and filled, the differences as Populate's out overload reports them.
+    /// </summary>
+    [TestMethod]
+    public async Task PopulateAsync_AsTheSynchronousPopulate()
+    {
+      foreach ((string name, LsMsgPackSerializer lt) in Serializers())
+      {
+        AsOrder written = NewOrder();
+        byte[] data = lt.Serialize(written).Concat(new byte[] { 0x2A }).ToArray();
+        AsOrder target = new AsOrder();
+        AsyncOnlyStream stream = new AsyncOnlyStream(data);
+        await lt.PopulateAsync(stream, target);
+        Assert.AreEqual(Dump(written), Dump(target), name);
+        Assert.AreEqual(data.Length - 1, stream.Consumed, name + ": left after the value");
+
+        MemoryStream memory = new MemoryStream(data);
+        AsOrder inMemory = new AsOrder();
+        Task populated = lt.PopulateAsync(memory, inMemory);
+        Assert.IsTrue(populated.IsCompleted, name + ": a MemoryStream needs no await");
+        await populated;
+        Assert.AreEqual(Dump(written), Dump(inMemory), name);
+        Assert.AreEqual(data.Length - 1, memory.Position, name);
+
+        List<AsLine> lines = new List<AsLine> { new AsLine { Product = "old" } };
+        await lt.PopulateAsync(new AsyncOnlyStream(lt.Serialize(written.Lines)), lines);
+        Assert.AreEqual("p0:0,p1:1000", string.Join(",", lines.Select(l => l.Product + ":" + l.Quantity)), name + ": cleared and filled");
+
+        AsOrder nil = new AsOrder { Name = "kept" };
+        await lt.PopulateAsync(new AsyncOnlyStream(new byte[] { 0xC0 }), nil);
+        Assert.AreEqual("kept", nil.Name, name + ": nil leaves the target");
+
+        byte[] newer = lt.Serialize(new AsLineNoted { Product = "p", Quantity = 3, Note = "newer" });
+        lt.Populate(newer, new AsLine(), out ReadDifferences sync);
+        Assert.IsNotNull(sync, name + ": the premise, a difference");
+        List<ReadDifferences> reported = new List<ReadDifferences>();
+        AsLine line = new AsLine();
+        await lt.PopulateAsync(new AsyncOnlyStream(newer), line, reported.Add);
+        Assert.AreEqual("p3", line.Product + line.Quantity, name);
+        await lt.PopulateAsync(new MemoryStream(newer), new AsLine(), reported.Add);
+        Assert.HasCount(2, reported, name);
+        Assert.AreEqual(sync.GenerateReport(), reported[0].GenerateReport(), name);
+        Assert.AreEqual(sync.GenerateReport(), reported[1].GenerateReport(), name);
+        await lt.PopulateAsync(new AsyncOnlyStream(data), new AsOrder(), d => Assert.Fail(name + ": called for matching data"));
+      }
+    }
+
+    /// <summary>
+    /// The members the data lacks keep their values (a map without them); a target that cannot be read into throws before the stream is read; errors as the synchronous Populate.
+    /// </summary>
+    [TestMethod]
+    public async Task PopulateAsync_KeepsMissingMembers_RefusesBeforeReading()
+    {
+      LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      AsLine line = new AsLine { Product = "old", Quantity = 5 };
+      await lt.PopulateAsync(new AsyncOnlyStream(lt.Serialize(new Dictionary<string, object> { { "Product", "new" } })), line);
+      Assert.AreEqual("new5", line.Product + line.Quantity);
+
+      AsyncOnlyStream untouched = new AsyncOnlyStream(lt.Serialize(NewOrder()));
+      Assert.ThrowsExactly<ArgumentException>(() => lt.PopulateAsync(untouched, "a string"));
+      Assert.ThrowsExactly<ArgumentNullException>(() => lt.PopulateAsync<AsOrder>(untouched, null));
+      Assert.AreEqual(0, untouched.Consumed, "nothing read");
+
+      byte[] cut = lt.Serialize(NewOrder()).Take(40).ToArray();
+      Exception sync = Assert.ThrowsExactly<MsgPackException>(() => lt.Populate(new NonSeekableStream(cut), new AsOrder()));
+      Exception async = await Assert.ThrowsExactlyAsync<MsgPackException>(() => lt.PopulateAsync(new AsyncOnlyStream(cut), new AsOrder()));
+      Assert.AreEqual(sync.Message, async.Message);
+      Task failed = lt.PopulateAsync(new MemoryStream(cut), new AsOrder());
+      Assert.IsTrue(failed.IsFaulted, "a faulted task, not an exception from the call");
+
+      using (CancellationTokenSource cancel = new CancellationTokenSource())
+      {
+        cancel.Cancel();
+        Task cancelled = lt.PopulateAsync(new AsyncOnlyStream(cut), new AsOrder(), cancel.Token);
+        Assert.IsTrue(cancelled.IsCanceled);
+      }
+    }
+
+    #endregion
 
     /// <summary>
     /// The stream cannot be peeked: each read asks for what the value needs at least, so a list of 1000 objects takes a few dozen reads, not one per byte.

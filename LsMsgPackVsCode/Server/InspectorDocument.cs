@@ -119,7 +119,7 @@ namespace LsMsgPackInspector
         ContinueProcessingOnBreakingError = settings.ContinueOnError,
         EndianAction = settings.Endian,
         // The extensions of LsMsgPack: decimals (type 1), references (5), DateTimes (6), and values of unknown length and the index of a stream, as its MsgPackStreamWriter writes them
-        CustomExtentionTypes = settings.LsMsgPackExtensions ? MsgPackSettings.Default_CustomExtentionTypes : new ICustomExt[0],
+        CustomExtensionTypes = settings.LsMsgPackExtensions ? MsgPackSettings.Default_CustomExtensionTypes : new ICustomExt[0],
         ReadLsMsgPackExtensions = settings.LsMsgPackExtensions,
         ReadStreams = settings.LsMsgPackExtensions,
         ReadHubMessages = true, // a capture of a SignalR connection (only when the whole data is one): its handshake, length prefixes and messages
@@ -547,7 +547,7 @@ namespace LsMsgPackInspector
         result.Issues.Add(new IssueModel()
         {
           Item = id,
-          Bytes = issues[t].WaistedBytes,
+          Bytes = issues[t].WastedBytes,
           Severity = issues[t].Severity.ToString(),
           Message = issues[t].Message
         });
@@ -574,7 +574,7 @@ namespace LsMsgPackInspector
         result.Issues.Add(new IssueModel()
         {
           Item = GetDisplayedId(issues[t].Item) ?? rootId,
-          Bytes = issues[t].WaistedBytes,
+          Bytes = issues[t].WastedBytes,
           Severity = issues[t].Severity.ToString(),
           Message = issues[t].Message
         });

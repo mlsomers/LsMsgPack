@@ -103,7 +103,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(ObjectCreation creation)
     {
-      return new MsgPackSettings() { UseInexedSchema = false, ObjectCreation = creation };
+      return new MsgPackSettings() { UseIndexedSchema = false, ObjectCreation = creation };
     }
 
     /// <summary>
@@ -278,7 +278,7 @@ namespace LsMsgPackUnitTests
       CreationCollections value = new CreationCollections() { Name = "x", Items = new List<string>() { "a", "b" }, Counts = new Dictionary<string, int>() { { "a", 1 } } };
       foreach (bool schema in new[] { true, false })
       {
-        MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = schema, ObjectCreation = creation };
+        MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = schema, ObjectCreation = creation };
         CreationCollections read = Serializer.Deserialize<CreationCollections>(Serializer.Serialize(value, settings), settings);
         CollectionAssert.AreEqual(value.Items, read.Items);
         Assert.AreEqual(1, read.Counts["a"]);

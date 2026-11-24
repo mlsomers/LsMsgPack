@@ -53,7 +53,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings MapsWithoutSchema(int maxDepth = 256)
     {
-      return new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, MaxDepth = maxDepth };
+      return new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, MaxDepth = maxDepth };
     }
 
     private static byte[] Map(params (string Key, string Value)[] entries)
@@ -269,7 +269,7 @@ namespace LsMsgPackUnitTests
     {
       DepthNode node = new DepthNode();
       node.Next = node;
-      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(node, new MsgPackSettings() { UseInexedSchema = schema }));
+      MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(node, new MsgPackSettings() { UseIndexedSchema = schema }));
       StringAssert.Contains(ex.Message, nameof(MsgPackOptions.MaxDepth));
     }
 
@@ -279,7 +279,7 @@ namespace LsMsgPackUnitTests
     [DataRow(false, ObjectLayout.Map)]
     public void DeepGraph(bool schema, ObjectLayout layout)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout };
       DepthNode read = Serializer.Deserialize<DepthNode>(Serializer.Serialize(DepthNode.Chain(200), settings), settings);
       int levels = 0;
       for (DepthNode node = read; node != null; node = node.Next)

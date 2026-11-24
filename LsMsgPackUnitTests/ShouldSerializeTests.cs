@@ -214,7 +214,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(ObjectLayout layout, bool useSchema, params IMsgPackPropertyIncludeDynamically[] filters)
     {
-      return new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema, DynamicFilters = filters };
+      return new MsgPackSettings() { ObjectLayout = layout, UseIndexedSchema = useSchema, DynamicFilters = filters };
     }
 
     private static readonly IMsgPackPropertyIncludeDynamically[] ShouldSerializeOnly = new IMsgPackPropertyIncludeDynamically[] { new FilterShouldSerialize() };
@@ -444,13 +444,13 @@ namespace LsMsgPackUnitTests
           LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions()
           {
             ObjectLayout = layout,
-            UseInexedSchema = useSchema,
+            UseIndexedSchema = useSchema,
             DynamicFilters = filters,
             CompileWritersAfter = compileAfter,
             UseRegisteredContexts = false
           });
           string message = $"{layout}, schema {useSchema}, {Describe(filters)}, compile after {compileAfter}";
-          AssertSameAsDebug(values => lt.Serialize(values), new MsgPackSettings() { ObjectLayout = layout, UseInexedSchema = useSchema, DynamicFilters = filters }, message);
+          AssertSameAsDebug(values => lt.Serialize(values), new MsgPackSettings() { ObjectLayout = layout, UseIndexedSchema = useSchema, DynamicFilters = filters }, message);
           bool custom = f == FilterSets.Length - 1; // FilterDefaultValues(true): custom filters, not compiled
           Assert.AreEqual(compileAfter == 0 && !custom ? "CompiledObjectCode" : null, CompiledWriterTests.WriterOf(lt, typeof(SsCalls), !useSchema), message);
         }

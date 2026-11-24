@@ -8,7 +8,7 @@ using System.Collections.Generic;
 namespace LsMsgPackUnitTests
 {
   /// <summary>
-  /// Extensions without a registered type (see <see cref="MsgPackSettings.CustomExtentionTypes"/>) are not converted to anything but their bytes (byte[]) or themselves (object).
+  /// Extensions without a registered type (see <see cref="MsgPackSettings.CustomExtensionTypes"/>) are not converted to anything but their bytes (byte[]) or themselves (object).
   /// <para>Their bytes used to be converted like binary data, e.g. a Guid written by Nerdbank.MessagePack (extension type 2, big-endian) was silently read as a different Guid.</para>
   /// </summary>
   public abstract class UnknownExtensions
@@ -18,7 +18,7 @@ namespace LsMsgPackUnitTests
     // 0f8fad5b-d9cb-469f-a165-70867728950e in big-endian (RFC 4122) byte order, not the order of Guid.ToByteArray()
     private static readonly byte[] GuidBigEndian = { 0x0f, 0x8f, 0xad, 0x5b, 0xd9, 0xcb, 0x46, 0x9f, 0xa1, 0x65, 0x70, 0x86, 0x77, 0x28, 0x95, 0x0e };
 
-    private static readonly MsgPackSettings WithoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+    private static readonly MsgPackSettings WithoutSchema = new MsgPackSettings() { UseIndexedSchema = false };
 
     public class WithUnknownExtension
     {

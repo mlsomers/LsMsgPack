@@ -32,7 +32,7 @@ namespace LsMsgPackFormattersTests
   {
     private static readonly Order SampleOrder = new Order { Id = 42, Customer = "Infotopie", Amounts = new[] { 1.5, 2.25 } };
 
-    private static MsgPackSettings Plain => new MsgPackSettings { UseInexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never, ObjectLayout = ObjectLayout.Map };
+    private static MsgPackSettings Plain => new MsgPackSettings { UseIndexedSchema = false, AddTypeIdOptions = AddTypeIdOption.Never, ObjectLayout = ObjectLayout.Map };
 
 #nullable enable // as in a new project: ASP.NET Core takes a parameter without annotations as optional
     private static void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -382,11 +382,11 @@ namespace LsMsgPackFormattersTests
     [Test]
     public async Task SetupActionIsApplied()
     {
-      (IHost host, HttpClient client) = await StartAsync(services => services.AddLsMsgPack(o => o.XLsMsgPack.UseInexedSchema = false));
+      (IHost host, HttpClient client) = await StartAsync(services => services.AddLsMsgPack(o => o.XLsMsgPack.UseIndexedSchema = false));
       using (host)
       {
         HttpResponseMessage response = await client.SendAsync(Request(HttpMethod.Get, "/min/order", MsgPackMediaTypes.XLsMsgPack));
-        Assert.That(MsgPackItem.UnpackMultiple(await response.Content.ReadAsByteArrayAsync()).Count, Is.EqualTo(1), "UseInexedSchema = false from the setup action should be used");
+        Assert.That(MsgPackItem.UnpackMultiple(await response.Content.ReadAsByteArrayAsync()).Count, Is.EqualTo(1), "UseIndexedSchema = false from the setup action should be used");
       }
     }
   }

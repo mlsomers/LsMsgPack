@@ -15,7 +15,7 @@ namespace LsMsgPack.Analyzers
   /// <summary>
   /// The properties and fields of the serialized types (<see cref="ModelTypes"/>): default values that are lost (LSMP001-003, LSMP006) and places where the data picks the type (LSMP004),
   /// the calls and actions that read into such a place (LSMP005) or into a place without property names (LSMP007), classes of other projects that are not checked (LSMP008),
-  /// JSON document types (LSMP009), public fields the serializers leave out (LSMP010) and extension data members the serializers refuse (LSMP011). See docs/Analyzers.md.
+  /// JSON document types (LSMP009), public fields the serializers leave out (LSMP010) and extension data members the serializers refuse (LSMP011); on any member, an enum format that has no effect (LSMP012). See docs/Analyzers.md.
   /// <para>Reported from symbol and operation actions (not at the end of the compilation), so the IDE shows them while typing and offers the code fixes.</para>
   /// </summary>
   [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -23,7 +23,8 @@ namespace LsMsgPack.Analyzers
   {
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
       ImmutableArray.Create(Rules.MissingDefaultValue, Rules.DefaultValueDiffers, Rules.DefaultValueType, Rules.OpenProperty, Rules.OpenRead,
-        Rules.NullReadAsInitial, Rules.UntypedRead, Rules.UncheckedModel, Rules.JsonDocument, Rules.FieldLeftOut, Rules.InvalidExtensionData);
+        Rules.NullReadAsInitial, Rules.UntypedRead, Rules.UncheckedModel, Rules.JsonDocument, Rules.FieldLeftOut, Rules.InvalidExtensionData,
+        Rules.EnumFormatWithoutEnum);
 
     public override void Initialize(AnalysisContext context)
     {
@@ -31,6 +32,9 @@ namespace LsMsgPack.Analyzers
       context.EnableConcurrentExecution();
       context.RegisterCompilationStartAction(start =>
       {
+        INamedTypeSymbol enumFormat = start.Compilation.GetTypeByMetadataName("LsMsgPack.MsgPackEnumFormatAttribute");
+        if (enumFormat != null) // any member with the attribute, serialized or not: it has no effect on one that is no enum (and Core alone has the attribute)
+          start.RegisterSymbolAction(c => AnalyzeEnumFormat(c, enumFormat), SymbolKind.Property, SymbolKind.Field);
         KnownSymbols known = new KnownSymbols(start.Compilation);
         if (known.IsEmpty && !ModelTypes.AllTypes(start.Compilation, start.Options))
           return; // neither serializer is referenced, and the project of models does not ask for its classes to be checked
@@ -118,6 +122,35 @@ namespace LsMsgPack.Analyzers
           context.ReportDiagnostic(Diagnostic.Create(Rules.InvalidExtensionData, member.Locations[0], string.Concat(type.Name, ".", member.Name),
             string.Concat("keeps extension data, and so does '", candidates[1].ContainingType.Name, ".", candidates[1].Name, "': a class has one such member"), type.Name));
       }
+    }
+
+    /// <summary>
+    /// LSMP012: <c>[MsgPackEnumFormat]</c> on a property or field whose type is no enum nor a nullable enum, where the runtime ignores it (Core's <c>PropertyAttributeSet.EnumType</c>:
+    /// the member's own value only, not collection elements). A type parameter may be an enum when it is closed, it is not reported.
+    /// </summary>
+    private static void AnalyzeEnumFormat(SymbolAnalysisContext context, INamedTypeSymbol attributeType)
+    {
+      ISymbol member = context.Symbol;
+      if (member.IsImplicitlyDeclared) // the backing field of an auto-property: the runtime reads the property's attributes
+        return;
+      AttributeData attribute = null;
+      ImmutableArray<AttributeData> attributes = member.GetAttributes();
+      for (int t = 0; t < attributes.Length; t++)
+      {
+        if (SymbolEqualityComparer.Default.Equals(attributes[t].AttributeClass, attributeType))
+        {
+          attribute = attributes[t];
+          break;
+        }
+      }
+      if (attribute is null)
+        return;
+      ITypeSymbol type = member is IPropertySymbol property ? property.Type : ((IFieldSymbol)member).Type;
+      ITypeSymbol value = type is INamedTypeSymbol named && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T ? named.TypeArguments[0] : type;
+      if (value.TypeKind == TypeKind.Enum || value.TypeKind == TypeKind.TypeParameter || value.TypeKind == TypeKind.Error)
+        return;
+      Location location = attribute.ApplicationSyntaxReference?.GetSyntax(context.CancellationToken).GetLocation() ?? member.Locations[0];
+      context.ReportDiagnostic(Diagnostic.Create(Rules.EnumFormatWithoutEnum, location, string.Concat(member.ContainingType.Name, ".", member.Name), Display(type)));
     }
 
     private static void AnalyzeProperty(SymbolAnalysisContext context, KnownSymbols known, Models models, OtherAssemblies others)

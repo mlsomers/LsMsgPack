@@ -174,11 +174,11 @@ namespace LsMsgPackDebug {
       if (typeSpecifier == -1)
         return new MpDateTime(this);
 
-      if (_settings._customExtentionTypes != null)
+      if (_settings._customExtensionTypes != null)
       {
-        for (int t = 0; t < _settings._customExtentionTypes.Length; t++)
+        for (int t = 0; t < _settings._customExtensionTypes.Length; t++)
         {
-          ICustomExt ext = _settings._customExtentionTypes[t];
+          ICustomExt ext = _settings._customExtensionTypes[t];
           if (ext is null)
             continue;
 

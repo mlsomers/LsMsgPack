@@ -1,0 +1,63 @@
+<linker>
+  <!-- The members of FSharp.Core that LsMsgPack.Core finds by reflection (docs/FSharp.md), kept in trimmed and NativeAOT applications that reference FSharp.Core:
+       LsMsgPack.Core.props adds this descriptor to those only. Options and value options (Some, Value, Tag), the [CompilationMapping] attribute that marks records, unions and their fields,
+       FSharp.Core's own unions (Choice, Result), and the factories of lists, maps and sets. -->
+  <assembly fullname="FSharp.Core">
+    <type fullname="Microsoft.FSharp.Core.CompilationMappingAttribute" preserve="all" />
+    <type fullname="Microsoft.FSharp.Core.SourceConstructFlags" preserve="all" />
+    <type fullname="Microsoft.FSharp.Core.FSharpOption`1" preserve="all" />
+    <type fullname="Microsoft.FSharp.Core.FSharpValueOption`1" preserve="all" />
+    <type fullname="Microsoft.FSharp.Core.FSharpResult`2" preserve="all" />
+    <type fullname="Microsoft.FSharp.Core.FSharpChoice`2" preserve="all">
+      <type name="Choice1Of2" preserve="all" />
+      <type name="Choice2Of2" preserve="all" />
+    </type>
+    <type fullname="Microsoft.FSharp.Core.FSharpChoice`3" preserve="all">
+      <type name="Choice1Of3" preserve="all" />
+      <type name="Choice2Of3" preserve="all" />
+      <type name="Choice3Of3" preserve="all" />
+    </type>
+    <type fullname="Microsoft.FSharp.Core.FSharpChoice`4" preserve="all">
+      <type name="Choice1Of4" preserve="all" />
+      <type name="Choice2Of4" preserve="all" />
+      <type name="Choice3Of4" preserve="all" />
+      <type name="Choice4Of4" preserve="all" />
+    </type>
+    <type fullname="Microsoft.FSharp.Core.FSharpChoice`5" preserve="all">
+      <type name="Choice1Of5" preserve="all" />
+      <type name="Choice2Of5" preserve="all" />
+      <type name="Choice3Of5" preserve="all" />
+      <type name="Choice4Of5" preserve="all" />
+      <type name="Choice5Of5" preserve="all" />
+    </type>
+    <type fullname="Microsoft.FSharp.Core.FSharpChoice`6" preserve="all">
+      <type name="Choice1Of6" preserve="all" />
+      <type name="Choice2Of6" preserve="all" />
+      <type name="Choice3Of6" preserve="all" />
+      <type name="Choice4Of6" preserve="all" />
+      <type name="Choice5Of6" preserve="all" />
+      <type name="Choice6Of6" preserve="all" />
+    </type>
+    <type fullname="Microsoft.FSharp.Core.FSharpChoice`7" preserve="all">
+      <type name="Choice1Of7" preserve="all" />
+      <type name="Choice2Of7" preserve="all" />
+      <type name="Choice3Of7" preserve="all" />
+      <type name="Choice4Of7" preserve="all" />
+      <type name="Choice5Of7" preserve="all" />
+      <type name="Choice6Of7" preserve="all" />
+      <type name="Choice7Of7" preserve="all" />
+    </type>
+    <type fullname="Microsoft.FSharp.Collections.ListModule">
+      <method name="OfSeq" />
+    </type>
+    <type fullname="Microsoft.FSharp.Collections.MapModule">
+      <method name="OfSeq" />
+    </type>
+    <type fullname="Microsoft.FSharp.Collections.FSharpMap`2">
+      <method name=".ctor" />
+    </type>
+    <type fullname="Microsoft.FSharp.Collections.FSharpSet`1">
+      <method name=".ctor" />
+    </type>
+  </assembly>
+</linker>

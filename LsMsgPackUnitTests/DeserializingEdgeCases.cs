@@ -126,7 +126,7 @@ namespace LsMsgPackUnitTests
     {
       return new MsgPackSettings()
       {
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         AddTypeIdOptions = option,
         DynamicFilters = Array.Empty<IMsgPackPropertyIncludeDynamically>()
       };
@@ -144,7 +144,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     [DataRow(AddTypeIdOption.Never)]
     public void Enums(AddTypeIdOption option)
@@ -164,7 +164,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     [DataRow(AddTypeIdOption.Never)]
     public void Dictionaries(AddTypeIdOption option)
@@ -183,7 +183,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     [DataRow(AddTypeIdOption.Never)]
     public void NestedAndConvertedCollections(AddTypeIdOption option)
@@ -202,19 +202,19 @@ namespace LsMsgPackUnitTests
     /// With the indexed schema the property keys are indexes, so the pets can not be resolved by signature and serializing them without a type id should fail fast.
     /// </summary>
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     [DataRow(AddTypeIdOption.Never)]
     public void NestedAndConvertedCollections_WithSchema(AddTypeIdOption option)
     {
       MsgPackSettings settings = Settings(option);
-      settings.UseInexedSchema = true;
+      settings.UseIndexedSchema = true;
       settings.TypeResolvers = new IMsgPackTypeResolver[] { new PetBySignature() };
 
       if (option == AddTypeIdOption.Never)
       {
         MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(GetCollections(), settings));
-        StringAssert.Contains(ex.Message, nameof(AddTypeIdOption.IfAmbiguious));
+        StringAssert.Contains(ex.Message, nameof(AddTypeIdOption.IfAmbiguous));
         return;
       }
 
@@ -242,7 +242,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     [DataRow(AddTypeIdOption.Never)]
     public void KeyValuePairArray(AddTypeIdOption option)
@@ -254,7 +254,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)] // Wraps DateTime and decimal in a map with a type id: { "": "DateTime", "@": value }
     [DataRow(AddTypeIdOption.Never)]
     public void Scalars(AddTypeIdOption option)
@@ -273,7 +273,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     [DataRow(AddTypeIdOption.Never)]
     public void CollectionSubclassWithoutGenericArguments(AddTypeIdOption option)
@@ -299,7 +299,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     [DataRow(AddTypeIdOption.Never)]
     public void RootCollections(AddTypeIdOption option)
@@ -318,7 +318,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void NilAtRoot(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       byte[] nil = Serializer.Serialize<Cat>(null, settings);
 
       Assert.IsNull(Serializer.Deserialize(typeof(string), nil, settings));
@@ -351,7 +351,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     [DataRow(AddTypeIdOption.Never)] // No type ids, so the collection type is derived from the interface
     public void InterfaceTypedCollections(AddTypeIdOption option)
@@ -368,7 +368,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     public void BoxedValues(AddTypeIdOption option)
     {
@@ -388,7 +388,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     [DataRow(AddTypeIdOption.Never)]
     public void StacksAndQueuesKeepTheirOrder(AddTypeIdOption option)
@@ -459,7 +459,7 @@ namespace LsMsgPackUnitTests
     [DataRow(false, ObjectLayout.Map)]
     public void ValuesReadAsText(bool useSchema, ObjectLayout layout)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = layout };
       Guid id = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
       ConvWritten written = new ConvWritten() { Number = 5, Id = id, Ratio = 0.25, Flag = true, Data = new byte[] { 1, 2, 3 }, Price = 1.5m, Code = id.ToString().ToUpperInvariant(), Colour = "green" };
       ConvAsText read = Serializer.Deserialize<ConvAsText>(Serializer.Serialize(written, settings), settings);
@@ -473,7 +473,7 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(id, read.Code);
       Assert.AreEqual(Colour.Green, read.Colour);
 
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseIndexedSchema = false };
       Assert.AreEqual("-7", Serializer.Deserialize<string>(Serializer.Serialize(-7, withoutSchema), withoutSchema));
       Assert.AreEqual("-7", Serializer.Deserialize(typeof(string), Serializer.Serialize(-7, withoutSchema), withoutSchema), "the root of the non-generic overload");
     }
@@ -495,7 +495,7 @@ namespace LsMsgPackUnitTests
     [DataRow(false, ObjectLayout.Array, false)]
     public void ObjectReadAsDictionary(bool useSchema, ObjectLayout layout, bool hasNames)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = layout };
       byte[] bytes = Serializer.Serialize(new ConvProductWritten() { Name = "Nut", Code = 3 }, settings);
       if (hasNames)
       {
@@ -581,7 +581,7 @@ namespace LsMsgPackUnitTests
     [DataRow(false)]
     public void PropertyNameCaseInsensitive(bool caseInsensitive)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = caseInsensitive, ReadErrors = ReadErrorHandling.ReportAndContinue };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = caseInsensitive, ReadErrors = ReadErrorHandling.ReportAndContinue };
       byte[] bytes = Serializer.Serialize(new CaseWritten() { name = "Nut", retries = 5, id = "x", other = "y" }, settings);
       CaseRead read = Serializer.Deserialize<CaseRead>(bytes, settings, out ReadDifferences differences);
 
@@ -605,7 +605,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void PropertyNameCaseInsensitiveCamelCase()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = true };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameCaseInsensitive = true };
       CamelWritten written = new CamelWritten() { ioStream = "s", invoiceDate = "d", id = "i", urlValue = "u", x = "x", already = "a", urlvalue2 = "u2", last = "l" };
       for (int t = 0; t < 2; t++) // the second time with the plan made
       {
@@ -667,7 +667,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void NumberKeysReadAsStrings()
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false };
       Dictionary<string, string> read = Serializer.Deserialize<Dictionary<string, string>>(Serializer.Serialize(new Dictionary<int, string>() { { 1, "one" }, { 20, "twenty" } }, settings), settings);
       Assert.AreEqual("one", read["1"]);
       Assert.AreEqual("twenty", read["20"]);

@@ -160,6 +160,30 @@ namespace LsMsgPackWebApiFormatters
       }
     }
 
+    /// <summary>
+    /// <see cref="ReadFromStreamAsync(Type, Stream, HttpContent, IFormatterLogger, CancellationToken)"/> into an existing object (<see cref="MsgPackHttpClientExtensions.PopulateFromMsgPackAsync{T}"/>):
+    /// the body buffered, then read by <see cref="LsMsgPackHttpSerializer.PopulateBody{T}"/>. An empty body leaves the target as it is.
+    /// </summary>
+    internal async Task PopulateFromStreamAsync<T>(T target, Stream readStream, HttpContent content, CancellationToken cancellationToken) where T : class
+    {
+      long? length = content?.Headers.ContentLength;
+      MemoryStream body = length > 0 && length <= MaxPresized ? new MemoryStream((int)length) : new MemoryStream();
+      await readStream.CopyToAsync(body, 81920, cancellationToken).ConfigureAwait(false);
+      if (body.Length == 0)
+        return;
+
+      try
+      {
+        Serializer.PopulateBody(body.GetBuffer(), 0, (int)body.Length, target, content?.Headers.ContentType?.MediaType, out ReadDifferences differences);
+        if (differences != null)
+          ReadDifferencesExtensions.Set(content, differences);
+      }
+      catch (Exception ex) when (Serializer.ReportsDifferences && ReportFailure(content, ex)) // never true: keeps the differences found until the exception
+      {
+        throw;
+      }
+    }
+
     /// <returns>False (an exception filter)</returns>
     private static bool ReportFailure(HttpContent content, Exception ex)
     {

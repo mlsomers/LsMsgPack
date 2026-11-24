@@ -140,7 +140,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true, ObjectLayout.Array)]
     public void CollectionsOfKeyValuePairs(bool useSchema, ObjectLayout layout)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = layout };
       AddOnlyCollection<KeyValuePair<long, string>> addOnly = new AddOnlyCollection<KeyValuePair<long, string>>();
       foreach (KeyValuePair<long, string> pair in SamplePairs)
         addOnly.Add(pair);
@@ -196,7 +196,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true, ObjectLayout.Array)]
     public void SingleKeyValuePair(bool useSchema, ObjectLayout layout)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = layout };
       SinglePairs value = new SinglePairs()
       {
         Simple = new KeyValuePair<long, string>(1, "a"),
@@ -220,9 +220,9 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(root, Serializer.Deserialize<KeyValuePair<long, string>>(bytes, settings));
     }
 
-    private static MsgPackSettings Settings(AddTypeIdOption option = AddTypeIdOption.IfAmbiguious)
+    private static MsgPackSettings Settings(AddTypeIdOption option = AddTypeIdOption.IfAmbiguous)
     {
-      return new MsgPackSettings() { UseInexedSchema = false, AddTypeIdOptions = option };
+      return new MsgPackSettings() { UseIndexedSchema = false, AddTypeIdOptions = option };
     }
 
     private static Dictionary<object, object> UnpackMap(byte[] buffer)
@@ -270,15 +270,15 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, false)]
     [DataRow(AddTypeIdOption.Always, false)]
     [DataRow(AddTypeIdOption.Never, false)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, true)]
     [DataRow(AddTypeIdOption.Always, true)]
     public void SerializePropertiesOnType(AddTypeIdOption option, bool useSchema)
     {
       MsgPackSettings settings = Settings(option);
-      settings.UseInexedSchema = useSchema;
+      settings.UseIndexedSchema = useSchema;
 
       PagedList org = new PagedList() { 1, 2, 3 };
       org.Page = 7;
@@ -289,14 +289,14 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, false)]
     [DataRow(AddTypeIdOption.Never, false)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, true)]
     [DataRow(AddTypeIdOption.Always, true)]
     public void SerializePropertiesOnProperty(AddTypeIdOption option, bool useSchema)
     {
       MsgPackSettings settings = Settings(option);
-      settings.UseInexedSchema = useSchema;
+      settings.UseIndexedSchema = useSchema;
 
       WithTaggedList org = new WithTaggedList()
       {
@@ -315,11 +315,11 @@ namespace LsMsgPackUnitTests
 
     [TestMethod]
     [DataRow(AddTypeIdOption.Always)]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     public void SchemaOnlyListsSerializedPropertiesOfCollections(AddTypeIdOption option)
     {
       MsgPackSettings settings = Settings(option);
-      settings.UseInexedSchema = true;
+      settings.UseIndexedSchema = true;
 
       List<IIPet> org = new List<IIPet>() { new Cat() { Name = "Mia" }, new Dog() { Name = "Rex" } };
       byte[] buffer = Serializer.Serialize(org, settings);
@@ -336,11 +336,11 @@ namespace LsMsgPackUnitTests
 
     [TestMethod]
     [DataRow(AddTypeIdOption.Always)]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     public void SchemaDoesNotListStaticallyIgnoredPropertiesOfCollections(AddTypeIdOption option)
     {
       MsgPackSettings settings = Settings(option);
-      settings.UseInexedSchema = true;
+      settings.UseIndexedSchema = true;
 
       PagedList org = new PagedList() { 1, 2, 3 };
       org.Page = 7;
@@ -368,7 +368,7 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious)]
+    [DataRow(AddTypeIdOption.IfAmbiguous)]
     [DataRow(AddTypeIdOption.Always)]
     public void DictionaryWithoutElementsIsNotReadAsEntries(AddTypeIdOption option)
     {

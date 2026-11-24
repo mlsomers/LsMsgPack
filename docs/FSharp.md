@@ -57,7 +57,19 @@ LsMsgPack's unions are not compatible with MessagePack.FSharpExtensions: it writ
 
 ## Source generator, trimming and NativeAOT
 
-F# projects can't run C# source generators, so F# types are written and read by reflection, as System.Text.Json's F# support does. A C# project's [generated context](SourceGenerator.md) that reaches F# types describes them the way the runtime writes them, and leaves the options and unions to the runtime. F# types under NativeAOT are not supported.
+F# projects can't run C# source generators, so F# types are written and read by reflection, as System.Text.Json's F# support does. A C# project's [generated context](SourceGenerator.md) that reaches F# types describes them the way the runtime writes them, and leaves the options and unions to the runtime.
+
+Trimmed and NativeAOT applications work with F# types the way they work [without the generator](SourceGenerator.md#without-the-generator): by reflection, with the same bytes.
+
+- Keep the assembly with your F# types from the trimmer: `<TrimmerRootAssembly Include="MyApp.Model" />`. Suppress IL2026 and IL3050 where you create the serializer.
+- LsMsgPack.Core's build keeps the members of FSharp.Core it uses (options, the attribute that marks unions and records, `Choice`, `Result`, the factories of lists and maps). It adds that descriptor (`LsMsgPack.FSharp.xml`) only to applications that reference FSharp.Core.
+- FSharp.Core reports trim and AOT warnings of its own (its reflection and `printf`) in every F# NativeAOT application. LsMsgPack adds none.
+- Options and unions of value types need no setup: without dynamic code their converters work on boxed values. F# lists and maps of a value type (`int list`, `Map<string, int>`) are made by `List.ofSeq` and `Map.ofSeq`. NativeAOT only has that code when the application calls them with these types, so call them once if it never makes such a list or map. Otherwise reading one throws a `MsgPackException` that names the call.
+- Under NativeAOT every value is read and written through reflection, so it is slower than with a JIT (see [the measurements of C# classes without the generator](SourceGenerator.md#measurements)).
+
+`LsMsgPackAotSmokeTest/run.sh` checks this with `LsMsgPackAotFSharpTest`: the values of the unit tests in seven option sets, written and read by a NativeAOT binary with the bytes of the JIT, and rows of a data reader read into F# records.
+
+F# records can be rows of a data reader too ([DataReader.md](DataReader.md#rows-into-objects-readrows)): `ReadRows<FsRow>` creates them by their constructor, NULL as `None`.
 
 ## Schemas and TypeScript
 

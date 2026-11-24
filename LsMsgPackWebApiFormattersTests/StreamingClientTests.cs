@@ -202,7 +202,7 @@ namespace LsMsgPackWebApiFormattersTests
           Assert.That(orders.Select(o => o.Id), Is.EqualTo(new[] { 1, 2, 3 }));
           Assert.That(recorder.AcceptHeaders[0], Does.EndWith(", application/x-lsmsgpack; schema=described; stream=unknown-length"));
           Assert.That(MsgPackMediaTypes.AcceptsStream(recorder.AcceptHeaders[0], MsgPackMediaTypes.XLsMsgPack), Is.True);
-          Dictionary<string, object> schema = MsgPackSerializer.Deserialize<Dictionary<string, object>>(recorder.Responses[0], new MsgPackSettings { UseInexedSchema = false });
+          Dictionary<string, object> schema = MsgPackSerializer.Deserialize<Dictionary<string, object>>(recorder.Responses[0], new MsgPackSettings { UseIndexedSchema = false });
           Assert.That(schema, Does.ContainKey(string.Empty), "Version 2: the root entry");
         }
       }

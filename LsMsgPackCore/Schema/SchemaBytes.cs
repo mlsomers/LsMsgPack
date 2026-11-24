@@ -369,12 +369,12 @@ namespace LsMsgPack
     internal static MsgPackException NotASchema(int firstByte)
     {
       MsgPackTypeId typeId = ToTypeId(firstByte);
-      return new MsgPackException($"Expected the data to start with an indexed schema (a map) but found {typeId}. Was it serialized with MsgPackSettings.{nameof(MsgPackOptions.UseInexedSchema)} = false?", 0, typeId);
+      return new MsgPackException($"Expected the data to start with an indexed schema (a map) but found {typeId}. Was it serialized with MsgPackSettings.{nameof(MsgPackOptions.UseIndexedSchema)} = false?", 0, typeId);
     }
 
     internal static MsgPackException InvalidSchema()
     {
-      return new MsgPackException($"Invalid indexed schema, expected a map of type names with an array of property names. Was the data serialized with MsgPackSettings.{nameof(MsgPackOptions.UseInexedSchema)} = false?");
+      return new MsgPackException($"Invalid indexed schema, expected a map of type names with an array of property names. Was the data serialized with MsgPackSettings.{nameof(MsgPackOptions.UseIndexedSchema)} = false?");
     }
 
     internal static bool IsMap(int firstByte)

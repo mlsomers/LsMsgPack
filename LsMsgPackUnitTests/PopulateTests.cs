@@ -218,7 +218,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(bool schema, ObjectLayout layout, PopulateMembers populate = PopulateMembers.GetOnly)
     {
-      return new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout, Populate = populate };
+      return new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout, Populate = populate };
     }
 
     private static IEnumerable<object[]> AllSettings()
@@ -269,7 +269,7 @@ namespace LsMsgPackUnitTests
     {
       byte[] bytes = Bytes(OrderDto(), Settings(schema, layout));
       Assert.AreEqual(PopulateMembers.Collections, new MsgPackSettings().Populate);
-      PopOrder read = Serializer.Deserialize<PopOrder>(bytes, new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout });
+      PopOrder read = Serializer.Deserialize<PopOrder>(bytes, new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout });
       Assert.IsNull(read.ShipTo.Street, "skipped as a computed property");
       Assert.AreEqual(1, read.Lines.Count, "get-only collections are still filled");
       Assert.AreEqual("Billstreet", read.Billing.Street);

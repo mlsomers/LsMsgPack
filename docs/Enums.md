@@ -31,7 +31,7 @@ public class Order
 }
 ```
 
-The most specific one wins: the member's attribute, then the enum's, then `EnumFormat` of the options. An attribute on a member applies to the member's own value, so its type is the enum or a nullable of it. On a `List<OrderStatus>` it has no effect: put it on the enum, or use the options. The elements of collections, dictionary keys and values, and the root value use the enum's format.
+The most specific one wins: the member's attribute, then the enum's, then `EnumFormat` of the options. An attribute on a member applies to the member's own value, so its type is the enum or a nullable of it. On a `List<OrderStatus>` it has no effect (the analyzers warn, [LSMP012](Analyzers.md#lsmp012-msgpackenumformat-on-a-member-that-is-no-enum)): put it on the enum, or use the options. The elements of collections, dictionary keys and values, and the root value use the enum's format.
 
 ## Attributes of other serializers
 

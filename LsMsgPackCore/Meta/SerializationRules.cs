@@ -53,7 +53,7 @@ namespace LsMsgPack.Meta
         return false;
       if ((settings._addTypeIdOptions & AddTypeIdOption.Always) != 0)
         return true;
-      if ((settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0)
+      if ((settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguous) != 0)
         return assignedTo?.AssignedToType != tType;
       return assignedTo?.AssignedToType != tType && FSharp.FSharpTypes.IsCaseWithFields(tType);
     }
@@ -63,7 +63,7 @@ namespace LsMsgPack.Meta
       if ((settings._addTypeIdOptions & AddTypeIdOption.Always) != 0)
         return !IsHiddenFrameworkType(tType) && !HasAnonymousType(tType);
 
-      if ((settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguious) != 0)
+      if ((settings._addTypeIdOptions & AddTypeIdOption.IfAmbiguous) != 0)
         return assignedTo?.AssignedToType != tType && !IsHiddenFrameworkType(tType) && !HasAnonymousType(tType);
 
       return assignedTo?.AssignedToType != tType && FSharp.FSharpTypes.IsCaseWithFields(tType); // AddTypeIdOption.Never (plain MsgPack): the case of an F# union is part of its value
@@ -184,7 +184,7 @@ namespace LsMsgPack.Meta
 
     private static MsgPackException UnresolvableWithSchema(Type tType, FullPropertyInfo assignedTo) // apart, so the check above is inlined (called per object)
     {
-      return new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id while using the indexed schema: the property keys are schema indexes of {tType.Name}, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} (with the schema a type id costs about 1 byte) or set MsgPackSettings.UseInexedSchema = false.");
+      return new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id while using the indexed schema: the property keys are schema indexes of {tType.Name}, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguous)} (with the schema a type id costs about 1 byte) or set MsgPackSettings.UseIndexedSchema = false.");
     }
 
     /// <summary>
@@ -199,7 +199,7 @@ namespace LsMsgPack.Meta
 
     private static MsgPackException UnresolvableAsArray(Type tType, FullPropertyInfo assignedTo) // apart, so the check above is inlined (called per object)
     {
-      return new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id as an array ({nameof(ObjectLayout)}.{nameof(ObjectLayout.Array)}): the values have no property ids, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguious)} or {nameof(ObjectLayout)}.{nameof(ObjectLayout.Map)}.");
+      return new MsgPackException($"Unable to serialize {tType.FullName} assigned to {assignedTo.AssignedToType.FullName} without a type id as an array ({nameof(ObjectLayout)}.{nameof(ObjectLayout.Array)}): the values have no property ids, so the type cannot be resolved by its properties when deserializing. Use {nameof(AddTypeIdOption)}.{nameof(AddTypeIdOption.IfAmbiguous)} or {nameof(ObjectLayout)}.{nameof(ObjectLayout.Map)}.");
     }
 
     private static readonly ConcurrentDictionary<Type, bool> TrackedKinds = new ConcurrentDictionary<Type, bool>();
@@ -296,7 +296,7 @@ namespace LsMsgPack.Meta
     /// <summary>
     /// A type of the framework that would be written as an object with properties but has no settable ones (e.g. Lazy&lt;T&gt;, Index): its values would be written as an empty map
     /// and read back as the default, without an error. The serializers write the framework types they know by themselves (see FrameworkTypeInfo), anything else of the framework that has no settable state is refused.
-    /// <para>Checked once per type, when the serializers plan to write or read an object of it. A custom extension for the type (MsgPackSettings.CustomExtentionTypes, LsMsgPackOptions.Extensions) is asked first, so it can still be written that way.</para>
+    /// <para>Checked once per type, when the serializers plan to write or read an object of it. A custom extension for the type (MsgPackSettings.CustomExtensionTypes, LsMsgPackOptions.Extensions) is asked first, so it can still be written that way.</para>
     /// </summary>
     internal static void ThrowIfUnsupportedFrameworkType(Type type)
     {
@@ -347,10 +347,10 @@ namespace LsMsgPack.Meta
 
       if (IsJsonDocumentType(type))
         return $"{type.FullName} is not supported: MsgPack has no form for a JSON document. Hold the JSON as a string (JsonElement.GetRawText(), JsonNode.ToJsonString(), JsonDocument.Parse(text)) or its values in a class of your own, "
-          + "or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LsMsgPackOptions.Extensions).";
+          + "or add a custom extension for it (MsgPackSettings.CustomExtensionTypes, LsMsgPackOptions.Extensions).";
 
       return $"{type.FullName} is not supported: it has no settable properties, so it would be written as an empty map and read back as its default value. "
-        + "Serialize the values it holds (in a class of your own), or add a custom extension for it (MsgPackSettings.CustomExtentionTypes, LsMsgPackOptions.Extensions).";
+        + "Serialize the values it holds (in a class of your own), or add a custom extension for it (MsgPackSettings.CustomExtensionTypes, LsMsgPackOptions.Extensions).";
     }
 
     /// <summary>

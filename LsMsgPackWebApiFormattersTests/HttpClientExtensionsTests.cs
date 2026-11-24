@@ -126,6 +126,32 @@ namespace LsMsgPackWebApiFormattersTests
       }
     }
 
+    /// <summary>
+    /// A response read into the instance the client holds, also when the second response refers to the schema the first one had inline.
+    /// </summary>
+    [Test]
+    public async Task PopulateReadsTheResponseIntoTheTarget()
+    {
+      using (IHost host = await StartAspNetCore())
+      {
+        LsMsgPackMediaTypeFormatter formatter = new LsMsgPackMediaTypeFormatter();
+        Recorder recorder = new Recorder(host.GetTestServer().CreateHandler());
+        using (HttpClient client = new HttpClient(formatter.CreateHandler(recorder)) { BaseAddress = new Uri("http://localhost/") })
+        {
+          client.DefaultRequestHeaders.TryAddWithoutValidation("Accept", MsgPackHttpClientExtensions.Accept); // GetAsync sends none of its own
+          Order held = new Order();
+          for (int t = 1; t <= 2; t++)
+          {
+            using (HttpResponseMessage response = await client.GetAsync("clientext/order/" + t))
+              await response.Content.PopulateFromMsgPackAsync(held, formatter);
+            Assert.That(held.Customer, Is.EqualTo("c" + t));
+            Assert.That(held.Amounts, Is.EqualTo(new[] { t * 1.5 }));
+          }
+          Assert.That(recorder.Responses[1][0], Is.EqualTo(0xD8), "A reference");
+        }
+      }
+    }
+
     [Test]
     public async Task PostPutAndPatchSendTheValue()
     {

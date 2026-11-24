@@ -91,7 +91,7 @@ namespace LsMsgPackInteropTests
     {
       return new MsgPackSettings()
       {
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         ObjectLayout = ObjectLayout.Map,
         StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(), ignoreFilter, new FilterStatic() }
       };

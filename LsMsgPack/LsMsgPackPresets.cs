@@ -83,7 +83,7 @@ namespace LsMsgPack
       return new LsMsgPackOptions()
       {
         DateTimeFormat = DateTimeFormat.Timestamp,
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         AddTypeIdOptions = AddTypeIdOption.Never,
         ObjectLayout = ObjectLayout.Map,
         DynamicFilters = new IMsgPackPropertyIncludeDynamically[0]

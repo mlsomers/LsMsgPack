@@ -16,15 +16,25 @@ namespace LsMsgPack.Meta
   {
     private static readonly ConcurrentDictionary<Type, Filler> Fillers = new ConcurrentDictionary<Type, Filler>();
 
+    private static readonly ConcurrentDictionary<Type, bool> Fillable = new ConcurrentDictionary<Type, bool>();
+
     /// <summary>
     /// Whether a property of this type can be filled: a collection or dictionary with Add (IList, IDictionary, ICollection&lt;T&gt;, also those interfaces), not an array.
     /// A read-only collection of such a type (e.g. ReadOnlyCollection&lt;T&gt;) is left as it is when read.
+    /// <para>Cached per type: the root Populate calls ask it per call (<c>GetInterfaces</c> makes an array every time).</para>
     /// </summary>
-    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
     internal static bool IsFillable(Type type)
     {
       if (type.IsArray || type == typeof(string))
         return false;
+      if (Fillable.TryGetValue(type, out bool fillable))
+        return fillable;
+      return Fillable.GetOrAdd(type, FindFillable);
+    }
+
+    [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = TrimReasons.ModelTypes)]
+    private static bool FindFillable(Type type)
+    {
       if (typeof(IList).IsAssignableFrom(type) || typeof(IDictionary).IsAssignableFrom(type) || IsCollectionInterface(type))
         return true;
       Type[] interfaces = type.GetInterfaces();

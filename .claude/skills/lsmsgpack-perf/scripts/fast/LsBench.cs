@@ -267,7 +267,7 @@ public static class Bench
   {
     LsMsgPackOptions options = new LsMsgPackOptions
     {
-      UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameResolvers = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIdResolver[] { new CamelCaseNames() }
+      UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNameResolvers = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIdResolver[] { new CamelCaseNames() }
     };
     if (allKeys)
       options.DynamicFilters = new LsMsgPack.TypeResolving.Interfaces.IMsgPackPropertyIncludeDynamically[0];
@@ -291,12 +291,12 @@ public static class Bench
       new Candidate { Name = "stj", Ser = i => JsonSerializer.SerializeToUtf8Bytes(i, stj), De = b => JsonSerializer.Deserialize<Invoice>(b, stj),
         SerSmall = a => JsonSerializer.SerializeToUtf8Bytes(a, stj), DeSmall = b => JsonSerializer.Deserialize<Address>(b, stj) },
       Ls("ls-default", new LsMsgPackOptions()),
-      Ls("ls-map-indexed", new LsMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map }),
-      Ls("ls-map-reference", new LsMsgPackOptions { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map }),
-      Ls("ls-map-named", new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }),
-      Ls("ls-arr-indexed", new LsMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array }),
-      Ls("ls-arr-reference", new LsMsgPackOptions { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array }),
-      Ls("ls-arr-noschema", new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }),
+      Ls("ls-map-indexed", new LsMsgPackOptions { UseIndexedSchema = true, ObjectLayout = ObjectLayout.Map }),
+      Ls("ls-map-reference", new LsMsgPackOptions { UseIndexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map }),
+      Ls("ls-map-named", new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }),
+      Ls("ls-arr-indexed", new LsMsgPackOptions { UseIndexedSchema = true, ObjectLayout = ObjectLayout.Array }),
+      Ls("ls-arr-reference", new LsMsgPackOptions { UseIndexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array }),
+      Ls("ls-arr-noschema", new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }),
       Ls("ls-mpcsharp", LsMsgPackPresets.MessagePackCSharp()),
       Http("http-lsmsgpack", "application/x-lsmsgpack", false),
       Http("http-lsmsgpack-ref", "application/x-lsmsgpack", true),
@@ -304,15 +304,15 @@ public static class Bench
       HttpCamelCase("http-plain-camel", false),
       HttpCamelCase("http-plain-camel-all", true),
       LsReport("ls-report-default", new LsMsgPackOptions()),
-      LsReport("ls-report-map-indexed", new LsMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map }),
-      LsReport("ls-report-map-reference", new LsMsgPackOptions { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map }),
-      LsReport("ls-report-map-named", new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }),
+      LsReport("ls-report-map-indexed", new LsMsgPackOptions { UseIndexedSchema = true, ObjectLayout = ObjectLayout.Map }),
+      LsReport("ls-report-map-reference", new LsMsgPackOptions { UseIndexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Map }),
+      LsReport("ls-report-map-named", new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }),
       Gen("gen-default", new LsMsgPackOptions()),
-      Gen("gen-map-indexed", new LsMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Map }),
-      Gen("gen-map-named", new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map }),
-      Gen("gen-arr-indexed", new LsMsgPackOptions { UseInexedSchema = true, ObjectLayout = ObjectLayout.Array }),
-      Gen("gen-arr-reference", new LsMsgPackOptions { UseInexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array }),
-      Gen("gen-arr-noschema", new LsMsgPackOptions { UseInexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }),
+      Gen("gen-map-indexed", new LsMsgPackOptions { UseIndexedSchema = true, ObjectLayout = ObjectLayout.Map }),
+      Gen("gen-map-named", new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map }),
+      Gen("gen-arr-indexed", new LsMsgPackOptions { UseIndexedSchema = true, ObjectLayout = ObjectLayout.Array }),
+      Gen("gen-arr-reference", new LsMsgPackOptions { UseIndexedSchema = true, SchemaStore = new SchemaStore(), WriteSchemaReference = true, ObjectLayout = ObjectLayout.Array }),
+      Gen("gen-arr-noschema", new LsMsgPackOptions { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Array, PropertyOrder = PropertyOrder.Declaration }),
     };
     list.RemoveAll(c => c is null);
     return list;

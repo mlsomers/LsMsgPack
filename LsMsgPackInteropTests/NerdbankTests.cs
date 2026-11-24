@@ -75,17 +75,17 @@ namespace LsMsgPackInteropTests
       LibraryExtensionTypeCodes = NB.LibraryReservedMessagePackExtensionTypeCode.Default with { Decimal = 1, ObjectReference = 10 }
     };
 
-    private static readonly MsgPackSettings Named = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map }; // Nerdbank reads maps keyed by names
+    private static readonly MsgPackSettings Named = new MsgPackSettings() { UseIndexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map }; // Nerdbank reads maps keyed by names
 
     /// <summary>
     /// Also reads Nerdbank's Guid (extension type 2) and decimal (extension type 4), decimals are still written as extension type 1
     /// </summary>
     private static readonly MsgPackSettings NamedNerdbankExtensions = new MsgPackSettings()
     {
-      UseInexedSchema = false,
+      UseIndexedSchema = false,
       DateTimeFormat = DateTimeFormat.Timestamp, // other libraries read timestamps
       ObjectLayout = ObjectLayout.Map,
-      CustomExtentionTypes = new ICustomExt[] { new MpDecimal((MsgPackSettings)null), new MpDecimal((MsgPackSettings)null) { TypeSpecifier = 4 }, new NerdbankGuidExtension() }
+      CustomExtensionTypes = new ICustomExt[] { new MpDecimal((MsgPackSettings)null), new MpDecimal((MsgPackSettings)null) { TypeSpecifier = 4 }, new NerdbankGuidExtension() }
     };
 
     private static readonly Invoice[] AllInvoices = Invoices.Create(100);
@@ -167,18 +167,18 @@ namespace LsMsgPackInteropTests
     public void SameBytes_CamelCaseNames()
     {
       NB.MessagePackSerializer camel = new NB.MessagePackSerializer() { PropertyNamingPolicy = NB.MessagePackNamingPolicy.CamelCase };
-      MsgPackSettings names = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase };
+      MsgPackSettings names = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase };
       NerdbankNames value = new NerdbankNames() { FirstName = "Ann", Count = 3, IsActive = true };
       byte[] nb = camel.Serialize<NerdbankNames, NerdbankShapes>(value);
       byte[] ls = Serializer.Serialize(value, names);
       CollectionAssert.AreEqual(nb, ls, $"LsMsgPack {Convert.ToHexString(ls)}, Nerdbank {Convert.ToHexString(nb)}");
 
       NB.MessagePackSerializer camelLsMsgPackDecimal = NerdbankLsMsgPackDecimal with { PropertyNamingPolicy = NB.MessagePackNamingPolicy.CamelCase };
-      MsgPackSettings camelNamed = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase };
+      MsgPackSettings camelNamed = new MsgPackSettings() { UseIndexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase };
       MsgPackSettings camelNerdbankExtensions = new MsgPackSettings()
       {
-        UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase,
-        CustomExtentionTypes = NamedNerdbankExtensions.CustomExtentionTypes
+        UseIndexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp, ObjectLayout = ObjectLayout.Map, PropertyNamingPolicy = MsgPackNamingPolicy.CamelCase,
+        CustomExtensionTypes = NamedNerdbankExtensions.CustomExtensionTypes
       };
       foreach (Invoice invoice in AllInvoices)
       {
@@ -191,7 +191,7 @@ namespace LsMsgPackInteropTests
     public void SameBytes_EnumsByName()
     {
       NB.MessagePackSerializer byName = new NB.MessagePackSerializer() { SerializeEnumValuesByName = true };
-      MsgPackSettings names = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name };
+      MsgPackSettings names = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map, EnumFormat = EnumFormat.Name };
       NerdbankEnums value = new NerdbankEnums() { Size = NerdbankSize.Large, Unit = UnitOfMeasure.Hour };
       byte[] nb = byName.Serialize<NerdbankEnums, NerdbankShapes>(value);
       byte[] ls = Serializer.Serialize(value, names);
@@ -207,7 +207,7 @@ namespace LsMsgPackInteropTests
     [TestMethod]
     public void IndexedSchema_NotReadable()
     {
-      byte[] bytes = Serializer.Serialize(AllInvoices[1], new MsgPackSettings() { UseInexedSchema = true });
+      byte[] bytes = Serializer.Serialize(AllInvoices[1], new MsgPackSettings() { UseIndexedSchema = true });
       Assert.Throws<NB.MessagePackSerializationException>(() => NerdbankLsMsgPackDecimal.Deserialize<Invoice, NerdbankShapes>(bytes));
     }
   }

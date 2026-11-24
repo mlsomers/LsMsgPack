@@ -91,6 +91,42 @@ MsgPackSerializer.Populate(bytes, current, new MsgPackSettings());   // LsMsgPac
 - `OnDeserializing` and `OnDeserialized` ([callbacks](Callbacks.md)) are called on the target, as on a new object.
 - The target can't be a struct, a string or another framework type, an immutable class or a type with a converter (`ArgumentException`), or a read-only collection.
 
+For a stream that must not be read synchronously (a network stream, a file opened for asynchronous I/O), `PopulateAsync` reads the payload with `ReadAsync`, then into the target, as `DeserializeAsync` does; the stream is left after the value. A target that can't be read into throws before anything is read. The differences come through a callback (async methods have no `out` parameters, see [ReadDifferences.md](ReadDifferences.md)):
+
+```csharp
+await serializer.PopulateAsync(stream, current);
+await serializer.PopulateAsync(stream, current, differences => logger.LogWarning(differences.GenerateReport()));
+```
+
+### Streams of values
+
+`MsgPackStreamReader.PopulateObject(target)` and `PopulateObjectAsync(target)` read the next value into a target where `ReadObject` would read a new one ([Streaming.md](Streaming.md)): a root value of the stream, or a value in the body of a head, at any depth:
+
+```csharp
+using (MsgPackStreamReader reader = new MsgPackStreamReader(stream, serializer))
+{
+  await reader.PopulateObjectAsync(settings);            // a root value
+  await reader.ReadHeadAsync<List<Station>>();
+  await reader.ReadAsync();                               // the start of the array
+  for (int t = 0; !await reader.AtEndAsync(); t++)
+    await reader.PopulateObjectAsync(stations[t]);        // each element into the station the app shows
+}
+```
+
+### HTTP
+
+With the Web API package's HttpClient helpers, `PopulateFromMsgPackAsync` reads a response into an object you have, as `ReadFromMsgPackAsync` reads a new one ([WebFormatters.md](WebFormatters.md#httpclient)):
+
+```csharp
+using (HttpResponseMessage response = await client.GetAsync("api/settings"))
+{
+  await response.EnsureSuccessStatusCodeAsync();
+  await response.Content.PopulateFromMsgPackAsync(current, formatter);
+}
+```
+
+An empty body (204 No Content) leaves the target as it is. With `ReportDifferences` the differences are on the content afterwards (`response.GetReadDifferences()`). `LsMsgPackHttpSerializer.PopulateBody` does the same for a body you have in an array. The server side formatters create the objects of a request, as model binding asks: read the body yourself with `PopulateBody` to read it into an object you have.
+
 ## Errors and edge cases
 
 - A type id naming another class than the one the member holds (or one it derives from): a `MsgPackException` that follows [`ReadErrors`](ReadDifferences.md) (skipped and reported with the other modes, the member keeps its object).

@@ -125,7 +125,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = Named(true, ObjectLayout.Array);
       byte[] bytes = Serializer.Serialize(new FldNamed() { Field = 1, Member = "m", Property = 2 }, settings);
-      Dictionary<string, object> schema = Serializer.Deserialize<Dictionary<string, object>>(bytes, new MsgPackSettings() { UseInexedSchema = false });
+      Dictionary<string, object> schema = Serializer.Deserialize<Dictionary<string, object>>(bytes, new MsgPackSettings() { UseIndexedSchema = false });
       Assert.IsTrue(schema.ContainsKey(nameof(FldNamed)), string.Join(", ", schema.Keys));
       List<object> names = ((IEnumerable<object>)schema[nameof(FldNamed)]).ToList();
       CollectionAssert.AreEqual(new object[] { "renamedProperty", "renamedField", "dm" }, names);
@@ -451,7 +451,7 @@ namespace LsMsgPackUnitTests
     [DynamicData(nameof(AllSettings))]
     public void ConstructorFields_DefaultMode_NotSerialized(bool schema, ObjectLayout layout)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout };
       Assert.AreEqual("", WrittenNames(new FldCtorFields(5, "b"), settings), "the fields are not attributed");
       FldCtorFields read = RoundTrip(new FldCtorFields(5, "b"), settings);
       Assert.IsNotNull(read);

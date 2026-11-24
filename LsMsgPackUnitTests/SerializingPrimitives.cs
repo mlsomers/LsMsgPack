@@ -18,7 +18,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void MinusThirtyTwoIsANegativeFixint()
     {
-      MsgPackSettings compact = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings compact = new MsgPackSettings() { UseIndexedSchema = false };
       foreach (object value in new object[] { (sbyte)-32, (short)-32, -32, -32L })
       {
         CollectionAssert.AreEqual(new byte[] { 0xE0 }, Serializer.Serialize(value, value.GetType(), compact), value.GetType().Name);
@@ -39,7 +39,7 @@ namespace LsMsgPackUnitTests
     [DataRow((sbyte)-33, new byte[] { 0xD0, 0xDF })]
     public void SByteWithoutCompacting(sbyte value, byte[] expected)
     {
-      MsgPackSettings settings = new MsgPackSettings() { DynamicallyCompact = false, UseInexedSchema = false };
+      MsgPackSettings settings = new MsgPackSettings() { DynamicallyCompact = false, UseIndexedSchema = false };
       CollectionAssert.AreEqual(expected, Serializer.Serialize(value, settings));
       Assert.AreEqual(value, Serializer.Deserialize<sbyte>(Serializer.Serialize(value, settings), settings));
     }
@@ -50,7 +50,7 @@ namespace LsMsgPackUnitTests
       DateTime dt = new DateTime(2021, 1, 1, 0, 0, 0, 500, DateTimeKind.Utc);
       // Timestamp 64 from the spec: 30 bits nanoseconds (500000000) and 34 bits seconds (1609459200) in one big-endian 64 bit value
       byte[] expected = new byte[] { (byte)MsgPackTypeId.MpFExt8, 0xFF, 0x77, 0x35, 0x94, 0x00, 0x5F, 0xEE, 0x66, 0x00 };
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseIndexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
 
       CollectionAssert.AreEqual(expected, Serializer.Serialize(dt, withoutSchema));
       Assert.AreEqual(dt, Serializer.Deserialize<DateTime>(expected, withoutSchema).ToUniversalTime());
@@ -64,7 +64,7 @@ namespace LsMsgPackUnitTests
     {
       DateTime dt = new DateTime(1969, 12, 31, 23, 59, 58, 500, DateTimeKind.Utc);
       byte[] expected = new byte[] { (byte)MsgPackTypeId.MpExt8, 12, 0xFF, 0x1D, 0xCD, 0x65, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFE };
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseIndexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
 
       CollectionAssert.AreEqual(expected, Serializer.Serialize(dt, withoutSchema));
       Assert.AreEqual(dt, Serializer.Deserialize<DateTime>(expected, withoutSchema).ToUniversalTime());
@@ -78,7 +78,7 @@ namespace LsMsgPackUnitTests
     public void FractionalSecondsBefore1970RoundTrip(int year, int month, int day, int hour, int minute, int second, int millisecond)
     {
       DateTime dt = new DateTime(year, month, day, hour, minute, second, millisecond, DateTimeKind.Utc).AddTicks(7);
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseIndexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
       Assert.AreEqual(dt, Serializer.Deserialize<DateTime>(Serializer.Serialize(dt, withoutSchema), withoutSchema).ToUniversalTime());
       withoutSchema.DateTimeFormat = DateTimeFormat.Native;
       Assert.AreEqual(dt, Serializer.Deserialize<DateTime>(Serializer.Serialize(dt, withoutSchema), withoutSchema));
@@ -94,7 +94,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void DateTimeOffsetRoundTrip(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       DateTimeOffset when = new DateTimeOffset(2021, 1, 1, 12, 30, 15, 250, TimeSpan.FromHours(3));
       byte[] buffer = Serializer.Serialize(new PrimitivesWithDateTimeOffset() { When = when }, settings);
       PrimitivesWithDateTimeOffset ret = Serializer.Deserialize<PrimitivesWithDateTimeOffset>(buffer, settings);
@@ -116,7 +116,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void UnspecifiedClockTimeRoundTrip(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, UnspecifiedDateTimeKind = DateTimeKind.Utc, ReadDateTimeKind = DateTimeKind.Unspecified, DateTimeFormat = DateTimeFormat.Timestamp };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, UnspecifiedDateTimeKind = DateTimeKind.Utc, ReadDateTimeKind = DateTimeKind.Unspecified, DateTimeFormat = DateTimeFormat.Timestamp };
       DateTime noon = new DateTime(2026, 10, 7, 12, 0, 0, 250, DateTimeKind.Unspecified);
       PrimitivesWithDates back = Serializer.Deserialize<PrimitivesWithDates>(Serializer.Serialize(new PrimitivesWithDates() { When = noon, Boxed = noon }, settings), settings);
       Assert.AreEqual(noon, back.When);
@@ -124,7 +124,7 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(noon, (DateTime)back.Boxed);
       Assert.AreEqual(DateTimeKind.Unspecified, ((DateTime)back.Boxed).Kind);
 
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false, UnspecifiedDateTimeKind = DateTimeKind.Utc, DateTimeFormat = DateTimeFormat.Timestamp };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseIndexedSchema = false, UnspecifiedDateTimeKind = DateTimeKind.Utc, DateTimeFormat = DateTimeFormat.Timestamp };
       CollectionAssert.AreEqual(Serializer.Serialize(DateTime.SpecifyKind(noon, DateTimeKind.Utc), withoutSchema), Serializer.Serialize(noon, withoutSchema), "written as the same clock time in UTC");
     }
 
@@ -137,7 +137,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void DefaultsKeepTheValueAndKind(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       Assert.AreEqual(DateTimeFormat.Native, settings.DateTimeFormat);
 
       DateTime midnight = new DateTime(2026, 10, 28, 0, 0, 0, DateTimeKind.Unspecified);
@@ -159,7 +159,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void NativeDateTimeBytes()
     {
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseIndexedSchema = false };
       DateTime utc = new DateTime(2021, 1, 1, 0, 0, 0, 500, DateTimeKind.Utc);
       byte[] expected = new byte[] { (byte)MsgPackTypeId.MpFExt8, 6, 0x48, 0xD8, 0xAD, 0xE8, 0x2E, 0xF8, 0xCB, 0x40 }; // 0x40... the Kind Utc, then the ticks 0x08D8ADE82EF8CB40
       CollectionAssert.AreEqual(expected, Serializer.Serialize(utc, withoutSchema));
@@ -174,7 +174,7 @@ namespace LsMsgPackUnitTests
         bits = (bits << 8) | bytes[t];
       Assert.AreEqual(0x8000000000000000UL | (ulong)local.ToUniversalTime().Ticks, bits, "the ticks in UTC with the Local flag");
 
-      MsgPackSettings neverSwap = new MsgPackSettings() { UseInexedSchema = false, EndianAction = EndianAction.NeverSwap };
+      MsgPackSettings neverSwap = new MsgPackSettings() { UseIndexedSchema = false, EndianAction = EndianAction.NeverSwap };
       byte[] native = Serializer.Serialize(utc, neverSwap);
       Assert.AreEqual(utc.ToBinary(), BitConverter.ToInt64(native, 2), "in the byte order of the machine");
       Assert.AreEqual(utc, Serializer.Deserialize<DateTime>(native, neverSwap));
@@ -187,8 +187,8 @@ namespace LsMsgPackUnitTests
     public void BothFormatsRead()
     {
       DateTime utc = new DateTime(2026, 10, 28, 12, 0, 0, DateTimeKind.Utc);
-      MsgPackSettings native = new MsgPackSettings() { UseInexedSchema = false };
-      MsgPackSettings timestamps = new MsgPackSettings() { UseInexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
+      MsgPackSettings native = new MsgPackSettings() { UseIndexedSchema = false };
+      MsgPackSettings timestamps = new MsgPackSettings() { UseIndexedSchema = false, DateTimeFormat = DateTimeFormat.Timestamp };
       Assert.AreEqual(utc, Serializer.Deserialize<DateTime>(Serializer.Serialize(utc, timestamps), native));
       Assert.AreEqual(utc, Serializer.Deserialize<DateTime>(Serializer.Serialize(utc, native), timestamps));
       Assert.AreEqual(utc, (DateTime)Serializer.Deserialize<object>(Serializer.Serialize(utc, native), timestamps));
@@ -201,7 +201,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void NativeDateTimeBeyondTheRange()
     {
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseIndexedSchema = false };
       byte[] tooLate = new byte[] { (byte)MsgPackTypeId.MpFExt8, 6, 0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 #if KEEPTRACK
       Assert.Throws<Exception>(() => Serializer.Deserialize<DateTime>(tooLate, withoutSchema)); // LsMsgPackDebug keeps the error as an MpError item (ContinueProcessingOnBreakingError), which is no DateTime
@@ -219,7 +219,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void TimestampsKeepTheClockTimeAsJson(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema, DateTimeFormat = DateTimeFormat.Timestamp };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema, DateTimeFormat = DateTimeFormat.Timestamp };
       Assert.AreEqual(DateTimeKind.Utc, settings.UnspecifiedDateTimeKind);
       Assert.AreEqual(DateTimeKind.Utc, settings.ReadDateTimeKind);
 
@@ -266,7 +266,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void DecimalExtension()
     {
-      MsgPackSettings withoutSchema = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings withoutSchema = new MsgPackSettings() { UseIndexedSchema = false };
       foreach (decimal value in new[] { 0m, 1.5m, -79228162514264337593543950335m, 0.0000001m })
       {
         byte[] bytes = Serializer.Serialize(value, withoutSchema);
@@ -280,10 +280,10 @@ namespace LsMsgPackUnitTests
     public void GuidIsBinaryData()
     {
       Guid id = Guid.Parse("0f8fad5b-d9cb-469f-a165-70867728950e");
-      byte[] bytes = Serializer.Serialize(id, new MsgPackSettings() { UseInexedSchema = false });
+      byte[] bytes = Serializer.Serialize(id, new MsgPackSettings() { UseIndexedSchema = false });
       Assert.AreEqual((byte)MsgPackTypeId.MpBin8, bytes[0]);
       Assert.AreEqual((byte)16, bytes[1]);
-      Assert.AreEqual(id, Serializer.Deserialize<Guid>(bytes, new MsgPackSettings() { UseInexedSchema = false }));
+      Assert.AreEqual(id, Serializer.Deserialize<Guid>(bytes, new MsgPackSettings() { UseIndexedSchema = false }));
     }
   }
 

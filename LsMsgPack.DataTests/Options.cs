@@ -21,7 +21,7 @@ namespace LsMsgPack.DataTests
     public T Apply<T>(T options) where T : MsgPackOptions
     {
       options.ObjectLayout = Layout;
-      options.UseInexedSchema = Indexed;
+      options.UseIndexedSchema = Indexed;
       options.SchemaVersion = Version;
       options.DynamicallyCompact = Compact;
       options.TrimTrailingNulls = Trim;

@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\LsMsgPackDebug\LsMsgPackDebug.csproj" />
     <ProjectReference Include="..\LsMsgPack.Data\LsMsgPack.Data.csproj" />
+    <ProjectReference Include="..\LsMsgPackFSharpTestTypes\LsMsgPackFSharpTestTypes.fsproj" />
   </ItemGroup>
 
 </Project>

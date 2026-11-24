@@ -21,7 +21,7 @@ namespace LsMsgPack
 
     /// <summary>
     /// Custom extensions: values of their types are written as MsgPack extensions (the first extension that supports the type), and extensions of their type code are read by them.
-    /// <para>Write the same bytes as the custom extensions of LsMsgPack (<c>MsgPackSettings.CustomExtentionTypes</c>) to stay compatible.</para>
+    /// <para>Write the same bytes as the custom extensions of LsMsgPack (<c>MsgPackSettings.CustomExtensionTypes</c>) to stay compatible.</para>
     /// </summary>
     [IgnoreDataMember]
     public LsExtension[] Extensions

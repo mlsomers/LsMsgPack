@@ -105,6 +105,42 @@ namespace LsMsgPack.Converters
     TResult Surrogate<T, TSurrogate>(MsgPackConverter<T, TSurrogate> converter);
 
     TResult Binary<T>(MsgPackBinaryConverter<T> converter);
+
+    /// <summary>
+    /// A converter without type arguments (<see cref="BoxedConverter"/>): its values are converted boxed.
+    /// </summary>
+    TResult Boxed(BoxedConverter converter);
+  }
+
+  /// <summary>
+  /// A converter of boxed values, for the converters the library makes for types only known at runtime where it has no code for their type arguments (NativeAOT: the F# converters of
+  /// value types). The serializers write and read its values boxed (LsMsgPack: its boxed writer and Core's conversion).
+  /// </summary>
+  internal abstract class BoxedConverter : MsgPackConverter
+  {
+    private readonly Type _converted;
+    private readonly Type _surrogate;
+
+    protected BoxedConverter(Type converted, Type surrogate)
+    {
+      _converted = converted;
+      _surrogate = surrogate;
+    }
+
+    public sealed override Type ConvertedType
+    {
+      get { return _converted; }
+    }
+
+    public sealed override Type SurrogateType
+    {
+      get { return _surrogate; }
+    }
+
+    internal sealed override TResult Accept<TResult>(IMsgPackConverterVisitor<TResult> visitor)
+    {
+      return visitor.Boxed(this);
+    }
   }
 
   /// <summary>

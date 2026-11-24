@@ -195,7 +195,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(bool schema, ObjectLayout layout, bool trim = false)
     {
-      return new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim };
+      return new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout, TrimTrailingNulls = trim };
     }
 
     private static IEnumerable<object[]> AllSettings()

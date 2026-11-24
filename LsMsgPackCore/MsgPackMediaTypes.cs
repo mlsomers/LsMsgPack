@@ -130,7 +130,7 @@ namespace LsMsgPack
       if (settings is null)
         throw new ArgumentNullException(nameof(settings));
       TOptions plain = (TOptions)settings.CloneOptions();
-      plain.UseInexedSchema = false;
+      plain.UseIndexedSchema = false;
       plain.WriteSchemaReference = false;
       plain.AddTypeIdOptions = AddTypeIdOption.Never;
       plain.ObjectLayout = ObjectLayout.Map; // without the schema an array can only be read in the writer's order

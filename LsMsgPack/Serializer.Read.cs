@@ -342,7 +342,7 @@ namespace LsMsgPack
     /// </summary>
     private ValueReader Preserving(Type type, ValueReader reader)
     {
-      if (!PreserveReferences || type.IsValueType || type == typeof(string) || type == typeof(byte[]))
+      if (!PreserveReferences || type.IsValueType || type == typeof(string) || type == typeof(byte[]) || reader is ConvertingReader) // Core's conversion resolves and registers references itself (a boxed converter's class)
         return reader;
       return ((IPreservableReader)reader).Preserving();
     }
@@ -573,6 +573,11 @@ namespace LsMsgPack
       {
         return new BinaryConverterReader<T>(_serializer, converter);
       }
+
+      public object Boxed(BoxedConverter converter)
+      {
+        return new ConvertingReader(converter.ConvertedType); // Core converts the surrogate and applies the converter
+      }
     }
 
     /// <returns>null when the type is not an object with properties that can be created</returns>
@@ -740,7 +745,7 @@ namespace LsMsgPack
         if (into != null)
           c.Into = into;
         object result;
-        if (!Options._useInexedSchema)
+        if (!Options._useIndexedSchema)
         {
           if (!ReferenceEquals(c.SlowSettings, Options))
             c.SlowSettings = Options;
@@ -930,7 +935,7 @@ namespace LsMsgPack
           throw MsgPackReader.EndOfData();
         sbyte extType = unchecked((sbyte)r.Buf[r.Pos + 1]);
         if (extType != SchemaStore.ReferenceExtensionType)
-          throw new MsgPackException($"Expected the data to start with an indexed schema (a map) or a reference to one (extension type {SchemaStore.ReferenceExtensionType}) but found extension type {extType}. Was it serialized with MsgPackSettings.UseInexedSchema = false?", 0, MsgPackTypeId.MpFExt16);
+          throw new MsgPackException($"Expected the data to start with an indexed schema (a map) or a reference to one (extension type {SchemaStore.ReferenceExtensionType}) but found extension type {extType}. Was it serialized with MsgPackSettings.UseIndexedSchema = false?", 0, MsgPackTypeId.MpFExt16);
 
         SchemaHit known = KnownSchema(r.Buf, r.Pos, SchemaStore.ReferenceLength);
         if (known != null)
@@ -1103,10 +1108,11 @@ namespace LsMsgPack
     /// <param name="type">The declared type of the value</param>
     /// <param name="intoSlot">As in <see cref="Deserialize"/></param>
     /// <param name="referencePrefix">Where the value is in the root value of the body (the start of its reference paths, <see cref="ReadContext.ReferencePrefix"/>), null at the root</param>
-    internal object DeserializeBody(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false, Func<int[]> referencePrefix = null)
+    /// <param name="into">As in <see cref="Deserialize"/> (the stream reader's PopulateObject)</param>
+    internal object DeserializeBody(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, ReadDifferences differences = null, bool intoSlot = false, Func<int[]> referencePrefix = null, object into = null)
     {
       if (differences is null && Options._readErrors != ReadErrorHandling.FailFast) // the errors are skipped and collected (with the differences)
-        return DeserializeBodyCollecting(head, root, type, buffer, offset, end, out consumed, referencePrefix);
+        return DeserializeBodyCollecting(head, root, type, buffer, offset, end, out consumed, referencePrefix, into);
 
       if (root != _cachedRoot)
         CacheRoot(root);
@@ -1124,6 +1130,8 @@ namespace LsMsgPack
         c.IntoSlot = intoSlot;
         c.Unusual = SlowObjects || differences != null;
         c.ReferencePrefix = referencePrefix;
+        if (into != null)
+          c.Into = into;
         object result = ReadWithSchema(c, root, type, offset, head.Schema, head.LengthSettings, head.State, head.Raw, null);
         consumed = c.R.Pos;
         return result;
@@ -1136,16 +1144,33 @@ namespace LsMsgPack
         ReturnContext(c);
       }
       differences?.Reset();
-      return PreservingReader().DeserializeBody(head, root, type, buffer, offset, end, out consumed, differences, intoSlot, referencePrefix);
+      return PreservingReader().DeserializeBody(head, root, type, buffer, offset, end, out consumed, differences, intoSlot, referencePrefix, into);
     }
 
-    private object DeserializeBodyCollecting(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, Func<int[]> referencePrefix)
+    private object DeserializeBodyCollecting(SchemaHead head, Type root, Type type, byte[] buffer, int offset, int end, out int consumed, Func<int[]> referencePrefix, object into)
     {
       ReadDifferences found = new ReadDifferences(Options);
       int used = 0;
-      object read = ReadDifferences.Collect(found, () => DeserializeBody(head, root, type, buffer, offset, end, out used, found, false, referencePrefix));
+      object read = ReadDifferences.Collect(found, () => DeserializeBody(head, root, type, buffer, offset, end, out used, found, false, referencePrefix, into));
       consumed = used;
       return read;
+    }
+
+    private Type _populatedClass; // the class of the last object target PopulateTarget accepted
+
+    /// <summary>
+    /// Checks the target of a root Populate (<see cref="Population.ThrowIfNotPopulatable"/>) before anything is read. Whether an object can be read into depends on its class and the options only,
+    /// so the last class accepted is remembered (the checks are a few lookups, ~15% of populating a small object); a collection is checked every time (read-only or not is the instance's).
+    /// </summary>
+    /// <returns>true for a collection (read as a new one, then filled), false for an object (read into)</returns>
+    internal bool PopulateTarget(object target)
+    {
+      if (target != null && target.GetType() == _populatedClass)
+        return false;
+      bool fill = Population.ThrowIfNotPopulatable(target, Options);
+      if (!fill)
+        _populatedClass = target.GetType();
+      return fill;
     }
 
     #endregion
@@ -1242,7 +1267,7 @@ namespace LsMsgPack
       else if (first <= 0x9F) typeId = MsgPackTypeId.MpArray4;
       else if (first <= 0xBF) typeId = MsgPackTypeId.MpStr5;
       else typeId = (MsgPackTypeId)first;
-      return new MsgPackException($"Expected the data to start with an indexed schema (a map) but found {typeId}. Was it serialized with MsgPackSettings.UseInexedSchema = false?", 0, typeId);
+      return new MsgPackException($"Expected the data to start with an indexed schema (a map) but found {typeId}. Was it serialized with MsgPackSettings.UseIndexedSchema = false?", 0, typeId);
     }
 
     private static byte[] Slice(byte[] buffer, int offset, int count)

@@ -117,15 +117,15 @@ namespace LsMsgPackUnitTests
 
     [TestMethod]
 
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 410)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 387)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 302)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 302)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, false, false, 410)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, false, true, 387)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, true, false, 302)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, true, true, 302)]
 
-    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, false, false, 448)]
-    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, false, true, 425)]
-    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, true, false, 340)]
-    [DataRow(AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, true, true, 340)]
+    [DataRow(AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName, false, false, 448)]
+    [DataRow(AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName, false, true, 425)]
+    [DataRow(AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName, true, false, 340)]
+    [DataRow(AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName, true, true, 340)]
 
     [DataRow(AddTypeIdOption.Always, false, false, 450)]
     [DataRow(AddTypeIdOption.Always, false, true, 427)]
@@ -143,7 +143,7 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings()
       {
         ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         AddTypeIdOptions = addTypeName
       };
       SetFilters(settings, omitDefault, omitNull);
@@ -160,10 +160,10 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 402)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 379)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 294)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 294)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, false, false, 402)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, false, true, 379)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, true, false, 294)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, true, true, 294)]
 
     [DataRow(AddTypeIdOption.Always, false, false, 430)]
     [DataRow(AddTypeIdOption.Always, false, true, 407)]
@@ -176,7 +176,7 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings()
       {
         ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         AddTypeIdOptions = addTypeName,
       };
       SetFilters(settings, omitDefault, omitNull);
@@ -247,7 +247,7 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings()
       {
         ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         AddTypeIdOptions = addTypeName,
       };
       SetFilters(settings, omitDefault, omitNull);
@@ -275,14 +275,14 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings()
       {
         ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
-        UseInexedSchema = true,
+        UseIndexedSchema = true,
         AddTypeIdOptions = AddTypeIdOption.Never,
       };
       SetFilters(settings, omitDefault, omitNull);
       settings.TypeResolvers = new[] { new Resolver2() };
 
       MsgPackException ex = Assert.ThrowsExactly<MsgPackException>(() => Serializer.Serialize(GetDefault(), settings));
-      StringAssert.Contains(ex.Message, nameof(AddTypeIdOption.IfAmbiguious));
+      StringAssert.Contains(ex.Message, nameof(AddTypeIdOption.IfAmbiguous));
     }
 
     /// <summary>
@@ -291,15 +291,15 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     [DataRow(false, false)]
     [DataRow(true, true)]
-    public void Hirarchical_ResolveBySignature_WithSchemaIfAmbiguious(bool omitDefault, bool omitNull)
+    public void Hirarchical_ResolveBySignature_WithSchemaIfAmbiguous(bool omitDefault, bool omitNull)
     {
       HierarchyContainer container = GetDefault();
 
       MsgPackSettings settings = new MsgPackSettings()
       {
         ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
-        UseInexedSchema = true,
-        AddTypeIdOptions = AddTypeIdOption.IfAmbiguious,
+        UseIndexedSchema = true,
+        AddTypeIdOptions = AddTypeIdOption.IfAmbiguous,
       };
       SetFilters(settings, omitDefault, omitNull);
       settings.TypeResolvers = new[] { new Resolver2() };
@@ -332,10 +332,10 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 626)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 603)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 446)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 446)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, false, false, 626)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, false, true, 603)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, true, false, 446)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, true, true, 446)]
 
     [DataRow(AddTypeIdOption.Always, false, false, 672)]
     [DataRow(AddTypeIdOption.Always, false, true, 649)]
@@ -348,7 +348,7 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings()
       {
         ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         AddTypeIdOptions = addTypeName,
       };
       SetFilters(settings, omitDefault, omitNull);
@@ -364,10 +364,10 @@ namespace LsMsgPackUnitTests
     }
 
     [TestMethod]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, false, 403)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, false, true, 399)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, false, 357)]
-    [DataRow(AddTypeIdOption.IfAmbiguious, true, true, 357)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, false, false, 403)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, false, true, 399)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, true, false, 357)]
+    [DataRow(AddTypeIdOption.IfAmbiguous, true, true, 357)]
 
     [DataRow(AddTypeIdOption.Always, false, false, 421)]
     [DataRow(AddTypeIdOption.Always, false, true, 417)]
@@ -380,7 +380,7 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings()
       {
         ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
-        UseInexedSchema = true,
+        UseIndexedSchema = true,
         AddTypeIdOptions = addTypeName,
       };
       SetFilters(settings, omitDefault, omitNull);
@@ -401,7 +401,7 @@ namespace LsMsgPackUnitTests
       MsgPackSettings settings = new MsgPackSettings()
       {
         ObjectLayout = ObjectLayout.Map, // the expected lengths are of maps, resolving by signature needs the property names
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
       };
 
       NextLevelHierarchyContainer container = GetNextLevel();
@@ -413,7 +413,7 @@ namespace LsMsgPackUnitTests
       string returned = JsonConvert.SerializeObject(ret);
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
 
-      settings.UseInexedSchema = true;
+      settings.UseIndexedSchema = true;
 
       byte[] bufferSchema = Serializer.Serialize(container, settings);
       ret = Serializer.Deserialize<NextLevelHierarchyContainer>(bufferSchema, settings);
@@ -432,7 +432,7 @@ namespace LsMsgPackUnitTests
         dict.Add(t, dict[t % 3]);
       org = JsonConvert.SerializeObject(container);
 
-      settings.UseInexedSchema = false;
+      settings.UseIndexedSchema = false;
 
       buffer = Serializer.Serialize(container, settings);
       ret = Serializer.Deserialize<NextLevelHierarchyContainer>(buffer, settings);
@@ -440,7 +440,7 @@ namespace LsMsgPackUnitTests
       returned = JsonConvert.SerializeObject(ret);
       Assert.AreEqual(org, returned, string.Concat("Not equal, Original - returned:\r\n", org, "\r\n", returned));
 
-      settings.UseInexedSchema = true;
+      settings.UseIndexedSchema = true;
 
       bufferSchema = Serializer.Serialize(container, settings);
       ret = Serializer.Deserialize<NextLevelHierarchyContainer>(bufferSchema, settings);

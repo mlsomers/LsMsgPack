@@ -1,4 +1,6 @@
 ﻿using LsMsgPack;
+using LsMsgPack.Converters;
+using LsMsgPack.FSharp;
 using LsMsgPackDebug;
 using LsMsgPackFSharpTestTypes;
 using Microsoft.FSharp.Collections;
@@ -7,6 +9,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 
 namespace LsMsgPackUnitTests
 {
@@ -144,16 +147,16 @@ namespace LsMsgPackUnitTests
     {
       yield return new MsgPackSettings();
       yield return new MsgPackSettings() { ObjectLayout = ObjectLayout.Map };
-      yield return new MsgPackSettings() { UseInexedSchema = false };
+      yield return new MsgPackSettings() { UseIndexedSchema = false };
       yield return MsgPackMediaTypes.ToPlain(new MsgPackSettings());
       yield return new MsgPackSettings() { SchemaVersion = SchemaVersion.Described };
-      yield return new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName };
+      yield return new MsgPackSettings() { AddTypeIdOptions = AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName };
       yield return new MsgPackSettings() { ReferenceHandling = ReferenceHandling.Preserve };
     }
 
     internal static string Describe(MsgPackSettings settings)
     {
-      return $"schema {settings.UseInexedSchema} v{(int)settings.SchemaVersion}, {settings.ObjectLayout}, type ids {settings.AddTypeIdOptions}, references {settings.ReferenceHandling}";
+      return $"schema {settings.UseIndexedSchema} v{(int)settings.SchemaVersion}, {settings.ObjectLayout}, type ids {settings.AddTypeIdOptions}, references {settings.ReferenceHandling}";
     }
 
     #endregion
@@ -184,6 +187,104 @@ namespace LsMsgPackUnitTests
           CollectionAssert.AreEqual(expected, Serializer.Serialize(value, value.GetType(), settings), $"{value.GetType().Name} ({Describe(settings)})");
         }
       }
+    }
+
+    /// <summary>
+    /// Without dynamic code (NativeAOT) the F# converters are boxed (FSharpBoxedConverter; LsMsgPack writes them through BoxedConverterHandler and reads them through Core):
+    /// made here with CompilePropertyAccessors off and given as the options' converters, they write the bytes of the generic converters and read the same values in every setting.
+    /// </summary>
+    [TestMethod]
+    public void BoxedConverters_SameBytesAndValues()
+    {
+      MsgPackConverter[] boxed = BoxedConverters();
+      Assert.IsTrue(boxed.Length > 10, "options, values as names, single cases");
+      foreach (MsgPackSettings settings in AllSettings())
+      {
+        foreach (object value in Values())
+        {
+          string message = $"{value.GetType().Name} ({Describe(settings)})";
+          byte[] expected = Serializers.Debug.Serialize(value, value.GetType(), settings);
+          settings.Converters = boxed;
+          byte[] bytes = Serializer.Serialize(value, value.GetType(), settings);
+          CollectionAssert.AreEqual(expected, bytes, message);
+          Assert.AreEqual(value, Serializer.Deserialize(value.GetType(), bytes, settings), message);
+          settings.Converters = null;
+        }
+      }
+    }
+
+    /// <summary>
+    /// The converters the F# seam makes without dynamic code, for the types of <see cref="Values"/> (their members, elements, generic arguments and case classes).
+    /// </summary>
+    private static MsgPackConverter[] BoxedConverters()
+    {
+      HashSet<Type> types = new HashSet<Type>();
+      foreach (object value in Values())
+        Collect(value.GetType(), types);
+      bool compile = MsgPackOptions.CompilePropertyAccessors;
+      MsgPackOptions.CompilePropertyAccessors = false; // PropertyAccessor.CanCompile false, as under NativeAOT
+      try
+      {
+        List<MsgPackConverter> converters = new List<MsgPackConverter>();
+        foreach (Type type in types)
+        {
+          MsgPackConverter converter = FSharpTypes.ConverterFor(type);
+          if (converter != null)
+          {
+            Assert.IsInstanceOfType<FSharpBoxedConverter>(converter, type.FullName);
+            converters.Add(converter);
+          }
+        }
+        return converters.ToArray();
+      }
+      finally
+      {
+        MsgPackOptions.CompilePropertyAccessors = compile;
+      }
+    }
+
+    private static void Collect(Type type, HashSet<Type> types)
+    {
+      if (type is null || type.IsPrimitive || type == typeof(string) || type.ContainsGenericParameters || !types.Add(type))
+        return;
+      if (type.IsArray)
+        Collect(type.GetElementType(), types);
+      foreach (Type argument in type.GenericTypeArguments)
+        Collect(argument, types);
+      foreach (PropertyInfo property in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        Collect(property.PropertyType, types);
+      foreach (Type nested in type.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
+        Collect(nested.IsGenericTypeDefinition && type.IsGenericType ? nested.MakeGenericType(type.GenericTypeArguments) : nested, types);
+      Type baseType = type.BaseType;
+      if (baseType != null && baseType != typeof(object) && baseType != typeof(ValueType))
+        Collect(baseType, types);
+    }
+
+    /// <summary>
+    /// NativeAOT drops the attributes of union case properties ([CompilationMapping] marks the fields), so Core finds them by the parameters of the case's factory then: the same fields in
+    /// the same order as by the attributes, for every case with fields of the F# test types.
+    /// </summary>
+    [TestMethod]
+    public void Unions_FieldsFromTheFactory_SameAsFromTheAttributes()
+    {
+      int cases = 0;
+      List<Type> unions = typeof(FsShape).Assembly.GetTypes().Where(t => !t.IsNested && !t.ContainsGenericParameters).ToList();
+      unions.Add(typeof(FsGeneric<int>));
+      unions.Add(typeof(FSharpChoice<int, string>));
+      foreach (Type type in unions)
+      {
+        FSharpUnion union = FSharpTypes.UnionOf(type);
+        if (union is null || union.Type != type)
+          continue;
+        foreach (UnionCase unionCase in union.Cases)
+        {
+          if (unionCase.Factory is null)
+            continue;
+          cases++;
+          CollectionAssert.AreEqual(unionCase.Fields, FSharpUnion.FieldsOfFactory(unionCase.Class, unionCase.Factory), $"{type.Name}.{unionCase.Name}");
+        }
+      }
+      Assert.IsTrue(cases > 15, cases + " cases with fields");
     }
 
     [TestMethod]
@@ -250,7 +351,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Unions_TheTypeIdIsTheCaseName()
     {
-      MsgPackSettings byNames = new MsgPackSettings() { UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      MsgPackSettings byNames = new MsgPackSettings() { UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
       FsGeneric<int>[] values = { FsGeneric<int>.NewValue(5) };
       Dictionary<string, object>[] expected = { new Dictionary<string, object>() { { "", "Value" }, { "Item", 5 } } };
       CollectionAssert.AreEqual(MsgPackSerializer.Serialize(expected, byNames), Serializer.Serialize(values, byNames));
@@ -329,11 +430,11 @@ namespace LsMsgPackUnitTests
       Assert.AreEqual(list, Serializer.Deserialize<FSharpList<FsAddress>>(Serializer.Serialize(list)));
       Assert.AreEqual(FSharpList<int>.Empty, Serializer.Deserialize<FSharpList<int>>(Serializer.Serialize(FSharpList<int>.Empty)));
       FSharpMap<int, string> map = MapModule.OfSeq(new[] { Tuple.Create(2, "two"), Tuple.Create(1, "one") });
-      Assert.AreEqual(map, Serializer.Deserialize<FSharpMap<int, string>>(Serializer.Serialize(map, new MsgPackSettings() { UseInexedSchema = false }), new MsgPackSettings() { UseInexedSchema = false }));
+      Assert.AreEqual(map, Serializer.Deserialize<FSharpMap<int, string>>(Serializer.Serialize(map, new MsgPackSettings() { UseIndexedSchema = false }), new MsgPackSettings() { UseIndexedSchema = false }));
       FSharpSet<FsColour> set = SetModule.OfSeq(new[] { FsColour.Green, FsColour.Red });
       Assert.AreEqual(set, Serializer.Deserialize<FSharpSet<FsColour>>(Serializer.Serialize(set)));
       FSharpMap<FsColour, FSharpOption<int>> byColour = MapModule.OfSeq(new[] { Tuple.Create(FsColour.Red, Some(1)), Tuple.Create(FsColour.Blue, (FSharpOption<int>)null) });
-      foreach (MsgPackSettings settings in new[] { new MsgPackSettings(), new MsgPackSettings() { UseInexedSchema = false } })
+      foreach (MsgPackSettings settings in new[] { new MsgPackSettings(), new MsgPackSettings() { UseIndexedSchema = false } })
         Assert.AreEqual(byColour, Serializer.Deserialize<FSharpMap<FsColour, FSharpOption<int>>>(Serializer.Serialize(byColour, settings), settings), "union keys by name, options as values");
     }
   }

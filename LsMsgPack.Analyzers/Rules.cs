@@ -3,7 +3,7 @@
 namespace LsMsgPack.Analyzers
 {
   /// <summary>
-  /// The diagnostics of the analyzers (docs/Analyzers.md). They are reported for the properties and fields of serialized types only (see <see cref="ModelTypes"/>).
+  /// The diagnostics of the analyzers (docs/Analyzers.md). They are reported for the properties and fields of serialized types only (see <see cref="ModelTypes"/>), LSMP012 for any property or field.
   /// </summary>
   internal static class Rules
   {
@@ -64,9 +64,9 @@ namespace LsMsgPack.Analyzers
       DocsUrl + "lsmp006-null-is-read-back-as-the-initial-value");
 
     public static readonly DiagnosticDescriptor UntypedRead = new DiagnosticDescriptor("LSMP007", "Objects are read without their property names",
-      "{0} reads {1}: an object written from a class arrives without its property names, {2} (by default, and for application/x-lsmsgpack, it is an array of its values with the indexed schema). Read into a class (with nullable properties for a partial update), or write maps without the schema (ObjectLayout.Map and UseInexedSchema = false, as for application/msgpack).",
+      "{0} reads {1}: an object written from a class arrives without its property names, {2} (by default, and for application/x-lsmsgpack, it is an array of its values with the indexed schema). Read into a class (with nullable properties for a partial update), or write maps without the schema (ObjectLayout.Map and UseIndexedSchema = false, as for application/msgpack).",
       ReadingCategory, DiagnosticSeverity.Warning, true,
-      "The names of an object's properties are in the schema, or nowhere in the array layout: only the class they are read into gives them back. Only maps without the indexed schema (ObjectLayout.Map, UseInexedSchema = false, as application/msgpack writes them) carry the names.",
+      "The names of an object's properties are in the schema, or nowhere in the array layout: only the class they are read into gives them back. Only maps without the indexed schema (ObjectLayout.Map, UseIndexedSchema = false, as application/msgpack writes them) carry the names.",
       DocsUrl + "lsmp007-objects-are-read-without-their-property-names");
 
     public static readonly DiagnosticDescriptor UncheckedModel = new DiagnosticDescriptor("LSMP008", "Serialized class of another project is not checked",
@@ -98,5 +98,13 @@ namespace LsMsgPack.Analyzers
       + "(IDictionary<string, object>, Dictionary<string, object>, or a class implementing it with a public parameterless constructor). The serializers refuse a class with two such members "
       + "(also one in a base class) and a marked member of another type, such as System.Text.Json's Dictionary<string, JsonElement> or JsonObject.",
       DocsUrl + "lsmp011-invalid-extension-data-member");
+
+    public static readonly DiagnosticDescriptor EnumFormatWithoutEnum = new DiagnosticDescriptor("LSMP012", "[MsgPackEnumFormat] on a member that is no enum",
+      "'{0}' is a {1}, not an enum: its [MsgPackEnumFormat] has no effect. On a member it applies to the member's own value only (an enum or a nullable enum), not to the elements of a collection. "
+      + "Put it on the enum type, or set MsgPackOptions.EnumFormat for all enums.",
+      SupportCategory, DiagnosticSeverity.Warning, true,
+      "[MsgPackEnumFormat] on a property or field decides how the member's own value is written, so its type has to be an enum or a nullable of one. On a member of another type "
+      + "(a collection or dictionary of enums, object, System.Enum, a number) the serializers ignore it and write the enums by the enum type's attribute or the options.",
+      DocsUrl + "lsmp012-msgpackenumformat-on-a-member-that-is-no-enum");
   }
 }

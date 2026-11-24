@@ -131,8 +131,8 @@ namespace LsMsgPack
       if (root is null)
         throw new ArgumentNullException(nameof(root));
       LsMsgPackOptions options = _serializer.Options;
-      if (!options._useInexedSchema || !options._writeSchemaReference || options._schemaStore is null)
-        throw new InvalidOperationException($"Only schemas that are referred to are kept: set {nameof(MsgPackOptions.UseInexedSchema)}, {nameof(MsgPackOptions.WriteSchemaReference)} and a {nameof(MsgPackOptions.SchemaStore)}.");
+      if (!options._useIndexedSchema || !options._writeSchemaReference || options._schemaStore is null)
+        throw new InvalidOperationException($"Only schemas that are referred to are kept: set {nameof(MsgPackOptions.UseIndexedSchema)}, {nameof(MsgPackOptions.WriteSchemaReference)} and a {nameof(MsgPackOptions.SchemaStore)}.");
       return options._schemaStore.PrepareWriter(root, options);
     }
 
@@ -422,7 +422,7 @@ namespace LsMsgPack
     /// Reads one value (with its schema) from the stream asynchronously: <see cref="Deserialize{T}(Stream)"/> for a stream that must not be read synchronously
     /// (an ASP.NET Core request body, a network stream, a file opened for asynchronous I/O).
     /// <para>It reads no further than the value, so the stream is left after it: the values that follow one another on a connection are read one call at a time.
-    /// The bytes are read with <c>ReadAsync</c> into an array of the shared pool, then the value is read from memory. A <see cref="MemoryStream"/> is read in place, without awaiting.</para>
+    /// The bytes are read with <c>ReadAsync</c> into an array of the shared pool, then the value is read from memory. A <see cref="MemoryStream"/> is read without awaiting (in place when its array is exposed, otherwise from a copy).</para>
     /// <para>The stream must hold one payload as <see cref="Serialize{T}(T)"/> writes it. Values of unknown length (the escapes of a stream) are read by <see cref="Streaming.MsgPackStreamReader"/>.</para>
     /// </summary>
     public Task<T> DeserializeAsync<T>(Stream source, CancellationToken cancellationToken = default(CancellationToken))
@@ -457,6 +457,61 @@ namespace LsMsgPack
       try
       {
         return Task.FromResult(Deserialize(type, source, null));
+      }
+      catch (Exception ex)
+      {
+        return Task.FromException<object>(ex);
+      }
+    }
+
+    /// <summary>
+    /// <see cref="DeserializeAsync{T}(Stream, CancellationToken)"/>, reporting what did not match between the data and the classes as <see cref="Deserialize{T}(Stream, out ReadDifferences)"/> does
+    /// (an async method has no out parameters).
+    /// </summary>
+    /// <param name="differences">Called with the differences after the value is read, not called when the data matched the classes. When reading fails it is not called:
+    /// the differences found until then are in the exception's <see cref="Exception.Data"/> (<see cref="ReadDifferences.ExceptionDataKey"/>). Null reads without reporting.</param>
+    public Task<T> DeserializeAsync<T>(Stream source, Action<ReadDifferences> differences, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      if (differences is null)
+        return DeserializeAsync<T>(source, cancellationToken);
+      if (source is null)
+        throw new ArgumentNullException(nameof(source));
+      if (cancellationToken.IsCancellationRequested)
+        return Task.FromCanceled<T>(cancellationToken);
+      if (source.GetType() != typeof(MemoryStream))
+        return DeserializeReportingAsync<T>(source, differences, cancellationToken);
+      try
+      {
+        T result = Deserialize<T>(source, out ReadDifferences found);
+        if (found != null)
+          differences(found);
+        return Task.FromResult(result);
+      }
+      catch (Exception ex) // as an async method
+      {
+        return Task.FromException<T>(ex);
+      }
+    }
+
+    /// <summary>
+    /// <see cref="DeserializeAsync{T}(Stream, Action{ReadDifferences}, CancellationToken)"/> for a type known at runtime.
+    /// </summary>
+    public Task<object> DeserializeAsync(Type type, Stream source, Action<ReadDifferences> differences, CancellationToken cancellationToken = default(CancellationToken))
+    {
+      if (differences is null)
+        return DeserializeAsync(type, source, cancellationToken);
+      if (source is null)
+        throw new ArgumentNullException(nameof(source));
+      if (cancellationToken.IsCancellationRequested)
+        return Task.FromCanceled<object>(cancellationToken);
+      if (source.GetType() != typeof(MemoryStream))
+        return DeserializeReportingAsync(type, source, differences, cancellationToken);
+      try
+      {
+        object result = Deserialize(type, source, out ReadDifferences found);
+        if (found != null)
+          differences(found);
+        return Task.FromResult(result);
       }
       catch (Exception ex)
       {
@@ -673,12 +728,30 @@ namespace LsMsgPack
       if (source is null)
         throw new ArgumentNullException(nameof(source));
 
-      if (source is MemoryStream memory && memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
+      if (source is MemoryStream memory)
       {
-        int offset = segment.Offset + (int)memory.Position;
-        object result = _serializer.Deserialize(type, segment.Array, offset, segment.Offset + (int)memory.Length, out int consumed, differences, intoSlot);
-        memory.Position += consumed - offset;
-        return result;
+        if (memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
+        {
+          int offset = segment.Offset + (int)memory.Position;
+          object result = _serializer.Deserialize(type, segment.Array, offset, segment.Offset + (int)memory.Length, out int consumed, differences, intoSlot);
+          memory.Position += consumed - offset;
+          return result;
+        }
+        if (memory.CanSeek && memory.Length - memory.Position <= StreamPayload.CopiedWhole) // its array is not exposed (new MemoryStream(byte[])): the rest copied without scanning
+        {
+          long start = memory.Position;
+          byte[] copy = StreamPayload.CopyRest(memory, out int length);
+          try
+          {
+            object result = _serializer.Deserialize(type, copy, 0, length, out int consumed, differences, intoSlot);
+            memory.Position = start + consumed;
+            return result;
+          }
+          finally
+          {
+            StreamPayload.Return(copy, length);
+          }
+        }
       }
 
       StreamPayload payload = new StreamPayload(_serializer.Options);
@@ -742,17 +815,76 @@ namespace LsMsgPack
     {
       if (data is null)
         throw new ArgumentNullException(nameof(data));
+      differences = PopulateReporting(data, 0, data.Length, target);
+    }
+
+    /// <inheritdoc cref="Populate{T}(byte[], T, out ReadDifferences)"/>
+    /// <param name="offset">Where the data starts</param>
+    /// <param name="count">The number of bytes of the data</param>
+    public void Populate<T>(byte[] data, int offset, int count, T target, out ReadDifferences differences) where T : class
+    {
+      if (data is null)
+        throw new ArgumentNullException(nameof(data));
+      if (offset < 0 || count < 0 || data.Length - offset < count)
+        throw new ArgumentOutOfRangeException(nameof(count));
+      differences = PopulateReporting(data, offset, offset + count, target);
+    }
+
+    /// <returns>Null when the data matched the classes</returns>
+    private ReadDifferences PopulateReporting(byte[] buffer, int offset, int end, object target)
+    {
       ReadDifferences found = new ReadDifferences(_serializer.Options);
       try // ReadDifferences.Collect without the delegate (a closure per call)
       {
-        PopulateArray(data, 0, data.Length, target, found, out int consumed);
+        PopulateArray(buffer, offset, end, target, found, out int consumed);
         found.Collected(target);
       }
       catch (Exception ex) when (found.AttachTo(ex))
       {
         throw; // not reached, the filter attaches the differences and passes it on as it is
       }
-      differences = found.IsEmpty ? null : found;
+      return found.IsEmpty ? null : found;
+    }
+
+    /// <summary>
+    /// <see cref="Populate{T}(Stream, T)"/>, reading the stream asynchronously as <see cref="DeserializeAsync{T}(Stream, CancellationToken)"/> does: the payload is read with <c>ReadAsync</c>
+    /// into an array of the shared pool, then into the target from memory (a <see cref="MemoryStream"/> without awaiting, in place when its array is exposed). The stream is left after the value.
+    /// </summary>
+    /// <exception cref="ArgumentException">The target cannot be read into (thrown before the stream is read)</exception>
+    public Task PopulateAsync<T>(Stream source, T target, CancellationToken cancellationToken = default(CancellationToken)) where T : class
+    {
+      return PopulateAsync(source, target, null, cancellationToken);
+    }
+
+    /// <summary>
+    /// <see cref="PopulateAsync{T}(Stream, T, CancellationToken)"/>, reporting what did not match between the data and the classes as <see cref="Populate{T}(Stream, T, out ReadDifferences)"/> does.
+    /// </summary>
+    /// <param name="differences">Called with the differences after the target is read, not called when the data matched the classes. When reading fails it is not called:
+    /// the differences found until then are in the exception's <see cref="Exception.Data"/> (<see cref="ReadDifferences.ExceptionDataKey"/>). Null reads without reporting.</param>
+    public Task PopulateAsync<T>(Stream source, T target, Action<ReadDifferences> differences, CancellationToken cancellationToken = default(CancellationToken)) where T : class
+    {
+      if (source is null)
+        throw new ArgumentNullException(nameof(source));
+      _serializer.PopulateTarget(target); // before the stream is read: the payload would be lost
+      if (cancellationToken.IsCancellationRequested)
+        return Task.FromCanceled(cancellationToken);
+      if (source.GetType() != typeof(MemoryStream)) // as DeserializeAsync
+        return PopulateSlowAsync(source, target, differences, cancellationToken);
+      try
+      {
+        ReadDifferences found = null;
+        if (differences is null)
+          PopulateStream(source, target, null);
+        else
+          Populate(source, target, out found);
+        if (found != null)
+          differences(found);
+        return Task.CompletedTask;
+      }
+      catch (Exception ex) // as an async method
+      {
+        return Task.FromException(ex);
+      }
     }
 
     /// <inheritdoc cref="Populate{T}(byte[], T, out ReadDifferences)"/>
@@ -811,12 +943,30 @@ namespace LsMsgPack
     {
       if (source is null)
         throw new ArgumentNullException(nameof(source));
-      if (source is MemoryStream memory && memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
+      if (source is MemoryStream memory)
       {
-        int offset = segment.Offset + (int)memory.Position;
-        PopulateArray(segment.Array, offset, segment.Offset + (int)memory.Length, target, differences, out int consumed);
-        memory.Position += consumed - offset;
-        return;
+        if (memory.TryGetBuffer(out ArraySegment<byte> segment)) // read in place
+        {
+          int offset = segment.Offset + (int)memory.Position;
+          PopulateArray(segment.Array, offset, segment.Offset + (int)memory.Length, target, differences, out int consumed);
+          memory.Position += consumed - offset;
+          return;
+        }
+        if (memory.CanSeek && memory.Length - memory.Position <= StreamPayload.CopiedWhole) // as Deserialize(Type, Stream, ...)
+        {
+          long start = memory.Position;
+          byte[] copy = StreamPayload.CopyRest(memory, out int length);
+          try
+          {
+            PopulateArray(copy, 0, length, target, differences, out int consumed);
+            memory.Position = start + consumed;
+            return;
+          }
+          finally
+          {
+            StreamPayload.Return(copy, length);
+          }
+        }
       }
       StreamPayload payload = new StreamPayload(_serializer.Options);
       try
@@ -835,18 +985,23 @@ namespace LsMsgPack
     /// </summary>
     private void PopulateArray(byte[] buffer, int offset, int end, object target, ReadDifferences differences, out int consumed)
     {
-      Population.ThrowIfNotPopulatable(target, _serializer.Options);
-      Type type = target.GetType();
-      if (GetOnlyCollection.IsFillable(type))
-      {
-        object items = _serializer.Deserialize(type, buffer, offset, end, out consumed, differences);
-        if (items != null && !ReferenceEquals(items, target))
-          GetOnlyCollection.Fill(target, items);
+      bool fill = _serializer.PopulateTarget(target);
+      object result = _serializer.Deserialize(target.GetType(), buffer, offset, end, out consumed, differences, false, null, fill ? null : target);
+      PopulatedRoot(target, result, fill);
+    }
+
+    /// <summary>
+    /// The end of a root Populate (also the stream reader's PopulateObject): a collection target was read as a new one (<paramref name="fill"/>), which is copied into it (cleared first);
+    /// an object was read into the target itself, which is what the read returns (nil: null, the target is left as it is).
+    /// </summary>
+    internal static void PopulatedRoot(object target, object result, bool fill)
+    {
+      if (result is null || ReferenceEquals(result, target))
         return;
-      }
-      object result = _serializer.Deserialize(type, buffer, offset, end, out consumed, differences, false, null, target);
-      if (result != null && !ReferenceEquals(result, target))
-        throw new MsgPackException($"The data cannot be read into the {type.Name}: its root value is another object (a reference).");
+      if (fill)
+        GetOnlyCollection.Fill(target, result);
+      else
+        throw new MsgPackException($"The data cannot be read into the {target.GetType().Name}: its root value is another object (a reference).");
     }
 
     #endregion
@@ -885,6 +1040,57 @@ namespace LsMsgPack
       {
         payload.Release();
       }
+    }
+
+    /// <summary>
+    /// <see cref="DeserializeSlowAsync{T}(Stream, CancellationToken)"/> with the differences: read boxed, as the synchronous reporting overloads (<see cref="ReadDifferences.Root"/> keeps the result).
+    /// </summary>
+    private async Task<T> DeserializeReportingAsync<T>(Stream source, Action<ReadDifferences> differences, CancellationToken cancellationToken)
+    {
+      object result = await DeserializeReportingAsync(typeof(T), source, differences, cancellationToken).ConfigureAwait(false);
+      return result is null ? default(T) : (T)result;
+    }
+
+    private async Task<object> DeserializeReportingAsync(Type type, Stream source, Action<ReadDifferences> differences, CancellationToken cancellationToken)
+    {
+      object result;
+      ReadDifferences found;
+      StreamPayload payload = new StreamPayload(_serializer.Options);
+      try
+      {
+        await payload.ReadFromAsync(source, cancellationToken).ConfigureAwait(false);
+        result = Deserialize(type, payload.Buffer, 0, payload.Length, out found);
+      }
+      finally
+      {
+        payload.Release();
+      }
+      if (found != null)
+        differences(found);
+      return result;
+    }
+
+    /// <summary>
+    /// <see cref="PopulateAsync{T}(Stream, T, Action{ReadDifferences}, CancellationToken)"/> once the payload has to be awaited.
+    /// </summary>
+    private async Task PopulateSlowAsync(Stream source, object target, Action<ReadDifferences> differences, CancellationToken cancellationToken)
+    {
+      ReadDifferences found = null;
+      StreamPayload payload = new StreamPayload(_serializer.Options);
+      try
+      {
+        await payload.ReadFromAsync(source, cancellationToken).ConfigureAwait(false);
+        if (differences is null)
+          PopulateArray(payload.Buffer, 0, payload.Length, target, null, out int end);
+        else
+          found = PopulateReporting(payload.Buffer, 0, payload.Length, target);
+      }
+      finally
+      {
+        payload.Release();
+      }
+      if (found != null)
+        differences(found);
     }
 
     #endregion

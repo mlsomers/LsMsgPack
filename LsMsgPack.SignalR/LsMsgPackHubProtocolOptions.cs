@@ -67,7 +67,7 @@ namespace LsMsgPack.SignalR
         options.DynamicFilters = new IMsgPackPropertyIncludeDynamically[0];
         options.GuidFormat = GuidFormat.String;
       }
-      options.UseInexedSchema = false;
+      options.UseIndexedSchema = false;
       options.WriteSchemaReference = false;
       options.PropertyNameCaseInsensitive = true;
       return options;

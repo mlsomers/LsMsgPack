@@ -118,7 +118,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(file, serializer))
 - At a `StringStart`, `BinaryStart`, `ArrayStart` or `MapStart`, `GetString()`, `GetBytes()` and `GetValue()` read the whole value. The reader is then at its end.
 - `Skip()` passes the current array, map, str or bin without buffering it.
 
-**Objects.** `ReadObject<T>()` reads the next value as `LsMsgPackSerializer.Deserialize<T>` does, with its schema. Values of unknown length inside it are read too: the reader replaces them by ones of known length before the serializer reads them. `ReadHead<TRoot>()` reads a schema written by `WriteHead<TRoot>()` (see [one schema for a root value](#one-schema-for-a-root-value)).
+**Objects.** `ReadObject<T>()` reads the next value as `LsMsgPackSerializer.Deserialize<T>` does, with its schema. Values of unknown length inside it are read too: the reader replaces them by ones of known length before the serializer reads them. `ReadHead<TRoot>()` reads a schema written by `WriteHead<TRoot>()` (see [one schema for a root value](#one-schema-for-a-root-value)). `PopulateObject(target)` reads the next value into an object you have instead, where `ReadObject` would read it (see [Populate.md](Populate.md#streams-of-values)).
 
 **The buffer.** The reader reads the stream in blocks into a buffer, so the stream doesn't have to seek (network streams work). Values that are read whole are buffered whole: objects, `GetValue`, `GetString`... The buffer only grows as far as the data that arrives, so a header that claims more than the stream holds costs no more memory than the stream holds.
 
@@ -143,7 +143,7 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(response, serializer
 }
 ```
 
-- `ReadAsync()`, `AtEndAsync()`, `SkipAsync()`, `GetValueAsync()`, `GetStringAsync()`, `GetBytesAsync()`, `ReadObjectAsync<T>()` and `ReadHeadAsync<TRoot>()` do what the methods without `Async` do. They read ahead until the buffer holds what the step needs (a token, or a value that is read whole), then read it from the buffer, with the same checks and errors.
+- `ReadAsync()`, `AtEndAsync()`, `SkipAsync()`, `GetValueAsync()`, `GetStringAsync()`, `GetBytesAsync()`, `ReadObjectAsync<T>()`, `PopulateObjectAsync(target)` and `ReadHeadAsync<TRoot>()` do what the methods without `Async` do. They read ahead until the buffer holds what the step needs (a token, or a value that is read whole), then read it from the buffer, with the same checks and errors.
 - `ReadElementsAsync<T>()` (.NET Standard 2.1 and .NET 8) returns the elements of an array as an `IAsyncEnumerable<T>`, each read as `ReadObjectAsync<T>` reads it: at its `ArrayStart`, or before it (then it reads that first). The reader is at the `ArrayEnd` afterwards.
 - The values of a token (`GetInt64()`, `GetBoolean()`, `GetDouble()`...) need no reading. The data of a str, bin or extension isn't buffered by `ReadAsync` (it may be large): read it with `GetStringAsync()`, `GetBytesAsync()` or `GetValueAsync()` (an extension, a timestamp). `GetDateTime()` and `GetExtension()` would read it synchronously.
 - `AtEndAsync()` in an array of unknown length needs one byte when the next value doesn't start with `0xC1`, so a source that waits after a small element doesn't keep it waiting.
@@ -152,10 +152,10 @@ using (MsgPackStreamReader reader = new MsgPackStreamReader(response, serializer
 
 ## Objects and their schema
 
-With the indexed schema (`UseInexedSchema`, the default) an object is written as its schema, then the object. That's two MsgPack values, so on their own `WriteObject` and `ReadObject` only take root values of the stream (`Depth` 0). For objects in an array or map, write their schema once before it: see [one schema for a root value](#one-schema-for-a-root-value). Without the indexed schema an object is one value: it can also be an element of an array, e.g. of an array of unknown length:
+With the indexed schema (`UseIndexedSchema`, the default) an object is written as its schema, then the object. That's two MsgPack values, so on their own `WriteObject` and `ReadObject` only take root values of the stream (`Depth` 0). For objects in an array or map, write their schema once before it: see [one schema for a root value](#one-schema-for-a-root-value). Without the indexed schema an object is one value: it can also be an element of an array, e.g. of an array of unknown length:
 
 ```csharp
-LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+LsMsgPackSerializer plain = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
 // writer: WriteArrayStart(), WriteObject(row) per row, WriteEnd()
 // reader: Read(), then while (!reader.AtEnd) rows.Add(reader.ReadObject<Row>())
 ```
@@ -287,7 +287,7 @@ for await (const row of reader.elements()) process(row);
 
 - **Write the described schema** for JavaScript readers: `SchemaVersion = SchemaVersion.Described` in the options of the writer's serializer. The reader then knows the type of every place in a body (the rows of a `List<Row>` are objects), and the defaults of the values the writer left out. With the plain schema it needs the type of the rows from the code (`elements(Row)` with the generated models, or `elements('Row')`).
 - **Range requests** for the index: serve the file as it is (a static file), or with `File(bytes or stream, contentType, enableRangeProcessing: true)`.
-- **The other way around**, the TypeScript writer writes plain MsgPack (objects as maps of their names, without a schema): read its streams with a serializer without the indexed schema (`UseInexedSchema = false`, and `PropertyNameCaseInsensitive = true` for camelCase names). Its index is read by `ReadIndexes` as any other.
+- **The other way around**, the TypeScript writer writes plain MsgPack (objects as maps of their names, without a schema): read its streams with a serializer without the indexed schema (`UseIndexedSchema = false`, and `PropertyNameCaseInsensitive = true` for camelCase names). Its index is read by `ReadIndexes` as any other.
 
 ## The format
 

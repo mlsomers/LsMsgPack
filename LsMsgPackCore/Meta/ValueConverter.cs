@@ -366,7 +366,7 @@ namespace LsMsgPack.Meta
     }
 
     /// <summary>
-    /// An extension without a registered type (see <see cref="MsgPackSettings.CustomExtentionTypes"/>) is only assigned as itself (e.g. to object), or as its bytes to a byte[].
+    /// An extension without a registered type (see <see cref="MsgPackSettings.CustomExtensionTypes"/>) is only assigned as itself (e.g. to object), or as its bytes to a byte[].
     /// <para>Converting its bytes to anything else would silently misread data, another library may use the type for something else (e.g. a Guid in a different byte order).</para>
     /// </summary>
     private static object ConvertExtension(IMsgPackExtension extension, Type assignType)
@@ -380,7 +380,7 @@ namespace LsMsgPack.Meta
       if (FrameworkTypeInfo.TryConvertExtension(extension, Nullable.GetUnderlyingType(assignType) ?? assignType, out object converted)) // a big integer (type -2)
         return converted;
 
-      throw new MsgPackException($"Unable to convert extension type {extension.TypeSpecifier} ({extension.Count} bytes) to {assignType.FullName}. To read it, add a custom extension for type {extension.TypeSpecifier} to MsgPackSettings.CustomExtentionTypes.", 0, extension.TypeId);
+      throw new MsgPackException($"Unable to convert extension type {extension.TypeSpecifier} ({extension.Count} bytes) to {assignType.FullName}. To read it, add a custom extension for type {extension.TypeSpecifier} to MsgPackSettings.CustomExtensionTypes.", 0, extension.TypeId);
     }
 
     /// <summary>
@@ -1119,7 +1119,7 @@ namespace LsMsgPack.Meta
     {
       if (keyType == typeof(string) && !(key is null) && key.GetType().IsPrimitive && SerializationRules.GetIndexedSchema(settings) != null)
         throw ReadDifferences.NotConverted(settings, new MsgPackException($"The map has a number key ({key}) and is read into a dictionary with string keys. With the indexed schema the keys of an object are the indexes of its property names, "
-          + "which are only known when the object is read into its class. Read it into a class with the properties, or write it without the indexed schema (UseInexedSchema = false) and with ObjectLayout.Map."));
+          + "which are only known when the object is read into its class. Read it into a class with the properties, or write it without the indexed schema (UseIndexedSchema = false) and with ObjectLayout.Map."));
       return ConvertDeserializeValue(key, keyType, settings, null);
     }
 

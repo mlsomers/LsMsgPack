@@ -132,7 +132,7 @@ namespace LsMsgPack.Data
       if (!_reader.TryGetHeadSchema(out byte[] schema, out MsgPackOptions byteOrder))
         return;
 
-      LsMsgPackOptions plain = new LsMsgPackOptions() { EndianAction = byteOrder.EndianAction, UseInexedSchema = false };
+      LsMsgPackOptions plain = new LsMsgPackOptions() { EndianAction = byteOrder.EndianAction, UseIndexedSchema = false };
       KeyValuePair<object, object>[] entries = new MsgPackReader(schema, 0, schema.Length, plain).ReadPlain(0) as KeyValuePair<object, object>[];
       if (entries is null || entries.Length == 0)
         return;

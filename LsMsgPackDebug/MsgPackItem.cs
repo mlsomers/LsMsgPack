@@ -64,7 +64,7 @@ namespace LsMsgPackDebug
     [XmlIgnore]
     [Category("MetaData")]
     [DisplayName("Offset")]
-    [Description("The number of bytes (0 bsaed) from the start of the file to the first byte of this node (is determined while reading).")]
+    [Description("The number of bytes (0 based) from the start of the file to the first byte of this node (is determined while reading).")]
     public long StoredOffset
     {
       get { return storedOffset; }
@@ -114,7 +114,7 @@ namespace LsMsgPackDebug
     public abstract byte[] ToBytes();
 
     /// <summary>
-    /// The value unpacked containers hold (and the serializer converts): <see cref="Value"/>, except for an extension without a registered type (see <see cref="MsgPackSettings.CustomExtentionTypes"/>).
+    /// The value unpacked containers hold (and the serializer converts): <see cref="Value"/>, except for an extension without a registered type (see <see cref="MsgPackSettings.CustomExtensionTypes"/>).
     /// <para>Its value would be indistinguishable from binary data (e.g. a 16 byte extension would be read as a Guid), so the <see cref="MpExt"/> itself is kept, including its type.</para>
     /// </summary>
     internal object UnpackedValue
@@ -352,11 +352,11 @@ namespace LsMsgPackDebug
       if (valuesType is null)
         valuesType = value.GetType();
 
-      if (settings._customExtentionTypes != null)
+      if (settings._customExtensionTypes != null)
       {
-        for (int t = 0; t < settings._customExtentionTypes.Length; t++)
+        for (int t = 0; t < settings._customExtensionTypes.Length; t++)
         {
-          ICustomExt ext = settings._customExtentionTypes[t];
+          ICustomExt ext = settings._customExtensionTypes[t];
           if (ext is null)
             continue;
 
@@ -793,7 +793,7 @@ namespace LsMsgPackDebug
 #if KEEPTRACK
           item.storedOffset = stream.Position - (escaped ? 2 : 1);
 #endif
-          item._settings = settings; // maybe redundent, but want to be sure
+          item._settings = settings; // maybe redundant, but want to be sure
           if (depth >= settings._maxDepth && (item is MpArray || item is MpMap))
             throw TooDeep(settings._maxDepth, stream.Position - (escaped ? 2 : 1), type);
           item._depth = depth;

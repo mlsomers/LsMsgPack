@@ -103,7 +103,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void RoundTripGivesTheSameValues(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       List<AccessorSample> org = CreateAssorted();
 
       for (int round = 0; round < 3; round++) // one list per round, the accessors are compiled somewhere along the way
@@ -136,7 +136,7 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void StructProperties(bool useSchema)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = useSchema };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = useSchema };
       List<AccessorPoint> org = new List<AccessorPoint>();
       for (int t = 0; t < Instances; t++)
         org.Add(new AccessorPoint() { X = t, Y = -t });
@@ -149,7 +149,7 @@ namespace LsMsgPackUnitTests
     public void NullForAValueTypeSetsTheDefault()
     {
       // Without filters null is serialized, and read into a property that cannot be null (the property names match)
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = false, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = false, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
       List<AccessorNullable> org = new List<AccessorNullable>();
       for (int t = 0; t < Instances; t++)
         org.Add(new AccessorNullable() { Value = t % 2 == 0 ? (int?)null : t });
@@ -164,7 +164,7 @@ namespace LsMsgPackUnitTests
     {
       MsgPackSettings settings = new MsgPackSettings()
       {
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(false), new FilterIgnoredAttribute() }
       };
       List<AccessorPrivateSetter> org = new List<AccessorPrivateSetter>();
@@ -189,10 +189,10 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void ExceptionsOfSettersAreNotWrapped()
     {
-      byte[] buffer = MsgPackSerializer.Serialize(new AccessorThrowingSetter(), new MsgPackSettings() { UseInexedSchema = false });
+      byte[] buffer = MsgPackSerializer.Serialize(new AccessorThrowingSetter(), new MsgPackSettings() { UseIndexedSchema = false });
       for (int t = 0; t < Instances; t++)
       {
-        InvalidOperationException ex = Assert.ThrowsExactly<InvalidOperationException>(() => MsgPackSerializer.Deserialize<AccessorThrowingSetter>(buffer, new MsgPackSettings() { UseInexedSchema = false }), $"call {t}");
+        InvalidOperationException ex = Assert.ThrowsExactly<InvalidOperationException>(() => MsgPackSerializer.Deserialize<AccessorThrowingSetter>(buffer, new MsgPackSettings() { UseIndexedSchema = false }), $"call {t}");
         Assert.AreEqual("setter", ex.Message);
       }
     }

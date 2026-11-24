@@ -56,7 +56,7 @@ namespace LsMsgPackUnitTests
     {
       if (KeepTrack && Serializer is DebugSerializer) // errors become MpError items instead of exceptions
       {
-        if (!settings.UseInexedSchema) // the schema is the first item there
+        if (!settings.UseIndexedSchema) // the schema is the first item there
           Assert.AreEqual("MpError", MsgPackItem.Unpack(new System.IO.MemoryStream(bytes), settings).GetType().Name);
         return;
       }
@@ -67,7 +67,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(bool useSchema = false)
     {
-      return new MsgPackSettings() { UseInexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
+      return new MsgPackSettings() { UseIndexedSchema = useSchema, ObjectLayout = ObjectLayout.Map };
     }
 
     /// <summary>
@@ -236,7 +236,7 @@ namespace LsMsgPackUnitTests
     {
       if (KeepTrack && Serializer is DebugSerializer)
         return; // errors become MpError items
-      MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseInexedSchema = false, ReferenceHandling = ReferenceHandling.Preserve };
+      MsgPackSettings settings = new MsgPackSettings() { ObjectLayout = ObjectLayout.Map, UseIndexedSchema = false, ReferenceHandling = ReferenceHandling.Preserve };
       byte[] bytes = Serializer.Serialize(new ReferenceTests.RfChained() { Name = "c", Chain = ReferenceTests.Chain(4) }, settings); // 16 copies of 100 numbers when kept
       int shared = LeastMaxObjects<ReferenceTests.RfChained>(bytes, settings);
       int kept = LeastMaxObjects<ReferenceTests.RfChainedOld>(bytes, settings);

@@ -520,7 +520,7 @@ namespace Mirror
       {
         StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.None, mode), new FilterIgnoredAttribute(), new FilterStatic() },
         DynamicFilters = new IMsgPackPropertyIncludeDynamically[0],
-        UseInexedSchema = false,
+        UseIndexedSchema = false,
         ObjectLayout = ObjectLayout.Map,
       };
       foreach (string name in new[] { "Mirror.Sample", "Mirror.Vec" })
@@ -618,8 +618,8 @@ End Namespace
         Assert.Contains(generated, allFields, "the fields VB generates (the test's premise)");
 
       IMsgPackPropertyIncludeStatically[] filters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.None, mode), new FilterIgnoredAttribute(), new FilterStatic() };
-      MsgPackSettings settings = new MsgPackSettings() { StaticFilters = filters, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseInexedSchema = false, ObjectLayout = ObjectLayout.Map };
-      LsMsgPack.LsMsgPackSerializer lt = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { StaticFilters = filters, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseInexedSchema = false, ObjectLayout = ObjectLayout.Map });
+      MsgPackSettings settings = new MsgPackSettings() { StaticFilters = filters, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map };
+      LsMsgPack.LsMsgPackSerializer lt = new LsMsgPack.LsMsgPackSerializer(new LsMsgPack.LsMsgPackOptions() { StaticFilters = filters, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0], UseIndexedSchema = false, ObjectLayout = ObjectLayout.Map });
       string[] properties = { "Auto", "WithInit", "ReadOnlyAuto", "Source" };
       string[] all = properties.Concat(expected).ToArray();
       CollectionAssert.AreEqual(all, MsgPackSerializer.Deserialize<Dictionary<string, object>>(MsgPackSerializer.Serialize(model, type, settings), settings).Keys.ToArray(), "LsMsgPack " + mode);

@@ -185,7 +185,7 @@ public static class Bench
       typeof(MsgPackSettings).GetProperty("CompilePropertyAccessors")?.SetValue(null, false);
 
     Invoice[] invoices = CreateInvoices(100);
-    MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = indexed };
+    MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = indexed };
 
     long exceptions = 0;
     AppDomain.CurrentDomain.FirstChanceException += (s, e) => Interlocked.Increment(ref exceptions);
@@ -196,7 +196,7 @@ public static class Bench
 
     if (mode == "phases")
     {
-      MsgPackSettings named = new MsgPackSettings() { UseInexedSchema = false };
+      MsgPackSettings named = new MsgPackSettings() { UseIndexedSchema = false };
       for (int pass = 0; pass < 8; pass++)
       {
         Stopwatch sw = Stopwatch.StartNew();

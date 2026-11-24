@@ -95,7 +95,7 @@ namespace LsMsgPack.Http
       ls.CompileWritersAfter = options.CompileWritersAfter;
       ls.CompileReadersAfter = options.CompileReadersAfter;
       Limit(ls, options);
-      _negotiate = options.NegotiateSchemas && ls.UseInexedSchema;
+      _negotiate = options.NegotiateSchemas && ls.UseIndexedSchema;
       if (_negotiate)
       {
         if (ls.SchemaStore is null)
@@ -106,7 +106,7 @@ namespace LsMsgPack.Http
       _lsOptions = ls;
       _store = ls.SchemaStore;
       _lsMsgPack = new LsMsgPackSerializer(ls, context);
-      if (options.DescribeSchemas && ls.UseInexedSchema)
+      if (options.DescribeSchemas && ls.UseIndexedSchema)
       {
         LsMsgPackOptions described = ls.Clone(); // the same store: the writer sessions are kept per version
         described.SchemaVersion = SchemaVersion.Described;
@@ -273,7 +273,7 @@ namespace LsMsgPack.Http
         return new MsgPackStreamHead(_plain, rootType, null, MsgPackStreamSchemas.PerObject, null, false);
 
       LsMsgPackSerializer serializer = describedSchema && !(_described is null) ? _described : _lsMsgPack;
-      if (!serializer.Implementation.Options._useInexedSchema)
+      if (!serializer.Implementation.Options._useIndexedSchema)
         return new MsgPackStreamHead(serializer, rootType, null, MsgPackStreamSchemas.PerObject, null, false);
 
       Serializer.WriterHead head = serializer.Implementation.PrepareHead(rootType); // the id written is the one named in the header
@@ -297,7 +297,7 @@ namespace LsMsgPack.Http
     {
       LsMsgPackSerializer serializer = For(mediaType);
       LsMsgPackOptions options = serializer.Implementation.Options;
-      bool references = options._useInexedSchema && options._writeSchemaReference && !(options._schemaStore is null);
+      bool references = options._useIndexedSchema && options._writeSchemaReference && !(options._schemaStore is null);
       return new MsgPackStreamWriter(body, serializer, references ? MsgPackStreamSchemas.PerStream : MsgPackStreamSchemas.PerObject, true, index, asynchronous);
     }
 
@@ -481,6 +481,24 @@ namespace LsMsgPack.Http
         return serializer.Deserialize(type, data, out differences);
       differences = null;
       return serializer.Deserialize(type, data);
+    }
+
+    /// <summary>
+    /// Reads a body into an existing object instead of creating one (<see cref="LsMsgPackSerializer.Populate{T}(byte[], int, int, T, out ReadDifferences)"/>, docs/Populate.md),
+    /// with the differences as <see cref="DeserializeBody(Type, byte[], int, int, string, out ReadDifferences)"/>: when <see cref="ReportsDifferences"/>, otherwise <paramref name="differences"/> is null.
+    /// </summary>
+    /// <param name="mediaType">The Content-Type of the body</param>
+    /// <exception cref="MissingSchemaException">The body refers to a schema this side does not hold</exception>
+    public void PopulateBody<T>(byte[] data, int offset, int count, T target, string mediaType, out ReadDifferences differences) where T : class
+    {
+      LsMsgPackSerializer serializer = For(mediaType);
+      if (_reportDifferences)
+      {
+        serializer.Populate(data, offset, count, target, out differences);
+        return;
+      }
+      differences = null;
+      serializer.Populate(data, offset, count, target);
     }
 
     /// <summary>

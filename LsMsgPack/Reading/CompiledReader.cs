@@ -529,7 +529,7 @@ namespace LsMsgPack.Reading
       if (!any)
         return null;
 
-      bool names = !serializer.Options._useInexedSchema;
+      bool names = !serializer.Options._useIndexedSchema;
       CompiledReads reads = new CompiledReads(type, members, props, serializer.CompileReadersAfter == 0, names);
       Type codeType = (type.IsValueType ? typeof(CompiledStructReader<>) : typeof(CompiledObjectReader<>)).MakeGenericType(type);
       GeneratedObjectCode code = (GeneratedObjectCode)Activator.CreateInstance(codeType, new object[] { reads });
@@ -600,7 +600,7 @@ namespace LsMsgPack.Reading
       if (!any)
         return null;
 
-      bool names = !serializer.Options._useInexedSchema;
+      bool names = !serializer.Options._useIndexedSchema;
       CompiledReads reads = new CompiledReads(type, members, props, serializer.CompileReadersAfter == 0, names);
       CompiledValuesReader code = new CompiledValuesReader(reads, plan);
       code.Compile(serializer.Options._objectLayout != ObjectLayout.Array);

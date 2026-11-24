@@ -732,12 +732,35 @@ namespace LsMsgPack.Streaming
       return ReadObject(type, false);
     }
 
+    /// <summary>
+    /// Reads the next value into an existing object instead of creating one, as <see cref="LsMsgPackSerializer.Populate{T}(byte[], T)"/> does (docs/Populate.md), where <see cref="ReadObject{T}"/> reads one:
+    /// a root value with its schema, or a value of a head's body (e.g. a <c>Settings</c> element read into the instance the app holds). The value is read as the target's own class.
+    /// A collection target is cleared and filled. Nil leaves the target as it is.
+    /// </summary>
+    /// <param name="target">A class with members (not one created by a constructor taking its values, nor one with a converter), or a collection with Add</param>
+    /// <exception cref="ArgumentException">The target cannot be read into (nothing is read)</exception>
+    /// <exception cref="MsgPackException">The data holds another class than the target's (or one it derives from), or no object; the stream ends</exception>
+    public void PopulateObject<T>(T target) where T : class
+    {
+      PopulateChecked(target);
+    }
+
+    /// <summary>
+    /// <see cref="PopulateObject{T}"/>: the target is checked before anything is read (the async methods check it before they read ahead too, the second check is the remembered class).
+    /// </summary>
+    private void PopulateChecked(object target)
+    {
+      bool fill = _serializer.PopulateTarget(target);
+      LsMsgPackSerializer.PopulatedRoot(target, ReadObject(target.GetType(), false, fill ? null : target), fill);
+    }
+
     /// <param name="intoSlot">A struct value is returned in a slot (see <see cref="RootSlot{T}.Take"/>)</param>
-    private object ReadObject(Type type, bool intoSlot)
+    /// <param name="into">An existing object the value is read into (<see cref="PopulateObject{T}"/>), null to create it</param>
+    private object ReadObject(Type type, bool intoSlot, object into = null)
     {
       ThrowIfDisposed();
       PassPayload();
-      bool withSchema = _options._useInexedSchema;
+      bool withSchema = _options._useIndexedSchema;
       bool body = _depth == 0 ? _headState == HeadState.AwaitingBody : _headState == HeadState.InBody;
       Serializer.SchemaHead head = body ? _head : null;
       Type root = _headRoot;
@@ -783,8 +806,8 @@ namespace LsMsgPack.Streaming
         _token = MsgPackTokenType.None;
         _length = 0;
         if (head != null)
-          return _serializer.DeserializeBody(head, root, type, data, offset, end, out int used, null, intoSlot, depth > 0 ? _bodyPath : null);
-        return _serializer.Deserialize(type, data, offset, end, out int consumed, null, intoSlot, body && depth > 0 ? _bodyPath : null); // a body without the indexed schema (the head wrote nothing)
+          return _serializer.DeserializeBody(head, root, type, data, offset, end, out int used, null, intoSlot, depth > 0 ? _bodyPath : null, into);
+        return _serializer.Deserialize(type, data, offset, end, out int consumed, null, intoSlot, body && depth > 0 ? _bodyPath : null, into); // a body without the indexed schema (the head wrote nothing)
       }
       finally
       {
@@ -850,7 +873,7 @@ namespace LsMsgPack.Streaming
 
       _head = null;
       _headRoot = root;
-      if (_options._useInexedSchema)
+      if (_options._useIndexedSchema)
       {
         SkipStreamValues();
         if (!TryEnsure(1))

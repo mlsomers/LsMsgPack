@@ -100,7 +100,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(bool schema, ObjectLayout layout, SerializedFields fields, PropertyOrder order = PropertyOrder.Reflection)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout, PropertyOrder = order };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout, PropertyOrder = order };
       if (fields != SerializedFields.Attributed)
         settings.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(GetOnlyProperties.All, NonPublicProperties.None, fields), new FilterIgnoredAttribute(), new FilterStatic() };
       return settings;
@@ -255,9 +255,9 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Vector3_AsArrayOfFloats()
     {
-      byte[] bytes = Serializer.Serialize(new Vector3(1, 2, 3), new MsgPackSettings() { UseInexedSchema = false });
+      byte[] bytes = Serializer.Serialize(new Vector3(1, 2, 3), new MsgPackSettings() { UseIndexedSchema = false });
       CollectionAssert.AreEqual(new byte[] { 0x93, 0xCA, 0x3F, 0x80, 0, 0, 0xCA, 0x40, 0, 0, 0, 0xCA, 0x40, 0x40, 0, 0 }, bytes, "as MessagePack-CSharp writes it");
-      Assert.AreEqual(new Vector3(1, 2, 3), Serializer.Deserialize<Vector3>(bytes, new MsgPackSettings() { UseInexedSchema = false }));
+      Assert.AreEqual(new Vector3(1, 2, 3), Serializer.Deserialize<Vector3>(bytes, new MsgPackSettings() { UseIndexedSchema = false }));
     }
 
     [TestMethod]

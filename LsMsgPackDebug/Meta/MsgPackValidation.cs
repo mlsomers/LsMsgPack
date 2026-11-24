@@ -209,28 +209,28 @@ namespace LsMsgPackDebug
         {
             if (item.Count == 0)
             {
-                int waisted;
+                int wasted;
                 switch (item.TypeId)
                 {
-                    case MsgPackTypeId.MpMap16: waisted = 2; break;
-                    case MsgPackTypeId.MpMap32: waisted = 4; break;
-                    case MsgPackTypeId.MpArray16: waisted = 2; break;
-                    case MsgPackTypeId.MpArray32: waisted = 4; break;
-                    case MsgPackTypeId.MpBin8: waisted = 1; break;
-                    case MsgPackTypeId.MpBin16: waisted = 2; break;
-                    case MsgPackTypeId.MpBin32: waisted = 4; break;
-                    case MsgPackTypeId.MpExt8: waisted = 1; break;
-                    case MsgPackTypeId.MpExt16: waisted = 2; break;
-                    case MsgPackTypeId.MpExt32: waisted = 4; break;
-                    case MsgPackTypeId.MpStr8: waisted = 1; break;
-                    case MsgPackTypeId.MpStr16: waisted = 2; break;
-                    case MsgPackTypeId.MpStr32: waisted = 4; break;
-                    default: waisted = 0; break;
+                    case MsgPackTypeId.MpMap16: wasted = 2; break;
+                    case MsgPackTypeId.MpMap32: wasted = 4; break;
+                    case MsgPackTypeId.MpArray16: wasted = 2; break;
+                    case MsgPackTypeId.MpArray32: wasted = 4; break;
+                    case MsgPackTypeId.MpBin8: wasted = 1; break;
+                    case MsgPackTypeId.MpBin16: wasted = 2; break;
+                    case MsgPackTypeId.MpBin32: wasted = 4; break;
+                    case MsgPackTypeId.MpExt8: wasted = 1; break;
+                    case MsgPackTypeId.MpExt16: wasted = 2; break;
+                    case MsgPackTypeId.MpExt32: wasted = 4; break;
+                    case MsgPackTypeId.MpStr8: wasted = 1; break;
+                    case MsgPackTypeId.MpStr16: wasted = 2; break;
+                    case MsgPackTypeId.MpStr32: wasted = 4; break;
+                    default: wasted = 0; break;
                 }
 
-                if(waisted > 0)
+                if(wasted > 0)
                 {
-                  issues.Add(new ValidationItem(item, ValidationSeverity.Warning, waisted, "Consider using a null (nil) value instead of an empty ", MsgPackItem.GetOfficialTypeName(item.TypeId), " instance."));
+                  issues.Add(new ValidationItem(item, ValidationSeverity.Warning, wasted, "Consider using a null (nil) value instead of an empty ", MsgPackItem.GetOfficialTypeName(item.TypeId), " instance."));
                   return true;
                 }
             }
@@ -279,7 +279,7 @@ namespace LsMsgPackDebug
                     issues.Add(new ValidationItem(item, ValidationSeverity.Warning, 0,
                         "The types of keys in this map do not appear to be consistent. Item ", reference, " has a key of type ", MsgPackItem.GetOfficialTypeName(firstKeyType),
                         " while item ", t, " has a key of type ", MsgPackItem.GetOfficialTypeName(map.PackedValues[t].Key.TypeId),
-                        ". Allthough the specs do not demand that keys are of the same type, it is likely that many implementations will assume that keys in a map are all of the same family."));
+                        ". Although the specs do not demand that keys are of the same type, it is likely that many implementations will assume that keys in a map are all of the same family."));
                 }
                 for (int i = t - 1; i >= 0; i--)
                 {
@@ -290,7 +290,7 @@ namespace LsMsgPackDebug
                     if (map.PackedValues[t].Key.Value.Equals(map.PackedValues[i].Key.Value))
                     {
                         issues.Add(new ValidationItem(item, ValidationSeverity.Warning, 0, "This map has multiple entries with identical keys (items ",
-                          i, "='", map.PackedValues[i].Key.ToString(), "' and ", t, "='", map.PackedValues[t].Key.ToString(), "'). Allthough the specs do not demand unique keys, it is likely that many implementations will assume that keys in a map are unique."));
+                          i, "='", map.PackedValues[i].Key.ToString(), "' and ", t, "='", map.PackedValues[t].Key.ToString(), "'). Although the specs do not demand unique keys, it is likely that many implementations will assume that keys in a map are unique."));
                     }
                 }
             }
@@ -349,11 +349,11 @@ namespace LsMsgPackDebug
         public class ValidationItem
         {
             public ValidationItem() { }
-            public ValidationItem(MsgPackItem item, ValidationSeverity severity, int waistedBytes, params object[] message)
+            public ValidationItem(MsgPackItem item, ValidationSeverity severity, int wastedBytes, params object[] message)
             {
                 Item = item;
                 Severity = severity;
-                WaistedBytes = waistedBytes;
+                WastedBytes = wastedBytes;
                 Message = string.Concat(message);
             }
 
@@ -364,7 +364,7 @@ namespace LsMsgPackDebug
             /// <summary>
             /// The number of bytes that could be spared by using an alternative way to encode the item.
             /// </summary>
-            public int WaistedBytes { get; set; }
+            public int WastedBytes { get; set; }
             /// <summary>
             /// Textual explanation of the validation issue
             /// </summary>

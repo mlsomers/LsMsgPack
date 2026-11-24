@@ -518,7 +518,7 @@ namespace LsMsgPackUnitTests
       options.PropertyOrder = order;
       options.EndianAction = endian;
       options.DynamicallyCompact = compact;
-      options.UseInexedSchema = mode != SchemaMode.Names;
+      options.UseIndexedSchema = mode != SchemaMode.Names;
       options.WriteSchemaReference = mode == SchemaMode.Reference;
       options.SchemaStore = mode == SchemaMode.Reference ? new SchemaStore() : null;
     }
@@ -993,12 +993,12 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void ConvertersWithOtherOptions(bool schema)
     {
-      foreach (AddTypeIdOption option in new[] { AddTypeIdOption.Always, AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, AddTypeIdOption.Never })
+      foreach (AddTypeIdOption option in new[] { AddTypeIdOption.Always, AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName, AddTypeIdOption.Never })
       {
         foreach (bool filters in new[] { true, false })
         {
-          MsgPackSettings ls = new MsgPackSettings { UseInexedSchema = schema, AddTypeIdOptions = option, Converters = ConverterTests.OptionConverters() };
-          LsMsgPackOptions ltOptions = new LsMsgPackOptions { UseInexedSchema = schema, AddTypeIdOptions = option, Converters = ConverterTests.OptionConverters() };
+          MsgPackSettings ls = new MsgPackSettings { UseIndexedSchema = schema, AddTypeIdOptions = option, Converters = ConverterTests.OptionConverters() };
+          LsMsgPackOptions ltOptions = new LsMsgPackOptions { UseIndexedSchema = schema, AddTypeIdOptions = option, Converters = ConverterTests.OptionConverters() };
           if (!filters)
           {
             ls.DynamicFilters = new IMsgPackPropertyIncludeDynamically[0];
@@ -1025,11 +1025,11 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void CustomPropertyIds(bool schema)
     {
-      MsgPackSettings ls = new MsgPackSettings { UseInexedSchema = schema, PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new AttributePropertyNameResolver() } };
+      MsgPackSettings ls = new MsgPackSettings { UseIndexedSchema = schema, PropertyNameResolvers = new IMsgPackPropertyIdResolver[] { new AttributePropertyNameResolver() } };
       XlRenamed value = new XlRenamed { A = "a", Ignored = "x", B = 3, Child = new XlRenamed { A = "c", B = 4 }, Kids = new List<XlRenamed> { new XlRenamed { B = 9 }, new XlRenamed { A = "k" } } };
 
       List<string> differences = new List<string>();
-      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(new LsMsgPackOptions { UseInexedSchema = schema, PropertyNameResolvers = ls.PropertyNameResolvers }))
+      foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(new LsMsgPackOptions { UseIndexedSchema = schema, PropertyNameResolvers = ls.PropertyNameResolvers }))
         Compare(which + " renamed", value, typeof(XlRenamed), ls, lt, differences);
       Assert.IsEmpty(differences, string.Join("\n", differences));
     }
@@ -1039,11 +1039,11 @@ namespace LsMsgPackUnitTests
     [DataRow(true)]
     public void AlwaysTypeIdsAndFullNames(bool schema)
     {
-      foreach (AddTypeIdOption option in new[] { AddTypeIdOption.Always, AddTypeIdOption.IfAmbiguious | AddTypeIdOption.FullName, AddTypeIdOption.Never })
+      foreach (AddTypeIdOption option in new[] { AddTypeIdOption.Always, AddTypeIdOption.IfAmbiguous | AddTypeIdOption.FullName, AddTypeIdOption.Never })
       {
-        MsgPackSettings ls = new MsgPackSettings { UseInexedSchema = schema, AddTypeIdOptions = option };
+        MsgPackSettings ls = new MsgPackSettings { UseIndexedSchema = schema, AddTypeIdOptions = option };
         List<string> differences = new List<string>();
-        foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(new LsMsgPackOptions { UseInexedSchema = schema, AddTypeIdOptions = option }))
+        foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(new LsMsgPackOptions { UseIndexedSchema = schema, AddTypeIdOptions = option }))
         {
           int n = 0;
           foreach (object value in Corpus().Where(v => !(v is Array a && a.Length > 1000) && !(v is IDictionary d && d.Count > 1000)))
@@ -1061,9 +1061,9 @@ namespace LsMsgPackUnitTests
     {
       foreach (bool schema in new[] { false, true })
       {
-        MsgPackSettings ls = new MsgPackSettings { UseInexedSchema = schema, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
+        MsgPackSettings ls = new MsgPackSettings { UseIndexedSchema = schema, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] };
         List<string> differences = new List<string>();
-        foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(new LsMsgPackOptions { UseInexedSchema = schema, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] }))
+        foreach ((string which, LsMsgPackSerializer lt) in LsAndGenerated(new LsMsgPackOptions { UseIndexedSchema = schema, DynamicFilters = new IMsgPackPropertyIncludeDynamically[0] }))
         {
           int n = 0;
           foreach (object value in Corpus().Where(v => !(v is Array a && a.Length > 1000) && !(v is IDictionary d && d.Count > 1000)))
@@ -1078,7 +1078,7 @@ namespace LsMsgPackUnitTests
     {
       foreach (bool schema in new[] { false, true })
       {
-        LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = schema });
+        LsMsgPackSerializer lt = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = schema });
         MemoryStream ms = new MemoryStream();
         lt.Serialize(new XlCircle { Name = "one" }, ms);
         lt.Serialize(new XlCircle { Name = "two" }, ms);

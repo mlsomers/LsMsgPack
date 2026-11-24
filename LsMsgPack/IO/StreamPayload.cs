@@ -38,7 +38,7 @@ namespace LsMsgPack.IO
     internal StreamPayload(LsMsgPackOptions options)
     {
       _littleEndian = BitConverter.IsLittleEndian != MsgPackOptions.SwapEndianChoice(options, 2);
-      _indexed = options._useInexedSchema;
+      _indexed = options._useIndexedSchema;
       _maxDepth = options._maxDepth;
       Buffer = ArrayPool<byte>.Shared.Rent(256);
       _counts = new long[8];
@@ -47,8 +47,42 @@ namespace LsMsgPack.IO
       _pending = 1;
     }
 
+    /// <summary>
+    /// A memory stream whose array is not exposed with at most this much left is copied whole (<see cref="CopyRest"/>) and read without <see cref="Scan"/>: the reader tells where the value ends.
+    /// Small enough that a stream of many small values copies little more than it reads, the larger ones are scanned with <see cref="ReadAhead"/>.
+    /// </summary>
+    internal const int CopiedWhole = 4096;
+
+    /// <summary>
+    /// The rest of a memory stream in an array of the shared pool (give it back with <see cref="Return"/>).
+    /// </summary>
+    internal static byte[] CopyRest(MemoryStream source, out int length)
+    {
+      int rest = (int)(source.Length - source.Position);
+      byte[] copy = ArrayPool<byte>.Shared.Rent(rest);
+      length = 0;
+      int read;
+      while (length < rest && (read = source.Read(copy, length, rest - length)) > 0) // a derived class may return less
+        length += read;
+      return copy;
+    }
+
+    /// <summary>
+    /// Clears the bytes of a copy and returns it to the pool.
+    /// </summary>
+    internal static void Return(byte[] copy, int length)
+    {
+      new Span<byte>(copy, 0, length).Clear();
+      ArrayPool<byte>.Shared.Return(copy);
+    }
+
     internal void ReadFrom(Stream source)
     {
+      if (source is MemoryStream memory && memory.CanSeek) // one whose array is not exposed (new MemoryStream(byte[])): the others are read in place
+      {
+        ReadAhead(memory);
+        return;
+      }
       long need;
       while ((need = Scan()) > 0)
       {
@@ -58,6 +92,29 @@ namespace LsMsgPack.IO
           throw MsgPackReader.EndOfData();
         Length += read;
       }
+    }
+
+    /// <summary>
+    /// A memory stream can go back, so it is read ahead (at least 1 KB, then as much as was read before, never past its end) instead of a read per need (a small object took dozens),
+    /// then set to the end of the value; the bytes after it are cleared, the payload is the value only. A stream holding many values copies about 1 KB or twice the value's bytes per value, whichever is more.
+    /// </summary>
+    private void ReadAhead(MemoryStream source)
+    {
+      long start = source.Position;
+      long need;
+      while ((need = Scan()) > 0)
+      {
+        long ahead = Math.Min(source.Length - source.Position, Math.Max(Length, 1024));
+        int count = Reserve(Math.Max(need, ahead));
+        int read = source.Read(Buffer, Length, count);
+        if (read <= 0)
+          throw MsgPackReader.EndOfData();
+        Length += read;
+      }
+      int end = _pos; // where Scan found the end of the value
+      new Span<byte>(Buffer, end, Length - end).Clear();
+      Length = end;
+      source.Position = start + end;
     }
 
     /// <summary>

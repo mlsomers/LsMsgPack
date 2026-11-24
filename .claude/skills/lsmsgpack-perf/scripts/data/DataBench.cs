@@ -139,7 +139,7 @@ public static class Program
         if (t.Name.Contains("DisplayClass"))
         { Console.Write(t.DeclaringType.FullName + "." + t.Name + ":"); foreach (var f in t.GetFields()) Console.Write(" " + f.Name); Console.WriteLine(); }
       Line one = new Line() { Product = "abc", Quantity = 2, Price = 1.5m };
-      LsMsgPackSerializer named = new LsMsgPackSerializer(new LsMsgPackOptions() { UseInexedSchema = false });
+      LsMsgPackSerializer named = new LsMsgPackSerializer(new LsMsgPackOptions() { UseIndexedSchema = false });
       foreach (LsMsgPackSerializer ser in new[] { lt, named })
       {
         byte[] b = ser.Serialize(one);

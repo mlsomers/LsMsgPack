@@ -50,7 +50,7 @@ namespace LsMsgPackUnitTests.Extensions
     public void RoundTripMpDecimalOtherId(double value)
     {
       MpDecimal.Default_TypeSpecifier = 9;
-      MsgPackSettings.Default_CustomExtentionTypes = new ICustomExt[]
+      MsgPackSettings.Default_CustomExtensionTypes = new ICustomExt[]
       {
         new MpDecimal((MsgPackSettings)null),
       };
@@ -58,7 +58,7 @@ namespace LsMsgPackUnitTests.Extensions
 
       // restore for other test
       MpDecimal.Default_TypeSpecifier = 1;
-      MsgPackSettings.Default_CustomExtentionTypes = new ICustomExt[]
+      MsgPackSettings.Default_CustomExtensionTypes = new ICustomExt[]
       {
         new MpDecimal((MsgPackSettings)null),
       };

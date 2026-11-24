@@ -181,22 +181,22 @@ namespace LsMsgPackDebug
           byte[] bitVal = SwapIfLittleEndian(settings, (byte[])ext.Value); // a copy when swapped, the value of the ext is not changed
 
           ulong bytes = BitConverter.ToUInt64(bitVal, 0);
-          ulong nanoSecc;
+          ulong nanoSeconds;
           ulong sec;
           long ticks;
           unchecked
           {
-            nanoSecc = bytes >> 34;
+            nanoSeconds = bytes >> 34;
             ulong mask = 0x3FFFFFFFF;
             sec = (bytes & mask);
-            ticks = (long)nanoSecc / 100;
+            ticks = (long)nanoSeconds / 100;
           }
 
           return Zero.AddSeconds(sec).Add(new TimeSpan(ticks));
         case MsgPackTypeId.MpExt8:
-          byte[] vall = (byte[])ext.Value;
-          uint nanoSec = BitConverter.ToUInt32(SwapIfLittleEndian(settings, vall, 0, 4), 0);
-          long sc = BitConverter.ToInt64(SwapIfLittleEndian(settings, vall, 4, 8), 0);
+          byte[] value = (byte[])ext.Value;
+          uint nanoSec = BitConverter.ToUInt32(SwapIfLittleEndian(settings, value, 0, 4), 0);
+          long sc = BitConverter.ToInt64(SwapIfLittleEndian(settings, value, 4, 8), 0);
           long tick = nanoSec / 100;
           TimeSpan subSec = TimeSpan.FromTicks(tick);
           return Zero.AddSeconds(sc) + subSec; // the nanoseconds are added, also before 1970 (the seconds are rounded down, see DateTimeToEpoch)
@@ -218,7 +218,7 @@ namespace LsMsgPackDebug
       dt = settings is null ? dt.ToUniversalTime() : settings.ToTimestamp(dt);
 
       if (dt < Zero || dt > MaxFExt8)
-        return ToExt8(settings, dt); // lartgest 15 bytes
+        return ToExt8(settings, dt); // largest 15 bytes
 
       if (dt > MaxFExt4 || (preserveFractionalSeconds && HasFractionalSeconds(dt)))
         return ToFExt8(settings, dt); // 10 bytes
@@ -231,7 +231,7 @@ namespace LsMsgPackDebug
       dt = dt.ToUniversalTime();
 
       if (dt < Zero || dt > MaxFExt8)
-        return ToExt8Bytes(settings, dt); // lartgest 15 bytes
+        return ToExt8Bytes(settings, dt); // largest 15 bytes
 
       if (dt > MaxFExt4 || (preserveFractionalSeconds && HasFractionalSeconds(dt)))
         return ToFExt8Bytes(settings, dt); // 10 bytes
@@ -309,9 +309,9 @@ namespace LsMsgPackDebug
     public static readonly DateTime MaxFExt4 = Zero.AddSeconds(uint.MaxValue);
     public static readonly DateTime MaxFExt8 = new DateTime(2514, 5, 30, 1, 53, 03, DateTimeKind.Utc).Add(TimeSpan.FromTicks(9999999));
 
-    public static DateTime EpochToLocalDateTime(long secconds)
+    public static DateTime EpochToLocalDateTime(long seconds)
     {
-      DateTime dt = Zero.AddSeconds(secconds).ToLocalTime();
+      DateTime dt = Zero.AddSeconds(seconds).ToLocalTime();
       return dt;
     }
 

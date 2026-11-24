@@ -9,6 +9,7 @@ The `LsMsgPack.Core` package includes analyzers, so every project that reference
 - **JSON document types** (`JsonElement`, `JsonNode`, Json.NET's `JObject`...), which the serializers don't write or read (LSMP009).
 - **Public fields that aren't serialized** (LSMP010): by default the serializers only write fields that opt in with an attribute.
 - **Extension data members the serializers refuse** (LSMP011): two in one class, or `[JsonExtensionData]` on a type they can't fill.
+- **`[MsgPackEnumFormat]` on a member that is no enum** (LSMP012), where it has no effect: a list of enums, for example.
 
 The warnings show while you type in Visual Studio, VS Code (C# Dev Kit) and Rider, and in the build output.
 
@@ -16,13 +17,13 @@ The warnings show while you type in Visual Studio, VS Code (C# Dev Kit) and Ride
 
 Only the classes your project serializes. Options classes, view models and anything else with initialized properties are left alone. A class is serialized when the project hands it to a serializer, or a serialized class reaches it:
 
-- **Calls**: the type argument or `typeof` of `MsgPackSerializer.Serialize`/`Deserialize`, `LsMsgPackSerializer.Serialize`/`Deserialize` and `LsMsgPackHttpSerializer`. Without one, the type of the value passed to `Serialize`.
+- **Calls**: the type argument or `typeof` of `MsgPackSerializer.Serialize`/`Deserialize`, `LsMsgPackSerializer.Serialize`/`Deserialize` and `LsMsgPackHttpSerializer`. Without one, the type of the value passed to `Serialize`. `Populate`/`PopulateAsync` (and `PopulateBody`) read the target's class: the type of the target, unless it is declared as `object` or an interface (the class is then unknown).
 - **Your own generic methods** that pass their type parameter on to one of these (`Save<T>(T item) => MsgPackSerializer.Serialize(item)`), also through the interface methods they implement: the type arguments of their callers.
 - **Contexts of the source generator**: `[LsMsgPackSerializable(typeof(Invoice))]`.
 - **Controller actions**, when the project references one of the web formatters: the result type (`ActionResult<Invoice>`, `Task<List<Invoice>>`) and the parameters of the public methods of ASP.NET Core controllers (`ControllerBase`), Web API controllers (`ApiController`) and MVC 5 controllers (`Controller`). `[NonAction]` methods and `[FromServices]` parameters are skipped.
 - **Values of ASP.NET Core results**, for actions that return `IActionResult`: the type of the value passed to `Ok(value)`, `Created...(..., value)`, `Accepted...(..., value)`, `StatusCode(code, value)`, `NotFound(value)`, `BadRequest(error)`, `Conflict(error)`, `UnprocessableEntity(error)`, `Unauthorized(value)` and to the constructors of `ObjectResult` and its subclasses (`new OkObjectResult(value)`). As with `Serialize`, a value declared as `object` tells nothing.
 - **Minimal APIs** with `LsMsgPack.AspNetCore`: the type argument of `MsgPackBody<T>` (read) and `MsgPackResult<T>` (written) where they're named (handler parameters, `Results<MsgPackResult<Invoice>, NotFound>`), and the value of `MsgPackResults.MsgPack(value)` / `Results.Extensions.MsgPack(value)`, as for `Ok(value)`. `MsgPackBody<object>` reads into object (LSMP005, LSMP007).
-- **HttpClient with the Web API formatter**: `GetFromMsgPackAsync<T>`, `ReadFromMsgPackAsync<T>`, `GetFromMsgPackAsAsyncEnumerable<T>`, `ReadFromMsgPackAsAsyncEnumerable<T>`, `PostAsMsgPackAsync<T>`, `PutAsMsgPackAsync<T>`, `PatchAsMsgPackAsync<T>`, `ReadAsAsync<T>`, `PostAsync<T>`, `PutAsync<T>`, `new ObjectContent<T>`. MVC 5: `new LsMsgPackResult(value)`.
+- **HttpClient with the Web API formatter**: `GetFromMsgPackAsync<T>`, `ReadFromMsgPackAsync<T>`, `PopulateFromMsgPackAsync<T>` (as `Populate`), `GetFromMsgPackAsAsyncEnumerable<T>`, `ReadFromMsgPackAsAsyncEnumerable<T>`, `PostAsMsgPackAsync<T>`, `PutAsMsgPackAsync<T>`, `PatchAsMsgPackAsync<T>`, `ReadAsAsync<T>`, `PostAsync<T>`, `PutAsync<T>`, `new ObjectContent<T>`. MVC 5: `new LsMsgPackResult(value)`.
 - **What those reach**: the types of public properties and of the fields the serializers write, elements of collections, generic arguments, base classes, and the classes of the project that derive from any of them (a type id can name those).
 
 Classes declared in another project are checked in that project. A project of models that never calls the serializers itself can ask for all its public classes and structs to be checked, with a reference to `LsMsgPack.Core` (the smallest package) or a package that depends on it:
@@ -155,7 +156,7 @@ public IActionResult Patch([FromBody] Dictionary<string, object> changes) => ...
 
 By default (and for `application/x-lsmsgpack`) an object is written as an array of its values with the indexed schema: the property names are in the schema, or nowhere, and only the class it is read into gives them back. Read into `object`, such an object becomes an `object[]` of its values. Read into a dictionary with string keys and values of any type (`Dictionary<string, object>`, `IDictionary<string, object>`, `ExpandoObject`), it throws a `MsgPackException`, and a web formatter answers 400.
 
-Read into a class instead. For a partial update, give the class nullable properties, so that a property the client didn't send stays null. Only maps without the schema carry the names (`ObjectLayout.Map` and `UseInexedSchema = false`, as for `application/msgpack`). If all the writers do that, suppress the warning.
+Read into a class instead. For a partial update, give the class nullable properties, so that a property the client didn't send stays null. Only maps without the schema carry the names (`ObjectLayout.Map` and `UseIndexedSchema = false`, as for `application/msgpack`). If all the writers do that, suppress the warning.
 
 A dictionary that the client also writes as a dictionary (not from a class) arrives as a map with its keys, so it works.
 
@@ -231,3 +232,22 @@ public class Invoice : Document                                 // Document has 
 A class keeps the members of the data it doesn't have in one member (see [ExtensionData.md](ExtensionData.md)): a `MsgPackExtensionData`, or a dictionary of string to object marked with `[MsgPackExtensionData]` or `[JsonExtensionData]` (`IDictionary<string, object>`, `Dictionary<string, object>`, or a class implementing it with a public parameterless constructor). The serializers throw a `MsgPackException` for a class with two such members (also when one is in a base class) and for a marked member of another type, such as System.Text.Json's `Dictionary<string, JsonElement>` or `JsonObject`. A class shared with System.Text.Json can use `Dictionary<string, object>`: both serializers fill it.
 
 It is reported on the members the class declares itself, for the serialized classes. A class that only inherits such members is not reported again.
+
+## Enums
+
+### LSMP012: [MsgPackEnumFormat] on a member that is no enum
+
+```csharp
+public class Palette
+{
+  [MsgPackEnumFormat(EnumFormat.Name)]
+  public Color Main { get; set; }              // an enum: written by name
+
+  [MsgPackEnumFormat(EnumFormat.Name)]
+  public List<Color> Others { get; set; }      // LSMP012: written as numbers, the attribute has no effect here
+}
+```
+
+On a property or field, `[MsgPackEnumFormat]` decides how the member's own value is written (see [Enums.md](Enums.md)), so its type has to be an enum or a nullable enum. On a member of another type (a collection or dictionary of enums, `object`, `System.Enum`, a number) the serializers ignore it, and the enums in it are written as the enum type's attribute or `MsgPackOptions.EnumFormat` say. Put the attribute on the enum type, or set the option for all enums. A member whose type is a type parameter isn't reported (it may be an enum where the class is used).
+
+Unlike the other rules, it is reported on any property or field, whether the project serializes its class or not: the attribute has no effect anywhere. It also runs in a project that references only `LsMsgPack.Core`.

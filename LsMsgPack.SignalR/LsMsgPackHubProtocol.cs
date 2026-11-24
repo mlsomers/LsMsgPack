@@ -79,7 +79,7 @@ namespace LsMsgPack.SignalR
         throw new ArgumentNullException(nameof(options));
       _name = options.AsMessagePack ? MessagePackName : LsMsgPackName;
       LsMsgPackOptions values = options.SerializerOptions?.Clone() ?? LsMsgPackHubProtocolOptions.DefaultSerializerOptions(options.AsMessagePack);
-      values.UseInexedSchema = false; // a message is written once for every connection it goes to (see LsMsgPackHubProtocolOptions.SerializerOptions)
+      values.UseIndexedSchema = false; // a message is written once for every connection it goes to (see LsMsgPackHubProtocolOptions.SerializerOptions)
       values.WriteSchemaReference = false;
       values.MaxObjects = options.MaxObjects;
       values.MaxItems = options.MaxItems;

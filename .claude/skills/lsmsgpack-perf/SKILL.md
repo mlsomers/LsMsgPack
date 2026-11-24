@@ -30,7 +30,7 @@ Use a work dir **outside the repository** (e.g. the session scratchpad). It extr
 .claude/skills/lsmsgpack-perf/scripts/compare.sh <work dir>   # ~35 s, rebuilds equiv-new
 ```
 
-`Equiv.cs` serializes ~90 edge case values (all integer sizes and boundaries, strings up to 70000 chars, bin, floats, NaN, decimals, DateTimes before/after the timestamp ranges, enums of several underlying types, arrays/maps over 65535 entries, nested objects, a custom property id resolver) for all `EndianAction` × `DynamicallyCompact` × `UseInexedSchema` settings, and prints the bytes (hashes for large ones), the typed round trip and the raw `MsgPackItem` tree. It warms up first, so the recorded pass uses the bound property delegates (see `PropertyAccessor`).
+`Equiv.cs` serializes ~90 edge case values (all integer sizes and boundaries, strings up to 70000 chars, bin, floats, NaN, decimals, DateTimes before/after the timestamp ranges, enums of several underlying types, arrays/maps over 65535 entries, nested objects, a custom property id resolver) for all `EndianAction` × `DynamicallyCompact` × `UseIndexedSchema` settings, and prints the bytes (hashes for large ones), the typed round trip and the raw `MsgPackItem` tree. It warms up first, so the recorded pass uses the bound property delegates (see `PropertyAccessor`).
 
 An intended format change shows up as a diff: check that only the expected lines differ, and mention it in the commit message. Add a case to `Equiv.cs` when a change touches something the corpus does not cover (and rerun setup, the base must run the same program).
 

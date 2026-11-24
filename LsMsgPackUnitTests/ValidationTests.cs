@@ -106,7 +106,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(bool schema, ObjectLayout layout = ObjectLayout.Array)
     {
-      return new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout };
+      return new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout };
     }
 
     #region Items
@@ -150,7 +150,7 @@ namespace LsMsgPackUnitTests
       List<ValidationItem> issues = Validate(bytes);
       ValidationItem issue = issues.Single(i => i.Message.Contains("timestamp 64"));
       Assert.AreEqual(ValidationSeverity.Warning, issue.Severity);
-      Assert.AreEqual(5, issue.WaistedBytes);
+      Assert.AreEqual(5, issue.WastedBytes);
     }
 
     [TestMethod]
@@ -158,7 +158,7 @@ namespace LsMsgPackUnitTests
     {
       byte[] bytes = { 0xD7, 0xFF, 0, 0, 0, 0, 0, 0, 0x03, 0xE8 };
       ValidationItem issue = Validate(bytes).Single(i => i.Message.Contains("timestamp 32"));
-      Assert.AreEqual(4, issue.WaistedBytes);
+      Assert.AreEqual(4, issue.WastedBytes);
     }
 
     [TestMethod]
@@ -180,7 +180,7 @@ namespace LsMsgPackUnitTests
       // ext -2 holding 1000 (big-endian 0x03E8) in fixext 2: 4 bytes, an integer takes 3
       ValidationItem issue = Validate(new byte[] { 0xD5, 0xFE, 0x03, 0xE8 }).Single(i => i.Message.Contains("fits in 64 bits"));
       Assert.AreEqual(ValidationSeverity.Warning, issue.Severity);
-      Assert.AreEqual(1, issue.WaistedBytes);
+      Assert.AreEqual(1, issue.WastedBytes);
     }
 
     [TestMethod]
@@ -191,7 +191,7 @@ namespace LsMsgPackUnitTests
       byte[] content = { 0xFF, 0xFF, 0x80, 0, 0, 0, 0, 0, 0, 0, 0 };
       byte[] bytes = new byte[] { 0xC7, (byte)content.Length, 0xFE }.Concat(content).ToArray();
       ValidationItem issue = Validate(bytes).Single(i => i.Message.Contains("repeat the sign"));
-      Assert.AreEqual(2, issue.WaistedBytes);
+      Assert.AreEqual(2, issue.WastedBytes);
     }
 
     [TestMethod]

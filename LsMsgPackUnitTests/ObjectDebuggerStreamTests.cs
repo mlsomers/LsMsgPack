@@ -127,7 +127,7 @@ namespace LsMsgPackUnitTests
       byte[] bytes = Write(w =>
       {
         w.Write("one value");
-      }, new LsMsgPackOptions { UseInexedSchema = false }, MsgPackStreamSchemas.PerObject, new MsgPackStreamIndexOptions());
+      }, new LsMsgPackOptions { UseIndexedSchema = false }, MsgPackStreamSchemas.PerObject, new MsgPackStreamIndexOptions());
       MpRoot items = Unpack(bytes);
       Assert.HasCount(3, items); // the value, the index, its tail
       Assert.IsEmpty(RootObject.FindSchemaItems(items));

@@ -59,7 +59,7 @@ namespace LsMsgPack.Data
         // The schema and the array header come before the rows (an empty list has no entry: the schema of an empty list)
         MsgPackWriter head = new MsgPackWriter(256);
         head.Reset(options);
-        if (options._useInexedSchema)
+        if (options._useIndexedSchema)
           head.Raw(Schema(options, plan));
         head.ArrayHeader(count);
         if (target != null)

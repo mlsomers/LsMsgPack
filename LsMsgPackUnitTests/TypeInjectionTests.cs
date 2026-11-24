@@ -84,7 +84,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(bool schema, IMsgPackTypeGuard guard = null)
     {
-      return new MsgPackSettings() { UseInexedSchema = schema, TypeGuard = guard };
+      return new MsgPackSettings() { UseIndexedSchema = schema, TypeGuard = guard };
     }
 
     /// <summary>

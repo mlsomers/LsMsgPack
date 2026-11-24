@@ -107,7 +107,7 @@ namespace LsMsgPackUnitTests
 
     private static MsgPackSettings Settings(bool schema, ObjectLayout layout, GetOnlyProperties getOnly = GetOnlyProperties.All)
     {
-      MsgPackSettings settings = new MsgPackSettings() { UseInexedSchema = schema, ObjectLayout = layout };
+      MsgPackSettings settings = new MsgPackSettings() { UseIndexedSchema = schema, ObjectLayout = layout };
       if (getOnly != GetOnlyProperties.All)
         settings.StaticFilters = new IMsgPackPropertyIncludeStatically[] { new FilterNonSettable(getOnly), new FilterIgnoredAttribute(), new FilterStatic() };
       return settings;

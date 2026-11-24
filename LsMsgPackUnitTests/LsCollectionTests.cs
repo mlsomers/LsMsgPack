@@ -24,7 +24,7 @@ namespace LsMsgPackUnitTests
     public class LcDrawing { public List<LcShape> Shapes { get; set; } public IList<LcShape> Interfaced { get; set; } public Dictionary<string, LcShape> ByName { get; set; } }
     public class LcHolder { public IList<int> List { get; set; } public IDictionary<string, int> Map { get; set; } public object Any { get; set; } }
 
-    private static readonly LsMsgPackSerializer NoSchema = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false });
+    private static readonly LsMsgPackSerializer NoSchema = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false });
     private static readonly LsMsgPackSerializer WithSchema = new LsMsgPackSerializer();
 
     private static byte[] Text(string text)
@@ -106,7 +106,7 @@ namespace LsMsgPackUnitTests
     [TestMethod]
     public void Interfaces_TypeGuard_AskedForTheTypeOfTheData()
     {
-      LsMsgPackSerializer guarded = new LsMsgPackSerializer(new LsMsgPackOptions { UseInexedSchema = false, TypeGuard = new RefuseAll() });
+      LsMsgPackSerializer guarded = new LsMsgPackSerializer(new LsMsgPackOptions { UseIndexedSchema = false, TypeGuard = new RefuseAll() });
       Assert.Throws<MsgPackException>(() => guarded.Deserialize<IList<int>>(Bytes(0x82, "", "List<Int32>", "@", 0x91, 1)));
       Assert.AreEqual(1, guarded.Deserialize<IList<int>>(Bytes(0x91, 1)).Count, "no type id: the data picks nothing");
     }
@@ -129,7 +129,7 @@ namespace LsMsgPackUnitTests
 
       for (int s = 0; s < 2; s++)
       {
-        LsMsgPackOptions options = new LsMsgPackOptions { UseInexedSchema = s == 1 };
+        LsMsgPackOptions options = new LsMsgPackOptions { UseIndexedSchema = s == 1 };
         byte[] expected = new LsMsgPackSerializer(options).Serialize(drawing);
 
         LsMsgPackSerializer shared = new LsMsgPackSerializer(options); // the caches per declared type are shared by the threads, starting empty
