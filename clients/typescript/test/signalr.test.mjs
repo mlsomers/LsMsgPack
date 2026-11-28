@@ -33,22 +33,35 @@ const ours = new LsMsgPackHubProtocol();
 test('names and version', () => {
   assert.strictEqual(ours.name, 'lsmsgpack');
   assert.strictEqual(new LsMsgPackHubProtocol({ name: 'messagepack' }).name, 'messagepack');
+  assert.strictEqual(new LsMsgPackHubProtocol({ name: 'lsmsgpack-indexed' }).name, 'lsmsgpack-indexed');
   assert.strictEqual(ours.version, 2);
   assert.strictEqual(ours.transferFormat, signalR.TransferFormat.Binary);
   assert.strictEqual(HubMessageType.Sequence, signalR.MessageType.Sequence);
 });
 
-test('round trip, several messages in one buffer', () => {
-  const parts = messages.map((m) => new Uint8Array(ours.writeMessage(m)));
-  const all = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const p of parts) { all.set(p, at); at += p.length; }
-  const read = ours.parseMessages(all.buffer, null);
-  assert.strictEqual(read.length, messages.length);
-  for (let t = 0; t < messages.length; t++) {
-    const m = messages[t];
-    for (const key of Object.keys(m)) assert.deepStrictEqual(read[t][key], m[key], `message ${t}.${key}`);
-  }
+for (const name of ['lsmsgpack', 'lsmsgpack-indexed']) {
+  test(`round trip, several messages in one buffer (${name})`, () => {
+    const protocol = new LsMsgPackHubProtocol({ name });
+    const parts = messages.map((m) => new Uint8Array(protocol.writeMessage(m)));
+    const all = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) { all.set(p, at); at += p.length; }
+    const read = protocol.parseMessages(all.buffer, null);
+    assert.strictEqual(read.length, messages.length);
+    for (let t = 0; t < messages.length; t++) {
+      const m = messages[t];
+      for (const key of Object.keys(m)) assert.deepStrictEqual(read[t][key], m[key], `message ${t}.${key}`);
+    }
+  });
+}
+
+test('lsmsgpack-indexed: the client writes [nil, value], null as nil; a value without the wrapper is refused', () => {
+  const indexed = new LsMsgPackHubProtocol({ name: 'lsmsgpack-indexed' });
+  const bytes = new Uint8Array(indexed.writeMessage({ type: HubMessageType.Invocation, headers: {}, target: 'S', arguments: [5, null], streamIds: [] }));
+  // prefix, [1, {}, nil, "S", [[nil, 5], nil], []]
+  assert.deepStrictEqual([...bytes], [0x0c, 0x96, 0x01, 0x80, 0xc0, 0xa1, 0x53, 0x92, 0x92, 0xc0, 0x05, 0xc0, 0x90]);
+  const plain = new Uint8Array(ours.writeMessage({ type: HubMessageType.Invocation, headers: {}, target: 'S', arguments: [5], streamIds: [] }));
+  assert.throws(() => indexed.parseMessages(plain, null), /lsmsgpack-indexed/);
 });
 
 test("Microsoft's JS protocol reads ours and we read Microsoft's", () => {
@@ -99,13 +112,13 @@ async function connect(protocol) {
   return connection;
 }
 
-for (const name of ['lsmsgpack', 'messagepack']) {
+for (const name of ['lsmsgpack', 'lsmsgpack-indexed', 'messagepack']) {
   test(`a hub: values, streams, calls to the client (${name})`, { skip }, async () => {
     const connection = await connect(new LsMsgPackHubProtocol({ name }));
     try {
       const invoices = await connection.invoke('Invoices', 3);
       const expected = JSON.parse(await connection.invoke('InvoicesJson', 3));
-      if (name === 'lsmsgpack') assertLikeJson(invoices, expected);
+      if (name !== 'messagepack') assertLikeJson(invoices, expected);
       else assertLikeJson(invoices.map(asJsonOfMessagePack), expected); // decimals as text, enums by name: as MessagePack-CSharp writes them
       assert.strictEqual(typeof invoices[0].Id, 'string', 'a Guid is text');
       assert.ok(invoices[0].InvoiceDate instanceof Date);
@@ -138,18 +151,20 @@ for (const name of ['lsmsgpack', 'messagepack']) {
   });
 }
 
-test('a hub: polymorphic values have $type, sent back the server makes the same classes (lsmsgpack)', { skip }, async () => {
-  const connection = await connect(new LsMsgPackHubProtocol());
-  try {
-    const zoo = await connection.invoke('Zoo');
-    assert.ok(zoo.Animals[0].$type.endsWith('Dog'), zoo.Animals[0].$type);
-    assert.ok(zoo.Favorite.$type.endsWith('Cat'), zoo.Favorite.$type);
-    assert.strictEqual(zoo.Animals[1].Indoor, true);
-    assert.strictEqual(await connection.invoke('EchoZoo', zoo), 'Dog:Rex,Cat:Tom;Cat;Dog');
-  } finally {
-    await connection.stop();
-  }
-});
+for (const name of ['lsmsgpack', 'lsmsgpack-indexed']) {
+  test(`a hub: polymorphic values have $type, sent back the server makes the same classes (${name})`, { skip }, async () => {
+    const connection = await connect(new LsMsgPackHubProtocol({ name }));
+    try {
+      const zoo = await connection.invoke('Zoo');
+      assert.ok(zoo.Animals[0].$type.endsWith('Dog'), zoo.Animals[0].$type);
+      assert.ok(zoo.Favorite.$type.endsWith('Cat'), zoo.Favorite.$type);
+      assert.strictEqual(zoo.Animals[1].Indoor, true);
+      assert.strictEqual(await connection.invoke('EchoZoo', zoo), 'Dog:Rex,Cat:Tom;Cat;Dog');
+    } finally {
+      await connection.stop();
+    }
+  });
+}
 
 test("Microsoft's JS MessagePack client against LsMsgPack as \"messagepack\"", { skip }, async () => {
   const connection = await connect(new MessagePackHubProtocol());

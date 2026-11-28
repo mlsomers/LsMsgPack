@@ -50,15 +50,15 @@ namespace ObjectDebugger
       if (item is null)
         return assessment;
 
-      if (RootObject.FindSchemaItems(item).Count > 0)
+      if (IsHubCapture(item)) // before the schemas: the values of "lsmsgpack-indexed" have theirs
       {
-        assessment.Raise(ObjectConfidence.Certain, "The data has an indexed schema.");
+        assessment.Raise(ObjectConfidence.Certain, "The data is a capture of a SignalR connection: its messages have known fields.");
         return assessment;
       }
 
-      if (IsHubCapture(item))
+      if (RootObject.FindSchemaItems(item).Count > 0)
       {
-        assessment.Raise(ObjectConfidence.Certain, "The data is a capture of a SignalR connection: its messages have known fields.");
+        assessment.Raise(ObjectConfidence.Certain, "The data has an indexed schema.");
         return assessment;
       }
 

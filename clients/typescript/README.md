@@ -44,7 +44,7 @@ A SignalR hub protocol for `@microsoft/signalr` and a server with [LsMsgPack.Sig
 import { HubConnectionBuilder } from '@microsoft/signalr';
 import { LsMsgPackHubProtocol } from '@lsmsgpack/client/signalr';
 
-const connection = new HubConnectionBuilder().withUrl('/chat').withHubProtocol(new LsMsgPackHubProtocol()).build();
+const connection = new HubConnectionBuilder().withUrl('/chat').withHubProtocol(new LsMsgPackHubProtocol()).build(); // { name: 'lsmsgpack-indexed' } for lists of objects
 ```
 
 Documentation: [docs/TypeScriptClient.md](https://github.com/mlsomers/LsMsgPack/blob/master/docs/TypeScriptClient.md) (options, the models, value conversions, polymorphic request bodies, shared objects and cycles, CORS, the described schema, streams).

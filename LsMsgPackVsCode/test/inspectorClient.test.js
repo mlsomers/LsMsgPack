@@ -153,6 +153,23 @@ test('a capture of a SignalR connection: the handshake, length prefixes and mess
   }
 });
 
+test('a capture of "lsmsgpack-indexed": the schema of a value is marked, the value read with it', { skip }, async () => {
+  // [1, {}, nil, "Send", [[{"P": ["X"]}, [5]]], []]: the argument is [schema, body]
+  const capture = Buffer.from('14' + '960180c0a453656e64' + '91' + '92' + '81a15091a158' + '9105' + '90', 'hex');
+  const client = new InspectorClient(process.env.DOTNET || 'dotnet', assembly);
+  try {
+    const model = await client.load('i', capture.toString('base64'), Object.assign({}, settings, { objects: 'show' }));
+    assert.strictEqual(model.hasSchema, true);
+    const schemaItems = model.items.filter((i) => i.schema);
+    assert.deepStrictEqual(schemaItems.map((i) => i.kind), ['map', 'str', 'array', 'str'], 'the map and what is in it');
+    assert.ok(!model.items.some((i) => i.kind === 'int' && i.schema), 'the body is no schema');
+    assert.ok(model.objects.nodes.some((n) => n.text === '[0] : P'), JSON.stringify(model.objects.nodes.map((n) => n.text)));
+    assert.strictEqual(model.objectConfidence, 'Certain');
+  } finally {
+    client.dispose();
+  }
+});
+
 test('an LZ4 compressed body: the decompressed items select the compressed bytes', { skip }, async () => {
   // Six objects as MessagePack-CSharp writes them with Lz4Block (ext 99) and Lz4BlockArray (an array starting with ext 98)
   const block = Buffer.from('c77263d200000127c49683a8437573746f6d6572aa0900f3062030a85175616e7469747900a750726f64756374a908002f2030310001153131001d0131001f31310001153231001d0231001f323100010693001d0331001f333100010693001d0431001f3431000106930019053100507563742030', 'hex');

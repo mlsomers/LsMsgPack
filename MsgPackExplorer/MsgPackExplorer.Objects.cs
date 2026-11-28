@@ -285,6 +285,7 @@ namespace MsgPackExplorer {
 
     /// <summary>
     /// The schema (or schema reference) and everything in it in navy, it is not part of the objects.
+    /// A child of the root, or in a SignalR capture of "lsmsgpack-indexed" the first element of each value of a message.
     /// </summary>
     private void ColorSchemaNodes(TreeNode rootNode) {
       if (_schemaItems.Count == 0)
@@ -294,6 +295,8 @@ namespace MsgPackExplorer {
         MsgPackItem nodeItem = node.Tag as MsgPackItem;
         if (nodeItem != null && _schemaItems.Contains(nodeItem))
           ColorSubtree(node, Color.Navy);
+        else if (node.Nodes.Count > 0)
+          ColorSchemaNodes(node);
       }
     }
 

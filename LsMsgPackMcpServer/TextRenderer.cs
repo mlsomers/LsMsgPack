@@ -361,8 +361,11 @@ namespace LsMsgPackMcp
         parts.Add(string.Concat(Count(messages, "message", "messages"), " (", string.Join(", ", counts), ")"));
       if (targets.Count > 0)
         parts.Add("targets " + string.Join(", ", targets));
-      return string.Concat("a capture of a SignalR hub connection (MessagePack hub protocol: \"messagepack\" or LsMsgPack.SignalR's \"lsmsgpack\", each message a VarInt length prefix and an array): ",
-        string.Join(", ", parts), ". The values (arguments, items, results) are payloads of their own");
+      string values = RootObject.IsIndexedHubCapture(root)
+        ? ". The values (arguments, items, results) are payloads of their own, LsMsgPack.SignalR's \"lsmsgpack-indexed\": [schema, body] read with that schema, [nil, value] without one"
+        : ". The values (arguments, items, results) are payloads of their own";
+      return string.Concat("a capture of a SignalR hub connection (MessagePack hub protocol: \"messagepack\" or LsMsgPack.SignalR's \"lsmsgpack\" or \"lsmsgpack-indexed\", each message a VarInt length prefix and an array): ",
+        string.Join(", ", parts), values);
     }
 
     /// <summary>

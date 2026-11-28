@@ -181,4 +181,36 @@ namespace LsMsgPackTsTestServer
     public DateTime Created { get; set; } = DateTime.UtcNow; // another value each time: the default of the type
     public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
   }
+
+  // The chat message of bench/signalr.mjs and LsMsgPack.SignalRTests (ProtocolBenchmark)
+
+  public class ChatPoint
+  {
+    public int X { get; set; }
+    public int Y { get; set; }
+  }
+
+  public class ChatMessage
+  {
+    public string User { get; set; }
+    public string Text { get; set; }
+    public DateTime Sent { get; set; }
+    public Guid Id { get; set; }
+    public decimal Amount { get; set; }
+    public int Mood { get; set; }
+    public List<string> Tags { get; set; }
+    public ChatPoint Where { get; set; }
+
+    public static ChatMessage Sample(int n) => new ChatMessage()
+    {
+      User = "user" + n,
+      Text = "Hello wörld " + n,
+      Sent = new DateTime(2026, 11, 19, 12, 30, n % 60, DateTimeKind.Utc),
+      Id = new Guid("0f8fad5b-d9cb-469f-a165-70867728950e"),
+      Amount = 12.34m + n,
+      Mood = 1,
+      Tags = new List<string>() { "a", "b" },
+      Where = new ChatPoint() { X = n, Y = -n },
+    };
+  }
 }

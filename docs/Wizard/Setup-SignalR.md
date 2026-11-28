@@ -99,6 +99,7 @@ Clients update at different times (an app store, a browser tab left open for day
 
 ## Next
 
+- Messages with lists of objects: add `.AddLsMsgPackIndexedProtocol()` next to `.AddLsMsgPackProtocol()` and let those clients ask for "lsmsgpack-indexed" (every name once per value: 50 objects 43% smaller, faster to read; larger for a single small object), see [docs/SignalR.md](../SignalR.md#the-indexed-schema-lsmsgpack-indexed).
 - NativeAOT or trimming: pass your source generator context, `AddLsMsgPackProtocol(AppMsgPackContext.Default)`, see [docs/SignalR.md](../SignalR.md#nativeaot-and-trimming).
 - What's inside a message: the VS Code extension and the MCP server show the bytes of a connection message by message, see [docs/SignalR.md](../SignalR.md#debugging).
 - All options, the values per protocol and the measurements: [docs/SignalR.md](../SignalR.md).

@@ -23,6 +23,8 @@ namespace LsMsgPack.SignalRTests
       List<(string, IHubProtocol)> protocols = new List<(string, IHubProtocol)>()
       {
         ("lsmsgpack", new LsMsgPackHubProtocol()),
+        ("lsmsgpack-indexed", new LsMsgPackHubProtocol(new LsMsgPackHubProtocolOptions() { IndexedSchema = true })),
+        ("lsmsgpack-indexed, names schema", new LsMsgPackHubProtocol(new LsMsgPackHubProtocolOptions() { IndexedSchema = true, SerializerOptions = NamesSchema() })),
         ("LsMsgPack as messagepack", new LsMsgPackHubProtocol(new LsMsgPackHubProtocolOptions() { AsMessagePack = true })),
         ("Microsoft messagepack", new MessagePackHubProtocol()),
         ("Microsoft json", new JsonHubProtocol()),
@@ -41,6 +43,16 @@ namespace LsMsgPack.SignalRTests
         Measure(name, protocol, binder, message, 200000);
         Measure(name + ", 50 messages in a list", protocol, binder, large, 10000);
       }
+    }
+
+    /// <summary>
+    /// The indexed defaults with schema version 1 (names only): for .NET clients with the classes.
+    /// </summary>
+    private static LsMsgPackOptions NamesSchema()
+    {
+      LsMsgPackOptions options = LsMsgPackHubProtocolOptions.DefaultSerializerOptions(false, true);
+      options.SchemaVersion = SchemaVersion.Names;
+      return options;
     }
 
     private static void Measure(string name, IHubProtocol protocol, IInvocationBinder binder, HubMessage message, int count)

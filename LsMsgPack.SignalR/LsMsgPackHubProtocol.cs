@@ -35,6 +35,11 @@ namespace LsMsgPack.SignalR
     public const string MessagePackName = "messagepack";
 
     /// <summary>
+    /// The name of the protocol with LsMsgPack's values and the indexed schema in each value (<see cref="LsMsgPackHubProtocolOptions.IndexedSchema"/>).
+    /// </summary>
+    public const string LsMsgPackIndexedName = "lsmsgpack-indexed";
+
+    /// <summary>
     /// Version 2: the messages of stateful reconnect (Ack, Sequence), as Microsoft's protocols of ASP.NET Core 8.
     /// </summary>
     private const int ProtocolVersion = 2;
@@ -46,6 +51,14 @@ namespace LsMsgPack.SignalR
     private readonly LsMsgPackSerializer _serializer;
     private readonly Serializer _reader;
     private readonly LsMsgPackOptions _options;
+    /// <summary>
+    /// "lsmsgpack-indexed": values are nil, [schema, body] or [nil, value without a schema] (the TypeScript client writes those).
+    /// </summary>
+    private readonly bool _indexed;
+    /// <summary>
+    /// "lsmsgpack-indexed": reads the values without a schema (the options of <see cref="_reader"/> without the indexed schema).
+    /// </summary>
+    private readonly Serializer _plainReader;
 
     /// <summary>
     /// "lsmsgpack" with the default options.
@@ -77,9 +90,12 @@ namespace LsMsgPack.SignalR
     {
       if (options is null)
         throw new ArgumentNullException(nameof(options));
-      _name = options.AsMessagePack ? MessagePackName : LsMsgPackName;
-      LsMsgPackOptions values = options.SerializerOptions?.Clone() ?? LsMsgPackHubProtocolOptions.DefaultSerializerOptions(options.AsMessagePack);
-      values.UseIndexedSchema = false; // a message is written once for every connection it goes to (see LsMsgPackHubProtocolOptions.SerializerOptions)
+      if (options.AsMessagePack && options.IndexedSchema)
+        throw new ArgumentException("\"messagepack\" has the bytes of Microsoft's MessagePack protocol, without the indexed schema: set AsMessagePack or IndexedSchema, not both.", nameof(options));
+      _indexed = options.IndexedSchema;
+      _name = options.AsMessagePack ? MessagePackName : _indexed ? LsMsgPackIndexedName : LsMsgPackName;
+      LsMsgPackOptions values = options.SerializerOptions?.Clone() ?? LsMsgPackHubProtocolOptions.DefaultSerializerOptions(options.AsMessagePack, _indexed);
+      values.UseIndexedSchema = _indexed; // inline in each value: a message is written once for every connection it goes to (see LsMsgPackHubProtocolOptions.SerializerOptions)
       values.WriteSchemaReference = false;
       values.MaxObjects = options.MaxObjects;
       values.MaxItems = options.MaxItems;
@@ -88,6 +104,12 @@ namespace LsMsgPack.SignalR
       _options = values;
       _serializer = new LsMsgPackSerializer(values, context);
       _reader = _serializer.Implementation;
+      if (_indexed)
+      {
+        LsMsgPackOptions plain = values.Clone();
+        plain.UseIndexedSchema = false;
+        _plainReader = new LsMsgPackSerializer(plain, context).Implementation;
+      }
     }
 
     private static LsMsgPackContext NotNull(LsMsgPackContext context)
@@ -98,7 +120,7 @@ namespace LsMsgPack.SignalR
     }
 
     /// <summary>
-    /// "lsmsgpack" or "messagepack" (<see cref="LsMsgPackHubProtocolOptions.AsMessagePack"/>): what the client asks for in its handshake.
+    /// "lsmsgpack", "lsmsgpack-indexed" (<see cref="LsMsgPackHubProtocolOptions.IndexedSchema"/>) or "messagepack" (<see cref="LsMsgPackHubProtocolOptions.AsMessagePack"/>): what the client asks for in its handshake.
     /// </summary>
     public string Name
     {
@@ -311,6 +333,7 @@ namespace LsMsgPack.SignalR
 
     /// <summary>
     /// A value as its runtime type (as Microsoft's protocols: the declared types of a hub method are not known here); a <see cref="RawResult"/> (a client's result passed on by the server) as its bytes.
+    /// "lsmsgpack-indexed": [schema, body] (the serializer writes a schema in front of every value but null), one item in the envelope's arrays.
     /// </summary>
     private void WriteValue(object value, HubFrame w)
     {
@@ -325,6 +348,8 @@ namespace LsMsgPack.SignalR
         w.Raw(raw.RawSerializedData);
         return;
       }
+      if (_indexed)
+        w.ArrayHeader(2);
       _serializer.Serialize(value, value.GetType(), w);
     }
 
@@ -551,12 +576,25 @@ namespace LsMsgPack.SignalR
 
     /// <summary>
     /// One value in place: the serializer reads it from the message's bytes and tells where it ended.
+    /// "lsmsgpack-indexed": nil, [schema, body] or [nil, value without a schema].
     /// </summary>
     private object ReadValue(byte[] buf, ref int pos, int end, Type type, string field)
     {
       try
       {
-        object value = _reader.Deserialize(type, buf, pos, end, out int consumed);
+        Serializer reader = _reader;
+        if (_indexed && pos < end && buf[pos] != 0xC0)
+        {
+          if (buf[pos] != 0x92) // fixarray of 2
+            throw new InvalidDataException($"Expected a value of the {LsMsgPackIndexedName} protocol: nil, [schema, value] or [nil, value], found 0x{buf[pos]:X2}.");
+          pos++;
+          if (pos < end && buf[pos] == 0xC0)
+          {
+            pos++;
+            reader = _plainReader;
+          }
+        }
+        object value = reader.Deserialize(type, buf, pos, end, out int consumed);
         pos = consumed;
         return value;
       }

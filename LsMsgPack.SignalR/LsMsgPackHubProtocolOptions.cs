@@ -1,4 +1,5 @@
 ﻿using LsMsgPack.TypeResolving.Interfaces;
+using System;
 
 namespace LsMsgPack.SignalR
 {
@@ -15,9 +16,17 @@ namespace LsMsgPack.SignalR
     public bool AsMessagePack { get; set; }
 
     /// <summary>
-    /// The options of the values (the arguments, stream items and results). Null (the default): <see cref="DefaultSerializerOptions(bool)"/> of <see cref="AsMessagePack"/>.
-    /// <para>A copy is used, without the indexed schema and schema references whatever these say: SignalR writes a message once for all the connections it goes to (groups, all clients),
-    /// so its bytes cannot depend on what one connection received before, and a schema in every message costs more than it saves.</para>
+    /// The protocol is named "lsmsgpack-indexed" and writes each value with its indexed schema in front (every name once per value: smaller for lists of objects), default false.
+    /// Each value is <c>nil</c>, <c>[schema, body]</c> or <c>[nil, value without a schema]</c>: the readers take both, so clients that only write plain values
+    /// (the TypeScript client) use it too. Not with <see cref="AsMessagePack"/>.
+    /// <para>Set by <c>AddLsMsgPackIndexedProtocol()</c>; it decides the defaults of <see cref="SerializerOptions"/>. Register it next to "lsmsgpack" to serve the clients of both names.</para>
+    /// </summary>
+    public bool IndexedSchema { get; set; }
+
+    /// <summary>
+    /// The options of the values (the arguments, stream items and results). Null (the default): <see cref="DefaultSerializerOptions(bool, bool)"/> of <see cref="AsMessagePack"/> and <see cref="IndexedSchema"/>.
+    /// <para>A copy is used, never with schema references whatever these say: SignalR writes a message once for all the connections it goes to (groups, all clients),
+    /// so its bytes cannot depend on what one connection received before. The indexed schema is on with <see cref="IndexedSchema"/> (inline, in each value) and off otherwise.</para>
     /// </summary>
     public LsMsgPackOptions SerializerOptions { get; set; }
 
@@ -48,13 +57,26 @@ namespace LsMsgPack.SignalR
     /// <item>"lsmsgpack": LsMsgPack's values (<see cref="LsMsgPackPresets.LsMsgPack"/>: decimals exact, DateTime with its kind, DateTimeOffset with its offset, type ids where the type differs, enums as numbers)
     /// with objects as maps keyed by property names and every value written (also defaults: a client without the classes, JavaScript, gets complete objects), Guids as text (without a schema JavaScript
     /// cannot tell a Guid from 16 bytes).</item>
+    /// <item>"lsmsgpack-indexed" (<paramref name="indexedSchema"/>): LsMsgPack's defaults (<see cref="LsMsgPackPresets.LsMsgPack"/>: objects as arrays, default values left out, Guids as 16 bytes)
+    /// with the described schema (<see cref="SchemaVersion.Described"/>: a client without the classes, JavaScript, gets the declared types and the defaults from it).</item>
     /// <item>"messagepack": the values of Microsoft's MessagePack protocol (<see cref="LsMsgPackPresets.MessagePackCSharp"/>, enums by name).</item>
     /// </list>
-    /// Both read property names ignoring case when the exact name is not found (<see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>): JavaScript clients send camelCase objects.
+    /// All read property names ignoring case when the exact name is not found (<see cref="MsgPackOptions.PropertyNameCaseInsensitive"/>): JavaScript clients send camelCase objects.
     /// </summary>
-    public static LsMsgPackOptions DefaultSerializerOptions(bool asMessagePack)
+    public static LsMsgPackOptions DefaultSerializerOptions(bool asMessagePack, bool indexedSchema = false)
     {
       LsMsgPackOptions options;
+      if (indexedSchema)
+      {
+        if (asMessagePack)
+          throw new ArgumentException("\"messagepack\" has the bytes of Microsoft's MessagePack protocol, without the indexed schema.", nameof(indexedSchema));
+        options = LsMsgPackPresets.LsMsgPack();
+        options.SchemaVersion = SchemaVersion.Described;
+        options.UseIndexedSchema = true;
+        options.WriteSchemaReference = false;
+        options.PropertyNameCaseInsensitive = true;
+        return options;
+      }
       if (asMessagePack)
       {
         options = LsMsgPackPresets.MessagePackCSharp();
