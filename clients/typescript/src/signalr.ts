@@ -6,6 +6,7 @@ import { Writer } from './writer.js';
 import type { EncodeOptions } from './writer.js';
 import { MsgPackReader } from './reader.js';
 import { MsgPackError } from './errors.js';
+import { Schema } from './schema.js';
 
 /** The message types of SignalR (MessageType of @microsoft/signalr). */
 export const HubMessageType = {
@@ -42,10 +43,12 @@ export interface HubLoggerLike {
 
 export interface HubProtocolOptions extends Omit<DecodeOptions, 'indexedSchema'>, EncodeOptions {
   /**
-   * 'lsmsgpack' (default): the server's AddLsMsgPackProtocol(), LsMsgPack's values (decimals, DateTimes with their kind, type ids). 'messagepack': the server's
-   * AddLsMsgPackAsMessagePackProtocol() or Microsoft's AddMessagePackProtocol() (the values of MessagePack-CSharp: decimals and Guids as text, dates as timestamps, enums by name).
+   * 'lsmsgpack' (default): the server's AddLsMsgPackProtocol(), LsMsgPack's values (decimals, DateTimes with their kind, type ids). 'lsmsgpack-indexed': the server's
+   * AddLsMsgPackIndexedProtocol(), the same with the indexed schema in each value the server writes (smaller for lists of objects; the values this client writes stay plain).
+   * 'messagepack': the server's AddLsMsgPackAsMessagePackProtocol() or Microsoft's AddMessagePackProtocol() (the values of MessagePack-CSharp: decimals and Guids as text,
+   * dates as timestamps, enums by name).
    */
-  name?: 'lsmsgpack' | 'messagepack';
+  name?: 'lsmsgpack' | 'lsmsgpack-indexed' | 'messagepack';
 }
 
 const ErrorResult = 1;
@@ -53,12 +56,15 @@ const VoidResult = 2;
 const NonVoidResult = 3;
 const LogInformation = 2; // LogLevel.Information
 const TransferFormatBinary = 2; // TransferFormat.Binary
+const KeptSchemas = 16; // 'lsmsgpack-indexed': the schemas read last, one instance per schema (its plans are made once)
 
 /**
  * A hub protocol for `new HubConnectionBuilder().withHubProtocol(new LsMsgPackHubProtocol())` of @microsoft/signalr (version 8 and up: protocol version 2).
  * Values are plain MsgPack without a schema (SignalR writes a message once for every connection it goes to): objects have the .NET property names (the server reads names
  * ignoring case, so camelCase objects are fine to send), a type id becomes `$type`, Guids are text, decimals numbers (DecodeOptions.decimal), DateTimes Dates.
  * Each value is read and written on its own (its references, extension type 5, point into it), as the .NET protocol does.
+ * 'lsmsgpack-indexed': each value is nil, [schema, body] or [nil, value without a schema]; the server writes the first, this client the last (it writes plain values).
+ * Objects keep the .NET names there too (DecodeOptions.propertyNames 'dotnet' unless given) and get the declared types and defaults of the described schema.
  */
 export class LsMsgPackHubProtocol {
   readonly name: string;
@@ -66,10 +72,16 @@ export class LsMsgPackHubProtocol {
   readonly transferFormat = TransferFormatBinary;
   private readonly decoder: Decoder;
   private readonly writer: Writer;
+  /** 'lsmsgpack-indexed': the decoder of [schema, body] values. */
+  private readonly schemaDecoder: Decoder | null;
+  private readonly schemas: Schema[] = [];
+  private readonly inlineSchema = (bytes: Uint8Array): Schema => this.schemaOf(bytes);
 
   constructor(options: HubProtocolOptions = {}) {
     this.name = options.name ?? 'lsmsgpack';
     this.decoder = new Decoder({ ...options, indexedSchema: false });
+    // the .NET names by default, as the values without a schema have them: switching the name does not rename the properties
+    this.schemaDecoder = this.name === 'lsmsgpack-indexed' ? new Decoder({ propertyNames: 'dotnet', ...options, indexedSchema: true }) : null;
     this.writer = new Writer(options.maxDepth ?? 256, options.models, options.generateCode ?? true, options.references === 'preserve');
   }
 
@@ -179,8 +191,12 @@ export class LsMsgPackHubProtocol {
     for (let t = 0; t < values.length; t++) this.writeValue(values[t], w);
   }
 
-  /** A value on its own: its references (EncodeOptions.references 'preserve') are paths from it. */
+  /** A value on its own: its references (EncodeOptions.references 'preserve') are paths from it. 'lsmsgpack-indexed': [nil, value] (no schema), null as nil. */
   private writeValue(value: unknown, w: Writer): void {
+    if (this.schemaDecoder !== null && value !== null && value !== undefined) {
+      w.arrayHeader(2);
+      w.write(null, 0);
+    }
     w.root(0);
     w.write(value, 0);
   }
@@ -259,10 +275,42 @@ export class LsMsgPackHubProtocol {
 
   /** A value on its own (its references point into it), read by the decoder from where the reader is; the reader continues after it. */
   private readValue(data: Uint8Array, r: MsgPackReader, end: number): unknown {
-    const read = this.decoder.readValue(data, r.pos, end, null);
+    let pos = r.pos;
+    if (this.schemaDecoder !== null && pos < end && data[pos] !== 0xc0) {
+      if (data[pos] !== 0x92) throw new MsgPackError(`Expected a value of the lsmsgpack-indexed protocol: nil, [schema, value] or [nil, value], found 0x${data[pos].toString(16)}.`, pos);
+      pos++;
+      if (data[pos] !== 0xc0) {
+        const decoded = this.schemaDecoder.decodeAt(data, pos, end, undefined, this.inlineSchema);
+        r.pos = decoded.end;
+        return decoded.value;
+      }
+      pos++;
+    }
+    const read = this.decoder.readValue(data, pos, end, null);
     r.pos = read.end;
     return read.value;
   }
+
+  /** The schema of the bytes: a kept instance when one has them (most messages repeat a few schemas), otherwise a new one (a copy: the message's buffer is not kept). */
+  private schemaOf(bytes: Uint8Array): Schema {
+    const kept = this.schemas;
+    for (let t = kept.length - 1; t >= 0; t--) {
+      if (sameBytes(kept[t].bytes, bytes)) {
+        if (t !== kept.length - 1) kept.push(kept.splice(t, 1)[0]); // the most recent last
+        return kept[kept.length - 1];
+      }
+    }
+    const schema = new Schema(bytes.slice());
+    if (kept.length === KeptSchemas) kept.shift();
+    kept.push(schema);
+    return schema;
+  }
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let t = a.length - 1; t >= 0; t--) if (a[t] !== b[t]) return false;
+  return true;
 }
 
 function writeHeaders(headers: Record<string, string> | undefined, w: Writer): void {

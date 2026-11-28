@@ -142,6 +142,32 @@ namespace LsMsgPackMcpServerTests
       return ms.ToArray();
     }
 
+    /// <summary>
+    /// "lsmsgpack-indexed" of LsMsgPack.SignalR, without the handshake: an invocation whose invoice is [schema, body] (the described schema) and a stream item [nil, value] (the TypeScript client).
+    /// </summary>
+    public static byte[] IndexedHubCapture()
+    {
+      LsMsgPackOptions options = LsMsgPackPresets.LsMsgPack();
+      options.SchemaVersion = SchemaVersion.Described;
+      LsMsgPackSerializer schema = new LsMsgPackSerializer(options);
+      LsMsgPackSerializer plain = new LsMsgPackSerializer(LsMsgPackPresets.Generic());
+      MemoryStream ms = new MemoryStream();
+      // [1, {}, "1", "Send", [[schema, invoice]], []]
+      MemoryStream invocation = new MemoryStream();
+      invocation.Write(new byte[] { 0x96, 0x01, 0x80, 0xA1, (byte)'1', 0xA4, (byte)'S', (byte)'e', (byte)'n', (byte)'d', 0x91, 0x92 }, 0, 12);
+      byte[] invoice = schema.Serialize(Invoice());
+      invocation.Write(invoice, 0, invoice.Length);
+      invocation.WriteByte(0x90);
+      WriteFrame(ms, invocation.ToArray());
+      // [2, {}, "s", [nil, {"Product": "Kiwi"}]]
+      MemoryStream item = new MemoryStream();
+      item.Write(new byte[] { 0x94, 0x02, 0x80, 0xA1, (byte)'s', 0x92, 0xC0 }, 0, 7);
+      byte[] value = plain.Serialize(new Dictionary<string, object>() { { "Product", "Kiwi" } });
+      item.Write(value, 0, value.Length);
+      WriteFrame(ms, item.ToArray());
+      return ms.ToArray();
+    }
+
     private static void WriteFrame(MemoryStream target, byte[] message)
     {
       long length = message.Length;

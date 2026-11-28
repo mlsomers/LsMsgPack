@@ -230,10 +230,11 @@ const connection = new HubConnectionBuilder()
   .build();
 ```
 
-- `name`: `'lsmsgpack'` (default, the server's `AddLsMsgPackProtocol()`) or `'messagepack'` (`AddLsMsgPackAsMessagePackProtocol()`, or Microsoft's `AddMessagePackProtocol()`).
+- `name`: `'lsmsgpack'` (default, the server's `AddLsMsgPackProtocol()`), `'lsmsgpack-indexed'` (`AddLsMsgPackIndexedProtocol()`: the server writes each value with the indexed schema, smaller and faster to read for lists of objects, see [SignalR.md](SignalR.md#the-indexed-schema-lsmsgpack-indexed)) or `'messagepack'` (`AddLsMsgPackAsMessagePackProtocol()`, or Microsoft's `AddMessagePackProtocol()`).
 - The other options are the decoder's and the encoder's: `decimal`, `int64`, `references`, `maxDepth`, `generateCode`.
 - The protocol imports nothing of `@microsoft/signalr` (it has the shape of its `IHubProtocol`), so it adds no dependency.
-- The messages have no schema (SignalR writes a message once for every connection it goes to): objects have the .NET property names (`message.User`), whatever `propertyNames` says, and only the properties in the data. LsMsgPack's server writes every value, so they are all there. A type id becomes `$type`, Guids are text, and DateTimes are `Date`s. The values follow the table in [Values](#values) for what the data holds.
+- With `'lsmsgpack'` the messages have no schema (SignalR writes a message once for every connection it goes to): objects have the .NET property names (`message.User`), whatever `propertyNames` says, and only the properties in the data. LsMsgPack's server writes every value, so they are all there. A type id becomes `$type`, Guids are text, and DateTimes are `Date`s. The values follow the table in [Values](#values) for what the data holds.
+- With `'lsmsgpack-indexed'` the values the server writes carry the described schema: they are read as over HTTP (declared types, defaults, type ids as `$type`, Guids as text), but with the .NET names unless you pass `propertyNames`. The values the client writes stay plain (`[nil, value]`), as its request bodies.
 - Sent objects may use camelCase names (the server reads names ignoring case); `$type` is written as the type id, as in request bodies.
 - Each argument, stream item and result is read and written on its own: with `references: 'preserve'` a shared object within one argument is one instance.
 

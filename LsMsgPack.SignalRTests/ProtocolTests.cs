@@ -15,6 +15,7 @@ namespace LsMsgPack.SignalRTests
     private static readonly LsMsgPackHubProtocol Ls = new LsMsgPackHubProtocol();
     private static readonly LsMsgPackHubProtocol AsMessagePack = new LsMsgPackHubProtocol(new LsMsgPackHubProtocolOptions() { AsMessagePack = true });
     private static readonly MessagePackHubProtocol Microsoft = new MessagePackHubProtocol();
+    private static readonly LsMsgPackHubProtocol Indexed = new LsMsgPackHubProtocol(new LsMsgPackHubProtocolOptions() { IndexedSchema = true });
 
     private static TestBinder Binder()
     {
@@ -66,6 +67,7 @@ namespace LsMsgPack.SignalRTests
     {
       Assert.AreEqual("lsmsgpack", Ls.Name);
       Assert.AreEqual("messagepack", AsMessagePack.Name);
+      Assert.AreEqual("lsmsgpack-indexed", Indexed.Name);
       Assert.AreEqual(2, Ls.Version);
       Assert.IsTrue(Ls.IsVersionSupported(1));
       Assert.IsTrue(Ls.IsVersionSupported(2));
@@ -317,6 +319,84 @@ namespace LsMsgPack.SignalRTests
       Point p = (Point)read.Arguments[3];
       Assert.AreEqual(5, p.X);
       Assert.AreEqual(6, p.Y);
+    }
+
+    [TestMethod]
+    public void Indexed_RoundTrip()
+    {
+      List<HubMessage> messages = Messages();
+      for (int i = 0; i < messages.Count; i++)
+        Assert.AreEqual(Describe(messages[i]), Describe(Parse(Indexed, Indexed.GetMessageBytes(messages[i]).ToArray())), $"message {i}");
+    }
+
+    /// <summary>
+    /// Each value is [schema, body] (null stays nil): the serializer's payload with the described schema, one item in the envelope.
+    /// </summary>
+    [TestMethod]
+    public void Indexed_ValueIsSchemaAndBody()
+    {
+      InvocationMessage message = new InvocationMessage("Send", new object[] { ChatMessage.Sample(), 1, "x", null });
+      byte[] bytes = Indexed.GetMessageBytes(message).ToArray();
+      LsMsgPackSerializer serializer = new LsMsgPackSerializer(LsMsgPackHubProtocolOptions.DefaultSerializerOptions(false, true));
+      byte[] value = serializer.Serialize(ChatMessage.Sample());
+      byte[] wrapped = new byte[value.Length + 1];
+      wrapped[0] = 0x92;
+      value.CopyTo(wrapped, 1);
+      Assert.IsTrue(Contains(bytes, wrapped), "[schema, body] of the serializer");
+      Assert.AreEqual(0xC0, bytes[bytes.Length - 2], "null is nil, then the stream ids []");
+      Assert.AreEqual(Describe(message), Describe(Parse(Indexed, bytes)));
+    }
+
+    /// <summary>
+    /// [nil, value without a schema] (as the TypeScript client writes them) are read too, and camelCase names.
+    /// </summary>
+    [TestMethod]
+    public void Indexed_ReadsValuesWithoutASchema()
+    {
+      // [1, {}, nil, "Send", [nil, [nil, 1], [nil, "s"], [nil, {"x": 5, "y": 6}]], []]
+      byte[] body = Convert.FromHexString("9601" + "80" + "C0" + "A453656E64" + "94" + "C0" + "92C001" + "92C0A173" + "92C082A17805A17906" + "90");
+      byte[] bytes = new byte[body.Length + 1];
+      bytes[0] = (byte)body.Length;
+      body.CopyTo(bytes, 1);
+      InvocationMessage read = (InvocationMessage)Parse(Indexed, bytes);
+      Assert.AreEqual(1, read.Arguments[1]);
+      Assert.AreEqual("s", read.Arguments[2]);
+      Point p = (Point)read.Arguments[3];
+      Assert.AreEqual(5, p.X);
+      Assert.AreEqual(6, p.Y);
+    }
+
+    [TestMethod]
+    public void Indexed_ValueWithoutTheWrapper_IsABindingFailure()
+    {
+      // "Count" with 3 instead of [schema, 3]
+      byte[] body = Convert.FromHexString("9601" + "80" + "A23132" + "A5436F756E74" + "91" + "03" + "90");
+      byte[] bytes = new byte[body.Length + 1];
+      bytes[0] = (byte)body.Length;
+      body.CopyTo(bytes, 1);
+      InvocationBindingFailureMessage failure = (InvocationBindingFailureMessage)Parse(Indexed, bytes);
+      StringAssert.Contains(failure.BindingFailure.SourceException.InnerException.InnerException.Message, "lsmsgpack-indexed");
+    }
+
+    /// <summary>
+    /// A list of objects: every name once instead of once per object.
+    /// </summary>
+    [TestMethod]
+    public void Indexed_ListIsSmaller()
+    {
+      List<ChatMessage> list = new List<ChatMessage>();
+      for (int i = 0; i < 50; i++)
+        list.Add(ChatMessage.Sample(i));
+      InvocationMessage message = new InvocationMessage("History", new object[] { list });
+      int plain = Ls.GetMessageBytes(message).Length;
+      int indexed = Indexed.GetMessageBytes(message).Length;
+      Assert.IsTrue(indexed < plain * 3 / 4, $"{indexed} bytes indexed, {plain} plain");
+    }
+
+    [TestMethod]
+    public void Indexed_NotWithAsMessagePack()
+    {
+      Assert.ThrowsExactly<ArgumentException>(() => new LsMsgPackHubProtocol(new LsMsgPackHubProtocolOptions() { AsMessagePack = true, IndexedSchema = true }));
     }
 
     #region Helpers

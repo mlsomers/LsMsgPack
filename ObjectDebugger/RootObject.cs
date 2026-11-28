@@ -154,7 +154,7 @@ namespace ObjectDebugger
     {
       if (payload.Body is MpHubMessage message)
       {
-        ReconstructHubMessage(message);
+        ReconstructHubMessage(message, payload.IndexedHubValues);
         return;
       }
       Schema = payload.Schema;
@@ -162,11 +162,17 @@ namespace ObjectDebugger
       LastItemRef = payload.Body;
       if (payload.Error != null)
         AddError(payload.Error);
+      FillBody(Node.FromItem(payload.Body));
+    }
 
+    /// <summary>
+    /// The objects of a body with the <see cref="Schema"/> of this payload (none: inferred).
+    /// </summary>
+    private void FillBody(Node body)
+    {
       try
       {
         List<SchemaType> types = Schema != null && Schema.IsAvailable ? Schema.Types : null;
-        Node body = Node.FromItem(payload.Body);
         Node.LinkReferences(body);
         ObjectReconstructor reconstructor = new ObjectReconstructor(types);
         reconstructor.FillRoot(this, body, Schema != null && Schema.IsAvailable ? Schema.RootType : null);
@@ -192,9 +198,10 @@ namespace ObjectDebugger
 
     /// <summary>
     /// A SignalR message: an object of its fields by name (<see cref="HubCapture.FieldName"/>), each value reconstructed on its own as the protocol writes it (an argument, a stream item,
-    /// a result: each one a payload without a schema, its references point into it).
+    /// a result: each one a payload, its references point into it).
     /// </summary>
-    private void ReconstructHubMessage(MpHubMessage message)
+    /// <param name="indexed">"lsmsgpack-indexed": each value is nil, [schema, body] or [nil, value without a schema] (<see cref="HubValuesIndexed"/>)</param>
+    private void ReconstructHubMessage(MpHubMessage message, bool indexed)
     {
       Kind = ObjectKind.Object;
       Type = "SignalR " + (message.MessageTypeName ?? "message");
@@ -216,10 +223,10 @@ namespace ObjectDebugger
           RootObject arguments = new RootObject() { Name = name, Parent = this, Kind = ObjectKind.Collection, Type = "arguments", FirstItemRef = node.Item, LastItemRef = node.Item };
           Members.Add(arguments);
           for (int a = 0; a < node.Elements.Length; a++)
-            AddHubValue(arguments, string.Concat("[", a.ToString(), "]"), node.Elements[a]);
+            AddHubValue(arguments, string.Concat("[", a.ToString(), "]"), node.Elements[a], indexed);
           continue;
         }
-        PrimitiveObject field = AddHubValue(this, name, node);
+        PrimitiveObject field = AddHubValue(this, name, node, indexed && IsHubValueField(name));
         if (name == "type")
           field.Type = message.MessageTypeName;
         else if (name == "resultKind")
@@ -230,8 +237,25 @@ namespace ObjectDebugger
     /// <summary>
     /// A field or argument of a SignalR message: a primitive as a member, anything else reconstructed as a payload of its own (its references point into it).
     /// </summary>
-    private static PrimitiveObject AddHubValue(ComplexObject parent, string name, Node node)
+    /// <param name="indexed">The value is nil, [schema, body] or [nil, value without a schema] ("lsmsgpack-indexed")</param>
+    private static PrimitiveObject AddHubValue(ComplexObject parent, string name, Node node, bool indexed)
     {
+      if (indexed && node.Kind == ValueKind.Array && node.Elements != null && node.Elements.Length == 2)
+      {
+        RootObject wrapped = new RootObject() { Name = name, Parent = parent, FirstItemRef = node.Item, LastItemRef = node.Item };
+        parent.Members.Add(wrapped);
+        Node first = node.Elements[0];
+        SchemaInfo schema = first.Kind == ValueKind.Nil ? null : ReadInlineSchema(first);
+        if (schema is null)
+        {
+          FillHubValue(wrapped, node.Elements[1]);
+          return wrapped;
+        }
+        schema.ItemRef = first.Item;
+        wrapped.Schema = schema;
+        wrapped.FillBody(node.Elements[1]);
+        return wrapped;
+      }
       if (!node.IsContainer && node.Kind != ValueKind.Reference)
       {
         PrimitiveObject value = new PrimitiveObject() { Name = name, Parent = parent, FirstItemRef = node.Item, LastItemRef = node.Item, ValueKind = node.Kind, Value = node.Value };
@@ -257,6 +281,102 @@ namespace ObjectDebugger
       {
         target.AddError(ex.Message);
       }
+    }
+
+    /// <summary>
+    /// The fields of a message that hold a value of the hub method (the elements of "arguments" too).
+    /// </summary>
+    private static bool IsHubValueField(string name)
+    {
+      return name == "item" || name == "result";
+    }
+
+    /// <summary>
+    /// Whether the values of the messages are those of "lsmsgpack-indexed" (LsMsgPack.SignalR): each one nil, [schema, body] or [nil, value without a schema].
+    /// The client's handshake names the protocol; without it (a capture of the messages only) every value must have that shape and at least one must hold a schema,
+    /// which plain values almost never do (a list of two whose first element is nil or a map of names to arrays of names).
+    /// </summary>
+    internal static bool HubValuesIndexed(List<MsgPackItem> items)
+    {
+      bool schemas = false;
+      for (int t = 0; t < items.Count; t++)
+      {
+        if (items[t] is MpHubHandshake handshake)
+        {
+          string protocol = HandshakeProtocol(handshake.Value as string);
+          if (protocol != null) // the client's (the server's {} names none)
+            return string.Equals(protocol, IndexedHubProtocol, StringComparison.Ordinal);
+          continue;
+        }
+        if (!(items[t] is MpHubMessage message))
+          continue;
+        Node[] fields = Node.FromItem(message).Elements; // nodes: without KEEPTRACK an array holds values, not items
+        if (fields is null)
+          return false;
+        for (int f = 0; f < fields.Length; f++)
+        {
+          string name = HubCapture.FieldName(message.MessageType, f, message.ResultKind);
+          if (name == "arguments")
+          {
+            if (fields[f].Kind != ValueKind.Array || fields[f].Elements is null)
+              return false;
+            Node[] values = fields[f].Elements;
+            for (int a = 0; a < values.Length; a++)
+              if (!FitsIndexedHubValue(values[a], ref schemas))
+                return false;
+          }
+          else if (IsHubValueField(name) && !FitsIndexedHubValue(fields[f], ref schemas))
+            return false;
+        }
+      }
+      return schemas;
+    }
+
+    /// <summary>
+    /// Whether the data is a capture of a SignalR connection (<see cref="MsgPackSettings.ReadHubMessages"/>) with the values of "lsmsgpack-indexed": each one nil, [schema, body] or [nil, value].
+    /// </summary>
+    /// <param name="item">An <see cref="MpRoot"/> or a single item, as for <see cref="Reconstruct(MsgPackItem, SchemaStore)"/></param>
+    public static bool IsIndexedHubCapture(MsgPackItem item)
+    {
+      if (item is MpHubMessage)
+        return HubValuesIndexed(new List<MsgPackItem>() { item });
+      return item is MpRoot root && HubValuesIndexed(new List<MsgPackItem>(root));
+    }
+
+    /// <summary>
+    /// The name of the protocol of LsMsgPack.SignalR with the indexed schema in each value.
+    /// </summary>
+    internal const string IndexedHubProtocol = "lsmsgpack-indexed";
+
+    private static bool FitsIndexedHubValue(Node value, ref bool schemas)
+    {
+      if (value.Kind == ValueKind.Nil)
+        return true;
+      if (value.Kind != ValueKind.Array || value.Elements is null || value.Elements.Length != 2)
+        return false;
+      Node first = value.Elements[0];
+      if (first.Kind == ValueKind.Nil)
+        return true;
+      if (first.Kind != ValueKind.Map || ReadInlineSchema(first) is null)
+        return false;
+      schemas = true;
+      return true;
+    }
+
+    /// <summary>
+    /// The "protocol" of a handshake's JSON (<c>{"protocol":"messagepack","version":1}</c>), null when it names none.
+    /// </summary>
+    internal static string HandshakeProtocol(string json)
+    {
+      if (json is null)
+        return null;
+      int key = json.IndexOf("\"protocol\"", StringComparison.Ordinal);
+      if (key < 0)
+        return null;
+      int colon = json.IndexOf(':', key + 10);
+      int open = colon < 0 ? -1 : json.IndexOf('"', colon + 1);
+      int close = open < 0 ? -1 : json.IndexOf('"', open + 1);
+      return close < 0 ? null : json.Substring(open + 1, close - open - 1);
     }
 
     /// <summary>
@@ -325,9 +445,42 @@ namespace ObjectDebugger
 
       List<Payload> payloads = SplitPayloads(new List<MsgPackItem>(root), null, null);
       for (int t = 0; t < payloads.Count; t++)
+      {
         if (payloads[t].SchemaItem != null)
           found.Add(payloads[t].SchemaItem);
+        else if (payloads[t].IndexedHubValues)
+          AddHubSchemaItems((MpHubMessage)payloads[t].Body, found);
+      }
       return found;
+    }
+
+    /// <summary>
+    /// The schemas of the values of an "lsmsgpack-indexed" message (<see cref="HubValuesIndexed"/> found every value fits): the maps in front of the bodies.
+    /// Without KEEPTRACK the values in a message have no items of their own (none found).
+    /// </summary>
+    private static void AddHubSchemaItems(MpHubMessage message, List<MsgPackItem> found)
+    {
+      Node[] fields = Node.FromItem(message).Elements;
+      if (fields is null)
+        return;
+      for (int f = 0; f < fields.Length; f++)
+      {
+        string name = HubCapture.FieldName(message.MessageType, f, message.ResultKind);
+        if (name == "arguments" && fields[f].Elements != null)
+        {
+          Node[] values = fields[f].Elements;
+          for (int a = 0; a < values.Length; a++)
+            AddHubSchemaItem(values[a], found);
+        }
+        else if (IsHubValueField(name))
+          AddHubSchemaItem(fields[f], found);
+      }
+    }
+
+    private static void AddHubSchemaItem(Node value, List<MsgPackItem> found)
+    {
+      if (value.Kind == ValueKind.Array && value.Elements != null && value.Elements.Length == 2 && value.Elements[0].Kind == ValueKind.Map && value.Elements[0].Item != null)
+        found.Add(value.Elements[0].Item);
     }
 
     private sealed class Payload
@@ -336,6 +489,8 @@ namespace ObjectDebugger
       public MsgPackItem Body;
       public SchemaInfo Schema;
       public string Error;
+      /// <summary>A SignalR message of "lsmsgpack-indexed" (<see cref="HubValuesIndexed"/>).</summary>
+      public bool IndexedHubValues;
     }
 
     /// <summary>
@@ -346,6 +501,7 @@ namespace ObjectDebugger
     {
       List<Payload> payloads = new List<Payload>();
       SchemaStore inline = null;
+      int hubValues = 0; // 0 not decided yet, 1 "lsmsgpack-indexed", -1 plain
       int t = 0;
       while (t < items.Count)
       {
@@ -355,6 +511,15 @@ namespace ObjectDebugger
           continue;
         }
         Payload payload = new Payload() { Body = items[t] };
+        if (items[t] is MpHubMessage)
+        {
+          if (hubValues == 0)
+            hubValues = HubValuesIndexed(items) ? 1 : -1;
+          payload.IndexedHubValues = hubValues > 0;
+          payloads.Add(payload);
+          t++;
+          continue;
+        }
         // Only a map (the schema) or an extension (a reference) can start a payload with a schema
         if (t + 1 < items.Count && (items[t] is MpMap || items[t] is MpExt) && !IsStreamPart(items[t + 1]))
         {

@@ -65,7 +65,7 @@ namespace LsMsgPackInspector
     private MsgPackItem _item;
     private long _displayLimit;
     private long _nodeCount;
-    private List<MsgPackItem> _schemaItems = new List<MsgPackItem>();
+    private HashSet<MsgPackItem> _schemaItems = new HashSet<MsgPackItem>(ReferenceEqualityComparer.Instance); // by reference: a capture of "lsmsgpack-indexed" has one per value
 
     /// <summary>
     /// The displayed items (the tree nodes), their index is the id in the model.
@@ -105,7 +105,7 @@ namespace LsMsgPackInspector
       _ids.Clear();
       _children.Clear();
       _item = null;
-      _schemaItems = new List<MsgPackItem>();
+      _schemaItems = new HashSet<MsgPackItem>(ReferenceEqualityComparer.Instance);
       _displayLimit = settings.DisplayLimit <= 0 ? long.MaxValue : settings.DisplayLimit;
 
       LoadResult result = new LoadResult() { Length = _data?.Length ?? 0, DisplayLimit = _displayLimit };
@@ -157,7 +157,7 @@ namespace LsMsgPackInspector
       if (result.Error != null || ReferenceEquals(_item, null))
         return result;
 
-      _schemaItems = RootObject.FindSchemaItems(_item);
+      _schemaItems = new HashSet<MsgPackItem>(RootObject.FindSchemaItems(_item), ReferenceEqualityComparer.Instance);
       result.HasSchema = _schemaItems.Count > 0;
       ObjectAssessment assessment = ObjectAssessment.Assess(_item);
       result.ObjectConfidence = assessment.Confidence.ToString();
@@ -306,15 +306,14 @@ namespace LsMsgPackInspector
       if (ReferenceEquals(item, null))
         return;
 
-      // The schema (or schema reference) is a direct child of the root, everything in it belongs to it
-      bool isTreeRoot = id == 0;
+      // The schema (or schema reference) is a direct child of the root, or the first element of a value of a SignalR message ("lsmsgpack-indexed"); everything in it belongs to it
       bool schema = result.Items[id].Schema;
 
       if (item is MpRoot root)
       {
         for (int t = 0; t < root.Count; t++)
         {
-          int child = AddItem(result, root[t], id, null, schema || isTreeRoot && IsSchemaItem(root[t]));
+          int child = AddItem(result, root[t], id, null, schema || IsSchemaItem(root[t]));
           Traverse(result, child, root[t]);
           if (_nodeCount > _displayLimit)
             return;
@@ -348,7 +347,7 @@ namespace LsMsgPackInspector
         {
           if (ReferenceEquals(elements[t], null))
             break; // the slots after an error were not read (the header claims them): they showed as NULL items, as if the data had them
-          int child = AddItem(result, elements[t], id, message?.FieldName(t) ?? index?.NameOf(elements[t]), schema || isTreeRoot && IsSchemaItem(elements[t]));
+          int child = AddItem(result, elements[t], id, message?.FieldName(t) ?? index?.NameOf(elements[t]), schema || IsSchemaItem(elements[t]));
           Traverse(result, child, elements[t], index);
           if (_nodeCount > _displayLimit)
             return;
@@ -408,10 +407,7 @@ namespace LsMsgPackInspector
 
     private bool IsSchemaItem(MsgPackItem item)
     {
-      foreach (MsgPackItem schemaItem in _schemaItems)
-        if (ReferenceEquals(schemaItem, item))
-          return true;
-      return false;
+      return _schemaItems.Count != 0 && _schemaItems.Contains(item);
     }
 
     private static string FirstLine(string text)

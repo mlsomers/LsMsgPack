@@ -50,7 +50,7 @@ Streams written by LsMsgPack's `MsgPackStreamWriter` (or the TypeScript client) 
 
 ## SignalR
 
-The bytes of a SignalR hub connection with a MessagePack protocol ("messagepack", or "lsmsgpack" of [LsMsgPack.SignalR](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SignalR.md)) are shown message by message: the handshake (**json**), each length prefix (**len**, not MsgPack) and the message (**hub**) with its fields by name, and in the objects pane each message as an object of its fields. Copy a binary WebSocket message from the browser's DevTools as base64 and use **MsgPack: Explore Bytes from Clipboard**.
+The bytes of a SignalR hub connection with a MessagePack protocol ("messagepack", or "lsmsgpack" and "lsmsgpack-indexed" of [LsMsgPack.SignalR](https://github.com/mlsomers/LsMsgPack/blob/master/docs/SignalR.md)) are shown message by message: the handshake (**json**), each length prefix (**len**, not MsgPack) and the message (**hub**) with its fields by name, and in the objects pane each message as an object of its fields. With "lsmsgpack-indexed" the schema in front of each value is marked as a schema and the value is read with it (class and property names). Copy a binary WebSocket message from the browser's DevTools as base64 and use **MsgPack: Explore Bytes from Clipboard**.
 
 ## Files and text
 

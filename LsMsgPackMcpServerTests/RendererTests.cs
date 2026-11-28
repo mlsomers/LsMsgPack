@@ -453,6 +453,21 @@ namespace LsMsgPackMcpServerTests
       Assert.IsFalse(Render(new byte[] { 0x02, 0x91, 0x01 }).Contains("SignalR", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// "lsmsgpack-indexed": a value [schema, body] is read with its schema (names, the class), [nil, value] as it is.
+    /// </summary>
+    [TestMethod]
+    public void HubCapture_IndexedValuesWithTheirSchema()
+    {
+      string text = Render(Payloads.IndexedHubCapture());
+      AssertContains(text, "\"lsmsgpack-indexed\": [schema, body] read with that schema");
+      AssertContains(text, "\"Customer\": \"Alice\"");
+      AssertContains(text, "\"City\": \"Amsterdam\"");
+      AssertContains(text, "McpInvoice");
+      AssertContains(text, "\"Product\": \"Kiwi\"");
+      Assert.IsFalse(text.Contains("\"McpInvoice\": [", StringComparison.Ordinal), "the schema is not shown as a value:\n" + text);
+    }
+
     public class McpCompressedLine
     {
       public string Product { get; set; }

@@ -83,7 +83,7 @@ namespace LsMsgPack.SignalRTests
           {
             ISignalRServerBuilder signalR = services.AddSignalR(o => o.MaximumParallelInvocationsPerClient = 2);
             if (protocols == ServerProtocols.Ours)
-              signalR.AddLsMsgPackProtocol().AddLsMsgPackAsMessagePackProtocol();
+              signalR.AddLsMsgPackProtocol().AddLsMsgPackIndexedProtocol().AddLsMsgPackAsMessagePackProtocol();
             else
               signalR.AddMessagePackProtocol();
             services.AddRouting();
@@ -115,6 +115,12 @@ namespace LsMsgPack.SignalRTests
     public Task LsMsgPack_Client_LsMsgPack_Server()
     {
       return Talk(ServerProtocols.Ours, b => b.AddLsMsgPackProtocol(), "lsmsgpack");
+    }
+
+    [TestMethod]
+    public Task Indexed_Client_Indexed_Server()
+    {
+      return Talk(ServerProtocols.Ours, b => b.AddLsMsgPackIndexedProtocol(), "lsmsgpack-indexed");
     }
 
     [TestMethod]
